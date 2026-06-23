@@ -13,10 +13,10 @@ use crate::context;
 use std::collections::HashMap;
 
 #[cfg(feature = "entropy")]
-pub(super) use super::scoring_policy::entropy_fallback_confidence;
+pub(super) use crate::confidence::policy::entropy_fallback_confidence;
 #[cfg(feature = "simdsieve")]
-pub(super) use super::scoring_policy::hot_pattern_confidence;
-pub(super) use super::scoring_policy::{
+pub(super) use crate::confidence::policy::hot_pattern_confidence;
+pub(super) use crate::confidence::policy::{
     checksum_policy_for, finalize_report_confidence, generic_secret_confidence,
     ReportConfidencePolicy,
 };

@@ -1,28 +1,28 @@
 use crate::context;
 
-pub(super) type CredentialChecksumPolicy = crate::checksum::ChecksumConfidenceDecision;
+pub(crate) type CredentialChecksumPolicy = crate::checksum::ChecksumConfidenceDecision;
 
 #[inline]
-pub(super) fn checksum_policy_for(credential: &str) -> CredentialChecksumPolicy {
+pub(crate) fn checksum_policy_for(credential: &str) -> CredentialChecksumPolicy {
     crate::checksum::ChecksumConfidenceDecision::for_credential(credential)
 }
 
 #[inline]
-pub(super) fn apply_checksum_confidence(confidence: f64, credential: &str) -> Option<f64> {
+pub(crate) fn apply_checksum_confidence(confidence: f64, credential: &str) -> Option<f64> {
     checksum_policy_for(credential).adjusted_confidence(confidence)
 }
 
-pub(super) struct ReportConfidencePolicy<'a> {
-    pub(super) credential: &'a str,
-    pub(super) detector_id: &'a str,
-    pub(super) file_path: Option<&'a str>,
-    pub(super) is_named_detector: bool,
-    pub(super) penalize_test_paths: bool,
-    pub(super) allow_encoded_text_lift: bool,
-    pub(super) calibration: Option<&'a keyhog_core::Calibration>,
+pub(crate) struct ReportConfidencePolicy<'a> {
+    pub(crate) credential: &'a str,
+    pub(crate) detector_id: &'a str,
+    pub(crate) file_path: Option<&'a str>,
+    pub(crate) is_named_detector: bool,
+    pub(crate) penalize_test_paths: bool,
+    pub(crate) allow_encoded_text_lift: bool,
+    pub(crate) calibration: Option<&'a keyhog_core::Calibration>,
 }
 
-pub(super) fn finalize_report_confidence(
+pub(crate) fn finalize_report_confidence(
     confidence: f64,
     policy: ReportConfidencePolicy<'_>,
 ) -> Option<f64> {
@@ -52,7 +52,7 @@ pub(super) fn finalize_report_confidence(
 }
 
 #[cfg(feature = "simdsieve")]
-pub(super) fn hot_pattern_confidence(
+pub(crate) fn hot_pattern_confidence(
     credential: &str,
     detector_id: &str,
     file_path: Option<&str>,
@@ -75,7 +75,7 @@ pub(super) fn hot_pattern_confidence(
 }
 
 #[cfg(feature = "entropy")]
-pub(super) fn entropy_fallback_confidence(entropy: f64, keyword: &str) -> f64 {
+pub(crate) fn entropy_fallback_confidence(entropy: f64, keyword: &str) -> f64 {
     // Keyword-free high-entropy candidates carry weaker evidence than
     // keyword/isolated-token candidates, so only the latter get the historical
     // +0.10 lift. The emit path owns routing; this owner owns the base score.
@@ -93,7 +93,7 @@ pub(super) fn entropy_fallback_confidence(entropy: f64, keyword: &str) -> f64 {
     }
 }
 
-pub(super) fn generic_secret_confidence(
+pub(crate) fn generic_secret_confidence(
     context: context::CodeContext,
     scan_comments: bool,
     penalize_test_paths: bool,

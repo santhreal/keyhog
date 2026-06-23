@@ -2,6 +2,7 @@
 //! Higher confidence means more likely to be a real secret.
 
 pub(crate) mod penalties;
+pub(crate) mod policy;
 mod prefixes;
 mod signals;
 

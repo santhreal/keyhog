@@ -1,4 +1,4 @@
-//! Gate: fallback confidence base-score policy has one engine owner.
+//! Gate: fallback confidence base-score policy has one confidence owner.
 
 use std::path::{Path, PathBuf};
 
@@ -40,7 +40,7 @@ fn uncommented_code(src: &str) -> String {
 #[test]
 fn entropy_and_generic_fallback_confidence_route_through_scoring_owner() {
     let src = scanner_src();
-    let scoring = uncommented_code(&read(&src.join("engine/scoring_policy.rs")));
+    let scoring = uncommented_code(&read(&src.join("confidence/policy.rs")));
     for required in [
         "fn entropy_fallback_confidence(",
         "fn generic_secret_confidence(",
@@ -52,7 +52,7 @@ fn entropy_and_generic_fallback_confidence_route_through_scoring_owner() {
     ] {
         assert!(
             scoring.contains(required),
-            "engine::scoring_policy must own fallback confidence policy token {required:?}"
+            "confidence::policy must own fallback confidence policy token {required:?}"
         );
     }
 
@@ -98,7 +98,7 @@ fn entropy_and_generic_fallback_confidence_route_through_scoring_owner() {
 #[test]
 fn report_confidence_tail_routes_through_scoring_owner() {
     let src = scanner_src();
-    let owner = src.join("engine/scoring_policy.rs");
+    let owner = src.join("confidence/policy.rs");
     let scoring = uncommented_code(&read(&owner));
     for required in [
         "fn finalize_report_confidence(",
@@ -110,7 +110,7 @@ fn report_confidence_tail_routes_through_scoring_owner() {
     ] {
         assert!(
             scoring.contains(required),
-            "engine::scoring_policy must own report-confidence policy token {required:?}"
+            "confidence::policy must own report-confidence policy token {required:?}"
         );
     }
 
@@ -136,7 +136,8 @@ fn report_confidence_tail_routes_through_scoring_owner() {
     collect_rs_files(&src.join("engine"), &mut files);
     let mut offenders = Vec::new();
     for path in files {
-        if path == owner {
+        let rel = path.strip_prefix(&src).expect("scanner src prefix");
+        if rel == Path::new("engine/scoring.rs") {
             continue;
         }
         let code = uncommented_code(&read(&path));
@@ -156,6 +157,6 @@ fn report_confidence_tail_routes_through_scoring_owner() {
 
     assert!(
         offenders.is_empty(),
-        "engine emission paths must not own report-confidence policy calls: {offenders:#?}"
+        "engine files other than scoring.rs must not own report-confidence policy calls: {offenders:#?}"
     );
 }
