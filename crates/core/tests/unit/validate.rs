@@ -395,10 +395,16 @@ fn literal_specificity_uses_ast_not_raw_regex_scans() {
     let source = std::fs::read_to_string("src/spec/validate.rs").expect("read validate source");
 
     assert!(source.contains("fn ast_literal_runs("));
+    assert!(source.contains("enum LiteralFrame"));
     assert!(source.contains("fn combine_literal_runs("));
     assert!(source.contains("fn pure_character_class_ast("));
+    assert!(source.contains("enum PureFrame"));
     assert!(source.contains("fn is_regex_metadata_node("));
     assert!(source.contains("is_pure_character_class(regex_cache,"));
+    assert!(!source.contains("ast_literal_runs(&group.ast)"));
+    assert!(!source.contains(".map(|child| ast_literal_runs(child).max)"));
+    assert!(!source.contains("pure_character_class_ast(&group.ast)"));
+    assert!(!source.contains(".map(|child| pure_character_class_ast(child))"));
     assert!(!source.contains("fn is_escaped_literal("));
     assert!(!source.contains("for ch in pattern.chars()"));
     assert!(!source.contains(".find(']')"));
@@ -423,6 +429,9 @@ fn pattern_group_bounds_are_validated_before_scanner_compile() {
     assert!(source.contains("fn validate_pattern_groups<'a>("));
     assert!(source.contains("fn ast_captures_len(ast: &ast::Ast) -> usize"));
     assert!(source.contains("fn ast_max_capture_index(ast: &ast::Ast) -> Option<u32>"));
+    assert!(source.contains("let mut stack = vec![ast];"));
+    assert!(!source.contains("chain(ast_max_capture_index(&group.ast))"));
+    assert!(!source.contains("filter_map(ast_max_capture_index)"));
     assert!(source.contains("group >= captures"));
     assert!(!source.contains("regex::Regex::new(&pat.regex)"));
 }

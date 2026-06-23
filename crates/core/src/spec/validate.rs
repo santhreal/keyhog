@@ -550,28 +550,28 @@ fn ast_captures_len(ast: &ast::Ast) -> usize {
 }
 
 fn ast_max_capture_index(ast: &ast::Ast) -> Option<u32> {
-    match ast {
-        ast::Ast::Group(group) => group
-            .capture_index()
-            .into_iter()
-            .chain(ast_max_capture_index(&group.ast))
-            .max(),
-        ast::Ast::Concat(concat) => concat.asts.iter().filter_map(ast_max_capture_index).max(),
-        ast::Ast::Alternation(alternation) => alternation
-            .asts
-            .iter()
-            .filter_map(ast_max_capture_index)
-            .max(),
-        ast::Ast::Repetition(repetition) => ast_max_capture_index(&repetition.ast),
-        ast::Ast::Empty(_)
-        | ast::Ast::Flags(_)
-        | ast::Ast::Literal(_)
-        | ast::Ast::Dot(_)
-        | ast::Ast::Assertion(_)
-        | ast::Ast::ClassUnicode(_)
-        | ast::Ast::ClassPerl(_)
-        | ast::Ast::ClassBracketed(_) => None,
+    let mut max_capture = None;
+    let mut stack = vec![ast];
+    while let Some(node) = stack.pop() {
+        match node {
+            ast::Ast::Group(group) => {
+                max_capture = max_capture.max(group.capture_index());
+                stack.push(&group.ast);
+            }
+            ast::Ast::Concat(concat) => stack.extend(concat.asts.iter()),
+            ast::Ast::Alternation(alternation) => stack.extend(alternation.asts.iter()),
+            ast::Ast::Repetition(repetition) => stack.push(&repetition.ast),
+            ast::Ast::Empty(_)
+            | ast::Ast::Flags(_)
+            | ast::Ast::Literal(_)
+            | ast::Ast::Dot(_)
+            | ast::Ast::Assertion(_)
+            | ast::Ast::ClassUnicode(_)
+            | ast::Ast::ClassPerl(_)
+            | ast::Ast::ClassBracketed(_) => {}
+        }
     }
+    max_capture
 }
 
 #[derive(Clone, Copy)]
@@ -603,49 +603,89 @@ impl LiteralRunStats {
 }
 
 fn ast_literal_runs(ast: &ast::Ast) -> LiteralRunStats {
-    match ast {
-        ast::Ast::Literal(_) => LiteralRunStats::literal(1),
-        ast::Ast::Empty(_) | ast::Ast::Flags(_) | ast::Ast::Assertion(_) => {
-            LiteralRunStats::empty()
-        }
-        ast::Ast::Group(group) => ast_literal_runs(&group.ast),
-        ast::Ast::Concat(concat) => concat
-            .asts
-            .iter()
-            .fold(LiteralRunStats::empty(), combine_literal_runs),
-        ast::Ast::Alternation(alternation) => LiteralRunStats {
-            max: match alternation
-                .asts
-                .iter()
-                .map(|child| ast_literal_runs(child).max)
-                .max()
-            {
-                Some(max) => max,
-                None => 0,
+    enum LiteralFrame<'a> {
+        Visit(&'a ast::Ast),
+        FinishConcat(usize),
+        FinishAlternation(usize),
+        FinishRepetition(&'a ast::RepetitionKind),
+    }
+
+    let mut frames = vec![LiteralFrame::Visit(ast)];
+    let mut results = Vec::new();
+    while let Some(frame) = frames.pop() {
+        match frame {
+            LiteralFrame::Visit(node) => match node {
+                ast::Ast::Literal(_) => results.push(LiteralRunStats::literal(1)),
+                ast::Ast::Empty(_) | ast::Ast::Flags(_) | ast::Ast::Assertion(_) => {
+                    results.push(LiteralRunStats::empty());
+                }
+                ast::Ast::Group(group) => frames.push(LiteralFrame::Visit(&group.ast)),
+                ast::Ast::Concat(concat) => {
+                    frames.push(LiteralFrame::FinishConcat(concat.asts.len()));
+                    for child in concat.asts.iter().rev() {
+                        frames.push(LiteralFrame::Visit(child));
+                    }
+                }
+                ast::Ast::Alternation(alternation) => {
+                    frames.push(LiteralFrame::FinishAlternation(alternation.asts.len()));
+                    for child in alternation.asts.iter().rev() {
+                        frames.push(LiteralFrame::Visit(child));
+                    }
+                }
+                ast::Ast::Repetition(repetition) => {
+                    frames.push(LiteralFrame::FinishRepetition(&repetition.op.kind));
+                    frames.push(LiteralFrame::Visit(&repetition.ast));
+                }
+                ast::Ast::Dot(_)
+                | ast::Ast::ClassUnicode(_)
+                | ast::Ast::ClassPerl(_)
+                | ast::Ast::ClassBracketed(_) => results.push(LiteralRunStats {
+                    prefix: 0,
+                    suffix: 0,
+                    max: 0,
+                    all_literal: false,
+                }),
             },
-            prefix: 0,
-            suffix: 0,
-            all_literal: false,
-        },
-        ast::Ast::Repetition(repetition) => repeated_literal_runs(
-            ast_literal_runs(&repetition.ast),
-            repetition_min(&repetition.op.kind),
-            repetition_is_exact(&repetition.op.kind),
-        ),
-        ast::Ast::Dot(_)
-        | ast::Ast::ClassUnicode(_)
-        | ast::Ast::ClassPerl(_)
-        | ast::Ast::ClassBracketed(_) => LiteralRunStats {
-            prefix: 0,
-            suffix: 0,
-            max: 0,
-            all_literal: false,
-        },
+            LiteralFrame::FinishConcat(child_count) => {
+                let children = results.split_off(results.len() - child_count);
+                let combined = children
+                    .into_iter()
+                    .fold(LiteralRunStats::empty(), combine_literal_runs);
+                results.push(combined);
+            }
+            LiteralFrame::FinishAlternation(child_count) => {
+                let children = results.split_off(results.len() - child_count);
+                let max = match children.into_iter().map(|child| child.max).max() {
+                    Some(max) => max,
+                    None => 0,
+                };
+                results.push(LiteralRunStats {
+                    max,
+                    prefix: 0,
+                    suffix: 0,
+                    all_literal: false,
+                });
+            }
+            LiteralFrame::FinishRepetition(kind) => {
+                let inner = match results.pop() {
+                    Some(inner) => inner,
+                    None => LiteralRunStats::empty(),
+                };
+                results.push(repeated_literal_runs(
+                    inner,
+                    repetition_min(kind),
+                    repetition_is_exact(kind),
+                ));
+            }
+        }
+    }
+    match results.pop() {
+        Some(stats) => stats,
+        None => LiteralRunStats::empty(),
     }
 }
 
-fn combine_literal_runs(left: LiteralRunStats, right: &ast::Ast) -> LiteralRunStats {
-    let right = ast_literal_runs(right);
+fn combine_literal_runs(left: LiteralRunStats, right: LiteralRunStats) -> LiteralRunStats {
     LiteralRunStats {
         prefix: if left.all_literal {
             left.prefix.saturating_add(right.prefix)
@@ -722,41 +762,60 @@ fn is_pure_character_class<'a>(regex_cache: &mut RegexAstCache<'a>, pattern: &'a
 }
 
 fn pure_character_class_ast(ast: &ast::Ast) -> Option<()> {
-    match ast {
-        ast::Ast::ClassBracketed(_) => Some(()),
-        ast::Ast::Group(group) => pure_character_class_ast(&group.ast),
-        ast::Ast::Repetition(repetition) => pure_character_class_ast(&repetition.ast),
-        ast::Ast::Alternation(alternation) => all_nonempty_pure(
-            alternation
-                .asts
-                .iter()
-                .map(|child| pure_character_class_ast(child)),
-        ),
-        ast::Ast::Concat(concat) => all_nonempty_pure(concat.asts.iter().filter_map(|child| {
-            if is_regex_metadata_node(child) {
-                None
-            } else {
-                Some(pure_character_class_ast(child))
-            }
-        })),
-        ast::Ast::Empty(_) | ast::Ast::Flags(_) | ast::Ast::Assertion(_) => None,
-        ast::Ast::Literal(_)
-        | ast::Ast::Dot(_)
-        | ast::Ast::ClassUnicode(_)
-        | ast::Ast::ClassPerl(_) => None,
+    enum PureFrame<'a> {
+        Visit(&'a ast::Ast),
+        FinishAllNonempty(usize),
     }
-}
 
-fn all_nonempty_pure<I>(items: I) -> Option<()>
-where
-    I: IntoIterator<Item = Option<()>>,
-{
-    let mut saw_item = false;
-    for item in items {
-        saw_item = true;
-        item?;
+    let mut frames = vec![PureFrame::Visit(ast)];
+    let mut results = Vec::new();
+    while let Some(frame) = frames.pop() {
+        match frame {
+            PureFrame::Visit(node) => match node {
+                ast::Ast::ClassBracketed(_) => results.push(Some(())),
+                ast::Ast::Group(group) => frames.push(PureFrame::Visit(&group.ast)),
+                ast::Ast::Repetition(repetition) => frames.push(PureFrame::Visit(&repetition.ast)),
+                ast::Ast::Alternation(alternation) => {
+                    frames.push(PureFrame::FinishAllNonempty(alternation.asts.len()));
+                    for child in alternation.asts.iter().rev() {
+                        frames.push(PureFrame::Visit(child));
+                    }
+                }
+                ast::Ast::Concat(concat) => {
+                    let children = concat
+                        .asts
+                        .iter()
+                        .filter(|child| !is_regex_metadata_node(child))
+                        .collect::<Vec<_>>();
+                    frames.push(PureFrame::FinishAllNonempty(children.len()));
+                    for child in children.into_iter().rev() {
+                        frames.push(PureFrame::Visit(child));
+                    }
+                }
+                ast::Ast::Empty(_) | ast::Ast::Flags(_) | ast::Ast::Assertion(_) => {
+                    results.push(None);
+                }
+                ast::Ast::Literal(_)
+                | ast::Ast::Dot(_)
+                | ast::Ast::ClassUnicode(_)
+                | ast::Ast::ClassPerl(_) => results.push(None),
+            },
+            PureFrame::FinishAllNonempty(child_count) => {
+                if child_count == 0 {
+                    results.push(None);
+                    continue;
+                }
+                let children = results.split_off(results.len() - child_count);
+                results.push(
+                    children
+                        .into_iter()
+                        .all(|child| child.is_some())
+                        .then_some(()),
+                );
+            }
+        }
     }
-    saw_item.then_some(())
+    results.pop().flatten()
 }
 
 fn is_regex_metadata_node(ast: &ast::Ast) -> bool {
