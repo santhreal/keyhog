@@ -61,20 +61,3 @@ pub(crate) fn generic_path_allows_ambiguous_base64_candidate(value: &str, entrop
     };
     shape.distinct_alnum >= MIN_DISTINCT_ALNUM
 }
-
-/// IAM-ARN-trimmed-prefix gate for the generic-secret path.
-/// Recognizes `aws:iam::...` shapes without `arn:` prefix.
-pub(crate) fn generic_path_looks_like_trimmed_aws_arn(value: &str) -> bool {
-    let prefixes = ["aws:iam::", "aws-cn:iam::", "aws-us-gov:iam::"];
-    let Some(body) = prefixes.iter().find_map(|&p| value.strip_prefix(p)) else {
-        return false;
-    };
-    let targets = [
-        ":role/",
-        ":user/",
-        ":group/",
-        ":policy/",
-        ":instance-profile/",
-    ];
-    targets.iter().any(|&t| body.contains(t))
-}

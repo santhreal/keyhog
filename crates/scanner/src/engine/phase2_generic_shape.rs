@@ -12,7 +12,6 @@
 //! helpers (the gauntlet's only callers) move with it.
 use super::phase2_generic::shape_helpers::{
     generic_path_allows_ambiguous_base64_candidate, generic_path_looks_like_random_base64_blob,
-    generic_path_looks_like_trimmed_aws_arn,
 };
 use super::*;
 
@@ -287,7 +286,7 @@ impl CompiledScanner {
         // `arn:` prefix; the trimmed form leaks here. The
         // dedicated trimmed-prefix gate catches it without
         // weakening the global gate.
-        if generic_path_looks_like_trimmed_aws_arn(value) {
+        if crate::suppression::shape::looks_like_trimmed_aws_iam_arn(value) {
             return Some("trimmed_aws_arn");
         }
 

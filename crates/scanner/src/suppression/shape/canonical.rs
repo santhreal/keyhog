@@ -166,6 +166,38 @@ pub(crate) fn looks_like_bare_hex_digest(credential: &str) -> bool {
     matches!(credential.len(), 32 | 40 | 48 | 56 | 64 | 72 | 128) && is_uniform_hex(credential)
 }
 
+pub(crate) fn looks_like_aws_iam_arn(value: &str) -> bool {
+    let Some(body) = ["arn:aws:iam::", "arn:aws-cn:iam::", "arn:aws-us-gov:iam::"]
+        .iter()
+        .find_map(|&prefix| value.strip_prefix(prefix))
+    else {
+        return false;
+    };
+    aws_iam_arn_body_has_resource_target(body)
+}
+
+pub(crate) fn looks_like_trimmed_aws_iam_arn(value: &str) -> bool {
+    let Some(body) = ["aws:iam::", "aws-cn:iam::", "aws-us-gov:iam::"]
+        .iter()
+        .find_map(|&prefix| value.strip_prefix(prefix))
+    else {
+        return false;
+    };
+    aws_iam_arn_body_has_resource_target(body)
+}
+
+fn aws_iam_arn_body_has_resource_target(body: &str) -> bool {
+    [
+        ":role/",
+        ":user/",
+        ":group/",
+        ":policy/",
+        ":instance-profile/",
+    ]
+    .iter()
+    .any(|&target| body.contains(target))
+}
+
 /// If `credential` begins with - OR contains - one of the well-known
 /// hash-algorithm labels (`sha256:`, `sha512:`, `sha512-`, `sha1:`,
 /// `md5:`), return the body after the label. Otherwise None.
@@ -493,7 +525,10 @@ pub(crate) fn is_dash_segmented_alnum_decoy_with_randomness(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_structured_dotted_token, looks_like_random_byte_base64_blob};
+    use super::{
+        is_structured_dotted_token, looks_like_aws_iam_arn, looks_like_random_byte_base64_blob,
+        looks_like_trimmed_aws_iam_arn,
+    };
 
     #[test]
     fn structured_dotted_token_accepts_jwt_like_shape() {
@@ -534,6 +569,32 @@ mod tests {
     fn random_byte_base64_blob_rejects_urlsafe_token_shape() {
         assert!(!looks_like_random_byte_base64_blob(
             "ghp_0123456789abcdefghijklmnopqrstuvwxyzABCDEF"
+        ));
+    }
+
+    #[test]
+    fn aws_iam_arn_accepts_full_and_trimmed_resource_identifiers() {
+        assert!(looks_like_aws_iam_arn(
+            "arn:aws:iam::123456789012:role/ReadOnly"
+        ));
+        assert!(looks_like_aws_iam_arn(
+            "arn:aws-us-gov:iam::123456789012:instance-profile/Worker"
+        ));
+        assert!(looks_like_trimmed_aws_iam_arn(
+            "aws-cn:iam::123456789012:user/alice"
+        ));
+    }
+
+    #[test]
+    fn aws_iam_arn_rejects_non_iam_secret_references() {
+        assert!(!looks_like_aws_iam_arn(
+            "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/db"
+        ));
+        assert!(!looks_like_aws_iam_arn(
+            "arn:aws:iam::123456789012:server-certificate/cert"
+        ));
+        assert!(!looks_like_trimmed_aws_iam_arn(
+            "arn:aws:iam::123456789012:role/ReadOnly"
         ));
     }
 }

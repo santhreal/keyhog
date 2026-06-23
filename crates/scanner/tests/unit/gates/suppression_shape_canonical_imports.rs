@@ -255,3 +255,34 @@ fn random_byte_base64_shape_lives_in_shape_owner() {
         "scanner paths must not call the removed generic-owned random-byte predicate"
     );
 }
+
+#[test]
+fn aws_iam_arn_shape_lives_in_shape_owner() {
+    let src = scanner_src();
+    let shape = uncommented_code(&read(&src.join("suppression/shape/canonical.rs")));
+    let shape_mod = uncommented_code(&read(&src.join("suppression/shape/mod.rs")));
+    let generic_helpers =
+        uncommented_code(&read(&src.join("engine/phase2_generic/shape_helpers.rs")));
+    let generic_shape = uncommented_code(&read(&src.join("engine/phase2_generic_shape.rs")));
+    let decision = uncommented_code(&read(&src.join("suppression/decision.rs")));
+
+    assert!(
+        shape.contains("fn looks_like_aws_iam_arn(")
+            && shape.contains("fn looks_like_trimmed_aws_iam_arn(")
+            && shape.contains("fn aws_iam_arn_body_has_resource_target(")
+            && shape_mod.contains("looks_like_aws_iam_arn")
+            && shape_mod.contains("looks_like_trimmed_aws_iam_arn"),
+        "suppression::shape must own full and trimmed AWS IAM ARN predicates"
+    );
+    assert!(
+        !generic_helpers.contains("generic_path_looks_like_trimmed_aws_arn")
+            && !decision.contains("fn decoded_looks_like_aws_iam_arn("),
+        "generic helpers and suppression decision must not re-own AWS IAM ARN predicates"
+    );
+    assert!(
+        generic_shape.contains("crate::suppression::shape::looks_like_trimmed_aws_iam_arn(value)")
+            && decision.contains("crate::suppression::shape::looks_like_aws_iam_arn(credential)")
+            && decision.contains("crate::suppression::shape::looks_like_aws_iam_arn(decoded)"),
+        "generic, direct suppression, and decoded suppression paths must call the shape owner"
+    );
+}

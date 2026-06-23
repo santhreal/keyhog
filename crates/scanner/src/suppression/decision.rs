@@ -291,15 +291,7 @@ pub(super) fn suppression_stage_inner(
     //          gate is intentionally narrow to the IAM namespace.
     //          SecretBench-medium 15k seed-0: 27 FPs from aws-arn
     //          (all IAM role ARNs).
-    if (credential.starts_with("arn:aws:iam::")
-        || credential.starts_with("arn:aws-cn:iam::")
-        || credential.starts_with("arn:aws-us-gov:iam::"))
-        && (credential.contains(":role/")
-            || credential.contains(":user/")
-            || credential.contains(":group/")
-            || credential.contains(":policy/")
-            || credential.contains(":instance-profile/"))
-    {
+    if crate::suppression::shape::looks_like_aws_iam_arn(credential) {
         return suppress("aws_iam_arn");
     }
 
@@ -489,7 +481,7 @@ pub(crate) fn decoded_benign_text_reason(credential: &str) -> Option<&'static st
     if decoded.contains(RFC7519_EXAMPLE_JWT_PREFIX) {
         return Some("decoded_rfc7519_example_jwt");
     }
-    if decoded_looks_like_aws_iam_arn(decoded) {
+    if crate::suppression::shape::looks_like_aws_iam_arn(decoded) {
         return Some("decoded_aws_iam_arn");
     }
     if decoded_looks_like_template_placeholder(decoded) {
@@ -525,17 +517,6 @@ fn decoded_looks_like_labelled_hash(decoded: &str) -> bool {
 
 fn decoded_looks_like_bare_hash_digest(decoded: &str) -> bool {
     matches!(decoded.len(), 56 | 64 | 72 | 128) && looks_like_bare_hex_digest(decoded)
-}
-
-fn decoded_looks_like_aws_iam_arn(decoded: &str) -> bool {
-    (decoded.starts_with("arn:aws:iam::")
-        || decoded.starts_with("arn:aws-cn:iam::")
-        || decoded.starts_with("arn:aws-us-gov:iam::"))
-        && (decoded.contains(":role/")
-            || decoded.contains(":user/")
-            || decoded.contains(":group/")
-            || decoded.contains(":policy/")
-            || decoded.contains(":instance-profile/"))
 }
 
 fn decoded_looks_like_template_placeholder(decoded: &str) -> bool {
