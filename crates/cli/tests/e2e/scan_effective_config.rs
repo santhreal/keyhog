@@ -373,6 +373,18 @@ fn config_effective_baked_values_equal_explicit_flags() {
 }
 
 #[test]
+fn config_effective_prints_documented_generic_keyword_low_entropy_toml_key() {
+    let (stdout, stderr, code) =
+        effective_config_with_toml("generic_keyword_low_entropy = false\n");
+
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("generic_keyword_low_entropy = false"),
+        "documented TOML generic_keyword_low_entropy=false must visibly reach resolved scanner config; stdout={stdout}"
+    );
+}
+
+#[test]
 fn config_effective_prints_hyperscan_cache_dir_and_cli_overrides_toml() {
     let (_config_root, config_cache) = home_temp_cache_dir("config-hs-cache");
     let (_cli_root, cli_cache) = home_temp_cache_dir("cli-hs-cache");

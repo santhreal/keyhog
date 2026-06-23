@@ -90,6 +90,15 @@ fn config_top_level_min_secret_len_wins_over_scan_table() {
 }
 
 #[test]
+fn config_top_level_generic_keyword_low_entropy_false_reaches_scan_args() {
+    let args = args_for_config("generic_keyword_low_entropy = false\n");
+    assert!(
+        args.no_keyword_low_entropy,
+        "documented TOML generic_keyword_low_entropy=false must reach the same scanner path as --no-keyword-low-entropy"
+    );
+}
+
+#[test]
 fn config_limit_stdin_bytes_reaches_source_limits() {
     let args = args_for_config("[limits]\nstdin_bytes = \"1MB\"\n");
     assert_eq!(args.limits.to_source_limits().stdin_bytes, 1024 * 1024);

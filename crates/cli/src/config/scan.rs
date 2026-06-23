@@ -384,6 +384,10 @@ pub(super) fn apply_top_level_scan_fields(
         }
     }
 
+    if config.generic_keyword_low_entropy == Some(false) && !args.no_keyword_low_entropy {
+        args.no_keyword_low_entropy = true;
+    }
+
     if let Some(no_unicode_norm) = config.no_unicode_norm {
         if !args.no_unicode_norm {
             args.no_unicode_norm = no_unicode_norm;

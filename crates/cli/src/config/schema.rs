@@ -57,6 +57,8 @@ pub(super) struct ConfigFile {
     pub entropy_threshold: Option<f64>,
     /// Minimum credential length for entropy-fallback candidates.
     pub min_secret_len: Option<usize>,
+    /// Admit credential-keyword-anchored generic values on a relaxed entropy floor.
+    pub generic_keyword_low_entropy: Option<bool>,
     /// Disable Unicode normalization.
     pub no_unicode_norm: Option<bool>,
     /// Disable ML-based confidence scoring.
