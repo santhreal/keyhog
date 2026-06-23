@@ -86,7 +86,8 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
             && gpu_lazy_src.contains("compile_gpu_literal_set(literals, \"pos-lit\")")
             && gpu_lazy_src.contains("catch_unwind")
             && gpu_lazy_src.contains("GPU literal-set compile panicked")
-            && gpu_lazy_src.contains("GPU positioned literal matcher unavailable"),
+            && gpu_lazy_src.contains("report_gpu_matcher_unavailable(&error, \"positioned literal\")")
+            && gpu_lazy_src.contains("GPU {matcher_kind} matcher unavailable"),
         "positioned confirmed-anchor/generic candidates must use the smaller positioned matcher, not appended rows in the region-presence bitset"
     );
     let helper_src = std::fs::read_to_string(concat!(
