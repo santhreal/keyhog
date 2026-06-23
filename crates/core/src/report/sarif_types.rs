@@ -15,7 +15,7 @@ pub(super) struct SarifRule {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) help_uri: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) properties: Option<serde_json::Map<String, serde_json::Value>>,
+    pub(super) properties: Option<SarifRuleProperties>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -51,7 +51,7 @@ pub(super) struct SarifResult {
     pub(super) message: SarifMessage,
     pub(super) locations: Vec<SarifLocation>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) properties: Option<serde_json::Map<String, serde_json::Value>>,
+    pub(super) properties: Option<SarifResultProperties>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) related_locations: Option<Vec<SarifLocation>>,
     /// SARIF v2.2.0 `fixes[]` - auto-rotation suggestions. Each entry
@@ -140,4 +140,69 @@ pub(super) struct SarifSnippet {
 pub(super) struct SarifLogicalLocation {
     pub(super) name: String,
     pub(super) kind: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub(super) struct SarifResultProperties {
+    pub(super) verification: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) confidence: Option<f64>,
+    pub(super) cwe: &'static str,
+    pub(super) owasp: &'static str,
+    #[serde(rename = "remediation.action")]
+    pub(super) remediation_action: String,
+    #[serde(
+        rename = "remediation.revoke_url",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(super) remediation_revoke_url: Option<String>,
+    #[serde(
+        rename = "remediation.docs_url",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(super) remediation_docs_url: Option<String>,
+    #[serde(
+        rename = "remediation.revoke_command",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(super) remediation_revoke_command: Option<String>,
+    #[serde(flatten)]
+    pub(super) metadata: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub(super) struct SarifRuleProperties {
+    pub(super) service: String,
+    pub(super) severity: String,
+    #[serde(rename = "security-severity")]
+    pub(super) security_severity: &'static str,
+    pub(super) tags: [&'static str; 1],
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct SarifInvocation {
+    pub(super) execution_successful: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) tool_execution_notifications: Vec<SarifNotification>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct SarifNotification {
+    pub(super) level: &'static str,
+    pub(super) message: SarifMessage,
+    pub(super) descriptor: SarifNotificationDescriptor,
+    pub(super) properties: SarifNotificationProperties,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub(super) struct SarifNotificationDescriptor {
+    pub(super) id: &'static str,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub(super) struct SarifNotificationProperties {
+    pub(super) count: usize,
+    pub(super) reason: String,
 }

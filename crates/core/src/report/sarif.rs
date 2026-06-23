@@ -1,7 +1,7 @@
 //! SARIF reporter for code-scanning platforms such as GitHub code scanning,
 //! Azure DevOps, and IDE integrations.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 
 use crate::{MatchLocation, Severity, VerifiedFinding};
@@ -114,66 +114,36 @@ impl<W: Write + Send> SarifReporter<W> {
             .map(Self::location_to_sarif)
             .collect();
 
-        let mut properties = serde_json::Map::new();
-        properties.insert(
-            "verification".to_string(),
-            serde_json::Value::String(format!("{:?}", finding.verification).to_lowercase()),
-        );
-        if let Some(confidence) = finding.confidence {
-            properties.insert(
-                "confidence".to_string(),
-                serde_json::Value::Number(
-                    serde_json::Number::from_f64(confidence).unwrap_or_else(|| 0.into()), // LAW10: a non-finite confidence renders as 0 in the SARIF property; finding still emitted
-                ),
-            );
-        }
         // CWE / OWASP taxonomy. CWE-798 ("Use of Hard-coded Credentials") and
         // OWASP A07:2021 ("Identification and Authentication Failures") apply
         // to every secret-scanning finding by definition. Compliance dashboards
         // consume `properties.cwe` + `properties.owasp` directly. Tier-B #16.
-        properties.insert(
-            "cwe".to_string(),
-            serde_json::Value::String("CWE-798".to_string()),
-        );
-        properties.insert(
-            "owasp".to_string(),
-            serde_json::Value::String("A07:2021".to_string()),
-        );
-        let mut metadata: Vec<_> = finding.metadata.iter().collect();
-        metadata.sort_by(|(left, _), (right, _)| left.cmp(right));
-        for (key, value) in metadata {
-            properties.insert(
-                format!("metadata.{}", key),
-                serde_json::Value::String(value.to_string()),
-            );
-        }
         let remediation = crate::auto_fix::remediation_for(
             &finding.detector_id,
             &finding.service,
             finding.severity,
         );
-        properties.insert(
-            "remediation.action".to_string(),
-            serde_json::Value::String(remediation.action.clone()),
-        );
-        if let Some(url) = &remediation.revoke_url {
-            properties.insert(
-                "remediation.revoke_url".to_string(),
-                serde_json::Value::String(url.clone()),
-            );
-        }
-        if let Some(url) = &remediation.docs_url {
-            properties.insert(
-                "remediation.docs_url".to_string(),
-                serde_json::Value::String(url.clone()),
-            );
-        }
-        if let Some(command) = &remediation.revoke_command {
-            properties.insert(
-                "remediation.revoke_command".to_string(),
-                serde_json::Value::String(command.clone()),
-            );
-        }
+        let properties = SarifResultProperties {
+            verification: format!("{:?}", finding.verification).to_lowercase(),
+            confidence: finding.confidence.map(|confidence| {
+                if confidence.is_finite() {
+                    confidence
+                } else {
+                    0.0
+                }
+            }),
+            cwe: "CWE-798",
+            owasp: "A07:2021",
+            remediation_action: remediation.action.clone(),
+            remediation_revoke_url: remediation.revoke_url.clone(),
+            remediation_docs_url: remediation.docs_url.clone(),
+            remediation_revoke_command: remediation.revoke_command.clone(),
+            metadata: finding
+                .metadata
+                .iter()
+                .map(|(key, value)| (format!("metadata.{key}"), value.to_string()))
+                .collect::<BTreeMap<_, _>>(),
+        };
 
         // Auto-fix suggestion: replace the leaked credential with a
         // ${ENV_VAR_NAME} reference at the same physical location. We emit
@@ -282,18 +252,13 @@ impl<W: Write + Send> SarifReporter<W> {
                 markdown: Some(remediation.markdown()),
             }),
             help_uri,
-            properties: Some({
-                let mut props = serde_json::Map::new();
-                props.insert(
-                    "service".to_string(),
-                    serde_json::Value::String(finding.service.to_string()),
-                );
-                props.insert(
-                    "severity".to_string(),
-                    serde_json::Value::String(format!("{:?}", finding.severity).to_lowercase()),
-                );
-                super::sarif_uri::apply_code_scanning_props(&mut props, finding.severity);
-                props
+            properties: Some(SarifRuleProperties {
+                service: finding.service.to_string(),
+                severity: format!("{:?}", finding.severity).to_lowercase(),
+                security_severity: super::sarif_uri::code_scanning_security_severity(
+                    finding.severity,
+                ),
+                tags: ["security"],
             }),
         }
     }
@@ -424,22 +389,28 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
         // `executionSuccessful` stays true: these notifications describe scan
         // coverage, not a reporter failure.
         if !self.skip_summary.is_empty() {
-            let notifications: Vec<serde_json::Value> = self
+            let notifications = self
                 .skip_summary
                 .iter()
-                .map(|(reason, count)| {
-                    serde_json::json!({
-                        "level": "note",
-                        "message": { "text": format!("{count} coverage gap(s): {reason}") },
-                        "descriptor": { "id": "keyhog/coverage-gap" },
-                        "properties": { "count": count, "reason": reason },
-                    })
+                .map(|(reason, count)| SarifNotification {
+                    level: "note",
+                    message: SarifMessage {
+                        text: format!("{count} coverage gap(s): {reason}"),
+                        markdown: None,
+                    },
+                    descriptor: SarifNotificationDescriptor {
+                        id: "keyhog/coverage-gap",
+                    },
+                    properties: SarifNotificationProperties {
+                        count: *count,
+                        reason: reason.clone(),
+                    },
                 })
-                .collect();
-            let invocations = serde_json::json!([{
-                "executionSuccessful": true,
-                "toolExecutionNotifications": notifications,
-            }]);
+                .collect::<Vec<_>>();
+            let invocations = [SarifInvocation {
+                execution_successful: true,
+                tool_execution_notifications: notifications,
+            }];
             write!(self.writer, ",\"invocations\":")?;
             serde_json::to_writer(&mut self.writer, &invocations)?;
         }

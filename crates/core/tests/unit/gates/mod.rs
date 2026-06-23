@@ -51,6 +51,7 @@ pub mod report_non_empty;
 pub mod report_sarif_no_inline_tests;
 pub mod report_sarif_no_unwrap_expect;
 pub mod report_sarif_non_empty;
+pub mod report_sarif_typed_serialization;
 pub mod report_text_no_inline_tests;
 pub mod report_text_no_unwrap_expect;
 pub mod report_text_non_empty;

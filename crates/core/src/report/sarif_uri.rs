@@ -72,15 +72,7 @@ pub(crate) fn apply_code_scanning_props(
     props: &mut serde_json::Map<String, serde_json::Value>,
     severity: crate::Severity,
 ) {
-    use crate::Severity as S;
-    let score = match severity {
-        S::Critical => "9.5",
-        S::High => "8.0",
-        S::Medium => "5.0",
-        S::Low => "2.0",
-        S::ClientSafe => "1.0",
-        S::Info => "0.0",
-    };
+    let score = code_scanning_security_severity(severity);
     props.insert(
         "security-severity".to_string(),
         serde_json::Value::String(score.to_string()),
@@ -89,6 +81,18 @@ pub(crate) fn apply_code_scanning_props(
         "tags".to_string(),
         serde_json::Value::Array(vec![serde_json::Value::String("security".to_string())]),
     );
+}
+
+pub(crate) fn code_scanning_security_severity(severity: crate::Severity) -> &'static str {
+    use crate::Severity as S;
+    match severity {
+        S::Critical => "9.5",
+        S::High => "8.0",
+        S::Medium => "5.0",
+        S::Low => "2.0",
+        S::ClientSafe => "1.0",
+        S::Info => "0.0",
+    }
 }
 
 /// Build the SARIF `partialFingerprints` map for a finding's credential hash,
