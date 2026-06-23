@@ -1,6 +1,4 @@
 #[cfg(feature = "entropy")]
-mod example_suppression;
-#[cfg(feature = "entropy")]
 mod gates;
 #[cfg(feature = "entropy")]
 pub(crate) mod helpers;

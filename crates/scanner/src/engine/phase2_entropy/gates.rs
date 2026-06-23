@@ -1,5 +1,4 @@
 //! Entropy-fallback candidate suppression predicate.
-use super::example_suppression::entropy_fallback_example_suppression_stage;
 use super::helpers::*;
 use super::line_context::{
     value_line_has_random_byte_blob_owner, value_line_has_same_line_credential_keyword,
@@ -54,9 +53,14 @@ pub(crate) fn entropy_match_suppression_stage(
         entropy_match.entropy,
     );
     // Keep shared content gates live even when canonical shape gates are lifted.
-    if let Some(stage) =
-        entropy_fallback_example_suppression_stage(entropy_match, chunk, canonical_lift)
-    {
+    if let Some(stage) = crate::adjudicate::entropy_fallback_example_suppression_stage(
+        entropy_match.value.as_str(),
+        &entropy_match.keyword,
+        entropy_match.entropy,
+        chunk.metadata.path.as_deref(),
+        Some(chunk.metadata.source_type.as_str()),
+        canonical_lift,
+    ) {
         return Some(stage);
     }
 

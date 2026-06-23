@@ -110,3 +110,63 @@ impl EntropyGenerationSignal {
         }
     }
 }
+
+/// Lift-aware known-example / placeholder gate for entropy fallback candidates.
+///
+/// The canonical lift releases only canonical SHAPE drops for model arbitration;
+/// content markers still suppress on both paths.
+#[cfg(feature = "entropy")]
+pub(crate) fn entropy_fallback_example_suppression_stage(
+    value: &str,
+    keyword: &str,
+    entropy: f64,
+    path: Option<&str>,
+    source: Option<&str>,
+    canonical_lift: bool,
+) -> Option<EntropyShapeStage> {
+    if !canonical_lift {
+        let isolated_bare_token = keyword == crate::entropy::ISOLATED_BARE_ENTROPY_LABEL;
+        let example_ctx = crate::suppression::api::KnownExampleSuppressionCtx::with_entropy(
+            path,
+            crate::context::CodeContext::Unknown,
+            source,
+            entropy,
+            false,
+            isolated_bare_token,
+            false,
+        );
+        return crate::suppression::api::suppress_known_example_credential_stage(
+            value,
+            example_ctx,
+        )
+        .map(|stage_id| EntropyShapeStage::SuppressionStage(stage_id.as_str()));
+    }
+
+    if crate::context::is_known_example_credential(value) {
+        return Some(EntropyShapeStage::SuppressionStage(
+            "algorithmic_placeholder",
+        ));
+    }
+    if crate::confidence::contains_placeholder_word(value) {
+        return Some(EntropyShapeStage::SuppressionStage("placeholder_word"));
+    }
+    if crate::suppression::shape::has_three_or_more_consecutive_identical(value) {
+        return Some(EntropyShapeStage::SuppressionStage("repetitive_run"));
+    }
+
+    if crate::suppression::shape::is_uuid_v4_shape(value) {
+        return None;
+    }
+
+    let example_ctx = crate::suppression::api::KnownExampleSuppressionCtx::with_entropy(
+        path,
+        crate::context::CodeContext::Unknown,
+        source,
+        entropy,
+        true,
+        false,
+        false,
+    );
+    crate::suppression::api::suppress_known_example_credential_stage(value, example_ctx)
+        .map(|stage_id| EntropyShapeStage::SuppressionStage(stage_id.as_str()))
+}

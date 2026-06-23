@@ -288,6 +288,12 @@ impl CompiledScanner {
         // a +14 TP recall gain. Net: catastrophic. Hold the strict
         // variant: hash-digest / UUID values in credential slots are
         // dominated by image digests and resource IDs in real source.
+        if let Some(stage) = crate::adjudicate::generic_bridge_canonical_hex_placeholder_stage(
+            allow_canonical_hex_key,
+            value,
+        ) {
+            return Some(stage);
+        }
         let example_ctx = crate::suppression::api::KnownExampleSuppressionCtx::with_entropy(
             chunk.metadata.path.as_deref(),
             crate::context::CodeContext::Unknown,

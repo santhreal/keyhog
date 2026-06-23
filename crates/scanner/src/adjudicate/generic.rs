@@ -33,6 +33,19 @@ pub(crate) fn generic_bridge_bare_auth_rejected(keyword: &str, value: &str) -> b
     keyword.eq_ignore_ascii_case("auth") && !bare_auth_value_allowed(value)
 }
 
+pub(crate) fn generic_bridge_canonical_hex_placeholder_stage(
+    allow_canonical_hex_key: bool,
+    value: &str,
+) -> Option<GenericValueShapeStage> {
+    if allow_canonical_hex_key && crate::context::is_known_example_credential(value) {
+        Some(GenericValueShapeStage::SharedSuppression(
+            "algorithmic_placeholder",
+        ))
+    } else {
+        None
+    }
+}
+
 fn generic_bridge_keyword_requires_word_boundary(keyword: &str) -> bool {
     keyword.eq_ignore_ascii_case("pass") || keyword.eq_ignore_ascii_case("auth")
 }

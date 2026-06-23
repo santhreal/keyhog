@@ -10,10 +10,12 @@ mod stage;
 use crate::suppression::NamedDetectorSuppressionCtx;
 use keyhog_core::RawMatch;
 
+#[cfg(feature = "entropy")]
+pub(crate) use entropy::entropy_fallback_example_suppression_stage;
 pub(crate) use entropy::{EntropyFallbackSignal, EntropyGenerationSignal, EntropyShapeStage};
 pub(crate) use generic::{
-    generic_bridge_bare_auth_rejected, generic_bridge_keyword_boundary_rejected,
-    GenericBridgeSignal, GenericValueShapeStage,
+    generic_bridge_bare_auth_rejected, generic_bridge_canonical_hex_placeholder_stage,
+    generic_bridge_keyword_boundary_rejected, GenericBridgeSignal, GenericValueShapeStage,
 };
 pub(crate) use stage::{StageId, StageOutcome, Verdict};
 

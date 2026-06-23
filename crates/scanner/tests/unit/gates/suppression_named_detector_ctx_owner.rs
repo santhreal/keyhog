@@ -262,6 +262,13 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
         !generic.contains("ProcessCandidateSignals::from_checksum_invalid(true)"),
         "engine/phase2_generic.rs must not rebuild finalizer checksum-invalid context"
     );
+    assert!(
+        adjudicate.contains("fn generic_bridge_canonical_hex_placeholder_stage(")
+            && generic_shape
+                .contains("crate::adjudicate::generic_bridge_canonical_hex_placeholder_stage(")
+            && !generic_shape.contains("crate::context::is_known_example_credential("),
+        "generic bridge canonical-hex placeholder content suppression must live in adjudicate, not the generic shape leaf"
+    );
 
     for reason in [
         "generic_named_detector_owned_keyword",
@@ -409,6 +416,16 @@ fn entropy_fallback_shape_gauntlet_returns_adjudicator_stage() {
                 "crate::generic_keyword_owner::entropy_candidate_owned_by_named_assignment("
             ),
         "phase2 entropy caller must route entropy fallback drops through the adjudicator context"
+    );
+    assert!(
+        adjudicate.contains("fn entropy_fallback_example_suppression_stage(")
+            && gates.contains("crate::adjudicate::entropy_fallback_example_suppression_stage(")
+            && !src
+                .join("engine/phase2_entropy/example_suppression.rs")
+                .exists()
+            && !entropy.contains("mod example_suppression;")
+            && !gates.contains("super::example_suppression::"),
+        "entropy fallback known-example/placeholder policy must live in adjudicate, not an engine submodule"
     );
     assert!(
         !entropy.contains("fn entropy_match_owned_by_named_assignment(")
