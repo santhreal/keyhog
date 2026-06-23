@@ -11,24 +11,24 @@ use keyhog_core::DetectorSpec;
 pub(crate) fn run(args: ExplainArgs) -> Result<()> {
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
 
-    let raw = args.detector_id.to_lowercase();
+    let requested = args.detector_id.as_str();
     // `hot-*` ids are the SIMD fast-path's FINDING labels (see the scanner's
     // simdsieve_prefilter HOT_PATTERN_DETECTOR_IDS), NOT registry detector ids.
     // A user who copies an id straight out of `scan` output (`hot-github_pat`)
     // into `explain` would otherwise hit a bare "no such detector" - the two
     // commands would silently disagree. Resolve to the canonical registry spec
     // and tell them what happened.
-    let (needle, hot_origin) = match canonical_for_hot_id(&raw) {
-        Some(canon) => (canon.to_string(), Some(raw.clone())),
-        None => (raw.clone(), None),
+    let (needle, hot_origin) = match canonical_for_hot_id(requested) {
+        Some(canon) => (canon, Some(requested)),
+        None => (requested, None),
     };
 
     let detector = detectors
         .iter()
-        .find(|d| d.id.to_lowercase() == needle)
-        .ok_or_else(|| explain_not_found(&detectors, &args.detector_id, &raw))?;
+        .find(|d| d.id.eq_ignore_ascii_case(needle))
+        .ok_or_else(|| explain_not_found(&detectors, requested, requested))?;
 
-    if let Some(hot) = &hot_origin {
+    if let Some(hot) = hot_origin {
         println!(
             "\u{2139} '{hot}' is keyhog's SIMD fast-path label; showing the \
              canonical detector '{needle}'.\n"
@@ -50,27 +50,32 @@ pub(crate) fn run(args: ExplainArgs) -> Result<()> {
 /// `squarespace-api-key`, a different service), so it falls through to the
 /// tailored not-found path rather than mis-resolving to the wrong service.
 fn canonical_for_hot_id(id: &str) -> Option<&'static str> {
-    match id {
-        "hot-github_pat" => Some("github-classic-pat"),
-        "hot-openai_key" => Some("openai-api-key"),
-        "hot-aws_key" => Some("aws-access-key"),
-        "hot-aws_session_key" => Some("aws-session-token"),
-        "hot-sendgrid_key" => Some("sendgrid-api-key"),
-        "hot-slack_bot_token" => Some("slack-bot-token"),
-        "hot-slack_user_token" => Some("slack-user-token"),
-        _ => None,
-    }
+    const HOT_IDS: &[(&str, &str)] = &[
+        ("hot-github_pat", "github-classic-pat"),
+        ("hot-openai_key", "openai-api-key"),
+        ("hot-aws_key", "aws-access-key"),
+        ("hot-aws_session_key", "aws-session-token"),
+        ("hot-sendgrid_key", "sendgrid-api-key"),
+        ("hot-slack_bot_token", "slack-bot-token"),
+        ("hot-slack_user_token", "slack-user-token"),
+    ];
+    HOT_IDS
+        .iter()
+        .find_map(|(hot, canonical)| id.eq_ignore_ascii_case(hot).then_some(*canonical))
 }
 
 /// Build the "not found" error, with a tailored branch for `hot-*` ids that
 /// have no canonical registry detector so the user learns it's a real fast-path
 /// pattern rather than chasing a typo.
 fn explain_not_found(detectors: &[DetectorSpec], requested: &str, lowered: &str) -> anyhow::Error {
-    if let Some(stripped) = lowered.strip_prefix("hot-") {
+    if let Some(stripped) = strip_prefix_ignore_ascii_case(lowered, "hot-") {
         let svc = stripped.split('_').next().unwrap_or(stripped); // LAW10: split yields >=1 element; unwrap_or is the never-taken total default, recall-safe
         let related: Vec<&str> = detectors
             .iter()
-            .filter(|d| d.id.to_lowercase().contains(svc) || d.service.to_lowercase().contains(svc))
+            .filter(|d| {
+                contains_ignore_ascii_case(&d.id, svc)
+                    || contains_ignore_ascii_case(&d.service, svc)
+            })
             .map(|d| d.id.as_str())
             .take(8)
             .collect();
@@ -92,7 +97,7 @@ fn explain_not_found(detectors: &[DetectorSpec], requested: &str, lowered: &str)
     // instead of "not found".
     let suggestions: Vec<&str> = detectors
         .iter()
-        .filter(|d| d.id.to_lowercase().contains(lowered))
+        .filter(|d| contains_ignore_ascii_case(&d.id, lowered))
         .map(|d| d.id.as_str())
         .take(8)
         .collect();
@@ -188,44 +193,66 @@ fn print_explanation(d: &DetectorSpec) {
 /// services per the GitGuardian + Snyk 2025 reports. Unknown services
 /// return None and the explainer omits the rotation block.
 fn rotation_guide(service: &str) -> Option<&'static str> {
-    let lower = service.to_lowercase();
-    match lower.as_str() {
-        s if s.contains("aws") => Some(
+    match service {
+        s if contains_ignore_ascii_case(s, "aws") => Some(
             "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_RotateAccessKey",
         ),
-        s if s.contains("github") => Some(
+        s if contains_ignore_ascii_case(s, "github") => Some(
             "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens",
         ),
-        s if s.contains("gitlab") => Some(
+        s if contains_ignore_ascii_case(s, "gitlab") => Some(
             "https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#revoke-a-personal-access-token",
         ),
-        s if s.contains("slack") => Some("https://api.slack.com/legacy/oauth-scopes#auth.revoke"),
-        s if s.contains("openai") => Some("https://platform.openai.com/api-keys"),
-        s if s.contains("anthropic") => Some("https://console.anthropic.com/settings/keys"),
-        s if s.contains("stripe") => Some("https://dashboard.stripe.com/apikeys"),
-        s if s.contains("twilio") => {
+        s if contains_ignore_ascii_case(s, "slack") => {
+            Some("https://api.slack.com/legacy/oauth-scopes#auth.revoke")
+        }
+        s if contains_ignore_ascii_case(s, "openai") => Some("https://platform.openai.com/api-keys"),
+        s if contains_ignore_ascii_case(s, "anthropic") => {
+            Some("https://console.anthropic.com/settings/keys")
+        }
+        s if contains_ignore_ascii_case(s, "stripe") => Some("https://dashboard.stripe.com/apikeys"),
+        s if contains_ignore_ascii_case(s, "twilio") => {
             Some("https://www.twilio.com/docs/iam/access-tokens#rotate-keys")
         }
-        s if s.contains("sendgrid") => {
+        s if contains_ignore_ascii_case(s, "sendgrid") => {
             Some("https://docs.sendgrid.com/ui/account-and-settings/api-keys")
         }
-        s if s.contains("google") || s.contains("gcp") => Some(
+        s if contains_ignore_ascii_case(s, "google") || contains_ignore_ascii_case(s, "gcp") => Some(
             "https://cloud.google.com/iam/docs/creating-managing-service-account-keys#rotating",
         ),
-        s if s.contains("azure") => Some(
+        s if contains_ignore_ascii_case(s, "azure") => Some(
             "https://learn.microsoft.com/en-us/azure/active-directory/develop/howto-create-service-principal-portal#authentication-two-options",
         ),
-        s if s.contains("npm") => Some("https://docs.npmjs.com/revoking-access-tokens"),
-        s if s.contains("pypi") => Some("https://pypi.org/help/#apitoken"),
-        s if s.contains("docker") => {
+        s if contains_ignore_ascii_case(s, "npm") => Some("https://docs.npmjs.com/revoking-access-tokens"),
+        s if contains_ignore_ascii_case(s, "pypi") => Some("https://pypi.org/help/#apitoken"),
+        s if contains_ignore_ascii_case(s, "docker") => {
             Some("https://docs.docker.com/security/for-developers/access-tokens/")
         }
-        s if s.contains("datadog") => {
+        s if contains_ignore_ascii_case(s, "datadog") => {
             Some("https://docs.datadoghq.com/account_management/api-app-keys/")
         }
-        s if s.contains("snowflake") => Some(
+        s if contains_ignore_ascii_case(s, "snowflake") => Some(
             "https://docs.snowflake.com/en/user-guide/key-pair-auth#configuring-key-pair-rotation",
         ),
         _ => None,
     }
+}
+
+fn strip_prefix_ignore_ascii_case<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
+    value
+        .as_bytes()
+        .get(..prefix.len())
+        .filter(|head| head.eq_ignore_ascii_case(prefix.as_bytes()))
+        .map(|_| &value[prefix.len()..])
+}
+
+fn contains_ignore_ascii_case(value: &str, needle: &str) -> bool {
+    let needle = needle.as_bytes();
+    if needle.is_empty() {
+        return true;
+    }
+    value
+        .as_bytes()
+        .windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle))
 }

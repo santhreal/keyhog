@@ -49,6 +49,11 @@ fn hot_ids_resolve_to_real_detectors() {
              (detector renamed? update canonical_for_hot_id)"
         );
     }
+    assert_eq!(
+        API.canonical_for_hot_id("HOT-GITHUB_PAT"),
+        Some("github-classic-pat"),
+        "hot-id aliases should be ASCII-case-insensitive without lowercasing the request"
+    );
 
     // Square (`sq0csp-`) has no standalone registry detector yet: it must
     // map to None and the not-found path must say so without pretending it

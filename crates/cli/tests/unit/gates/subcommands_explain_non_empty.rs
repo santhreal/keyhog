@@ -18,4 +18,11 @@ fn subcommands_explain_non_empty() {
         !prod.contains("todo!()") && !prod.contains("unimplemented!()"),
         "subcommands::explain: todo!/unimplemented! forbidden in non-test source"
     );
+    assert!(
+        prod.contains("fn contains_ignore_ascii_case(")
+            && prod.contains("fn strip_prefix_ignore_ascii_case")
+            && !prod.contains(".to_lowercase()")
+            && !prod.contains(".to_ascii_lowercase()"),
+        "subcommands::explain must keep detector/service matching allocation-free and ASCII-case-insensitive"
+    );
 }
