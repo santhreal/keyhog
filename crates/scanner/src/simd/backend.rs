@@ -532,12 +532,14 @@ impl HsScanner {
                 let shard_key = Self::shard_cache_key(cache_key, shard_count, shard_idx, &pats);
                 let cache_path = cache_dir.join(format!("hs-{shard_key}.db"));
 
-                if let Some(db) = Self::load_cached_shard(&cache_path, shard_idx, pats.len()) {
-                    return Ok((db, Vec::new()));
+                if let Some((db, dropped)) =
+                    Self::load_cached_shard(&cache_path, shard_idx, pats.len())
+                {
+                    return Ok((db, dropped));
                 }
 
                 let (db, dropped) = Self::compile_hs_db(&pats)?;
-                Self::persist_cached_shard(&db, &cache_path, shard_idx);
+                Self::persist_cached_shard(&db, &dropped, &cache_path, shard_idx);
                 Ok((db, dropped))
             })
             .collect()
@@ -565,7 +567,7 @@ impl HsScanner {
         cache_path: &std::path::Path,
         shard_idx: usize,
         pattern_count: usize,
-    ) -> Option<BlockDatabase> {
+    ) -> Option<(BlockDatabase, Vec<usize>)> {
         match read_hs_cache_file(cache_path) {
             Ok(Some(bytes)) => {
                 if bytes.len() > keyhog_core::HYPERSCAN_CACHE_HEADER_LEN
@@ -574,15 +576,23 @@ impl HsScanner {
                     )
                 {
                     use hyperscan::Serialized;
-                    let payload: &[u8] = &bytes[keyhog_core::HYPERSCAN_CACHE_HEADER_LEN..];
+                    let Some((dropped, payload)) = read_cached_dropped_ids(&bytes) else {
+                        tracing::warn!(
+                            cache = %cache_path.display(),
+                            shard = shard_idx,
+                            "HS shard cache metadata is not usable; compiling from patterns"
+                        );
+                        return None;
+                    };
                     if let Ok(db) = payload.deserialize::<BlockMode>() {
                         tracing::info!(
                             cache = %cache_path.display(),
                             shard = shard_idx,
                             patterns = pattern_count,
+                            dropped = dropped.len(),
                             "HS shard loaded from cache"
                         );
-                        return Some(db);
+                        return Some((db, dropped));
                     }
                 }
             }
@@ -599,11 +609,19 @@ impl HsScanner {
         None
     }
 
-    fn persist_cached_shard(db: &BlockDatabase, cache_path: &std::path::Path, shard_idx: usize) {
+    fn persist_cached_shard(
+        db: &BlockDatabase,
+        dropped: &[usize],
+        cache_path: &std::path::Path,
+        shard_idx: usize,
+    ) {
         if let Ok(ser) = db.serialize() {
-            let mut data =
-                Vec::with_capacity(ser.as_ref().len() + keyhog_core::HYPERSCAN_CACHE_HEADER_LEN);
+            let dropped_bytes = 8usize.saturating_add(dropped.len().saturating_mul(8));
+            let mut data = Vec::with_capacity(
+                ser.as_ref().len() + keyhog_core::HYPERSCAN_CACHE_HEADER_LEN + dropped_bytes,
+            );
             keyhog_core::write_hyperscan_cache_header(&mut data);
+            write_cached_dropped_ids(&mut data, dropped);
             data.extend_from_slice(ser.as_ref());
             if data.len() as u64 > keyhog_core::HYPERSCAN_CACHE_FILE_BYTES {
                 tracing::warn!(
@@ -629,7 +647,12 @@ impl HsScanner {
                     }
                 }
             }
-            tracing::info!(cache = %cache_path.display(), shard = shard_idx, "HS shard cached");
+            tracing::info!(
+                cache = %cache_path.display(),
+                shard = shard_idx,
+                dropped = dropped.len(),
+                "HS shard cached"
+            );
         }
     }
 
@@ -736,6 +759,45 @@ impl HsScanner {
         );
         Ok((db, dropped))
     }
+}
+
+fn write_cached_dropped_ids(data: &mut Vec<u8>, dropped: &[usize]) {
+    data.extend_from_slice(&(dropped.len() as u64).to_le_bytes());
+    for &id in dropped {
+        data.extend_from_slice(&(id as u64).to_le_bytes());
+    }
+}
+
+fn read_cached_dropped_ids(bytes: &[u8]) -> Option<(Vec<usize>, &[u8])> {
+    let mut offset = keyhog_core::HYPERSCAN_CACHE_HEADER_LEN;
+    let count = read_u64_le_at(bytes, offset)?;
+    offset = offset.checked_add(8)?;
+    let Ok(count) = usize::try_from(count) else {
+        return None;
+    };
+    let total_id_bytes = count.checked_mul(8)?;
+    let payload_offset = offset.checked_add(total_id_bytes)?;
+    if payload_offset > bytes.len() {
+        return None;
+    }
+    let mut dropped = Vec::with_capacity(count);
+    for _ in 0..count {
+        let id = read_u64_le_at(bytes, offset)?;
+        let Ok(id) = usize::try_from(id) else {
+            return None;
+        };
+        dropped.push(id);
+        offset = offset.checked_add(8)?;
+    }
+    Some((dropped, &bytes[payload_offset..]))
+}
+
+fn read_u64_le_at(bytes: &[u8], offset: usize) -> Option<u64> {
+    let end = offset.checked_add(8)?;
+    let slice = bytes.get(offset..end)?;
+    let mut raw = [0u8; 8];
+    raw.copy_from_slice(slice);
+    Some(u64::from_le_bytes(raw))
 }
 
 fn hs_partition_cost(regex: &str) -> u64 {

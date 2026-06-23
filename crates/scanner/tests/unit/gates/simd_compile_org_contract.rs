@@ -18,6 +18,8 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
         "fn compile_cached_shards(",
         "fn assemble_scanner_shards(",
         "scratch_pool: parking_lot::Mutex::new(Vec::new())",
+        "fn write_cached_dropped_ids(",
+        "fn read_cached_dropped_ids(",
     ] {
         assert!(
             source.contains(required),
@@ -102,6 +104,21 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
             && shard_key_body.contains("h.update((shard_count as u64).to_le_bytes())")
             && shard_key_body.contains("h.update((shard_idx as u64).to_le_bytes())"),
         "Hyperscan shard cache keys must include profile key, shard count, and shard index"
+    );
+
+    let cached_body = source
+        .split("fn compile_cached_shards(")
+        .nth(1)
+        .expect("compile_cached_shards present")
+        .split("fn shard_cache_key(")
+        .next()
+        .expect("compile_cached_shards boundary present");
+    assert!(
+        cached_body.contains("if let Some((db, dropped))")
+            && cached_body.contains("return Ok((db, dropped));")
+            && cached_body.contains("Self::persist_cached_shard(&db, &dropped")
+            && !cached_body.contains("return Ok((db, Vec::new()));"),
+        "Hyperscan shard cache hits must preserve compile-time dropped ids so warm-cache scans reroute unsupported patterns exactly like cold compiles"
     );
 
     let partition_body = source

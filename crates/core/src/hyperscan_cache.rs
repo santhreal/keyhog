@@ -4,7 +4,7 @@
 pub const HYPERSCAN_CACHE_MAGIC: &[u8; 4] = b"KHHS";
 
 /// Keyhog-owned cache header version for serialized Hyperscan shard files.
-pub const HYPERSCAN_CACHE_VERSION: u32 = 1;
+pub const HYPERSCAN_CACHE_VERSION: u32 = 2;
 
 /// Byte length of the Keyhog Hyperscan cache header: magic plus little-endian version.
 pub const HYPERSCAN_CACHE_HEADER_LEN: usize = 8;

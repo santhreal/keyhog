@@ -31,7 +31,7 @@ fn compiled_hyperscan_cache_name() -> String {
 fn compiled_hyperscan_cache_bytes() -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"KHHS");
-    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend_from_slice(&keyhog_core::HYPERSCAN_CACHE_VERSION.to_le_bytes());
     bytes.extend_from_slice(b"serialized-hyperscan-body");
     bytes
 }
@@ -68,7 +68,7 @@ fn compiled_hyperscan_cache_file_is_not_lockdown_violation() {
                 &keyhog_core::testing::TestApi,
             )
             .is_empty(),
-            "exact-shape compiled Hyperscan cache with KHHS/v1 header must not fail lockdown"
+            "exact-shape compiled Hyperscan cache with current KHHS header must not fail lockdown"
         );
     });
 }
