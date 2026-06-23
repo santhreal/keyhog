@@ -11,56 +11,20 @@ use super::ScanOrchestrator;
 use crate::orchestrator_config::autoroute_config_digest;
 mod backend;
 mod fused;
+mod pipeline;
 use anyhow::Result;
-pub(crate) use backend::CachedBackendRouter;
 pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
+pub(crate) use backend::CachedBackendRouter;
 use backend::{AutorouteRoutingError, MeasuredBackendRouter};
 use keyhog_core::{Chunk, RawMatch, Source};
-use keyhog_scanner::CompiledScanner;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
-use std::sync::Arc;
+use keyhog_scanner::CompiledScanner;
+use pipeline::{coalesced_pipeline_plan, CoalescedPipelinePlan};
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::Instant;
 
-const COALESCED_BATCH_CHUNK_LIMIT: usize = 4096;
-const COALESCED_PIPELINE_MAX_DEPTH: usize = 3;
 const COALESCED_CHUNK_SCAN_CEILING_BYTES: usize = 512 * 1024 * 1024;
-
-#[derive(Debug, Clone, Copy)]
-struct CoalescedPipelinePlan {
-    batch_chunk_limit: usize,
-    batch_bytes_budget: usize,
-    pipeline_depth: usize,
-}
-
-fn coalesced_pipeline_plan() -> CoalescedPipelinePlan {
-    let engine_cap = keyhog_scanner::megascan_input_len();
-    let caps = keyhog_scanner::hw_probe::probe_hardware();
-    let total_ram_bytes = caps
-        .total_memory_mb
-        .map(|mb| (mb as usize) * 1024 * 1024)
-        .unwrap_or(0); // LAW10: empty/absent => documented numeric default, recall-safe
-    // Pipeline depth is derived below from the same hardware probe. Assume the
-    // max depth for the headroom clamp so worst-case resident memory remains
-    // under 1/8 of system RAM even on big-VRAM cards.
-    let headroom_cap = total_ram_bytes / (8 * COALESCED_PIPELINE_MAX_DEPTH);
-    let batch_bytes_budget = if headroom_cap == 0 {
-        engine_cap
-    } else {
-        engine_cap.min(headroom_cap)
-    };
-    let pipeline_depth = match caps.total_memory_mb {
-        Some(mb) if mb >= 32 * 1024 => 3,
-        Some(mb) if mb >= 16 * 1024 => 2,
-        _ => 1,
-    };
-
-    CoalescedPipelinePlan {
-        batch_chunk_limit: COALESCED_BATCH_CHUNK_LIMIT,
-        batch_bytes_budget,
-        pipeline_depth,
-    }
-}
 
 struct CoalescedScannerWorker {
     scanner: Arc<CompiledScanner>,

@@ -5,18 +5,35 @@ fn coalesced_scan_dispatch_resource_plan_is_split_from_scan_sources() {
         "/src/orchestrator/dispatch.rs"
     ))
     .expect("dispatch source readable");
+    let pipeline = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/dispatch/pipeline.rs"
+    ))
+    .expect("dispatch pipeline source readable");
 
     for required in [
         "struct CoalescedPipelinePlan",
         "fn coalesced_pipeline_plan() -> CoalescedPipelinePlan",
         "COALESCED_BATCH_CHUNK_LIMIT",
         "COALESCED_PIPELINE_MAX_DEPTH",
+        "keyhog_scanner::megascan_input_len()",
+        "keyhog_scanner::hw_probe::probe_hardware()",
+    ] {
+        assert!(
+            pipeline.contains(required),
+            "coalesced pipeline module must own resource planning boundary `{required}`"
+        );
+    }
+
+    for required in [
+        "mod pipeline;",
+        "use pipeline::{coalesced_pipeline_plan, CoalescedPipelinePlan};",
         "pipeline_plan.batch_bytes_budget",
         "pipeline_plan.pipeline_depth",
     ] {
         assert!(
             dispatch.contains(required),
-            "coalesced scan dispatch must keep resource planning boundary `{required}`"
+            "coalesced scan dispatch must consume resource planning boundary `{required}`"
         );
     }
 
@@ -30,7 +47,6 @@ fn coalesced_scan_dispatch_resource_plan_is_split_from_scan_sources() {
         .expect("scan_sources planning section extractable");
     for forbidden in [
         "keyhog_scanner::megascan_input_len()",
-        "keyhog_scanner::hw_probe::probe_hardware()",
         "const BATCH_CHUNK_LIMIT",
         "let batch_bytes_budget",
         "let pipeline_depth",
@@ -45,7 +61,7 @@ fn coalesced_scan_dispatch_resource_plan_is_split_from_scan_sources() {
         dispatch
             .matches("keyhog_scanner::hw_probe::probe_hardware()")
             .count(),
-        2,
-        "dispatch.rs should probe hardware once for the coalesced plan and once for autoroute router identity"
+        1,
+        "dispatch.rs should only probe hardware for autoroute router identity; coalesced resource planning lives in dispatch/pipeline.rs"
     );
 }
