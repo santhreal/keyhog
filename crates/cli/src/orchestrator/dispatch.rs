@@ -15,8 +15,11 @@ use anyhow::Result;
 pub(crate) use backend::CachedBackendRouter;
 pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 use backend::{AutorouteRoutingError, MeasuredBackendRouter};
-use keyhog_core::{RawMatch, Source};
+use keyhog_core::{Chunk, RawMatch, Source};
+use keyhog_scanner::CompiledScanner;
+use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 const COALESCED_BATCH_CHUNK_LIMIT: usize = 4096;
@@ -58,7 +61,210 @@ fn coalesced_pipeline_plan() -> CoalescedPipelinePlan {
     }
 }
 
+struct CoalescedScannerWorker {
+    scanner: Arc<CompiledScanner>,
+    router: CoalescedBatchRouter,
+    perf_trace: bool,
+}
+
+enum CoalescedBatchRouter {
+    Explicit(ScanBackend),
+    Measured(MeasuredBackendRouter),
+}
+
+struct CoalescedMeasuredRouterConfig {
+    hw_caps: HardwareCaps,
+    pattern_count: usize,
+    rules_digest: String,
+    config_digest: u64,
+    autoroute_gpu: bool,
+    autoroute_calibration: bool,
+    autoroute_cache_path: std::result::Result<Option<std::path::PathBuf>, String>,
+}
+
+impl CoalescedBatchRouter {
+    fn choose(
+        &mut self,
+        scanner: &CompiledScanner,
+        batch: &[Chunk],
+    ) -> std::result::Result<ScanBackend, AutorouteRoutingError> {
+        match self {
+            Self::Explicit(backend) => Ok(*backend),
+            Self::Measured(router) => router.choose(scanner, None, batch),
+        }
+    }
+}
+
+impl CoalescedScannerWorker {
+    fn explicit(scanner: Arc<CompiledScanner>, backend: ScanBackend, perf_trace: bool) -> Self {
+        Self {
+            scanner,
+            router: CoalescedBatchRouter::Explicit(backend),
+            perf_trace,
+        }
+    }
+
+    fn measured(
+        scanner: Arc<CompiledScanner>,
+        config: CoalescedMeasuredRouterConfig,
+        perf_trace: bool,
+    ) -> Self {
+        let router = MeasuredBackendRouter::new(
+            config.hw_caps,
+            config.pattern_count,
+            config.rules_digest,
+            config.config_digest,
+            config.autoroute_gpu,
+            config.autoroute_calibration,
+            config.autoroute_cache_path,
+            scanner.as_ref(),
+        );
+        Self {
+            scanner,
+            router: CoalescedBatchRouter::Measured(router),
+            perf_trace,
+        }
+    }
+
+    fn run(
+        mut self,
+        rx: std::sync::mpsc::Receiver<Vec<Chunk>>,
+    ) -> std::result::Result<Vec<RawMatch>, AutorouteRoutingError> {
+        let sc_t0 = std::time::Instant::now();
+        let mut scan_dur = std::time::Duration::ZERO;
+        let mut recv_dur = std::time::Duration::ZERO;
+        let mut last_end = std::time::Instant::now();
+        let mut findings: Vec<RawMatch> = Vec::new();
+
+        for batch in rx {
+            recv_dur += last_end.elapsed();
+            if !batch.is_empty() {
+                scan_dur += self.scan_nonempty_batch(&batch, &mut findings)?;
+            }
+            last_end = std::time::Instant::now();
+        }
+
+        self.dump_perf_trace(sc_t0, scan_dur, recv_dur);
+        self.scanner.dump_profile_reports("keyhog scan");
+        Ok(findings)
+    }
+
+    fn scan_nonempty_batch(
+        &mut self,
+        batch: &[Chunk],
+        findings: &mut Vec<RawMatch>,
+    ) -> std::result::Result<std::time::Duration, AutorouteRoutingError> {
+        let scan_start = std::time::Instant::now();
+        let scanned_count = batch.len();
+        let chosen_backend = self.router.choose(self.scanner.as_ref(), batch)?;
+        let ran_on_gpu = matches!(chosen_backend, ScanBackend::Gpu | ScanBackend::MegaScan);
+        let per_chunk = match chosen_backend {
+            // The Vyre GpuLiteralSet region-presence route is the single on-GPU
+            // trigger path. It owns backend acquisition and degrades LOUDLY to
+            // SIMD/CPU, so both an explicit GPU request and a selected Gpu/MegaScan
+            // batch land here.
+            ScanBackend::Gpu | ScanBackend::MegaScan => {
+                let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
+                tracing::debug!(
+                    target: "keyhog::routing",
+                    backend = "gpu",
+                    batch_bytes,
+                    chunks = scanned_count,
+                    "batch dispatched (gpu region presence)",
+                );
+                self.scanner
+                    .scan_chunks_with_backend(batch, ScanBackend::Gpu)
+            }
+            ScanBackend::CpuFallback => self
+                .scanner
+                .scan_chunks_with_backend(batch, ScanBackend::CpuFallback),
+            ScanBackend::SimdCpu => self.scanner.scan_coalesced(batch),
+            backend => return Err(AutorouteRoutingError::unsupported_backend(backend)),
+        };
+        append_scanned_batch_findings(findings, per_chunk, scanned_count, ran_on_gpu);
+        Ok(scan_start.elapsed())
+    }
+
+    fn dump_perf_trace(
+        &self,
+        started: std::time::Instant,
+        scan_dur: std::time::Duration,
+        recv_dur: std::time::Duration,
+    ) {
+        if !self.perf_trace {
+            return;
+        }
+        let wall = started.elapsed().as_secs_f64().max(1e-9);
+        eprintln!(
+            "perf-trace scanner_thread: wall={:.2}s scan={:.2}s recv_wait={:.2}s (scan {:.0}%, recv_wait {:.0}%)",
+            wall,
+            scan_dur.as_secs_f64(),
+            recv_dur.as_secs_f64(),
+            100.0 * scan_dur.as_secs_f64() / wall,
+            100.0 * recv_dur.as_secs_f64() / wall,
+        );
+    }
+}
+
+fn append_scanned_batch_findings(
+    findings: &mut Vec<RawMatch>,
+    per_chunk: Vec<Vec<RawMatch>>,
+    scanned_count: usize,
+    ran_on_gpu: bool,
+) {
+    use std::sync::atomic::Ordering;
+
+    crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+    if ran_on_gpu {
+        // Authoritative routing signal for the completion summary: this is the
+        // single coalesced-pipeline path where chunks actually run on the GPU.
+        crate::GPU_SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+    }
+    let mut batch_findings = 0usize;
+    for chunk_findings in per_chunk {
+        batch_findings += chunk_findings.len();
+        findings.extend(chunk_findings);
+    }
+    crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
+}
+
 impl ScanOrchestrator {
+    fn coalesced_scanner_worker(&self, scanner: Arc<CompiledScanner>) -> CoalescedScannerWorker {
+        let perf_trace = self.effective_config.scanner.perf_trace;
+        if let Some(backend) = self.effective_config.backend_override {
+            return CoalescedScannerWorker::explicit(scanner, backend, perf_trace);
+        }
+
+        // Auto-route every batch through the persisted calibration router when
+        // the user has not pinned `--backend`. Normal scans do not benchmark
+        // candidates and do not apply hardware-name thresholds: every selected
+        // backend must come from an installer/maintenance calibration record
+        // keyed by this binary, detector digest, resolved config, host profile,
+        // and workload bucket. A missing/stale/incomplete decision returns a
+        // routing error before scanning instead of substituting CPU/SIMD/GPU.
+        //
+        // COHERENCE HAZARD: backend selection can still change the execution
+        // path for the same input on different hosts, so SIMD/GPU/scalar parity
+        // remains a release-blocking invariant. Benchmarks that tune detector
+        // quality must pin an explicit backend; production `auto` is only as
+        // trustworthy as the persisted fastest-correct calibration evidence.
+        let hw_caps = keyhog_scanner::hw_probe::probe_hardware().clone();
+        let pattern_count = scanner.runtime_status().pattern_count;
+        let config_digest = autoroute_config_digest(&self.effective_config);
+        let rules_digest = self.detector_rules_digest.clone();
+        let autoroute_cache_path = Ok(self.effective_config.autoroute_cache_path.clone());
+        let router_config = CoalescedMeasuredRouterConfig {
+            hw_caps,
+            pattern_count,
+            rules_digest,
+            config_digest,
+            autoroute_gpu: self.effective_config.autoroute_gpu,
+            autoroute_calibration: self.effective_config.autoroute_calibration,
+            autoroute_cache_path,
+        };
+        CoalescedScannerWorker::measured(scanner, router_config, perf_trace)
+    }
+
     pub(crate) fn scan_sources(
         &self,
         sources: Vec<Box<dyn Source>>,
@@ -66,8 +272,6 @@ impl ScanOrchestrator {
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
         incremental_path: Option<std::path::PathBuf>,
     ) -> Result<Vec<RawMatch>> {
-        use std::sync::atomic::Ordering;
-
         // Fused parallel read+scan path for CPU/SIMD filesystem scans. The
         // coalesced batch pipeline below funnels the parallel reader's output
         // through one main-thread drain + one scanner thread running 23
@@ -151,167 +355,8 @@ impl ScanOrchestrator {
             "scan dispatch pipeline sized"
         );
 
-        // Auto-route every batch through the persisted calibration router when
-        // the user has not pinned `--backend`. Normal scans do not benchmark
-        // candidates and do not apply hardware-name thresholds: every selected
-        // backend must come from an installer/maintenance calibration record
-        // keyed by this binary, detector digest, resolved config, host profile,
-        // and workload bucket. A missing/stale/incomplete decision returns a
-        // routing error before scanning instead of substituting CPU/SIMD/GPU.
-        //
-        // COHERENCE HAZARD: backend selection can still change the execution
-        // path for the same input on different hosts, so SIMD/GPU/scalar parity
-        // remains a release-blocking invariant. Benchmarks that tune detector
-        // quality must pin an explicit backend; production `auto` is only as
-        // trustworthy as the persisted fastest-correct calibration evidence.
-        let hw_caps = keyhog_scanner::hw_probe::probe_hardware().clone();
-        let pattern_count = scanner.runtime_status().pattern_count;
-        let config_digest = autoroute_config_digest(&self.effective_config);
-        let rules_digest = self.detector_rules_digest.clone();
-        let autoroute_cache_path = Ok(self.effective_config.autoroute_cache_path.clone());
-        let autoroute_gpu = self.effective_config.autoroute_gpu;
-        let autoroute_calibration = self.effective_config.autoroute_calibration;
-        let explicit_backend = self.effective_config.backend_override;
-        let perf_trace = self.effective_config.scanner.perf_trace;
-
-        let scanner_thread = std::thread::spawn(
-            move || -> std::result::Result<Vec<RawMatch>, AutorouteRoutingError> {
-                let mut findings: Vec<RawMatch> = Vec::new();
-                enum BatchBackendRouter {
-                    Explicit(keyhog_scanner::hw_probe::ScanBackend),
-                    Measured(MeasuredBackendRouter),
-                }
-                let mut router = match explicit_backend {
-                    Some(backend) => BatchBackendRouter::Explicit(backend),
-                    None => BatchBackendRouter::Measured(MeasuredBackendRouter::new(
-                        hw_caps,
-                        pattern_count,
-                        rules_digest,
-                        config_digest,
-                        autoroute_gpu,
-                        autoroute_calibration,
-                        autoroute_cache_path,
-                        scanner.as_ref(),
-                    )),
-                };
-
-                let mut prev_phase2: Option<(std::thread::JoinHandle<Vec<Vec<RawMatch>>>, usize)> =
-                    None;
-
-                let drain_prev =
-                    |prev: Option<(std::thread::JoinHandle<Vec<Vec<RawMatch>>>, usize)>,
-                     findings: &mut Vec<RawMatch>| {
-                        if let Some((handle, scanned_count)) = prev {
-                            let per_chunk = match handle.join() {
-                                Ok(per_chunk) => per_chunk,
-                                Err(error) => std::panic::resume_unwind(error),
-                            };
-                            crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
-                            let mut batch_findings = 0usize;
-                            for chunk_findings in per_chunk {
-                                batch_findings += chunk_findings.len();
-                                findings.extend(chunk_findings);
-                            }
-                            crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
-                        }
-                    };
-
-                let sc_t0 = std::time::Instant::now();
-                let mut scan_dur = std::time::Duration::ZERO;
-                let mut recv_dur = std::time::Duration::ZERO;
-                let mut last_end = std::time::Instant::now();
-                for batch in rx {
-                    recv_dur += last_end.elapsed();
-                    if batch.is_empty() {
-                        last_end = std::time::Instant::now();
-                        continue;
-                    }
-                    let _scan_start = std::time::Instant::now();
-                    let scanned_count = batch.len();
-                    let chosen_backend = match &mut router {
-                        BatchBackendRouter::Explicit(backend) => *backend,
-                        BatchBackendRouter::Measured(router) => {
-                            router.choose(scanner.as_ref(), None, &batch)?
-                        }
-                    };
-                    match chosen_backend {
-                        // The Vyre GpuLiteralSet region-presence route is the single
-                        // on-GPU trigger path. It owns backend acquisition and degrades
-                        // LOUDLY to SIMD/CPU, so both an explicit GPU request and a
-                        // selected Gpu/MegaScan batch land here.
-                        keyhog_scanner::hw_probe::ScanBackend::Gpu
-                        | keyhog_scanner::hw_probe::ScanBackend::MegaScan => {
-                            drain_prev(prev_phase2.take(), &mut findings);
-                            let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
-                            tracing::debug!(
-                                target: "keyhog::routing",
-                                backend = "gpu",
-                                batch_bytes,
-                                chunks = scanned_count,
-                                "batch dispatched (gpu region presence)",
-                            );
-                            let per_chunk = scanner.scan_chunks_with_backend(
-                                &batch,
-                                keyhog_scanner::hw_probe::ScanBackend::Gpu,
-                            );
-                            crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
-                            // Authoritative routing signal for the completion summary:
-                            // this is the single place chunks actually run on the GPU.
-                            crate::GPU_SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
-                            let mut batch_findings = 0usize;
-                            for chunk_findings in per_chunk {
-                                batch_findings += chunk_findings.len();
-                                findings.extend(chunk_findings);
-                            }
-                            crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
-                        }
-                        keyhog_scanner::hw_probe::ScanBackend::CpuFallback => {
-                            drain_prev(prev_phase2.take(), &mut findings);
-                            let per_chunk = scanner.scan_chunks_with_backend(
-                                &batch,
-                                keyhog_scanner::hw_probe::ScanBackend::CpuFallback,
-                            );
-                            crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
-                            let mut batch_findings = 0usize;
-                            for chunk_findings in per_chunk {
-                                batch_findings += chunk_findings.len();
-                                findings.extend(chunk_findings);
-                            }
-                            crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
-                        }
-                        _ => {
-                            drain_prev(prev_phase2.take(), &mut findings);
-                            let per_chunk = scanner.scan_coalesced(&batch);
-                            crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
-                            let mut batch_findings = 0usize;
-                            for chunk_findings in per_chunk {
-                                batch_findings += chunk_findings.len();
-                                findings.extend(chunk_findings);
-                            }
-                            crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
-                        }
-                    }
-                    scan_dur += _scan_start.elapsed();
-                    last_end = std::time::Instant::now();
-                }
-                drain_prev(prev_phase2.take(), &mut findings);
-                if perf_trace {
-                    let wall = sc_t0.elapsed().as_secs_f64().max(1e-9);
-                    eprintln!(
-                        "perf-trace scanner_thread: wall={:.2}s scan={:.2}s recv_wait={:.2}s (scan {:.0}%, recv_wait {:.0}%)",
-                        wall,
-                        scan_dur.as_secs_f64(),
-                        recv_dur.as_secs_f64(),
-                        100.0 * scan_dur.as_secs_f64() / wall,
-                        100.0 * recv_dur.as_secs_f64() / wall,
-                    );
-                }
-                // Scanner owns the profiling switch and all report shards; the
-                // CLI only asks the compiled scanner to drain them at scan end.
-                scanner.dump_profile_reports("keyhog scan");
-                Ok(findings)
-            },
-        );
+        let scanner_worker = self.coalesced_scanner_worker(scanner);
+        let scanner_thread = std::thread::spawn(move || scanner_worker.run(rx));
 
         let mut batch: Vec<keyhog_core::Chunk> =
             Vec::with_capacity(pipeline_plan.batch_chunk_limit);

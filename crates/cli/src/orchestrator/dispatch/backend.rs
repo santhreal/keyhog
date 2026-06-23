@@ -10,10 +10,10 @@ use self::calibration::calibrate_fastest_correct_backend;
 use self::evidence::AutorouteDecision;
 use self::host::AutorouteHostProfile;
 use self::store::{load_autoroute_cache, save_autoroute_cache};
-use self::workload::{workload_key, WorkloadClassificationError, WorkloadKey};
+use self::workload::{WorkloadClassificationError, WorkloadKey, workload_key};
 use keyhog_core::Chunk;
-use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use keyhog_scanner::CompiledScanner;
+use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
@@ -142,6 +142,17 @@ impl AutorouteRoutingError {
                  {trial}. Autoroute cannot prove fastest-correct routing when the SIMD reference \
                  is unstable, so no backend decision was persisted. Fix scanner nondeterminism or \
                  run an explicit `--backend <simd|cpu|gpu|megascan>` diagnostic scan."
+            ),
+        }
+    }
+
+    pub(super) fn unsupported_backend(backend: ScanBackend) -> Self {
+        Self {
+            message: format!(
+                "autoroute selected unsupported scan backend {backend:?}. This binary cannot prove \
+                 fastest-correct routing for a backend variant it does not implement in the \
+                 coalesced scanner worker. Recalibrate with a matching keyhog/scanner build or pass \
+                 an explicit supported `--backend <simd|cpu|gpu|megascan>` diagnostic override."
             ),
         }
     }
@@ -325,7 +336,9 @@ impl MeasuredBackendRouter {
         let Some(path) = self.cache_path.as_deref() else {
             let reason = match self.cache_load_error.as_deref() {
                 Some(error) => error,
-                None => "--autoroute-cache off / [system].autoroute_cache = \"off\" disables the autoroute cache",
+                None => {
+                    "--autoroute-cache off / [system].autoroute_cache = \"off\" disables the autoroute cache"
+                }
             };
             return Err(AutorouteRoutingError::calibration_not_persisted(reason));
         };
