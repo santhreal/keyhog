@@ -20,6 +20,11 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         "/src/orchestrator_config/policy.rs"
     ))
     .expect("orchestrator_config policy source readable");
+    let calibration = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator_config/calibration.rs"
+    ))
+    .expect("orchestrator_config calibration source readable");
 
     assert!(
         scanner.contains("struct ScannerConfigInput"),
@@ -41,6 +46,11 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         policy.contains("struct ResolvedAllowlistConfig")
             && policy.contains("struct ResolvedOobPolicy"),
         "orchestrator_config/policy.rs must own allowlist and OOB policy leaves"
+    );
+    assert!(
+        calibration.contains("fn calibration_store_digest(")
+            && calibration.contains("fn load_explicit_scan_calibration("),
+        "orchestrator_config/calibration.rs must own explicit calibration cache load/digest"
     );
     assert!(
         scanner.contains("fn build_scanner_config_from_input(input: &ScannerConfigInput)"),
@@ -128,6 +138,8 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         "struct ResolvedVerifyPolicy",
         "struct ResolvedAllowlistConfig",
         "struct ResolvedOobPolicy",
+        "fn calibration_store_digest(",
+        "fn load_explicit_scan_calibration(",
     ] {
         assert!(
             !src.contains(forbidden),
