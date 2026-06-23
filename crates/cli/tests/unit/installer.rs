@@ -294,6 +294,19 @@ fn install_with_rollback_bool_wrapper_has_one_owner() {
     );
 }
 
+#[test]
+fn current_binary_surfaces_canonicalize_failure() {
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/installer.rs"))
+        .expect("installer source readable");
+    assert!(
+        src.contains("std::fs::canonicalize(&exe).with_context(||")
+            && src.contains("resolve current executable symlink target")
+            && !src.contains("std::fs::canonicalize(&exe).unwrap_or(exe)")
+            && !src.contains("canonicalize failure => original path"),
+        "current_binary must not silently install through a non-canonical symlink path"
+    );
+}
+
 // Supply-chain: a missing `.minisig` must FAIL CLOSED. A forged 404 on the
 // signature URL (active MITM / compromised CDN serving a tampered binary)
 // otherwise bypassed the entire minisign gate. Linux-gated because the served

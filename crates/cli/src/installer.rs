@@ -38,7 +38,12 @@ pub(crate) use release::*;
 /// Resolve the running binary, following symlinks so we replace the real file.
 pub(crate) fn current_binary() -> Result<std::path::PathBuf> {
     let exe = std::env::current_exe().context("locate current executable")?;
-    Ok(std::fs::canonicalize(&exe).unwrap_or(exe)) // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
+    std::fs::canonicalize(&exe).with_context(|| {
+        format!(
+            "resolve current executable symlink target for {} before self-update",
+            exe.display()
+        )
+    })
 }
 
 #[cfg(unix)]
