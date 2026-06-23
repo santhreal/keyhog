@@ -50,4 +50,21 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
             && !compile_body.contains("Pattern::with_flags("),
         "compile_with_opts must not own pattern prep, cache I/O, or parallel shard build loops"
     );
+
+    let partition_body = source
+        .split("fn partition_patterns_lpt(")
+        .nth(1)
+        .expect("partition_patterns_lpt present")
+        .split("fn compile_cached_shards(")
+        .next()
+        .expect("partition_patterns_lpt boundary present");
+    assert!(
+        partition_body.contains("order.sort_unstable_by(")
+            && partition_body.contains(".expression")
+            && partition_body.contains(".len()")
+            && partition_body.contains(".then_with(|| hs_pats[a].id.cmp(&hs_pats[b].id))")
+            && partition_body.contains(".then_with(|| a.cmp(&b))")
+            && !partition_body.contains("sort_unstable_by_key"),
+        "Hyperscan LPT partitioning must use deterministic tie-breakers so equal-length patterns do not churn shard cache keys"
+    );
 }

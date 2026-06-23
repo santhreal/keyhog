@@ -74,8 +74,10 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         scan.contains("static SCRATCH_TLS")
             && scan.contains("fn take_scratch(")
             && scan.contains("fn put_scratch(")
+            && scan.contains("fn retain_current_scanner_scratch(")
+            && scan.contains("retain_current_scanner_scratch(&mut tls, scanner_id);")
             && scan.contains("put_scratch(self.scanner_id, shard_idx, scratch);"),
-        "fallible Hyperscan scan paths must return scratch to TLS/pool before reporting an error"
+        "fallible Hyperscan scan paths must return scratch and evict stale per-thread scanner scratches before reporting an error"
     );
     assert!(
         !scan.contains("alloc_scratch().ok()"),

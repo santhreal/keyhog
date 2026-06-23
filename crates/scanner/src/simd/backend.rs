@@ -2,8 +2,8 @@ use hyperscan::{
     Block as BlockMode, BlockDatabase, Builder, Pattern, PatternFlags, Patterns, Scratch,
 };
 use std::path::PathBuf;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 
 mod scan;
 
@@ -443,7 +443,14 @@ impl HsScanner {
 
     fn partition_patterns_lpt(hs_pats: &[Pattern], shard_count: usize) -> Vec<Vec<Pattern>> {
         let mut order: Vec<usize> = (0..hs_pats.len()).collect();
-        order.sort_unstable_by_key(|&i| std::cmp::Reverse(hs_pats[i].expression.len()));
+        order.sort_unstable_by(|&a, &b| {
+            hs_pats[b]
+                .expression
+                .len()
+                .cmp(&hs_pats[a].expression.len())
+                .then_with(|| hs_pats[a].id.cmp(&hs_pats[b].id))
+                .then_with(|| a.cmp(&b))
+        });
         let mut shard_pats: Vec<Vec<Pattern>> = (0..shard_count).map(|_| Vec::new()).collect();
         let mut shard_cost: Vec<u64> = vec![0; shard_count];
         for &i in &order {

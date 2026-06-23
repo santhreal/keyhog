@@ -28,8 +28,17 @@ fn take_scratch(
 fn put_scratch(scanner_id: u64, shard_idx: usize, scratch: Scratch) {
     let key = (scanner_id, shard_idx);
     SCRATCH_TLS.with(|tls| {
-        tls.borrow_mut().insert(key, scratch);
+        let mut tls = tls.borrow_mut();
+        retain_current_scanner_scratch(&mut tls, scanner_id);
+        tls.insert(key, scratch);
     });
+}
+
+fn retain_current_scanner_scratch(
+    tls: &mut HashMap<(u64, usize), Scratch>,
+    current_scanner_id: u64,
+) {
+    tls.retain(|(scanner_id, _), _| *scanner_id == current_scanner_id);
 }
 
 impl HsScanner {
