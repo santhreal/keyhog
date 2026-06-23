@@ -66,6 +66,10 @@ pub(crate) fn reader_panic_rows_for_test() -> Vec<Result<Chunk, SourceError>> {
     rx.into_iter().collect()
 }
 
+pub(crate) fn reader_process_entry_panic_rows_for_test() -> Vec<Result<Chunk, SourceError>> {
+    reader::process_entry_panic_rows_for_test()
+}
+
 pub(crate) fn max_buffered_read_bytes_for_test() -> u64 {
     read::max_buffered_read_bytes_for_test()
 }

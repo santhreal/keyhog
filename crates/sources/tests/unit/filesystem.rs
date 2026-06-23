@@ -76,6 +76,28 @@ fn filesystem_reader_iterator_panic_surfaces_source_error() {
 }
 
 #[test]
+fn filesystem_reader_process_entry_panic_surfaces_source_error() {
+    let rows = TestApi.reader_process_entry_panic_rows();
+    assert_eq!(
+        rows.len(),
+        1,
+        "entry extraction panic should emit one ordered error"
+    );
+    let err = rows[0]
+        .as_ref()
+        .expect_err("entry extraction panic must not look like clean EOF");
+    assert!(
+        err.to_string().contains("file extraction panicked")
+            && err.to_string().contains("panic.zip")
+            && err.to_string().contains("extractor exploded")
+            && err
+                .to_string()
+                .contains("remaining content for that entry was not scanned"),
+        "unexpected process-entry panic error: {err}"
+    );
+}
+
+#[test]
 fn default_max_file_size_matches_core_scan_config() {
     let max_file_size = TestApi.filesystem_default_max_file_size();
     assert_eq!(max_file_size, keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES);

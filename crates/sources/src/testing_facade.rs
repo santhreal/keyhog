@@ -14,6 +14,9 @@ pub mod testing {
         ) -> std::io::Result<String>;
         fn reader_pool_thread_count(&self, scanner_threads: usize) -> usize;
         fn reader_panic_rows(&self) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>;
+        fn reader_process_entry_panic_rows(
+            &self,
+        ) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>;
         fn configured_reader_pool_thread_count(
             &self,
             scanner_threads: usize,
@@ -369,6 +372,12 @@ pub mod testing {
 
         fn reader_panic_rows(&self) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
             crate::filesystem::reader_panic_rows_for_test()
+        }
+
+        fn reader_process_entry_panic_rows(
+            &self,
+        ) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
+            crate::filesystem::reader_process_entry_panic_rows_for_test()
         }
 
         fn configured_reader_pool_thread_count(

@@ -99,15 +99,18 @@ pub(super) fn spawn_chunk_producer(
         loop {
             let item = {
                 let guard = match cursor.lock() {
-                    Ok(g) => g,
+                    Ok(g) => Ok(g),
                     Err(poisoned) => {
                         tracing::warn!(
                                 "filesystem reader cursor mutex was poisoned; surfacing partial scan error"
                             );
-                        poisoned.into_inner()
+                        cursor_poison_item(poisoned.into_inner())
                     }
                 };
-                next_cursor_item(guard)
+                match guard {
+                    Ok(guard) => next_cursor_item(guard),
+                    Err(item) => item,
+                }
             };
             let (seq, entry) = match item {
                 CursorItem::Entry(seq, entry) => (seq, entry),
@@ -123,17 +126,22 @@ pub(super) fn spawn_chunk_producer(
                 chunks.push(chunk);
                 true
             };
-            process_entry(
-                entry,
-                &merkle,
-                &skipped,
-                &default_exclude_root,
-                max_size,
-                window_size,
-                window_overlap,
-                respect_default_excludes,
-                &mut emit,
-            );
+            let entry_path = entry.path.clone();
+            if let Err(payload) = catch_unwind(AssertUnwindSafe(|| {
+                process_entry(
+                    entry,
+                    &merkle,
+                    &skipped,
+                    &default_exclude_root,
+                    max_size,
+                    window_size,
+                    window_overlap,
+                    respect_default_excludes,
+                    &mut emit,
+                );
+            })) {
+                chunks.push(Err(process_entry_panic_error(seq, &entry_path, payload)));
+            }
             if tx.send((seq, chunks)).is_err() {
                 return;
             }
@@ -173,7 +181,13 @@ pub(super) fn spawn_chunk_producer(
             .spawn(move || run_reader_fb(cursor_fb, tx_fb, merkle_fb, skipped_fb))
             .is_err()
         {
-            run_reader(cursor, entry_tx.clone(), merkle.clone(), skipped.clone());
+            let _ = entry_tx.send((
+                0,
+                vec![Err(SourceError::Other(
+                    "failed to spawn any filesystem reader thread; no files were scanned"
+                        .to_string(),
+                ))],
+            ));
         }
     }
 
@@ -207,6 +221,51 @@ fn next_cursor_item(mut cursor: std::sync::MutexGuard<'_, ReaderCursor>) -> Curs
             )
         }
     }
+}
+
+fn cursor_poison_item(
+    mut cursor: std::sync::MutexGuard<'_, ReaderCursor>,
+) -> Result<std::sync::MutexGuard<'_, ReaderCursor>, CursorItem> {
+    if cursor.closed {
+        return Err(CursorItem::End);
+    }
+    let seq = cursor.next_seq;
+    cursor.closed = true;
+    cursor.next_seq = cursor.next_seq.saturating_add(1);
+    Err(CursorItem::Error(
+        seq,
+        SourceError::Other(format!(
+            "filesystem reader cursor mutex was poisoned before entry {seq}; remaining files were not scanned"
+        )),
+    ))
+}
+
+fn process_entry_panic_error(
+    seq: usize,
+    path: &std::path::Path,
+    payload: Box<dyn std::any::Any + Send>,
+) -> SourceError {
+    SourceError::Other(format!(
+        "filesystem file extraction panicked for entry {seq} at '{}'; remaining content for that entry was not scanned: {}",
+        path.display(),
+        panic_payload_message(payload)
+    ))
+}
+
+pub(super) fn process_entry_panic_rows_for_test() -> Vec<Result<Chunk, SourceError>> {
+    let payload = match catch_unwind(AssertUnwindSafe(|| panic!("extractor exploded"))) {
+        Ok(()) => {
+            return vec![Err(SourceError::Other(
+                "test panic injector did not panic".to_string(),
+            ))];
+        }
+        Err(payload) => payload,
+    };
+    vec![Err(process_entry_panic_error(
+        7,
+        std::path::Path::new("panic.zip"),
+        payload,
+    ))]
 }
 
 fn panic_payload_message(payload: Box<dyn std::any::Any + Send>) -> String {
