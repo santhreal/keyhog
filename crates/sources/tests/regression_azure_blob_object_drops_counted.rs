@@ -87,6 +87,60 @@ fn plain_text_blob_is_scanned_and_sas_query_is_preserved() {
 }
 
 #[test]
+fn octet_stream_text_blob_is_scanned() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container")
+            .query_param("sv", "2024-11-04")
+            .query_param("sig", "regression")
+            .query_param("restype", "container")
+            .query_param("comp", "list");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body(listing(&blob(
+                "extensionless-secret",
+                64,
+                "application/octet-stream",
+            )));
+    });
+    let _obj = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container/extensionless-secret")
+            .query_param("sv", "2024-11-04")
+            .query_param("sig", "regression");
+        then.status(200)
+            .header("content-type", "application/octet-stream")
+            .body("aws_key=AKIAQYLPMN5HFIQR7XYA\n"); // keyhog:ignore detector=aws-access-key
+    });
+
+    let ok: Vec<_> = AzureBlobSource::new(container_url(&server))
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(ok.len(), 1, "Azure octet-stream text blob must be scanned");
+    assert!(
+        ok[0].data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"), // keyhog:ignore detector=aws-access-key
+        "chunk must carry octet-stream text body"
+    );
+    assert_eq!(
+        ok[0].metadata.path.as_deref(),
+        Some("azblob://127.0.0.1/container/extensionless-secret")
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.total(),
+        before.total(),
+        "a scanned octet-stream text blob must not inflate skip counters"
+    );
+}
+
+#[test]
 fn binary_extension_blob_is_counted_binary_without_get() {
     let _guard = counter_guard();
     TestApi.reset_skip_counters();

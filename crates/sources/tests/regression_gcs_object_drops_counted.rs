@@ -73,6 +73,53 @@ fn plain_text_object_is_scanned_and_not_counted_as_skipped() {
 }
 
 #[test]
+fn octet_stream_text_object_is_scanned() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o"))
+            .query_param("alt", "json");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(listing(&object("extensionless-secret", 64)));
+    });
+    let _obj = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o/extensionless-secret"))
+            .query_param("alt", "media");
+        then.status(200)
+            .header("content-type", "application/octet-stream")
+            .body("aws_key=AKIAQYLPMN5HFIQR7XYA\n"); // keyhog:ignore detector=aws-access-key
+    });
+
+    let ok: Vec<_> = TestApi
+        .gcs_source_with_endpoint(BUCKET, server.url(""))
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(ok.len(), 1, "GCS octet-stream text object must be scanned");
+    assert!(
+        ok[0].data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"), // keyhog:ignore detector=aws-access-key
+        "chunk must carry octet-stream text body"
+    );
+    assert_eq!(
+        ok[0].metadata.path.as_deref(),
+        Some("gs://regression-bucket/extensionless-secret")
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.total(),
+        before.total(),
+        "a scanned octet-stream text object must not inflate skip counters"
+    );
+}
+
+#[test]
 fn binary_extension_object_is_counted_binary_without_get() {
     let _guard = counter_guard();
     TestApi.reset_skip_counters();

@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use keyhog_core::{Chunk, SourceError};
 use reqwest::blocking::{Client, Response};
 use std::io::Read;
@@ -209,6 +207,7 @@ pub(crate) fn read_text_object_body(
             return Ok(None);
         }
     }
+    let content_type_is_unknown_binary = content_type.is_some_and(is_unknown_binary_content_type);
 
     let initial_capacity = match response.content_length() {
         Some(len) => len.min(ctx.max_bytes).min(64 * 1024) as usize,
@@ -234,6 +233,21 @@ pub(crate) fn read_text_object_body(
         return Ok(None);
     }
 
+    if content_type_is_unknown_binary {
+        return match crate::filesystem::decode_text_file(&body) {
+            Some(text) => Ok(Some(text)),
+            None => {
+                tracing::warn!(
+                    source = ctx.source,
+                    key = ctx.item_name,
+                    "skipping cloud object: octet-stream body is binary after capped decode; NOT scanned as text"
+                );
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                Ok(None)
+            }
+        };
+    }
+
     match String::from_utf8(body) {
         Ok(text) => Ok(Some(text)),
         Err(error) => {
@@ -257,13 +271,22 @@ pub(crate) fn is_probably_text_object_key(key: &str) -> bool {
     const BINARY_OBJECT_EXTS: &[&str] = &[
         "zip", "gz", "tgz", "tar", "7z", "rar", "pdf", "bz2", "xz", "zst", "lz4", "sz",
     ];
-    let Some(ext) = Path::new(key).extension().and_then(|value| value.to_str()) else {
+    let Some(ext) = cloud_key_extension(key) else {
         return true;
     };
     !crate::filesystem::is_default_skip_extension(ext)
         && !BINARY_OBJECT_EXTS
             .iter()
             .any(|candidate| ext.eq_ignore_ascii_case(candidate))
+}
+
+fn cloud_key_extension(key: &str) -> Option<&str> {
+    let file_name = key.rsplit('/').next().unwrap_or(key);
+    let (stem, ext) = file_name.rsplit_once('.')?;
+    if stem.is_empty() || ext.is_empty() {
+        return None;
+    }
+    Some(ext)
 }
 
 pub(crate) fn is_binary_content_type(content_type: &str) -> bool {
@@ -274,9 +297,16 @@ pub(crate) fn is_binary_content_type(content_type: &str) -> bool {
     starts_with_ignore_ascii_case(media_type, "image/")
         || starts_with_ignore_ascii_case(media_type, "audio/")
         || starts_with_ignore_ascii_case(media_type, "video/")
-        || media_type.eq_ignore_ascii_case("application/octet-stream")
         || media_type.eq_ignore_ascii_case("application/zip")
         || media_type.eq_ignore_ascii_case("application/gzip")
+}
+
+fn is_unknown_binary_content_type(content_type: &str) -> bool {
+    let media_type = content_type
+        .split_once(';')
+        .map_or(content_type, |(media_type, _)| media_type)
+        .trim();
+    media_type.eq_ignore_ascii_case("application/octet-stream")
 }
 
 fn starts_with_ignore_ascii_case(value: &str, prefix: &str) -> bool {

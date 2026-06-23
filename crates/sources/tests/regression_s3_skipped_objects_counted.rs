@@ -130,10 +130,7 @@ fn binary_content_type_object_is_counted_binary() {
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
-    // Extension `.bin` is NOT in `is_probably_text`'s deny-list, so the object
-    // reaches the GET and the content-type guard fires there (exercising the
-    // production content-type skip path, not the extension pre-filter).
-    let body = listing(&contents("payload.bin", 512));
+    let body = listing(&contents("payload", 512));
     let _list = server.mock(|when, then| {
         when.method(httpmock::Method::GET)
             .query_param("list-type", "2");
@@ -142,10 +139,9 @@ fn binary_content_type_object_is_counted_binary() {
             .body(body);
     });
     let _obj = server.mock(|when, then| {
-        when.method(httpmock::Method::GET)
-            .path_includes("payload.bin");
+        when.method(httpmock::Method::GET).path_includes("payload");
         then.status(200)
-            .header("content-type", "application/octet-stream")
+            .header("content-type", "image/png")
             .body(vec![0u8; 512]);
     });
 
@@ -171,6 +167,94 @@ fn binary_content_type_object_is_counted_binary() {
         after.over_max_size - before.over_max_size,
         0,
         "a binary skip must NOT be miscounted as an over-size skip"
+    );
+}
+
+#[test]
+fn octet_stream_text_object_is_scanned() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let body = listing(&contents("extensionless-secret", 64));
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .query_param("list-type", "2");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body(body);
+    });
+    let _obj = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path_includes("extensionless-secret");
+        then.status(200)
+            .header("content-type", "application/octet-stream")
+            .body("aws_key=AKIAQYLPMN5HFIQR7XYA\n"); // keyhog:ignore detector=aws-access-key
+    });
+
+    let ok: Vec<_> = TestApi
+        .s3_source_with_endpoint(BUCKET, server.url(""))
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(ok.len(), 1, "octet-stream text object must be scanned");
+    assert!(
+        ok[0].data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"), // keyhog:ignore detector=aws-access-key
+        "chunk must carry octet-stream text body"
+    );
+    assert_eq!(
+        ok[0].metadata.path.as_deref(),
+        Some("regression-bucket/extensionless-secret")
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.total(),
+        before.total(),
+        "a scanned octet-stream text object must not inflate skip counters"
+    );
+}
+
+#[test]
+fn octet_stream_binary_object_is_counted_binary_after_fetch() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let body = listing(&contents("extensionless-binary", 64));
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .query_param("list-type", "2");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body(body);
+    });
+    let _obj = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path_includes("extensionless-binary");
+        then.status(200)
+            .header("content-type", "application/octet-stream")
+            .body(vec![0u8; 64]);
+    });
+
+    let ok: Vec<_> = TestApi
+        .s3_source_with_endpoint(BUCKET, server.url(""))
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(
+        ok.len(),
+        0,
+        "octet-stream binary object must not produce a text chunk"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.binary - before.binary,
+        1,
+        "octet-stream binary body MUST bump SKIPPED_BINARY exactly once after capped decode"
     );
 }
 
