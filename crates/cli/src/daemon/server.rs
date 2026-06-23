@@ -9,8 +9,8 @@ use anyhow::{Context, Result};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch, Source};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Notify, Semaphore};
@@ -131,32 +131,8 @@ pub(crate) async fn run_with_backend_override(
     options: ServerOptions,
     backend_override: Option<ScanBackend>,
 ) -> Result<()> {
-    let scan_runtime = crate::orchestrator::compile_default_scan_runtime(detectors, |error| {
-        anyhow::anyhow!("daemon: compiling scanner from detector specs: {error}")
-    })?;
-    let detector_count = scan_runtime.detector_count();
-    // The daemon is long-lived and serves many scan requests; pay the lazy
-    // regex compile once, up front and in parallel, so no client request
-    // eats a detector's first-use compile latency.
-    scan_runtime.warm();
-    let (scanner, router) = scan_runtime.into_parts();
-
-    if let Some(parent) = socket_path.parent() {
-        trust::ensure_private_socket_dir(parent)?;
-    }
-    // Remove a stale socket file from a previous crashed instance only after
-    // the parent dir and stale socket file both pass the daemon trust checks.
-    trust::remove_stale_socket_if_trusted(&socket_path)?;
-
-    let listener = UnixListener::bind(&socket_path)
-        .with_context(|| format!("daemon: binding Unix socket at {}", socket_path.display()))?;
-
-    // 0600 = user-only. Without this the socket inherits the umask
-    // default which on most distros is 0644 - a co-tenant user on
-    // the same box could connect and request scans, exposing every
-    // credential the scanner finds via its responses.
-    trust::set_socket_mode_user_only(&socket_path)?;
-
+    let (scanner, router, detector_count) = compile_daemon_scan_runtime(detectors)?;
+    let listener = bind_trusted_daemon_socket(&socket_path)?;
     let shutdown = Arc::new(Notify::new());
     let state = Arc::new(ServerState::new(
         scanner,
@@ -167,87 +143,8 @@ pub(crate) async fn run_with_backend_override(
         backend_override,
     ));
 
-    eprintln!(
-        "keyhog daemon ready on {} ({} detectors, wire={})",
-        socket_path.display(),
-        detector_count,
-        WIRE_VERSION,
-    );
-
-    let accept_state = state.clone();
-    let accept_shutdown = shutdown.clone();
-    let accept_task = tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = accept_shutdown.notified() => break,
-                conn = listener.accept() => {
-                    match conn {
-                        Ok((stream, _addr)) => {
-                            let s = accept_state.clone();
-                            let limiter = s.connection_limit.clone();
-                            // Backpressure: refuse to spawn another
-                            // handler until a permit is available. A
-                            // permit drop at the end of the spawned
-                            // task releases the slot. acquire_owned
-                            // moves the permit into the task without
-                            // a separate handle to plumb through.
-                            let permit = match limiter.acquire_owned().await {
-                                Ok(p) => p,
-                                Err(_closed) => break, // semaphore closed -> shutting down
-                            };
-                            tokio::spawn(async move {
-                                let _permit = permit;
-                                if let Err(e) = handle_connection(s, stream).await {
-                                    tracing::warn!("daemon: connection ended with error: {e:#}");
-                                }
-                            });
-                        }
-                        Err(e) => {
-                            // Law 10: a swallowed accept() error silently kills
-                            // the daemon's ability to serve while the process
-                            // stays alive — `daemon status` keeps reporting
-                            // "ready" but every new connection is refused. A
-                            // `tracing::error!` here is invisible without
-                            // RUST_LOG, so the operator never learns the daemon
-                            // went deaf. Surface it LOUDLY on stderr.
-                            //
-                            // Transient errors (fd exhaustion under a connection
-                            // burst, an interrupted syscall, a peer that aborted
-                            // mid-handshake) are RECOVERABLE: a permit-bounded
-                            // backlog drains and accept() works again. Back off
-                            // briefly and keep serving rather than tearing the
-                            // daemon down for a momentary spike.
-                            if is_transient_accept_error(&e) {
-                                let palette = style::for_stderr();
-                                eprintln!(
-                                    "{} keyhog daemon: accept() failed transiently ({e}); \
-                                     backing off and continuing to serve",
-                                    style::warn("WARN", &palette)
-                                );
-                                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                                continue;
-                            }
-                            // A genuinely fatal accept error (the listening socket
-                            // was unlinked, the fd was closed under us): the
-                            // daemon can never serve again. Do NOT leave a deaf
-                            // zombie — surface loudly and trigger graceful
-                            // shutdown so the process actually exits and a
-                            // supervisor / the operator can restart it.
-                            let palette = style::for_stderr();
-                            eprintln!(
-                                "{} keyhog daemon: listener accept failed fatally ({e}); \
-                                 the daemon can no longer accept connections and is \
-                                 shutting down. Restart it with `keyhog daemon start`.",
-                                style::fail("FAIL", &palette)
-                            );
-                            accept_shutdown.notify_waiters();
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    });
+    announce_daemon_ready(&socket_path, detector_count);
+    let accept_task = spawn_accept_loop(listener, state.clone());
 
     shutdown.notified().await;
     accept_task
@@ -255,6 +152,125 @@ pub(crate) async fn run_with_backend_override(
         .context("daemon: accept loop task failed during shutdown")?;
     remove_daemon_socket_on_shutdown(&socket_path)?;
     Ok(())
+}
+
+fn compile_daemon_scan_runtime(
+    detectors: Vec<DetectorSpec>,
+) -> Result<(
+    Arc<CompiledScanner>,
+    crate::orchestrator::CachedBackendRouter,
+    usize,
+)> {
+    let scan_runtime = crate::orchestrator::compile_default_scan_runtime(detectors, |error| {
+        anyhow::anyhow!("daemon: compiling scanner from detector specs: {error}")
+    })?;
+    let detector_count = scan_runtime.detector_count();
+    // The daemon is long-lived and serves many scan requests; pay the lazy
+    // regex compile once, up front and in parallel, so no client request eats a
+    // detector's first-use compile latency.
+    scan_runtime.warm();
+    let (scanner, router) = scan_runtime.into_parts();
+    Ok((scanner, router, detector_count))
+}
+
+fn bind_trusted_daemon_socket(socket_path: &Path) -> Result<UnixListener> {
+    if let Some(parent) = socket_path.parent() {
+        trust::ensure_private_socket_dir(parent)?;
+    }
+    // Remove a stale socket file from a previous crashed instance only after the
+    // parent dir and stale socket file both pass the daemon trust checks.
+    trust::remove_stale_socket_if_trusted(socket_path)?;
+
+    let listener = UnixListener::bind(socket_path)
+        .with_context(|| format!("daemon: binding Unix socket at {}", socket_path.display()))?;
+
+    // 0600 = user-only. Without this the socket inherits the umask default which
+    // on most distros is 0644 - a co-tenant user on the same box could connect
+    // and request scans, exposing every credential the scanner finds.
+    trust::set_socket_mode_user_only(socket_path)?;
+    Ok(listener)
+}
+
+fn announce_daemon_ready(socket_path: &Path, detector_count: usize) {
+    eprintln!(
+        "keyhog daemon ready on {} ({} detectors, wire={})",
+        socket_path.display(),
+        detector_count,
+        WIRE_VERSION,
+    );
+}
+
+fn spawn_accept_loop(
+    listener: UnixListener,
+    state: Arc<ServerState>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(run_accept_loop(listener, state))
+}
+
+async fn run_accept_loop(listener: UnixListener, state: Arc<ServerState>) {
+    loop {
+        tokio::select! {
+            _ = state.shutdown.notified() => break,
+            conn = listener.accept() => {
+                match conn {
+                    Ok((stream, _addr)) => {
+                        if spawn_connection_handler(state.clone(), stream).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        if handle_accept_error(&state, e).await {
+                            continue;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn spawn_connection_handler(
+    state: Arc<ServerState>,
+    stream: UnixStream,
+) -> std::result::Result<(), ()> {
+    let limiter = state.connection_limit.clone();
+    // Backpressure: refuse to spawn another handler until a permit is available.
+    // A permit drop at the end of the spawned task releases the slot.
+    let permit = limiter.acquire_owned().await.map_err(|_closed| ())?;
+    tokio::spawn(async move {
+        let _permit = permit;
+        if let Err(e) = handle_connection(state, stream).await {
+            tracing::warn!("daemon: connection ended with error: {e:#}");
+        }
+    });
+    Ok(())
+}
+
+async fn handle_accept_error(state: &ServerState, error: std::io::Error) -> bool {
+    // Law 10: a swallowed accept() error silently kills the daemon's ability to
+    // serve while the process stays alive. Surface it loudly and either recover
+    // from transient bursts or notify shutdown for fatal listener failure.
+    if is_transient_accept_error(&error) {
+        let palette = style::for_stderr();
+        eprintln!(
+            "{} keyhog daemon: accept() failed transiently ({error}); \
+             backing off and continuing to serve",
+            style::warn("WARN", &palette)
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        return true;
+    }
+
+    let palette = style::for_stderr();
+    eprintln!(
+        "{} keyhog daemon: listener accept failed fatally ({error}); \
+         the daemon can no longer accept connections and is \
+         shutting down. Restart it with `keyhog daemon start`.",
+        style::fail("FAIL", &palette)
+    );
+    state.shutdown.notify_waiters();
+    false
 }
 
 fn remove_daemon_socket_on_shutdown(socket_path: &std::path::Path) -> Result<()> {

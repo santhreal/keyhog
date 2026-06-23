@@ -34,4 +34,23 @@ fn daemon_server_non_empty() {
             && !prod.contains("let _ = std::fs::remove_file(&socket_path)"),
         "daemon shutdown must not discard accept-loop or socket cleanup results"
     );
+    assert!(
+        prod.contains("fn compile_daemon_scan_runtime(")
+            && prod.contains("fn bind_trusted_daemon_socket(")
+            && prod.contains("fn spawn_accept_loop(")
+            && prod.contains("async fn run_accept_loop(")
+            && prod.contains("async fn handle_accept_error("),
+        "daemon server lifecycle must have named owners for compile, trusted bind, accept loop, and accept errors"
+    );
+    let run_body = prod
+        .split("pub(crate) async fn run_with_backend_override(")
+        .nth(1)
+        .and_then(|tail| tail.split("fn compile_daemon_scan_runtime(").next())
+        .expect("run_with_backend_override before compile helper");
+    assert!(
+        !run_body.contains("UnixListener::bind")
+            && !run_body.contains("listener.accept()")
+            && !run_body.contains("trust::set_socket_mode_user_only"),
+        "run_with_backend_override must delegate trusted bind/chmod and accept-loop internals"
+    );
 }
