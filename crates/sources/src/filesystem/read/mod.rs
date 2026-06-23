@@ -24,7 +24,7 @@ pub(super) use bytes::read_file_for_compressed_input;
 /// parity + no-duplication).
 pub(crate) use decode::decode_text_file;
 pub(super) use raw::{read_file_buffered, read_file_mmap, read_file_safe, BufferedFileRead};
-pub(super) use window::read_file_windowed_mmap;
+pub(super) use window::for_each_file_windowed_mmap;
 
 /// Cap on any mmap-based read. The walker already enforces the user's
 /// `max_file_size` based on a stat before scheduling; this is the
@@ -50,7 +50,10 @@ pub(crate) fn read_file_safe_capped_for_test(
 }
 
 pub(crate) fn read_file_mmap_for_test(path: &std::path::Path) -> Option<String> {
-    raw::read_file_mmap(path)
+    match raw::read_file_mmap(path) {
+        Some(raw::BufferedFileRead::Text(text)) => Some(text),
+        _ => None,
+    }
 }
 
 pub(crate) fn read_file_for_compressed_input_for_test(

@@ -45,6 +45,26 @@ pub(in crate::filesystem) fn read_file_windowed_mmap(
     window_size: usize,
     overlap: usize,
 ) -> Option<Vec<FileWindow>> {
+    let mut windows = Vec::new();
+    for_each_file_windowed_mmap(path, window_size, overlap, |window| {
+        windows.push(window);
+        true
+    })?;
+    Some(windows)
+}
+
+/// Memory-map `path` and emit overlapping windows one at a time.
+///
+/// This is the production path. It keeps only the current decoded window live
+/// instead of retaining every `String` in a `Vec<FileWindow>` before the scanner
+/// sees the first chunk. The collecting sibling above remains for tests and
+/// count-only facades.
+pub(in crate::filesystem) fn for_each_file_windowed_mmap(
+    path: &Path,
+    window_size: usize,
+    overlap: usize,
+    mut emit: impl FnMut(FileWindow) -> bool,
+) -> Option<()> {
     debug_assert!(window_size > overlap, "window must exceed overlap");
     let file = open_file_safe(path).ok()?; // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
 
@@ -62,7 +82,8 @@ pub(in crate::filesystem) fn read_file_windowed_mmap(
                 cap = MMAP_TOCTOU_SANITY_CAP_BYTES,
                 "refusing to windowed-mmap file: live size exceeds sanity cap (likely TOCTOU growth)"
             );
-            return None;
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            return Some(());
         }
     }
 
@@ -79,7 +100,7 @@ pub(in crate::filesystem) fn read_file_windowed_mmap(
                 "large file is locked by another process; skipping to avoid scanning a torn write"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return Some(Vec::new());
+            return Some(());
         }
     }
 
@@ -117,7 +138,7 @@ pub(in crate::filesystem) fn read_file_windowed_mmap(
         }
     }
 
-    let windows = slice_into_windows(&mmap, window_size, overlap);
+    for_each_window(&mmap, window_size, overlap, |window| emit(window));
 
     #[cfg(unix)]
     {
@@ -125,7 +146,7 @@ pub(in crate::filesystem) fn read_file_windowed_mmap(
         // SAFETY: Simple advisory unlock FFI call.
         unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
     }
-    Some(windows)
+    Some(())
 }
 
 /// Count newlines in `slice` via `memchr` (SIMD-accelerated). Used to
@@ -156,13 +177,30 @@ pub(in crate::filesystem) fn slice_into_windows(
     window_size: usize,
     overlap: usize,
 ) -> Vec<FileWindow> {
+    let mut out = Vec::with_capacity(
+        bytes
+            .len()
+            .div_ceil(window_size.saturating_sub(overlap).max(1)),
+    );
+    for_each_window(bytes, window_size, overlap, |window| {
+        out.push(window);
+        true
+    });
+    out
+}
+
+fn for_each_window(
+    bytes: &[u8],
+    window_size: usize,
+    overlap: usize,
+    mut emit: impl FnMut(FileWindow) -> bool,
+) -> bool {
     assert!(window_size > overlap, "window must exceed overlap");
     if bytes.is_empty() {
-        return Vec::new();
+        return true;
     }
     let stride = window_size - overlap;
     let total = bytes.len();
-    let mut out = Vec::with_capacity(total.div_ceil(stride));
     let mut offset = 0usize;
     // Running count of newlines in `bytes[0..offset]`. Advanced by the
     // newlines in each non-overlapping stride region exactly once, so the
@@ -179,19 +217,21 @@ pub(in crate::filesystem) fn slice_into_windows(
         // boundaries (an emoji split across two windows survives via
         // `U+FFFD` rather than failing the decode).
         let text = String::from_utf8_lossy(slice).into_owned();
-        out.push(FileWindow {
+        if !emit(FileWindow {
             offset,
             base_line,
             text,
-        });
+        }) {
+            return false;
+        }
         // Stop once we've reached the tail; stride-from-here would
         // start past EOF.
         if end >= total {
-            break;
+            return true;
         }
         let next = offset + stride;
         base_line += bytecount_newlines(&bytes[offset..next]);
         offset = next;
     }
-    out
+    true
 }

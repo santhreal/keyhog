@@ -5,7 +5,7 @@
 
 use super::bytes::read_file_for_compressed_input;
 use super::decode::{decode_text_file, decode_utf16, looks_binary};
-use super::window::{read_file_windowed_mmap, slice_into_windows};
+use super::window::{for_each_file_windowed_mmap, read_file_windowed_mmap, slice_into_windows};
 
 #[test]
 fn looks_binary_empty_input_is_text() {
@@ -394,6 +394,25 @@ fn read_file_windowed_mmap_roundtrip_matches_pure_helper() {
         assert_eq!(a.offset, b.offset);
         assert_eq!(a.text, b.text);
     }
+}
+
+#[test]
+fn for_each_file_windowed_mmap_stops_on_consumer_backpressure() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("big.txt");
+    let bytes: Vec<u8> = (0..u8::MAX).cycle().take(8192).collect();
+    std::fs::write(&path, &bytes).unwrap();
+
+    let mut seen = Vec::new();
+    let mapped = for_each_file_windowed_mmap(&path, 1024, 32, |window| {
+        seen.push((window.offset, window.text.len()));
+        false
+    });
+
+    assert!(mapped.is_some(), "mmap path should own this file");
+    assert_eq!(seen.len(), 1, "consumer stop must halt window emission");
+    assert_eq!(seen[0].0, 0, "first streamed window starts at byte zero");
+    assert!(seen[0].1 >= 1024, "lossy first window should be non-empty");
 }
 
 #[test]

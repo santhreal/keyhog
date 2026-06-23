@@ -329,24 +329,31 @@ pub(super) fn process_entry(
 
     if file_size > window_size as u64 {
         let display = display_path(&path);
-        if let Some(windows) = read::read_file_windowed_mmap(&path, window_size, window_overlap) {
-            for w in windows {
-                let chunk = Ok(Chunk {
-                    data: w.text.into(),
-                    metadata: ChunkMetadata {
-                        source_type: "filesystem/windowed".to_string(),
-                        path: Some(display.clone()),
-                        base_offset: w.offset,
-                        base_line: w.base_line,
-                        mtime_ns: live_mtime_ns,
-                        size_bytes: Some(file_size),
-                        decoded_span: None,
-                        ..Default::default()
-                    },
-                });
-                if !emit(chunk) {
-                    return;
-                }
+        let mut consumer_stopped = false;
+        if read::for_each_file_windowed_mmap(&path, window_size, window_overlap, |w| {
+            let chunk = Ok(Chunk {
+                data: w.text.into(),
+                metadata: ChunkMetadata {
+                    source_type: "filesystem/windowed".to_string(),
+                    path: Some(display.clone()),
+                    base_offset: w.offset,
+                    base_line: w.base_line,
+                    mtime_ns: live_mtime_ns,
+                    size_bytes: Some(file_size),
+                    decoded_span: None,
+                    ..Default::default()
+                },
+            });
+            if !emit(chunk) {
+                consumer_stopped = true;
+                return false;
+            }
+            true
+        })
+        .is_some()
+        {
+            if consumer_stopped {
+                return;
             }
             return;
         }
@@ -453,13 +460,14 @@ pub(super) fn process_entry(
     }
 
     let content_source = if file_size >= MMAP_THRESHOLD {
-        read::read_file_mmap(&path).map(read::BufferedFileRead::Text)
+        read::read_file_mmap(&path)
     } else {
         read::read_file_buffered(&path, file_size)
     };
 
     let (content, source_type) = match content_source {
-        Some(read::BufferedFileRead::Text(text)) if !text.is_empty() => (text.into(), "filesystem"),
+        Some(read::BufferedFileRead::Text(text)) if text.is_empty() => return,
+        Some(read::BufferedFileRead::Text(text)) => (text.into(), "filesystem"),
         Some(read::BufferedFileRead::Bytes(bytes)) => {
             let strings = crate::strings::extract_printable_strings(&bytes, 8);
             if strings.is_empty() {
@@ -469,6 +477,21 @@ pub(super) fn process_entry(
             tracing::info!(
                 path = %path.display(),
                 "file is not valid text; scanning printable strings only"
+            );
+            (
+                crate::strings::join_sensitive_strings(&strings, "\n"),
+                "filesystem:binary-strings",
+            )
+        }
+        Some(read::BufferedFileRead::Mmap(mmap)) => {
+            let strings = crate::strings::extract_printable_strings(&mmap, 8);
+            if strings.is_empty() {
+                record_binary_without_printable_strings(&display_path(&path));
+                return;
+            }
+            tracing::info!(
+                path = %path.display(),
+                "file is not valid text; scanning mmap-backed printable strings only"
             );
             (
                 crate::strings::join_sensitive_strings(&strings, "\n"),

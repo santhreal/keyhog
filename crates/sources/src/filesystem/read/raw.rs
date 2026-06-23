@@ -14,6 +14,7 @@ use super::MMAP_TOCTOU_SANITY_CAP_BYTES;
 pub(in crate::filesystem) enum BufferedFileRead {
     Text(String),
     Bytes(Vec<u8>),
+    Mmap(memmap2::Mmap),
 }
 
 /// Hard ceiling on a single buffered (non-mmap) whole-file read. Set to the
@@ -156,7 +157,7 @@ pub(in crate::filesystem) fn read_file_safe(
     Ok(bytes)
 }
 
-pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<String> {
+pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileRead> {
     let mut file = match open_file_safe(path) {
         Ok(f) => f,
         Err(error) => {
@@ -223,7 +224,12 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<String> {
                 &mut (&mut file).take(MMAP_TOCTOU_SANITY_CAP_BYTES),
                 &mut bytes,
             ) {
-                Ok(_) => return super::decode::decode_text_file(&bytes),
+                Ok(_) => {
+                    return Some(match decode_text_file_owned_or_bytes(bytes) {
+                        Ok(text) => BufferedFileRead::Text(text),
+                        Err(bytes) => BufferedFileRead::Bytes(bytes),
+                    });
+                }
                 Err(error) => {
                     tracing::warn!(
                         path = %path.display(),
@@ -254,7 +260,10 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<String> {
         }
     }
 
-    let result = super::decode::decode_text_file(&mmap);
+    let result = match super::decode::decode_text_file(&mmap) {
+        Some(text) => BufferedFileRead::Text(text),
+        None => BufferedFileRead::Mmap(mmap),
+    };
 
     #[cfg(unix)]
     {
@@ -264,5 +273,5 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<String> {
         unsafe { libc::flock(fd, libc::LOCK_UN) };
     }
 
-    result
+    Some(result)
 }

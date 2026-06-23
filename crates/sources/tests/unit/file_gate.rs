@@ -95,14 +95,17 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
     assert!(
         read_mod.contains("BufferedFileRead")
             && raw.contains("enum BufferedFileRead")
+            && raw.contains("Mmap(memmap2::Mmap)")
             && raw.contains("decode_text_file_owned_or_bytes(bytes)")
             && decode.contains("fn decode_text_file_owned_or_bytes"),
-        "buffered file reads must preserve already-read bytes when text decoding rejects them"
+        "buffered and mmap file reads must preserve already-read bytes when text decoding rejects them"
     );
     assert!(
         extract.contains("Some(read::BufferedFileRead::Bytes(bytes))")
-            && extract.contains("extract_printable_strings(&bytes, 8)"),
-        "filesystem binary-strings fallback must reuse buffered bytes instead of rereading the file"
+            && extract.contains("extract_printable_strings(&bytes, 8)")
+            && extract.contains("Some(read::BufferedFileRead::Mmap(mmap))")
+            && extract.contains("extract_printable_strings(&mmap, 8)"),
+        "filesystem binary-strings fallback must reuse buffered/mmap bytes instead of rereading the file"
     );
 }
 

@@ -755,6 +755,29 @@ fn high_nul_density_binary_falls_back_to_printable_strings() {
 }
 
 #[test]
+fn mmap_binary_falls_back_to_printable_strings_without_reread() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("large-binary.dat");
+    let mut bytes = vec![0u8; 70 * 1024];
+    bytes.extend_from_slice(b"AKIAMMAPFALLBACKMARKER01");
+    bytes.extend_from_slice(&[0u8; 4096]);
+    fs::write(&path, &bytes).unwrap();
+
+    let chunks = scan_single_file(&path);
+    assert!(
+        chunks
+            .iter()
+            .any(|c| c.metadata.source_type == "filesystem:binary-strings"
+                && c.data.contains("AKIAMMAPFALLBACKMARKER01")),
+        "mmap-backed binary body must surface via printable-strings fallback; got {:?}",
+        chunks
+            .iter()
+            .map(|c| c.metadata.source_type.clone())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn binary_with_only_short_runs_yields_no_chunk() {
     // extract_printable_strings uses min_len 8. A binary file whose printable
     // runs are all < 8 chars yields an empty strings vec -> process_entry
