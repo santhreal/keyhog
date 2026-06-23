@@ -187,23 +187,6 @@ pub(crate) fn normalized_assignment_keyword_has_secret_suffix(normalized: &str) 
         || normalized.ends_with("password")
 }
 
-/// Whole-word left boundary for the generic bridge, including camelCase hinges
-/// while rejecting substring tails such as `bypass` and `xtoken`.
-pub(crate) fn keyword_has_word_boundary(line: &str, kw_start: usize) -> bool {
-    if kw_start == 0 {
-        return true;
-    }
-    let bytes = line.as_bytes();
-    let prev = bytes[kw_start - 1];
-    if !prev.is_ascii_alphabetic() {
-        return true;
-    }
-    // `prev` is a letter: the only legitimate in-word start is a camelCase
-    // hinge - a lowercase byte immediately followed by the (uppercase) keyword.
-    let kw_first = bytes[kw_start];
-    prev.is_ascii_lowercase() && kw_first.is_ascii_uppercase()
-}
-
 /// True iff the bridge captured a complete 32/48-byte hex key under a strong
 /// cryptographic keyword. Other placeholder and hash-shape gates still run.
 pub(crate) fn is_strong_keyword_anchored_hex_key(keyword: &str, value: &str) -> bool {

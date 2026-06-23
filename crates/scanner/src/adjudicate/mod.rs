@@ -11,7 +11,10 @@ use crate::suppression::NamedDetectorSuppressionCtx;
 use keyhog_core::RawMatch;
 
 pub(crate) use entropy::{EntropyFallbackSignal, EntropyGenerationSignal, EntropyShapeStage};
-pub(crate) use generic::{GenericBridgeSignal, GenericValueShapeStage};
+pub(crate) use generic::{
+    generic_bridge_bare_auth_rejected, generic_bridge_keyword_boundary_rejected,
+    GenericBridgeSignal, GenericValueShapeStage,
+};
 pub(crate) use stage::{StageId, StageOutcome, Verdict};
 
 #[derive(Debug, Clone, Copy)]

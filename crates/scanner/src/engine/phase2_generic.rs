@@ -2,16 +2,13 @@ use super::*;
 use std::cell::RefCell;
 use std::sync::LazyLock;
 
-mod auth_value;
 pub(crate) mod keywords;
 mod line_mapping;
 mod metrics;
 
-use self::auth_value::bare_auth_value_allowed;
 use self::keywords::{
     collect_generic_keyword_lines, collect_generic_keyword_lines_from_positions,
     is_strong_keyword_anchored_encoded_text_secret, is_strong_keyword_anchored_hex_key,
-    keyword_has_word_boundary,
 };
 use self::line_mapping::line_at_index;
 pub(crate) use self::metrics::{generic_profile_dump, generic_profile_reset};
@@ -185,9 +182,11 @@ impl CompiledScanner {
                 // for no precision gain. `pass` alone needs the guard because its
                 // false-substring family (`bypass=`/`compass=`) is common.
                 let keyword = keyword_match.as_str();
-                if (keyword.eq_ignore_ascii_case("pass") || keyword.eq_ignore_ascii_case("auth"))
-                    && !keyword_has_word_boundary(line, keyword_match.start())
-                {
+                if crate::adjudicate::generic_bridge_keyword_boundary_rejected(
+                    keyword,
+                    line,
+                    keyword_match.start(),
+                ) {
                     let generic_ctx = crate::adjudicate::MatchCtx::for_generic_bridge(
                         crate::adjudicate::GenericBridgeSignal::KeywordBoundary,
                     );
@@ -215,7 +214,7 @@ impl CompiledScanner {
                     continue;
                 }
                 let value = value_match.as_str();
-                if keyword.eq_ignore_ascii_case("auth") && !bare_auth_value_allowed(value) {
+                if crate::adjudicate::generic_bridge_bare_auth_rejected(keyword, value) {
                     let generic_ctx = crate::adjudicate::MatchCtx::for_generic_bridge(
                         crate::adjudicate::GenericBridgeSignal::BareAuthUnstructured,
                     );

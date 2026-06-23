@@ -246,6 +246,15 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
         "engine/phase2_generic.rs must route generic suppression telemetry through the adjudicator"
     );
     assert!(
+        adjudicate.contains("fn generic_bridge_keyword_boundary_rejected(")
+            && adjudicate.contains("fn generic_bridge_bare_auth_rejected(")
+            && !generic.contains("keyword_has_word_boundary(")
+            && !generic.contains("bare_auth_value_allowed(")
+            && !generic.contains("eq_ignore_ascii_case(\"pass\")")
+            && !generic.contains("eq_ignore_ascii_case(\"auth\")"),
+        "generic bridge keyword-boundary and bare-auth policy must live in adjudicate, not engine/phase2_generic.rs"
+    );
+    assert!(
         generic.contains("crate::adjudicate::finalize_report_candidate("),
         "engine/phase2_generic.rs finalizer checksum drops must use the adjudicator final report helper"
     );

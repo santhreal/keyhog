@@ -1,4 +1,5 @@
 use super::StageId;
+use crate::entropy::plausibility::{passes_secret_strength_checks, PlausibilityContext};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GenericBridgeSignal {
@@ -17,6 +18,46 @@ impl GenericBridgeSignal {
             Self::ValueShape(stage) => StageId::GenericValueShape(stage),
         }
     }
+}
+
+pub(crate) fn generic_bridge_keyword_boundary_rejected(
+    keyword: &str,
+    line: &str,
+    keyword_start: usize,
+) -> bool {
+    generic_bridge_keyword_requires_word_boundary(keyword)
+        && !keyword_has_word_boundary(line, keyword_start)
+}
+
+pub(crate) fn generic_bridge_bare_auth_rejected(keyword: &str, value: &str) -> bool {
+    keyword.eq_ignore_ascii_case("auth") && !bare_auth_value_allowed(value)
+}
+
+fn generic_bridge_keyword_requires_word_boundary(keyword: &str) -> bool {
+    keyword.eq_ignore_ascii_case("pass") || keyword.eq_ignore_ascii_case("auth")
+}
+
+/// Whole-word left boundary for substring-ambiguous generic bridge keywords,
+/// including camelCase hinges while rejecting substring tails such as `bypass`.
+fn keyword_has_word_boundary(line: &str, keyword_start: usize) -> bool {
+    if keyword_start == 0 {
+        return true;
+    }
+    let bytes = line.as_bytes();
+    let prev = bytes[keyword_start - 1];
+    if !prev.is_ascii_alphabetic() {
+        return true;
+    }
+    let keyword_first = bytes[keyword_start];
+    prev.is_ascii_lowercase() && keyword_first.is_ascii_uppercase()
+}
+
+fn bare_auth_value_allowed(value: &str) -> bool {
+    let context = PlausibilityContext::new(true, false);
+    crate::suppression::shape::is_structured_dotted_token(value)
+        || (!value.contains('.')
+            && value.bytes().any(|byte| !byte.is_ascii_alphanumeric())
+            && passes_secret_strength_checks(value, context))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
