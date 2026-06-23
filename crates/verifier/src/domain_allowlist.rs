@@ -16,6 +16,7 @@
 //! can be explicitly allowed, but the shared suffix must not become a wildcard
 //! license for attacker-owned tenants.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 /// Builtin map of `service` → allowed apex domains. Detectors that set
@@ -185,14 +186,33 @@ pub(crate) fn host_is_allowed(host: &str, allowlist: &[String]) -> bool {
     if host.is_empty() || allowlist.is_empty() {
         return false;
     }
-    let host = host.trim_end_matches('.').to_lowercase();
+    let host = lowercase_domain_if_needed(host.trim_end_matches('.'));
     allowlist.iter().any(|allowed| {
-        let allowed = allowed.trim_end_matches('.').to_lowercase();
+        let allowed = allowed.trim_end_matches('.');
+        if allowed.is_empty() {
+            return false;
+        }
+        let allowed = lowercase_domain_if_needed(allowed);
         if host == allowed {
             return true;
         }
-        !is_exact_only_shared_tenant_suffix(&allowed) && host.ends_with(&format!(".{allowed}"))
+        !is_exact_only_shared_tenant_suffix(&allowed)
+            && host_is_subdomain_of_allowed(&host, &allowed)
     })
+}
+
+fn lowercase_domain_if_needed(value: &str) -> Cow<'_, str> {
+    if value.chars().any(char::is_uppercase) {
+        Cow::Owned(value.to_lowercase())
+    } else {
+        Cow::Borrowed(value)
+    }
+}
+
+fn host_is_subdomain_of_allowed(host: &str, allowed: &str) -> bool {
+    host.len() > allowed.len()
+        && host.ends_with(allowed)
+        && host.as_bytes()[host.len() - allowed.len() - 1] == b'.'
 }
 
 fn is_exact_only_shared_tenant_suffix(domain: &str) -> bool {

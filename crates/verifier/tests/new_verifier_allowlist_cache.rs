@@ -150,6 +150,7 @@ fn host_trailing_dot_normalized() {
 #[test]
 fn host_case_insensitive() {
     assert!(TestApi.host_is_allowed("API.GitHub.COM", &["github.com".to_string()]));
+    assert!(TestApi.host_is_allowed("api.github.com", &["GitHub.COM.".to_string()]));
 }
 
 #[test]
