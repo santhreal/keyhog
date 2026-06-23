@@ -20,7 +20,7 @@ pub(crate) mod fast_neon;
 #[cfg(target_arch = "x86_64")]
 pub(crate) mod fast_x86;
 
-pub use scanner::{find_entropy_secrets, find_entropy_secrets_with_threshold, is_sensitive_file};
+pub use scanner::{find_entropy_secrets, find_entropy_secrets_with_threshold};
 
 /// Threshold for keyword-context entropy detection.
 pub const LOW_ENTROPY_THRESHOLD: f64 = 3.0;

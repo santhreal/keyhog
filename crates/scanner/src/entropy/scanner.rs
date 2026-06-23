@@ -51,28 +51,6 @@ pub(crate) fn credential_keyword_context_with_lift(
     }
 }
 
-/// Determine whether a file path represents a clearly sensitive file.
-pub fn is_sensitive_file(path: Option<&str>) -> bool {
-    let Some(path) = path else { return false };
-    // Case-insensitive suffix check without allocating a lowercased
-    // copy of the entire path on every call. Compares the trailing
-    // bytes of `path` against the literal extension byte-for-byte.
-    const EXTS: &[&[u8]] = &[
-        b".env",
-        b".pem",
-        b".key",
-        b".secrets",
-        b".tfvars",
-        b".p12",
-        b".pkcs12",
-        b".jks",
-    ];
-    let bytes = path.as_bytes();
-    EXTS.iter().any(|ext| {
-        bytes.len() >= ext.len() && bytes[bytes.len() - ext.len()..].eq_ignore_ascii_case(ext)
-    })
-}
-
 /// Find secret-like tokens using entropy heuristics near likely credential context.
 pub fn find_entropy_secrets(
     text: &str,

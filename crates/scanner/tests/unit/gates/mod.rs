@@ -139,6 +139,7 @@ pub mod entropy_plausibility_non_empty;
 pub mod entropy_scanner_no_inline_tests;
 pub mod entropy_scanner_no_unwrap_expect;
 pub mod entropy_scanner_non_empty;
+pub mod entropy_sensitive_path_owner;
 pub mod error_no_inline_tests;
 pub mod error_no_unwrap_expect;
 pub mod error_non_empty;

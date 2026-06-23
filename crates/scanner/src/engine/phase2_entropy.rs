@@ -88,12 +88,16 @@ impl CompiledScanner {
             }
         });
 
-        let keyword_free_threshold =
-            if crate::entropy::is_sensitive_file(chunk.metadata.path.as_deref()) {
-                crate::entropy::SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD
-            } else {
-                crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD
-            };
+        let keyword_free_threshold = if chunk
+            .metadata
+            .path
+            .as_deref()
+            .is_some_and(crate::confidence::is_sensitive_path)
+        {
+            crate::entropy::SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD
+        } else {
+            crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD
+        };
 
         // With authoritative ML, credential-anchored canonical hash/UUID/serial
         // candidates may be generated for model arbitration.

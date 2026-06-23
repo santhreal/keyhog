@@ -1,3 +1,4 @@
+use keyhog_scanner::confidence::is_sensitive_path;
 use keyhog_scanner::entropy::*;
 use keyhog_scanner::telemetry::{self, DogfoodEvent, ScanTelemetry};
 use keyhog_scanner::testing::entropy_keywords::{is_candidate_plausible, is_secret_plausible};
@@ -783,12 +784,14 @@ fn entropy_is_not_appropriate_for_noisy_extensions() {
 }
 
 #[test]
-fn sensitive_files_are_detected() {
-    assert!(is_sensitive_file(Some(".env")));
-    assert!(is_sensitive_file(Some("server.pem")));
-    assert!(is_sensitive_file(Some("secrets.tfvars")));
-    assert!(!is_sensitive_file(Some("README.md")));
-    assert!(!is_sensitive_file(Some("package.json")));
+fn entropy_sensitive_paths_use_confidence_owner() {
+    assert!(is_sensitive_path(".env"));
+    assert!(is_sensitive_path(".env.local"));
+    assert!(is_sensitive_path("config/credentials.json"));
+    assert!(is_sensitive_path("server.pem"));
+    assert!(is_sensitive_path("secrets.tfvars"));
+    assert!(!is_sensitive_path("README.md"));
+    assert!(!is_sensitive_path("package.json"));
 }
 
 #[test]
