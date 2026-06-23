@@ -8,6 +8,16 @@ use std::sync::Arc;
 
 use keyhog_core::SensitiveString;
 
+#[cfg(feature = "ml")]
+pub(crate) fn ml_context_for_candidate(text: &str, line: usize, file_path: Option<&str>) -> String {
+    let text_context =
+        crate::pipeline::local_context_window(text, line, crate::types::ML_CONTEXT_RADIUS_LINES);
+    match file_path {
+        Some(path) => format!("file:{path}\n{text_context}"),
+        None => text_context.to_string(),
+    }
+}
+
 /// Queued ML match waiting for batch inference at the end of a scan.
 #[cfg(feature = "ml")]
 #[derive(Debug, Clone)]

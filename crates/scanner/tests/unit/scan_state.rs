@@ -1,5 +1,7 @@
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use keyhog_scanner::scan_state::{RawMatchPriority, ScanState};
+#[cfg(feature = "ml")]
+use keyhog_scanner::testing::ml_context_for_candidate;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -93,4 +95,19 @@ fn push_match_lazy_builds_only_for_admitted_candidates() {
         .map(|m| m.credential.to_string())
         .collect();
     assert_eq!(kept, ["admitted"]);
+}
+
+#[test]
+#[cfg(feature = "ml")]
+fn ml_context_for_candidate_has_one_path_prefix_owner() {
+    let text = "zero\none\ntwo\nthree\nfour";
+
+    assert_eq!(
+        ml_context_for_candidate(text, 3, Some("src/lib.rs")),
+        "file:src/lib.rs\nzero\none\ntwo\nthree\nfour"
+    );
+    assert_eq!(
+        ml_context_for_candidate(text, 3, None),
+        "zero\none\ntwo\nthree\nfour"
+    );
 }

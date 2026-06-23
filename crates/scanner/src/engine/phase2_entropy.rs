@@ -214,15 +214,11 @@ impl CompiledScanner {
             #[cfg(feature = "ml")]
             if self.config.ml_enabled && self.config.entropy_ml_authoritative {
                 let raw_match = build_raw_match(scan_state, confidence);
-                let text_context = crate::pipeline::local_context_window(
+                let ml_context = crate::types::ml_context_for_candidate(
                     &preprocessed.text,
                     entropy_match.line,
-                    crate::types::ML_CONTEXT_RADIUS_LINES,
+                    chunk.metadata.path.as_deref(),
                 );
-                let ml_context = match chunk.metadata.path.as_deref() {
-                    Some(path) => format!("file:{path}\n{text_context}"),
-                    None => text_context.to_string(),
-                };
                 scan_state
                     .ml_pending
                     .push(crate::types::MlPendingMatch::entropy_authoritative(

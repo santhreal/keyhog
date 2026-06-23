@@ -18,6 +18,11 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         "/src/engine/scan_postprocess/ml.rs"
     ))
     .expect("scan_postprocess/ml.rs readable");
+    let policy = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/confidence/policy.rs"
+    ))
+    .expect("confidence/policy.rs readable");
     let gpu = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu.rs"))
         .expect("gpu.rs readable");
     let backend =
@@ -65,13 +70,23 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
             && entropy.contains("MlPendingMatch::entropy_authoritative(")
             && process.contains("ml_enabled: self.config.ml_enabled")
             && entropy.contains("if self.config.ml_enabled && self.config.entropy_ml_authoritative")
+            && process.contains("crate::types::ml_context_for_candidate(")
+            && entropy.contains("crate::types::ml_context_for_candidate(")
             && !process.contains("MlPendingMatch {")
             && !entropy.contains("MlPendingMatch {")
             && ml_postprocess.contains("is_named_detector: pending.is_named_detector")
             && !ml_postprocess.contains(
                 "is_service_anchored_detector(\n                    &pending.raw_match.detector_id"
-            ),
+        ),
         "ML pending finalization must preserve the producer's weak-anchor-aware named-detector classification"
+    );
+    assert!(
+        scan_state.contains("fn ml_context_for_candidate(")
+            && !policy.contains("local_context_window(")
+            && !policy.contains("file:{path}")
+            && !process.contains("format!(\"file:{path}")
+            && !entropy.contains("format!(\"file:{path}"),
+        "ML context formatting must have one owner outside confidence policy"
     );
     assert!(
         gpu.contains("let score_features_on_cpu = || -> Vec<f64>")

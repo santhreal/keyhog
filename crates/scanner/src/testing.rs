@@ -522,6 +522,10 @@ pub fn is_within_hex_context(data: &str, match_start: usize, match_end: usize) -
 pub fn local_context_window(text: &str, line: usize, radius: usize) -> &str {
     crate::pipeline::local_context_window(text, line, radius)
 }
+#[cfg(feature = "ml")]
+pub fn ml_context_for_candidate(text: &str, line: usize, file_path: Option<&str>) -> String {
+    crate::scan_state::ml_context_for_candidate(text, line, file_path)
+}
 pub fn match_entropy(data: &[u8]) -> f64 {
     crate::pipeline::match_entropy(data)
 }

@@ -9,7 +9,6 @@ pub(crate) enum MlScoreResult<'a> {
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
         credential: std::borrow::Cow<'a, str>,
-        ml_context: std::borrow::Cow<'a, str>,
     },
     /// Zero-sized placeholder that keeps the `'a` lifetime live when ML batch
     /// scoring is compiled out (lean / `--no-default-features` build). Never
@@ -95,14 +94,6 @@ pub(crate) struct CandidateMatchScorePolicy<'a> {
     pub(crate) ml_enabled: bool,
     pub(crate) credential: &'a str,
     pub(crate) is_named_detector: bool,
-    #[cfg(feature = "ml")]
-    pub(crate) data: &'a str,
-    #[cfg(feature = "ml")]
-    pub(crate) line: usize,
-    #[cfg(feature = "ml")]
-    pub(crate) file_path: Option<&'a str>,
-    #[cfg(feature = "ml")]
-    pub(crate) ml_context_radius_lines: usize,
 }
 
 pub(crate) fn match_heuristic_confidence(policy: MatchHeuristicConfidencePolicy) -> f64 {
@@ -153,21 +144,10 @@ pub(crate) fn candidate_match_score<'a>(
         {
             MlScoreResult::Final(confidence)
         } else {
-            let text_context = crate::pipeline::local_context_window(
-                policy.data,
-                policy.line,
-                policy.ml_context_radius_lines,
-            );
-            let ml_context = match policy.file_path {
-                Some(path) => format!("file:{path}\n{text_context}"),
-                None => text_context.to_string(),
-            };
-
             MlScoreResult::Pending {
                 heuristic_conf,
                 code_context: policy.code_context,
                 credential: std::borrow::Cow::Borrowed(policy.credential),
-                ml_context: std::borrow::Cow::Owned(ml_context),
             }
         }
     };

@@ -419,4 +419,6 @@ pub use crate::scanner_config::{ScannerConfig, ScannerTuningConfig};
 // record); re-export it under the same gate so the lean / `--no-default-features`
 // build resolves the import set instead of failing with E0432.
 #[cfg(feature = "ml")]
+pub(crate) use crate::scan_state::ml_context_for_candidate;
+#[cfg(feature = "ml")]
 pub(crate) use crate::scan_state::MlPendingMatch;

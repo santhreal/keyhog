@@ -276,14 +276,6 @@ impl CompiledScanner {
                 ml_enabled: self.config.ml_enabled,
                 credential,
                 is_named_detector,
-                #[cfg(feature = "ml")]
-                data,
-                #[cfg(feature = "ml")]
-                line,
-                #[cfg(feature = "ml")]
-                file_path: chunk.metadata.path.as_deref(),
-                #[cfg(feature = "ml")]
-                ml_context_radius_lines: crate::types::ML_CONTEXT_RADIUS_LINES,
             },
         ) else {
             let scoring_ctx = crate::adjudicate::MatchCtx::for_process_signals(
@@ -345,10 +337,14 @@ impl CompiledScanner {
                 heuristic_conf,
                 code_context,
                 credential: pending_credential,
-                ml_context,
             } => {
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
+                let ml_context = crate::types::ml_context_for_candidate(
+                    data,
+                    line,
+                    chunk.metadata.path.as_deref(),
+                );
                 let raw_match = build_raw_match(
                     detector,
                     self.interned_detector_metadata(entry.detector_index),
@@ -369,7 +365,7 @@ impl CompiledScanner {
                         heuristic_conf,
                         code_context,
                         pending_credential.into_owned(),
-                        ml_context.into_owned(),
+                        ml_context,
                         min_confidence_floor,
                         is_named_detector,
                     ));
