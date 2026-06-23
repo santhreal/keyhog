@@ -117,6 +117,7 @@ fn report_confidence_tail_routes_through_confidence_owner() {
     for required in [
         "struct ReportAdjudicationPolicy",
         "fn finalize_report_candidate(",
+        "fn finalize_report_raw_match(",
         "finalize_report_confidence(",
         "record_checksum_invalid_suppression(",
         "MatchCtx::for_final_emit(",
@@ -135,11 +136,22 @@ fn report_confidence_tail_routes_through_confidence_owner() {
         "engine/phase2_generic.rs",
     ] {
         let code = uncommented_code(&read(&src.join(path)));
+        let expected_finalizer = if path == "engine/scan_postprocess/ml.rs" {
+            "crate::adjudicate::finalize_report_raw_match("
+        } else {
+            "crate::adjudicate::finalize_report_candidate("
+        };
         assert!(
-            code.contains("crate::adjudicate::finalize_report_candidate(")
+            code.contains(expected_finalizer)
                 && code.contains("crate::adjudicate::ReportAdjudicationPolicy"),
             "{path} must route final report confidence through adjudicate"
         );
+        if path == "engine/scan_postprocess/ml.rs" {
+            assert!(
+                !code.contains("raw_match.confidence ="),
+                "{path} must not mutate RawMatch confidence outside adjudicate"
+            );
+        }
         for forbidden in [
             "super::scoring::finalize_report_confidence(",
             "super::scoring::ReportConfidencePolicy",

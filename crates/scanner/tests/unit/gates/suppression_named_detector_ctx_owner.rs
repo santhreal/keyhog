@@ -276,12 +276,13 @@ fn entropy_and_ml_emit_reject_reasons_route_through_adjudicator() {
         "engine/phase2_entropy.rs finalizer checksum drops must use the adjudicator final report helper"
     );
     assert!(
-        ml.contains("crate::adjudicate::finalize_report_candidate("),
-        "engine/scan_postprocess/ml.rs must route pending-match suppressions through the adjudicator final report helper"
+        ml.contains("crate::adjudicate::finalize_report_raw_match("),
+        "engine/scan_postprocess/ml.rs must route pending-match suppressions through the adjudicator raw-match final report helper"
     );
     assert!(
-        ml.contains("crate::adjudicate::finalize_report_candidate("),
-        "engine/scan_postprocess/ml.rs checksum drops must use the adjudicator final report helper"
+        ml.contains("crate::adjudicate::finalize_report_raw_match(")
+            && !ml.contains("raw_match.confidence ="),
+        "engine/scan_postprocess/ml.rs checksum drops and confidence assignment must use the adjudicator raw-match final report helper"
     );
     for (path, code) in [
         ("engine/phase2_entropy.rs", entropy.as_str()),
@@ -505,10 +506,11 @@ fn final_emit_context_hard_suppression_stays_out_of_scoring_owner() {
             && adjudicate.contains("StageId::HardSuppressedContext")
             && adjudicate.contains("fn final_emit_stage(")
             && adjudicate.contains("fn finalize_report_candidate(")
+            && adjudicate.contains("fn finalize_report_raw_match(")
             && process.contains("crate::adjudicate::finalize_report_candidate(")
             && generic.contains("crate::adjudicate::finalize_report_candidate(")
             && entropy.contains("crate::adjudicate::finalize_report_candidate(")
-            && ml.contains("crate::adjudicate::finalize_report_candidate("),
+            && ml.contains("crate::adjudicate::finalize_report_raw_match("),
         "all final emit tails must route through adjudicate final report candidate helper"
     );
     for (path, code) in [

@@ -411,6 +411,17 @@ pub(crate) fn finalize_report_candidate(
     }
 }
 
+pub(crate) fn finalize_report_raw_match(
+    mut raw_match: RawMatch,
+    credential: &str,
+    policy: ReportAdjudicationPolicy<'_>,
+) -> Option<RawMatch> {
+    let confidence =
+        finalize_report_candidate(raw_match.location.file_path.as_deref(), credential, policy)?;
+    raw_match.confidence = Some(confidence);
+    Some(raw_match)
+}
+
 pub(crate) fn record_example_suppression(
     detector: &str,
     path: Option<&str>,

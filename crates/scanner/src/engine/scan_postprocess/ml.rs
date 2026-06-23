@@ -14,16 +14,18 @@ impl CompiledScanner {
         pending: MlPendingMatch,
         final_score: f64,
     ) {
-        let Some(final_score) = crate::adjudicate::finalize_report_candidate(
-            pending.raw_match.location.file_path.as_deref(),
+        let detector_id = pending.raw_match.detector_id.clone();
+        let file_path = pending.raw_match.location.file_path.clone();
+        let Some(raw_match) = crate::adjudicate::finalize_report_raw_match(
+            pending.raw_match,
             &pending.credential,
             crate::adjudicate::ReportAdjudicationPolicy {
-                detector_id: pending.raw_match.detector_id.as_ref(),
+                detector_id: detector_id.as_ref(),
                 code_context: pending.code_context,
                 confidence: final_score,
                 min_confidence_floor: pending.min_confidence_floor,
                 penalize_test_paths: self.config.penalize_test_paths,
-                file_path: pending.raw_match.location.file_path.as_deref(),
+                file_path: file_path.as_deref(),
                 is_named_detector: pending.is_named_detector,
                 allow_encoded_text_lift: false,
                 calibration: self.config.calibration.as_deref(),
@@ -31,8 +33,6 @@ impl CompiledScanner {
         ) else {
             return;
         };
-        let mut raw_match = pending.raw_match;
-        raw_match.confidence = Some(final_score);
         scan_state.push_match(raw_match, self.config.max_matches_per_chunk);
     }
 

@@ -42,9 +42,13 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
             && ml_postprocess.contains(
                 "self.emit_finalized_pending_match(scan_state, pending, final_score)"
             )
-            && ml_postprocess.contains("crate::adjudicate::finalize_report_candidate(")
+            && ml_postprocess.contains("crate::adjudicate::finalize_report_raw_match(")
             && ml_postprocess.contains("crate::adjudicate::ReportAdjudicationPolicy"),
         "every ML-pending drain path must pass through the report finalizer and adjudicator-owned rejection stages"
+    );
+    assert!(
+        !ml_postprocess.contains("raw_match.confidence ="),
+        "ML postprocess must not mutate finalized confidence outside adjudicate"
     );
     assert!(
         scanner_config.contains("pub(crate) is_named_detector: bool")
