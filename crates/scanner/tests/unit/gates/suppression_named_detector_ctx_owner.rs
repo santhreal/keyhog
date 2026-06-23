@@ -37,6 +37,19 @@ fn uncommented_code(src: &str) -> String {
         .join("\n")
 }
 
+fn adjudicate_code(src: &Path) -> String {
+    [
+        "adjudicate/mod.rs",
+        "adjudicate/stage.rs",
+        "adjudicate/generic.rs",
+        "adjudicate/entropy.rs",
+    ]
+    .into_iter()
+    .map(|rel| uncommented_code(&read(&src.join(rel))))
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
 #[test]
 fn engine_uses_typed_named_detector_suppression_context() {
     let src = scanner_src();
@@ -102,7 +115,7 @@ fn pipeline_does_not_facade_suppression_decisions() {
 fn engine_named_detector_suppression_routes_through_adjudicator() {
     let src = scanner_src();
     let process = uncommented_code(&read(&src.join("engine/process.rs")));
-    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
+    let adjudicate = adjudicate_code(&src);
     let api = uncommented_code(&read(&src.join("suppression/api.rs")));
     assert!(
         process.contains("crate::adjudicate::record_suppression("),
@@ -125,7 +138,7 @@ fn engine_named_detector_suppression_routes_through_adjudicator() {
 fn engine_process_early_suppression_reasons_live_in_adjudicator() {
     let src = scanner_src();
     let process = uncommented_code(&read(&src.join("engine/process.rs")));
-    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
+    let adjudicate = adjudicate_code(&src);
     for reason in [
         "aws_access_key_length_invalid",
         "anthropic_legacy_length_invalid",
@@ -146,7 +159,7 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         );
         assert!(
             adjudicate.contains(&format!("\"{reason}\"")),
-            "adjudicate/mod.rs must own the {reason} suppression reason"
+            "adjudicate module must own the {reason} suppression reason"
         );
     }
     assert!(
@@ -160,7 +173,7 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
     let src = scanner_src();
     let generic = uncommented_code(&read(&src.join("engine/phase2_generic.rs")));
     let generic_shape = uncommented_code(&read(&src.join("engine/phase2_generic_shape.rs")));
-    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
+    let adjudicate = adjudicate_code(&src);
 
     assert!(
         generic.contains("crate::adjudicate::record_suppression(")
@@ -184,7 +197,7 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
         );
         assert!(
             adjudicate.contains(&format!("\"{reason}\"")),
-            "adjudicate/mod.rs must own the {reason} suppression reason"
+            "adjudicate module must own the {reason} suppression reason"
         );
     }
     for forbidden in [
@@ -227,7 +240,7 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
         );
         assert!(
             adjudicate.contains(&format!("\"{reason}\"")),
-            "adjudicate/mod.rs must own the {reason} suppression reason"
+            "adjudicate module must own the {reason} suppression reason"
         );
     }
 }
@@ -237,7 +250,7 @@ fn entropy_and_ml_emit_reject_reasons_route_through_adjudicator() {
     let src = scanner_src();
     let entropy = uncommented_code(&read(&src.join("engine/phase2_entropy.rs")));
     let ml = uncommented_code(&read(&src.join("engine/scan_postprocess/ml.rs")));
-    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
+    let adjudicate = adjudicate_code(&src);
 
     assert!(
         entropy.contains("crate::adjudicate::record_suppression(")
@@ -273,7 +286,7 @@ fn entropy_and_ml_emit_reject_reasons_route_through_adjudicator() {
         );
         assert!(
             adjudicate.contains(&format!("\"{reason}\"")),
-            "adjudicate/mod.rs must own the {reason} suppression reason"
+            "adjudicate module must own the {reason} suppression reason"
         );
     }
 }
@@ -283,7 +296,7 @@ fn entropy_fallback_shape_gauntlet_returns_adjudicator_stage() {
     let src = scanner_src();
     let entropy = uncommented_code(&read(&src.join("engine/phase2_entropy.rs")));
     let gates = uncommented_code(&read(&src.join("engine/phase2_entropy/gates.rs")));
-    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
+    let adjudicate = adjudicate_code(&src);
 
     assert!(
         gates.contains("fn entropy_match_suppression_stage(")
@@ -312,7 +325,7 @@ fn entropy_fallback_shape_gauntlet_returns_adjudicator_stage() {
     assert!(
         adjudicate.contains("enum EntropyShapeStage")
             && adjudicate.contains("\"entropy_random_base64_blob\""),
-        "adjudicate/mod.rs must own entropy fallback suppression stage names"
+        "adjudicate module must own entropy fallback suppression stage names"
     );
 }
 
@@ -322,7 +335,7 @@ fn entropy_generation_plausibility_rejections_route_through_adjudicator() {
     let scanner = uncommented_code(&read(&src.join("entropy/scanner.rs")));
     let isolated = uncommented_code(&read(&src.join("entropy/isolated.rs")));
     let keywords = uncommented_code(&read(&src.join("entropy/keywords.rs")));
-    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
+    let adjudicate = adjudicate_code(&src);
 
     assert!(
         scanner.contains("fn candidate_plausibility_rejection_stage(")
@@ -380,7 +393,7 @@ fn entropy_generation_plausibility_rejections_route_through_adjudicator() {
         );
         assert!(
             adjudicate.contains(&format!("\"{reason}\"")),
-            "adjudicate/mod.rs must own the {reason} suppression reason"
+            "adjudicate module must own the {reason} suppression reason"
         );
     }
 }
@@ -452,7 +465,7 @@ fn decoded_postprocess_example_drops_route_through_adjudicator() {
 #[test]
 fn final_emit_context_hard_suppression_stays_out_of_scoring_owner() {
     let src = scanner_src();
-    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
+    let adjudicate = adjudicate_code(&src);
     let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
     let process = uncommented_code(&read(&src.join("engine/process.rs")));
     let generic = uncommented_code(&read(&src.join("engine/phase2_generic.rs")));
