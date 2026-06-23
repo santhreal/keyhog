@@ -116,7 +116,15 @@ fn stream_added_lines(
 
     // Run git diff to get unified diff output
     let mut command = Command::new(super::git_bin()?);
-    command.args(["-C", &repo_arg, "diff", "-U0", "--end-of-options"]);
+    command.args([
+        "-C",
+        &repo_arg,
+        "diff",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        "-U0",
+        "--end-of-options",
+    ]);
     command.arg(&base_commit);
     if let Some(head_commit) = head_commit.as_deref() {
         command.arg(head_commit);

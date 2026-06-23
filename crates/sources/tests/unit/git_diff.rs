@@ -323,6 +323,12 @@ fn git_diff_source_scans_quoted_tab_path_headers() {
         "clean = true\nQUOTED_TAB_SECRET = ghp_quotedTabPathHeader0000000000001\n",
         "Add quoted path secret",
     );
+    let config = Command::new("git")
+        .args(["config", "diff.noprefix", "true"])
+        .current_dir(&repo_path)
+        .output()
+        .expect("failed to set diff.noprefix");
+    assert!(config.status.success(), "git config failed: {config:?}");
 
     let source = GitDiffSource::new(repo_path, "main").with_head_ref("feature");
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
@@ -333,7 +339,49 @@ fn git_diff_source_scans_quoted_tab_path_headers() {
 
     assert_eq!(
         chunk.metadata.path.as_deref(),
-        Some("tab\\tfile.txt"),
-        "quoted git path metadata must stay printable without dropping the hunk"
+        Some("tab\tfile.txt"),
+        "quoted git path metadata must be exact and prefix-stable without dropping the hunk"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
+fn git_diff_source_decodes_quoted_quote_and_utf8_paths() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(&repo_path, "seed.txt", "clean = true\n", "Initial");
+    Command::new("git")
+        .args(["checkout", "-b", "feature"])
+        .current_dir(&repo_path)
+        .output()
+        .unwrap();
+    commit_file(
+        &repo_path,
+        "quote\"x.txt",
+        "QUOTE_PATH_SECRET = ghp_quotedQuotePathHeader0000000001\n",
+        "Add quote path secret",
+    );
+    commit_file(
+        &repo_path,
+        "unic\u{f6}de.txt",
+        "UTF8_PATH_SECRET = ghp_quotedUtf8PathHeader00000000001\n",
+        "Add utf8 path secret",
+    );
+
+    let source = GitDiffSource::new(repo_path, "main").with_head_ref("feature");
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+
+    let quote_chunk = chunks
+        .iter()
+        .find(|chunk| chunk.data.contains("ghp_quotedQuotePathHeader0000000001"))
+        .expect("git-diff must scan added lines for quoted double-quote paths");
+    assert_eq!(quote_chunk.metadata.path.as_deref(), Some("quote\"x.txt"));
+
+    let utf8_chunk = chunks
+        .iter()
+        .find(|chunk| chunk.data.contains("ghp_quotedUtf8PathHeader00000000001"))
+        .expect("git-diff must scan added lines for quoted UTF-8 paths");
+    assert_eq!(
+        utf8_chunk.metadata.path.as_deref(),
+        Some("unic\u{f6}de.txt")
     );
 }

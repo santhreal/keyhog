@@ -241,6 +241,12 @@ fn git_history_source_scans_quoted_tab_path_headers() {
         "QUOTED_HISTORY_SECRET = ghp_quotedHistoryPathHeader00001\n",
         "Add quoted path secret",
     );
+    let config = Command::new("git")
+        .args(["config", "diff.noprefix", "true"])
+        .current_dir(&repo_path)
+        .output()
+        .expect("failed to set diff.noprefix");
+    assert!(config.status.success(), "git config failed: {config:?}");
 
     let chunks: Vec<_> = GitHistorySource::new(repo_path)
         .with_max_commits(1)
@@ -254,8 +260,47 @@ fn git_history_source_scans_quoted_tab_path_headers() {
 
     assert_eq!(
         chunk.metadata.path.as_deref(),
-        Some("tab\\tfile.txt"),
-        "quoted git path metadata must stay printable without dropping the hunk"
+        Some("tab\tfile.txt"),
+        "quoted git path metadata must be exact and prefix-stable without dropping the hunk"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
+fn git_history_source_decodes_quoted_quote_and_utf8_paths() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(
+        &repo_path,
+        "quote\"x.txt",
+        "QUOTE_HISTORY_SECRET = ghp_quotedHistoryQuotePath0000001\n",
+        "Add quote path secret",
+    );
+    commit_file(
+        &repo_path,
+        "unic\u{f6}de.txt",
+        "UTF8_HISTORY_SECRET = ghp_quotedHistoryUtf8Path00000001\n",
+        "Add utf8 path secret",
+    );
+
+    let chunks: Vec<_> = GitHistorySource::new(repo_path)
+        .with_max_commits(2)
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    let quote_chunk = chunks
+        .iter()
+        .find(|chunk| chunk.data.contains("ghp_quotedHistoryQuotePath0000001"))
+        .expect("git-history must scan added lines for quoted double-quote paths");
+    assert_eq!(quote_chunk.metadata.path.as_deref(), Some("quote\"x.txt"));
+
+    let utf8_chunk = chunks
+        .iter()
+        .find(|chunk| chunk.data.contains("ghp_quotedHistoryUtf8Path00000001"))
+        .expect("git-history must scan added lines for quoted UTF-8 paths");
+    assert_eq!(
+        utf8_chunk.metadata.path.as_deref(),
+        Some("unic\u{f6}de.txt")
     );
 }
 

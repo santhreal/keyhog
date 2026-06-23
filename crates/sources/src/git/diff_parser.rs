@@ -108,12 +108,13 @@ fn sanitize_path_bytes_with_status(path: &[u8]) -> (Option<String>, bool) {
 }
 
 fn sanitize_path_bytes(path: &[u8]) -> Option<String> {
-    sanitize_path_bytes_inner(path, true, true)
+    sanitize_path_bytes_inner(path, true, true, false)
 }
 
 fn sanitize_quoted_git_path_with_status(path_after_open_quote: &[u8]) -> (Option<String>, bool) {
     match quoted_git_path_body(path_after_open_quote)
-        .and_then(|path| sanitize_path_bytes_inner(path, false, false))
+        .and_then(unescape_quoted_git_path_body)
+        .and_then(|path| sanitize_path_bytes_inner(&path, false, true, true))
     {
         Some(path) => (Some(path), false),
         None => (None, true),
@@ -138,10 +139,61 @@ fn quoted_git_path_body(path_after_open_quote: &[u8]) -> Option<&[u8]> {
     None
 }
 
+fn unescape_quoted_git_path_body(body: &[u8]) -> Option<Vec<u8>> {
+    let mut output = Vec::with_capacity(body.len());
+    let mut index = 0;
+    while index < body.len() {
+        let byte = body[index];
+        if byte != b'\\' {
+            output.push(byte);
+            index += 1;
+            continue;
+        }
+
+        index += 1;
+        let escaped = *body.get(index)?;
+        if escaped.is_ascii_digit() && escaped < b'8' {
+            let mut value = u16::from(escaped - b'0');
+            index += 1;
+            for _ in 0..2 {
+                let Some(&next) = body.get(index) else {
+                    break;
+                };
+                if !next.is_ascii_digit() || next >= b'8' {
+                    break;
+                }
+                value = (value * 8) + u16::from(next - b'0');
+                index += 1;
+            }
+            if value > u16::from(u8::MAX) {
+                return None;
+            }
+            output.push(value as u8);
+            continue;
+        }
+
+        output.push(match escaped {
+            b'\\' => b'\\',
+            b'"' => b'"',
+            b'n' => b'\n',
+            b't' => b'\t',
+            b'r' => b'\r',
+            b'b' => 0x08,
+            b'a' => 0x07,
+            b'f' => 0x0c,
+            b'v' => 0x0b,
+            other => other,
+        });
+        index += 1;
+    }
+    Some(output)
+}
+
 fn sanitize_path_bytes_inner(
     path: &[u8],
     trim_whitespace: bool,
     backslash_is_separator: bool,
+    allow_control_bytes: bool,
 ) -> Option<String> {
     let path = if trim_whitespace {
         trim_ascii_whitespace(path)
@@ -151,7 +203,7 @@ fn sanitize_path_bytes_inner(
     if path.is_empty() || path == b"/dev/null" {
         return None;
     }
-    if path.iter().any(|byte| byte.is_ascii_control()) {
+    if !allow_control_bytes && path.iter().any(|byte| byte.is_ascii_control()) {
         return None;
     }
 
@@ -230,11 +282,38 @@ mod tests {
             UnifiedDiffEvent::FileHeader {
                 new_path: Some(path),
                 invalid_path: false
-            } if path == "tab\\tfile.txt"
+            } if path == "tab\tfile.txt"
+        ));
+        assert!(matches!(
+            parser
+                .parse_line(b"+++ \"b/dir\\040name/quote\\\"x.txt\"", "git diff")
+                .unwrap(),
+            UnifiedDiffEvent::FileHeader {
+                new_path: Some(path),
+                invalid_path: false
+            } if path == "dir name/quote\"x.txt"
+        ));
+        assert!(matches!(
+            parser
+                .parse_line(b"+++ \"b/unic\\303\\266de.txt\"", "git diff")
+                .unwrap(),
+            UnifiedDiffEvent::FileHeader {
+                new_path: Some(path),
+                invalid_path: false
+            } if path == "unic\u{f6}de.txt"
         ));
         assert!(matches!(
             parser
                 .parse_line(b"+++ b/../secret.txt", "git diff")
+                .unwrap(),
+            UnifiedDiffEvent::FileHeader {
+                new_path: None,
+                invalid_path: true
+            }
+        ));
+        assert!(matches!(
+            parser
+                .parse_line(b"+++ \"b/..\\\\..\\\\etc\\\\passwd\"", "git diff")
                 .unwrap(),
             UnifiedDiffEvent::FileHeader {
                 new_path: None,

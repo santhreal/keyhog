@@ -98,6 +98,8 @@ fn stream_git_history_chunks(
         "--format=commit %H%nAuthor: %an <%ae>%nDate: %aI",
         "-p",
         "-m",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
         // Zero context so each hunk's `+` lines are the contiguous new-file
         // run starting at the header's `+new_start` — lets a single per-hunk
         // `base_line` map every added line to its absolute new-file line.

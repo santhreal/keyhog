@@ -15,6 +15,7 @@ fn git_diff_sources_share_byte_oriented_parser() {
         "fn sanitize_path_bytes(",
         "fn extract_new_path_from_plus_header(",
         "fn sanitize_quoted_git_path_with_status(",
+        "fn unescape_quoted_git_path_body(",
         "fn normalize_git_relative_path(",
         "quoted_git_path_body",
         "invalid_path: bool",
@@ -40,6 +41,10 @@ fn git_diff_sources_share_byte_oriented_parser() {
                 && source.contains("diff_parser.parse_line(")
                 && source.contains("UnifiedDiffEvent::"),
             "{rel} must consume shared unified-diff parser events"
+        );
+        assert!(
+            source.contains("\"--src-prefix=a/\"") && source.contains("\"--dst-prefix=b/\""),
+            "{rel} must force git patch prefixes so global diff config cannot change parser assumptions"
         );
         for forbidden in [
             "line.starts_with(b\"diff --git \")",
