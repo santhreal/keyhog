@@ -34,15 +34,7 @@ impl Phase2HsEngine {
         let mut refs: Vec<(usize, usize, &str, bool)> = Vec::with_capacity(always_active.len());
         let mut caseless: Vec<bool> = Vec::with_capacity(always_active.len());
         for &idx in always_active {
-            let Some((pat, _)) = phase2_patterns.get(idx) else {
-                tracing::warn!(
-                    target: "keyhog::phase2",
-                    index = idx,
-                    patterns = phase2_patterns.len(),
-                    "HS always-active prefilter received out-of-range phase-2 index; invalid index ignored before compile",
-                );
-                continue;
-            };
+            let (pat, _) = &phase2_patterns[idx];
             // det_idx slot carries the phase-2 index back through `pattern_info`.
             refs.push((idx, 0, pat.regex.as_str(), false));
             caseless.push(pat.regex.is_case_insensitive());

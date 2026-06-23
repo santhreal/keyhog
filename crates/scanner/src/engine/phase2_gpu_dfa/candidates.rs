@@ -10,15 +10,7 @@ pub(super) fn prefixless_always_active_candidates(
 ) -> Vec<usize> {
     let mut candidates = Vec::with_capacity(always_active_indices.len());
     for &idx in always_active_indices {
-        let Some((pattern, _)) = phase2_patterns.get(idx) else {
-            tracing::warn!(
-                target: "keyhog::gpu",
-                index = idx,
-                patterns = phase2_patterns.len(),
-                "phase-2 GPU regex-DFA admission received out-of-range always-active pattern index; invalid index ignored and CPU admission remains authoritative"
-            );
-            continue;
-        };
+        let (pattern, _) = &phase2_patterns[idx];
         if gate_prefix_literals(pattern.regex.as_str()).is_none() {
             candidates.push(idx);
         }
@@ -31,7 +23,6 @@ pub(super) fn prioritized_phase2_gpu_dfa_candidates(
     candidates: &[usize],
     max_candidates: usize,
 ) -> Vec<usize> {
-    let candidates = valid_phase2_gpu_dfa_candidates(phase2_patterns, candidates);
     let mut selected = Vec::with_capacity(candidates.len().min(max_candidates));
     let mut selected_indices = HashSet::new();
     let mut base_detectors = HashSet::new();
@@ -39,7 +30,7 @@ pub(super) fn prioritized_phase2_gpu_dfa_candidates(
 
     append_phase2_gpu_dfa_candidates(
         phase2_patterns,
-        &candidates,
+        candidates,
         max_candidates,
         &mut selected,
         &mut selected_indices,
@@ -47,7 +38,7 @@ pub(super) fn prioritized_phase2_gpu_dfa_candidates(
     );
     append_phase2_gpu_dfa_candidates(
         phase2_patterns,
-        &candidates,
+        candidates,
         max_candidates,
         &mut selected,
         &mut selected_indices,
@@ -55,7 +46,7 @@ pub(super) fn prioritized_phase2_gpu_dfa_candidates(
     );
     append_phase2_gpu_dfa_candidates(
         phase2_patterns,
-        &candidates,
+        candidates,
         max_candidates,
         &mut selected,
         &mut selected_indices,
@@ -63,7 +54,7 @@ pub(super) fn prioritized_phase2_gpu_dfa_candidates(
     );
     append_phase2_gpu_dfa_candidates(
         phase2_patterns,
-        &candidates,
+        candidates,
         max_candidates,
         &mut selected,
         &mut selected_indices,
@@ -71,26 +62,6 @@ pub(super) fn prioritized_phase2_gpu_dfa_candidates(
     );
 
     selected
-}
-
-pub(super) fn valid_phase2_gpu_dfa_candidates(
-    phase2_patterns: &[(CompiledPattern, Vec<String>)],
-    candidates: &[usize],
-) -> Vec<usize> {
-    let mut valid = Vec::with_capacity(candidates.len());
-    for &idx in candidates {
-        if phase2_patterns.get(idx).is_some() {
-            valid.push(idx);
-        } else {
-            tracing::warn!(
-                target: "keyhog::gpu",
-                index = idx,
-                patterns = phase2_patterns.len(),
-                "phase-2 GPU regex-DFA candidate selection received out-of-range pattern index; invalid index ignored before prioritization"
-            );
-        }
-    }
-    valid
 }
 
 fn append_phase2_gpu_dfa_candidates<F>(
@@ -110,15 +81,7 @@ fn append_phase2_gpu_dfa_candidates<F>(
         if selected.len() >= max_candidates {
             return;
         }
-        let Some((pattern, _)) = phase2_patterns.get(idx) else {
-            tracing::warn!(
-                target: "keyhog::gpu",
-                index = idx,
-                patterns = phase2_patterns.len(),
-                "phase-2 GPU regex-DFA candidate append received out-of-range pattern index; invalid index ignored before selection"
-            );
-            continue;
-        };
+        let (pattern, _) = &phase2_patterns[idx];
         if selected_indices.contains(&idx) || !accepts(pattern) {
             continue;
         }

@@ -23,21 +23,15 @@ fn phase2_prefilter_compile_failures_warn() {
         "RegexSet batch compile failure must warn"
     );
     assert!(
-        src.contains("phase-2 RegexSet batch received out-of-range pattern index")
-            && src.contains("phase-2 always-active prefilter received out-of-range pattern index")
-            && src.contains("ASCII-folded phase-2 RegexSet received out-of-range pattern index")
-            && src.contains("let mut valid_indices = Vec::with_capacity(chunk.len())")
-            && src.contains("phase2_indices: valid_indices")
+        src.contains(
+            "compiled scanner invariant violation: phase-2 always-active index out of range"
+        ) && src.contains("phase2_indices: chunk.to_vec()")
             && !src.contains(
                 ".filter_map(|&i| phase2_patterns.get(i).map(|(p, _)| p.regex.as_str()))"
-            ),
-        "RegexSet batch source entries and stored phase-2 indices must stay aligned"
-    );
-    assert!(
-        src.matches("crate::telemetry::record_invalid_pattern_index_skip()")
-            .count()
-            >= 3,
-        "phase2 prefilter corrupt pattern-index skips must count typed scanner coverage gaps"
+            )
+            && !src.contains("record_invalid_pattern_index_skip()")
+            && !src.contains("out-of-range pattern index"),
+        "RegexSet batch source entries and stored phase-2 indices must stay construction-owned and aligned"
     );
     assert!(
         !src.contains(".filter_map(|&i| phase2_patterns.get(i))"),
@@ -57,8 +51,9 @@ fn phase2_prefilter_compile_failures_warn() {
     );
     let phase2_hs = engine_src("phase2_hs.rs");
     assert!(
-        phase2_hs.contains("HS always-active prefilter received out-of-range phase-2 index"),
-        "Hyperscan always-active prefilter must warn before ignoring corrupt phase-2 indices"
+        !phase2_hs.contains("out-of-range phase-2 index")
+            && !phase2_hs.contains("phase2_patterns.get(idx)"),
+        "Hyperscan always-active prefilter must consume construction-owned phase-2 indices directly"
     );
     let phase2_gpu_dfa = [
         engine_src("phase2_gpu_dfa.rs"),
@@ -66,14 +61,11 @@ fn phase2_prefilter_compile_failures_warn() {
     ]
     .join("\n");
     assert!(
-        phase2_gpu_dfa.contains(
-            "phase-2 GPU regex-DFA admission received out-of-range always-active pattern index"
-        ) && phase2_gpu_dfa.contains(
-            "phase-2 GPU regex-DFA candidate selection received out-of-range pattern index"
-        ) && phase2_gpu_dfa.contains(
-            "phase-2 GPU regex-DFA candidate append received out-of-range pattern index"
-        ),
-        "GPU regex-DFA admission must warn before ignoring corrupt always-active or candidate indices"
+        !phase2_gpu_dfa.contains("out-of-range always-active pattern index")
+            && !phase2_gpu_dfa.contains("out-of-range pattern index")
+            && !phase2_gpu_dfa.contains("valid_phase2_gpu_dfa_candidates")
+            && !phase2_gpu_dfa.contains("phase2_patterns.get(idx)"),
+        "GPU regex-DFA admission must consume construction-owned phase-2 indices directly"
     );
     // Every warn site must use tracing::warn!, not debug!/silent drop.
     assert!(

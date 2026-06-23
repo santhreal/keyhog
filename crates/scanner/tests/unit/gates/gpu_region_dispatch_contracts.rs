@@ -167,10 +167,11 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
     assert!(
         gpu_dfa_candidates_src.contains("prefixless_always_active_candidates")
             && gpu_dfa_candidates_src.contains("prioritized_phase2_gpu_dfa_candidates")
-            && gpu_dfa_candidates_src.contains("valid_phase2_gpu_dfa_candidates")
+            && !gpu_dfa_candidates_src.contains("valid_phase2_gpu_dfa_candidates")
+            && !gpu_dfa_candidates_src.contains("phase2_patterns.get(idx)")
             && gpu_dfa_candidates_src.contains("gate_prefix_literals")
             && gpu_dfa_candidates_src.contains("HashSet"),
-        "phase-2 GPU DFA candidate discovery and prioritization must live in engine/phase2_gpu_dfa/candidates.rs"
+        "phase-2 GPU DFA candidate discovery and prioritization must live in engine/phase2_gpu_dfa/candidates.rs and consume construction-owned indices directly"
     );
     assert!(
         gpu_dfa_lowering_src.contains("build_shards_recursive")

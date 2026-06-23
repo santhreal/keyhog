@@ -31,26 +31,14 @@ impl Phase2AlwaysActivePrefilter {
         if always_active_indices.is_empty() {
             return None;
         }
-        let mut valid_always_active_indices: Vec<usize> =
-            Vec::with_capacity(always_active_indices.len());
-        for &index in always_active_indices {
-            match phase2_patterns.get(index) {
-                Some(_) => valid_always_active_indices.push(index),
-                None => {
-                    crate::telemetry::record_invalid_pattern_index_skip();
-                    tracing::warn!(
-                        index,
-                        patterns = phase2_patterns.len(),
-                        "phase-2 always-active prefilter received out-of-range pattern index; invalid index ignored before batch construction"
-                    );
-                }
-            }
-        }
-        if valid_always_active_indices.is_empty() {
-            return None;
-        }
+        debug_assert!(
+            always_active_indices
+                .iter()
+                .all(|&index| index < phase2_patterns.len()),
+            "compiled scanner invariant violation: phase-2 always-active index out of range"
+        );
         Some(Self {
-            valid_always_active_indices,
+            valid_always_active_indices: always_active_indices.to_vec(),
             portable: std::sync::OnceLock::new(),
             combined_gate: std::sync::OnceLock::new(),
             #[cfg(feature = "simd")]
@@ -98,18 +86,13 @@ impl Phase2AlwaysActivePrefilter {
         let mut plain_homoglyph: Vec<usize> = Vec::new();
         let mut plain_other: Vec<usize> = Vec::new();
         for &index in &self.valid_always_active_indices {
-            match phase2_patterns.get(index) {
-                Some((pattern, _)) if pattern.regex.is_case_insensitive() => ci.push(index),
-                Some((pattern, _)) if pattern.homoglyph_variant => plain_homoglyph.push(index),
-                Some(_) => plain_other.push(index),
-                None => {
-                    crate::telemetry::record_invalid_pattern_index_skip();
-                    tracing::warn!(
-                        index,
-                        patterns = phase2_patterns.len(),
-                        "phase-2 portable prefilter received out-of-range pattern index; invalid index ignored before lazy RegexSet batch construction"
-                    );
-                }
+            let (pattern, _) = &phase2_patterns[index];
+            if pattern.regex.is_case_insensitive() {
+                ci.push(index);
+            } else if pattern.homoglyph_variant {
+                plain_homoglyph.push(index);
+            } else {
+                plain_other.push(index);
             }
         }
         let mut batches = Vec::new();
@@ -348,19 +331,9 @@ impl Phase2AlwaysActivePrefilter {
         ungated_indices: &mut Vec<usize>,
     ) {
         for chunk in indices.chunks(Self::BATCH_SIZE) {
-            let mut valid_indices = Vec::with_capacity(chunk.len());
             let mut srcs = Vec::with_capacity(chunk.len());
             for &index in chunk {
-                let Some((pattern, _)) = phase2_patterns.get(index) else {
-                    crate::telemetry::record_invalid_pattern_index_skip();
-                    tracing::warn!(
-                        index,
-                        patterns = phase2_patterns.len(),
-                        "phase-2 RegexSet batch received out-of-range pattern index; dropping invalid index before building batch"
-                    );
-                    continue;
-                };
-                valid_indices.push(index);
+                let (pattern, _) = &phase2_patterns[index];
                 srcs.push(pattern.regex.as_str());
             }
             if srcs.is_empty() {
@@ -372,7 +345,7 @@ impl Phase2AlwaysActivePrefilter {
                     let ascii_set = if case_insensitive {
                         None
                     } else {
-                        Self::build_ascii_alternate(phase2_patterns, &valid_indices)
+                        Self::build_ascii_alternate(phase2_patterns, chunk)
                     };
                     let trunc_srcs: Vec<String> = srcs
                         .iter()
@@ -386,20 +359,18 @@ impl Phase2AlwaysActivePrefilter {
                         Ok(set) => set,
                         Err(error) => {
                             tracing::warn!(
-                                batch_size = valid_indices.len(),
+                                batch_size = chunk.len(),
                                 case_insensitive,
                                 %error,
                                 "phase-2 RegexSet batch recompile failed; batch will run ungated (recall preserved)"
                             );
-                            ungated_indices.extend_from_slice(&valid_indices);
+                            ungated_indices.extend_from_slice(chunk);
                             continue;
                         }
                     };
                     let ascii_set_trunc = ascii_set
                         .as_ref()
-                        .and_then(|_| {
-                            Self::build_ascii_alternate_trunc(phase2_patterns, &valid_indices)
-                        })
+                        .and_then(|_| Self::build_ascii_alternate_trunc(phase2_patterns, chunk))
                         .or_else(|| ascii_set.clone());
                     // A plain gateable batch needs its folded matcher present for
                     // the (ASCII-path) gate to describe what actually runs. If the
@@ -411,19 +382,19 @@ impl Phase2AlwaysActivePrefilter {
                         ascii_set,
                         set_trunc,
                         ascii_set_trunc,
-                        phase2_indices: valid_indices,
+                        phase2_indices: chunk.to_vec(),
                         gateable: batch_gateable,
                         homoglyph_skippable: homoglyph,
                     });
                 }
                 Err(error) => {
                     tracing::warn!(
-                        batch_size = valid_indices.len(),
+                        batch_size = chunk.len(),
                         case_insensitive,
                         %error,
                         "phase-2 RegexSet batch compile failed; batch will run ungated (recall preserved)"
                     );
-                    ungated_indices.extend_from_slice(&valid_indices);
+                    ungated_indices.extend_from_slice(chunk);
                 }
             }
         }
@@ -548,16 +519,7 @@ impl Phase2AlwaysActivePrefilter {
     ) -> Option<Vec<String>> {
         let mut folded = Vec::with_capacity(indices.len());
         for &index in indices {
-            let Some((pattern, _)) = phase2_patterns.get(index) else {
-                crate::telemetry::record_invalid_pattern_index_skip();
-                tracing::warn!(
-                    index,
-                    patterns = phase2_patterns.len(),
-                    truncate,
-                    "ASCII-folded phase-2 RegexSet received out-of-range pattern index; folded alternate disabled"
-                );
-                return None;
-            };
+            let (pattern, _) = &phase2_patterns[index];
             let source: String = pattern
                 .regex
                 .as_str()

@@ -1,8 +1,9 @@
 //! Migrated from src/compiler.rs & src/compiler/compiler_prefix.rs
 
 use keyhog_scanner::testing::{
-    extract_inner_literals, extract_literal_prefixes, match_proves_keyword_nearby,
-    rewrite_alternation_prefix, rewrite_homoglyph_literal_prefix, split_leading_inline_flag,
+    expand_homoglyphs, extract_inner_literals, extract_literal_prefixes,
+    match_proves_keyword_nearby, rewrite_alternation_prefix, rewrite_homoglyph_literal_prefix,
+    split_leading_inline_flag,
 };
 
 #[test]
@@ -105,6 +106,23 @@ fn homoglyph_rewrite_preserves_negative_inline_flag() {
 fn homoglyph_rewrite_consumes_escaped_literal_prefix() {
     let out = rewrite_homoglyph_literal_prefix(r"\+KEY[A-Z0-9]{8}", "+KEY", r"[\+＋]K[EЕ]Y");
     assert_eq!(out.as_deref(), Some(r"[\+＋]K[EЕ]Y[A-Z0-9]{8}"));
+}
+
+#[test]
+fn homoglyph_rewrite_escapes_regex_metachar_literal_prefix() {
+    let expanded = expand_homoglyphs("?sv=");
+    assert_eq!(expanded, r"\?[sѕｓ]v=");
+    let out = rewrite_homoglyph_literal_prefix(
+        r#"(\?sv=\d{4}-\d{2}-\d{2}&[^\s"'']*sig=[a-zA-Z0-9%]{20,})"#,
+        "?sv=",
+        &expanded,
+    )
+    .expect("capturing-group literal prefix should rewrite");
+    assert!(regex::Regex::new(&out).is_ok(), "generated regex: {out}");
+    assert!(
+        !out.starts_with("(?["),
+        "expanded literal question mark must stay escaped after group open: {out}"
+    );
 }
 
 #[test]

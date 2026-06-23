@@ -13,8 +13,6 @@ use self::batch::{
     build_packed_region_batch, build_packed_region_batch_refs, with_phase2_gpu_dfa_scratch,
     Phase2GpuDfaScratch,
 };
-#[cfg(test)]
-use self::candidates::valid_phase2_gpu_dfa_candidates;
 use self::candidates::{
     prefixless_always_active_candidates, prioritized_phase2_gpu_dfa_candidates,
 };
@@ -502,7 +500,8 @@ mod tests {
     }
 
     #[test]
-    fn gpu_dfa_candidate_selection_drops_corrupt_indices_before_prioritization() {
+    #[should_panic]
+    fn gpu_dfa_candidate_selection_fails_loud_on_corrupt_indices() {
         let patterns = vec![
             (
                 test_pattern_with_shape("base0[0-9]{2}", true, 0, false),
@@ -515,16 +514,8 @@ mod tests {
         ];
         let candidates = [usize::MAX, 1, 9, 0];
 
-        assert_eq!(
-            valid_phase2_gpu_dfa_candidates(&patterns, &candidates),
-            vec![1, 0],
-            "corrupt GPU DFA candidate indices must be filtered once before selection"
-        );
-        assert_eq!(
-            prioritized_phase2_gpu_dfa_candidates(&patterns, &candidates, 8),
-            vec![1, 0],
-            "candidate prioritization must not silently carry impossible phase-2 indices"
-        );
+        // LAW10: intentional should-panic probe for corrupt construction-owned phase-2 indices; production indices are derived from enumerate().
+        prioritized_phase2_gpu_dfa_candidates(&patterns, &candidates, 8);
     }
 
     #[test]

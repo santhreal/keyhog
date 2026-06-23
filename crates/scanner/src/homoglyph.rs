@@ -67,9 +67,34 @@ pub(crate) fn expand_homoglyphs(pattern: &str) -> String {
             }
             expanded.push(']');
         } else {
-            expanded.push(ch);
+            push_regex_literal_char(&mut expanded, ch);
         }
     }
 
     expanded
+}
+
+fn push_regex_literal_char(out: &mut String, ch: char) {
+    if matches!(
+        ch,
+        '\\' | '.'
+            | '+'
+            | '*'
+            | '?'
+            | '('
+            | ')'
+            | '|'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | '^'
+            | '$'
+            | '#'
+            | '&'
+            | '-'
+    ) {
+        out.push('\\');
+    }
+    out.push(ch);
 }
