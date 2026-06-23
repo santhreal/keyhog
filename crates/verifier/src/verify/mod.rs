@@ -30,7 +30,7 @@ use tokio::task::JoinSet;
 use crate::cache;
 use crate::{into_finding, DedupedMatch, VerificationEngine, VerifyConfig, VerifyError};
 
-pub(crate) use aws::{build_aws_probe, parse_aws_sts_success_metadata};
+pub(crate) use aws::{build_aws_probe, classify_aws_sts_failure, parse_aws_sts_success_metadata};
 pub(crate) use credential::{
     retry_delay_bounds_for_attempt, retry_loop_preserves_metadata_on_exhaustion_for_test,
     verify_with_retry, VerificationAttempt,

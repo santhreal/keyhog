@@ -436,6 +436,11 @@ pub mod testing {
             &self,
             body: &str,
         ) -> Result<HashMap<String, String>, String>;
+        fn classify_aws_sts_failure(
+            &self,
+            status: u16,
+            body: &str,
+        ) -> (keyhog_core::VerificationResult, bool);
         fn interactsh_client_for_test(
             &self,
             server: &str,
@@ -609,6 +614,14 @@ pub mod testing {
             body: &str,
         ) -> Result<HashMap<String, String>, String> {
             crate::verify::parse_aws_sts_success_metadata(body)
+        }
+
+        fn classify_aws_sts_failure(
+            &self,
+            status: u16,
+            body: &str,
+        ) -> (keyhog_core::VerificationResult, bool) {
+            crate::verify::classify_aws_sts_failure(status, body)
         }
 
         fn interactsh_client_for_test(

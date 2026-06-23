@@ -242,11 +242,26 @@ async fn build_sigv4_request(
             }
         };
         Ok((VerificationResult::Live, metadata, false))
-    } else if status == 403 {
-        Ok((VerificationResult::Dead, HashMap::new(), false))
     } else {
-        Ok((VerificationResult::RateLimited, HashMap::new(), true))
+        let (result, transient) = classify_aws_sts_failure(status, &resp_body);
+        Ok((result, HashMap::new(), transient))
     }
+}
+
+pub(crate) fn classify_aws_sts_failure(status: u16, body: &str) -> (VerificationResult, bool) {
+    if status == 403 {
+        if body.contains("RequestTimeTooSkewed") {
+            return (
+                VerificationResult::Error(
+                    "AWS STS rejected the request because system time is skewed; fix the host clock and retry verification"
+                        .into(),
+                ),
+                true,
+            );
+        }
+        return (VerificationResult::Dead, false);
+    }
+    (VerificationResult::RateLimited, true)
 }
 
 #[derive(Debug, Default, Deserialize)]
