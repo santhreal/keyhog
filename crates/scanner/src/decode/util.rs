@@ -30,6 +30,31 @@ where
 }
 
 #[allow(clippy::result_unit_err)]
+pub(crate) fn take_hex_digits_indexed<I>(chars: &mut I, count: usize) -> Result<u32, ()>
+where
+    I: Iterator<Item = (usize, char)>,
+{
+    let mut value = 0u32;
+    for _ in 0..count {
+        let digit = chars.next().ok_or(())?.1.to_digit(16).ok_or(())?;
+        value = (value << 4) | digit;
+    }
+    Ok(value)
+}
+
+pub(super) fn lazy_decoded_prefix<'a>(
+    decoded: &'a mut Option<String>,
+    input: &str,
+    prefix_end: usize,
+) -> &'a mut String {
+    decoded.get_or_insert_with(|| {
+        let mut out = String::with_capacity(input.len());
+        out.push_str(&input[..prefix_end]);
+        out
+    })
+}
+
+#[allow(clippy::result_unit_err)]
 pub(super) fn hex_val(byte: u8) -> Result<u8, ()> {
     match byte {
         b'0'..=b'9' => Ok(byte - b'0'),

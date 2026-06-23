@@ -126,4 +126,46 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
             && !macro_body.contains(".collect::<Vec<_>>()"),
         "simple escape/entity decoders should stream borrowed candidates"
     );
+
+    for (name, marker, end_marker) in [
+        (
+            "html named entity",
+            "fn html_named_entity_decode",
+            "fn html_numeric_entity_decode",
+        ),
+        (
+            "html numeric entity",
+            "fn html_numeric_entity_decode",
+            "fn hex_escape_decode",
+        ),
+        (
+            "hex escape",
+            "fn hex_escape_decode",
+            "fn octal_escape_decode",
+        ),
+        (
+            "octal escape",
+            "fn octal_escape_decode",
+            "fn contains_octal_escape",
+        ),
+    ] {
+        let body = impl_body(&url, marker, end_marker);
+        assert!(
+            body.contains("Option<String>")
+                && !body.contains("let mut decoded = String::with_capacity(input.len())"),
+            "{name} decoder should allocate output lazily after a real output-changing escape"
+        );
+    }
+
+    let unicode = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/decode/unicode_escape.rs"
+    ))
+    .expect("unicode escape source readable");
+    let unicode_body = impl_body(&unicode, "pub(super) fn unicode_escape_decode", "fn ");
+    assert!(
+        unicode_body.contains("let mut decoded_text: Option<String> = None")
+            && !unicode_body.contains("let mut decoded_text = String::with_capacity(input.len())"),
+        "unicode escape decoder should allocate output lazily after a real escape"
+    );
 }

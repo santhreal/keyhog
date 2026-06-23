@@ -4,7 +4,7 @@ use super::pipeline::{
     ExtractedValue,
 };
 use super::unicode_escape::unicode_escape_decode;
-use super::util::hex_val;
+use super::util::{hex_val, lazy_decoded_prefix};
 use super::Decoder;
 use crate::context;
 use keyhog_core::Chunk;
@@ -330,18 +330,19 @@ fn quoted_printable_decode(input: &str) -> Result<String, ()> {
 }
 
 fn html_named_entity_decode(input: &str) -> Result<String, ()> {
-    let mut decoded = String::with_capacity(input.len());
-    let mut changed = false;
-    let mut chars = input.chars().peekable();
+    let mut decoded: Option<String> = None;
+    let mut chars = input.char_indices().peekable();
 
-    while let Some(ch) = chars.next() {
+    while let Some((idx, ch)) = chars.next() {
         if ch != '&' {
-            decoded.push(ch);
+            if let Some(decoded) = decoded.as_mut() {
+                decoded.push(ch);
+            }
             continue;
         }
 
         let mut entity = String::new();
-        while let Some(&next) = chars.peek() {
+        while let Some(&(_, next)) = chars.peek() {
             entity.push(next);
             chars.next();
             if next == ';' || entity.len() > 10 {
@@ -360,36 +361,37 @@ fn html_named_entity_decode(input: &str) -> Result<String, ()> {
         };
 
         if let Some(replacement) = replacement {
-            decoded.push(replacement);
-            changed = true;
-        } else {
+            lazy_decoded_prefix(&mut decoded, input, idx).push(replacement);
+        } else if let Some(decoded) = decoded.as_mut() {
             decoded.push('&');
             decoded.push_str(&entity);
         }
     }
 
-    changed.then_some(decoded).ok_or(())
+    decoded.ok_or(())
 }
 
 fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
-    let mut decoded = String::with_capacity(input.len());
+    let mut decoded: Option<String> = None;
     let mut changed = false;
-    let mut chars = input.chars().peekable();
+    let mut chars = input.char_indices().peekable();
 
-    while let Some(ch) = chars.next() {
-        if ch != '&' || chars.peek() != Some(&'#') {
-            decoded.push(ch);
+    while let Some((idx, ch)) = chars.next() {
+        if ch != '&' || !chars.peek().is_some_and(|&(_, next)| next == '#') {
+            if let Some(decoded) = decoded.as_mut() {
+                decoded.push(ch);
+            }
             continue;
         }
 
         chars.next();
-        let is_hex = matches!(chars.peek(), Some('x') | Some('X'));
+        let is_hex = matches!(chars.peek(), Some(&(_, 'x' | 'X')));
         if is_hex {
             chars.next();
         }
 
         let mut digits = String::new();
-        while let Some(&next) = chars.peek() {
+        while let Some(&(_, next)) = chars.peek() {
             if next == ';' {
                 chars.next();
                 break;
@@ -398,13 +400,15 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
                 digits.push(next);
                 chars.next();
             } else {
-                decoded.push('&');
-                decoded.push('#');
-                if is_hex {
-                    decoded.push('x');
+                if let Some(decoded) = decoded.as_mut() {
+                    decoded.push('&');
+                    decoded.push('#');
+                    if is_hex {
+                        decoded.push('x');
+                    }
+                    decoded.push_str(&digits);
+                    decoded.push(next);
                 }
-                decoded.push_str(&digits);
-                decoded.push(next);
                 chars.next();
                 digits.clear();
                 break;
@@ -412,10 +416,19 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
         }
 
         if digits.is_empty() {
-            decoded.push('&');
-            decoded.push('#');
-            if is_hex {
-                decoded.push('x');
+            if let Some(decoded) = decoded.as_mut() {
+                decoded.push('&');
+                decoded.push('#');
+                if is_hex {
+                    decoded.push('x');
+                }
+            } else {
+                let out = lazy_decoded_prefix(&mut decoded, input, idx);
+                out.push('&');
+                out.push('#');
+                if is_hex {
+                    out.push('x');
+                }
             }
             continue;
         }
@@ -423,63 +436,69 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
         let radix = if is_hex { 16 } else { 10 };
         let code = u32::from_str_radix(&digits, radix).map_err(|_| ())?;
         let replacement = char::from_u32(code).ok_or(())?;
-        decoded.push(replacement);
+        lazy_decoded_prefix(&mut decoded, input, idx).push(replacement);
         changed = true;
     }
 
-    changed.then_some(decoded).ok_or(())
+    if changed {
+        decoded.ok_or(())
+    } else {
+        Err(())
+    }
 }
 
 fn hex_escape_decode(input: &str) -> Result<String, ()> {
-    let mut decoded = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-    let mut changed = false;
+    let mut decoded: Option<String> = None;
+    let mut chars = input.char_indices().peekable();
 
-    while let Some(ch) = chars.next() {
-        if ch != '\\' || chars.peek() != Some(&'x') {
-            decoded.push(ch);
+    while let Some((idx, ch)) = chars.next() {
+        if ch != '\\' || !chars.peek().is_some_and(|&(_, next)| next == 'x') {
+            if let Some(decoded) = decoded.as_mut() {
+                decoded.push(ch);
+            }
             continue;
         }
 
         chars.next();
-        let high = chars.next().ok_or(())?.to_digit(16).ok_or(())?;
-        let low = chars.next().ok_or(())?.to_digit(16).ok_or(())?;
-        decoded.push(char::from(((high << 4) | low) as u8));
-        changed = true;
+        let high = chars.next().ok_or(())?.1.to_digit(16).ok_or(())?;
+        let low = chars.next().ok_or(())?.1.to_digit(16).ok_or(())?;
+        lazy_decoded_prefix(&mut decoded, input, idx).push(char::from(((high << 4) | low) as u8));
     }
 
-    changed.then_some(decoded).ok_or(())
+    decoded.ok_or(())
 }
 
 fn octal_escape_decode(input: &str) -> Result<String, ()> {
-    let mut decoded = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-    let mut changed = false;
+    let mut decoded: Option<String> = None;
+    let mut chars = input.char_indices().peekable();
 
-    while let Some(ch) = chars.next() {
+    while let Some((idx, ch)) = chars.next() {
         if ch != '\\' {
-            decoded.push(ch);
+            if let Some(decoded) = decoded.as_mut() {
+                decoded.push(ch);
+            }
             continue;
         }
 
-        let Some(&next) = chars.peek() else {
+        let Some(&(_, next)) = chars.peek() else {
             return Err(());
         };
         if !('0'..='7').contains(&next) {
-            decoded.push(ch);
+            if let Some(decoded) = decoded.as_mut() {
+                decoded.push(ch);
+            }
             continue;
         }
 
         let mut value = 0u8;
         for _ in 0..3 {
-            let digit = chars.next().ok_or(())?;
+            let digit = chars.next().ok_or(())?.1;
             value = (value << 3) | digit.to_digit(8).ok_or(())? as u8;
         }
-        decoded.push(char::from(value));
-        changed = true;
+        lazy_decoded_prefix(&mut decoded, input, idx).push(char::from(value));
     }
 
-    changed.then_some(decoded).ok_or(())
+    decoded.ok_or(())
 }
 
 fn contains_octal_escape(input: &str) -> bool {
