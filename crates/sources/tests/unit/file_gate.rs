@@ -549,6 +549,15 @@ fn web_happy() {
             && !web.contains("url.to_lowercase()"),
         "WebSource URL routing must classify extensions without allocating a lowercase copy of the full URL"
     );
+    assert!(
+        web.contains("for (i, content) in contents.into_iter().enumerate()")
+            && web.contains("data: code.into()")
+            && web.contains(".and_then(Option::take)")
+            && !web.contains("contents.iter().enumerate()")
+            && !web.contains("data: code.clone().into()")
+            && !web.contains(".and_then(|name| name.clone())"),
+        "WebSource source-map expansion must move parsed sourcesContent strings into chunks without cloning large source bodies"
+    );
 }
 #[cfg(feature = "web")]
 #[test]

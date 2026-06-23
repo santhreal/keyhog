@@ -371,7 +371,7 @@ fn handle_sourcemap(
         Err(e) => return vec![Err(e)],
     };
 
-    let map: serde_json::Value = match serde_json::from_str(&body) {
+    let mut map: serde_json::Value = match serde_json::from_str(&body) {
         Ok(v) => v,
         Err(e) => {
             let _event =
@@ -382,7 +382,7 @@ fn handle_sourcemap(
     };
 
     let mut malformed_sources = false;
-    let sources: Vec<Option<String>> = match map.get("sources") {
+    let mut sources: Vec<Option<String>> = match map.get("sources") {
         Some(value) => match value.as_array() {
             Some(arr) => arr
                 .iter()
@@ -414,14 +414,15 @@ fn handle_sourcemap(
     }
 
     let mut malformed_sources_content = false;
-    let contents: Vec<Option<String>> = match map.get("sourcesContent") {
-        Some(value) => match value.as_array() {
+    let contents: Vec<Option<String>> = match map.get_mut("sourcesContent") {
+        Some(value) => match value.as_array_mut() {
             Some(arr) => arr
-                .iter()
-                .map(|entry| match entry.as_str() {
-                    Some(text) => Some(text.to_string()),
-                    None => {
-                        if !entry.is_null() {
+                .iter_mut()
+                .map(|entry| match entry.take() {
+                    serde_json::Value::String(text) => Some(text),
+                    serde_json::Value::Null => None,
+                    other => {
+                        if !other.is_null() {
                             malformed_sources_content = true;
                         }
                         None
@@ -447,17 +448,17 @@ fn handle_sourcemap(
 
     let mut chunks = Vec::new();
 
-    for (i, content) in contents.iter().enumerate() {
+    for (i, content) in contents.into_iter().enumerate() {
         if let Some(code) = content {
             if code.is_empty() {
                 continue;
             }
             let source_name = sources
-                .get(i)
-                .and_then(|name| name.clone())
+                .get_mut(i)
+                .and_then(Option::take)
                 .unwrap_or_else(|| format!("source_{i}")); // LAW10: synthetic label for an unnamed sourcemap entry; the content is still scanned
             chunks.push(Ok(Chunk {
-                data: code.clone().into(),
+                data: code.into(),
                 metadata: ChunkMetadata {
                     base_offset: 0,
                     base_line: 0,
