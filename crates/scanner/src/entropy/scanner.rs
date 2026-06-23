@@ -516,7 +516,7 @@ pub(crate) fn is_canonical_non_secret_shape(value: &str) -> bool {
 /// explicit cryptographic-key anchors where an AES-256/key-material value is a
 /// plausible credential.
 pub(crate) fn canonical_shape_lift_allowed(value: &str, keyword: &str) -> bool {
-    if is_uuid_shape(value) {
+    if crate::suppression::shape::looks_like_entropy_uuid_shape(value) {
         return true;
     }
     if !value.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -534,10 +534,6 @@ pub(crate) fn canonical_shape_lift_allowed(value: &str, keyword: &str) -> bool {
         // non-secret shapes even under the model-authoritative lift.
         _ => false,
     }
-}
-
-fn is_uuid_shape(value: &str) -> bool {
-    crate::suppression::shape::looks_like_entropy_uuid_shape(value)
 }
 
 fn keyword_is_crypto_key_material(keyword: &str) -> bool {

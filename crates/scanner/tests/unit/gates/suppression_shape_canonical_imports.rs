@@ -190,8 +190,9 @@ fn entropy_canonical_shapes_live_in_shape_owner() {
     assert!(
         scanner.contains(
             "crate::suppression::shape::looks_like_entropy_canonical_non_secret_shape(value)"
-        ) && scanner.contains("crate::suppression::shape::looks_like_entropy_uuid_shape(value)"),
-        "entropy/scanner.rs must call the shape owner for canonical non-secret and UUID checks"
+        ) && scanner.contains("crate::suppression::shape::looks_like_entropy_uuid_shape(value)")
+            && !scanner.contains("fn is_uuid_shape("),
+        "entropy/scanner.rs must call the shape owner for canonical non-secret and UUID checks without local UUID aliases"
     );
     assert!(
         plausibility.contains("crate::suppression::shape::looks_like_entropy_uuid_shape(value)")
