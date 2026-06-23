@@ -20,9 +20,10 @@ fn take_scratch(
     if let Some(scratch) = shard.scratch_pool.lock().pop() {
         return Ok(scratch);
     }
-    shard.db.alloc_scratch().map_err(|error| {
-        format!("hyperscan scratch allocation failed for shard {shard_idx}: {error}")
-    })
+    Err(format!(
+        "hyperscan scratch pool exhausted for scanner {scanner_id} shard {shard_idx}; \
+         preallocated scratches are already checked out on this thread set"
+    ))
 }
 
 fn put_scratch(scanner_id: u64, shard_idx: usize, scratch: Scratch) {

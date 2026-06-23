@@ -215,10 +215,9 @@ static SCANNER_ID_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// One compiled shard: its database plus a Mutex-guarded scratch pool. Each
 /// `Scratch` is tied to exactly one `BlockDatabase`, so the pools are
-/// per-shard. The pool starts empty; scan threads allocate the first scratch
-/// they need lazily and then retain it in thread-local storage. Eagerly
-/// allocating `cores * shards` scratches made scanner construction scale with
-/// shard count and erased much of the parallel compile win.
+/// per-shard. The pool is filled during scanner construction; scan coverage
+/// never allocates a scratch opportunistically, so exhaustion is visible as a
+/// runtime error instead of a partial scan.
 struct Shard {
     db: BlockDatabase,
     scratch_pool: parking_lot::Mutex<Vec<Scratch>>,
@@ -662,15 +661,38 @@ impl HsScanner {
         unsupported: &mut Vec<usize>,
     ) -> Result<Vec<Shard>, String> {
         let mut shards = Vec::with_capacity(shard_count);
-        for result in shard_results {
+        let scratch_count = Self::scratch_pool_size();
+        for (shard_idx, result) in shard_results.into_iter().enumerate() {
             let (db, dropped) = result?;
             unsupported.extend(dropped);
+            let scratch_pool = Self::build_scratch_pool(&db, shard_idx, scratch_count)?;
             shards.push(Shard {
                 db,
-                scratch_pool: parking_lot::Mutex::new(Vec::new()),
+                scratch_pool: parking_lot::Mutex::new(scratch_pool),
             });
         }
         Ok(shards)
+    }
+
+    fn scratch_pool_size() -> usize {
+        std::thread::available_parallelism()
+            .map(|cores| cores.get())
+            .unwrap_or(1) // LAW10: host core-count probe failure preallocates one scratch per shard; scan coverage still fails loud on exhaustion instead of dropping findings.
+            .clamp(1, MAX_COMPILE_SHARDS)
+    }
+
+    fn build_scratch_pool(
+        db: &BlockDatabase,
+        shard_idx: usize,
+        scratch_count: usize,
+    ) -> Result<Vec<Scratch>, String> {
+        let mut scratch_pool = Vec::with_capacity(scratch_count);
+        for _ in 0..scratch_count {
+            scratch_pool.push(db.alloc_scratch().map_err(|error| {
+                format!("hyperscan scratch preallocation failed for shard {shard_idx}: {error}")
+            })?);
+        }
+        Ok(scratch_pool)
     }
 
     /// Compile patterns with explicit per-pattern flags. See [`HsCompileOpts`].

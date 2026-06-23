@@ -17,7 +17,8 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
         "fn partition_patterns_lpt(",
         "fn compile_cached_shards(",
         "fn assemble_scanner_shards(",
-        "scratch_pool: parking_lot::Mutex::new(Vec::new())",
+        "fn scratch_pool_size()",
+        "fn build_scratch_pool(",
         "fn write_cached_dropped_ids(",
         "fn read_cached_dropped_ids(",
     ] {
@@ -64,10 +65,12 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
         .next()
         .expect("assemble_scanner_shards boundary present");
     assert!(
-        assemble_body.contains("scratch_pool: parking_lot::Mutex::new(Vec::new())")
-            && !assemble_body.contains("alloc_scratch()")
-            && !source.contains("fn scratch_pool_size("),
-        "Hyperscan compile must not eagerly allocate per-core scratch pools for every shard; scan threads allocate shard scratches lazily"
+        assemble_body.contains("let scratch_count = Self::scratch_pool_size();")
+            && assemble_body.contains("Self::build_scratch_pool(&db, shard_idx, scratch_count)?")
+            && assemble_body.contains("scratch_pool: parking_lot::Mutex::new(scratch_pool)")
+            && source.contains("Vec::with_capacity(scratch_count)")
+            && source.contains("scratch_pool.push("),
+        "Hyperscan compile must preallocate shard scratch pools so scan coverage cannot allocate opportunistically or return partial results"
     );
 
     let cache_key_body = source
