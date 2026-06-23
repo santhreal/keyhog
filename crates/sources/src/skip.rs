@@ -9,11 +9,12 @@ use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 /// via `reset_skipped_over_max_size()`.
 static SKIPPED_OVER_MAX_SIZE: AtomicUsize = AtomicUsize::new(0);
 
-/// How many files the filesystem walker skipped because their extension (or a
-/// content-sniffed magic header / NUL byte) marked them binary, before any
-/// content scan. Previously a silent `return` (Law 10): a `.bin`/`.dat`/no-ext
-/// file that is actually a planted-credential blob vanished with no trace. Bumped
-/// at each binary skip site in `process_entry`; surfaced at end-of-scan.
+/// How many files the filesystem walker skipped because their extension,
+/// content-sniffed magic header, or repeated-NUL binary prefix marked them
+/// binary before any content scan. Previously a silent `return` (Law 10): a
+/// `.bin`/`.dat`/no-ext file that is actually a planted-credential blob vanished
+/// with no trace. Bumped at each binary skip site in `process_entry`; surfaced
+/// at end-of-scan.
 static SKIPPED_BINARY: AtomicUsize = AtomicUsize::new(0);
 
 /// How many files were skipped by the default-exclusion filter (lock files,

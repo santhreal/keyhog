@@ -74,8 +74,18 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
     assert!(
         extract.contains("let mut buf = [0u8; 16]")
             && extract.contains("read::read_file_prefix_safe(&path, &mut buf)")
+            && extract.contains("read::looks_binary_prefix(head)")
             && !extract.contains("if let Ok(mut f) = std::fs::File::open(&path)"),
-        "extensionless header sniff must use a stack buffer plus the no-follow prefix reader, not symlink-following File::open"
+        "extensionless header sniff must use a stack buffer plus the shared binary-prefix verdict and no-follow prefix reader, not symlink-following File::open"
+    );
+    assert!(
+        extract
+            .find("idx.metadata_unchanged(&path, mtime_ns, file_size)")
+            .expect("merkle unchanged check must be present")
+            < extract
+                .find("read::read_file_prefix_safe(&path, &mut buf)")
+                .expect("extensionless prefix sniff must be present"),
+        "merkle unchanged files must skip before the extensionless prefix reader opens the file"
     );
     assert!(
         raw.contains("fn read_file_prefix_safe(")

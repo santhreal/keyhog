@@ -188,6 +188,10 @@ pub(in crate::filesystem::read) fn looks_binary(bytes: &[u8]) -> bool {
     suspicious >= SUSPICIOUS_CONTROL_BINARY_MIN && suspicious * 20 > total
 }
 
+pub(in crate::filesystem) fn looks_binary_prefix(bytes: &[u8]) -> bool {
+    has_binary_magic(bytes) || has_repeated_nul_run(bytes)
+}
+
 fn has_repeated_nul_run(bytes: &[u8]) -> bool {
     bytes
         .windows(BINARY_NUL_RUN)

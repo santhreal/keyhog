@@ -169,6 +169,14 @@ pub(super) fn process_entry(
         return;
     }
 
+    let live_mtime_ns = file_mtime_ns(&path);
+    if let (Some(idx), Some(mtime_ns)) = (merkle.as_ref(), live_mtime_ns) {
+        if idx.metadata_unchanged(&path, mtime_ns, file_size) {
+            skipped.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+    }
+
     if ext.is_empty() {
         // Sniff the first 16 bytes of files without extensions to quickly skip
         // binary structures without full content reads (KH-50). Use the same
@@ -178,22 +186,10 @@ pub(super) fn process_entry(
         let mut buf = [0u8; 16];
         if let Ok(n) = read::read_file_prefix_safe(&path, &mut buf) {
             let head = &buf[..n];
-            let is_binary = head.starts_with(b"\x7fELF")
-                || head.starts_with(b"MZ")
-                || head.starts_with(b"%PDF")
-                || head.starts_with(b"PK\x03\x04");
-            if is_binary {
+            if read::looks_binary_prefix(head) {
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
                 return;
             }
-        }
-    }
-
-    let live_mtime_ns = file_mtime_ns(&path);
-    if let (Some(idx), Some(mtime_ns)) = (merkle.as_ref(), live_mtime_ns) {
-        if idx.metadata_unchanged(&path, mtime_ns, file_size) {
-            skipped.fetch_add(1, Ordering::Relaxed);
-            return;
         }
     }
 

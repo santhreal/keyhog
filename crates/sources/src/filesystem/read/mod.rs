@@ -23,6 +23,7 @@ pub(super) use bytes::read_file_for_compressed_input;
 /// walker, rather than each one inventing its own weaker read (Law 10 recall
 /// parity + no-duplication).
 pub(crate) use decode::decode_text_file;
+pub(in crate::filesystem) use decode::looks_binary_prefix;
 pub(super) use raw::{
     read_file_buffered, read_file_mmap, read_file_prefix_safe, read_file_safe, BufferedFileRead,
 };

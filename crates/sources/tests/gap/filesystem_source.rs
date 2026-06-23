@@ -15,8 +15,8 @@
 //!       2. `.min.` / `.bundle.` / `.chunk.js` / `.min.js` / `.bundle.js`
 //!       3. `max_size > 0 && file_size > max_size` -> warn + counter + return
 //!       4. `is_skip_extension(ext)` ASCII-case-insensitive extension gate
-//!       5. empty-ext: sniff first 16 bytes for NUL / ELF / MZ / %PDF / PK
-//!       6. merkle skip
+//!       5. merkle skip
+//!       6. empty-ext: sniff first 16 bytes for binary magic / repeated NUL run
 //!       7. pdf structured extraction
 //!       8. archive (zip/apk/ipa/crx/jar) with symlink refusal
 //!       9. compressed (gz/zst/lz4/sz)
@@ -679,15 +679,16 @@ fn extensionless_zip_magic_is_skipped_by_sniff() {
 }
 
 #[test]
-fn extensionless_nul_byte_in_first_16_is_skipped() {
-    // The sniff also rejects any of the first 16 bytes being NUL.
+fn extensionless_repeated_nul_run_in_first_16_is_skipped() {
+    // The sniff rejects an obvious binary NUL run, while the unit coverage keeps
+    // single-NUL extensionless text on the recall-preserving scan path.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("rawblob"); // no extension
-    fs::write(&path, b"abc\x00def more text KEY=nul").unwrap();
+    fs::write(&path, b"abc\0\0\0\0def more text KEY=nul").unwrap();
     let chunks = scan_single_file(&path);
     assert!(
         chunks.is_empty(),
-        "a NUL byte within the first 16 bytes must trip the binary sniff"
+        "a repeated NUL run within the first 16 bytes must trip the binary sniff"
     );
 }
 
