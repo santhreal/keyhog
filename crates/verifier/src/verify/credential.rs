@@ -149,13 +149,12 @@ where
         last_attempt = Some((result.result, result.metadata));
     }
 
-    match last_attempt {
-        Some(attempt) => attempt,
-        None => (
+    last_attempt.unwrap_or_else(|| {
+        (
             VerificationResult::Error("max retries exceeded".into()),
             HashMap::new(),
-        ),
-    }
+        )
+    })
 }
 
 pub(crate) fn retry_delay_bounds_for_attempt(attempt: usize, base_delay_ms: u64) -> (u64, u64) {
@@ -473,6 +472,11 @@ async fn combine_oob(
         OobPolicy::OobOnly => {
             if observed {
                 VerificationResult::Live
+            } else if matches!(
+                http_only_result,
+                VerificationResult::RateLimited | VerificationResult::Error(_)
+            ) {
+                http_only_result
             } else {
                 VerificationResult::Dead
             }

@@ -458,6 +458,11 @@ pub mod testing {
             client: Arc<crate::oob::InteractshClient>,
             config: crate::oob::OobConfig,
         ) -> Arc<crate::oob::OobSession>;
+        fn engine_set_oob_session_for_test(
+            &self,
+            engine: &mut crate::VerificationEngine,
+            session: Arc<crate::oob::OobSession>,
+        );
         fn oob_session_mint(&self, session: &crate::oob::OobSession) -> TestMintedUrl;
         fn oob_session_default_timeout(&self, session: &crate::oob::OobSession) -> Duration;
         fn oob_session_store_and_notify(
@@ -651,6 +656,14 @@ pub mod testing {
             config: crate::oob::OobConfig,
         ) -> Arc<crate::oob::OobSession> {
             crate::oob::OobSession::for_test(client, config)
+        }
+
+        fn engine_set_oob_session_for_test(
+            &self,
+            engine: &mut crate::VerificationEngine,
+            session: Arc<crate::oob::OobSession>,
+        ) {
+            engine.oob_session = Some(session);
         }
 
         fn oob_session_mint(&self, session: &crate::oob::OobSession) -> TestMintedUrl {

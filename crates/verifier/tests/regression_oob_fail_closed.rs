@@ -1,16 +1,22 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use keyhog_core::{
     AuthSpec, DedupedMatch, DetectorSpec, HttpMethod, MatchLocation, OobPolicy, OobProtocol,
     OobSpec, Severity, StepSpec, SuccessSpec, VerificationResult, VerifySpec,
 };
+use keyhog_verifier::oob::OobConfig;
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 use keyhog_verifier::{VerificationEngine, VerifyConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 async fn counting_server(requests: Arc<AtomicUsize>) -> String {
+    status_server(requests, 200, "OK").await
+}
+
+async fn status_server(requests: Arc<AtomicUsize>, status: u16, body: &'static str) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move {
@@ -20,9 +26,11 @@ async fn counting_server(requests: Arc<AtomicUsize>) -> String {
                 let mut buf = [0u8; 1024];
                 let _ = stream.read(&mut buf).await;
                 requests.fetch_add(1, Ordering::SeqCst);
-                let _ = stream
-                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
-                    .await;
+                let response = format!(
+                    "HTTP/1.1 {status} TEST\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
             });
         }
     });
@@ -70,6 +78,22 @@ fn engine_for(spec: DetectorSpec) -> VerificationEngine {
         },
     )
     .unwrap()
+}
+
+fn test_oob_session(default_timeout_secs: u64) -> Arc<keyhog_verifier::oob::OobSession> {
+    let client = Arc::new(
+        TestApi
+            .interactsh_client_for_test("https://example.test")
+            .expect("test interactsh client must construct"),
+    );
+    TestApi.oob_session_for_test(
+        client,
+        OobConfig {
+            default_timeout: std::time::Duration::from_secs(default_timeout_secs),
+            max_timeout: std::time::Duration::from_secs(default_timeout_secs),
+            ..Default::default()
+        },
+    )
 }
 
 #[tokio::test]
@@ -185,4 +209,64 @@ async fn multi_step_oob_errors_before_any_step_request() {
         ),
         other => panic!("expected multi-step OOB Error, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn oob_only_preserves_transient_http_rate_limit_when_callback_absent() {
+    let requests = Arc::new(AtomicUsize::new(0));
+    let base = status_server(requests.clone(), 429, "slow down").await;
+    let detector = DetectorSpec {
+        id: "oob-only-rate-limit".into(),
+        name: "OOB only rate limit".into(),
+        service: "test".into(),
+        severity: Severity::Critical,
+        keywords: vec![],
+        patterns: vec![],
+        companions: vec![],
+        tests: vec![],
+        min_confidence: None,
+        verify: Some(VerifySpec {
+            service: "test".into(),
+            method: Some(HttpMethod::Post),
+            url: Some(format!("{base}/probe")),
+            auth: Some(AuthSpec::None),
+            headers: vec![],
+            body: Some(r#"{"callback":"{{interactsh.url}}"}"#.into()),
+            success: Some(SuccessSpec {
+                status: Some(200),
+                ..Default::default()
+            }),
+            metadata: vec![],
+            timeout_ms: None,
+            steps: vec![],
+            allowed_domains: vec!["127.0.0.1".into()],
+            oob: Some(OobSpec {
+                protocol: OobProtocol::Http,
+                timeout_secs: Some(0),
+                policy: OobPolicy::OobOnly,
+            }),
+        }),
+        ..Default::default()
+    };
+
+    let mut engine = engine_for(detector);
+    TestApi.engine_set_oob_session_for_test(&mut engine, test_oob_session(0));
+    let findings = engine
+        .verify_all(vec![group_for("oob-only-rate-limit")])
+        .await;
+
+    assert_eq!(
+        requests.load(Ordering::SeqCst),
+        3,
+        "429 remains transient and should still use the retry budget"
+    );
+    assert_eq!(
+        findings[0].metadata.get("oob_observed").map(String::as_str),
+        Some("false")
+    );
+    assert!(
+        matches!(findings[0].verification, VerificationResult::RateLimited),
+        "OobOnly without callback must not silently downgrade transient HTTP status to Dead; got {:?}",
+        findings[0].verification
+    );
 }
