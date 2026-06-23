@@ -16,50 +16,11 @@ pub(crate) use detectors::{
 pub(crate) use effective::{autoroute_config_digest, render_effective_config};
 pub(crate) use runtime::{
     backend_override_label, configure_hyperscan_cache_dir, configure_threads, fused_depth_default,
-    gpu_runtime_policy_from_args, parse_backend_override, FUSED_BATCH_DEFAULT, MAX_THREADS_CAP,
+    parse_backend_override, ScanRuntimeInput, FUSED_BATCH_DEFAULT, MAX_THREADS_CAP,
     ML_THRESHOLD_DEFAULT,
 };
 pub(crate) use scanner::build_scanner_config;
 use scanner::{build_scanner_config_from_input, ScannerConfigInput};
-
-#[derive(Debug, Clone)]
-struct ScanRuntimeInput {
-    cache_dir: Option<PathBuf>,
-    autoroute_cache: Option<String>,
-    calibration_cache: Option<PathBuf>,
-    backend: Option<String>,
-    batch_pipeline: bool,
-    threads: Option<usize>,
-    reader_threads: Option<usize>,
-    fused_batch: usize,
-    fused_depth: Option<usize>,
-    gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy,
-    autoroute_gpu: bool,
-    autoroute_calibration: bool,
-    regex_dfa_limit: Option<usize>,
-    source_limits: keyhog_sources::SourceLimits,
-}
-
-impl ScanRuntimeInput {
-    fn from_scan_args(args: &ScanArgs) -> Self {
-        Self {
-            cache_dir: args.cache_dir.clone(),
-            autoroute_cache: args.autoroute_cache.clone(),
-            calibration_cache: args.calibration_cache.clone(),
-            backend: args.backend.clone(),
-            batch_pipeline: args.batch_pipeline && !args.no_batch_pipeline,
-            threads: args.threads,
-            reader_threads: args.reader_threads,
-            fused_batch: args.fused_batch.unwrap_or(FUSED_BATCH_DEFAULT), // LAW10: absent fused-batch config => documented compiled throughput default; no recall path changes and the value is printed/hashes into autoroute identity
-            fused_depth: args.fused_depth,
-            gpu_runtime_policy: gpu_runtime_policy_from_args(args),
-            autoroute_gpu: args.autoroute_gpu && !args.no_autoroute_gpu,
-            autoroute_calibration: args.autoroute_calibrate,
-            regex_dfa_limit: args.regex_dfa_limit,
-            source_limits: args.limits.to_source_limits(),
-        }
-    }
-}
 
 fn calibration_store_digest(calibration: &keyhog_core::Calibration) -> u64 {
     let mut hasher = crate::stable_hash::StableHasher::new("calibration-store-digest");

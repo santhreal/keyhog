@@ -10,14 +10,19 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         "/src/orchestrator_config/scanner.rs"
     ))
     .expect("orchestrator_config scanner source readable");
+    let runtime = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator_config/runtime.rs"
+    ))
+    .expect("orchestrator_config runtime source readable");
 
     assert!(
         scanner.contains("struct ScannerConfigInput"),
         "orchestrator_config/scanner.rs must keep a resolved scanner-builder input boundary"
     );
     assert!(
-        src.contains("struct ScanRuntimeInput"),
-        "orchestrator_config must keep a resolved runtime/path input boundary"
+        runtime.contains("struct ScanRuntimeInput"),
+        "orchestrator_config/runtime.rs must keep a resolved runtime/path input boundary"
     );
     assert!(
         src.contains("struct ResolvedReportPolicy"),
@@ -108,6 +113,7 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
     for forbidden in [
         "struct ScannerConfigInput",
         "fn build_scanner_config_from_input(input: &ScannerConfigInput)",
+        "struct ScanRuntimeInput",
     ] {
         assert!(
             !src.contains(forbidden),

@@ -57,6 +57,45 @@ pub(crate) fn gpu_runtime_policy_from_args(
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ScanRuntimeInput {
+    pub(crate) cache_dir: Option<PathBuf>,
+    pub(crate) autoroute_cache: Option<String>,
+    pub(crate) calibration_cache: Option<PathBuf>,
+    pub(crate) backend: Option<String>,
+    pub(crate) batch_pipeline: bool,
+    pub(crate) threads: Option<usize>,
+    pub(crate) reader_threads: Option<usize>,
+    pub(crate) fused_batch: usize,
+    pub(crate) fused_depth: Option<usize>,
+    pub(crate) gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy,
+    pub(crate) autoroute_gpu: bool,
+    pub(crate) autoroute_calibration: bool,
+    pub(crate) regex_dfa_limit: Option<usize>,
+    pub(crate) source_limits: keyhog_sources::SourceLimits,
+}
+
+impl ScanRuntimeInput {
+    pub(crate) fn from_scan_args(args: &ScanArgs) -> Self {
+        Self {
+            cache_dir: args.cache_dir.clone(),
+            autoroute_cache: args.autoroute_cache.clone(),
+            calibration_cache: args.calibration_cache.clone(),
+            backend: args.backend.clone(),
+            batch_pipeline: args.batch_pipeline && !args.no_batch_pipeline,
+            threads: args.threads,
+            reader_threads: args.reader_threads,
+            fused_batch: args.fused_batch.unwrap_or(FUSED_BATCH_DEFAULT), // LAW10: absent fused-batch config => documented compiled throughput default; no recall path changes and the value is printed/hashes into autoroute identity
+            fused_depth: args.fused_depth,
+            gpu_runtime_policy: gpu_runtime_policy_from_args(args),
+            autoroute_gpu: args.autoroute_gpu && !args.no_autoroute_gpu,
+            autoroute_calibration: args.autoroute_calibrate,
+            regex_dfa_limit: args.regex_dfa_limit,
+            source_limits: args.limits.to_source_limits(),
+        }
+    }
+}
+
 pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
     // Resolution order: --threads / [scan].threads > physical core count.
     // Physical cores are the right default for CPU-bound regex: SMT siblings
