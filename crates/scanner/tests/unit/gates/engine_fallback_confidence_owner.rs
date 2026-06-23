@@ -167,6 +167,10 @@ fn engine_scoring_confidence_adjustments_route_through_confidence_owner() {
     let policy = uncommented_code(&read(&src.join("confidence/policy.rs")));
     for required in [
         "fn pre_ml_heuristic_confidence(",
+        "struct MatchHeuristicConfidencePolicy",
+        "fn match_heuristic_confidence(",
+        "compute_confidence",
+        "ConfidenceSignals",
         "fn apply_known_prefix_floor(",
         "known_prefix_confidence_floor",
         "confidence.max(floor)",
@@ -181,7 +185,8 @@ fn engine_scoring_confidence_adjustments_route_through_confidence_owner() {
 
     let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
     for required in [
-        "super::scoring::pre_ml_heuristic_confidence(",
+        "super::scoring::match_heuristic_confidence(",
+        "super::scoring::MatchHeuristicConfidencePolicy",
         "super::scoring::apply_known_prefix_floor(",
     ] {
         assert!(
@@ -191,6 +196,9 @@ fn engine_scoring_confidence_adjustments_route_through_confidence_owner() {
     }
     for forbidden in [
         "let context_multiplier =",
+        "crate::confidence::compute_confidence(",
+        "crate::confidence::ConfidenceSignals",
+        "super::scoring::pre_ml_heuristic_confidence(",
         "CodeContext::TestCode | crate::context::CodeContext::Documentation",
         "context.confidence_multiplier()",
         "known_prefix_confidence_floor(credential)",

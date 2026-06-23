@@ -12,8 +12,8 @@ use keyhog_scanner::context::CodeContext;
 use keyhog_scanner::testing::confidence::{
     apply_calibration_multiplier, apply_calibration_multiplier_with_store,
     apply_known_prefix_floor, apply_path_confidence_penalties, apply_post_ml_penalties,
-    char_diversity, contains_placeholder_word, finalize_confidence, max_repeat_run,
-    placeholder_words, pre_ml_heuristic_confidence,
+    char_diversity, contains_placeholder_word, finalize_confidence, match_heuristic_confidence,
+    max_repeat_run, placeholder_words, pre_ml_heuristic_confidence,
 };
 #[cfg(feature = "ml")]
 use keyhog_scanner::testing::confidence::{
@@ -328,6 +328,28 @@ fn known_prefix_floor_policy_lifts_low_scores_only_for_real_prefixes() {
         apply_known_prefix_floor(0.2, "sk_live_PLACEHOLDER_value_here"),
         0.2
     );
+}
+
+#[test]
+fn match_heuristic_confidence_owns_raw_signal_scoring_and_context_adjustment() {
+    let signals = ConfidenceSignals {
+        has_literal_prefix: true,
+        has_context_anchor: true,
+        entropy: 7.5,
+        keyword_nearby: true,
+        sensitive_file: true,
+        match_length: 40,
+        has_companion: true,
+    };
+    let all_signals_test_path = match_heuristic_confidence(&signals, CodeContext::TestCode, true);
+    assert!(
+        (all_signals_test_path - CodeContext::TestCode.confidence_multiplier()).abs() < 1e-9,
+        "all raw signals should score 1.0 before the test-code multiplier, got {all_signals_test_path}"
+    );
+
+    let all_signals_test_opt_out =
+        match_heuristic_confidence(&signals, CodeContext::TestCode, false);
+    assert!((all_signals_test_opt_out - 1.0).abs() < 1e-9);
 }
 
 // ---------------------------------------------------------------------------

@@ -198,6 +198,27 @@ pub mod confidence {
         )
     }
 
+    #[cfg(test)]
+    pub(crate) fn match_heuristic_confidence(
+        signals: &crate::confidence::ConfidenceSignals,
+        code_context: crate::context::CodeContext,
+        penalize_test_paths: bool,
+    ) -> f64 {
+        crate::confidence::policy::match_heuristic_confidence(
+            crate::confidence::policy::MatchHeuristicConfidencePolicy {
+                has_literal_prefix: signals.has_literal_prefix,
+                has_context_anchor: signals.has_context_anchor,
+                entropy: signals.entropy,
+                keyword_nearby: signals.keyword_nearby,
+                sensitive_file: signals.sensitive_file,
+                match_length: signals.match_length,
+                has_companion: signals.has_companion,
+                code_context,
+                penalize_test_paths,
+            },
+        )
+    }
+
     #[cfg(all(test, feature = "ml"))]
     pub(crate) fn ml_pending_confidence(
         heuristic_confidence: f64,

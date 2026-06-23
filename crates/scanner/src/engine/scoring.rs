@@ -24,7 +24,8 @@ pub(super) use crate::confidence::policy::probabilistic_promise_confidence_overr
 pub(super) use crate::confidence::policy::MlConfidencePolicy;
 pub(super) use crate::confidence::policy::{
     apply_known_prefix_floor, checksum_policy_for, finalize_report_confidence,
-    generic_secret_confidence, pre_ml_heuristic_confidence, ReportConfidencePolicy,
+    generic_secret_confidence, match_heuristic_confidence, MatchHeuristicConfidencePolicy,
+    ReportConfidencePolicy,
 };
 
 impl CompiledScanner {
@@ -84,8 +85,10 @@ impl CompiledScanner {
         is_named_detector: bool,
         scan_state: &mut ScanState,
     ) -> Option<MlScoreResult<'a>> {
-        let raw_conf =
-            crate::confidence::compute_confidence(&crate::confidence::ConfidenceSignals {
+        // Checksum validation is handled in process_match (early reject for Invalid,
+        // confidence floor for Valid). No need to re-validate here.
+        let heuristic_conf = super::scoring::match_heuristic_confidence(
+            super::scoring::MatchHeuristicConfidencePolicy {
                 // Per-PATTERN constant, memoized on the `LazyRegex` (see
                 // `LazyRegex::has_literal_prefix`): the prior inline
                 // `extract_literal_prefix(entry.regex.as_str()).is_some()`
@@ -98,14 +101,9 @@ impl CompiledScanner {
                 sensitive_file,
                 match_length: credential.len(),
                 has_companion,
-            });
-
-        // Checksum validation is handled in process_match (early reject for Invalid,
-        // confidence floor for Valid). No need to re-validate here.
-        let heuristic_conf = super::scoring::pre_ml_heuristic_confidence(
-            raw_conf,
-            context,
-            self.config.penalize_test_paths,
+                code_context: context,
+                penalize_test_paths: self.config.penalize_test_paths,
+            },
         );
         let score_result = self.calculate_final_score(
             heuristic_conf,

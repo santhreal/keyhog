@@ -36,6 +36,36 @@ pub(crate) fn pre_ml_heuristic_confidence(
     raw_confidence * context_multiplier
 }
 
+pub(crate) struct MatchHeuristicConfidencePolicy {
+    pub(crate) has_literal_prefix: bool,
+    pub(crate) has_context_anchor: bool,
+    pub(crate) entropy: f64,
+    pub(crate) keyword_nearby: bool,
+    pub(crate) sensitive_file: bool,
+    pub(crate) match_length: usize,
+    pub(crate) has_companion: bool,
+    pub(crate) code_context: context::CodeContext,
+    pub(crate) penalize_test_paths: bool,
+}
+
+pub(crate) fn match_heuristic_confidence(policy: MatchHeuristicConfidencePolicy) -> f64 {
+    let raw_confidence =
+        crate::confidence::compute_confidence(&crate::confidence::ConfidenceSignals {
+            has_literal_prefix: policy.has_literal_prefix,
+            has_context_anchor: policy.has_context_anchor,
+            entropy: policy.entropy,
+            keyword_nearby: policy.keyword_nearby,
+            sensitive_file: policy.sensitive_file,
+            match_length: policy.match_length,
+            has_companion: policy.has_companion,
+        });
+    pre_ml_heuristic_confidence(
+        raw_confidence,
+        policy.code_context,
+        policy.penalize_test_paths,
+    )
+}
+
 pub(crate) struct ReportConfidencePolicy<'a> {
     pub(crate) credential: &'a str,
     pub(crate) detector_id: &'a str,
