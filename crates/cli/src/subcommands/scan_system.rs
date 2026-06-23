@@ -532,7 +532,6 @@ fn scan_mount(
     space_cap: u64,
     out: &mut FindingSink,
 ) -> Result<()> {
-    use keyhog_core::Source;
     use keyhog_sources::FilesystemSource;
 
     // scan-system is paranoid by default - walks files even if listed in
@@ -540,31 +539,15 @@ fn scan_mount(
     // would gitignore it; respecting gitignore here would let that hide.
     let source =
         FilesystemSource::new(root.to_path_buf()).with_respect_gitignore(args.respect_gitignore);
-    for chunk_result in source.chunks() {
-        if bytes_scanned.load(Ordering::Relaxed) >= space_cap {
-            return Ok(());
-        }
-        let chunk = match chunk_result {
-            Ok(c) => c,
-            // Law 10: an unreadable chunk is unscanned bytes. Count it (surfaced
-            // in the final summary) rather than silently dropping a slice of the
-            // filesystem from the audit.
-            Err(error) => {
-                tracing::warn!(
-                    root = %root.display(),
-                    %error,
-                    "source chunk could not be read during system scan; counted as skipped"
-                );
-                out.record_skipped_chunk();
-                continue;
-            }
-        };
-        bytes_scanned.fetch_add(chunk.data.len() as u64, Ordering::Relaxed);
-        // Convert + drop raw matches per chunk so plaintext-bearing RawMatch
-        // entries are never accumulated (audit: memory).
-        out.absorb(scan_runtime.scan_chunk(&chunk)?);
-    }
-    Ok(())
+    scan_source_chunks(
+        scan_runtime,
+        &source,
+        "filesystem",
+        root,
+        bytes_scanned,
+        space_cap,
+        out,
+    )
 }
 
 fn scan_git_history(
@@ -576,33 +559,16 @@ fn scan_git_history(
 ) -> Result<()> {
     #[cfg(feature = "git")]
     {
-        use keyhog_core::Source;
         let source = keyhog_sources::GitSource::new(repo.to_path_buf());
-        for chunk_result in source.chunks() {
-            if bytes_scanned.load(Ordering::Relaxed) >= space_cap {
-                return Ok(());
-            }
-            let chunk = match chunk_result {
-                Ok(c) => c,
-                // Law 10: a corrupt git object / unreadable ref drops that slice
-                // of history from the audit. Count it (surfaced in the summary)
-                // so a silently-failed repo is not indistinguishable from a clean
-                // one.
-                Err(error) => {
-                    tracing::warn!(
-                        repo = %repo.display(),
-                        %error,
-                        "git history chunk could not be read during system scan; counted as skipped"
-                    );
-                    out.record_skipped_chunk();
-                    continue;
-                }
-            };
-            bytes_scanned.fetch_add(chunk.data.len() as u64, Ordering::Relaxed);
-            // Convert + drop raw matches per chunk (audit: memory).
-            out.absorb(scan_runtime.scan_chunk(&chunk)?);
-        }
-        Ok(())
+        scan_source_chunks(
+            scan_runtime,
+            &source,
+            "git-history",
+            repo,
+            bytes_scanned,
+            space_cap,
+            out,
+        )
     }
     #[cfg(not(feature = "git"))]
     {
@@ -625,4 +591,41 @@ fn scan_git_history(
         out.record_skipped_chunk();
         Ok(())
     }
+}
+
+fn scan_source_chunks(
+    scan_runtime: &DefaultScanRuntime,
+    source: &dyn keyhog_core::Source,
+    source_kind: &'static str,
+    root: &Path,
+    bytes_scanned: &AtomicU64,
+    space_cap: u64,
+    out: &mut FindingSink,
+) -> Result<()> {
+    for chunk_result in source.chunks() {
+        if bytes_scanned.load(Ordering::Relaxed) >= space_cap {
+            return Ok(());
+        }
+        let chunk = match chunk_result {
+            Ok(c) => c,
+            // Law 10: an unreadable source chunk is unscanned bytes. Count it
+            // (surfaced in the final summary) rather than silently dropping a
+            // slice of the filesystem or git history from the audit.
+            Err(error) => {
+                tracing::warn!(
+                    source_kind,
+                    root = %root.display(),
+                    %error,
+                    "system scan source chunk could not be read; counted as skipped"
+                );
+                out.record_skipped_chunk();
+                continue;
+            }
+        };
+        bytes_scanned.fetch_add(chunk.data.len() as u64, Ordering::Relaxed);
+        // Convert + drop raw matches per chunk so plaintext-bearing RawMatch
+        // entries are never accumulated (audit: memory).
+        out.absorb(scan_runtime.scan_chunk(&chunk)?);
+    }
+    Ok(())
 }

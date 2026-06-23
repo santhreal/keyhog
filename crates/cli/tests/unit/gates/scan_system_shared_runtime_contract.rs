@@ -29,6 +29,9 @@ fn scan_system_uses_shared_scan_runtime_boundary() {
         "let scan_runtime = compile_default_scan_runtime(",
         "scan_runtime.warm();",
         "scan_runtime.scan_chunk(&chunk)?",
+        "fn scan_source_chunks(",
+        "\"filesystem\"",
+        "\"git-history\"",
     ] {
         assert!(
             scan_system.contains(required),
@@ -44,6 +47,27 @@ fn scan_system_uses_shared_scan_runtime_boundary() {
         assert!(
             !scan_system.contains(forbidden),
             "scan_system must not re-own default runtime routing detail `{forbidden}`"
+        );
+    }
+
+    let scan_mount = scan_system
+        .split("fn scan_mount(")
+        .nth(1)
+        .and_then(|tail| tail.split("fn scan_git_history(").next())
+        .expect("scan_mount body extractable");
+    let scan_git_history = scan_system
+        .split("fn scan_git_history(")
+        .nth(1)
+        .and_then(|tail| tail.split("#[cfg(not(feature = \"git\"))]").next())
+        .expect("scan_git_history body extractable");
+    for body in [scan_mount, scan_git_history] {
+        assert!(
+            !body.contains(".chunks()"),
+            "scan_mount/scan_git_history must delegate chunk iteration to scan_source_chunks"
+        );
+        assert!(
+            !body.contains("record_skipped_chunk()"),
+            "scan_mount/scan_git_history must not duplicate skipped-chunk accounting"
         );
     }
 }
