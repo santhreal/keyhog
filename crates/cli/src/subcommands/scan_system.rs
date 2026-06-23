@@ -300,8 +300,9 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     // by .gitignore-style filters.
     let mut git_repos: Vec<PathBuf> = Vec::new();
     if !args.no_git_history {
+        let skip_dirs = crate::skip_dirs::SkipDirPolicy::load()?;
         for mount in &mounts {
-            discover_git_repos(mount, &mut git_repos, args.space);
+            discover_git_repos(mount, &mut git_repos, args.space, &skip_dirs);
         }
         eprintln!("🌿 discovered {} git repo(s)", git_repos.len());
     }
@@ -432,7 +433,12 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
 /// or a long chain (`/proc/*/cwd` style) caused unbounded growth and
 /// in some cases an OOM kill. We now canonicalize each candidate dir
 /// before recursing and skip any path we've already visited.
-fn discover_git_repos(root: &Path, out: &mut Vec<PathBuf>, _space_cap: u64) {
+fn discover_git_repos(
+    root: &Path,
+    out: &mut Vec<PathBuf>,
+    _space_cap: u64,
+    skip_dirs: &crate::skip_dirs::SkipDirPolicy,
+) {
     use std::collections::HashSet;
     use std::fs;
     let mut visited: HashSet<PathBuf> = HashSet::new();
@@ -465,17 +471,7 @@ fn discover_git_repos(root: &Path, out: &mut Vec<PathBuf>, _space_cap: u64) {
             continue;
         }
         if let Some(name) = dir.file_name().and_then(|n| n.to_str()) {
-            if matches!(
-                name,
-                "node_modules"
-                    | "target"
-                    | ".cargo"
-                    | ".cache"
-                    | "Library"
-                    | "AppData"
-                    | "$Recycle.Bin"
-                    | "System Volume Information"
-            ) {
+            if skip_dirs.is_git_discovery_component(name) {
                 continue;
             }
         }

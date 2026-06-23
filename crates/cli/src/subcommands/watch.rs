@@ -19,6 +19,7 @@
 
 use crate::args::WatchArgs;
 use crate::orchestrator::{DefaultScanRuntime, compile_default_scan_runtime};
+use crate::skip_dirs::SkipDirPolicy;
 use crate::style;
 use anyhow::{Context, Result};
 use keyhog_core::{Chunk, ChunkMetadata};
@@ -100,6 +101,7 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
     // notify fires Create then Modify for a single new-file write, which
     // without this would print every finding twice (KH-GAP-109).
     let mut recently_scanned: HashMap<PathBuf, (Instant, u64)> = HashMap::new();
+    let skip_dirs = SkipDirPolicy::load()?;
 
     for event in rx {
         let event = match event {
@@ -133,7 +135,7 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
         for path in event.paths {
             // Skip directories and common build/IDE artifacts that produce
             // a flood of irrelevant events.
-            if path.is_dir() || should_skip(&path) {
+            if path.is_dir() || should_skip(&path, &skip_dirs) {
                 continue;
             }
             scan_file(&scan_runtime, &path, &mut recently_scanned);
@@ -251,32 +253,16 @@ fn scan_file(
     }
 }
 
-fn should_skip(path: &std::path::Path) -> bool {
+fn should_skip(path: &std::path::Path, skip_dirs: &SkipDirPolicy) -> bool {
     // Walk path components - handles both `/` and `\` natively and
     // doesn't allocate a lowercased copy of the entire path on every
     // watch event. The previous flow (a) didn't skip Windows paths
     // because the SKIP literals were POSIX-only and (b) burned a
     // String per event in the inotify hot loop.
-    const SKIP_NAMES: &[&str] = &[
-        ".git",
-        ".svn",
-        ".hg",
-        "node_modules",
-        "target",
-        ".cargo",
-        ".cache",
-        ".venv",
-        "venv",
-        "__pycache__",
-        ".next",
-        ".turbo",
-        "dist",
-        "build",
-    ];
     path.components().any(|c| {
         if let std::path::Component::Normal(os) = c {
             if let Some(s) = os.to_str() {
-                return SKIP_NAMES.iter().any(|skip| s.eq_ignore_ascii_case(skip));
+                return skip_dirs.is_watch_component(s);
             }
         }
         false

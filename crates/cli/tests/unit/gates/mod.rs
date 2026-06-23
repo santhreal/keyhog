@@ -66,6 +66,7 @@ pub mod reporting_non_empty;
 pub mod scan_e2e_direct_commands_backend_pinned;
 pub mod scan_finalize_shared_postprocess_contract;
 pub mod scan_system_shared_runtime_contract;
+pub mod skip_dir_policy_contract;
 pub mod sources_no_inline_tests;
 pub mod sources_no_unwrap_expect;
 pub mod sources_non_empty;

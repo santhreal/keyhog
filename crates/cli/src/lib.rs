@@ -414,6 +414,7 @@ pub(crate) mod orchestrator;
 pub(crate) mod orchestrator_config;
 pub(crate) mod path_validation;
 pub(crate) mod reporting;
+pub(crate) mod skip_dirs;
 pub(crate) mod sources;
 mod style;
 pub(crate) mod subcommands;

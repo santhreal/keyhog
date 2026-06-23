@@ -1,0 +1,18 @@
+# Tier-B data: directory names skipped by long-running CLI filesystem surfaces.
+#
+# `base` applies to every consumer below. Consumer-specific extras keep the
+# behavioral differences explicit: watch skips VCS/build/venv event storms,
+# while scan-system git discovery must not skip `.git` because it is looking
+# for repository roots.
+
+[skip_dirs]
+base = ["node_modules", "target", ".cargo", ".cache"]
+
+watch_extra = [
+  ".git", ".svn", ".hg", ".venv", "venv", "__pycache__", ".next", ".turbo",
+  "dist", "build",
+]
+
+git_discovery_extra = [
+  "Library", "AppData", "$Recycle.Bin", "System Volume Information",
+]
