@@ -65,17 +65,14 @@ pub fn validate_checksum(credential: &str) -> ChecksumResult {
     ChecksumResult::NotApplicable
 }
 
-#[cfg(test)]
 pub(crate) fn standard_crc32(data: &[u8]) -> u32 {
     github::crc32(data)
 }
 
-#[cfg(test)]
 pub(crate) fn base62_encode_u32(value: u32, width: usize) -> String {
     github::base62_encode_u32(value, width)
 }
 
-#[cfg(test)]
 pub(crate) fn crc32_base62_suffix(data: &[u8], width: usize) -> String {
     base62_encode_u32(standard_crc32(data), width)
 }

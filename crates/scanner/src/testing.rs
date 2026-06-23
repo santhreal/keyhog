@@ -960,25 +960,24 @@ pub(crate) mod entropy_keywords {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod checksum {
-    pub(crate) use crate::checksum::{
+pub mod checksum {
+    pub use crate::checksum::{
         checksum_adjusted_confidence, validate_checksum, ChecksumResult, CHECKSUM_VALID_FLOOR,
     };
 
-    pub(crate) fn standard_crc32(data: &[u8]) -> u32 {
+    pub fn standard_crc32(data: &[u8]) -> u32 {
         crate::checksum::standard_crc32(data)
     }
 
-    pub(crate) fn base62_encode_u32(value: u32, width: usize) -> String {
+    pub fn base62_encode_u32(value: u32, width: usize) -> String {
         crate::checksum::base62_encode_u32(value, width)
     }
 
-    pub(crate) fn crc32_base62_suffix(data: &[u8], width: usize) -> String {
+    pub fn crc32_base62_suffix(data: &[u8], width: usize) -> String {
         crate::checksum::crc32_base62_suffix(data, width)
     }
 
-    pub(crate) fn github_classic_pat_with_checksum(body30: &str) -> String {
+    pub fn github_classic_pat_with_checksum(body30: &str) -> String {
         assert_eq!(body30.len(), 30, "github classic body must be 30 chars");
         format!(
             "ghp_{}{}",
@@ -987,7 +986,7 @@ pub(crate) mod checksum {
         )
     }
 
-    pub(crate) fn npm_token_with_checksum(body30: &str) -> String {
+    pub fn npm_token_with_checksum(body30: &str) -> String {
         assert_eq!(body30.len(), 30, "npm body must be 30 chars");
         format!(
             "npm_{}{}",
@@ -996,10 +995,7 @@ pub(crate) mod checksum {
         )
     }
 
-    pub(crate) fn github_fine_grained_pat_with_checksum(
-        left22: &str,
-        right_body53: &str,
-    ) -> String {
+    pub fn github_fine_grained_pat_with_checksum(left22: &str, right_body53: &str) -> String {
         assert_eq!(left22.len(), 22, "github fine-grained left segment");
         assert_eq!(
             right_body53.len(),
@@ -1013,14 +1009,14 @@ pub(crate) mod checksum {
         )
     }
 
-    pub(crate) trait ChecksumValidator {
+    pub trait ChecksumValidator {
         fn validator_id(&self) -> &str;
         fn validate(&self, credential: &str) -> ChecksumResult;
     }
 
     macro_rules! checksum_validator_wrapper {
         ($name:ident, $inner:path, $validator_id:expr) => {
-            pub(crate) struct $name;
+            pub struct $name;
 
             impl ChecksumValidator for $name {
                 fn validator_id(&self) -> &str {
@@ -1034,11 +1030,11 @@ pub(crate) mod checksum {
             }
 
             impl $name {
-                pub(crate) fn validator_id(&self) -> &str {
+                pub fn validator_id(&self) -> &str {
                     <Self as ChecksumValidator>::validator_id(self)
                 }
 
-                pub(crate) fn validate(&self, credential: &str) -> ChecksumResult {
+                pub fn validate(&self, credential: &str) -> ChecksumResult {
                     <Self as ChecksumValidator>::validate(self, credential)
                 }
             }

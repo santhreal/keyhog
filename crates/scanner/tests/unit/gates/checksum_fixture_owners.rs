@@ -13,6 +13,10 @@ fn checksum_gap_tests_use_shared_fixture_builders_not_crc_copies() {
             "detector_recall_prefixes.rs",
             include_str!("../../gap/detector_recall_prefixes.rs"),
         ),
+        (
+            "target_spec/capability_context_variants.rs",
+            include_str!("../../target_spec/capability_context_variants.rs"),
+        ),
     ] {
         assert!(
             !src.contains("fn crc32("),

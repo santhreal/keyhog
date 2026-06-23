@@ -26,15 +26,10 @@ pub(crate) const GITHUB_APP_PRIVATE_KEY: &str = "github-app-private-key";
 
 pub(crate) const AWS_ACCESS_KEY: &str = "aws-access-key";
 pub(crate) const ANTHROPIC_API_KEY: &str = "anthropic-api-key";
-#[cfg(any(feature = "simdsieve", test))]
 pub(crate) const GITHUB_CLASSIC_PAT: &str = "github-classic-pat";
-#[cfg(test)]
 pub(crate) const GITHUB_FINE_GRAINED_PAT: &str = "github-fine-grained-pat";
-#[cfg(test)]
 pub(crate) const GITLAB_TOKEN: &str = "gitlab-token";
-#[cfg(test)]
 pub(crate) const NPM_ACCESS_TOKEN: &str = "npm-access-token";
-#[cfg(test)]
 pub(crate) const PYPI_API_TOKEN: &str = "pypi-api-token";
 #[cfg(feature = "simdsieve")]
 pub(crate) const OPENAI_API_KEY: &str = "openai-api-key";
@@ -42,11 +37,9 @@ pub(crate) const OPENAI_API_KEY: &str = "openai-api-key";
 pub(crate) const SENDGRID_API_KEY: &str = "sendgrid-api-key";
 #[cfg(feature = "simdsieve")]
 pub(crate) const SLACK_BOT_TOKEN: &str = "slack-bot-token";
-#[cfg(test)]
 pub(crate) const SLACK_TOKEN: &str = "slack-token";
 #[cfg(feature = "simdsieve")]
 pub(crate) const SLACK_USER_TOKEN: &str = "slack-user-token";
-#[cfg(test)]
 pub(crate) const STRIPE_API_KEY: &str = "stripe-api-key";
 pub(crate) const STRIPE_SECRET_KEY: &str = "stripe-secret-key";
 #[cfg(feature = "simdsieve")]

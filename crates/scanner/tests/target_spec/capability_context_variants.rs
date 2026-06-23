@@ -19,6 +19,7 @@
 use crate::target_spec::{
     join_capped, load_canonicals, scan, sufficient_canonicals, surfaces, Canonical,
 };
+use keyhog_scanner::testing::checksum::crc32_base62_suffix;
 
 /// One named context variant: given a raw credential, produce a body that
 /// embeds it, plus the logical path the body would live at.
@@ -407,56 +408,6 @@ fn rotate_alnum_run_preserving_grammar(run: &mut [u8]) {
             *b = b'a' + ((*b - b'a' + shift) % 26);
         }
     }
-}
-
-fn crc32_base62_suffix(data: &[u8], width: usize) -> String {
-    base62_encode_u32(crc32(data), width)
-}
-
-fn crc32(data: &[u8]) -> u32 {
-    const TABLE: [u32; 256] = {
-        let mut table = [0u32; 256];
-        let mut i = 0;
-        while i < 256 {
-            let mut crc = i as u32;
-            let mut j = 0;
-            while j < 8 {
-                if crc & 1 != 0 {
-                    crc = 0xEDB88320 ^ (crc >> 1);
-                } else {
-                    crc >>= 1;
-                }
-                j += 1;
-            }
-            table[i] = crc;
-            i += 1;
-        }
-        table
-    };
-
-    let mut crc: u32 = 0xFFFF_FFFF;
-    for &byte in data {
-        crc = TABLE[((crc ^ byte as u32) & 0xFF) as usize] ^ (crc >> 8);
-    }
-    crc ^ 0xFFFF_FFFF
-}
-
-fn base62_encode_u32(mut value: u32, width: usize) -> String {
-    const BASE62_DIGITS: &[u8; 62] =
-        b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    if value == 0 {
-        return "0".repeat(width);
-    }
-    let mut rev = Vec::with_capacity(width.max(6));
-    while value > 0 {
-        rev.push(BASE62_DIGITS[(value % 62) as usize] as char);
-        value /= 62;
-    }
-    while rev.len() < width {
-        rev.push('0');
-    }
-    rev.reverse();
-    rev.into_iter().collect()
 }
 
 #[test]
