@@ -149,9 +149,11 @@ pub(crate) fn decode_chunk(
                         return decoded_chunks;
                     }
 
-                    queue.push_back((decoded.clone(), depth + 1));
                     if passes_screen {
+                        queue.push_back((decoded.clone(), depth + 1));
                         decoded_chunks.push(decoded);
+                    } else {
+                        queue.push_back((decoded, depth + 1));
                     }
                 }
             }

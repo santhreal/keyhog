@@ -64,6 +64,7 @@ pub mod decode_json_non_empty;
 pub mod decode_pipeline_no_inline_tests;
 pub mod decode_pipeline_no_unwrap_expect;
 pub mod decode_pipeline_non_empty;
+pub mod decode_pipeline_screen_fail_queue_move;
 pub mod decode_reverse_no_inline_tests;
 pub mod decode_reverse_no_unwrap_expect;
 pub mod decode_reverse_non_empty;
