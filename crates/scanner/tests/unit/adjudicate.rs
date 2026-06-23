@@ -1,6 +1,6 @@
 use crate::adjudicate::{
-    adjudicate_match, CandidateMatch, EntropyShapeStage, FinalEmitSignals, MatchCtx,
-    ProcessCandidateSignals, StageId, Verdict,
+    adjudicate_match, CandidateMatch, EntropyShapeStage, FinalEmitSignals, GenericBridgeSignal,
+    MatchCtx, ProcessCandidateSignals, StageId, Verdict,
 };
 use crate::context::CodeContext;
 use crate::suppression::NamedDetectorSuppressionCtx;
@@ -180,9 +180,9 @@ fn process_stage_reports_service_anchored_candidate() {
 }
 
 #[test]
-fn explicit_stage_reports_generic_named_detector_owned_keyword() {
+fn generic_bridge_stage_reports_named_detector_owned_keyword() {
     let credential = "segment_write_key";
-    let ctx = MatchCtx::for_stage(StageId::GenericNamedDetectorOwnedKeyword);
+    let ctx = MatchCtx::for_generic_bridge(GenericBridgeSignal::NamedDetectorOwnedKeyword);
 
     assert_eq!(
         adjudicate_match(CandidateMatch::new(credential), &ctx),
@@ -195,8 +195,8 @@ fn explicit_stage_reports_generic_named_detector_owned_keyword() {
 }
 
 #[test]
-fn explicit_stage_reports_generic_keyword_boundary() {
-    let ctx = MatchCtx::for_stage(StageId::GenericKeywordBoundary);
+fn generic_bridge_stage_reports_keyword_boundary() {
+    let ctx = MatchCtx::for_generic_bridge(GenericBridgeSignal::KeywordBoundary);
 
     assert_eq!(
         adjudicate_match(CandidateMatch::new("bypass"), &ctx),
@@ -209,9 +209,9 @@ fn explicit_stage_reports_generic_keyword_boundary() {
 }
 
 #[test]
-fn explicit_stage_reports_bare_auth_unstructured() {
+fn generic_bridge_stage_reports_bare_auth_unstructured() {
     let credential = "not-a-structured-authorization-value";
-    let ctx = MatchCtx::for_stage(StageId::BareAuthUnstructured);
+    let ctx = MatchCtx::for_generic_bridge(GenericBridgeSignal::BareAuthUnstructured);
 
     assert_eq!(
         adjudicate_match(CandidateMatch::new(credential), &ctx),
@@ -224,9 +224,11 @@ fn explicit_stage_reports_bare_auth_unstructured() {
 }
 
 #[test]
-fn explicit_stage_reports_generic_value_shape_reason() {
+fn generic_bridge_stage_reports_value_shape_reason() {
     let credential = "DUMMY_TOKEN_VALUE_abc123def456";
-    let ctx = MatchCtx::for_stage(StageId::GenericValueShape("known_example_or_placeholder"));
+    let ctx = MatchCtx::for_generic_bridge(GenericBridgeSignal::ValueShape(
+        "known_example_or_placeholder",
+    ));
 
     assert_eq!(
         adjudicate_match(CandidateMatch::new(credential), &ctx),

@@ -272,6 +272,25 @@ impl ProcessCandidateSignals {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GenericBridgeSignal {
+    KeywordBoundary,
+    NamedDetectorOwnedKeyword,
+    BareAuthUnstructured,
+    ValueShape(&'static str),
+}
+
+impl GenericBridgeSignal {
+    const fn stage_id(self) -> StageId {
+        match self {
+            Self::KeywordBoundary => StageId::GenericKeywordBoundary,
+            Self::NamedDetectorOwnedKeyword => StageId::GenericNamedDetectorOwnedKeyword,
+            Self::BareAuthUnstructured => StageId::BareAuthUnstructured,
+            Self::ValueShape(reason) => StageId::GenericValueShape(reason),
+        }
+    }
+}
+
 fn final_emit_suppression_stage(
     detector_id: &str,
     credential: &str,
@@ -332,6 +351,7 @@ impl<'a> FinalEmitSignals<'a> {
 pub(crate) struct MatchCtx<'a> {
     explicit_stage: Option<StageId>,
     process_signals: Option<ProcessCandidateSignals>,
+    generic_bridge_signal: Option<GenericBridgeSignal>,
     named_detector_suppression: Option<NamedDetectorSuppressionCtx<'a>>,
     final_emit_signals: Option<FinalEmitSignals<'a>>,
 }
@@ -341,6 +361,7 @@ impl<'a> MatchCtx<'a> {
         Self {
             explicit_stage: Some(stage_id),
             process_signals: None,
+            generic_bridge_signal: None,
             named_detector_suppression: None,
             final_emit_signals: None,
         }
@@ -350,6 +371,17 @@ impl<'a> MatchCtx<'a> {
         Self {
             explicit_stage: None,
             process_signals: Some(process_signals),
+            generic_bridge_signal: None,
+            named_detector_suppression: None,
+            final_emit_signals: None,
+        }
+    }
+
+    pub(crate) const fn for_generic_bridge(signal: GenericBridgeSignal) -> Self {
+        Self {
+            explicit_stage: None,
+            process_signals: None,
+            generic_bridge_signal: Some(signal),
             named_detector_suppression: None,
             final_emit_signals: None,
         }
@@ -359,6 +391,7 @@ impl<'a> MatchCtx<'a> {
         Self {
             explicit_stage: None,
             process_signals: None,
+            generic_bridge_signal: None,
             named_detector_suppression: Some(ctx),
             final_emit_signals: None,
         }
@@ -368,6 +401,7 @@ impl<'a> MatchCtx<'a> {
         Self {
             explicit_stage: None,
             process_signals: None,
+            generic_bridge_signal: None,
             named_detector_suppression: None,
             final_emit_signals: Some(signals),
         }
@@ -382,6 +416,7 @@ type StageFn = for<'candidate, 'ctx, 'borrow> fn(
 const STAGES: &[StageFn] = &[
     explicit_stage,
     process_signal_stage,
+    generic_bridge_stage,
     named_detector_suppression_stage,
     final_emit_stage,
 ];
@@ -455,6 +490,14 @@ fn process_signal_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> S
         return StageOutcome::Suppress(stage_id);
     }
     StageOutcome::Pass
+}
+
+fn generic_bridge_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {
+    if let Some(signal) = ctx.generic_bridge_signal {
+        StageOutcome::Suppress(signal.stage_id())
+    } else {
+        StageOutcome::Pass
+    }
 }
 
 fn named_detector_suppression_stage(

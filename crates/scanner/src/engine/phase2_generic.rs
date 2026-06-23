@@ -194,10 +194,13 @@ impl CompiledScanner {
                 if (keyword.eq_ignore_ascii_case("pass") || keyword.eq_ignore_ascii_case("auth"))
                     && !keyword_has_word_boundary(line, keyword_match.start())
                 {
-                    crate::adjudicate::record_stage_suppression(
+                    let generic_ctx = crate::adjudicate::MatchCtx::for_generic_bridge(
+                        crate::adjudicate::GenericBridgeSignal::KeywordBoundary,
+                    );
+                    crate::adjudicate::record_suppression(
                         chunk.metadata.path.as_deref(),
                         keyword,
-                        crate::adjudicate::StageId::GenericKeywordBoundary,
+                        &generic_ctx,
                     );
                     continue;
                 }
@@ -207,19 +210,25 @@ impl CompiledScanner {
                     keyword_match.start(),
                     keyword_match.end(),
                 ) {
-                    crate::adjudicate::record_stage_suppression(
+                    let generic_ctx = crate::adjudicate::MatchCtx::for_generic_bridge(
+                        crate::adjudicate::GenericBridgeSignal::NamedDetectorOwnedKeyword,
+                    );
+                    crate::adjudicate::record_suppression(
                         chunk.metadata.path.as_deref(),
                         keyword,
-                        crate::adjudicate::StageId::GenericNamedDetectorOwnedKeyword,
+                        &generic_ctx,
                     );
                     continue;
                 }
                 let value = value_match.as_str();
                 if keyword.eq_ignore_ascii_case("auth") && !bare_auth_value_allowed(value) {
-                    crate::adjudicate::record_stage_suppression(
+                    let generic_ctx = crate::adjudicate::MatchCtx::for_generic_bridge(
+                        crate::adjudicate::GenericBridgeSignal::BareAuthUnstructured,
+                    );
+                    crate::adjudicate::record_suppression(
                         chunk.metadata.path.as_deref(),
                         value,
-                        crate::adjudicate::StageId::BareAuthUnstructured,
+                        &generic_ctx,
                     );
                     continue;
                 }
@@ -255,10 +264,13 @@ impl CompiledScanner {
                     allow_canonical_hex_key,
                     allow_encoded_text_secret,
                 ) {
-                    crate::adjudicate::record_stage_suppression(
+                    let generic_ctx = crate::adjudicate::MatchCtx::for_generic_bridge(
+                        crate::adjudicate::GenericBridgeSignal::ValueShape(reason),
+                    );
+                    crate::adjudicate::record_suppression(
                         chunk.metadata.path.as_deref(),
                         value,
-                        crate::adjudicate::StageId::GenericValueShape(reason),
+                        &generic_ctx,
                     );
                     continue;
                 }

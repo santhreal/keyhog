@@ -162,7 +162,8 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
     let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
 
     assert!(
-        generic.contains("crate::adjudicate::record_stage_suppression("),
+        generic.contains("crate::adjudicate::record_suppression(")
+            && generic.contains("crate::adjudicate::MatchCtx::for_generic_bridge("),
         "engine/phase2_generic.rs must route generic suppression telemetry through the adjudicator"
     );
     assert!(
@@ -183,6 +184,17 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
         assert!(
             adjudicate.contains(&format!("\"{reason}\"")),
             "adjudicate/mod.rs must own the {reason} suppression reason"
+        );
+    }
+    for forbidden in [
+        "StageId::GenericKeywordBoundary",
+        "StageId::GenericNamedDetectorOwnedKeyword",
+        "StageId::BareAuthUnstructured",
+        "StageId::GenericValueShape",
+    ] {
+        assert!(
+            !generic.contains(forbidden),
+            "engine/phase2_generic.rs must not name generic suppression stages directly: {forbidden}"
         );
     }
 }
