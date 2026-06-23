@@ -125,7 +125,26 @@ pub(super) fn extract_seven_zip_chunks(
         let read_limit = read_cap.saturating_add(1);
         let mut content = Vec::with_capacity(entry_size.min(READ_CAPACITY_HINT) as usize);
         entry_reader.take(read_limit).read_to_end(&mut content)?;
-        if content.len() as u64 > read_cap {
+        let content_len = content.len() as u64;
+        if content_len > per_entry_cap {
+            tracing::warn!(
+                archive = %archive_display,
+                entry = %entry_name,
+                size = content_len,
+                cap = per_entry_cap,
+                "skipping 7z entry: decoded size exceeds per-file cap; remaining entries were NOT scanned"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+            archive_truncated = true;
+            if !emit(Err(SourceError::Other(format!(
+                "7z entry '{archive_display}//{entry_name}' exceeded the per-file cap after capped decode ({content_len} > {per_entry_cap}); remaining entries were not scanned"
+            )))) {
+                consumer_stopped = true;
+            }
+            return Ok(false);
+        }
+        if content_len > read_cap {
             let attempted_total = total_uncompressed.saturating_add(content.len() as u64);
             let error =
                 super::report_archive_truncation(&archive_display, attempted_total, total_budget);

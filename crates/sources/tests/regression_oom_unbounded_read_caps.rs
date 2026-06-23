@@ -107,4 +107,15 @@ fn seven_zip_entry_reads_are_capped() {
             && seven_zip.contains("entry_reader.take(read_limit).read_to_end(&mut content)"),
         "7z entry reads must cap decompressed output to the smaller of per-entry cap and remaining archive budget, with a one-byte overflow probe"
     );
+    let per_entry_branch = seven_zip
+        .find("if content_len > per_entry_cap")
+        .expect("7z per-entry overflow branch");
+    let aggregate_branch = seven_zip
+        .find("if content_len > read_cap")
+        .expect("7z aggregate-budget overflow branch");
+    assert!(
+        per_entry_branch < aggregate_branch
+            && seven_zip[per_entry_branch..aggregate_branch].contains("SourceSkipEvent::OverMaxSize"),
+        "7z decoded-entry overflow must be classified as over-max-size before falling through to aggregate archive truncation"
+    );
 }
