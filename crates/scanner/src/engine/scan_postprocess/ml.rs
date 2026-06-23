@@ -99,10 +99,11 @@ impl CompiledScanner {
             .map(|pending| (pending.credential.as_str(), pending.ml_context.as_str()))
             .collect();
 
+        let tuning = self.tuning.resolve();
         let scores = crate::gpu::batch_ml_inference_with_timeout(
             &candidates,
             &self.config,
-            self.tuning.gpu_moe_timeout(),
+            tuning.gpu_moe_timeout(),
         );
         let pending_matches: Vec<_> = scan_state.ml_pending.drain(..).collect();
         let scores = if scores.len() == pending_matches.len() {

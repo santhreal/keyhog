@@ -232,6 +232,7 @@ pub mod suppression_shape_canonical_imports;
 pub mod telemetry_no_inline_tests;
 pub mod telemetry_no_unwrap_expect;
 pub mod telemetry_non_empty;
+pub mod tuning_resolved_hot_path;
 pub mod types_no_inline_tests;
 pub mod types_no_unwrap_expect;
 pub mod types_non_empty;

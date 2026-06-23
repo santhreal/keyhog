@@ -4,6 +4,7 @@ use super::phase2::*;
 use super::phase2_hs::Phase2HsEngine;
 use super::phase2_truncate::truncate_for_prefilter;
 use super::*;
+use crate::scanner_config::ResolvedScannerTuningConfig;
 use aho_corasick::AhoCorasick;
 use std::sync::atomic::Ordering::Relaxed;
 
@@ -548,7 +549,7 @@ impl Phase2AlwaysActivePrefilter {
         match_text: &str,
         scratch: &mut ActivePatternsScratch,
         localize_plain: bool,
-        tuning: &ScannerTuning,
+        tuning: &ResolvedScannerTuningConfig,
     ) {
         record_mark_call();
         // SWE-101 no-candidate gate (the user's #1 issue: "phase-2 must NEVER
@@ -569,7 +570,7 @@ impl Phase2AlwaysActivePrefilter {
         // describe the homoglyph matcher only on ASCII text. A non-ASCII chunk, a
         // degraded build (`None`), or a real candidate fall through to the full
         // body — never a silent skip (Law 10).
-        if tuning.no_candidate_gate_enabled() {
+        if tuning.no_candidate_gate {
             if let Some(gate) = &self.combined_gate {
                 if match_text.is_ascii() && !gate.anchor_present(match_text) {
                     // No anchorable pattern can fire; mark only the non-anchorable
@@ -595,7 +596,7 @@ impl Phase2AlwaysActivePrefilter {
             // cost beats the RegexSet's per-call lazy-DFA setup), but its unicode
             // automaton over MANY bytes loses to the folded/truncated RegexSet on
             // large chunks. Above the threshold, fall through to the batches.
-            if tuning.phase2_hs_enabled() && match_text.len() <= tuning.hs_prefilter_max_len() {
+            if tuning.fallback_hs && match_text.len() <= tuning.hs_prefilter_max_len {
                 let _ = localize_plain; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
                 match hs.mark(match_text, scratch) {
                     Ok(()) => return,
@@ -608,7 +609,7 @@ impl Phase2AlwaysActivePrefilter {
                 }
             }
         }
-        let use_ascii = tuning.homoglyph_gate_enabled() && match_text.is_ascii();
+        let use_ascii = tuning.homoglyph_gate && match_text.is_ascii();
 
         // Prefix-literal skip gate (KH decode-recursion lever). A `gateable`
         // batch's patterns ALL provably require one of their prefix literals; if
@@ -619,7 +620,7 @@ impl Phase2AlwaysActivePrefilter {
         // skip case (the dominant decode-recursion sub-chunk shape, and most
         // low-density source). `present == true` means "run gateable batches as
         // before" — recall is identical, only dead work is removed.
-        let gate_on = tuning.phase2_prefix_gate_enabled();
+        let gate_on = tuning.fallback_prefix_gate;
         // ci batches run `set` on every chunk -> the ci gate applies always.
         let ci_present = !gate_on
             || self
@@ -643,7 +644,7 @@ impl Phase2AlwaysActivePrefilter {
         // Truncated (lazy-DFA) marking sets: a sound SUPERSET — over-marks at
         // most, extraction with the full pattern filters. The win is keeping the
         // RegexSet off PikeVM on `{N,}` bodies.
-        let truncate = tuning.prefilter_truncate_enabled();
+        let truncate = tuning.prefilter_truncate;
         let ascii = match_text.is_ascii();
         for batch in &self.batches {
             let is_plain = batch.ascii_set.is_some();
@@ -660,7 +661,7 @@ impl Phase2AlwaysActivePrefilter {
             // Proven recall-neutral by `homoglyph_ascii_skip_parity_default` (now a
             // live gate, not `#[ignore]`). Generic/case-sensitive plain fallbacks
             // (no base AC) are in non-skippable batches and are unaffected.
-            if batch.homoglyph_skippable && ascii && tuning.homoglyph_ascii_skip_enabled() {
+            if batch.homoglyph_skippable && ascii && tuning.homoglyph_ascii_skip {
                 continue;
             }
             // Or: the caller's localizer covers this plain batch.
@@ -726,7 +727,11 @@ impl Phase2AlwaysActivePrefilter {
     /// no-phase-1-hit admission gate that exists only on the `simd`/`gpu` phase-2
     /// tail) so non-`simd` profiles don't carry it as dead code (Law 11).
     #[cfg(any(feature = "simd", feature = "gpu"))]
-    pub(crate) fn any_active_match(&self, match_text: &str, tuning: &ScannerTuning) -> bool {
+    pub(crate) fn any_active_match(
+        &self,
+        match_text: &str,
+        tuning: &ResolvedScannerTuningConfig,
+    ) -> bool {
         // Same no-candidate gate as `mark_matches`: on a pure-ASCII no-anchor chunk
         // no anchorable pattern can fire, so the active set is non-empty iff some
         // non-anchorable pattern matches — checked precisely with each pattern's
@@ -734,7 +739,7 @@ impl Phase2AlwaysActivePrefilter {
         // check costs one exact first-bigram prescreen, one possible AC
         // `is_match`, and a handful of per-pattern `is_match` calls instead of
         // the full ~2,700-pattern HS/RegexSet scan.
-        if tuning.no_candidate_gate_enabled() {
+        if tuning.no_candidate_gate {
             if let Some(gate) = &self.combined_gate {
                 if match_text.is_ascii() && !gate.anchor_present(match_text) {
                     return gate.any_non_anchorable_match(match_text);
@@ -752,7 +757,7 @@ impl Phase2AlwaysActivePrefilter {
         }
         #[cfg(feature = "simd")]
         if let Some(hs) = &self.hs {
-            if tuning.phase2_hs_enabled() && match_text.len() <= tuning.hs_prefilter_max_len() {
+            if tuning.fallback_hs && match_text.len() <= tuning.hs_prefilter_max_len {
                 match hs.any_match(match_text) {
                     Ok(hit) => return hit,
                     Err(error) => {
@@ -767,11 +772,11 @@ impl Phase2AlwaysActivePrefilter {
         // RegexSet reference path (HS absent / over the size gate): the active
         // set is non-empty iff some batch's set matches. `is_match` early-exits
         // at the first matching pattern within the batch.
-        let truncate = tuning.prefilter_truncate_enabled();
+        let truncate = tuning.prefilter_truncate;
         let ascii = match_text.is_ascii();
-        let use_ascii = tuning.homoglyph_gate_enabled() && ascii;
+        let use_ascii = tuning.homoglyph_gate && ascii;
         for batch in &self.batches {
-            if batch.homoglyph_skippable && ascii && tuning.homoglyph_ascii_skip_enabled() {
+            if batch.homoglyph_skippable && ascii && tuning.homoglyph_ascii_skip {
                 continue;
             }
             let set = match (

@@ -320,7 +320,7 @@ fn backend_affecting_config_parse_failures_are_loud() {
             && scanner_config.contains("pub gpu_moe_timeout_ms: Option<u64>")
             && scanner_config.contains("const GPU_MOE_TIMEOUT_MS_DEFAULT: u64 = 30_000")
             && tuning.contains("set_gpu_moe_timeout_ms")
-            && tuning.contains("gpu_moe_timeout(&self) -> Duration"),
+            && scanner_config.contains("gpu_moe_timeout(&self) -> Duration"),
         "GPU MoE timeout must be explicit scanner tuning config, not ambient env"
     );
 

@@ -88,16 +88,16 @@ impl CompiledScanner {
         let Some(prefilter) = &self.phase2_always_active_prefilter else {
             return 0.0;
         };
-        let tuning = self.tuning();
+        let tuning = self.tuning().resolve();
         // Warm: one call to initialise any thread-local state before timing.
         let mut scratch = phase2::ActivePatternsScratch::new();
         scratch.begin(self.phase2_patterns.len());
-        prefilter.mark_matches(text, &mut scratch, false, tuning);
+        prefilter.mark_matches(text, &mut scratch, false, &tuning);
         // Timed loop.
         let t0 = std::time::Instant::now();
         for _ in 0..n_calls {
             scratch.begin(self.phase2_patterns.len());
-            prefilter.mark_matches(text, &mut scratch, false, tuning);
+            prefilter.mark_matches(text, &mut scratch, false, &tuning);
         }
         let elapsed_ns = t0.elapsed().as_nanos() as f64;
         elapsed_ns / n_calls as f64

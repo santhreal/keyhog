@@ -14,10 +14,8 @@
 //! prefilter, the decode-recursion focus, and the confirmed-pass suffix gate, so
 //! this carries every recall-identical per-scan route lever in one place.
 //! Re-exported through `engine::phase2` (`pub use crate::tuning::*`).
-use crate::scanner_config::ScannerTuningConfig;
+use crate::scanner_config::{ResolvedScannerTuningConfig, ScannerTuningConfig};
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering::Relaxed};
-#[cfg(feature = "ml")]
-use std::time::Duration;
 
 /// Encode an `Option<bool>` override into the `AtomicU8` convention
 /// (`None` = compiled default, `Some(true)` = force on, `Some(false)` = force off).
@@ -27,6 +25,15 @@ fn encode_override(mode: Option<bool>) -> u8 {
         None => 0,
         Some(true) => 1,
         Some(false) => 2,
+    }
+}
+
+#[inline]
+fn resolve_override(raw: u8, default: bool) -> bool {
+    match raw {
+        1 => true,
+        2 => false,
+        _ => default,
     }
 }
 
@@ -117,6 +124,76 @@ impl ScannerTuning {
         self.set_gpu_moe_timeout_ms(config.gpu_moe_timeout_ms);
     }
 
+    /// Resolve every per-scanner tuning override once into a plain copyable
+    /// record. Scan hot paths pass this snapshot instead of loading atomics and
+    /// re-matching compiled defaults inside each phase-2 prefilter/admission
+    /// call. Test hooks still mutate `ScannerTuning` before invoking a scan; the
+    /// scan observes those mutations when it takes this snapshot.
+    pub(crate) fn resolve(&self) -> ResolvedScannerTuningConfig {
+        let hs_prefilter_max_len = match self.hs_max_len.load(Relaxed) {
+            usize::MAX => ScannerTuningConfig::HS_PREFILTER_MAX_LEN_DEFAULT,
+            value => value,
+        };
+        let gpu_moe_timeout_ms = match self.gpu_moe_timeout_ms.load(Relaxed) {
+            0 => ScannerTuningConfig::GPU_MOE_TIMEOUT_MS_DEFAULT,
+            value => value,
+        };
+
+        ResolvedScannerTuningConfig {
+            fallback_hs: resolve_override(
+                self.phase2_hs.load(Relaxed),
+                ScannerTuningConfig::FALLBACK_HS_DEFAULT,
+            ),
+            hs_prefilter_max_len,
+            hs_shard_target: ScannerTuningConfig::HS_SHARD_TARGET_DEFAULT,
+            fallback_anchor: resolve_override(
+                self.phase2_anchor.load(Relaxed),
+                ScannerTuningConfig::FALLBACK_ANCHOR_DEFAULT,
+            ),
+            homoglyph_gate: resolve_override(
+                self.homoglyph_gate.load(Relaxed),
+                ScannerTuningConfig::HOMOGLYPH_GATE_DEFAULT,
+            ),
+            homoglyph_ascii_skip: resolve_override(
+                self.homoglyph_ascii_skip.load(Relaxed),
+                ScannerTuningConfig::HOMOGLYPH_ASCII_SKIP_DEFAULT,
+            ),
+            fallback_reverse: resolve_override(
+                self.phase2_reverse.load(Relaxed),
+                ScannerTuningConfig::FALLBACK_REVERSE_DEFAULT,
+            ),
+            prefilter_truncate: resolve_override(
+                self.prefilter_truncate.load(Relaxed),
+                ScannerTuningConfig::PREFILTER_TRUNCATE_DEFAULT,
+            ),
+            fallback_prefix_gate: resolve_override(
+                self.phase2_prefix_gate.load(Relaxed),
+                ScannerTuningConfig::FALLBACK_PREFIX_GATE_DEFAULT,
+            ),
+            decode_focus: resolve_override(
+                self.decode_focus.load(Relaxed),
+                ScannerTuningConfig::DECODE_FOCUS_DEFAULT,
+            ),
+            confirmed_suffix_gate: resolve_override(
+                self.confirmed_suffix_gate.load(Relaxed),
+                ScannerTuningConfig::CONFIRMED_SUFFIX_GATE_DEFAULT,
+            ),
+            no_candidate_gate: resolve_override(
+                self.no_candidate_gate.load(Relaxed),
+                ScannerTuningConfig::NO_CANDIDATE_GATE_DEFAULT,
+            ),
+            fallback_localizer: resolve_override(
+                self.phase2_localizer.load(Relaxed),
+                ScannerTuningConfig::FALLBACK_LOCALIZER_DEFAULT,
+            ),
+            gpu_recall_floor: resolve_override(
+                self.gpu_recall_floor.load(Relaxed),
+                ScannerTuningConfig::GPU_RECALL_FLOOR_DEFAULT,
+            ),
+            gpu_moe_timeout_ms,
+        }
+    }
+
     // ── Hyperscan always-active prefilter engine ───────────────────────────
 
     /// Select the always-active prefilter engine (test/diagnostic). Recall is
@@ -125,19 +202,6 @@ impl ScannerTuning {
     /// compiled default (on when an HS engine compiled).
     pub(crate) fn set_phase2_hs(&self, mode: Option<bool>) {
         self.phase2_hs.store(encode_override(mode), Relaxed);
-    }
-
-    /// Whether the HS always-active prefilter is enabled. Default ON: the HS
-    /// engine is ~1000x the `regex::RegexSet` throughput on the always-active set
-    /// and is the measured #1 scan cost. Explicit config can force the legacy
-    /// reference path.
-    #[cfg(feature = "simd")]
-    pub(crate) fn phase2_hs_enabled(&self) -> bool {
-        match self.phase2_hs.load(Relaxed) {
-            1 => true,
-            2 => false,
-            _ => ScannerTuningConfig::FALLBACK_HS_DEFAULT,
-        }
     }
 
     /// Force the HS-prefilter size gate (test/diagnostic). `Some(4096)` is the
@@ -150,23 +214,6 @@ impl ScannerTuning {
     pub(crate) fn set_hs_prefilter_max_len(&self, threshold: Option<usize>) {
         self.hs_max_len
             .store(threshold.unwrap_or(usize::MAX), Relaxed); // LAW10: None is the documented compiled-default sentinel, not an error fallback.
-    }
-
-    /// Max chunk length (bytes) for which the HS prefilter is used; larger chunks
-    /// fall through to the localized `regex::RegexSet` batches. Default
-    /// [`ScannerTuningConfig::HS_PREFILTER_MAX_LEN_DEFAULT`] (4096) — above it the RegexSet path is far
-    /// faster because the HS prefilter scans the full always-active superset while
-    /// the RegexSet path respects shared-anchor localization (recall-identical,
-    /// `fallback_prefilter_hs_large_parity`). Set
-    /// `[tuning].hs_prefilter_max_len` to `usize::MAX - 1` to force HS at every
-    /// size for an A/B.
-    #[cfg(feature = "simd")]
-    pub(crate) fn hs_prefilter_max_len(&self) -> usize {
-        let override_val = self.hs_max_len.load(Relaxed);
-        if override_val != usize::MAX {
-            return override_val;
-        }
-        ScannerTuningConfig::HS_PREFILTER_MAX_LEN_DEFAULT
     }
 
     // ── Shared-anchor phase-2 localization ────────────────────────────────
@@ -216,27 +263,6 @@ impl ScannerTuning {
             .store(encode_override(mode), Relaxed);
     }
 
-    /// Whether to SKIP the always-active homoglyph phase-2 variants on a
-    /// pure-ASCII chunk. **Default ON** since the base-AC coverage gap was closed:
-    /// `collect_triggered_patterns_cpu` now scans the trigger AC with OVERLAPPING
-    /// matching, so a detector whose base literal is a substring of a longer
-    /// matched literal (e.g. `secret` inside `client_secret`) is no longer
-    /// shadowed — its match is reproduced by the AC/confirmed path, making the
-    /// always-active homoglyph variant redundant on a chunk with no non-ASCII
-    /// bytes. Proven recall-neutral by `homoglyph_ascii_skip_parity_default`
-    /// (skip ≡ fold over the mirror corpus + 20k synthetic ASCII inputs). On the
-    /// mirror corpus this also corrects an overlap-suppression cascade
-    /// (`MAILGUN_API_KEY=key-…` was mislabelled Webhook-Signing-Key when the
-    /// variant ran) and is ~13% faster (`phase2:prefilter` is 55% of scan).
-    /// Explicit config can force the legacy fold-every-variant path.
-    pub(crate) fn homoglyph_ascii_skip_enabled(&self) -> bool {
-        match self.homoglyph_ascii_skip.load(Relaxed) {
-            1 => true,
-            2 => false,
-            _ => ScannerTuningConfig::HOMOGLYPH_ASCII_SKIP_DEFAULT,
-        }
-    }
-
     // ── Diagnostic extraction-order reversal ───────────────────────────────
 
     /// Diagnostic: override the phase-2 extraction-order reversal (test hook).
@@ -266,16 +292,6 @@ impl ScannerTuning {
             .store(encode_override(mode), Relaxed);
     }
 
-    /// Whether the prefilter `{N,}`→`{N}` truncation is enabled (default ON:
-    /// −16.8% end-to-end on the mirror corpus, recall-identical).
-    pub(crate) fn prefilter_truncate_enabled(&self) -> bool {
-        match self.prefilter_truncate.load(Relaxed) {
-            1 => true,
-            2 => false,
-            _ => ScannerTuningConfig::PREFILTER_TRUNCATE_DEFAULT,
-        }
-    }
-
     // ── Prefix-literal skip gate ───────────────────────────────────────────
 
     /// Override the phase-2 prefix-literal skip gate (test/diagnostic).
@@ -284,17 +300,6 @@ impl ScannerTuning {
     pub(crate) fn set_phase2_prefix_gate(&self, mode: Option<bool>) {
         self.phase2_prefix_gate
             .store(encode_override(mode), Relaxed);
-    }
-
-    /// Whether the phase-2 prefix-literal skip gate is enabled (default OFF: the
-    /// folded-prefix literal union is too broad to pay off on the mirror corpus;
-    /// kept as a sound, parity-validated lever for literal-sparse corpora).
-    pub(crate) fn phase2_prefix_gate_enabled(&self) -> bool {
-        match self.phase2_prefix_gate.load(Relaxed) {
-            1 => true,
-            2 => false,
-            _ => ScannerTuningConfig::FALLBACK_PREFIX_GATE_DEFAULT,
-        }
     }
 
     // ── Decode-recursion focus restriction ─────────────────────────────────
@@ -351,21 +356,6 @@ impl ScannerTuning {
         self.no_candidate_gate.store(encode_override(mode), Relaxed);
     }
 
-    /// Whether the SWE-101 combined no-candidate prefilter gate is enabled
-    /// (default ON): one `ascii_case_insensitive` Aho-Corasick over the union of
-    /// every always-active pattern's required-prefix literal proves, at ~ns/chunk,
-    /// that NO always-active pattern can fire on a pure-ASCII chunk — so the
-    /// expensive per-pattern marking body is skipped. Explicit config can force
-    /// the legacy run-the-body-on-every-chunk path (recall identical, far slower
-    /// — the original SWE-101 cost).
-    pub(crate) fn no_candidate_gate_enabled(&self) -> bool {
-        match self.no_candidate_gate.load(Relaxed) {
-            1 => true,
-            2 => false,
-            _ => ScannerTuningConfig::NO_CANDIDATE_GATE_DEFAULT,
-        }
-    }
-
     // ── Phase-2 plain-pattern localizer ───────────────────────────────────
 
     /// Override phase-2 plain-pattern localization (test/diagnostic).
@@ -415,16 +405,5 @@ impl ScannerTuning {
     pub(crate) fn set_gpu_moe_timeout_ms(&self, timeout_ms: Option<u64>) {
         let value = timeout_ms.unwrap_or(0); // LAW10: documented default sentinel; unset config means shipped scanner tuning, recall-safe.
         self.gpu_moe_timeout_ms.store(value, Relaxed);
-    }
-
-    #[cfg(feature = "ml")]
-    pub(crate) fn gpu_moe_timeout(&self) -> Duration {
-        let configured = self.gpu_moe_timeout_ms.load(Relaxed);
-        let ms = if configured == 0 {
-            ScannerTuningConfig::GPU_MOE_TIMEOUT_MS_DEFAULT
-        } else {
-            configured
-        };
-        Duration::from_millis(ms)
     }
 }

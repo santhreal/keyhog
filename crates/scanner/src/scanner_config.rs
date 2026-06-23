@@ -162,6 +162,13 @@ pub struct ResolvedScannerTuningConfig {
     pub gpu_moe_timeout_ms: u64,
 }
 
+impl ResolvedScannerTuningConfig {
+    #[cfg(feature = "ml")]
+    pub(crate) fn gpu_moe_timeout(&self) -> Duration {
+        Duration::from_millis(self.gpu_moe_timeout_ms)
+    }
+}
+
 /// Scanner-side configuration: the canonical [`ScanConfig`] — the single owned
 /// source of truth for every shared detection knob (decode depth, entropy, ML,
 /// confidence floor, keyword lists, …) — PLUS the two knobs that are
