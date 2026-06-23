@@ -17,6 +17,27 @@ fn filesystem_source_yields_file_contents() {
 }
 
 #[test]
+fn filesystem_source_does_not_skip_extensionless_text_with_single_nul() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("nul-bearing-config");
+    std::fs::write(&file, b"API_KEY=abc\0def\n").unwrap();
+
+    let source = FilesystemSource::new(PathBuf::from(dir.path()));
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+    assert_eq!(
+        chunks.len(),
+        1,
+        "an extensionless text file with one embedded NUL must not be pre-skipped as binary"
+    );
+    assert_eq!(chunks[0].metadata.source_type, "filesystem");
+    assert!(
+        chunks[0].data.contains("API_KEY=abc\0def"),
+        "NUL-bearing text must reach the scanner unchanged; chunk={:?}",
+        chunks[0]
+    );
+}
+
+#[test]
 fn filesystem_source_missing_path_yields_source_error() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("does-not-exist");

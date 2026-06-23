@@ -39,6 +39,21 @@ fn looks_binary_sparse_controls_is_text() {
 }
 
 #[test]
+fn looks_binary_single_control_in_short_text_is_text() {
+    let bytes = b"KEY\0VALUE\n";
+    assert!(
+        !looks_binary(bytes),
+        "one embedded NUL/control byte is not enough evidence to skip a text file"
+    );
+}
+
+#[test]
+fn looks_binary_repeated_nul_run_is_binary() {
+    let bytes = b"prefix\0\0\0\0suffix";
+    assert!(looks_binary(bytes));
+}
+
+#[test]
 fn looks_binary_short_circuit_matches_full_scan() {
     // Random fixed-seed mix; exhaustive comparison against the
     // previous "filter().count()" implementation for several sizes
@@ -57,7 +72,7 @@ fn looks_binary_short_circuit_matches_full_scan() {
                 .iter()
                 .filter(|&&b| b < 0x20 && !matches!(b, b'\n' | b'\r' | b'\t' | 0x0C))
                 .count() as u64;
-            let expected = suspicious * 20 > bytes.len().max(1) as u64;
+            let expected = suspicious >= 4 && suspicious * 20 > bytes.len().max(1) as u64;
             assert_eq!(
                 looks_binary(&bytes),
                 expected,
@@ -114,6 +129,16 @@ fn decode_utf16_unpaired_surrogate_is_none() {
 fn decode_text_file_valid_utf8_takes_fast_path() {
     let s = "let x = 1;\nfn main() {}\n".repeat(500);
     assert_eq!(decode_text_file(s.as_bytes()).as_deref(), Some(s.as_str()));
+}
+
+#[test]
+fn decode_text_file_short_utf8_with_single_nul_is_kept() {
+    let bytes = b"API_KEY=abc\0def\n";
+    assert_eq!(
+        decode_text_file(bytes).as_deref(),
+        Some("API_KEY=abc\0def\n"),
+        "a single embedded NUL must not silently turn a text file into a binary skip"
+    );
 }
 
 #[test]

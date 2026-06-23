@@ -175,8 +175,7 @@ pub(super) fn process_entry(
             let mut buf = [0u8; 16];
             if let Ok(n) = f.read(&mut buf) {
                 if n > 0 {
-                    let is_binary = buf[..n].iter().any(|&b| b == 0)
-                        || buf.starts_with(b"\x7fELF")
+                    let is_binary = buf.starts_with(b"\x7fELF")
                         || buf.starts_with(b"MZ")
                         || buf.starts_with(b"%PDF")
                         || buf.starts_with(b"PK\x03\x04");

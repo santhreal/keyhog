@@ -4,6 +4,9 @@
 //! together makes the binary-vs-text heuristic easy to audit and
 //! changes obvious in `git diff`.
 
+const SUSPICIOUS_CONTROL_BINARY_MIN: u64 = 4;
+const BINARY_NUL_RUN: usize = 4;
+
 pub(crate) fn decode_text_file(bytes: &[u8]) -> Option<String> {
     // Cheap O(1) header rejects first - no full pass needed to know a PDF or
     // ZIP isn't a text file. NOTE: `has_utf16_nul_pattern` (which previously
@@ -118,7 +121,9 @@ fn looks_binary_header_check(bytes: &[u8]) -> bool {
         if byte < 0x20 && !matches!(byte, b'\n' | b'\r' | b'\t' | 0x0C) {
             suspicious += 1;
             // Threshold matches `looks_binary` (5% suspicious bytes).
-            if (suspicious as usize) * 20 > window.len() {
+            if suspicious >= SUSPICIOUS_CONTROL_BINARY_MIN as u32
+                && (suspicious as usize) * 20 > window.len()
+            {
                 return true;
             }
         }
@@ -130,18 +135,11 @@ pub(in crate::filesystem::read) fn looks_binary(bytes: &[u8]) -> bool {
     if has_binary_magic(bytes) || has_utf16_nul_pattern(bytes) {
         return true;
     }
-    // FIX: Be more lenient with NUL bytes. A single NUL doesn't mean it's
-    // a binary blob - minified JS or UTF-16-without-BOM might have them.
-    // Reject only if NUL density is high or near the start.
-    if let Some(first_nul) = memchr::memchr(0, bytes) {
-        if first_nul < 1024 {
-            // Check if it's UTF-16 (alternating NULs)
-            let is_utf16 = bytes.len() >= 4
-                && ((bytes[0] == 0 && bytes[1] != 0) || (bytes[0] != 0 && bytes[1] == 0));
-            if !is_utf16 {
-                return true;
-            }
-        }
+    // A single NUL/control byte is not enough evidence to throw away a text
+    // file. Reject obvious binary NUL runs here, then let the shared density
+    // gate below make the ratio decision once it has several control bytes.
+    if has_repeated_nul_run(bytes) {
+        return true;
     }
     // Threshold: `suspicious * 20 > total` (i.e. >5% of the file is C0
     // controls other than the usual text whitespace/form-feed). The previous
@@ -151,7 +149,7 @@ pub(in crate::filesystem::read) fn looks_binary(bytes: &[u8]) -> bool {
     //
     // Two-sided early exit - bail in either direction the moment the verdict
     // is provable:
-    //   * As soon as `suspicious * 20 > scanned`, it's binary.
+    //   * As soon as at least four suspicious bytes exceed 5%, it's binary.
     //   * As soon as `(suspicious + remaining) * 20 ≤ total`, even worst-case
     //     remaining bytes can't push us past threshold → it's text.
     //
@@ -171,7 +169,7 @@ pub(in crate::filesystem::read) fn looks_binary(bytes: &[u8]) -> bool {
         if is_susp {
             suspicious += 1;
             // Confirmed binary: ratio already over threshold.
-            if suspicious * 20 > total {
+            if suspicious >= SUSPICIOUS_CONTROL_BINARY_MIN && suspicious * 20 > total {
                 return true;
             }
         }
@@ -187,7 +185,13 @@ pub(in crate::filesystem::read) fn looks_binary(bytes: &[u8]) -> bool {
             }
         }
     }
-    suspicious * 20 > total
+    suspicious >= SUSPICIOUS_CONTROL_BINARY_MIN && suspicious * 20 > total
+}
+
+fn has_repeated_nul_run(bytes: &[u8]) -> bool {
+    bytes
+        .windows(BINARY_NUL_RUN)
+        .any(|window| window.iter().all(|&byte| byte == 0))
 }
 
 fn has_binary_magic(bytes: &[u8]) -> bool {
