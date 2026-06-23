@@ -60,10 +60,11 @@ fn binary_magic_short_ascii_prefixes_require_structure() {
     assert!(!looks_binary(b"MZ_TOKEN=text_prefix_value"));
     assert!(!looks_binary_prefix(b"MZ_TOKEN=text"));
     assert!(!looks_binary(b"BZh_TOKEN=text_prefix_value"));
+    assert!(!looks_binary_prefix(b"BZh_TOKEN=text"));
 }
 
 #[test]
-fn binary_magic_structural_bmp_and_pe_headers_are_binary() {
+fn binary_magic_structural_bmp_pe_and_bzip2_headers_are_binary() {
     let bmp = [b'B', b'M', 70, 0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0, b'd', b'a'];
     assert!(looks_binary(&bmp));
     assert!(looks_binary_prefix(&bmp));
@@ -73,7 +74,10 @@ fn binary_magic_structural_bmp_and_pe_headers_are_binary() {
     pe[60..64].copy_from_slice(&128u32.to_le_bytes());
     pe[128..132].copy_from_slice(b"PE\0\0");
     assert!(looks_binary(&pe));
-    assert!(looks_binary_prefix(&pe[..16]));
+    assert!(looks_binary_prefix(&pe));
+
+    assert!(looks_binary(b"BZh1compressed"));
+    assert!(looks_binary_prefix(b"BZh1compressed"));
 }
 
 #[test]

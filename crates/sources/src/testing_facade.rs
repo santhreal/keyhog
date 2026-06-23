@@ -17,6 +17,12 @@ pub mod testing {
         fn reader_process_entry_panic_rows(
             &self,
         ) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>;
+        fn process_entry_with_recorded_size(
+            &self,
+            path: std::path::PathBuf,
+            recorded_size: u64,
+            max_size: u64,
+        ) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>;
         fn configured_reader_pool_thread_count(
             &self,
             scanner_threads: usize,
@@ -378,6 +384,19 @@ pub mod testing {
             &self,
         ) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
             crate::filesystem::reader_process_entry_panic_rows_for_test()
+        }
+
+        fn process_entry_with_recorded_size(
+            &self,
+            path: std::path::PathBuf,
+            recorded_size: u64,
+            max_size: u64,
+        ) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
+            crate::filesystem::process_entry_with_recorded_size_for_test(
+                path,
+                recorded_size,
+                max_size,
+            )
         }
 
         fn configured_reader_pool_thread_count(

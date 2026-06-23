@@ -189,7 +189,11 @@ pub(in crate::filesystem::read) fn looks_binary(bytes: &[u8]) -> bool {
 }
 
 pub(in crate::filesystem) fn looks_binary_prefix(bytes: &[u8]) -> bool {
-    has_unambiguous_prefix_magic(bytes) || has_repeated_nul_run(bytes)
+    has_unambiguous_prefix_magic(bytes)
+        || has_bmp_header(bytes)
+        || has_pe_header(bytes)
+        || has_bzip2_header(bytes)
+        || has_repeated_nul_run(bytes)
 }
 
 fn has_repeated_nul_run(bytes: &[u8]) -> bool {
@@ -276,9 +280,10 @@ fn has_pe_header(bytes: &[u8]) -> bool {
         return false;
     }
     let pe_offset = u32::from_le_bytes([bytes[60], bytes[61], bytes[62], bytes[63]]) as usize;
-    pe_offset
-        .checked_add(4)
-        .is_some_and(|end| end <= bytes.len() && &bytes[pe_offset..end] == b"PE\0\0")
+    pe_offset >= 64
+        && pe_offset
+            .checked_add(4)
+            .is_some_and(|end| end <= bytes.len() && &bytes[pe_offset..end] == b"PE\0\0")
 }
 
 fn has_bzip2_header(bytes: &[u8]) -> bool {

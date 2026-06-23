@@ -70,6 +70,34 @@ pub(crate) fn reader_process_entry_panic_rows_for_test() -> Vec<Result<Chunk, So
     reader::process_entry_panic_rows_for_test()
 }
 
+pub(crate) fn process_entry_with_recorded_size_for_test(
+    path: PathBuf,
+    recorded_size: u64,
+    max_size: u64,
+) -> Vec<Result<Chunk, SourceError>> {
+    let mut rows = Vec::new();
+    let entry = codewalk::FileEntry {
+        path,
+        size: recorded_size,
+        is_binary: false,
+    };
+    extract::process_entry(
+        entry,
+        &None,
+        &Arc::new(AtomicUsize::new(0)),
+        std::path::Path::new("."),
+        max_size,
+        reader::DEFAULT_WINDOW_SIZE,
+        reader::DEFAULT_WINDOW_OVERLAP,
+        true,
+        &mut |row| {
+            rows.push(row);
+            true
+        },
+    );
+    rows
+}
+
 pub(crate) fn max_buffered_read_bytes_for_test() -> u64 {
     read::max_buffered_read_bytes_for_test()
 }

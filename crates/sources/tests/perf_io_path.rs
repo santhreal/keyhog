@@ -7,15 +7,10 @@
 //! through `filesystem::extract::process_entry`, which for a sub-64-KiB text
 //! file (the dominant case in any real source tree) does, per file:
 //!
-//!   1. `file_live_metadata(&path)` -> `std::fs::metadata(path)`  (extract.rs:111,
-//!      extract.rs:673-678) — a path-based, symlink-FOLLOWING `statx`. Its only
-//!      consumer is the merkle/incremental cache: the `live_mtime_ns` it
-//!      produces is read in `crates/cli/src/orchestrator/dispatch.rs:378/387`
-//!      **only** inside `if let (Some(idx), ...) = (merkle.as_ref(), ...)`.
-//!      `merkle` is `Some` only when `--incremental` is passed
-//!      (`orchestrator/mod.rs:237-248`). On a DEFAULT scan it is `None`, so this
-//!      whole `stat` is pure waste — the walker (`codewalk`) already stat'd the
-//!      entry to fill `entry.size`/`entry.is_binary`.
+//!   1. `file_live_metadata(&path)` -> `std::fs::symlink_metadata(path)` — a
+//!      path-based, symlink-NOFOLLOWING metadata read. Its consumers are the
+//!      live size cap, `Chunk.metadata.size_bytes`, `Chunk.metadata.mtime_ns`,
+//!      and the merkle/incremental cache when present.
 //!   2. `read_file_buffered` -> `read_file_safe` (read/raw.rs:72-102):
 //!        * `open_file_safe` -> one `openat(O_NOFOLLOW)`,
 //!        * one `posix_fadvise` (`fadvise64`),
@@ -45,9 +40,8 @@
 //!     buffer + one 0-byte EOF probe). `read_to_end` on an empty `Vec` is the
 //!     defect.
 //!   * metadata stats per file: ~3-4 (the walker's own stat + the post-open fd
-//!     stat the std read path issues). Dropping the unused `file_live_metadata`
-//!     follow-`stat` on the non-`--incremental` path removes ~1 full path-stat
-//!     per file outright.
+//!     stat the std read path issues). `file_live_metadata` is part of the
+//!     source contract; adding another path-stat is the bug this budget catches.
 //!
 //! TRIPWIRE
 //! --------
@@ -93,17 +87,16 @@ const MAX_READS_PER_FILE: f64 = 3.5;
 ///
 /// NOTE — the original "drop the unused `file_live_metadata` follow-stat → ~3-4/file"
 /// target was REFUTED. `file_live_metadata` is NOT waste: `FilesystemSource` populates
-/// `Chunk.metadata.mtime_ns` on EVERY scan (not just `--incremental`), a contract
-/// asserted by `tests/integration/filesystem.rs` (mtime_ns.is_some() at L378 and
-/// L635) and `tests/gaps/filesystem_source.rs:942`. Gating that stat behind
-/// `merkle.is_some()` would break those three tests. The stat also can't be
-/// deduplicated against the walker's own stat: `codewalk = "=0.2.5"` (pinned
-/// crates.io) exposes only `path`/`size`/`is_binary`, not mtime. So one
-/// path-stat for mtime is contract-required, and the remaining stats are
-/// codewalk's intrinsic per-entry directory walk — neither is a removable
-/// keyhog redundancy. This ceiling therefore only catches a GROSS regression
-/// (e.g. a SECOND redundant per-file stat creeping in), not the refuted 3-4
-/// target. The controllable, landed win is the `read(2)` budget below.
+/// live size plus `Chunk.metadata.mtime_ns` on EVERY scan (not just
+/// `--incremental`), a contract asserted by integration/gap tests. Gating that
+/// stat behind `merkle.is_some()` would break source truth. The stat also can't
+/// be deduplicated against the walker's own stat: `codewalk = "=0.2.5"` exposes
+/// only `path`/`size`/`is_binary`, not mtime. So one path-stat for live size and
+/// mtime is contract-required, and the remaining stats are codewalk's intrinsic
+/// per-entry directory walk — neither is a removable keyhog redundancy. This
+/// ceiling therefore only catches a GROSS regression (e.g. a SECOND redundant
+/// per-file stat creeping in), not the refuted 3-4 target. The controllable,
+/// landed win is the `read(2)` budget below.
 const MAX_META_STATS_PER_FILE: f64 = 12.0;
 
 /// Locate the shipped `keyhog` binary the audit times. Documented profile:

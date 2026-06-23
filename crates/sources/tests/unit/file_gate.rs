@@ -72,20 +72,25 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
         "filesystem extract hot path must not allocate a lowercase extension per file"
     );
     assert!(
-        extract.contains("let mut buf = [0u8; 16]")
+        extract.contains("let mut buf = [0u8; 256]")
             && extract.contains("read::read_file_prefix_safe(&path, &mut buf)")
             && extract.contains("read::looks_binary_prefix(head)")
             && !extract.contains("if let Ok(mut f) = std::fs::File::open(&path)"),
-        "extensionless header sniff must use a stack buffer plus the shared binary-prefix verdict and no-follow prefix reader, not symlink-following File::open"
+        "extensionless header sniff must use a bounded stack buffer plus the shared binary-prefix verdict and no-follow prefix reader, not symlink-following File::open"
     );
     assert!(
         extract
-            .find("idx.metadata_unchanged(&path, meta.mtime_ns, meta.size_bytes)")
+            .find("idx.metadata_unchanged(&path, mtime_ns, meta.size_bytes)")
             .expect("merkle unchanged check must be present")
             < extract
                 .find("read::read_file_prefix_safe(&path, &mut buf)")
                 .expect("extensionless prefix sniff must be present"),
         "merkle unchanged files must compare live mtime and live size before the extensionless prefix reader opens the file"
+    );
+    assert!(
+        extract.contains("std::fs::symlink_metadata(path)")
+            && !extract.contains("std::fs::metadata(path)"),
+        "live filesystem metadata must use no-follow symlink_metadata, never symlink-following metadata"
     );
     assert!(
         raw.contains("fn read_file_prefix_safe(")

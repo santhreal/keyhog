@@ -16,7 +16,8 @@
 //!       3. `max_size > 0 && file_size > max_size` -> warn + counter + return
 //!       4. `is_skip_extension(ext)` ASCII-case-insensitive extension gate
 //!       5. merkle skip
-//!       6. empty-ext: sniff first 16 bytes for binary magic / repeated NUL run
+//!       6. empty-ext: sniff a bounded structural prefix for binary magic /
+//!          repeated NUL run
 //!       7. pdf structured extraction
 //!       8. archive (zip/apk/ipa/crx/jar) with symlink refusal
 //!       9. compressed (gz/zst/lz4/sz)
@@ -319,6 +320,29 @@ fn file_one_byte_over_cap_is_skipped() {
 }
 
 #[test]
+fn live_size_over_cap_wins_over_stale_recorded_size() {
+    reset_skipped_over_max_size();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("grown.txt");
+    fs::write(&path, "SECRET=stale-size-should-not-leak\n").unwrap();
+
+    let rows = TestApi.process_entry_with_recorded_size(path, 4, 8);
+    let chunks: Vec<_> = rows
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("over-cap live file should skip cleanly");
+    assert!(
+        chunks.is_empty(),
+        "live over-cap file must not emit a partial prefix from stale walker size"
+    );
+    assert_eq!(
+        skip_counts().over_max_size,
+        1,
+        "live over-cap size must be surfaced in skip telemetry"
+    );
+}
+
+#[test]
 fn max_file_size_zero_means_unlimited() {
     // The gate is `max_size > 0 && file_size > max_size`; with max_size == 0
     // the cap never triggers, so even a (relatively) large text file scans.
@@ -589,7 +613,7 @@ fn ordinary_text_extension_is_scanned() {
 
 #[test]
 fn extensionless_elf_magic_is_skipped() {
-    // process_entry: a file with NO extension sniffs the first 16 bytes;
+    // process_entry: a file with NO extension sniffs a bounded prefix;
     // a `\x7fELF` header is in the sniff list and is detected as binary and
     // skipped. Filename must be genuinely extension-less (`a.out` would have
     // ext "out" and bypass the sniff), so use a bare name.
@@ -601,14 +625,14 @@ fn extensionless_elf_magic_is_skipped() {
     let chunks = scan_single_file(&path);
     assert!(
         chunks.is_empty(),
-        "ELF-magic extensionless file must be skipped by the 16-byte sniff"
+        "ELF-magic extensionless file must be skipped by the prefix sniff"
     );
 }
 
 #[test]
 fn elf_magic_with_nonskip_extension_falls_back_to_strings_not_text() {
     // Twin of the above documenting the OTHER branch: a file named with a
-    // non-SKIP extension (`.out`) keeps a non-empty `ext`, so the 16-byte
+    // non-SKIP extension (`.out`) keeps a non-empty `ext`, so the prefix
     // sniff is bypassed entirely. The bytes then hit the text decoder, whose
     // `has_binary_magic` rejects the `\x7fELF` header (returns None), and the
     // printable-strings fallback emits the embedded run tagged
@@ -639,8 +663,7 @@ fn elf_magic_with_nonskip_extension_falls_back_to_strings_not_text() {
 #[test]
 fn extensionless_mz_text_like_prefix_is_scanned() {
     // A bare "MZ" prefix is not enough evidence to discard extensionless text;
-    // real PE validation needs the later PE header, and the prefix sniff only
-    // sees the first 16 bytes.
+    // real PE validation needs the later PE header inside the bounded prefix.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("program"); // no extension
     fs::write(&path, b"MZ_TOKEN=text_prefix_value").unwrap();
@@ -651,6 +674,24 @@ fn extensionless_mz_text_like_prefix_is_scanned() {
         "bare MZ-prefixed text must stay on the recall-preserving scan path"
     );
     assert!(chunks[0].data.contains("MZ_TOKEN=text_prefix_value"));
+}
+
+#[test]
+fn extensionless_pe_header_is_skipped_by_structural_sniff() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("program"); // no extension
+    let mut bytes = vec![0u8; 160];
+    bytes[0..2].copy_from_slice(b"MZ");
+    bytes[60..64].copy_from_slice(&128u32.to_le_bytes());
+    bytes[128..132].copy_from_slice(b"PE\0\0");
+    bytes.extend_from_slice(b"KEY=pe_should_not_scan");
+    fs::write(&path, &bytes).unwrap();
+
+    let chunks = scan_single_file(&path);
+    assert!(
+        chunks.is_empty(),
+        "structural PE header in extensionless file must be skipped"
+    );
 }
 
 #[test]
@@ -681,7 +722,7 @@ fn extensionless_pdf_magic_is_skipped() {
 
 #[test]
 fn extensionless_zip_magic_is_skipped_by_sniff() {
-    // PK\x03\x04 (ZIP) is in the 16-byte sniff list. An extensionless file
+    // PK\x03\x04 (ZIP) is in the prefix sniff list. An extensionless file
     // with that header is skipped before any unpack attempt (the archive
     // branch keys off the .zip extension, which this file lacks).
     let dir = tempfile::tempdir().unwrap();
@@ -695,7 +736,7 @@ fn extensionless_zip_magic_is_skipped_by_sniff() {
 }
 
 #[test]
-fn extensionless_repeated_nul_run_in_first_16_is_skipped() {
+fn extensionless_repeated_nul_run_in_prefix_is_skipped() {
     // The sniff rejects an obvious binary NUL run, while the unit coverage keeps
     // single-NUL extensionless text on the recall-preserving scan path.
     let dir = tempfile::tempdir().unwrap();
@@ -704,13 +745,13 @@ fn extensionless_repeated_nul_run_in_first_16_is_skipped() {
     let chunks = scan_single_file(&path);
     assert!(
         chunks.is_empty(),
-        "a repeated NUL run within the first 16 bytes must trip the binary sniff"
+        "a repeated NUL run within the prefix must trip the binary sniff"
     );
 }
 
 #[test]
 fn extensionless_clean_text_passes_the_sniff() {
-    // Control: an extensionless file whose first 16 bytes are clean text
+    // Control: an extensionless file whose prefix is clean text
     // survives the sniff and is scanned as `filesystem`.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("Makefile"); // no extension, clean text
@@ -722,12 +763,10 @@ fn extensionless_clean_text_passes_the_sniff() {
 }
 
 #[test]
-fn extensionless_nul_after_first_16_bytes_is_not_caught_by_sniff() {
-    // The sniff only inspects the FIRST 16 bytes. A NUL at byte 20 passes the
-    // sniff; the file then goes to the text-read path where the full
-    // `looks_binary` density check (read/decode.rs) decides. With a single
-    // late NUL in otherwise-clean text the decoder's lenient NUL rule
-    // (first_nul >= 1024 -> not auto-binary) keeps it, so it IS scanned.
+fn extensionless_single_nul_in_prefix_is_not_caught_by_sniff() {
+    // The prefix sniff rejects repeated NUL runs, not one NUL in otherwise-clean
+    // text. The file then goes to the text-read path where the full `looks_binary`
+    // density check (read/decode.rs) decides, so it IS scanned.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("notes"); // no extension
     let mut bytes = b"clean leading sixteen bytes here ".to_vec(); // > 16 clean bytes
@@ -738,7 +777,7 @@ fn extensionless_nul_after_first_16_bytes_is_not_caught_by_sniff() {
     assert_eq!(
         chunks.len(),
         1,
-        "a single late NUL must not trip the 16-byte sniff and survives decode"
+        "a single NUL must not trip the prefix sniff and survives decode"
     );
     assert!(chunks[0].data.contains("KEY=late_nul_value"));
 }

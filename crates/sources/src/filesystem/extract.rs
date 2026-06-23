@@ -111,7 +111,7 @@ const MMAP_THRESHOLD: u64 = 1024 * 1024;
 
 #[derive(Clone, Copy)]
 struct FileLiveMetadata {
-    mtime_ns: u64,
+    mtime_ns: Option<u64>,
     size_bytes: u64,
 }
 
@@ -130,7 +130,6 @@ pub(super) fn process_entry(
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
     let path = entry.path;
-    let file_size = entry.size;
 
     // Built-in exclusion list (lock/minified/bundled/vendored). Gated on
     // `respect_default_excludes` so `--no-default-excludes` actually reaches this
@@ -156,6 +155,10 @@ pub(super) fn process_entry(
         return;
     }
 
+    let live_metadata = file_live_metadata(&path);
+    let file_size = live_metadata.map_or(entry.size, |meta| meta.size_bytes);
+    let live_mtime_ns = live_metadata.and_then(|meta| meta.mtime_ns);
+
     if max_size > 0 && file_size > max_size {
         tracing::warn!(
             path = %path.display(),
@@ -175,22 +178,22 @@ pub(super) fn process_entry(
         return;
     }
 
-    let live_metadata = file_live_metadata(&path);
-    let live_mtime_ns = live_metadata.map(|meta| meta.mtime_ns);
     if let (Some(idx), Some(meta)) = (merkle.as_ref(), live_metadata) {
-        if idx.metadata_unchanged(&path, meta.mtime_ns, meta.size_bytes) {
-            skipped.fetch_add(1, Ordering::Relaxed);
-            return;
+        if let Some(mtime_ns) = meta.mtime_ns {
+            if idx.metadata_unchanged(&path, mtime_ns, meta.size_bytes) {
+                skipped.fetch_add(1, Ordering::Relaxed);
+                return;
+            }
         }
     }
 
     if ext.is_empty() {
-        // Sniff the first 16 bytes of files without extensions to quickly skip
-        // binary structures without full content reads (KH-50). Use the same
+        // Sniff a small structural prefix of files without extensions to quickly
+        // skip binary structures without full content reads (KH-50). Use the same
         // no-follow safe open as the real file reader: an extensionless symlink
         // must not get a pre-guard `File::open` of its target just because this
         // is only a header sniff.
-        let mut buf = [0u8; 16];
+        let mut buf = [0u8; 256];
         if let Ok(n) = read::read_file_prefix_safe(&path, &mut buf) {
             let head = &buf[..n];
             if read::looks_binary_prefix(head) {
@@ -548,17 +551,21 @@ pub(super) fn process_entry(
     }
 }
 
-/// Read live metadata via a single `stat`.
-/// Returns `None` when the platform/filesystem doesn't expose a usable
-/// modified time - in that case the cache fast-path simply doesn't fire,
-/// which is strictly better than a false skip.
+/// Read live metadata via a single no-follow `stat`.
+/// Size remains authoritative even when the platform/filesystem does not expose
+/// a usable modified time; in that case only the cache fast-path is disabled.
 fn file_live_metadata(path: &Path) -> Option<FileLiveMetadata> {
-    let meta = std::fs::metadata(path).ok()?; // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
-    let modified = meta.modified().ok()?; // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
-    let dur = modified.duration_since(std::time::UNIX_EPOCH).ok()?; // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
-    let nanos = dur.as_secs() as u128 * 1_000_000_000 + dur.subsec_nanos() as u128;
+    let meta = std::fs::symlink_metadata(path).ok()?; // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
+    let mtime_ns = meta
+        .modified()
+        .ok()
+        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|dur| {
+            let nanos = dur.as_secs() as u128 * 1_000_000_000 + dur.subsec_nanos() as u128;
+            u64::try_from(nanos).unwrap_or(u64::MAX) // LAW10: empty/absent => documented numeric default, recall-safe
+        });
     Some(FileLiveMetadata {
-        mtime_ns: u64::try_from(nanos).unwrap_or(u64::MAX), // LAW10: empty/absent => documented numeric default, recall-safe
+        mtime_ns,
         size_bytes: meta.len(),
     })
 }
