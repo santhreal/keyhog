@@ -95,6 +95,34 @@ fn har_symlink_target_is_not_followed_via_include() {
 }
 
 #[test]
+fn plain_named_symlink_to_har_target_is_refused_via_include() {
+    let target_dir = tempfile::tempdir().unwrap();
+    let scan_dir = tempfile::tempdir().unwrap();
+
+    let target = target_dir.path().join("capture.har");
+    fs::write(&target, HAR_WITH_SECRET).unwrap();
+
+    let bait = scan_dir.path().join("creds.txt");
+    symlink(&target, &bait).unwrap();
+
+    let source =
+        FilesystemSource::new(scan_dir.path().to_path_buf()).with_include_paths(vec![bait.clone()]);
+    let rows: Vec<_> = source.chunks().collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "plain-named symlink to expandable target must surface one source error"
+    );
+    let err = rows[0]
+        .as_ref()
+        .expect_err("symlink to HAR target must be refused");
+    assert!(
+        err.to_string().contains("archive symlink") && err.to_string().contains("refusing to scan"),
+        "error should name the refused archive symlink include, got {err}"
+    );
+}
+
+#[test]
 fn expandable_symlink_extensions_are_refused_via_include() {
     for ext in ["7z", "rar", "pdf", "bz2", "xz"] {
         let target_dir = tempfile::tempdir().unwrap();

@@ -421,11 +421,12 @@ impl Source for FilesystemSource {
                 // is read (documented "canonicalize-then-read" — the user
                 // explicitly named it; see
                 // `included_symlinked_plain_file_is_canonicalized_then_read`).
-                // But a symlink whose own extension marks it an ARCHIVE /
-                // expandable container (`creds.har -> ~/.aws/credentials`,
-                // `x.zip -> /etc/...`) is REFUSED: following it would read AND
-                // structurally EXPAND an out-of-tree target, the link-swap
-                // exfiltration class (see `har_symlink_target_is_not_followed_via_include`).
+                // But a symlink whose link name OR resolved target extension marks
+                // it as an ARCHIVE / expandable container (`creds.har ->
+                // ~/.aws/credentials`, `creds.txt -> ~/capture.har`, `x.zip ->
+                // /etc/...`) is REFUSED: following it would read AND structurally
+                // EXPAND an out-of-tree target, the link-swap exfiltration class
+                // (see `har_symlink_target_is_not_followed_via_include`).
                 // The expandable-extension set mirrors the archive/compressed
                 // branches in `extract.rs::process_entry`.
                 let is_link = std::fs::symlink_metadata(p)
@@ -439,14 +440,20 @@ impl Source for FilesystemSource {
                     "har", "zip", "apk", "ipa", "crx", "jar", "tar", "gz", "tgz", "zst", "lz4",
                     "sz", "bz2", "xz", "7z", "rar", "pdf",
                 ];
-                let expandable = p.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
-                    EXPANDABLE_SYMLINK_EXTS
-                        .iter()
-                        .any(|candidate| ext.eq_ignore_ascii_case(candidate))
-                });
-                if expandable {
+                let is_expandable_path = |path: &std::path::Path| {
+                    path.extension()
+                        .and_then(|e| e.to_str())
+                        .is_some_and(|ext| {
+                            EXPANDABLE_SYMLINK_EXTS
+                                .iter()
+                                .any(|candidate| ext.eq_ignore_ascii_case(candidate))
+                        })
+                };
+                let target = p.canonicalize().unwrap_or_else(|_| p.clone()); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
+                if is_expandable_path(p) || is_expandable_path(&target) {
                     tracing::warn!(
                         path = %p.display(),
+                        target = %target.display(),
                         "refusing --include of an archive symlink - prevents the link-swap exfiltration class"
                     );
                     let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
@@ -456,7 +463,7 @@ impl Source for FilesystemSource {
                     )));
                     continue;
                 }
-                allowed.push(p.canonicalize().unwrap_or_else(|_| p.clone())); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
+                allowed.push(target);
             }
             allowed.sort();
             allowed.dedup();

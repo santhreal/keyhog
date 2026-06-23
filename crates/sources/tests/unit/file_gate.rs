@@ -101,8 +101,10 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
     assert!(
         filesystem.contains("EXPANDABLE_SYMLINK_EXTS")
             && filesystem.contains("ext.eq_ignore_ascii_case(candidate)")
+            && filesystem.contains("is_expandable_path(p) || is_expandable_path(&target)")
+            && filesystem.contains("target = %target.display()")
             && !filesystem.contains(".to_ascii_lowercase();"),
-        "filesystem include-symlink archive extension checks must be allocation-free and ASCII-case-insensitive"
+        "filesystem include-symlink archive extension checks must cover link and resolved target paths allocation-free and ASCII-case-insensitively"
     );
     assert!(
         archive.contains("const OPENPACK_EXTS")
