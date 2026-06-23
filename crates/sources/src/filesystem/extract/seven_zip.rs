@@ -120,21 +120,22 @@ pub(super) fn extract_seven_zip_chunks(
             return Ok(false);
         }
 
+        let remaining_budget = total_budget.saturating_sub(total_uncompressed);
+        let read_cap = per_entry_cap.min(remaining_budget);
+        let read_limit = read_cap.saturating_add(1);
         let mut content = Vec::with_capacity(entry_size.min(READ_CAPACITY_HINT) as usize);
-        entry_reader.read_to_end(&mut content)?;
-        total_uncompressed = total_uncompressed.saturating_add(content.len() as u64);
-        if total_uncompressed > total_budget {
-            let error = super::report_archive_truncation(
-                &archive_display,
-                total_uncompressed,
-                total_budget,
-            );
+        entry_reader.take(read_limit).read_to_end(&mut content)?;
+        if content.len() as u64 > read_cap {
+            let attempted_total = total_uncompressed.saturating_add(content.len() as u64);
+            let error =
+                super::report_archive_truncation(&archive_display, attempted_total, total_budget);
             archive_truncated = true;
             if !emit(Err(error)) {
                 consumer_stopped = true;
             }
             return Ok(false);
         }
+        total_uncompressed = total_uncompressed.saturating_add(content.len() as u64);
 
         let entry_path = format!("{archive_display}//{entry_name}");
         if let Some(chunk) = chunk_from_entry_content(content, entry_path) {

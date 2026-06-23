@@ -94,3 +94,17 @@ fn compressed_fallback_read_is_bounded_and_no_follow() {
         "compressed locked-file contention must not reopen and buffered-read the path unlocked"
     );
 }
+
+#[test]
+fn seven_zip_entry_reads_are_capped() {
+    let seven_zip = read_src("src/filesystem/extract/seven_zip.rs");
+    assert!(
+        !seven_zip.contains("entry_reader.read_to_end(&mut content)"),
+        "7z entries must not use bare read_to_end: a forged or expanding entry would allocate beyond the per-entry/archive bomb budget"
+    );
+    assert!(
+        seven_zip.contains("let read_cap = per_entry_cap.min(remaining_budget)")
+            && seven_zip.contains("entry_reader.take(read_limit).read_to_end(&mut content)"),
+        "7z entry reads must cap decompressed output to the smaller of per-entry cap and remaining archive budget, with a one-byte overflow probe"
+    );
+}
