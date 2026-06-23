@@ -1,4 +1,4 @@
-use keyhog::testing::{CliTestApi as _, API};
+use keyhog::testing::{API, CliTestApi as _};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use std::sync::Arc;
 
@@ -25,7 +25,7 @@ fn filter_inline_suppressions_keeps_non_filesystem_matches() {
         service: Arc::from("demo"),
         severity: Severity::Low,
         credential: keyhog_core::SensitiveString::from("abc"),
-        credential_hash: test_hash(),
+        credential_hash: test_hash().into(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("stdin"),
@@ -59,7 +59,7 @@ fn filter_inline_suppressions_drops_directive_marked_line() {
         service: Arc::from("demo"),
         severity: Severity::Low,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: test_hash(),
+        credential_hash: test_hash().into(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
@@ -93,7 +93,7 @@ fn filter_inline_suppressions_keeps_findings_after_read_error() {
         service: Arc::from("demo"),
         severity: Severity::Low,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: test_hash(),
+        credential_hash: test_hash().into(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
@@ -133,7 +133,7 @@ fn filter_inline_suppressions_supports_migrated_directives() {
             service: Arc::from("demo"),
             severity: Severity::Low,
             credential: keyhog_core::SensitiveString::from("secret"),
-            credential_hash: test_hash(),
+            credential_hash: test_hash().into(),
             companions: Default::default(),
             location: MatchLocation {
                 source: Arc::from("filesystem"),
@@ -173,7 +173,7 @@ fn filter_inline_suppressions_with_detector_suffix() {
         service: Arc::from("aws"),
         severity: Severity::Low,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: test_hash(),
+        credential_hash: test_hash().into(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
@@ -200,7 +200,7 @@ fn filter_inline_suppressions_with_detector_suffix() {
         service: Arc::from("stripe"),
         severity: Severity::Low,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: test_hash(),
+        credential_hash: test_hash().into(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
@@ -244,7 +244,7 @@ fn filter_inline_suppressions_detector_suffix_is_case_insensitive() {
         service: Arc::from("aws"),
         severity: Severity::Low,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: test_hash(),
+        credential_hash: test_hash().into(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("filesystem"),

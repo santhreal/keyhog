@@ -17,7 +17,7 @@ pub fn deduped_match() -> DedupedMatch {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,

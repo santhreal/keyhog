@@ -22,7 +22,8 @@ async fn test_verify_u32_max_limits() {
 #[tokio::test]
 async fn test_verify_long_unicode_surrogates() {
     // Overlong utf-8 and surrogates in credential strings
-    let spec = DetectorSpec { tests: Vec::new(),
+    let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "det_uni".to_string(),
         name: "det_uni".to_string(),
         service: "test".to_string(),
@@ -65,7 +66,7 @@ async fn test_verify_long_unicode_surrogates() {
         credential: keyhog_core::SensitiveString::from(
             String::from_utf8_lossy(b"secret\xEF\xBF\xBD\xED\xA0\x80\xED\xB0\x80test").into_owned(),
         ),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,
@@ -135,7 +136,7 @@ fn test_verify_deeply_nested_interpolations_inner() {
                 service: Arc::from("test"),
                 severity: Severity::Critical,
                 credential: keyhog_core::SensitiveString::from("secret"),
-                credential_hash: [0u8; 32],
+                credential_hash: [0u8; 32].into(),
                 primary_location: MatchLocation { source: Arc::from(""), file_path: None, line: None, offset: 0, commit: None, author: None, date: None },
                 additional_locations: vec![],
                 companions: comps,
@@ -150,7 +151,8 @@ fn test_verify_deeply_nested_interpolations_inner() {
 
 #[tokio::test]
 async fn test_verify_duplicate_entries_same_key() {
-    let spec = DetectorSpec { tests: Vec::new(),
+    let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "det_same".to_string(),
         name: "det_same".to_string(),
         service: "test".to_string(),
@@ -193,7 +195,7 @@ async fn test_verify_duplicate_entries_same_key() {
             service: Arc::from("test"),
             severity: Severity::Critical,
             credential: keyhog_core::SensitiveString::from("secret"),
-            credential_hash: [0u8; 32],
+            credential_hash: [0u8; 32].into(),
             primary_location: MatchLocation {
                 source: Arc::from(""),
                 file_path: None,

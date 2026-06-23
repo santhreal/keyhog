@@ -1,4 +1,4 @@
-use keyhog_core::{dedup_cross_detector, DedupedMatch, MatchLocation, Severity};
+use keyhog_core::{DedupedMatch, MatchLocation, Severity, dedup_cross_detector};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -9,7 +9,7 @@ fn make_deduped(detector: &str, service: &str, conf: f64) -> DedupedMatch {
         service: Arc::from(service),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from("AIza_FAKE_KEY_NOT_REAL_VALUE_1234567890"),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         companions: HashMap::new(),
         primary_location: MatchLocation {
             source: Arc::from("test"),

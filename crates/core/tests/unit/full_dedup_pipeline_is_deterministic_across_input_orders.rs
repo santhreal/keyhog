@@ -1,6 +1,6 @@
 use keyhog_core::{
-    dedup_cross_detector, dedup_matches, DedupScope, DedupedMatch, MatchLocation, RawMatch,
-    Severity,
+    DedupScope, DedupedMatch, MatchLocation, RawMatch, Severity, dedup_cross_detector,
+    dedup_matches,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -12,7 +12,7 @@ fn make_raw(detector: &str, credential: &str, conf: f64) -> RawMatch {
         service: Arc::from(detector.split('-').next().unwrap_or(detector)),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from(credential),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         companions: HashMap::new(),
         location: MatchLocation {
             source: Arc::from("test"),

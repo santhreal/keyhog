@@ -21,8 +21,8 @@
 //!      cap gzip bomb).
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use keyhog_core::{
@@ -100,7 +100,7 @@ fn group_for(id: &str, credential: &str) -> DedupedMatch {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from(credential),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from("fs"),
             file_path: Some(Arc::from("test")),
@@ -546,10 +546,14 @@ async fn connection_reset_yields_error_not_silent_live_or_dead() {
     match &findings[0].verification {
         VerificationResult::Error(_) => { /* correct: Unknown, surfaced loudly */ }
         VerificationResult::Live => {
-            panic!("FAIL-OPEN: a connection-reset probe was reported Live (credential not proven valid)")
+            panic!(
+                "FAIL-OPEN: a connection-reset probe was reported Live (credential not proven valid)"
+            )
         }
         VerificationResult::Dead => {
-            panic!("FAIL-SHUT: a connection-reset probe was reported Dead (credential not proven rejected)")
+            panic!(
+                "FAIL-SHUT: a connection-reset probe was reported Dead (credential not proven rejected)"
+            )
         }
         other => panic!("connection reset must yield Error (Unknown), got {other:?}"),
     }
@@ -880,7 +884,8 @@ fn resolved_client_for_url_is_split_into_explicit_egress_stages() {
         .expect("direct resolver stage must be bounded before client selection");
     assert!(
         direct_resolve.contains("crate::ssrf::resolve_dns_cached")
-            && direct_resolve.contains("screen_target_url_and_addrs(url, &addrs, allow_private_ips)?")
+            && direct_resolve
+                .contains("screen_target_url_and_addrs(url, &addrs, allow_private_ips)?")
             && direct_resolve.contains("blocked: DNS returned no addresses")
             && direct_resolve.contains("blocked: DNS resolution failed"),
         "direct resolver stage must own DNS resolution, resolved-IP screening, and fail-closed DNS errors"
@@ -895,7 +900,8 @@ fn resolved_client_for_url_is_split_into_explicit_egress_stages() {
         .expect("direct client stage must be bounded before cache owner");
     assert!(
         direct_client.contains("return Ok(base_client.clone());")
-            && direct_client.contains("pinned_client_for(host, pinned_addrs, timeout, insecure_tls)"),
+            && direct_client
+                .contains("pinned_client_for(host, pinned_addrs, timeout, insecure_tls)"),
         "direct client stage must preserve the empty-host base-client path and the pinned-client cache path"
     );
 }

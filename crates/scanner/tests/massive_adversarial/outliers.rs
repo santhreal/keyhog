@@ -258,7 +258,7 @@ fn make_raw_match(
         service: Arc::from(format!("Service-{detector_id}")),
         severity,
         credential: keyhog_core::SensitiveString::from(credential),
-        credential_hash: credential_hash(credential),
+        credential_hash: credential_hash(credential).into(),
         companions,
         location: MatchLocation {
             source: Arc::from("test"),

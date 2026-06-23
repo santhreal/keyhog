@@ -25,7 +25,8 @@ async fn test_verify_json_path_exhaustion() {
     })
     .await;
 
-    let spec = DetectorSpec { tests: Vec::new(),
+    let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "det_json".to_string(),
         name: "det_json".to_string(),
         service: "test".to_string(),
@@ -73,7 +74,7 @@ async fn test_verify_json_path_exhaustion() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,
@@ -122,7 +123,8 @@ async fn test_verify_json_path_exhaustion() {
 
 #[tokio::test]
 async fn test_verify_aws_sigv4_empty_keys() {
-    let spec = DetectorSpec { tests: Vec::new(),
+    let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "det_aws".to_string(),
         name: "det_aws".to_string(),
         service: "aws".to_string(),
@@ -169,7 +171,7 @@ async fn test_verify_aws_sigv4_empty_keys() {
         service: Arc::from("aws"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from(""), // empty
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,
@@ -196,7 +198,8 @@ async fn test_verify_aws_sigv4_empty_keys() {
 
 #[tokio::test]
 async fn test_verify_aws_sigv4_null_bytes() {
-    let spec = DetectorSpec { tests: Vec::new(),
+    let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "det_aws".to_string(),
         name: "det_aws".to_string(),
         service: "aws".to_string(),
@@ -245,7 +248,7 @@ async fn test_verify_aws_sigv4_null_bytes() {
         service: Arc::from("aws"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from("AKIA\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,
@@ -273,7 +276,8 @@ async fn test_verify_aws_sigv4_null_bytes() {
 
 #[tokio::test]
 async fn test_verify_bad_header_templates() {
-    let spec = DetectorSpec { tests: Vec::new(),
+    let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "det_headers".to_string(),
         name: "det_headers".to_string(),
         service: "test".to_string(),
@@ -317,7 +321,7 @@ async fn test_verify_bad_header_templates() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from("val\r\nInjected-Header: 1\r\n\0"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,

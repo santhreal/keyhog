@@ -37,7 +37,7 @@ fn make_match_at_offset(
         service: Arc::from("test"),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from(credential),
-        credential_hash: credential_hash(credential),
+        credential_hash: credential_hash(credential).into(),
         companions: HashMap::new(),
         location: MatchLocation {
             source: Arc::from("test"),

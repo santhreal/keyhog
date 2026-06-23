@@ -2,14 +2,14 @@
 
 use clap::Parser;
 use keyhog::args::{Cli, ScanArgs};
-use keyhog::testing::{CliTestApi as _, API};
+use keyhog::testing::{API, CliTestApi as _};
 // The `keyhog::daemon::*` modules are unix-only (Unix-domain sockets).
 // Gate the imports and the daemon_* tests below so the file compiles
 // on Windows.
 #[cfg(unix)]
 use keyhog::daemon::default_socket_path;
 #[cfg(unix)]
-use keyhog::daemon::protocol::{Request, Response, MAX_FRAME_BYTES, WIRE_VERSION};
+use keyhog::daemon::protocol::{MAX_FRAME_BYTES, Request, Response, WIRE_VERSION};
 use keyhog_core::{Chunk, ChunkMetadata, MatchLocation, RawMatch, SensitiveString, Severity};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -197,9 +197,10 @@ fn baseline_happy() {
 }
 #[test]
 fn baseline_error() {
-    assert!(API
-        .baseline_load(std::path::Path::new("/nonexistent/baseline.json"))
-        .is_err());
+    assert!(
+        API.baseline_load(std::path::Path::new("/nonexistent/baseline.json"))
+            .is_err()
+    );
 }
 
 // ── crates/cli/src/benchmark.rs ───────────────────────────────────────
@@ -216,9 +217,10 @@ fn config_happy() {
 }
 #[test]
 fn config_error() {
-    assert!(API
-        .find_config_file(Some(std::path::Path::new("/nonexistent")))
-        .is_none());
+    assert!(
+        API.find_config_file(Some(std::path::Path::new("/nonexistent")))
+            .is_none()
+    );
 }
 
 // ── crates/cli/src/daemon/mod.rs ──────────────────────────────────────
@@ -292,7 +294,7 @@ fn inline_suppression_happy() {
         service: Arc::from("demo"),
         severity: Severity::Low,
         credential: keyhog_core::SensitiveString::from("abc"),
-        credential_hash: [7u8; 32],
+        credential_hash: [7u8; 32].into(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("stdin"),
@@ -320,9 +322,10 @@ fn orchestrator_happy() {
 }
 #[test]
 fn orchestrator_error() {
-    assert!(API
-        .validate_cli_path_arg(std::path::Path::new("/nonexistent/keyhog-path"), "scan")
-        .is_err());
+    assert!(
+        API.validate_cli_path_arg(std::path::Path::new("/nonexistent/keyhog-path"), "scan")
+            .is_err()
+    );
 }
 
 // ── crates/cli/src/orchestrator_config.rs ─────────────────────────────
@@ -335,9 +338,10 @@ fn orchestrator_config_happy() {
 // ── crates/cli/src/path_validation.rs ─────────────────────────────────
 #[test]
 fn path_validation_error() {
-    assert!(API
-        .validate_cli_path_arg(std::path::Path::new("/nonexistent/keyhog-path"), "scan")
-        .is_err());
+    assert!(
+        API.validate_cli_path_arg(std::path::Path::new("/nonexistent/keyhog-path"), "scan")
+            .is_err()
+    );
 }
 
 // ── crates/cli/src/reporting.rs ───────────────────────────────────────

@@ -15,7 +15,8 @@ pub fn sample_finding() -> VerifiedFinding {
         credential_hash: [
             0xde, 0xad, 0xbe, 0xef, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0,
-        ],
+        ]
+        .into(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("config/app.env")),

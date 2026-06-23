@@ -10,7 +10,7 @@ fn synthetic_finding() -> VerifiedFinding {
         service: Arc::from("test"),
         severity: Severity::High,
         credential_redacted: std::borrow::Cow::Borrowed("****redacted"),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("config.env")),
@@ -57,8 +57,8 @@ fn sarif_output_is_valid_json_with_cwe_owasp_taxa() {
         ["replacements"][0]["insertedContent"]["text"]
         .as_str();
     assert_eq!(fix_replacement, Some("${TEST_KEY}"));
-    let fix_uri = json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]
-        ["artifactLocation"]["uri"]
-        .as_str();
+    let fix_uri =
+        json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]["artifactLocation"]["uri"]
+            .as_str();
     assert_eq!(fix_uri, Some("config.env"));
 }

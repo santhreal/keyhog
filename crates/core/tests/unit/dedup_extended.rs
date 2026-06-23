@@ -2,7 +2,7 @@
 /// companion merge stability, empty input, same-location collapse,
 /// file-scope commit separation, and large batch determinism.
 use keyhog_core::{
-    dedup_cross_detector, dedup_matches, DedupScope, MatchLocation, RawMatch, Severity,
+    DedupScope, MatchLocation, RawMatch, Severity, dedup_cross_detector, dedup_matches,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -26,7 +26,7 @@ fn make(detector: &str, cred: &str, file: &str, line: usize, conf: Option<f64>) 
         service: Arc::from("svc"),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from(cred),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         companions: HashMap::new(),
         location: loc(file, line, 0),
         entropy: None,

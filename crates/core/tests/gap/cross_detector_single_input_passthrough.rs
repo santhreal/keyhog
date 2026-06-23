@@ -1,6 +1,6 @@
 //! Single-element cross-detector dedup must pass through unchanged cardinality.
 
-use keyhog_core::{dedup_cross_detector, DedupedMatch, MatchLocation, Severity};
+use keyhog_core::{DedupedMatch, MatchLocation, Severity, dedup_cross_detector};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -12,7 +12,7 @@ fn cross_detector_single_input_passthrough() {
         service: Arc::from("solo"),
         severity: Severity::Low,
         credential: keyhog_core::SensitiveString::from("x"),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         companions: HashMap::new(),
         primary_location: MatchLocation {
             source: Arc::from("t"),

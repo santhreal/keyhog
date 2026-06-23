@@ -1,4 +1,4 @@
-use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
+use keyhog_core::{DedupScope, MatchLocation, RawMatch, Severity, dedup_matches};
 use std::collections::HashMap;
 
 fn raw_match(source: &str, line: usize, offset: usize) -> RawMatch {
@@ -8,7 +8,7 @@ fn raw_match(source: &str, line: usize, offset: usize) -> RawMatch {
         service: "devcycle".into(),
         severity: Severity::High,
         credential: "DVC_CTRL_REG3_SW_PROG".into(),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         companions: HashMap::new(),
         location: MatchLocation {
             source: source.into(),

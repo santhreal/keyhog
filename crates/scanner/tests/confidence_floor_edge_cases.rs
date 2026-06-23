@@ -24,7 +24,7 @@ fn make_match(
         service: service.into(),
         severity: Severity::Medium,
         credential: "test_secret".into(),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         companions: HashMap::new(),
         location: MatchLocation {
             source: "test".into(),

@@ -50,7 +50,7 @@ async fn daemon_scan_text_roundtrip_carries_matches() {
         service: Arc::from("aws"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from(concat!("AK", "IAQYLPMN5HFIQR7XYA")),
-        credential_hash: [7u8; 32],
+        credential_hash: [7u8; 32].into(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("daemon"),

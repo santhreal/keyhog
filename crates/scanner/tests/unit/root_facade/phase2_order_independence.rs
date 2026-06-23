@@ -120,7 +120,7 @@ fn tied_match(offset: usize) -> RawMatch {
         service: Arc::from("generic"),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from("AKIAIOSFODNN7EXAMPLE"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         companions: HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),

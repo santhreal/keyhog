@@ -15,7 +15,7 @@ fn record_window_match_adjusts_offset() {
         service: Arc::from("test"),
         severity: Severity::Low,
         credential: keyhog_core::SensitiveString::from("345"),
-        credential_hash: [3u8; 32],
+        credential_hash: [3u8; 32].into(),
         companions: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("test"),
@@ -53,7 +53,7 @@ fn record_window_match_rejects_synthesized_offsets_outside_window() {
         service: Arc::from("test"),
         severity: Severity::Low,
         credential: keyhog_core::SensitiveString::from("synthetic"),
-        credential_hash: [4u8; 32],
+        credential_hash: [4u8; 32].into(),
         companions: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("test"),

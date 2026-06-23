@@ -34,4 +34,11 @@ fn finding_non_empty() {
             && !src.contains("pub(crate) fn deduplication_key(&self) -> (&str, &str)"),
         "finding: raw-match deduplication identity should be a named key, not an anonymous tuple"
     );
+    assert!(
+        src.contains("pub struct CredentialHash(")
+            && src.matches("pub credential_hash: CredentialHash").count() == 3
+            && src.contains("pub fn sha256_hash(s: &str) -> CredentialHash")
+            && !src.contains("pub credential_hash: [u8; 32]"),
+        "finding: public credential hash fields must use the CredentialHash domain type, not raw arrays"
+    );
 }

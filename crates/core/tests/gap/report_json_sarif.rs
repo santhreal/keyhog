@@ -27,7 +27,7 @@ fn finding() -> VerifiedFinding {
         service: Arc::from("test"),
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("****redacted"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("config.env")),
@@ -242,7 +242,7 @@ fn jsonl_credential_hash_hex_encodes_nonzero_bytes() {
     h[0] = 0xde;
     h[1] = 0xad;
     h[31] = 0xff;
-    f.credential_hash = h;
+    f.credential_hash = h.into();
     let out = jsonl_str(&[f]);
     let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
     let hex = v["credential_hash"].as_str().unwrap();
@@ -577,7 +577,7 @@ fn sarif_partial_fingerprints_present_for_nonzero_hash() {
     let mut f = finding();
     let mut h = [0u8; 32];
     h[0] = 0x01;
-    f.credential_hash = h;
+    f.credential_hash = h.into();
     let json = sarif_of(&[f]);
     let fp = &json["runs"][0]["results"][0]["partialFingerprints"]["keyhog/credentialHash/v1"];
     let hex = fp.as_str().unwrap();
@@ -912,9 +912,9 @@ fn sarif_fix_deleted_region_uses_finding_line() {
 #[test]
 fn sarif_fix_artifact_uri_matches_finding_path() {
     let json = sarif_of(&[finding()]);
-    let uri = json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]["artifactLocation"]
-        ["uri"]
-        .as_str();
+    let uri =
+        json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]["artifactLocation"]["uri"]
+            .as_str();
     assert_eq!(uri, Some("config.env"));
 }
 

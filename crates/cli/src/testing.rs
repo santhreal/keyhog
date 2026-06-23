@@ -94,7 +94,7 @@ pub trait CliTestApi {
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
     ) -> Result<Vec<Box<dyn Source>>>;
     fn merge_scan_ignore_paths(&self, args: &ScanArgs, allowlist_paths: Vec<String>)
-        -> Vec<String>;
+    -> Vec<String>;
     fn validate_cli_path_arg(&self, path: &Path, name: &str) -> Result<()>;
     fn report_findings(&self, findings: &[VerifiedFinding], args: &ScanArgs) -> Result<()>;
     fn filter_inline_suppressions(&self, matches: Vec<RawMatch>) -> Vec<RawMatch>;
@@ -205,7 +205,11 @@ pub trait CliTestApi {
     fn finding_sink_retained_len(&self, sink: &FindingSink) -> usize;
     fn finding_sink_cap(&self, sink: &FindingSink) -> usize;
     fn finding_sink_capped_warned(&self, sink: &FindingSink) -> bool;
-    fn finding_sink_retained_hash(&self, sink: &FindingSink, index: usize) -> Option<[u8; 32]>;
+    fn finding_sink_retained_hash(
+        &self,
+        sink: &FindingSink,
+        index: usize,
+    ) -> Option<keyhog_core::CredentialHash>;
     fn finding_sink_retained_json(&self, sink: &FindingSink) -> serde_json::Result<String>;
 
     fn sanitise_thread_count(
@@ -601,7 +605,11 @@ impl CliTestApi for TestApi {
     fn finding_sink_capped_warned(&self, sink: &FindingSink) -> bool {
         sink.0.capped_warned()
     }
-    fn finding_sink_retained_hash(&self, sink: &FindingSink, index: usize) -> Option<[u8; 32]> {
+    fn finding_sink_retained_hash(
+        &self,
+        sink: &FindingSink,
+        index: usize,
+    ) -> Option<keyhog_core::CredentialHash> {
         sink.0.retained_hash(index)
     }
     fn finding_sink_retained_json(&self, sink: &FindingSink) -> serde_json::Result<String> {

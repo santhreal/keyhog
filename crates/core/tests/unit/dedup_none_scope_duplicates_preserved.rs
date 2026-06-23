@@ -2,7 +2,7 @@
 //! Contract: With DedupScope::None, identical credentials in identical files
 //! remain as separate findings (no grouping, no primary/additional split).
 
-use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
+use keyhog_core::{DedupScope, MatchLocation, RawMatch, Severity, dedup_matches};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -13,7 +13,7 @@ fn make_match(detector: &str, cred: &str, path: &str, line: usize, offset: usize
         service: Arc::from("test"),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from(cred),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         companions: HashMap::new(),
         location: MatchLocation {
             source: Arc::from("fs"),
@@ -69,7 +69,11 @@ fn dedup_none_scope_identical_matches_remain_distinct() {
 
     let deduped = dedup_matches(input, &DedupScope::None);
 
-    assert_eq!(deduped.len(), 2, "None scope: 2 input = 2 output, not 1 grouped");
+    assert_eq!(
+        deduped.len(),
+        2,
+        "None scope: 2 input = 2 output, not 1 grouped"
+    );
     assert_eq!(deduped[0].additional_locations.len(), 0);
     assert_eq!(deduped[1].additional_locations.len(), 0);
 }

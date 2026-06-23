@@ -1,5 +1,5 @@
 use keyhog_core::{DetectorSpec, MatchLocation, PatternSpec, RawMatch, Severity};
-use keyhog_verifier::{dedup_matches, DedupScope, VerificationEngine, VerifyConfig};
+use keyhog_verifier::{DedupScope, VerificationEngine, VerifyConfig, dedup_matches};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), keyhog_verifier::VerifyError> {
@@ -27,7 +27,7 @@ async fn main() -> Result<(), keyhog_verifier::VerifyError> {
             service: "demo".into(),
             severity: Severity::High,
             credential: "demo_ABC12345".into(),
-            credential_hash: [0u8; 32],
+            credential_hash: [0u8; 32].into(),
             companions: std::collections::HashMap::new(),
             location: MatchLocation {
                 source: "example".into(),

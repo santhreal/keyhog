@@ -1,7 +1,8 @@
 #[tokio::test]
 async fn ssrf_break_link_local_metadata() {
     let url = "http://169.254.169.254/latest/meta-data/";
-    let spec = DetectorSpec { tests: Vec::new(),
+    let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "ssrf-break".into(),
         name: "ssrf".into(),
         service: "test".into(),
@@ -33,7 +34,7 @@ async fn ssrf_break_link_local_metadata() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,

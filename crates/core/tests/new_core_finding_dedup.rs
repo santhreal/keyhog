@@ -8,8 +8,8 @@
 //! `is_ok()` / `!is_empty()`.
 
 use keyhog_core::{
-    dedup_cross_detector, dedup_matches, hex_encode, redact, DedupScope, MatchLocation, RawMatch,
-    Severity, VerificationResult, VerifiedFinding,
+    CredentialHash, DedupScope, MatchLocation, RawMatch, Severity, VerificationResult,
+    VerifiedFinding, dedup_cross_detector, dedup_matches, hex_encode, redact,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -18,11 +18,11 @@ use std::sync::Arc;
 // Construction helpers (no production code touched).
 // ---------------------------------------------------------------------------
 
-fn sha256(s: &str) -> [u8; 32] {
+fn sha256(s: &str) -> CredentialHash {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(s.as_bytes());
-    h.finalize().into()
+    CredentialHash::from_bytes(h.finalize().into())
 }
 
 fn loc(file: &str, line: usize, offset: usize) -> MatchLocation {
@@ -845,9 +845,10 @@ fn hex_encode_is_64_lowercase_chars() {
     assert_eq!(hex.len(), 64);
     assert!(hex.starts_with("ab"));
     assert!(hex.ends_with("cd"));
-    assert!(hex
-        .chars()
-        .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+    assert!(
+        hex.chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    );
 }
 
 #[test]

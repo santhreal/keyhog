@@ -38,7 +38,8 @@ async fn test_verify_large_payload() {
     })
     .await;
 
-    let spec = DetectorSpec { tests: Vec::new(),
+    let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "det1".to_string(),
         name: "det1".to_string(),
         service: "test".to_string(),
@@ -79,7 +80,7 @@ async fn test_verify_large_payload() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from("fs"),
             file_path: Some(Arc::from("test")),
@@ -120,7 +121,8 @@ async fn test_verify_malformed_response() {
     })
     .await;
 
-    let spec = DetectorSpec { tests: Vec::new(),
+    let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "det2".to_string(),
         name: "det2".to_string(),
         service: "test".to_string(),
@@ -161,7 +163,7 @@ async fn test_verify_malformed_response() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from("fs"),
             file_path: Some(Arc::from("test")),
@@ -192,7 +194,8 @@ async fn test_verify_zero_concurrency() {
         ..Default::default()
     };
 
-    let spec = DetectorSpec { tests: Vec::new(),
+    let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "det_zero".to_string(),
         name: "det_zero".to_string(),
         service: "test".to_string(),
@@ -225,7 +228,7 @@ async fn test_verify_zero_concurrency() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,
@@ -260,7 +263,8 @@ async fn test_verify_inflight_deadlock_on_duplicates() {
     })
     .await;
 
-    let spec = DetectorSpec { tests: Vec::new(),
+    let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "det_dup".to_string(),
         name: "det_dup".to_string(),
         service: "test".to_string(),
@@ -302,7 +306,7 @@ async fn test_verify_inflight_deadlock_on_duplicates() {
             service: Arc::from("test"),
             severity: Severity::Critical,
             credential: keyhog_core::SensitiveString::from("same_secret"),
-            credential_hash: [0u8; 32],
+            credential_hash: [0u8; 32].into(),
             primary_location: MatchLocation {
                 source: Arc::from(""),
                 file_path: None,
@@ -335,7 +339,8 @@ async fn test_verify_slow_loris_timeout() {
     })
     .await;
 
-    let spec = DetectorSpec { tests: Vec::new(),
+    let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "det_slow".to_string(),
         name: "det_slow".to_string(),
         service: "test".to_string(),
@@ -368,7 +373,7 @@ async fn test_verify_slow_loris_timeout() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,
@@ -414,7 +419,7 @@ async fn test_verify_max_inflight_keys() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,
@@ -465,11 +470,14 @@ async fn verifier_routes_through_configured_proxy() {
             // verifier is the only thing the test needs to observe.
             let mut buf = [0u8; 256];
             let _ = stream.read(&mut buf).await;
-            let _ = stream.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n").await;
+            let _ = stream
+                .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+                .await;
         }
     });
 
-    let spec = DetectorSpec { tests: Vec::new(),
+    let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "proxy-flow-test".to_string(),
         name: "proxy-flow-test".to_string(),
         service: "test".to_string(),
@@ -520,7 +528,7 @@ async fn verifier_routes_through_configured_proxy() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from("fs"),
             file_path: Some(Arc::from("test")),

@@ -12,7 +12,8 @@
 //! Every asserted value is derived from that code, not guessed.
 
 use keyhog_core::{
-    dedup_cross_detector, dedup_matches, redact, DedupScope, MatchLocation, RawMatch, Severity,
+    CredentialHash, DedupScope, MatchLocation, RawMatch, Severity, dedup_cross_detector,
+    dedup_matches, redact,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -24,11 +25,11 @@ use std::sync::Arc;
 
 /// SHA-256 of a string, mirroring the private `dedup::sha256_hash` so we can
 /// assert `credential_hash` exactly and group two matches by hash on purpose.
-fn sha256(s: &str) -> [u8; 32] {
+fn sha256(s: &str) -> CredentialHash {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(s.as_bytes());
-    h.finalize().into()
+    CredentialHash::from_bytes(h.finalize().into())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1103,22 +1104,28 @@ fn cross_detector_three_losers_indexed_in_confidence_order() {
     let out = dedup_cross_detector(deduped);
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].detector_id.as_ref(), "d1"); // 0.9 winner
-                                                   // cross_detector.0 = 0.7 (d2), .1 = 0.5 (d4), .2 = 0.3 (d3).
-    assert!(out[0]
-        .companions
-        .get("cross_detector.0")
-        .unwrap()
-        .contains("0.70"));
-    assert!(out[0]
-        .companions
-        .get("cross_detector.1")
-        .unwrap()
-        .contains("0.50"));
-    assert!(out[0]
-        .companions
-        .get("cross_detector.2")
-        .unwrap()
-        .contains("0.30"));
+    // cross_detector.0 = 0.7 (d2), .1 = 0.5 (d4), .2 = 0.3 (d3).
+    assert!(
+        out[0]
+            .companions
+            .get("cross_detector.0")
+            .unwrap()
+            .contains("0.70")
+    );
+    assert!(
+        out[0]
+            .companions
+            .get("cross_detector.1")
+            .unwrap()
+            .contains("0.50")
+    );
+    assert!(
+        out[0]
+            .companions
+            .get("cross_detector.2")
+            .unwrap()
+            .contains("0.30")
+    );
     assert!(out[0].companions.get("cross_detector.3").is_none());
 }
 

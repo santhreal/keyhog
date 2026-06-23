@@ -154,12 +154,11 @@ pub(crate) mod util_hash;
 pub(crate) mod prefilter_degrade;
 
 pub(crate) use engine::floor_char_boundary;
-/// SHA-256 of a credential as the raw 32 inline bytes, matching
-/// `Finding::credential_hash: [u8; 32]`. Re-exported from the single canonical
-/// implementation in `keyhog_core` so the scanner, core dedup, and telemetry
-/// all hash credentials identically (no second copy to drift). Hex encoding is
-/// a separate step at the serde/reporter boundary (`keyhog_core::hex_encode`),
-/// keeping the pre-dedup hot path zero-heap.
+/// SHA-256 of a credential as the `CredentialHash` domain type. Re-exported
+/// from the single canonical implementation in `keyhog_core` so the scanner,
+/// core dedup, and telemetry all hash credentials identically (no second copy
+/// to drift). Hex encoding is a separate step at the serde/reporter boundary
+/// (`keyhog_core::hex_encode`), keeping the pre-dedup hot path zero-heap.
 pub(crate) use keyhog_core::sha256_hash;
 pub(crate) use pipeline::compute_line_offsets;
 

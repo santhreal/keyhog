@@ -130,7 +130,7 @@ impl FindingSink {
         self.capped_warned
     }
 
-    fn retained_hash(&self, index: usize) -> Option<[u8; 32]> {
+    fn retained_hash(&self, index: usize) -> Option<keyhog_core::CredentialHash> {
         self.redacted
             .get(index)
             .map(|finding| finding.credential_hash)
@@ -194,7 +194,7 @@ pub(crate) mod testing {
             self.inner.capped_warned()
         }
 
-        pub(crate) fn retained_hash(&self, index: usize) -> Option<[u8; 32]> {
+        pub(crate) fn retained_hash(&self, index: usize) -> Option<keyhog_core::CredentialHash> {
             self.inner.retained_hash(index)
         }
 

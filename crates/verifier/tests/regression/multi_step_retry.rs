@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use keyhog_core::{
     AuthSpec, DedupedMatch, DetectorSpec, HttpMethod, MatchLocation, Severity, StepSpec,
@@ -40,7 +40,7 @@ fn group_for(detector_id: &str) -> DedupedMatch {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from("secret-value"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from("fs"),
             file_path: Some(Arc::from("fixture.txt")),

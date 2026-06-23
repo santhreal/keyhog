@@ -21,7 +21,7 @@ fn reporter_trait_can_be_implemented() {
         service: Arc::from("demo"),
         severity: Severity::Info,
         credential_redacted: std::borrow::Cow::Borrowed("****"),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: None,

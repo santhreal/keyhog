@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use keyhog_core::{
-    write_report, MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding,
+    MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding, write_report,
 };
 
 fn render(finding: &VerifiedFinding) -> String {
@@ -27,7 +27,7 @@ fn finding_with(file_path: &str, author: Option<&str>) -> VerifiedFinding {
         service: Arc::from("aws"),
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("AKIA...7XYA"),
-        credential_hash: [0xab; 32],
+        credential_hash: [0xab; 32].into(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from(file_path)),

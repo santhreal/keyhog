@@ -1,4 +1,4 @@
-use keyhog_core::{dedup_cross_detector, DedupedMatch, MatchLocation, Severity};
+use keyhog_core::{DedupedMatch, MatchLocation, Severity, dedup_cross_detector};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -9,7 +9,7 @@ fn make_deduped(detector: &str, service: &str, conf: f64) -> DedupedMatch {
         service: Arc::from(service),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from("AIza_FAKE_KEY_NOT_REAL_VALUE_1234567890"),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         companions: HashMap::new(),
         primary_location: MatchLocation {
             source: Arc::from("test"),
@@ -28,9 +28,9 @@ fn make_deduped(detector: &str, service: &str, conf: f64) -> DedupedMatch {
 #[test]
 fn cross_detector_dedup_keeps_distinct_credentials_separate() {
     let mut a = make_deduped("github-pat", "github", 0.9);
-    a.credential_hash = [0xaa; 32];
+    a.credential_hash = [0xaa; 32].into();
     let mut b = make_deduped("openai-key", "openai", 0.9);
-    b.credential_hash = [0xbb; 32];
+    b.credential_hash = [0xbb; 32].into();
     let out = dedup_cross_detector(vec![a, b]);
     assert_eq!(out.len(), 2);
 }

@@ -1,4 +1,4 @@
-use keyhog::testing::{CliTestApi as _, API};
+use keyhog::testing::{API, CliTestApi as _};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use std::sync::Arc;
 use std::thread;
@@ -10,7 +10,7 @@ fn dummy_match(file_path: Option<&str>, line: Option<usize>, detector_id: &str) 
         service: Arc::from("test"),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         companions: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
@@ -263,9 +263,10 @@ fn test_negative_byte_size() {
 
 #[test]
 fn test_huge_byte_size() {
-    assert!(API
-        .parse_byte_size("10000000000000000000000000000MB")
-        .is_err());
+    assert!(
+        API.parse_byte_size("10000000000000000000000000000MB")
+            .is_err()
+    );
 }
 
 #[test]

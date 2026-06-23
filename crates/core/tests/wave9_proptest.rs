@@ -25,7 +25,7 @@ fn raw(cred: &str) -> RawMatch {
         service: "s".into(),
         severity: Severity::High,
         credential: cred.into(),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         companions: Default::default(),
         location: loc(),
         entropy: None,
@@ -42,7 +42,7 @@ proptest! {
         prop_assert!(dbg.contains("redacted"));
         prop_assert!(!dbg.contains(&cred));
     }
-#[test] fn prop_hash_nonempty(cred in "[a-z]{1,20}") { let d=dedup_matches(vec![raw(&cred)], &DedupScope::Credential); prop_assert!(!d[0].credential_hash.is_empty()); }
+#[test] fn prop_hash_nonempty(cred in "[a-z]{1,20}") { let d=dedup_matches(vec![raw(&cred)], &DedupScope::Credential); prop_assert!(!d[0].credential_hash.is_zero()); }
 #[test] fn prop_empty_credential(cred in "") { let c=Credential::from(cred.as_str()); prop_assert!(keyhog_core::testing::CoreTestApi::credential_expose_secret(&keyhog_core::testing::TestApi, &c).is_empty()); }
 #[test] fn prop_clone_eq(cred in "[A-Za-z0-9]{1,50}") { let a=Credential::from(cred.as_str()); let b=a.clone(); prop_assert_eq!(a, b); }
 #[test] fn prop_dedup_file_scope_same_file(cred in "secret") { let ms=vec![raw(&cred), raw(&cred)]; prop_assert_eq!(dedup_matches(ms, &DedupScope::File).len(), 1); }

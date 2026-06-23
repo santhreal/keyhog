@@ -219,7 +219,7 @@ fn demo_window_match(offset: usize) -> RawMatch {
         service: Arc::from("test"),
         severity: Severity::Low,
         credential: keyhog_core::SensitiveString::from("cred"),
-        credential_hash: [7u8; 32],
+        credential_hash: [7u8; 32].into(),
         companions: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("test"),

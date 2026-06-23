@@ -20,7 +20,7 @@ fn dedup_non_empty() {
     );
     assert!(
         src.contains("fn effective_credential_hash(")
-            && src.contains("credential_hash == [0; 32]")
+            && src.contains("credential_hash.is_zero()")
             && src.contains("effective_credential_hash(m.credential.as_ref(), m.credential_hash)")
             && src.contains(
                 "effective_credential_hash(matched.credential.as_ref(), matched.credential_hash)"
@@ -48,7 +48,8 @@ fn dedup_non_empty() {
     );
     assert!(
         src.contains("struct FileScopeIdentity")
-            && src.contains("type DedupKey = (Arc<str>, SensitiveString, Option<FileScopeIdentity>)")
+            && src
+                .contains("type DedupKey = (Arc<str>, SensitiveString, Option<FileScopeIdentity>)")
             && !src.contains("fn file_scope_identity(location: &MatchLocation) -> Arc<str>")
             && !src.contains("let mut identity = String::new();"),
         "file-scope dedup identity must reuse existing Arc fields instead of formatting a new Arc<str> per match"
@@ -60,5 +61,12 @@ fn dedup_non_empty() {
             && src.contains("seen.contains(&identity)")
             && src.contains("seen.insert(location_identity(location))"),
         "dedup location membership must probe with borrowed fields before cloning Arc identity fields on misses"
+    );
+    assert!(
+        src.contains("pub credential_hash: CredentialHash")
+            && src.contains("type GroupKey = (CredentialHash, Option<Arc<str>>)")
+            && !src.contains("pub credential_hash: [u8; 32]")
+            && !src.contains("type GroupKey = ([u8; 32]"),
+        "dedup: credential hashes must stay typed through report grouping and cross-detector grouping"
     );
 }

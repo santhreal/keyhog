@@ -6,8 +6,8 @@ fn allowlist_hash_hex_parsing_uses_merkle_digest_parser() {
 
     assert!(
         allowlist.contains("use crate::merkle_spec_hash::hex_to_array;")
-            && allowlist.contains("fn parse_sha256_hex(input: &str) -> Option<[u8; 32]>")
-            && allowlist.contains("hex_to_array(input.trim())"),
+            && allowlist.contains("fn parse_sha256_hex(input: &str) -> Option<CredentialHash>")
+            && allowlist.contains("hex_to_array(input.trim()).map(CredentialHash::from_bytes)"),
         "allowlist SHA-256 parsing must delegate to the canonical merkle hex parser"
     );
     for forbidden in [
@@ -25,5 +25,11 @@ fn allowlist_hash_hex_parsing_uses_merkle_digest_parser() {
         allowlist.contains("fn matches_ignored_hash_hex(&self, hash_hex: &str) -> bool")
             && allowlist.matches("self.matches_ignored_hash_hex(").count() == 2,
         "is_hash_allowed and is_raw_hash_ignored must share one hex-hash membership helper"
+    );
+    assert!(
+        allowlist.contains("credential_hashes: HashSet<CredentialHash>")
+            && allowlist.contains("fn matches_ignored_hash(&self, hash: &CredentialHash) -> bool")
+            && !allowlist.contains("credential_hashes: HashSet<[u8; 32]>"),
+        "allowlist: credential hash suppressions must use the CredentialHash domain type"
     );
 }

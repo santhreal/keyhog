@@ -12,10 +12,10 @@ use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
-use crate::{sha256_hash, MatchLocation, RawMatch, SensitiveString, Severity};
+use crate::{CredentialHash, MatchLocation, RawMatch, SensitiveString, Severity, sha256_hash};
 
 /// Count of times [`dedup_cross_detector`] reached the (guard-impossible) empty
 /// singleton-group branch, where a finding would otherwise vanish from the
@@ -54,9 +54,8 @@ pub struct DedupedMatch {
     /// Unredacted credential for verification.
     pub credential: SensitiveString,
     /// SHA-256 hash of the original credential for internal correlation.
-    /// Raw 32 bytes (matching `Finding`/`RawMatch`); hex at the serde boundary.
-    #[serde(with = "crate::finding::serde_hash_hex")]
-    pub credential_hash: [u8; 32],
+    /// Named credential digest for suppression, correlation, and reporting.
+    pub credential_hash: CredentialHash,
     /// Optional companion credentials extracted nearby.
     #[serde(serialize_with = "serialize_companions_sorted")]
     pub companions: HashMap<String, String>,
@@ -81,7 +80,7 @@ impl std::fmt::Debug for DedupedMatch {
             )
             .field(
                 "credential_hash",
-                &crate::finding::hex_encode(&self.credential_hash),
+                &crate::finding::hex_encode(self.credential_hash),
             )
             .field(
                 "companions",
@@ -303,8 +302,8 @@ fn is_decoder_location(location: &MatchLocation) -> bool {
         .any(|suffix| location.source.ends_with(suffix))
 }
 
-fn effective_credential_hash(credential: &str, credential_hash: [u8; 32]) -> [u8; 32] {
-    if credential_hash == [0; 32] {
+fn effective_credential_hash(credential: &str, credential_hash: CredentialHash) -> CredentialHash {
+    if credential_hash.is_zero() {
         sha256_hash(credential)
     } else {
         credential_hash
@@ -338,7 +337,7 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
 
     // Group by (credential_hash, primary_location.file_path) - splitting by
     // file keeps file-scope dedup intact when the caller used DedupScope::File.
-    type GroupKey = ([u8; 32], Option<Arc<str>>);
+    type GroupKey = (CredentialHash, Option<Arc<str>>);
     let mut groups: IndexMap<GroupKey, Vec<DedupedMatch>> = IndexMap::with_capacity(deduped.len());
     for m in deduped {
         let key = (m.credential_hash, m.primary_location.file_path.clone());

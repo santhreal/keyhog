@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
-use keyhog_core::{VerificationResult, sha256_hash};
+use keyhog_core::VerificationResult;
 
 /// Bounded in-memory cache for verification outcomes.
 ///
@@ -339,13 +339,21 @@ impl VerificationCache {
 
 fn cache_key(credential: &str, detector_id: &str) -> CacheKey {
     CacheKey {
-        credential_hash: sha256_hash(credential),
-        detector_id_hash: sha256_hash(detector_id),
+        credential_hash: cache_key_hash(credential),
+        detector_id_hash: cache_key_hash(detector_id),
         detector_id: Arc::<str>::from(truncate_to_char_boundary(
             detector_id,
             VerificationCache::MAX_DETECTOR_ID_BYTES,
         )),
     }
+}
+
+fn cache_key_hash(value: &str) -> [u8; VerificationCache::HASH_BYTES] {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    hasher.finalize().into()
 }
 
 fn sanitize_metadata(metadata: HashMap<String, String>) -> HashMap<String, String> {

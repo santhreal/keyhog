@@ -101,9 +101,9 @@ pub(crate) fn code_scanning_security_severity(severity: crate::Severity) -> &'st
 /// `Finding` stores raw bytes - see `finding.rs`). An all-zero hash is the
 /// "no credential identity" sentinel and yields `None`.
 pub(crate) fn credential_fingerprints(
-    credential_hash: &[u8; 32],
+    credential_hash: crate::CredentialHash,
 ) -> Option<std::collections::BTreeMap<String, String>> {
-    if credential_hash == &[0u8; 32] {
+    if credential_hash.is_zero() {
         return None;
     }
     let mut fp = std::collections::BTreeMap::new();

@@ -6,8 +6,8 @@
 
 use keyhog_core::decode_standard_base64;
 use keyhog_core::{
-    dedup_matches, redact, Credential, DedupScope, MatchLocation, RawMatch, SensitiveString,
-    Severity,
+    Credential, DedupScope, MatchLocation, RawMatch, SensitiveString, Severity, dedup_matches,
+    redact,
 };
 use keyhog_core::{finding_metadata, key_id_canary_status};
 use std::collections::HashMap;
@@ -54,11 +54,13 @@ fn credential_from_text_len_and_expose() {
 #[test]
 fn credential_empty_is_empty() {
     let c = Credential::from("");
-    assert!(keyhog_core::testing::CoreTestApi::credential_expose_secret(
-        &keyhog_core::testing::TestApi,
-        &c
-    )
-    .is_empty());
+    assert!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &c
+        )
+        .is_empty()
+    );
     assert_eq!(
         keyhog_core::testing::CoreTestApi::credential_expose_secret(
             &keyhog_core::testing::TestApi,
@@ -315,7 +317,7 @@ fn canonical_match_credentials_use_zeroizing_sensitive_string() {
         service: Arc::from("unit-service"),
         severity: Severity::High,
         credential: SensitiveString::from("live-secret-value"),
-        credential_hash: [7u8; 32],
+        credential_hash: [7u8; 32].into(),
         companions: HashMap::new(),
         location: MatchLocation {
             source: Arc::from("unit"),

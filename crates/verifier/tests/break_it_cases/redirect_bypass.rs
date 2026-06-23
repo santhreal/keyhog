@@ -31,9 +31,7 @@ async fn pinned_client_does_not_follow_redirect_to_private_target() {
     // Mock-2: the would-be SSRF target. Counts how many times the
     // verifier reached it - must stay at zero.
     let mock2_hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let mock2_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let mock2_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mock2_port = mock2_listener.local_addr().unwrap().port();
     let hits_for_task = mock2_hits.clone();
     tokio::spawn(async move {
@@ -50,9 +48,7 @@ async fn pinned_client_does_not_follow_redirect_to_private_target() {
     });
 
     // Mock-1: the "public" host. Always issues a 302 to mock-2.
-    let mock1_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let mock1_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mock1_port = mock1_listener.local_addr().unwrap().port();
     tokio::spawn(async move {
         while let Ok((mut stream, _)) = mock1_listener.accept().await {
@@ -69,7 +65,8 @@ async fn pinned_client_does_not_follow_redirect_to_private_target() {
     });
 
     let url = format!("http://127.0.0.1:{}/", mock1_port);
-    let spec = DetectorSpec { tests: Vec::new(),
+    let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "redir_det".to_string(),
         name: "redir_det".to_string(),
         service: "test".to_string(),
@@ -110,7 +107,7 @@ async fn pinned_client_does_not_follow_redirect_to_private_target() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from("fs"),
             file_path: Some(Arc::from("test")),

@@ -10,7 +10,7 @@ fn synthetic_finding() -> VerifiedFinding {
         service: Arc::from("test"),
         severity: Severity::High,
         credential_redacted: std::borrow::Cow::Borrowed("****redacted"),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("config.env")),
@@ -41,8 +41,8 @@ fn sarif_uri_full_run_with_absolute_path() {
         ["artifactLocation"]["uri"]
         .as_str();
     assert_eq!(loc_uri, Some("file:///etc/keys/aws.env"));
-    let fix_uri = json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]
-        ["artifactLocation"]["uri"]
-        .as_str();
+    let fix_uri =
+        json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]["artifactLocation"]["uri"]
+            .as_str();
     assert_eq!(fix_uri, Some("file:///etc/keys/aws.env"));
 }

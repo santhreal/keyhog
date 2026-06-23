@@ -1,6 +1,7 @@
 #[tokio::test]
 async fn ssrf_break_allowlist_attacker_host() {
-    let spec = DetectorSpec { tests: Vec::new(),
+    let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "ssrf-allow".into(),
         name: "ssrf".into(),
         service: "test".into(),
@@ -32,7 +33,7 @@ async fn ssrf_break_allowlist_attacker_host() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,

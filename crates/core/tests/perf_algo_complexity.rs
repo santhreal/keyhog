@@ -53,7 +53,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
+use keyhog_core::{DedupScope, MatchLocation, RawMatch, Severity, dedup_matches};
 
 /// Doubling input must not roughly quadruple time for the dedup pass. A
 /// log-linear dedup ratios ~2.0-2.4 (the +log term); the O(K^2)
@@ -90,7 +90,7 @@ fn build_repeated_credential_group(n: usize) -> Vec<RawMatch> {
             service: Arc::clone(&service),
             severity: Severity::High,
             credential: credential.clone(),
-            credential_hash: [0u8; 32],
+            credential_hash: [0u8; 32].into(),
             companions: std::collections::HashMap::new(),
             location: MatchLocation {
                 source: Arc::clone(&source),

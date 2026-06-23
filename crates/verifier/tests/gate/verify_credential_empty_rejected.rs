@@ -11,7 +11,7 @@ fn empty_credential_match_has_zero_len_secret() {
         service: Arc::from("demo"),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from(""),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("fs"),

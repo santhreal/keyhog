@@ -9,20 +9,20 @@
 
 use keyhog_core::Allowlist;
 use keyhog_core::{
-    hex_encode, validate_detector, DetectorSpec, MatchLocation, PatternSpec, QualityIssue,
-    Severity, VerificationResult, VerifiedFinding,
+    CredentialHash, DetectorSpec, MatchLocation, PatternSpec, QualityIssue, Severity,
+    VerificationResult, VerifiedFinding, hex_encode, validate_detector,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
 
-fn sha256(s: &str) -> [u8; 32] {
+fn sha256(s: &str) -> CredentialHash {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(s.as_bytes());
-    h.finalize().into()
+    CredentialHash::from_bytes(h.finalize().into())
 }
 
-fn finding(detector_id: &str, file: &str, hash: [u8; 32]) -> VerifiedFinding {
+fn finding(detector_id: &str, file: &str, hash: CredentialHash) -> VerifiedFinding {
     VerifiedFinding {
         detector_id: Arc::from(detector_id),
         detector_name: Arc::from("Name"),

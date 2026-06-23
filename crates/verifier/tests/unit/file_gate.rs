@@ -20,7 +20,7 @@ fn demo_match() -> RawMatch {
         service: Arc::from("demo"),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("fs"),
@@ -132,9 +132,11 @@ fn verify_mod_error() {
         service: "unknown".into(),
         ..Default::default()
     };
-    assert!(TestApi
-        .check_url_against_spec("https://evil.example/", &spec)
-        .is_err());
+    assert!(
+        TestApi
+            .check_url_against_spec("https://evil.example/", &spec)
+            .is_err()
+    );
 }
 
 // ── crates/verifier/src/verify/auth.rs ──────────────────────────────────
@@ -195,9 +197,11 @@ fn verify_request_happy() {
         allowed_domains: vec!["example.com".into()],
         ..Default::default()
     };
-    assert!(TestApi
-        .check_url_against_spec("https://example.com/path", &spec)
-        .is_ok());
+    assert!(
+        TestApi
+            .check_url_against_spec("https://example.com/path", &spec)
+            .is_ok()
+    );
 }
 #[test]
 fn verify_request_error() {
@@ -207,9 +211,11 @@ fn verify_request_error() {
         allowed_domains: vec!["example.com".into()],
         ..Default::default()
     };
-    assert!(TestApi
-        .check_url_against_spec("https://other.example/path", &spec)
-        .is_err());
+    assert!(
+        TestApi
+            .check_url_against_spec("https://other.example/path", &spec)
+            .is_err()
+    );
 }
 
 // ── crates/verifier/src/verify/response.rs ──────────────────────────────

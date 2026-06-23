@@ -10,7 +10,7 @@ fn raw_match(confidence: f64, credential: &'static str, offset: usize) -> RawMat
         service: Arc::from("test"),
         severity: Severity::High,
         credential: credential.into(),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         companions: HashMap::new(),
         location: MatchLocation {
             source: Arc::from("unit"),

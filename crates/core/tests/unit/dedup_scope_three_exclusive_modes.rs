@@ -2,7 +2,7 @@
 //! Contract: For the same input, DedupScope::None, DedupScope::File, and
 //! DedupScope::Credential must produce different (and correct) survivor counts.
 
-use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
+use keyhog_core::{DedupScope, MatchLocation, RawMatch, Severity, dedup_matches};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -13,7 +13,7 @@ fn make_match(detector: &str, cred: &str, path: &str, line: usize) -> RawMatch {
         service: Arc::from("test"),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from(cred),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         companions: HashMap::new(),
         location: MatchLocation {
             source: Arc::from("fs"),

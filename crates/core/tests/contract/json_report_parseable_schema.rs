@@ -13,7 +13,7 @@ fn sample_finding() -> VerifiedFinding {
         service: "oracle".into(),
         severity: Severity::Critical,
         credential_redacted: Cow::Borrowed("sk_****7890"),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("secrets.env".into()),

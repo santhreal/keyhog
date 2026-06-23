@@ -13,6 +13,89 @@ use std::sync::Arc;
 
 use crate::{SensitiveString, Severity};
 
+/// SHA-256 digest of a credential.
+///
+/// This is intentionally distinct from other 32-byte digests in the system
+/// (Merkle content hashes, detector-set hashes, verifier cache internals). A
+/// credential hash can suppress findings, correlate reports, and cross detector
+/// boundaries; keeping it named prevents those contracts from blending into
+/// arbitrary `[u8; 32]` arrays.
+#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct CredentialHash(#[serde(with = "serde_hash_hex")] [u8; 32]);
+
+impl CredentialHash {
+    /// All-zero hash used only as a compatibility sentinel for historical test
+    /// constructors and old serialized fixtures that omitted real hashes.
+    pub const ZERO: Self = Self([0; 32]);
+
+    /// Construct from raw SHA-256 bytes.
+    #[inline]
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    /// Borrow the raw SHA-256 bytes.
+    #[inline]
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    /// Return the raw SHA-256 bytes.
+    #[inline]
+    pub const fn into_bytes(self) -> [u8; 32] {
+        self.0
+    }
+
+    /// True when this value is the historical all-zero compatibility sentinel.
+    #[inline]
+    pub const fn is_zero(self) -> bool {
+        let mut idx = 0;
+        while idx < self.0.len() {
+            if self.0[idx] != 0 {
+                return false;
+            }
+            idx += 1;
+        }
+        true
+    }
+}
+
+impl From<[u8; 32]> for CredentialHash {
+    #[inline]
+    fn from(bytes: [u8; 32]) -> Self {
+        Self::from_bytes(bytes)
+    }
+}
+
+impl From<CredentialHash> for [u8; 32] {
+    #[inline]
+    fn from(hash: CredentialHash) -> Self {
+        hash.into_bytes()
+    }
+}
+
+impl AsRef<[u8; 32]> for CredentialHash {
+    #[inline]
+    fn as_ref(&self) -> &[u8; 32] {
+        self.as_bytes()
+    }
+}
+
+impl AsRef<[u8]> for CredentialHash {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl std::fmt::Debug for CredentialHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&hex_encode(self))
+    }
+}
+
 /// Borrowed raw-match identity used before report-scope deduplication.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RawMatchDedupKey<'a> {
@@ -51,8 +134,7 @@ pub struct RawMatch {
     /// never the 64-char hex `String`: zero heap, half the per-finding
     /// footprint, no per-match allocation on the pre-dedup hot path. Hex
     /// encoding happens lazily at the serde/reporter boundary only.
-    #[serde(with = "serde_hash_hex")]
-    pub credential_hash: [u8; 32],
+    pub credential_hash: CredentialHash,
     /// Companion credential or context value extracted nearby.
     pub companions: std::collections::HashMap<String, String>,
     /// Source location for the match.
@@ -117,7 +199,7 @@ impl std::fmt::Debug for RawMatch {
             )
             .field(
                 "credential_hash",
-                &format_args!("{}", hex_encode(&self.credential_hash)),
+                &format_args!("{}", hex_encode(self.credential_hash)),
             )
             .field(
                 "companions",
@@ -239,8 +321,7 @@ pub struct VerifiedFinding {
     pub credential_redacted: Cow<'static, str>,
     /// SHA-256 digest of the original credential for internal correlation.
     /// Raw 32 inline bytes; hex-encoded lazily at the serde/reporter boundary.
-    #[serde(with = "serde_hash_hex")]
-    pub credential_hash: [u8; 32],
+    pub credential_hash: CredentialHash,
     /// Source location for the match.
     pub location: MatchLocation,
     /// Verification result.
@@ -271,7 +352,7 @@ impl Serialize for VerifiedFinding {
         state.serialize_field("service", self.service.as_ref())?;
         state.serialize_field("severity", &self.severity)?;
         state.serialize_field("credential_redacted", self.credential_redacted.as_ref())?;
-        state.serialize_field("credential_hash", &hex_encode(&self.credential_hash))?;
+        state.serialize_field("credential_hash", &hex_encode(self.credential_hash))?;
         state.serialize_field("location", &self.location)?;
         state.serialize_field("verification", &self.verification)?;
         let sorted_metadata: BTreeMap<&str, &str> = self
@@ -360,8 +441,7 @@ pub struct RedactedFinding {
     pub severity: Severity,
     pub credential_redacted: Cow<'static, str>,
     /// SHA-256 digest as raw 32 inline bytes; hex-encoded at the serde boundary.
-    #[serde(with = "serde_hash_hex")]
-    pub credential_hash: [u8; 32],
+    pub credential_hash: CredentialHash,
     pub companions_redacted: HashMap<String, String>,
     pub location: MatchLocation,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -370,26 +450,23 @@ pub struct RedactedFinding {
     pub confidence: Option<f64>,
 }
 
-/// Lower-case hex of a 32-byte SHA-256 digest. The only place the hex string
-/// is materialized for a `[u8; 32]` `credential_hash` (reporters, Debug).
+/// Lower-case hex of digest bytes. The only place the hex string is materialized
+/// for `CredentialHash` values (reporters, Debug).
 #[inline]
-pub fn hex_encode(bytes: &[u8; 32]) -> String {
-    hex::encode(bytes)
+pub fn hex_encode(bytes: impl AsRef<[u8]>) -> String {
+    hex::encode(bytes.as_ref())
 }
 
-/// SHA-256 of a string as the raw 32 inline bytes, matching the
-/// `credential_hash: [u8; 32]` field. This is the single source for credential
-/// hashing across the workspace (scanner, dedup, telemetry); hex encoding is a
-/// separate step at the serde/reporter boundary via [`hex_encode`], keeping the
-/// pre-dedup hot path zero-heap. Every `credential_hash` assignment forwards
-/// this value straight into the `[u8; 32]` field, so callers want the byte form
-/// here, not the hex string.
+/// SHA-256 of a string as the `CredentialHash` domain type. This is the single
+/// source for credential hashing across the workspace (scanner, dedup,
+/// telemetry); hex encoding is a separate step at the serde/reporter boundary
+/// via [`hex_encode`], keeping the pre-dedup hot path zero-heap.
 #[inline]
-pub fn sha256_hash(s: &str) -> [u8; 32] {
+pub fn sha256_hash(s: &str) -> CredentialHash {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(s.as_bytes());
-    hasher.finalize().into()
+    CredentialHash::from_bytes(hasher.finalize().into())
 }
 
 /// Serde adapter keeping the on-wire shape of `credential_hash` a 64-char

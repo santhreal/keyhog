@@ -1,7 +1,7 @@
 //! Dedup must merge identical `(detector, credential)` pairs into one group
 //! keyed by the SHA-256 credential hash oracle.
 
-use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
+use keyhog_core::{CredentialHash, DedupScope, MatchLocation, RawMatch, Severity, dedup_matches};
 use std::collections::HashMap;
 
 const CREDENTIAL: &str = "secret-alpha";
@@ -18,7 +18,7 @@ fn sample_match(path: &str, offset: usize) -> RawMatch {
         service: "oracle".into(),
         severity: Severity::High,
         credential: CREDENTIAL.into(),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         companions: HashMap::new(),
         location: MatchLocation {
             source: "fs".into(),
@@ -53,7 +53,8 @@ fn dedup_same_credential_one_group() {
         "merged group must preserve the credential value"
     );
     assert_eq!(
-        deduped[0].credential_hash, EXPECTED_CREDENTIAL_HASH,
+        deduped[0].credential_hash,
+        CredentialHash::from_bytes(EXPECTED_CREDENTIAL_HASH),
         "group id (credential_hash) must be SHA-256 of credential bytes, not the stale per-match hash"
     );
     assert_eq!(

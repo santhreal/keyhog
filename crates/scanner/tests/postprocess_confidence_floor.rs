@@ -19,7 +19,7 @@ fn make_match(detector_id: &str, detector_name: &str, service: &str, confidence:
         service: service.into(),
         severity: Severity::Medium,
         credential: "test_secret_12345678".into(),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         companions: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "test".into(),

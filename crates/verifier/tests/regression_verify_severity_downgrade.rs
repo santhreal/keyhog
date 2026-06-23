@@ -33,7 +33,7 @@ fn group_with_severity(severity: Severity) -> DedupedMatch {
         service: Arc::from("test-service"),
         severity,
         credential: keyhog_core::SensitiveString::from("planted-credential-value"),
-        credential_hash: [7u8; 32],
+        credential_hash: [7u8; 32].into(),
         companions: HashMap::new(),
         primary_location: MatchLocation {
             source: Arc::from("test"),

@@ -3,7 +3,7 @@
 //! the HIGHEST confidence wins; ties broken by HIGHEST severity;
 //! final tiebreak is LEXICOGRAPHIC detector_id.
 
-use keyhog_core::{dedup_cross_detector, DedupedMatch, MatchLocation, Severity};
+use keyhog_core::{DedupedMatch, MatchLocation, Severity, dedup_cross_detector};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -14,7 +14,7 @@ fn make_deduped(detector: &str, conf: Option<f64>, severity: Severity) -> Dedupe
         service: Arc::from("test"),
         severity,
         credential: keyhog_core::SensitiveString::from("SAME_CREDENTIAL_VALUE_FOR_ALL"),
-        credential_hash: [42; 32],
+        credential_hash: [42; 32].into(),
         companions: HashMap::new(),
         primary_location: MatchLocation {
             source: Arc::from("fs"),
@@ -47,12 +47,14 @@ fn cross_detector_dedup_wins_by_highest_confidence() {
     assert_eq!(result[0].confidence, Some(0.95));
 
     // Losers should appear in companions.
-    assert!(result[0]
-        .companions
-        .contains_key("cross_detector.0"), "loser 0 should be in companions");
-    assert!(result[0]
-        .companions
-        .contains_key("cross_detector.1"), "loser 1 should be in companions");
+    assert!(
+        result[0].companions.contains_key("cross_detector.0"),
+        "loser 0 should be in companions"
+    );
+    assert!(
+        result[0].companions.contains_key("cross_detector.1"),
+        "loser 1 should be in companions"
+    );
 }
 
 #[test]
@@ -130,7 +132,16 @@ fn cross_detector_dedup_loser_appears_in_companions_with_formatted_string() {
     let companion_value = result[0].companions.get("cross_detector.0").unwrap();
 
     // Format should be "test (loser-det) [0.60]"
-    assert!(companion_value.contains("test"), "should contain service name");
-    assert!(companion_value.contains("loser-det"), "should contain detector name");
-    assert!(companion_value.contains("0.60"), "should contain confidence");
+    assert!(
+        companion_value.contains("test"),
+        "should contain service name"
+    );
+    assert!(
+        companion_value.contains("loser-det"),
+        "should contain detector name"
+    );
+    assert!(
+        companion_value.contains("0.60"),
+        "should contain confidence"
+    );
 }

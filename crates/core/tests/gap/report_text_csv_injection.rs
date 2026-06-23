@@ -34,7 +34,7 @@ fn base_finding() -> VerifiedFinding {
         service: Arc::from("aws"),
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("AKIA...7XYA"),
-        credential_hash: [0xab; 32],
+        credential_hash: [0xab; 32].into(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("config/app.env")),

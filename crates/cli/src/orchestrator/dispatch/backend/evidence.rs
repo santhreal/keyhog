@@ -327,7 +327,7 @@ impl TimingConfidenceInterval {
 pub(super) type CanonicalMatch = (
     usize,
     String,
-    [u8; 32],
+    keyhog_core::CredentialHash,
     Option<String>,
     Option<usize>,
     usize,
@@ -357,7 +357,7 @@ pub(super) fn canonical_match_digest(matches: &[CanonicalMatch]) -> u64 {
     for (chunk_idx, detector_id, credential_hash, file_path, line, offset) in matches {
         h.field_usize("match.chunk_idx", *chunk_idx);
         h.field_str("match.detector_id", detector_id);
-        h.field_bytes("match.credential_hash", credential_hash);
+        h.field_bytes("match.credential_hash", credential_hash.as_bytes());
         h.field_option_str("match.file_path", file_path.as_deref());
         h.field_option_usize("match.line", *line);
         h.field_usize("match.offset", *offset);

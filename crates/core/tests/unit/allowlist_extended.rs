@@ -13,7 +13,7 @@ fn verified_finding(detector: &str, path: Option<&str>) -> VerifiedFinding {
         service: Arc::from("svc"),
         severity: Severity::High,
         credential_redacted: "abcd...wxyz".into(),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         location: MatchLocation {
             source: Arc::from("fs"),
             file_path: path.map(Arc::from),

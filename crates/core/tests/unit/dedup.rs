@@ -1,4 +1,4 @@
-use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
+use keyhog_core::{DedupScope, MatchLocation, RawMatch, Severity, dedup_matches};
 use std::collections::HashMap;
 
 fn sample_match(id: &str, cred: &str, path: &str) -> RawMatch {
@@ -8,7 +8,7 @@ fn sample_match(id: &str, cred: &str, path: &str) -> RawMatch {
         service: "test".into(),
         severity: Severity::High,
         credential: cred.into(),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         companions: HashMap::new(),
         location: MatchLocation {
             source: "fs".into(),
@@ -27,13 +27,13 @@ fn sample_match(id: &str, cred: &str, path: &str) -> RawMatch {
 #[test]
 fn dedup_reuses_precomputed_hash_for_none_scope() {
     let mut raw = sample_match("det1", "secret1", "file1.txt");
-    raw.credential_hash = [0x41; 32];
+    raw.credential_hash = [0x41; 32].into();
 
     let deduped = dedup_matches(vec![raw], &DedupScope::None);
     assert_eq!(deduped.len(), 1);
     assert_eq!(
         deduped[0].credential_hash,
-        [0x41; 32],
+        [0x41; 32].into(),
         "dedup none must reuse RawMatch::credential_hash instead of recomputing SHA-256"
     );
 }
@@ -41,13 +41,13 @@ fn dedup_reuses_precomputed_hash_for_none_scope() {
 #[test]
 fn dedup_reuses_precomputed_hash_for_group_insert() {
     let mut raw = sample_match("det1", "secret1", "file1.txt");
-    raw.credential_hash = [0x42; 32];
+    raw.credential_hash = [0x42; 32].into();
 
     let deduped = dedup_matches(vec![raw], &DedupScope::Credential);
     assert_eq!(deduped.len(), 1);
     assert_eq!(
         deduped[0].credential_hash,
-        [0x42; 32],
+        [0x42; 32].into(),
         "dedup grouped insert must reuse RawMatch::credential_hash instead of recomputing SHA-256"
     );
 }

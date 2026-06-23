@@ -20,7 +20,7 @@ fn finding(
             let hash = hash.as_bytes();
             let len = hash.len().min(bytes.len());
             bytes[..len].copy_from_slice(&hash[..len]);
-            bytes
+            bytes.into()
         },
         location: MatchLocation {
             source: Arc::from("filesystem"),

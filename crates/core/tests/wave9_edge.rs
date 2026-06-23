@@ -37,7 +37,7 @@ fn raw(cred: &str) -> RawMatch {
         service: "s".into(),
         severity: Severity::High,
         credential: cred.into(),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         companions: Default::default(),
         location: loc(),
         entropy: None,
@@ -58,11 +58,13 @@ w9_edge!(w9_kh_01, {
 
 w9_edge!(w9_kh_02, {
     let c = Credential::from("");
-    assert!(keyhog_core::testing::CoreTestApi::credential_expose_secret(
-        &keyhog_core::testing::TestApi,
-        &c
-    )
-    .is_empty());
+    assert!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &c
+        )
+        .is_empty()
+    );
 });
 
 w9_edge!(w9_kh_03, {
@@ -128,7 +130,7 @@ w9_edge!(w9_kh_12, {
 
 w9_edge!(w9_kh_13, {
     let d = dedup_matches(vec![raw("a")], &DedupScope::Credential);
-    assert!(!d[0].credential_hash.is_empty());
+    assert!(!d[0].credential_hash.is_zero());
 });
 
 w9_edge!(w9_kh_14, {

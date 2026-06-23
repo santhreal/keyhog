@@ -115,7 +115,7 @@ impl<W: Write + Send> SarifReporter<W> {
             },
             fixes,
             partial_fingerprints: super::sarif_uri::credential_fingerprints(
-                &finding.credential_hash,
+                finding.credential_hash,
             ),
         }
     }

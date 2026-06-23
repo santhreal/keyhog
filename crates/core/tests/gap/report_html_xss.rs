@@ -50,7 +50,7 @@ fn base_finding() -> VerifiedFinding {
         service: Arc::from("aws"),
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("AKIA...wxyz"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("src/main.rs")),
@@ -612,11 +612,12 @@ fn json_uses_snake_case_field_names() {
 fn credential_hash_serializes_as_lowercase_hex() {
     let mut f = base_finding();
     // 0xDE 0xAD 0xBE 0xEF then zeros.
-    f.credential_hash = [0u8; 32];
-    f.credential_hash[0] = 0xde;
-    f.credential_hash[1] = 0xad;
-    f.credential_hash[2] = 0xbe;
-    f.credential_hash[3] = 0xef;
+    let mut hash = [0u8; 32];
+    hash[0] = 0xde;
+    hash[1] = 0xad;
+    hash[2] = 0xbe;
+    hash[3] = 0xef;
+    f.credential_hash = hash.into();
     let payload = raw_findings_payload(&render(&f)).to_string();
     // hex::encode -> lowercase, 64 hex chars total.
     let expected = "deadbeef".to_string() + &"00".repeat(28);

@@ -1,4 +1,4 @@
-use keyhog::testing::{CliTestApi as _, API};
+use keyhog::testing::{API, CliTestApi as _};
 use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,7 +14,7 @@ fn make_finding(
         service: Arc::from("test"),
         severity: Severity::High,
         credential_redacted: "***".into(),
-        credential_hash: test_hash(credential_hash),
+        credential_hash: test_hash(credential_hash).into(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: file_path.map(Arc::from),
@@ -98,7 +98,7 @@ fn baseline_does_not_suppress_new_findings() {
 
     let filtered = API.baseline_filter_new(&baseline, &new_findings);
     assert_eq!(filtered.len(), 1);
-    assert_eq!(filtered[0].credential_hash, test_hash("newhash"));
+    assert_eq!(filtered[0].credential_hash, test_hash("newhash").into());
 }
 
 #[test]

@@ -9,8 +9,8 @@ use crate::credential::Credential;
 use crate::merkle_index::{MerkleIndex, MerkleLoadReport};
 use crate::registry::{CustomVerifier, SourceRegistry, VerifierRegistry};
 use crate::{
-    DetectorSpec, RawMatch, RawMatchDedupKey, RuleSuppressor, RuleSuppressorError, Severity,
-    SpecError, VerifiedFinding,
+    CredentialHash, DetectorSpec, RawMatch, RawMatchDedupKey, RuleSuppressor, RuleSuppressorError,
+    Severity, SpecError, VerifiedFinding,
 };
 
 pub struct TestApi;
@@ -88,7 +88,7 @@ pub trait CoreTestApi {
     fn allowlist_is_hash_allowed(&self, allowlist: &Allowlist, credential: &str) -> bool;
     fn allowlist_is_raw_hash_ignored(&self, allowlist: &Allowlist, hash_hex: &str) -> bool;
     fn rule_suppressor_parse(&self, toml_text: &str)
-        -> Result<RuleSuppressor, RuleSuppressorError>;
+    -> Result<RuleSuppressor, RuleSuppressorError>;
     fn rule_suppressor_load(&self, path: &Path) -> Result<RuleSuppressor, RuleSuppressorError>;
     fn raw_match_sanitize_floats(&self, raw_match: RawMatch) -> RawMatch;
     fn raw_match_deduplication_key<'a>(&self, raw_match: &'a RawMatch) -> RawMatchDedupKey<'a>;
@@ -139,7 +139,7 @@ pub trait CoreTestApi {
     );
     fn credential_fingerprints(
         &self,
-        credential_hash: &[u8; 32],
+        credential_hash: CredentialHash,
     ) -> Option<BTreeMap<String, String>>;
     fn aws_account_from_key_id(&self, key_id: &str) -> Option<String>;
     fn aws_account_is_canary(&self, account_id: &str) -> bool;
@@ -478,7 +478,7 @@ impl CoreTestApi for TestApi {
 
     fn credential_fingerprints(
         &self,
-        credential_hash: &[u8; 32],
+        credential_hash: CredentialHash,
     ) -> Option<BTreeMap<String, String>> {
         crate::report::sarif_uri::credential_fingerprints(credential_hash)
     }

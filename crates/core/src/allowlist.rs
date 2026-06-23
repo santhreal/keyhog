@@ -14,7 +14,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use crate::merkle_spec_hash::hex_to_array;
-use crate::VerifiedFinding;
+use crate::{CredentialHash, VerifiedFinding};
 
 // Submodules live in `allowlist/` (native resolution), matching the
 // `foo.rs` + `foo/` layout used across the workspace.
@@ -25,7 +25,7 @@ use metadata::*;
 // index) is its own subsystem; the `Allowlist` holds a precompiled index and
 // delegates every path decision to it.
 mod glob;
-use glob::{normalize_path, PathGlobIndex};
+use glob::{PathGlobIndex, normalize_path};
 
 /// User-defined suppressions loaded from `.keyhogignore`: credential hashes, detector IDs, and path globs.
 ///
@@ -48,7 +48,7 @@ use glob::{normalize_path, PathGlobIndex};
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Allowlist {
     /// SHA-256 hashes of credentials to ignore.
-    pub credential_hashes: HashSet<[u8; 32]>,
+    pub credential_hashes: HashSet<CredentialHash>,
     /// Detector IDs to ignore entirely.
     pub ignored_detectors: HashSet<String>,
     /// Glob patterns for paths to ignore (raw, as authored). Kept as the public
@@ -568,7 +568,7 @@ impl Allowlist {
         }
     }
 
-    fn matches_ignored_hash(&self, hash: &[u8; 32]) -> bool {
+    fn matches_ignored_hash(&self, hash: &CredentialHash) -> bool {
         // Direct byte-set membership. Suppressing `hash:` entries are parsed
         // from 64-hex into this same `[u8; 32]` form at load time
         // (`parse_sha256_hex`), and findings carry the raw bytes, so no hex
@@ -590,8 +590,8 @@ impl Default for Allowlist {
     }
 }
 
-fn parse_sha256_hex(input: &str) -> Option<[u8; 32]> {
-    hex_to_array(input.trim())
+fn parse_sha256_hex(input: &str) -> Option<CredentialHash> {
+    hex_to_array(input.trim()).map(CredentialHash::from_bytes)
 }
 
 /// Inline metadata parsed from a `.keyhogignore` line trailer. Used to

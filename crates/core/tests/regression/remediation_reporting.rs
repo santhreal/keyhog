@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use keyhog_core::{
-    write_report, MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding,
+    MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding, write_report,
 };
 
 const REMEDIATION_DATA: &str = include_str!("../../data/remediation.toml");
@@ -25,7 +25,7 @@ fn finding(detector_id: &str, name: &str, service: &str, severity: Severity) -> 
         service: Arc::from(service),
         severity,
         credential_redacted: Cow::Borrowed("AKIA...7XYA"),
-        credential_hash: [7; 32],
+        credential_hash: [7; 32].into(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("src/main.rs")),

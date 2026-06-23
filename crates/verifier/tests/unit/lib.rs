@@ -1,9 +1,9 @@
-use keyhog_core::{dedup_matches, DedupScope, DetectorSpec, MatchLocation, RawMatch, Severity};
+use keyhog_core::{DedupScope, DetectorSpec, MatchLocation, RawMatch, Severity, dedup_matches};
 use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 use keyhog_verifier::{VerificationEngine, VerifyConfig};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -78,7 +78,7 @@ async fn test_verify_all_logic() {
         service: "test".into(),
         severity: Severity::High,
         credential: "same-credential".into(),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         companions: HashMap::new(),
         location: MatchLocation {
             source: "fs".into(),

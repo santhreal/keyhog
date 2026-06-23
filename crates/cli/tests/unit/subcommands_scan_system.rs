@@ -1,4 +1,4 @@
-use keyhog::testing::{CliTestApi as _, API};
+use keyhog::testing::{API, CliTestApi as _};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use std::sync::Arc;
 
@@ -10,7 +10,7 @@ fn raw_match(i: usize) -> RawMatch {
         service: Arc::from("aws"),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from(credential.as_str()),
-        credential_hash: raw_hash(i),
+        credential_hash: raw_hash(i).into(),
         companions: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
@@ -61,7 +61,10 @@ fn sink_retains_only_redacted_never_plaintext() {
         "plaintext credential leaked into retained findings: {json}"
     );
     assert_eq!(API.finding_sink_retained_len(&sink), 1);
-    assert_eq!(API.finding_sink_retained_hash(&sink, 0), Some(raw_hash(7)));
+    assert_eq!(
+        API.finding_sink_retained_hash(&sink, 0),
+        Some(raw_hash(7).into())
+    );
 }
 
 #[test]
@@ -76,10 +79,13 @@ fn sink_caps_resident_set_but_keeps_counting() {
     assert_eq!(API.finding_sink_retained_len(&sink), cap);
     assert!(API.finding_sink_capped_warned(&sink));
     assert!(!API.finding_sink_is_empty(&sink));
-    assert_eq!(API.finding_sink_retained_hash(&sink, 0), Some(raw_hash(0)));
+    assert_eq!(
+        API.finding_sink_retained_hash(&sink, 0),
+        Some(raw_hash(0).into())
+    );
     assert_eq!(
         API.finding_sink_retained_hash(&sink, cap - 1),
-        Some(raw_hash(cap - 1))
+        Some(raw_hash(cap - 1).into())
     );
 }
 

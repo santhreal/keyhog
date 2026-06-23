@@ -14,7 +14,7 @@ fn make_match(detector_id: &str, credential: &str, confidence: Option<f64>) -> R
         service: Arc::from("test"),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from(credential),
-        credential_hash: credential_hash(credential),
+        credential_hash: credential_hash(credential).into(),
         companions: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("test"),

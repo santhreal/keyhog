@@ -28,7 +28,7 @@
 mod support;
 use support::paths::detector_dir;
 
-use keyhog_core::{dedup_matches, Chunk, ChunkMetadata, DedupScope};
+use keyhog_core::{Chunk, ChunkMetadata, DedupScope, dedup_matches};
 use keyhog_scanner::CompiledScanner;
 fn make_chunk(text: &str, path: &str) -> Chunk {
     Chunk {
@@ -149,7 +149,7 @@ fn dedup_suppresses_same_file_same_line_additional_location() {
     use std::collections::HashMap;
     use std::sync::Arc;
     let primary = RawMatch {
-        credential_hash: [1u8; 32],
+        credential_hash: [1u8; 32].into(),
         detector_id: Arc::from("test-detector"),
         detector_name: Arc::from("Test Detector"),
         service: Arc::from("test"),

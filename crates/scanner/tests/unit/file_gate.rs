@@ -1608,7 +1608,7 @@ fn resolution_happy() {
         service: Arc::from("s"),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from("same"),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("t"),

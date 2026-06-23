@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use keyhog_core::{
-    write_report, MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding,
+    MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding, write_report,
 };
 
 const PAYLOAD: &str = "</script><img src=x onerror=alert(1)>";
@@ -28,7 +28,7 @@ fn poisoned_finding() -> VerifiedFinding {
         service: Arc::from("aws"),
         severity: Severity::High,
         credential_redacted: Cow::Owned(format!("AKIA...{PAYLOAD}")),
-        credential_hash: [0u8; 32],
+        credential_hash: [0u8; 32].into(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             // Attacker-named file on disk: appears in location.file_path.

@@ -1,4 +1,4 @@
-use keyhog_core::{redact, MatchLocation, RawMatch, Severity};
+use keyhog_core::{MatchLocation, RawMatch, Severity, redact};
 use std::collections::HashMap;
 
 #[test]
@@ -10,7 +10,7 @@ fn raw_match_sorting_priority() {
             service: "test".into(),
             severity: Severity::Low,
             credential: "key1".into(),
-            credential_hash: [0; 32],
+            credential_hash: [0; 32].into(),
             companions: HashMap::new(),
             location: MatchLocation {
                 source: "fs".into(),
@@ -30,7 +30,7 @@ fn raw_match_sorting_priority() {
             service: "test".into(),
             severity: Severity::High,
             credential: "key2".into(),
-            credential_hash: [0; 32],
+            credential_hash: [0; 32].into(),
             companions: HashMap::new(),
             location: MatchLocation {
                 source: "fs".into(),
@@ -50,7 +50,7 @@ fn raw_match_sorting_priority() {
             service: "test".into(),
             severity: Severity::Medium,
             credential: "key3".into(),
-            credential_hash: [0; 32],
+            credential_hash: [0; 32].into(),
             companions: HashMap::new(),
             location: MatchLocation {
                 source: "fs".into(),
@@ -126,7 +126,7 @@ fn raw_match_sorting_handles_close_floats_without_epsilon_collapse() {
         service: "test".into(),
         severity: Severity::High,
         credential: "key-a".into(),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         companions: HashMap::new(),
         location: MatchLocation {
             source: "fs".into(),

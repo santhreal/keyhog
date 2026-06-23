@@ -4,7 +4,7 @@
 //! Distinct line locations become additional_locations; same-line duplicates
 //! are aliases and intentionally collapse.
 
-use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
+use keyhog_core::{DedupScope, MatchLocation, RawMatch, Severity, dedup_matches};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -15,7 +15,7 @@ fn make_match(cred: &str, path: &str, line: usize, offset: usize) -> RawMatch {
         service: Arc::from("test"),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from(cred),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         companions: HashMap::new(),
         location: MatchLocation {
             source: Arc::from("fs"),
@@ -68,7 +68,10 @@ fn dedup_primary_offset_stable_across_input_order() {
     let m50 = make_match("SECRET", "file.env", 1, 50);
     let m75 = make_match("SECRET", "file.env", 2, 75);
 
-    let forward = dedup_matches(vec![m100.clone(), m50.clone(), m75.clone()], &DedupScope::Credential);
+    let forward = dedup_matches(
+        vec![m100.clone(), m50.clone(), m75.clone()],
+        &DedupScope::Credential,
+    );
     let backward = dedup_matches(vec![m75, m50, m100], &DedupScope::Credential);
 
     assert_eq!(forward[0].primary_location.offset, 50);
@@ -100,7 +103,10 @@ fn dedup_file_scope_selects_primary_per_file() {
         .find(|m| m.primary_location.file_path.as_deref() == Some("file2.env"))
         .unwrap();
 
-    assert_eq!(group1.primary_location.offset, 10, "file1: primary at lower offset");
+    assert_eq!(
+        group1.primary_location.offset, 10,
+        "file1: primary at lower offset"
+    );
     assert_eq!(group1.additional_locations.len(), 1);
     assert_eq!(group2.primary_location.offset, 50, "file2: only one match");
 }

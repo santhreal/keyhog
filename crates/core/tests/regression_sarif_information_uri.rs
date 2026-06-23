@@ -15,7 +15,7 @@
 //! `keyhog/keyhog` value and PASS once the URI tracks the manifest.
 
 use keyhog_core::{
-    write_report, MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding,
+    MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding, write_report,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -35,7 +35,7 @@ fn sample_finding() -> VerifiedFinding {
         service: "aws".into(),
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("AKIA****"),
-        credential_hash: [0; 32],
+        credential_hash: [0; 32].into(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("config.env".into()),
