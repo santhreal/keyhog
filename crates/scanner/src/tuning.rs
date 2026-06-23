@@ -1,6 +1,6 @@
 //! Per-instance scanner performance tuning ([`ScannerTuning`]), extracted from
 //! `phase2.rs`. Each toggle has a compiled shipped DEFAULT plus a PER-SCANNER
-//! override (`AtomicU8`: 0 = compiled default, 1 = force on, 2 = force off;
+//! override (`BoolOverride` stored in an `AtomicU8`;
 //! `AtomicUsize` with `usize::MAX` = compiled default; timeout `AtomicU64` with
 //! 0 = compiled default). A differential parity test drives one input down both
 //! code paths by flipping the override ON ITS OWN scanner (through
@@ -17,23 +17,41 @@
 use crate::scanner_config::{ResolvedScannerTuningConfig, ScannerTuningConfig};
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering::Relaxed};
 
-/// Encode an `Option<bool>` override into the `AtomicU8` convention
-/// (`None` = compiled default, `Some(true)` = force on, `Some(false)` = force off).
-#[inline]
-fn encode_override(mode: Option<bool>) -> u8 {
-    match mode {
-        None => 0,
-        Some(true) => 1,
-        Some(false) => 2,
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+enum BoolOverride {
+    Default = 0,
+    ForceOn = 1,
+    ForceOff = 2,
 }
 
-#[inline]
-fn resolve_override(raw: u8, default: bool) -> bool {
-    match raw {
-        1 => true,
-        2 => false,
-        _ => default,
+impl BoolOverride {
+    const fn as_byte(self) -> u8 {
+        self as u8
+    }
+
+    fn from_option(mode: Option<bool>) -> Self {
+        match mode {
+            None => Self::Default,
+            Some(true) => Self::ForceOn,
+            Some(false) => Self::ForceOff,
+        }
+    }
+
+    fn from_raw(raw: u8) -> Self {
+        match raw {
+            x if x == Self::ForceOn.as_byte() => Self::ForceOn,
+            x if x == Self::ForceOff.as_byte() => Self::ForceOff,
+            _ => Self::Default,
+        }
+    }
+
+    fn resolve(self, default: bool) -> bool {
+        match self {
+            Self::Default => default,
+            Self::ForceOn => true,
+            Self::ForceOff => false,
+        }
     }
 }
 
@@ -89,19 +107,19 @@ impl ScannerTuning {
     /// A tuning with every override at the compiled shipped default.
     pub(crate) const fn from_defaults() -> Self {
         Self {
-            phase2_hs: AtomicU8::new(0),
+            phase2_hs: AtomicU8::new(BoolOverride::Default.as_byte()),
             hs_max_len: AtomicUsize::new(usize::MAX),
-            phase2_anchor: AtomicU8::new(0),
-            homoglyph_gate: AtomicU8::new(0),
-            homoglyph_ascii_skip: AtomicU8::new(0),
-            phase2_reverse: AtomicU8::new(0),
-            prefilter_truncate: AtomicU8::new(0),
-            phase2_prefix_gate: AtomicU8::new(0),
-            decode_focus: AtomicU8::new(0),
-            confirmed_suffix_gate: AtomicU8::new(0),
-            no_candidate_gate: AtomicU8::new(0),
-            phase2_localizer: AtomicU8::new(0),
-            gpu_recall_floor: AtomicU8::new(0),
+            phase2_anchor: AtomicU8::new(BoolOverride::Default.as_byte()),
+            homoglyph_gate: AtomicU8::new(BoolOverride::Default.as_byte()),
+            homoglyph_ascii_skip: AtomicU8::new(BoolOverride::Default.as_byte()),
+            phase2_reverse: AtomicU8::new(BoolOverride::Default.as_byte()),
+            prefilter_truncate: AtomicU8::new(BoolOverride::Default.as_byte()),
+            phase2_prefix_gate: AtomicU8::new(BoolOverride::Default.as_byte()),
+            decode_focus: AtomicU8::new(BoolOverride::Default.as_byte()),
+            confirmed_suffix_gate: AtomicU8::new(BoolOverride::Default.as_byte()),
+            no_candidate_gate: AtomicU8::new(BoolOverride::Default.as_byte()),
+            phase2_localizer: AtomicU8::new(BoolOverride::Default.as_byte()),
+            gpu_recall_floor: AtomicU8::new(BoolOverride::Default.as_byte()),
             gpu_moe_timeout_ms: AtomicU64::new(0),
         }
     }
@@ -140,56 +158,32 @@ impl ScannerTuning {
         };
 
         ResolvedScannerTuningConfig {
-            fallback_hs: resolve_override(
-                self.phase2_hs.load(Relaxed),
-                ScannerTuningConfig::FALLBACK_HS_DEFAULT,
-            ),
+            fallback_hs: BoolOverride::from_raw(self.phase2_hs.load(Relaxed))
+                .resolve(ScannerTuningConfig::FALLBACK_HS_DEFAULT),
             hs_prefilter_max_len,
             hs_shard_target: ScannerTuningConfig::HS_SHARD_TARGET_DEFAULT,
-            fallback_anchor: resolve_override(
-                self.phase2_anchor.load(Relaxed),
-                ScannerTuningConfig::FALLBACK_ANCHOR_DEFAULT,
-            ),
-            homoglyph_gate: resolve_override(
-                self.homoglyph_gate.load(Relaxed),
-                ScannerTuningConfig::HOMOGLYPH_GATE_DEFAULT,
-            ),
-            homoglyph_ascii_skip: resolve_override(
-                self.homoglyph_ascii_skip.load(Relaxed),
-                ScannerTuningConfig::HOMOGLYPH_ASCII_SKIP_DEFAULT,
-            ),
-            fallback_reverse: resolve_override(
-                self.phase2_reverse.load(Relaxed),
-                ScannerTuningConfig::FALLBACK_REVERSE_DEFAULT,
-            ),
-            prefilter_truncate: resolve_override(
-                self.prefilter_truncate.load(Relaxed),
-                ScannerTuningConfig::PREFILTER_TRUNCATE_DEFAULT,
-            ),
-            fallback_prefix_gate: resolve_override(
-                self.phase2_prefix_gate.load(Relaxed),
-                ScannerTuningConfig::FALLBACK_PREFIX_GATE_DEFAULT,
-            ),
-            decode_focus: resolve_override(
-                self.decode_focus.load(Relaxed),
-                ScannerTuningConfig::DECODE_FOCUS_DEFAULT,
-            ),
-            confirmed_suffix_gate: resolve_override(
-                self.confirmed_suffix_gate.load(Relaxed),
-                ScannerTuningConfig::CONFIRMED_SUFFIX_GATE_DEFAULT,
-            ),
-            no_candidate_gate: resolve_override(
-                self.no_candidate_gate.load(Relaxed),
-                ScannerTuningConfig::NO_CANDIDATE_GATE_DEFAULT,
-            ),
-            fallback_localizer: resolve_override(
-                self.phase2_localizer.load(Relaxed),
-                ScannerTuningConfig::FALLBACK_LOCALIZER_DEFAULT,
-            ),
-            gpu_recall_floor: resolve_override(
-                self.gpu_recall_floor.load(Relaxed),
-                ScannerTuningConfig::GPU_RECALL_FLOOR_DEFAULT,
-            ),
+            fallback_anchor: BoolOverride::from_raw(self.phase2_anchor.load(Relaxed))
+                .resolve(ScannerTuningConfig::FALLBACK_ANCHOR_DEFAULT),
+            homoglyph_gate: BoolOverride::from_raw(self.homoglyph_gate.load(Relaxed))
+                .resolve(ScannerTuningConfig::HOMOGLYPH_GATE_DEFAULT),
+            homoglyph_ascii_skip: BoolOverride::from_raw(self.homoglyph_ascii_skip.load(Relaxed))
+                .resolve(ScannerTuningConfig::HOMOGLYPH_ASCII_SKIP_DEFAULT),
+            fallback_reverse: BoolOverride::from_raw(self.phase2_reverse.load(Relaxed))
+                .resolve(ScannerTuningConfig::FALLBACK_REVERSE_DEFAULT),
+            prefilter_truncate: BoolOverride::from_raw(self.prefilter_truncate.load(Relaxed))
+                .resolve(ScannerTuningConfig::PREFILTER_TRUNCATE_DEFAULT),
+            fallback_prefix_gate: BoolOverride::from_raw(self.phase2_prefix_gate.load(Relaxed))
+                .resolve(ScannerTuningConfig::FALLBACK_PREFIX_GATE_DEFAULT),
+            decode_focus: BoolOverride::from_raw(self.decode_focus.load(Relaxed))
+                .resolve(ScannerTuningConfig::DECODE_FOCUS_DEFAULT),
+            confirmed_suffix_gate: BoolOverride::from_raw(self.confirmed_suffix_gate.load(Relaxed))
+                .resolve(ScannerTuningConfig::CONFIRMED_SUFFIX_GATE_DEFAULT),
+            no_candidate_gate: BoolOverride::from_raw(self.no_candidate_gate.load(Relaxed))
+                .resolve(ScannerTuningConfig::NO_CANDIDATE_GATE_DEFAULT),
+            fallback_localizer: BoolOverride::from_raw(self.phase2_localizer.load(Relaxed))
+                .resolve(ScannerTuningConfig::FALLBACK_LOCALIZER_DEFAULT),
+            gpu_recall_floor: BoolOverride::from_raw(self.gpu_recall_floor.load(Relaxed))
+                .resolve(ScannerTuningConfig::GPU_RECALL_FLOOR_DEFAULT),
             gpu_moe_timeout_ms,
         }
     }
@@ -201,7 +195,8 @@ impl ScannerTuning {
     /// `Some(true)` forces HS, `Some(false)` forces `regex::RegexSet`, `None` =
     /// compiled default (on when an HS engine compiled).
     pub(crate) fn set_phase2_hs(&self, mode: Option<bool>) {
-        self.phase2_hs.store(encode_override(mode), Relaxed);
+        self.phase2_hs
+            .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
     }
 
     /// Force the HS-prefilter size gate (test/diagnostic). `Some(4096)` is the
@@ -222,16 +217,14 @@ impl ScannerTuning {
     /// `Some(true)` forces it on, `Some(false)` the legacy whole-chunk path,
     /// `None` the compiled default. Recall-identical — pure performance route.
     pub(crate) fn set_phase2_anchor_mode(&self, mode: Option<bool>) {
-        self.phase2_anchor.store(encode_override(mode), Relaxed);
+        self.phase2_anchor
+            .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
     }
 
     /// Whether shared-anchor phase-2 localization is enabled. On by default.
     pub(crate) fn phase2_anchor_enabled(&self) -> bool {
-        match self.phase2_anchor.load(Relaxed) {
-            1 => true,
-            2 => false,
-            _ => ScannerTuningConfig::FALLBACK_ANCHOR_DEFAULT,
-        }
+        BoolOverride::from_raw(self.phase2_anchor.load(Relaxed))
+            .resolve(ScannerTuningConfig::FALLBACK_ANCHOR_DEFAULT)
     }
 
     // ── Homoglyph ASCII gate ───────────────────────────────────────────────
@@ -240,16 +233,14 @@ impl ScannerTuning {
     /// it on (skip homoglyph variants on pure-ASCII chunks), `Some(false)` forces
     /// every homoglyph variant to run, `None` restores the default (on).
     pub(crate) fn set_phase2_homoglyph_gate(&self, mode: Option<bool>) {
-        self.homoglyph_gate.store(encode_override(mode), Relaxed);
+        self.homoglyph_gate
+            .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
     }
 
     /// Whether the homoglyph ASCII-gate is enabled (default on).
     pub(crate) fn homoglyph_gate_enabled(&self) -> bool {
-        match self.homoglyph_gate.load(Relaxed) {
-            1 => true,
-            2 => false,
-            _ => ScannerTuningConfig::HOMOGLYPH_GATE_DEFAULT,
-        }
+        BoolOverride::from_raw(self.homoglyph_gate.load(Relaxed))
+            .resolve(ScannerTuningConfig::HOMOGLYPH_GATE_DEFAULT)
     }
 
     // ── Homoglyph ASCII-skip (measurement only) ────────────────────────────
@@ -260,24 +251,22 @@ impl ScannerTuning {
     /// skipping every homoglyph variant on a pure-ASCII chunk drops no finding.
     pub(crate) fn set_homoglyph_ascii_skip(&self, mode: Option<bool>) {
         self.homoglyph_ascii_skip
-            .store(encode_override(mode), Relaxed);
+            .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
     }
 
     // ── Diagnostic extraction-order reversal ───────────────────────────────
 
     /// Diagnostic: override the phase-2 extraction-order reversal (test hook).
     pub(crate) fn set_phase2_reverse(&self, mode: Option<bool>) {
-        self.phase2_reverse.store(encode_override(mode), Relaxed);
+        self.phase2_reverse
+            .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
     }
 
     /// Diagnostic: reverse the phase-2 active-pattern extraction order, to prove
     /// the final finding set is INDEPENDENT of phase-2 extraction order.
     pub(crate) fn phase2_reverse_enabled(&self) -> bool {
-        match self.phase2_reverse.load(Relaxed) {
-            1 => true,
-            2 => false,
-            _ => ScannerTuningConfig::FALLBACK_REVERSE_DEFAULT,
-        }
+        BoolOverride::from_raw(self.phase2_reverse.load(Relaxed))
+            .resolve(ScannerTuningConfig::FALLBACK_REVERSE_DEFAULT)
     }
 
     // ── Prefilter {N,}→{N} truncation ──────────────────────────────────────
@@ -289,7 +278,7 @@ impl ScannerTuning {
     /// `prefilter_truncate_parity`.
     pub(crate) fn set_prefilter_truncate(&self, mode: Option<bool>) {
         self.prefilter_truncate
-            .store(encode_override(mode), Relaxed);
+            .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
     }
 
     // ── Prefix-literal skip gate ───────────────────────────────────────────
@@ -299,7 +288,7 @@ impl ScannerTuning {
     /// require a prefix literal absent from the chunk.
     pub(crate) fn set_phase2_prefix_gate(&self, mode: Option<bool>) {
         self.phase2_prefix_gate
-            .store(encode_override(mode), Relaxed);
+            .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
     }
 
     // ── Decode-recursion focus restriction ─────────────────────────────────
@@ -308,18 +297,16 @@ impl ScannerTuning {
     /// `Some(true)` forces it on, `Some(false)` off, `None` = compiled default (on).
     /// Recall-validated by `decode_focus_parity`.
     pub(crate) fn set_decode_focus(&self, mode: Option<bool>) {
-        self.decode_focus.store(encode_override(mode), Relaxed);
+        self.decode_focus
+            .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
     }
 
     /// Whether the decode-recursion focus restriction is enabled (default on):
     /// the phase-2 pass on a decode sub-chunk scans only a window around the
     /// freshly decoded text instead of the whole spliced parent context.
     pub(crate) fn decode_focus_enabled(&self) -> bool {
-        match self.decode_focus.load(Relaxed) {
-            1 => true,
-            2 => false,
-            _ => ScannerTuningConfig::DECODE_FOCUS_DEFAULT,
-        }
+        BoolOverride::from_raw(self.decode_focus.load(Relaxed))
+            .resolve(ScannerTuningConfig::DECODE_FOCUS_DEFAULT)
     }
 
     // ── Confirmed-pass suffix gate ─────────────────────────────────────────
@@ -330,18 +317,15 @@ impl ScannerTuning {
     /// literal is absent (so they cannot match), so it is safe to flip.
     pub(crate) fn set_confirmed_suffix_gate(&self, mode: Option<bool>) {
         self.confirmed_suffix_gate
-            .store(encode_override(mode), Relaxed);
+            .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
     }
 
     /// Whether the confirmed-pass suffix gate is enabled (default on): one AC
     /// pass marks which required-suffix literals are present, so a triggered
     /// pattern whose suffix literals are ALL absent skips its whole-chunk regex.
     pub(crate) fn confirmed_suffix_gate_enabled(&self) -> bool {
-        match self.confirmed_suffix_gate.load(Relaxed) {
-            1 => true,
-            2 => false,
-            _ => ScannerTuningConfig::CONFIRMED_SUFFIX_GATE_DEFAULT,
-        }
+        BoolOverride::from_raw(self.confirmed_suffix_gate.load(Relaxed))
+            .resolve(ScannerTuningConfig::CONFIRMED_SUFFIX_GATE_DEFAULT)
     }
 
     // ── SWE-101 combined no-candidate prefilter gate ───────────────────────
@@ -353,14 +337,16 @@ impl ScannerTuning {
     /// cannot fire any always-active pattern. The differential parity test forces
     /// it OFF on one scanner to prove the gate changes no finding.
     pub(crate) fn set_no_candidate_gate(&self, mode: Option<bool>) {
-        self.no_candidate_gate.store(encode_override(mode), Relaxed);
+        self.no_candidate_gate
+            .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
     }
 
     // ── Phase-2 plain-pattern localizer ───────────────────────────────────
 
     /// Override phase-2 plain-pattern localization (test/diagnostic).
     pub(crate) fn set_phase2_localizer(&self, mode: Option<bool>) {
-        self.phase2_localizer.store(encode_override(mode), Relaxed);
+        self.phase2_localizer
+            .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
     }
 
     /// Whether the localized plain-pattern phase-2 path is enabled. Default
@@ -368,11 +354,8 @@ impl ScannerTuning {
     /// decode-recursion-heavy inputs, while the plain-pattern RegexSet path is
     /// the better shipped default.
     pub(crate) fn phase2_localizer_enabled(&self) -> bool {
-        match self.phase2_localizer.load(Relaxed) {
-            1 => true,
-            2 => false,
-            _ => ScannerTuningConfig::FALLBACK_LOCALIZER_DEFAULT,
-        }
+        BoolOverride::from_raw(self.phase2_localizer.load(Relaxed))
+            .resolve(ScannerTuningConfig::FALLBACK_LOCALIZER_DEFAULT)
     }
 
     // ── GPU region-presence CPU recall floor ──────────────────────────────
@@ -383,18 +366,16 @@ impl ScannerTuning {
     /// coverage: it lets the shared CPU trigger net recover any GPU under-fire,
     /// and the region-presence path reports that recovery loudly.
     pub(crate) fn set_gpu_recall_floor(&self, mode: Option<bool>) {
-        self.gpu_recall_floor.store(encode_override(mode), Relaxed);
+        self.gpu_recall_floor
+            .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
     }
 
     /// Whether GPU region presence should compute the full CPU trigger floor
     /// even when host-only detectors are absent.
     #[cfg(feature = "gpu")]
     pub(crate) fn gpu_recall_floor_enabled(&self) -> bool {
-        match self.gpu_recall_floor.load(Relaxed) {
-            1 => true,
-            2 => false,
-            _ => ScannerTuningConfig::GPU_RECALL_FLOOR_DEFAULT,
-        }
+        BoolOverride::from_raw(self.gpu_recall_floor.load(Relaxed))
+            .resolve(ScannerTuningConfig::GPU_RECALL_FLOOR_DEFAULT)
     }
 
     // ── GPU MoE readback timeout ──────────────────────────────────────────

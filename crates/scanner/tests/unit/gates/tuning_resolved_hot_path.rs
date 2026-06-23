@@ -53,3 +53,36 @@ fn gpu_moe_timeout_uses_resolved_tuning_config() {
         "ML postprocess should use a resolved tuning snapshot for GPU MoE timeout"
     );
 }
+
+#[test]
+fn tuning_bool_overrides_use_named_state_not_magic_bytes() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let tuning =
+        std::fs::read_to_string(root.join("src/tuning.rs")).expect("tuning source readable");
+
+    assert!(
+        tuning.contains("enum BoolOverride")
+            && tuning.contains("Default = 0")
+            && tuning.contains("ForceOn = 1")
+            && tuning.contains("ForceOff = 2")
+            && tuning.contains("fn from_option(mode: Option<bool>) -> Self")
+            && tuning.contains("fn from_raw(raw: u8) -> Self")
+            && tuning.contains("fn resolve(self, default: bool) -> bool"),
+        "tuning boolean override state should be named and resolved through BoolOverride"
+    );
+    assert!(
+        tuning.contains("AtomicU8::new(BoolOverride::Default.as_byte())")
+            && tuning.contains("BoolOverride::from_option(mode).as_byte()")
+            && tuning.contains("BoolOverride::from_raw(self.phase2_anchor.load(Relaxed))")
+            && tuning.contains("BoolOverride::from_raw(self.gpu_recall_floor.load(Relaxed))"),
+        "ScannerTuning should initialize, store, and load boolean overrides through BoolOverride"
+    );
+    assert!(
+        !tuning.contains("fn encode_override(")
+            && !tuning.contains("fn resolve_override(")
+            && !tuning.contains("AtomicU8::new(0)")
+            && !tuning.contains("match self.phase2_anchor.load(Relaxed)")
+            && !tuning.contains("match self.gpu_recall_floor.load(Relaxed)"),
+        "ScannerTuning must not regress to anonymous AtomicU8 magic-byte matches"
+    );
+}
