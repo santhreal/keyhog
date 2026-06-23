@@ -283,9 +283,16 @@ fn is_uniform_hex(s: &str) -> bool {
     if bytes.is_empty() {
         return false;
     }
+    hex_bytes_are_uniform_case(bytes, &[])
+}
+
+fn hex_bytes_are_uniform_case(bytes: &[u8], skipped_positions: &[usize]) -> bool {
     let mut saw_lower = false;
     let mut saw_upper = false;
-    for &b in bytes {
+    for (index, &b) in bytes.iter().enumerate() {
+        if skipped_positions.contains(&index) {
+            continue;
+        }
         match b {
             b'0'..=b'9' => {}
             b'a'..=b'f' => saw_lower = true,
@@ -311,20 +318,7 @@ pub(crate) fn is_uuid_v4_shape(s: &str) -> bool {
     // Version-4 marker at position 14, variant marker at position 19
     // (8/9/a/b) per RFC 4122. We don't require the version digit so
     // we also catch v1/v3/v5 - every standard-shaped UUID is FP.
-    let mut saw_lower = false;
-    let mut saw_upper = false;
-    for (i, &c) in b.iter().enumerate() {
-        if matches!(i, 8 | 13 | 18 | 23) {
-            continue;
-        }
-        match c {
-            b'0'..=b'9' => {}
-            b'a'..=b'f' => saw_lower = true,
-            b'A'..=b'F' => saw_upper = true,
-            _ => return false,
-        }
-    }
-    !(saw_lower && saw_upper)
+    hex_bytes_are_uniform_case(b, &[8, 13, 18, 23])
 }
 
 /// True when a quoted-printable assignment delimiter (`=3d`, `=3a`, etc.)
@@ -346,20 +340,7 @@ pub(crate) fn looks_like_truncated_uuid_v4_suffix(s: &str) -> bool {
     if !matches!(b[17], b'8' | b'9' | b'a' | b'b' | b'A' | b'B') {
         return false;
     }
-    let mut saw_lower = false;
-    let mut saw_upper = false;
-    for (i, &c) in b.iter().enumerate() {
-        if matches!(i, 6 | 11 | 16 | 21) {
-            continue;
-        }
-        match c {
-            b'0'..=b'9' => {}
-            b'a'..=b'f' => saw_lower = true,
-            b'A'..=b'F' => saw_upper = true,
-            _ => return false,
-        }
-    }
-    !(saw_lower && saw_upper)
+    hex_bytes_are_uniform_case(b, &[6, 11, 16, 21])
 }
 
 /// Return true if the credential contains three or more consecutive identical characters.
