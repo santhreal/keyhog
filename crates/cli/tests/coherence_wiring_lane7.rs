@@ -542,3 +542,70 @@ fn output_formats_doc_states_nine_values() {
         );
     }
 }
+
+/// README↔installer verification coherence (dogfood 2026-06-22). `install.sh`
+/// and `install.ps1` gate every download on a minisign SIGNATURE against the
+/// pinned public key and FAIL CLOSED when minisign is absent: a real install ran
+/// on a host with no minisign — it downloaded the binary + `.minisig`, then
+/// refused with "minisign is not installed … Refusing to install an unverified
+/// keyhog binary" and wrote nothing. README's `## Install` section previously
+/// claimed only "Each download is SHA256-verified against the release-side
+/// checksum file", which undersells the hard requirement: most hosts ship no
+/// minisign, so the headline `curl … | sh` refuses with no forewarning, and the
+/// `.sha256` is never even reached (the signature gate fails first). Pin the
+/// corrected, coherent wording so the install-verification docs can never
+/// silently drift back to a sha256-only claim the installer never honored.
+#[test]
+fn readme_documents_minisign_install_gate_coherently() {
+    let readme = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../README.md"));
+    let install_sh = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../install.sh"));
+    let install_ps1 = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../install.ps1"));
+
+    // Ground truth FIRST: both installers really do verify a minisign signature
+    // and fail closed without it. The README assertions below only make sense
+    // while this is the live behavior — so anchor on it.
+    assert!(
+        install_sh.contains("minisign -Vm")
+            && install_sh.contains("Refusing to install an unverified"),
+        "install.sh must verify the release minisign signature and fail closed; \
+         the README coherence assertions below depend on that being the real behavior."
+    );
+    assert!(
+        install_ps1.contains("minisign")
+            && install_ps1.contains("Refusing to install an unverified"),
+        "install.ps1 must verify the release minisign signature and fail closed (Windows parity)."
+    );
+
+    // Isolate the README `## Install` section (up to the next h2 heading).
+    let install_section = readme
+        .split("## Install")
+        .nth(1)
+        .expect("README must have an `## Install` section")
+        .split("\n## ")
+        .next()
+        .expect("README `## Install` section must have body text");
+
+    // Coherence: because the install fails closed without minisign, the README
+    // install section MUST tell operators minisign is required and that the
+    // install fails closed — not imply sha256-only verification.
+    assert!(
+        install_section.contains("minisign"),
+        "README `## Install` must document the minisign signature requirement (the installer \
+         fails closed without minisign); it must not imply sha256-only verification."
+    );
+    assert!(
+        install_section.contains("fails closed") || install_section.contains("Refusing"),
+        "README `## Install` must state the installer FAILS CLOSED on a missing/invalid \
+         signature, matching install.sh's `Refusing to install an unverified` behavior."
+    );
+    // The `--insecure` escape hatch the README points operators to must be a real
+    // installer flag, so the documented offline/air-gapped path actually works.
+    assert!(
+        install_section.contains("--insecure"),
+        "README `## Install` must document the `--insecure` offline/air-gapped escape hatch."
+    );
+    assert!(
+        install_sh.contains("--insecure") || install_sh.contains("INSECURE_INSTALL"),
+        "install.sh must implement the `--insecure` flag the README documents."
+    );
+}

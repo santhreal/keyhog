@@ -161,8 +161,15 @@ The dedicated `keyhog-linux-x86_64-cuda` variant is only auto-picked
 when the full CUDA toolkit is present (nvcc on PATH, `$CUDA_HOME` set,
 or `/usr/local/cuda` exists) - the signal that you actively run a CUDA
 development setup, not just an NVIDIA driver. macOS release assets run
-SIMD on CPU plus the WGPU GPU path on compatible adapters. Each download
-is SHA256-verified against the release-side checksum file before install.
+SIMD on CPU plus the WGPU GPU path on compatible adapters. Each download is
+verified before it can replace your binary: the installer checks the release's
+**minisign signature** against keyhog's pinned public key and **fails closed**
+(refuses to install, touching nothing) if the signature is missing, wrong, or
+minisign itself is not installed - in which case it prints the one-line install
+command for your OS (`sudo apt-get install minisign`, `brew install minisign`,
+`winget install -e --id jedisct1.minisign`). It then SHA256-verifies the binary
+against the release-side checksum file. For an offline/air-gapped install
+without signature verification, pass `--insecure` (the SHA256 is still checked).
 
 Override the variant with `--variant=cuda` (force the native CUDA build,
 requires `libcuda.so` at runtime) or `--variant=cpu` (force the default
