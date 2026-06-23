@@ -1,6 +1,6 @@
 use crate::adjudicate::{
     adjudicate_match, CandidateMatch, EntropyFallbackSignal, EntropyShapeStage, FinalEmitSignals,
-    GenericBridgeSignal, MatchCtx, ProcessCandidateSignals, StageId, Verdict,
+    GenericBridgeSignal, HotPatternSignal, MatchCtx, ProcessCandidateSignals, StageId, Verdict,
 };
 use crate::context::CodeContext;
 use crate::suppression::NamedDetectorSuppressionCtx;
@@ -369,13 +369,18 @@ fn hot_pattern_suppression_owner_returns_adjudicator_stage() {
         "filesystem",
         40,
     );
+    let signal = crate::suppression::hot_pattern_suppression_stage(
+        "ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ",
+        ctx,
+    )
+    .expect("vendored hot-pattern hit is suppressed");
 
     assert_eq!(
-        crate::suppression::hot_pattern_suppression_stage(
-            "ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ",
-            ctx,
+        adjudicate_match(
+            CandidateMatch::new("ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ"),
+            &MatchCtx::for_hot_pattern(signal),
         ),
-        Some(StageId::ShapeGate("hot_vendored_minified_path"))
+        Verdict::Suppressed(StageId::ShapeGate("hot_vendored_minified_path"))
     );
 }
 
@@ -383,10 +388,35 @@ fn hot_pattern_suppression_owner_returns_adjudicator_stage() {
 #[test]
 fn hot_pattern_min_length_drop_returns_adjudicator_stage() {
     let ctx = crate::suppression::HotPatternSuppressionCtx::new(None, "filesystem", 40);
+    let signal = crate::suppression::hot_pattern_suppression_stage("ghp_short", ctx)
+        .expect("short hot-pattern hit is suppressed");
 
     assert_eq!(
-        crate::suppression::hot_pattern_suppression_stage("ghp_short", ctx),
-        Some(StageId::ShapeGate("hot_below_min_length"))
+        adjudicate_match(
+            CandidateMatch::new("ghp_short"),
+            &MatchCtx::for_hot_pattern(signal),
+        ),
+        Verdict::Suppressed(StageId::ShapeGate("hot_below_min_length"))
+    );
+}
+
+#[test]
+fn hot_pattern_signal_reports_regex_validation_and_checksum() {
+    assert_eq!(
+        adjudicate_match(
+            CandidateMatch::new("xoxb-bad-tail"),
+            &MatchCtx::for_hot_pattern(HotPatternSignal::ShapeGate(
+                "hot_regex_validation_rejected"
+            )),
+        ),
+        Verdict::Suppressed(StageId::ShapeGate("hot_regex_validation_rejected"))
+    );
+    assert_eq!(
+        adjudicate_match(
+            CandidateMatch::new("ghp_invalidchecksum000000000000000000000"),
+            &MatchCtx::for_hot_pattern(HotPatternSignal::ChecksumInvalid),
+        ),
+        Verdict::Suppressed(StageId::ChecksumInvalid)
     );
 }
 

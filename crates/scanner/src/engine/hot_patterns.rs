@@ -74,14 +74,15 @@ impl CompiledScanner {
                     .unwrap_or(candidate.len()); // LAW10: search/boundary miss => span end (whole remainder), recall-safe boundary default
 
                 let credential = std::str::from_utf8(&candidate[..cred_end]).unwrap_or(""); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
-                let record_hot_drop = |credential: &str, stage_id: crate::adjudicate::StageId| {
-                    let recorded = crate::adjudicate::record_stage_suppression(
-                        chunk.metadata.path.as_deref(),
-                        credential,
-                        stage_id,
-                    );
-                    debug_assert_eq!(recorded, Some(stage_id));
-                };
+                let record_hot_drop =
+                    |credential: &str, signal: crate::adjudicate::HotPatternSignal| {
+                        let ctx = crate::adjudicate::MatchCtx::for_hot_pattern(signal);
+                        crate::adjudicate::record_suppression(
+                            chunk.metadata.path.as_deref(),
+                            credential,
+                            &ctx,
+                        );
+                    };
 
                 // The literal-prefix hit plus length floor is only a prefilter.
                 // The precise validator owns the emitted token span.
@@ -95,7 +96,7 @@ impl CompiledScanner {
                             {
                                 record_hot_drop(
                                     credential,
-                                    crate::adjudicate::StageId::ShapeGate(
+                                    crate::adjudicate::HotPatternSignal::ShapeGate(
                                         "hot_regex_validation_rejected",
                                     ),
                                 );
@@ -106,7 +107,7 @@ impl CompiledScanner {
                         None => {
                             record_hot_drop(
                                 credential,
-                                crate::adjudicate::StageId::ShapeGate(
+                                crate::adjudicate::HotPatternSignal::ShapeGate(
                                     "hot_regex_validation_rejected",
                                 ),
                             );
@@ -117,7 +118,6 @@ impl CompiledScanner {
                     // fall back to the length-floor-only behavior below.
                     _ => credential,
                 };
-
                 // Per-pattern minimum credential length, in bytes.
                 // Each pattern's floor matches the actual minimum length
                 // a valid token of that shape can have - fast-path
@@ -143,10 +143,10 @@ impl CompiledScanner {
                     chunk.metadata.source_type.as_str(),
                     min_len,
                 );
-                if let Some(stage_id) =
+                if let Some(signal) =
                     crate::suppression::hot_pattern_suppression_stage(credential, suppression_ctx)
                 {
-                    record_hot_drop(credential, stage_id);
+                    record_hot_drop(credential, signal);
                     continue;
                 }
 
@@ -158,7 +158,10 @@ impl CompiledScanner {
                     self.config.penalize_test_paths,
                     self.config.calibration.as_deref(),
                 ) else {
-                    record_hot_drop(credential, crate::adjudicate::StageId::ChecksumInvalid);
+                    record_hot_drop(
+                        credential,
+                        crate::adjudicate::HotPatternSignal::ChecksumInvalid,
+                    );
                     continue;
                 };
 

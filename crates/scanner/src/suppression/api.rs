@@ -118,9 +118,9 @@ impl<'a> HotPatternSuppressionCtx<'a> {
 pub(crate) fn hot_pattern_suppression_stage(
     credential: &str,
     ctx: HotPatternSuppressionCtx<'_>,
-) -> Option<crate::adjudicate::StageId> {
+) -> Option<crate::adjudicate::HotPatternSignal> {
     if credential.len() < ctx.min_credential_len {
-        return Some(crate::adjudicate::StageId::ShapeGate(
+        return Some(crate::adjudicate::HotPatternSignal::ShapeGate(
             "hot_below_min_length",
         ));
     }
@@ -130,28 +130,34 @@ pub(crate) fn hot_pattern_suppression_stage(
         Some(ctx.source_type),
     );
     if let Some(stage_id) = suppress_known_example_credential_stage(credential, example_ctx) {
-        return Some(stage_id);
+        return Some(crate::adjudicate::HotPatternSignal::SuppressionStage(
+            stage_id,
+        ));
     }
     if looks_like_regex_literal_tail(credential) {
-        return Some(crate::adjudicate::StageId::ShapeGate(
+        return Some(crate::adjudicate::HotPatternSignal::ShapeGate(
             "hot_regex_literal_tail",
         ));
     }
     if looks_like_vendored_minified_path(ctx.path) {
-        return Some(crate::adjudicate::StageId::ShapeGate(
+        return Some(crate::adjudicate::HotPatternSignal::ShapeGate(
             "hot_vendored_minified_path",
         ));
     }
     if ctx.source_type.contains("binary-strings") || ctx.source_type.contains("archive-binary") {
-        return Some(crate::adjudicate::StageId::ShapeGate("hot_binary_source"));
+        return Some(crate::adjudicate::HotPatternSignal::ShapeGate(
+            "hot_binary_source",
+        ));
     }
     if looks_like_secret_scanner_source(ctx.path) {
-        return Some(crate::adjudicate::StageId::ShapeGate(
+        return Some(crate::adjudicate::HotPatternSignal::ShapeGate(
             "hot_secret_scanner_source",
         ));
     }
     if looks_like_hot_pattern_base64_path(ctx.path) {
-        return Some(crate::adjudicate::StageId::ShapeGate("hot_base64_path"));
+        return Some(crate::adjudicate::HotPatternSignal::ShapeGate(
+            "hot_base64_path",
+        ));
     }
     None
 }

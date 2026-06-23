@@ -31,7 +31,7 @@ fn hot_pattern_suppression_routes_through_suppression_owner() {
     assert!(
         suppression.contains("struct HotPatternSuppressionCtx")
             && suppression.contains("fn hot_pattern_suppression_stage(")
-            && suppression.contains(") -> Option<crate::adjudicate::StageId>")
+            && suppression.contains(") -> Option<crate::adjudicate::HotPatternSignal>")
             && suppression.contains("min_credential_len")
             && suppression.contains("\"hot_below_min_length\"")
             && suppression.contains("suppress_known_example_credential")
@@ -49,11 +49,19 @@ fn hot_pattern_suppression_routes_through_suppression_owner() {
     let hot_patterns = uncommented_code(&read(&src.join("engine/hot_patterns.rs")));
     assert!(
         hot_patterns.contains("crate::suppression::hot_pattern_suppression_stage(")
-            && hot_patterns.contains("crate::adjudicate::record_stage_suppression(")
+            && hot_patterns.contains("crate::adjudicate::record_suppression(")
+            && hot_patterns.contains("crate::adjudicate::MatchCtx::for_hot_pattern(")
+            && hot_patterns.contains("crate::adjudicate::HotPatternSignal::ShapeGate(")
+            && hot_patterns.contains("crate::adjudicate::HotPatternSignal::ChecksumInvalid")
             && hot_patterns.contains("\"hot_regex_validation_rejected\"")
-            && hot_patterns.contains("crate::adjudicate::StageId::ChecksumInvalid")
             && !hot_patterns.contains("credential.len() < min_len"),
         "hot-pattern fast path must record length, policy, regex-validation, and checksum drops"
+    );
+    assert!(
+        !hot_patterns.contains("crate::adjudicate::record_stage_suppression(")
+            && !hot_patterns.contains("crate::adjudicate::StageId::ChecksumInvalid")
+            && !hot_patterns.contains("crate::adjudicate::StageId::ShapeGate("),
+        "hot-pattern fast path must not name adjudicator StageIds directly"
     );
     for forbidden in [
         "suppress_known_example_credential",
