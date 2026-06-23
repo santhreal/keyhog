@@ -4,7 +4,10 @@ use crate::error::{Result, ScanError};
 use crate::types::*;
 use keyhog_core::DetectorSpec;
 
-use super::compiler_prefix::{extract_inner_literals, extract_literal_prefixes};
+use super::compiler_prefix::{
+    extract_inner_literals, extract_literal_prefixes, is_escaped_literal,
+    split_leading_boundary_guard,
+};
 
 use super::compiler_compile::{compile_detector_companions, compile_pattern};
 
@@ -102,28 +105,17 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                 if expanded_prefix == *prefix {
                     continue;
                 }
-                let full_homoglyph_regex =
-                    if let Some(suffix) = pattern.regex.strip_prefix(prefix.as_str()) {
-                        // Simple case: prefix is the literal head of the regex.
-                        format!("{expanded_prefix}{suffix}")
-                    } else if let Some(rewritten) =
-                        rewrite_alternation_prefix(&pattern.regex, prefix, &expanded_prefix)
-                    {
-                        // Alternation case: regex is `(?:p1|p2|...)body`. Replace
-                        // the leading `(?:...)` with the expanded prefix so the
-                        // homoglyph variant still requires the rest of the pattern
-                        // to match. Without this, every alternation-prefix detector
-                        // silently skipped its homoglyph phase-2 variant - leaving
-                        // Cyrillic/full-width spoofed credentials of the form
-                        // `[ɡ̅р][hн]p_<body>` invisible to the scanner.
-                        rewritten
-                    } else {
-                        // Prefix appears in the parse tree but isn't a leading
-                        // literal slice and isn't a trivially-rewritable alternation
-                        // (e.g. it sits inside a nested group). Skip - there's no
-                        // safe text rewrite we can do here.
-                        continue;
-                    };
+                let full_homoglyph_regex = if let Some(rewritten) =
+                    rewrite_homoglyph_literal_prefix(&pattern.regex, prefix, &expanded_prefix)
+                {
+                    rewritten
+                } else {
+                    // Prefix appears in the parse tree but isn't a leading
+                    // literal slice and isn't a trivially-rewritable alternation
+                    // (e.g. it sits inside a nested group). Skip - there's no
+                    // safe text rewrite we can do here.
+                    continue;
+                };
                 let compiled_homoglyph_regex = regex::Regex::new(&full_homoglyph_regex)
                     .map(std::sync::Arc::new)
                     .map_err(|source| ScanError::RegexCompile {
@@ -272,6 +264,61 @@ pub(crate) fn rewrite_alternation_prefix(
     None
 }
 
+pub(crate) fn rewrite_homoglyph_literal_prefix(
+    regex: &str,
+    prefix: &str,
+    expanded_prefix: &str,
+) -> Option<String> {
+    let (flag_prefix, body) = split_leading_inline_flag(regex);
+    if let Some(rewritten) = rewrite_homoglyph_body_prefix(body, prefix, expanded_prefix) {
+        return Some(format!("{flag_prefix}{rewritten}"));
+    }
+    if let Some((guard, rest)) = split_leading_boundary_guard(body) {
+        if let Some(rewritten) = rewrite_homoglyph_body_prefix(rest, prefix, expanded_prefix) {
+            return Some(format!("{flag_prefix}{guard}{rewritten}"));
+        }
+    }
+    rewrite_alternation_prefix(regex, prefix, expanded_prefix)
+}
+
+fn rewrite_homoglyph_body_prefix(
+    body: &str,
+    prefix: &str,
+    expanded_prefix: &str,
+) -> Option<String> {
+    if let Some(suffix) = strip_literal_prefix_source(body, prefix) {
+        return Some(format!("{expanded_prefix}{suffix}"));
+    }
+    let inner = body.strip_prefix('(')?;
+    if inner.starts_with('?') {
+        return None;
+    }
+    let suffix = strip_literal_prefix_source(inner, prefix)?;
+    Some(format!("({expanded_prefix}{suffix}"))
+}
+
+fn strip_literal_prefix_source<'a>(source: &'a str, prefix: &str) -> Option<&'a str> {
+    let mut offset = 0usize;
+    for wanted in prefix.chars() {
+        let rest = source.get(offset..)?;
+        let mut chars = rest.char_indices();
+        let (_, first) = chars.next()?;
+        if first == '\\' {
+            let (next_offset, escaped) = chars.next()?;
+            if escaped != wanted || !is_escaped_literal(escaped) {
+                return None;
+            }
+            offset += next_offset + escaped.len_utf8();
+        } else {
+            if first != wanted {
+                return None;
+            }
+            offset += first.len_utf8();
+        }
+    }
+    source.get(offset..)
+}
+
 fn split_top_level_alternatives(group: &str) -> Vec<&str> {
     let mut alts = Vec::new();
     let mut start = 0;
@@ -306,7 +353,7 @@ pub(crate) fn split_leading_inline_flag(s: &str) -> (&str, &str) {
     }
     let bytes = s.as_bytes();
     let mut i = 2;
-    while i < bytes.len() && matches!(bytes[i], b'i' | b'm' | b's' | b'x' | b'u' | b'U') {
+    while i < bytes.len() && matches!(bytes[i], b'i' | b'm' | b's' | b'x' | b'u' | b'U' | b'-') {
         i += 1;
     }
     if i < bytes.len() && bytes[i] == b')' {

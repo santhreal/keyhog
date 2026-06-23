@@ -107,6 +107,10 @@ pub(crate) fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
 /// Returns `None` if the leading group is anything else (so a normal
 /// alternation like `(AKIA|ASIA)` is untouched).
 pub(crate) fn strip_leading_boundary_guard(pattern: &str) -> Option<&str> {
+    split_leading_boundary_guard(pattern).map(|(_, rest)| rest)
+}
+
+pub(crate) fn split_leading_boundary_guard(pattern: &str) -> Option<(&str, &str)> {
     let body = pattern.strip_prefix("(?:")?;
     // Find the matching ')' for this group at depth 0, skipping escapes
     // and the interior of `[...]` classes (a `]`-less `)` inside a class
@@ -141,7 +145,9 @@ pub(crate) fn strip_leading_boundary_guard(pattern: &str) -> Option<&str> {
     }
     let end = end?;
     let group = &body[..end];
-    let rest = &body[end + 1..];
+    let guard_end = "(?:".len() + end + 1;
+    let guard = &pattern[..guard_end];
+    let rest = &pattern[guard_end..];
     if group.is_empty() || rest.is_empty() {
         return None;
     }
@@ -192,11 +198,7 @@ pub(crate) fn strip_leading_boundary_guard(pattern: &str) -> Option<&str> {
                 | r"\z"
         ) || (a.starts_with('[') && a.ends_with(']') && a.len() >= 3)
     });
-    if all_boundary {
-        Some(rest)
-    } else {
-        None
-    }
+    all_boundary.then_some((guard, rest))
 }
 
 /// Strip leading inline flags like `(?i)`, `(?m)`, `(?ims)` from a regex.

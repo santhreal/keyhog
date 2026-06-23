@@ -507,7 +507,7 @@ pub(crate) fn gpu_matcher_cache_dir_from_base(
 pub(crate) use crate::compiler::{
     build_ac_pattern_set, build_prefix_propagation, build_same_prefix_patterns,
     extract_inner_literals, extract_literal_prefix, extract_literal_prefixes, is_escaped_literal,
-    rewrite_alternation_prefix, split_leading_inline_flag,
+    rewrite_alternation_prefix, rewrite_homoglyph_literal_prefix, split_leading_inline_flag,
 };
 pub use crate::engine::{
     floor_char_boundary, line_number_for_offset, next_window_offset, record_window_match,

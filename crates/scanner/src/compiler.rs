@@ -8,7 +8,9 @@ pub(crate) mod compiler_prefix;
 
 pub(crate) use compiler_build::build_compile_state;
 #[cfg(test)]
-pub(crate) use compiler_build::{rewrite_alternation_prefix, split_leading_inline_flag};
+pub(crate) use compiler_build::{
+    rewrite_alternation_prefix, rewrite_homoglyph_literal_prefix, split_leading_inline_flag,
+};
 pub(crate) use compiler_compile::build_phase2_keyword_ac;
 pub(crate) use compiler_compile::log_quality_warnings;
 #[cfg(test)]

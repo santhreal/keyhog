@@ -2,7 +2,7 @@
 
 use keyhog_scanner::testing::{
     extract_inner_literals, extract_literal_prefixes, match_proves_keyword_nearby,
-    rewrite_alternation_prefix, split_leading_inline_flag,
+    rewrite_alternation_prefix, rewrite_homoglyph_literal_prefix, split_leading_inline_flag,
 };
 
 #[test]
@@ -85,12 +85,38 @@ fn alternation_rewrite_returns_none_for_singleton_group() {
 #[test]
 fn split_leading_inline_flag_parses_common_shapes() {
     assert_eq!(split_leading_inline_flag("(?i)body"), ("(?i)", "body"));
+    assert_eq!(split_leading_inline_flag("(?-i)body"), ("(?-i)", "body"));
     assert_eq!(split_leading_inline_flag("(?im)body"), ("(?im)", "body"));
     assert_eq!(split_leading_inline_flag("(?ims)body"), ("(?ims)", "body"));
     assert_eq!(split_leading_inline_flag("body"), ("", "body"));
     assert_eq!(
         split_leading_inline_flag("(?:abc|def)body"),
         ("", "(?:abc|def)body")
+    );
+}
+
+#[test]
+fn homoglyph_rewrite_preserves_negative_inline_flag() {
+    let out = rewrite_homoglyph_literal_prefix("(?-i)ghp_[A-Za-z0-9_]{36}", "ghp_", "[gɡ]hp_");
+    assert_eq!(out.as_deref(), Some("(?-i)[gɡ]hp_[A-Za-z0-9_]{36}"));
+}
+
+#[test]
+fn homoglyph_rewrite_consumes_escaped_literal_prefix() {
+    let out = rewrite_homoglyph_literal_prefix(r"\+KEY[A-Z0-9]{8}", "+KEY", r"[\+＋]K[EЕ]Y");
+    assert_eq!(out.as_deref(), Some(r"[\+＋]K[EЕ]Y[A-Z0-9]{8}"));
+}
+
+#[test]
+fn homoglyph_rewrite_preserves_boundary_guard_and_wrapping_group() {
+    let out = rewrite_homoglyph_literal_prefix(
+        r"(?:^|[^A-Za-z0-9_])(ghp_[A-Za-z0-9_]{36})",
+        "ghp_",
+        "[gɡ]hp_",
+    );
+    assert_eq!(
+        out.as_deref(),
+        Some(r"(?:^|[^A-Za-z0-9_])([gɡ]hp_[A-Za-z0-9_]{36})")
     );
 }
 
