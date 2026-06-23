@@ -72,6 +72,11 @@ pub(crate) struct ScanRuntimeInput {
     pub(crate) autoroute_gpu: bool,
     pub(crate) autoroute_calibration: bool,
     pub(crate) regex_dfa_limit: Option<usize>,
+    pub(crate) max_file_size: Option<usize>,
+    pub(crate) no_default_excludes: bool,
+    pub(crate) exclude_paths: Vec<String>,
+    pub(crate) incremental: bool,
+    pub(crate) incremental_cache_path: Option<PathBuf>,
     pub(crate) source_limits: keyhog_sources::SourceLimits,
 }
 
@@ -91,6 +96,14 @@ impl ScanRuntimeInput {
             autoroute_gpu: args.autoroute_gpu && !args.no_autoroute_gpu,
             autoroute_calibration: args.autoroute_calibrate,
             regex_dfa_limit: args.regex_dfa_limit,
+            max_file_size: args.max_file_size,
+            no_default_excludes: args.no_default_excludes,
+            exclude_paths: match &args.exclude_paths {
+                Some(paths) => paths.clone(),
+                None => Vec::new(),
+            },
+            incremental: args.incremental,
+            incremental_cache_path: args.incremental_cache.clone(),
             source_limits: args.limits.to_source_limits(),
         }
     }

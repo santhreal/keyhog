@@ -89,6 +89,17 @@ pub(crate) struct ResolvedScanConfig {
     pub(crate) require_lockdown: bool,
     /// Resolved regex lazy-DFA cache cap applied before scanner compilation.
     pub(crate) regex_dfa_limit: Option<usize>,
+    /// Resolved filesystem max-file-size cap applied by the source factory.
+    pub(crate) max_file_size: Option<usize>,
+    /// Whether source-owned default excludes are disabled.
+    pub(crate) no_default_excludes: bool,
+    /// Explicit operator path/glob exclusions merged with allowlist paths.
+    pub(crate) exclude_paths: Vec<String>,
+    /// Whether incremental Merkle-cache scanning is enabled.
+    pub(crate) incremental: bool,
+    /// Explicit incremental cache file path. `None` means platform default when
+    /// incremental mode is enabled.
+    pub(crate) incremental_cache_path: Option<PathBuf>,
     /// Resolved Hyperscan compiled-database cache directory.
     pub(crate) hyperscan_cache_dir: Option<PathBuf>,
     /// Resolved persistent autoroute calibration cache file. `None` means
@@ -181,6 +192,11 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         disabled_detectors: outcome.disabled_detectors.into_iter().collect(),
         require_lockdown: outcome.require_lockdown,
         regex_dfa_limit: runtime_input.regex_dfa_limit,
+        max_file_size: runtime_input.max_file_size,
+        no_default_excludes: runtime_input.no_default_excludes,
+        exclude_paths: runtime_input.exclude_paths,
+        incremental: runtime_input.incremental,
+        incremental_cache_path: runtime_input.incremental_cache_path,
         hyperscan_cache_dir: runtime_input.cache_dir,
         autoroute_cache_path,
         calibration_cache_path,
@@ -220,6 +236,11 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
         disabled_detectors: std::collections::HashSet::new(),
         require_lockdown: false,
         regex_dfa_limit: None,
+        max_file_size: None,
+        no_default_excludes: false,
+        exclude_paths: Vec::new(),
+        incremental: false,
+        incremental_cache_path: None,
         hyperscan_cache_dir: None,
         autoroute_cache_path: None,
         calibration_cache_path: None,

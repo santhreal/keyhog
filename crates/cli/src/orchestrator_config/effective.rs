@@ -76,6 +76,27 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
             .regex_dfa_limit
             .map_or_else(|| "off".to_string(), |bytes| bytes.to_string())
     ));
+    out.push_str(&format!(
+        "max_file_size = {}\n",
+        resolved
+            .max_file_size
+            .map_or_else(|| "off".to_string(), |bytes| bytes.to_string())
+    ));
+    out.push_str(&format!(
+        "no_default_excludes = {}\n",
+        resolved.no_default_excludes
+    ));
+    out.push_str(&format!(
+        "exclude_paths = {}\n",
+        resolved.exclude_paths.len()
+    ));
+    out.push_str(&format!("incremental = {}\n", resolved.incremental));
+    let incremental_cache = resolved
+        .incremental_cache_path
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "<platform default>".to_string()); // LAW10: reporting-only label; actual cache path is resolved before use when incremental mode is enabled.
+    out.push_str(&format!("incremental_cache = {incremental_cache}\n"));
     let limits = resolved.source_limits;
     out.push_str(&format!("limit_stdin_bytes = {}\n", limits.stdin_bytes));
     out.push_str(&format!(
@@ -353,6 +374,19 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
     );
     h.field_bool("autoroute_gpu", resolved.autoroute_gpu);
     h.field_option_usize("regex_dfa_limit", resolved.regex_dfa_limit);
+    h.field_option_usize("source_policy.max_file_size", resolved.max_file_size);
+    h.field_bool(
+        "source_policy.no_default_excludes",
+        resolved.no_default_excludes,
+    );
+    let mut exclude_paths = resolved.exclude_paths.clone();
+    exclude_paths.sort();
+    hash_strings(&mut h, "source_policy.exclude_paths", &exclude_paths);
+    h.field_bool("source_policy.incremental", resolved.incremental);
+    h.field_option_path(
+        "source_policy.incremental_cache_path",
+        resolved.incremental_cache_path.as_deref(),
+    );
     h.field_option_path(
         "hyperscan_cache_dir",
         resolved.hyperscan_cache_dir.as_deref(),

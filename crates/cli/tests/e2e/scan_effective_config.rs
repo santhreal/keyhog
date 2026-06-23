@@ -404,6 +404,45 @@ fn config_effective_prints_regex_dfa_limit_cli_and_toml() {
 }
 
 #[test]
+fn config_effective_prints_source_policy_controls() {
+    let dir = TempDir::new().expect("tempdir");
+    let cache_path = dir.path().join("incremental.db");
+    let config_path = dir.path().join(".keyhog.toml");
+    std::fs::write(
+        &config_path,
+        format!(
+            "max_file_size = \"5MB\"\n\
+             exclude_paths = [\"target/\", \"*.pem\"]\n\
+             incremental = true\n\
+             incremental_cache = {}\n",
+            toml::Value::String(cache_path.to_string_lossy().to_string())
+        ),
+    )
+    .expect("write config");
+
+    let config_path = config_path.to_string_lossy();
+    let (stdout, stderr, code) =
+        effective_config(&["--config", &config_path, "--no-default-excludes"]);
+
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    for required in [
+        "max_file_size = 5242880",
+        "no_default_excludes = true",
+        "exclude_paths = 2",
+        "incremental = true",
+    ] {
+        assert!(
+            stdout.contains(required),
+            "effective config missing `{required}`; stdout={stdout}"
+        );
+    }
+    assert!(
+        stdout.contains(&format!("incremental_cache = {}", cache_path.display())),
+        "effective config must show the resolved incremental cache path; stdout={stdout}"
+    );
+}
+
+#[test]
 fn config_effective_prints_hyperscan_cache_dir_and_cli_overrides_toml() {
     let (_config_root, config_cache) = home_temp_cache_dir("config-hs-cache");
     let (_cli_root, cli_cache) = home_temp_cache_dir("cli-hs-cache");
