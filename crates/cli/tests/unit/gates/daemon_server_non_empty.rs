@@ -18,4 +18,9 @@ fn daemon_server_non_empty() {
         !prod.contains("todo!()") && !prod.contains("unimplemented!()"),
         "daemon::server: todo!/unimplemented! forbidden in non-test source"
     );
+    assert!(
+        prod.contains("tracing::warn!(\"daemon: connection ended with error: {e:#}\");")
+            && !prod.contains("tracing::debug!(\"daemon: connection ended with error: {e:#}\");"),
+        "daemon connection framing/protocol errors must be warn-visible, not debug-only"
+    );
 }

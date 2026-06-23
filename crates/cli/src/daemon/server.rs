@@ -198,7 +198,7 @@ pub(crate) async fn run_with_backend_override(
                             tokio::spawn(async move {
                                 let _permit = permit;
                                 if let Err(e) = handle_connection(s, stream).await {
-                                    tracing::debug!("daemon: connection ended with error: {e:#}");
+                                    tracing::warn!("daemon: connection ended with error: {e:#}");
                                 }
                             });
                         }
