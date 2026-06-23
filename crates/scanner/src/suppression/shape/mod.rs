@@ -112,6 +112,21 @@ pub(crate) fn looks_like_pure_identifier(credential: &str) -> bool {
     false
 }
 
+/// True for the narrow process-path false-positive shape: no ASCII digit and at
+/// least two lower-to-upper camel transitions, e.g. `getUserName`.
+pub(crate) fn looks_like_camel_case_no_digit(credential: &str) -> bool {
+    if credential.bytes().any(|b| b.is_ascii_digit()) {
+        return false;
+    }
+    credential
+        .as_bytes()
+        .windows(2)
+        .filter(|w| w[0].is_ascii_lowercase() && w[1].is_ascii_uppercase())
+        .take(2)
+        .count()
+        >= 2
+}
+
 /// Word-separated identifier with embedded digits. Catches the FP class
 /// that `looks_like_pure_identifier` misses because digits short-circuit
 /// its `!has_digit` guard:

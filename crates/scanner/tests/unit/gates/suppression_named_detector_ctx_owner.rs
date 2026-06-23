@@ -167,6 +167,15 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
             && !process.contains("crate::confidence::policy::checksum_policy_for("),
         "engine/process.rs checksum drops must ask adjudicate to derive the checksum signal"
     );
+    let shape = uncommented_code(&read(&src.join("suppression/shape/mod.rs")));
+    assert!(
+        shape.contains("fn looks_like_camel_case_no_digit(")
+            && process.contains("crate::suppression::shape::looks_like_camel_case_no_digit(")
+            && !process.contains("let camel_transitions =")
+            && !process.contains(".windows(2)")
+            && !process.contains("w[0].is_ascii_lowercase() && w[1].is_ascii_uppercase()"),
+        "engine/process.rs must route camel-case/no-digit value-shape checks through suppression::shape"
+    );
     assert!(
         !process.contains("from_scoring_rejected")
             && !adjudicate.contains("from_scoring_rejected")

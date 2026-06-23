@@ -195,24 +195,8 @@ impl CompiledScanner {
                 generic_entropy_floor(self.config.entropy_threshold, floor_id, credential.len());
             if entropy < entropy_floor {
                 entropy_below_floor = true;
-            } else if !credential.bytes().any(|b| b.is_ascii_digit()) {
-                // camelCase-without-digits is the false-positive shape (Java/Go
-                // identifiers like `getUserName`); real tokens almost always carry
-                // a digit. The cheap digit scan (ASCII bytes, no UTF-8 decode via
-                // `chars()`) runs first so any credential containing a digit skips
-                // the O(n) camel-transition window walk entirely. Only no-digit
-                // credentials pay for the count, and `take(2)` stops it as soon as
-                // the >=2 threshold is reached. Behavior is identical to the prior
-                // `transitions >= 2 && !has_digit` gate.
-                let camel_transitions = credential
-                    .as_bytes()
-                    .windows(2)
-                    .filter(|w| w[0].is_ascii_lowercase() && w[1].is_ascii_uppercase())
-                    .take(2)
-                    .count();
-                if camel_transitions >= 2 {
-                    camel_case_no_digit = true;
-                }
+            } else if crate::suppression::shape::looks_like_camel_case_no_digit(credential) {
+                camel_case_no_digit = true;
             }
         }
         let entropy_shape_ctx = crate::adjudicate::MatchCtx::for_process_signals(
