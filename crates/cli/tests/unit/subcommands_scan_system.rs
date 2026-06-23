@@ -1,4 +1,4 @@
-use keyhog::testing::{API, CliTestApi as _};
+use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use std::sync::Arc;
 
@@ -168,6 +168,30 @@ fn macos_scan_system_mount_enumeration_does_not_fall_back_to_path() {
     assert!(
         src.contains("[system].trusted_bin_dirs"),
         "trusted mount resolution failure must tell the operator how to configure a non-standard mount path"
+    );
+}
+
+#[test]
+fn linux_mount_skip_prefixes_match_decoded_targets() {
+    let src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/subcommands/scan_system/mounts.rs"
+    ))
+    .expect("scan-system mount source readable");
+    let decode_pos = src
+        .find("let decoded = decode_octal_escapes(target);")
+        .expect("linux mount enumeration must decode /proc/mounts targets");
+    let skip_pos = src
+        .find("SKIP_PATH_PREFIXES.iter().any(|p| decoded.starts_with(p))")
+        .expect("linux mount skip prefixes must compare against decoded targets");
+
+    assert!(
+        decode_pos < skip_pos,
+        "linux scan-system must decode escaped mount targets before applying skip_path_prefixes"
+    );
+    assert!(
+        !src.contains("SKIP_PATH_PREFIXES.iter().any(|p| target.starts_with(p))"),
+        "raw /proc/mounts targets contain octal escapes, so skip_path_prefixes must not match raw targets"
     );
 }
 

@@ -107,10 +107,10 @@ fn linux_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
         if !include_network && NETWORK_FS_TYPES.contains(&fstype) {
             continue;
         }
-        if SKIP_PATH_PREFIXES.iter().any(|p| target.starts_with(p)) {
+        let decoded = decode_octal_escapes(target);
+        if SKIP_PATH_PREFIXES.iter().any(|p| decoded.starts_with(p)) {
             continue;
         }
-        let decoded = decode_octal_escapes(target);
         if seen.insert(decoded.clone()) {
             roots.push(PathBuf::from(decoded));
         }
