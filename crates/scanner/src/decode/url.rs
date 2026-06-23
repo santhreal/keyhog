@@ -24,34 +24,53 @@ impl Decoder for UrlDecoder {
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        let mut candidates = with_extracted_value_spans(&chunk.data, |candidates| {
-            candidates
-                .iter()
-                .filter(|candidate| candidate.value.contains('%'))
-                .cloned()
-                .collect::<Vec<_>>()
-        });
-        // Also pick up percent-only assignment tails the pct_block accumulator
-        // can miss when the `%` run abuts a quote or delimiter mid-chunk.
-        for line in chunk.data.lines() {
-            for (lhs, rhs) in line.split_once('=').into_iter().chain(
-                line.split_once(':')
-                    .into_iter()
-                    .filter(|(l, _)| !l.contains("://") && !l.starts_with("http")),
-            ) {
-                let _ = lhs; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
-                let rhs = rhs.trim().trim_matches('"').trim_matches('\'');
-                if rhs.starts_with('%')
-                    && rhs.len() >= 6
-                    && contains_percent_escape(rhs)
-                    && !candidates.iter().any(|c| c.value.as_str() == rhs)
-                {
-                    candidates.push(ExtractedValue::synthetic(rhs.to_string()));
-                }
+        with_extracted_value_spans(&chunk.data, |candidates| {
+            let mut decoded_chunks = decode_candidate_refs_exact(
+                chunk,
+                candidates
+                    .iter()
+                    .filter_map(|candidate| candidate.value.contains('%').then_some(candidate)),
+                url_decode,
+                self.name(),
+            );
+            let synthetic = percent_assignment_tail_candidates(&chunk.data, candidates);
+            decoded_chunks.extend(decode_candidate_spans_exact(
+                chunk,
+                synthetic,
+                url_decode,
+                self.name(),
+            ));
+            decoded_chunks
+        })
+    }
+}
+
+fn percent_assignment_tail_candidates(
+    text: &str,
+    borrowed_candidates: &[ExtractedValue],
+) -> Vec<ExtractedValue> {
+    let mut synthetic = Vec::new();
+    // Also pick up percent-only assignment tails the pct_block accumulator
+    // can miss when the `%` run abuts a quote or delimiter mid-chunk.
+    for line in text.lines() {
+        for (lhs, rhs) in line.split_once('=').into_iter().chain(
+            line.split_once(':')
+                .into_iter()
+                .filter(|(l, _)| !l.contains("://") && !l.starts_with("http")),
+        ) {
+            let _ = lhs; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
+            let rhs = rhs.trim().trim_matches('"').trim_matches('\'');
+            if rhs.starts_with('%')
+                && rhs.len() >= 6
+                && contains_percent_escape(rhs)
+                && !borrowed_candidates.iter().any(|c| c.value.as_str() == rhs)
+                && !synthetic.iter().any(|c: &ExtractedValue| c.value == rhs)
+            {
+                synthetic.push(ExtractedValue::synthetic(rhs.to_string()));
             }
         }
-        decode_candidate_spans_exact(chunk, candidates, url_decode, self.name())
     }
+    synthetic
 }
 
 impl Decoder for QuotedPrintableDecoder {

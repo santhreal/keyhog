@@ -75,6 +75,18 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
 
     let url = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/decode/url.rs"))
         .expect("url source readable");
+    let url_body = impl_body(
+        &url,
+        "impl Decoder for UrlDecoder",
+        "impl Decoder for QuotedPrintableDecoder",
+    );
+    assert!(
+        url_body.contains("decode_candidate_refs_exact(")
+            && url_body.contains("percent_assignment_tail_candidates(")
+            && !url_body.contains(".cloned()")
+            && !url_body.contains(".collect::<Vec<_>>()"),
+        "URL decoder should stream shared percent candidates and own only synthetic assignment tails"
+    );
     let macro_body = impl_body(&url, "macro_rules! simple_decoder", "simple_decoder!(");
     assert!(
         macro_body.contains("decode_candidate_refs_exact(")
