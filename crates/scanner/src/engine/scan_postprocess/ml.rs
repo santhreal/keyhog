@@ -12,7 +12,7 @@ impl CompiledScanner {
         &self,
         scan_state: &mut ScanState,
         pending: MlPendingMatch,
-        final_score: f64,
+        report_conf: f64,
     ) {
         let detector_id = pending.raw_match.detector_id.clone();
         let file_path = pending.raw_match.location.file_path.clone();
@@ -21,7 +21,7 @@ impl CompiledScanner {
             crate::adjudicate::ReportAdjudicationPolicy {
                 detector_id: detector_id.as_ref(),
                 code_context: pending.code_context,
-                confidence: final_score,
+                confidence: report_conf,
                 min_confidence_floor: pending.min_confidence_floor,
                 penalize_test_paths: self.config.penalize_test_paths,
                 file_path: file_path.as_deref(),
@@ -97,7 +97,7 @@ impl CompiledScanner {
             self.score_ml_pending_cpu(&pending_matches)
         };
         for (pending, ml_conf) in pending_matches.into_iter().zip(scores.into_iter()) {
-            let final_score = crate::confidence::policy::ml_pending_confidence(
+            let report_conf = crate::confidence::policy::ml_pending_confidence(
                 crate::confidence::policy::MlConfidencePolicy {
                     heuristic_confidence: pending.heuristic_conf,
                     model_confidence: ml_conf,
@@ -109,7 +109,7 @@ impl CompiledScanner {
                 },
             );
 
-            self.emit_finalized_pending_match(scan_state, pending, final_score);
+            self.emit_finalized_pending_match(scan_state, pending, report_conf);
         }
     }
 }

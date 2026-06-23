@@ -74,6 +74,16 @@ fn entropy_and_generic_fallback_confidence_route_through_confidence_owner() {
             "entropy fallback emitter must not own confidence policy token {forbidden:?}"
         );
     }
+    for forbidden in [
+        "let confidence = crate::confidence::policy::entropy_fallback_confidence(",
+        "let Some(confidence) = crate::adjudicate::finalize_report_candidate(",
+        "|scan_state: &mut ScanState, confidence|",
+    ] {
+        assert!(
+            !entropy.contains(forbidden),
+            "entropy fallback must not bind confidence-owner values with leaf-owned name {forbidden:?}"
+        );
+    }
 
     let generic = uncommented_code(&read(&src.join("engine/phase2_generic.rs")));
     assert!(
@@ -91,6 +101,15 @@ fn entropy_and_generic_fallback_confidence_route_through_confidence_owner() {
         assert!(
             !generic.contains(forbidden),
             "generic fallback emitter must not own confidence policy token {forbidden:?}"
+        );
+    }
+    for forbidden in [
+        "let confidence = crate::confidence::policy::generic_secret_confidence(",
+        "let Some(confidence) = crate::adjudicate::finalize_report_candidate(",
+    ] {
+        assert!(
+            !generic.contains(forbidden),
+            "generic fallback must not bind confidence-owner values with leaf-owned name {forbidden:?}"
         );
     }
 }

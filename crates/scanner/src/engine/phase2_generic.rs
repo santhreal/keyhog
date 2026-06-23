@@ -304,7 +304,7 @@ impl CompiledScanner {
                         preprocessed_documentation_lines.as_slice(),
                     )
                 };
-                let confidence = crate::confidence::policy::generic_secret_confidence(
+                let policy_conf = crate::confidence::policy::generic_secret_confidence(
                     context,
                     self.config.scan_comments,
                     self.config.penalize_test_paths,
@@ -316,13 +316,13 @@ impl CompiledScanner {
                 // named-detector emit paths use. `is_named=false` keeps the
                 // generic fallback's shape penalties active; the encoded-text
                 // lift is the one extra raw signal this path contributes.
-                let Some(confidence) = crate::adjudicate::finalize_report_candidate(
+                let Some(report_conf) = crate::adjudicate::finalize_report_candidate(
                     chunk.metadata.path.as_deref(),
                     value,
                     crate::adjudicate::ReportAdjudicationPolicy {
                         detector_id: crate::detector_ids::GENERIC_SECRET,
                         code_context: context,
-                        confidence,
+                        confidence: policy_conf,
                         min_confidence_floor: self.config.min_confidence,
                         penalize_test_paths: self.config.penalize_test_paths,
                         file_path: chunk.metadata.path.as_deref(),
@@ -363,7 +363,7 @@ impl CompiledScanner {
                     absolute_offset,
                     Some(mapped_line + chunk.metadata.base_line),
                     Some(entropy),
-                    confidence,
+                    report_conf,
                     scan_state,
                 );
                 scan_state.push_match(raw, self.config.max_matches_per_chunk);

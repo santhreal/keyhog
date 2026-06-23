@@ -41,9 +41,7 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         "postprocess ML scoring must preserve every pending finding when score cardinality drifts"
     );
     assert!(
-        ml_postprocess.contains(
-            "self.emit_finalized_pending_match(scan_state, pending, final_score)"
-        )
+        ml_postprocess.contains("self.emit_finalized_pending_match(scan_state, pending, report_conf)")
             && ml_postprocess.contains("crate::adjudicate::finalize_report_raw_match(")
             && ml_postprocess.contains("crate::adjudicate::ReportAdjudicationPolicy"),
         "every ML-pending drain path must pass through the report finalizer and adjudicator-owned rejection stages"
@@ -60,6 +58,12 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         !ml_postprocess.contains("raw_match.confidence =")
             && !ml_postprocess.contains("&pending.credential,"),
         "ML postprocess must not mutate finalized confidence or pass a split credential into adjudicate"
+    );
+    assert!(
+        !ml_postprocess.contains("final_score")
+            && !ml_postprocess.contains("let confidence =")
+            && !ml_postprocess.contains("let Some(confidence)"),
+        "ML postprocess must not bind report-confidence handoff values with confidence/score owner names"
     );
     assert!(
         scan_state.contains("pub(crate) is_named_detector: bool")

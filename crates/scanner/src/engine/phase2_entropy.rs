@@ -127,7 +127,7 @@ impl CompiledScanner {
         for entropy_match in entropy_matches {
             // Resolve metadata once; emit clones the pre-interned triple.
             let entropy_meta_idx = helpers::classify_entropy_detector_index(&entropy_match.keyword);
-            let confidence = crate::confidence::policy::entropy_fallback_confidence(
+            let policy_conf = crate::confidence::policy::entropy_fallback_confidence(
                 entropy_match.entropy,
                 &entropy_match.keyword,
             );
@@ -181,7 +181,7 @@ impl CompiledScanner {
 
             let metadata = &self.entropy_metadata_by_index[entropy_meta_idx];
             let absolute_line = mapped_line + chunk.metadata.base_line;
-            let build_raw_match = |scan_state: &mut ScanState, confidence| {
+            let build_raw_match = |scan_state: &mut ScanState, report_conf| {
                 // Clone metadata only for candidates that need an owned RawMatch.
                 let detector_id = Arc::clone(&metadata.0);
                 let detector_name = Arc::clone(&metadata.1);
@@ -194,7 +194,7 @@ impl CompiledScanner {
                     offset,
                     Some(absolute_line),
                     Some(entropy_match.entropy),
-                    confidence,
+                    report_conf,
                     scan_state,
                 )
             };
@@ -213,7 +213,7 @@ impl CompiledScanner {
             // pre-filters.
             #[cfg(feature = "ml")]
             if self.config.ml_enabled && self.config.entropy_ml_authoritative {
-                let raw_match = build_raw_match(scan_state, confidence);
+                let raw_match = build_raw_match(scan_state, policy_conf);
                 let ml_context = crate::types::ml_context_for_candidate(
                     &preprocessed.text,
                     entropy_match.line,
@@ -223,7 +223,7 @@ impl CompiledScanner {
                     .ml_pending
                     .push(crate::types::MlPendingMatch::entropy_authoritative(
                         raw_match,
-                        confidence,
+                        policy_conf,
                         entropy_match.value.to_string(),
                         ml_context,
                         self.config.min_confidence,
@@ -233,13 +233,13 @@ impl CompiledScanner {
 
             // Non-ML path emits directly through the same report-confidence
             // finalizer used by ML and detector hits.
-            let Some(confidence) = crate::adjudicate::finalize_report_candidate(
+            let Some(report_conf) = crate::adjudicate::finalize_report_candidate(
                 chunk.metadata.path.as_deref(),
                 &entropy_match.value,
                 crate::adjudicate::ReportAdjudicationPolicy {
                     detector_id: metadata.0.as_ref(),
                     code_context: crate::context::CodeContext::Unknown,
-                    confidence,
+                    confidence: policy_conf,
                     min_confidence_floor: self.config.min_confidence,
                     penalize_test_paths: self.config.penalize_test_paths,
                     file_path: chunk.metadata.path.as_deref(),
@@ -252,7 +252,7 @@ impl CompiledScanner {
             };
             scan_state.push_match_lazy(
                 crate::types::RawMatchPriority {
-                    confidence: Some(confidence),
+                    confidence: Some(report_conf),
                     severity: keyhog_core::Severity::High,
                     detector_id: metadata.0.as_ref(),
                     credential: &entropy_match.value,
@@ -260,7 +260,7 @@ impl CompiledScanner {
                     line: Some(absolute_line),
                 },
                 self.config.max_matches_per_chunk,
-                |scan_state| build_raw_match(scan_state, confidence),
+                |scan_state| build_raw_match(scan_state, report_conf),
             );
         }
     }
