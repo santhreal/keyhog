@@ -180,6 +180,24 @@ pub mod confidence {
         crate::confidence::penalties::apply_path_confidence_penalties(score, path, penalize)
     }
 
+    #[cfg(test)]
+    pub(crate) fn apply_known_prefix_floor(score: f64, credential: &str) -> f64 {
+        crate::confidence::policy::apply_known_prefix_floor(score, credential)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pre_ml_heuristic_confidence(
+        raw_confidence: f64,
+        code_context: crate::context::CodeContext,
+        penalize_test_paths: bool,
+    ) -> f64 {
+        crate::confidence::policy::pre_ml_heuristic_confidence(
+            raw_confidence,
+            code_context,
+            penalize_test_paths,
+        )
+    }
+
     #[cfg(all(test, feature = "ml"))]
     pub(crate) fn ml_pending_confidence(
         heuristic_confidence: f64,

@@ -12,6 +12,30 @@ pub(crate) fn apply_checksum_confidence(confidence: f64, credential: &str) -> Op
     checksum_policy_for(credential).adjusted_confidence(confidence)
 }
 
+pub(crate) fn apply_known_prefix_floor(confidence: f64, credential: &str) -> f64 {
+    if let Some(floor) = crate::confidence::known_prefix_confidence_floor(credential) {
+        confidence.max(floor)
+    } else {
+        confidence
+    }
+}
+
+pub(crate) fn pre_ml_heuristic_confidence(
+    raw_confidence: f64,
+    code_context: context::CodeContext,
+    penalize_test_paths: bool,
+) -> f64 {
+    let context_multiplier = match code_context {
+        context::CodeContext::TestCode | context::CodeContext::Documentation
+            if !penalize_test_paths =>
+        {
+            1.0
+        }
+        _ => code_context.confidence_multiplier(),
+    };
+    raw_confidence * context_multiplier
+}
+
 pub(crate) struct ReportConfidencePolicy<'a> {
     pub(crate) credential: &'a str,
     pub(crate) detector_id: &'a str,
@@ -37,12 +61,7 @@ pub(crate) fn finalize_report_confidence(
         policy.file_path,
         policy.penalize_test_paths,
     );
-    let confidence =
-        if let Some(floor) = crate::confidence::known_prefix_confidence_floor(policy.credential) {
-            confidence.max(floor)
-        } else {
-            confidence
-        };
+    let confidence = apply_known_prefix_floor(confidence, policy.credential);
     let confidence = crate::confidence::apply_calibration_multiplier(
         confidence,
         policy.detector_id,

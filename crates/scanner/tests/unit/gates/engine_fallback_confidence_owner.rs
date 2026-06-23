@@ -162,6 +162,48 @@ fn report_confidence_tail_routes_through_scoring_owner() {
 }
 
 #[test]
+fn engine_scoring_confidence_adjustments_route_through_confidence_owner() {
+    let src = scanner_src();
+    let policy = uncommented_code(&read(&src.join("confidence/policy.rs")));
+    for required in [
+        "fn pre_ml_heuristic_confidence(",
+        "fn apply_known_prefix_floor(",
+        "known_prefix_confidence_floor",
+        "confidence.max(floor)",
+        "CodeContext::TestCode | context::CodeContext::Documentation",
+        "confidence_multiplier()",
+    ] {
+        assert!(
+            policy.contains(required),
+            "confidence::policy must own engine scoring adjustment token {required:?}"
+        );
+    }
+
+    let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
+    for required in [
+        "super::scoring::pre_ml_heuristic_confidence(",
+        "super::scoring::apply_known_prefix_floor(",
+    ] {
+        assert!(
+            scoring.contains(required),
+            "engine scoring must route adjustment through confidence owner token {required:?}"
+        );
+    }
+    for forbidden in [
+        "let context_multiplier =",
+        "CodeContext::TestCode | crate::context::CodeContext::Documentation",
+        "context.confidence_multiplier()",
+        "known_prefix_confidence_floor(credential)",
+        "confidence.max(floor)",
+    ] {
+        assert!(
+            !scoring.contains(forbidden),
+            "engine scoring must not own confidence adjustment token {forbidden:?}"
+        );
+    }
+}
+
+#[test]
 fn ml_pending_confidence_policy_routes_through_confidence_owner() {
     let src = scanner_src();
     let policy = uncommented_code(&read(&src.join("confidence/policy.rs")));

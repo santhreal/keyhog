@@ -23,8 +23,8 @@ pub(super) use crate::confidence::policy::probabilistic_promise_confidence_overr
 #[cfg(feature = "ml")]
 pub(super) use crate::confidence::policy::MlConfidencePolicy;
 pub(super) use crate::confidence::policy::{
-    checksum_policy_for, finalize_report_confidence, generic_secret_confidence,
-    ReportConfidencePolicy,
+    apply_known_prefix_floor, checksum_policy_for, finalize_report_confidence,
+    generic_secret_confidence, pre_ml_heuristic_confidence, ReportConfidencePolicy,
 };
 
 impl CompiledScanner {
@@ -102,17 +102,11 @@ impl CompiledScanner {
 
         // Checksum validation is handled in process_match (early reject for Invalid,
         // confidence floor for Valid). No need to re-validate here.
-        // The fixture opt-out must also bypass this pre-ML context multiplier;
-        // otherwise the lower score is baked into `heuristic_conf`.
-        let context_multiplier = match context {
-            crate::context::CodeContext::TestCode | crate::context::CodeContext::Documentation
-                if !self.config.penalize_test_paths =>
-            {
-                1.0
-            }
-            _ => context.confidence_multiplier(),
-        };
-        let heuristic_conf = raw_conf * context_multiplier;
+        let heuristic_conf = super::scoring::pre_ml_heuristic_confidence(
+            raw_conf,
+            context,
+            self.config.penalize_test_paths,
+        );
         let score_result = self.calculate_final_score(
             heuristic_conf,
             context,
@@ -126,13 +120,7 @@ impl CompiledScanner {
 
         match score_result {
             MlScoreResult::Final(confidence) => {
-                let final_score = if let Some(floor) =
-                    crate::confidence::known_prefix_confidence_floor(credential)
-                {
-                    confidence.max(floor)
-                } else {
-                    confidence
-                };
+                let final_score = super::scoring::apply_known_prefix_floor(confidence, credential);
                 Some(MlScoreResult::Final(final_score))
             }
             #[cfg(feature = "ml")]

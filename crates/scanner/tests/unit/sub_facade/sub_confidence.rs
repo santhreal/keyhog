@@ -11,8 +11,9 @@ use keyhog_scanner::confidence::{
 use keyhog_scanner::context::CodeContext;
 use keyhog_scanner::testing::confidence::{
     apply_calibration_multiplier, apply_calibration_multiplier_with_store,
-    apply_path_confidence_penalties, apply_post_ml_penalties, char_diversity,
-    contains_placeholder_word, finalize_confidence, max_repeat_run, placeholder_words,
+    apply_known_prefix_floor, apply_path_confidence_penalties, apply_post_ml_penalties,
+    char_diversity, contains_placeholder_word, finalize_confidence, max_repeat_run,
+    placeholder_words, pre_ml_heuristic_confidence,
 };
 #[cfg(feature = "ml")]
 use keyhog_scanner::testing::confidence::{
@@ -281,6 +282,40 @@ fn path_penalty_disabled_passes_through() {
 #[test]
 fn path_penalty_none_path_is_nan_safe() {
     assert_eq!(apply_path_confidence_penalties(f64::NAN, None, true), 0.0);
+}
+
+// ---------------------------------------------------------------------------
+// pre_ml_heuristic_confidence / apply_known_prefix_floor
+// ---------------------------------------------------------------------------
+
+#[test]
+fn pre_ml_heuristic_confidence_honors_test_fixture_opt_out() {
+    let penalized = pre_ml_heuristic_confidence(0.8, CodeContext::TestCode, true);
+    let unpenalized = pre_ml_heuristic_confidence(0.8, CodeContext::TestCode, false);
+    assert!((penalized - (0.8 * CodeContext::TestCode.confidence_multiplier())).abs() < 1e-9);
+    assert!((unpenalized - 0.8).abs() < 1e-9);
+}
+
+#[test]
+fn pre_ml_heuristic_confidence_keeps_assignment_at_raw_score() {
+    assert!((pre_ml_heuristic_confidence(0.8, CodeContext::Assignment, true) - 0.8).abs() < 1e-9);
+    assert!((pre_ml_heuristic_confidence(0.8, CodeContext::Assignment, false) - 0.8).abs() < 1e-9);
+}
+
+#[test]
+fn known_prefix_floor_policy_lifts_low_scores_only_for_real_prefixes() {
+    assert_eq!(
+        apply_known_prefix_floor(0.2, "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"),
+        0.8
+    );
+    assert_eq!(
+        apply_known_prefix_floor(0.95, "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"),
+        0.95
+    );
+    assert_eq!(
+        apply_known_prefix_floor(0.2, "sk_live_PLACEHOLDER_value_here"),
+        0.2
+    );
 }
 
 // ---------------------------------------------------------------------------
