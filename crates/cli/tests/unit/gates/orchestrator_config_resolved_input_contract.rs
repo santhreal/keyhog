@@ -5,10 +5,15 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         "/src/orchestrator_config.rs"
     ))
     .expect("orchestrator_config source readable");
+    let scanner = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator_config/scanner.rs"
+    ))
+    .expect("orchestrator_config scanner source readable");
 
     assert!(
-        src.contains("struct ScannerConfigInput"),
-        "orchestrator_config must keep a resolved scanner-builder input boundary"
+        scanner.contains("struct ScannerConfigInput"),
+        "orchestrator_config/scanner.rs must keep a resolved scanner-builder input boundary"
     );
     assert!(
         src.contains("struct ScanRuntimeInput"),
@@ -23,8 +28,8 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         "orchestrator_config must keep a resolved verifier policy boundary"
     );
     assert!(
-        src.contains("fn build_scanner_config_from_input(input: &ScannerConfigInput)"),
-        "ScannerConfig construction must have an input-owned implementation"
+        scanner.contains("fn build_scanner_config_from_input(input: &ScannerConfigInput)"),
+        "ScannerConfig construction must have an input-owned implementation in scanner.rs"
     );
 
     let resolve_body = src
@@ -92,15 +97,23 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         );
     }
 
-    let builder_body = src
+    let builder_body = scanner
         .split("fn build_scanner_config_from_input(input: &ScannerConfigInput)")
         .nth(1)
-        .and_then(|tail| tail.split("fn calibration_store_digest").next())
         .expect("input-based scanner builder body must be extractable");
     assert!(
         !builder_body.contains("args."),
         "build_scanner_config_from_input must read only ScannerConfigInput, not raw ScanArgs"
     );
+    for forbidden in [
+        "struct ScannerConfigInput",
+        "fn build_scanner_config_from_input(input: &ScannerConfigInput)",
+    ] {
+        assert!(
+            !src.contains(forbidden),
+            "orchestrator_config.rs must not re-own scanner-builder detail `{forbidden}`"
+        );
+    }
 }
 
 #[test]
