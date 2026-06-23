@@ -1,11 +1,17 @@
 #[cfg(feature = "entropy")]
+mod example_suppression;
+#[cfg(feature = "entropy")]
 mod gates;
 #[cfg(feature = "entropy")]
 pub(crate) mod helpers;
 #[cfg(feature = "entropy")]
+pub(crate) mod line_context;
+#[cfg(feature = "entropy")]
 use super::*;
 #[cfg(feature = "entropy")]
-use gates::{entropy_match_suppression_stage, entropy_value_line};
+use gates::entropy_match_suppression_stage;
+#[cfg(feature = "entropy")]
+use line_context::entropy_value_line;
 #[cfg(feature = "entropy")]
 use std::sync::Arc;
 
