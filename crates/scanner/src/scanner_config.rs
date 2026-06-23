@@ -411,6 +411,9 @@ pub(crate) struct MlPendingMatch {
     pub(crate) ml_context: String,
     /// Confidence floor that applies to this pending candidate after ML blending.
     pub(crate) min_confidence_floor: f64,
+    /// Whether the original producer classified this as a named detector after
+    /// applying weak-anchor exclusions.
+    pub(crate) is_named_detector: bool,
     /// When true, the MoE score is AUTHORITATIVE for this candidate: the final
     /// confidence is the model score directly, NOT `max(heuristic, ml)`. Set for
     /// entropy phase-2 candidates, whose "heuristic" is bare entropy magnitude -

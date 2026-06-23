@@ -350,6 +350,7 @@ impl CompiledScanner {
                     credential: pending_credential.into_owned(),
                     ml_context: ml_context.into_owned(),
                     min_confidence_floor,
+                    is_named_detector,
                     // Detector/generic matches: the firing regex is positive
                     // evidence, so the heuristic stays a confidence FLOOR (the
                     // model can only raise). Not model-authoritative.

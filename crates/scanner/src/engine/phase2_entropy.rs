@@ -235,6 +235,7 @@ impl CompiledScanner {
                     credential: entropy_match.value.to_string(),
                     ml_context,
                     min_confidence_floor: self.config.min_confidence,
+                    is_named_detector: false,
                     model_authoritative: true,
                 });
                 continue;

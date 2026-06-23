@@ -228,6 +228,18 @@ fn post_ml_named_keeps_small_alphabet_secret() {
 }
 
 #[test]
+fn post_ml_weak_anchor_classification_uses_generic_shape_penalties() {
+    let hex64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let named = apply_post_ml_penalties(0.9, hex64, true);
+    let weak_anchor = apply_post_ml_penalties(0.9, hex64, false);
+    assert!((named - 0.9).abs() < 1e-9, "named score drifted to {named}");
+    assert!(
+        weak_anchor < 0.2,
+        "weak-anchor classification must keep generic low-diversity penalties, got {weak_anchor}"
+    );
+}
+
+#[test]
 fn post_ml_degenerate_run_penalized_even_for_named() {
     // 16-char 'X' run -> degenerate -> *0.1 (absolute-run arm).
     let out = apply_post_ml_penalties(1.0, "AKIAXXXXXXXXXXXXXXXX", true);

@@ -20,9 +20,7 @@ impl CompiledScanner {
                 credential: &pending.credential,
                 detector_id: pending.raw_match.detector_id.as_ref(),
                 file_path: pending.raw_match.location.file_path.as_deref(),
-                is_named_detector: crate::confidence::is_service_anchored_detector(
-                    &pending.raw_match.detector_id,
-                ),
+                is_named_detector: pending.is_named_detector,
                 penalize_test_paths: self.config.penalize_test_paths,
                 allow_encoded_text_lift: false,
                 calibration: self.config.calibration.as_deref(),

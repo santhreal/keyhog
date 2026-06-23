@@ -1,5 +1,20 @@
 #[test]
 fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
+    let scanner_config = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/scanner_config.rs"
+    ))
+    .expect("scanner_config.rs readable");
+    let process = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/process.rs"
+    ))
+    .expect("engine/process.rs readable");
+    let entropy = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/phase2_entropy.rs"
+    ))
+    .expect("engine/phase2_entropy.rs readable");
     let ml_postprocess = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/engine/scan_postprocess/ml.rs"
@@ -30,6 +45,17 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
             && ml_postprocess.contains("ProcessCandidateSignals::from_checksum_invalid(true)")
             && ml_postprocess.contains("crate::adjudicate::MatchCtx::for_final_emit("),
         "every ML-pending drain path must pass through the report finalizer and adjudicator-owned rejection stages"
+    );
+    assert!(
+        scanner_config.contains("pub(crate) is_named_detector: bool")
+            && process.contains("&& !weak_anchor")
+            && process.contains("is_named_detector,")
+            && entropy.contains("is_named_detector: false")
+            && ml_postprocess.contains("is_named_detector: pending.is_named_detector")
+            && !ml_postprocess.contains(
+                "is_service_anchored_detector(\n                    &pending.raw_match.detector_id"
+            ),
+        "ML pending finalization must preserve the producer's weak-anchor-aware named-detector classification"
     );
     assert!(
         gpu.contains("let score_features_on_cpu = || -> Vec<f64>")
