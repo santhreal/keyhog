@@ -28,6 +28,7 @@ pub mod scan_decode_plain_base64;
 pub mod scan_dedup_none_reports_all_occurrences;
 pub mod scan_deep_flag_git_staged_clean;
 pub mod scan_demo_example_not_clean_summary;
+pub mod scan_documented_formats_are_accepted;
 pub mod scan_dogfood_dedupes_example_suppression_events;
 pub mod scan_dogfood_suppressed_example;
 pub mod scan_effective_config;
