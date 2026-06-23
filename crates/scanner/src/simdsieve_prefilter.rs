@@ -165,6 +165,31 @@ pub(crate) fn hot_pattern_index_at(text_bytes: &[u8], offset: usize) -> Option<u
         .find_map(|(idx, pattern)| rest.starts_with(pattern).then_some(idx))
 }
 
+#[inline]
+pub(crate) fn hot_pattern_direct_emit_allowed(slot: usize) -> bool {
+    HOT_PATTERN_DETECTOR_IDS[slot] == crate::detector_ids::HOT_SQUARE_SECRET
+}
+
+pub(crate) fn validate_hot_pattern_runtime_table_lengths(
+    validators_len: usize,
+    ac_map_len: usize,
+    metadata_len: usize,
+) -> crate::error::Result<()> {
+    let expected = HOT_PATTERNS.len();
+    for (table, actual) in [
+        ("hot_pattern_validators", validators_len),
+        ("hot_ac_map_index_by_index", ac_map_len),
+        ("hot_metadata_by_index", metadata_len),
+    ] {
+        if actual != expected {
+            return Err(crate::error::ScanError::Config(format!(
+                "simdsieve hot-pattern runtime table {table} has {actual} slots but HOT_PATTERNS has {expected}; fix: rebuild all hot-pattern runtime tables from simdsieve_prefilter"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Build a precise-regex validator for each hot-pattern slot, index-parallel
 /// with [`HOT_PATTERNS`].
 ///
@@ -182,9 +207,10 @@ pub(crate) fn hot_pattern_index_at(text_bytes: &[u8], offset: usize) -> Option<u
 /// detector's own regex (anchored at the candidate start) restores parity: the
 /// fast path emits exactly what the precise path would, just sooner.
 ///
-/// A slot is `None` only when its `HOT_PATTERN_DETECTOR_IDS` entry names no
-/// loaded detector (`hot-square_secret`, genuinely fast-path-only); that slot
-/// keeps the length-floor as its sole gate.
+/// A slot is `None` when its `HOT_PATTERN_DETECTOR_IDS` entry names no loaded
+/// detector. Only `hot-square_secret` is allowed to direct-emit without a
+/// canonical detector; absent canonical detectors remain disabled and are
+/// skipped by the hot path.
 ///
 /// This module (`mod simdsieve_prefilter`) and the sole caller in
 /// `engine::compile` are both gated on `feature = "simdsieve"`, so whenever

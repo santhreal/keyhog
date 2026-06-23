@@ -403,6 +403,12 @@ impl CompiledScanner {
                 })
                 .collect()
         };
+        #[cfg(feature = "simdsieve")]
+        crate::simdsieve_prefilter::validate_hot_pattern_runtime_table_lengths(
+            hot_pattern_validators.len(),
+            hot_ac_map_index_by_index.len(),
+            hot_metadata_by_index.len(),
+        )?;
 
         let scanner = Self {
             ac,

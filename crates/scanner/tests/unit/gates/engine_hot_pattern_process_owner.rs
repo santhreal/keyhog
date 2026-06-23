@@ -34,15 +34,32 @@ fn canonical_hot_patterns_delegate_to_process_match() {
     let backend_triggered = uncommented_code(&read(&src.join("engine/backend_triggered.rs")));
 
     assert!(
-        hot_patterns.contains("self.hot_ac_map_index_by_index.get(pattern_idx)")
+        hot_patterns.contains("self.hot_ac_map_index_by_index[pattern_idx]")
+            && hot_patterns.contains("hot_pattern_direct_emit_allowed(pattern_idx)")
+            && hot_patterns.contains("if ac_map_index.is_none() && !hot_pattern_direct_emit_allowed(pattern_idx)")
             && hot_patterns.contains("self.process_match(")
             && hot_patterns.contains("super::scan_filters::compute_pattern_signals("),
         "canonical hot-pattern hits must delegate through process_match with shared confidence/suppression signals"
     );
     assert!(
+        !hot_patterns.contains("self.hot_ac_map_index_by_index.get(pattern_idx)")
+            && !hot_patterns.contains("self.hot_pattern_validators.get(pattern_idx)"),
+        "hot-pattern runtime tables must be construction-validated and indexed directly, not silently treated as missing slots"
+    );
+    assert!(
         compile.contains("fn build_hot_ac_map_index_by_index(")
             && compile.contains("crate::compiler::compiler_prefix::extract_literal_prefixes("),
         "compile must build hot-slot to canonical ac_map entries from existing compiler prefix extraction"
+    );
+    assert!(
+        compile.contains("validate_hot_pattern_runtime_table_lengths("),
+        "scanner construction must fail loud if hot-pattern runtime tables drift from HOT_PATTERNS"
+    );
+    let simdsieve = uncommented_code(&read(&src.join("simdsieve_prefilter.rs")));
+    assert!(
+        simdsieve.contains("fn hot_pattern_direct_emit_allowed(")
+            && simdsieve.contains("HOT_PATTERN_DETECTOR_IDS[slot] == crate::detector_ids::HOT_SQUARE_SECRET"),
+        "the prefilter table owner must be the only place that allows synthetic direct hot-pattern emission"
     );
     assert!(
         backend_triggered

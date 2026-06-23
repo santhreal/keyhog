@@ -23,7 +23,8 @@ impl CompiledScanner {
         // below (PERF-locality_intern-1). Only the literal table is still
         // needed for the sieve + dispatch.
         use crate::simdsieve_prefilter::{
-            hot_pattern_index_at, HOT_PATTERNS, HOT_PATTERN_MIN_LENGTHS,
+            hot_pattern_direct_emit_allowed, hot_pattern_index_at, HOT_PATTERNS,
+            HOT_PATTERN_MIN_LENGTHS,
         };
         use simdsieve::SimdSieve;
 
@@ -48,6 +49,11 @@ impl CompiledScanner {
                 // resolver already uses the same literal table, so this is a
                 // cheap invariant check before span extraction.
                 if end > text_bytes.len() || &text_bytes[offset..end] != pattern {
+                    continue;
+                }
+
+                let ac_map_index = self.hot_ac_map_index_by_index[pattern_idx];
+                if ac_map_index.is_none() && !hot_pattern_direct_emit_allowed(pattern_idx) {
                     continue;
                 }
 
@@ -87,8 +93,8 @@ impl CompiledScanner {
 
                 // The literal-prefix hit plus length floor is only a prefilter.
                 // The precise validator owns the emitted token span.
-                let credential = match self.hot_pattern_validators.get(pattern_idx) {
-                    Some(Some(validator)) => match validator.find(credential) {
+                let credential = match &self.hot_pattern_validators[pattern_idx] {
+                    Some(validator) => match validator.find(credential) {
                         // `^`-anchored, so any match starts at 0; trim the
                         // delimiter-bounded capture down to the real token.
                         Some(m) => {
@@ -115,13 +121,13 @@ impl CompiledScanner {
                             continue;
                         }
                     },
-                    // No validator for this slot (square, or out of range):
-                    // fall back to the length-floor-only behavior below.
-                    _ => credential,
+                    // No validator for this slot (square): keep the
+                    // length-floor-only behavior below.
+                    None => credential,
                 };
 
-                if let Some(Some(ac_map_index)) = self.hot_ac_map_index_by_index.get(pattern_idx) {
-                    let entry = &self.ac_map[*ac_map_index];
+                if let Some(ac_map_index) = ac_map_index {
+                    let entry = &self.ac_map[ac_map_index];
                     let detector = &self.detectors[entry.detector_index];
                     let (keyword_nearby, sensitive_file) =
                         super::scan_filters::compute_pattern_signals(

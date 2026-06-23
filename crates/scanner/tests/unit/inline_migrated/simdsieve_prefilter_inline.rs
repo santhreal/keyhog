@@ -14,8 +14,9 @@
 #![cfg(feature = "simdsieve")]
 
 use keyhog_scanner::testing::{
-    hot_pattern_index_at, HOT_PATTERNS, HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES,
-    HOT_PATTERN_MIN_LENGTHS, HOT_PATTERN_NAMES,
+    hot_pattern_index_at, validate_hot_pattern_runtime_table_lengths, HOT_PATTERNS,
+    HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_MIN_LENGTHS,
+    HOT_PATTERN_NAMES,
 };
 
 #[test]
@@ -163,5 +164,22 @@ fn hot_pattern_index_resolves_every_prefix_from_the_shared_table() {
         hot_pattern_index_at(b"prefix", b"prefix".len()),
         None,
         "offset at end of haystack"
+    );
+}
+
+#[test]
+fn hot_pattern_runtime_tables_fail_loud_on_length_drift() {
+    let expected = HOT_PATTERNS.len();
+    validate_hot_pattern_runtime_table_lengths(expected, expected, expected)
+        .expect("matching runtime hot-pattern table lengths are valid");
+
+    let err = validate_hot_pattern_runtime_table_lengths(expected - 1, expected, expected)
+        .expect_err("validator length drift must fail scanner construction");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("hot_pattern_validators")
+            && msg.contains("HOT_PATTERNS")
+            && msg.contains("fix: rebuild all hot-pattern runtime tables"),
+        "error must name the drifted table and remediation; got {msg}"
     );
 }

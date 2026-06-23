@@ -2026,6 +2026,18 @@ pub(crate) const HOT_PATTERN_NAMES: &[&str] = crate::simdsieve_prefilter::HOT_PA
 pub(crate) fn hot_pattern_index_at(text_bytes: &[u8], offset: usize) -> Option<usize> {
     crate::simdsieve_prefilter::hot_pattern_index_at(text_bytes, offset)
 }
+#[cfg(all(test, feature = "simdsieve"))]
+pub(crate) fn validate_hot_pattern_runtime_table_lengths(
+    validators_len: usize,
+    ac_map_len: usize,
+    metadata_len: usize,
+) -> crate::error::Result<()> {
+    crate::simdsieve_prefilter::validate_hot_pattern_runtime_table_lengths(
+        validators_len,
+        ac_map_len,
+        metadata_len,
+    )
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg(test)]
