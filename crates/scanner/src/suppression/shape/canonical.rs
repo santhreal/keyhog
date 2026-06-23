@@ -10,16 +10,7 @@ pub(crate) const RFC7519_EXAMPLE_JWT_PREFIX: &str =
 /// Adobe, Atlassian, JetBrains and many other product-key surfaces
 /// use this shape; real credentials almost never do.
 pub(crate) fn looks_like_dashed_serial_key(credential: &str) -> bool {
-    if credential.len() != 29 {
-        return false;
-    }
-    let parts: Vec<&str> = credential.split('-').collect();
-    if parts.len() != 5 {
-        return false;
-    }
-    parts
-        .iter()
-        .all(|p| p.len() == 5 && p.chars().all(|c| c.is_ascii_alphanumeric()))
+    is_five_by_five_dash_shape(credential, |b| b.is_ascii_alphanumeric())
 }
 
 /// Canonical non-secret shapes rejected at entropy candidate generation.
@@ -96,17 +87,21 @@ fn looks_like_entropy_integrity_digest(value: &str) -> bool {
 }
 
 fn looks_like_entropy_upper_license_serial(value: &str) -> bool {
-    if value.len() != 29 || value.as_bytes().iter().filter(|&&b| b == b'-').count() != 4 {
+    is_five_by_five_dash_shape(value, |b| b.is_ascii_uppercase() || b.is_ascii_digit())
+}
+
+fn is_five_by_five_dash_shape(value: &str, body_byte_ok: impl Fn(u8) -> bool) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 29 {
         return false;
     }
-    let groups: Vec<&str> = value.split('-').collect();
-    groups.len() == 5
-        && groups.iter().all(|group| {
-            group.len() == 5
-                && group
-                    .bytes()
-                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
-        })
+    bytes.iter().enumerate().all(|(idx, &byte)| {
+        if matches!(idx, 5 | 11 | 17 | 23) {
+            byte == b'-'
+        } else {
+            body_byte_ok(byte)
+        }
+    })
 }
 
 /// Algo-labelled hash-digest sub-shape:
@@ -552,7 +547,8 @@ pub(crate) fn is_dash_segmented_alnum_decoy_with_randomness(
 #[cfg(test)]
 mod tests {
     use super::{
-        is_structured_dotted_token, looks_like_aws_iam_arn, looks_like_random_byte_base64_blob,
+        is_structured_dotted_token, looks_like_aws_iam_arn, looks_like_dashed_serial_key,
+        looks_like_entropy_canonical_non_secret_shape, looks_like_random_byte_base64_blob,
         looks_like_trimmed_aws_iam_arn,
     };
 
@@ -575,6 +571,45 @@ mod tests {
         assert!(!is_structured_dotted_token("this.someService.copilotToken"));
         assert!(!is_structured_dotted_token("example.com"));
         assert!(!is_structured_dotted_token("alpha.beta.gamma.delta"));
+    }
+
+    #[test]
+    fn dashed_serial_key_accepts_exact_five_by_five_shape() {
+        assert!(looks_like_dashed_serial_key(
+            "JQQJN-VBWHG-XBC8R-2MV9F-CD7P9"
+        ));
+        assert!(looks_like_dashed_serial_key(
+            "jqqjn-vbwhg-xbc8r-2mv9f-cd7p9"
+        ));
+    }
+
+    #[test]
+    fn dashed_serial_key_rejects_broken_boundaries() {
+        for value in [
+            "JQQJN-VBWHG-XBC8R-2MV9F-CD7P",
+            "JQQJN-VBWHG-XBC8R-2MV9F-CD7P99",
+            "JQQJN--VBWHG-XBC8R-2MV9F-CD7P",
+            "JQQJN_VBWHG-XBC8R-2MV9F-CD7P9",
+            "JQQJN-VBWHG-XBC8R-2MV9F-CD7P!",
+        ] {
+            assert!(
+                !looks_like_dashed_serial_key(value),
+                "broken 5x5 serial boundary must not suppress: {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn entropy_license_serial_remains_uppercase_only() {
+        assert!(looks_like_entropy_canonical_non_secret_shape(
+            "JQQJN-VBWHG-XBC8R-2MV9F-CD7P9"
+        ));
+        assert!(
+            !looks_like_entropy_canonical_non_secret_shape(
+                "jqqjn-vbwhg-xbc8r-2mv9f-cd7p9"
+            ),
+            "entropy generation intentionally keeps lowercase dashed keys outside the canonical serial decoy set"
+        );
     }
 
     #[test]

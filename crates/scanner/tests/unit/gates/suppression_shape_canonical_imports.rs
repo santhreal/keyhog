@@ -184,8 +184,13 @@ fn entropy_canonical_shapes_live_in_shape_owner() {
     assert!(
         shape.contains("fn looks_like_entropy_canonical_non_secret_shape(")
             && shape.contains("fn looks_like_entropy_canonical_hex_digest(")
-            && shape.contains("fn looks_like_entropy_uuid_shape("),
+            && shape.contains("fn looks_like_entropy_uuid_shape(")
+            && shape.contains("fn is_five_by_five_dash_shape("),
         "suppression::shape::canonical must own entropy canonical non-secret shape predicates"
+    );
+    assert!(
+        !shape.contains("Vec<&str>") && !shape.contains(".split('-').collect()"),
+        "canonical dashed serial predicates must stay allocation-free fixed-width byte scans"
     );
     assert!(
         scanner.contains(
