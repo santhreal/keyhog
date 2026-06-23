@@ -60,11 +60,12 @@ impl CompiledScanner {
         }
 
         if !self.config.ml_enabled {
-            let pending = scan_state.ml_pending.drain(..).collect::<Vec<_>>();
-            for p in pending {
-                let heuristic_conf = p.heuristic_conf;
-                self.emit_finalized_pending_match(scan_state, p, heuristic_conf);
-            }
+            let pending = scan_state.ml_pending.len();
+            tracing::error!(
+                pending,
+                "internal invariant violation: ML pending queue populated while ML is disabled; dropping pending ML matches instead of silently using heuristic fallback"
+            );
+            scan_state.ml_pending.clear();
             return;
         }
 

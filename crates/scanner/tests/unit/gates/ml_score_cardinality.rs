@@ -36,13 +36,20 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         "postprocess ML scoring must preserve every pending finding when score cardinality drifts"
     );
     assert!(
-        ml_postprocess.contains("self.emit_finalized_pending_match(scan_state, p, heuristic_conf)")
-            && ml_postprocess.contains(
-                "self.emit_finalized_pending_match(scan_state, pending, final_score)"
-            )
+        ml_postprocess.contains(
+            "self.emit_finalized_pending_match(scan_state, pending, final_score)"
+        )
             && ml_postprocess.contains("crate::adjudicate::finalize_report_raw_match(")
             && ml_postprocess.contains("crate::adjudicate::ReportAdjudicationPolicy"),
         "every ML-pending drain path must pass through the report finalizer and adjudicator-owned rejection stages"
+    );
+    assert!(
+        ml_postprocess.contains("if !self.config.ml_enabled")
+            && ml_postprocess.contains("internal invariant violation: ML pending queue populated while ML is disabled")
+            && ml_postprocess.contains("scan_state.ml_pending.clear();")
+            && !ml_postprocess.contains("for p in pending")
+            && !ml_postprocess.contains("let heuristic_conf = p.heuristic_conf"),
+        "ML postprocess must fail loud on impossible disabled-ML pending state instead of silently using heuristic fallback"
     );
     assert!(
         !ml_postprocess.contains("raw_match.confidence =")
@@ -56,6 +63,8 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
             && process.contains("&& !weak_anchor")
             && process.contains("MlPendingMatch::detector_candidate(")
             && entropy.contains("MlPendingMatch::entropy_authoritative(")
+            && process.contains("ml_enabled: self.config.ml_enabled")
+            && entropy.contains("if self.config.ml_enabled && self.config.entropy_ml_authoritative")
             && !process.contains("MlPendingMatch {")
             && !entropy.contains("MlPendingMatch {")
             && ml_postprocess.contains("is_named_detector: pending.is_named_detector")
