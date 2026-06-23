@@ -119,6 +119,7 @@ pub fn is_private_url(url_str: &str) -> bool {
         }
         url::Host::Domain(d) => {
             if d == "localhost"
+                || d.ends_with(".localhost")
                 || d.ends_with(".local")
                 || d.ends_with(".internal")
                 || d.ends_with(".localdomain")

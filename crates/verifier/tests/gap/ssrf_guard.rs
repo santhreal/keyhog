@@ -377,6 +377,8 @@ fn bogon_v6_loopback_regression_not_via_v4_fallback() {
 fn url_blocks_localhost_domain() {
     assert!(is_private_url("http://localhost/"));
     assert!(is_private_url("http://localhost:8080/path"));
+    assert!(is_private_url("http://app.localhost/"));
+    assert!(is_private_url("http://deep.app.localhost"));
 }
 
 #[test]
@@ -403,6 +405,8 @@ fn url_allows_public_domains() {
     assert!(!is_private_url("https://api.stripe.com/v1/charges"));
     // ".local" must be a suffix, not a substring: "local.example.com" is public.
     assert!(!is_private_url("https://local.example.com/"));
+    // ".localhost" must be a suffix, not a substring.
+    assert!(!is_private_url("https://localhost.example.com/"));
     // "internal" embedded as a label that is not the suffix is public.
     assert!(!is_private_url("https://internal.example.com/"));
 }
