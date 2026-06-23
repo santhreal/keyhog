@@ -72,6 +72,15 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
             && !reverse_body.contains(".collect()"),
         "reverse decoder should stream borrowed candidates into decode"
     );
+    let looks_reversible_body = impl_body(
+        &reverse,
+        "pub(crate) fn looks_reversible",
+        "REVERSED_KNOWN_PREFIXES",
+    );
+    assert!(
+        !looks_reversible_body.contains("reverse_str(candidate)"),
+        "reverse prefilter should search reversed known prefixes without allocating a reversed candidate"
+    );
 
     let url = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/decode/url.rs"))
         .expect("url source readable");

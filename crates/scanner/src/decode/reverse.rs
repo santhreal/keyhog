@@ -1,6 +1,7 @@
 use super::pipeline::{decode_candidate_refs_exact, with_extracted_value_spans};
 use super::Decoder;
 use keyhog_core::Chunk;
+use std::sync::LazyLock;
 
 /// Match secrets that have been reversed character-by-character to dodge a
 /// naïve byte-substring scan. Cheap evasion the adversarial corpus
@@ -14,6 +15,21 @@ use keyhog_core::Chunk;
 pub(crate) struct ReverseDecoder;
 
 const MIN_REVERSE_LEN: usize = 16;
+
+/// Reverse-prefix needles for [`looks_reversible`].
+///
+/// SOUNDNESS: `reverse(candidate).contains(prefix)` iff
+/// `candidate.contains(reverse(prefix))`, because reverse is a bijection over
+/// character positions. The decoder still reverses only admitted candidates
+/// when emitting output; this gate just avoids allocating a full reversed copy
+/// for the overwhelmingly common no-match candidate.
+static REVERSED_KNOWN_PREFIXES: LazyLock<Vec<String>> = LazyLock::new(|| {
+    crate::confidence::KNOWN_PREFIXES
+        .iter()
+        .filter(|prefix| prefix.len() >= 3)
+        .map(|prefix| reverse_str(prefix))
+        .collect()
+});
 
 impl Decoder for ReverseDecoder {
     fn name(&self) -> &'static str {
@@ -92,9 +108,7 @@ pub(crate) fn looks_reversible(candidate: &str) -> bool {
     // reversed string is exotic enough that the recall loss is near zero;
     // every 3+ char vendor prefix (`hf_`, `SG.`, `eyJ`, `sk-`, `ghp_`,
     // ...) still gates as before.
-    let reversed = reverse_str(candidate);
-    crate::confidence::KNOWN_PREFIXES
+    REVERSED_KNOWN_PREFIXES
         .iter()
-        .filter(|prefix| prefix.len() >= 3)
-        .any(|prefix| reversed.contains(prefix))
+        .any(|prefix| candidate.contains(prefix))
 }
