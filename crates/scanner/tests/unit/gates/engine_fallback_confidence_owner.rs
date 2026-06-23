@@ -163,10 +163,6 @@ fn report_confidence_tail_routes_through_confidence_owner() {
     collect_rs_files(&src.join("engine"), &mut files);
     let mut offenders = Vec::new();
     for path in files {
-        let rel = path.strip_prefix(&src).expect("scanner src prefix");
-        if rel == Path::new("engine/scoring.rs") {
-            continue;
-        }
         let code = uncommented_code(&read(&path));
         for forbidden in [
             "crate::confidence::apply_post_ml_penalties(",
@@ -184,7 +180,7 @@ fn report_confidence_tail_routes_through_confidence_owner() {
 
     assert!(
         offenders.is_empty(),
-        "engine files other than scoring.rs must not own report-confidence policy calls: {offenders:#?}"
+        "engine files must not own report-confidence policy calls: {offenders:#?}"
     );
 }
 
@@ -210,20 +206,27 @@ fn engine_scoring_confidence_adjustments_use_confidence_owner() {
         );
     }
 
-    let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
+    assert!(
+        !src.join("engine/scoring.rs").exists(),
+        "engine/scoring.rs must stay folded into confidence::policy"
+    );
     let process = uncommented_code(&read(&src.join("engine/process.rs")));
     assert!(
-        process.contains("fn match_companions(") && !scoring.contains("fn match_companions("),
-        "companion matching is process wiring, not engine/scoring confidence ownership"
+        process.contains("fn match_companions(")
+            && process.contains("crate::confidence::policy::candidate_match_score(")
+            && !process.contains("self.match_confidence("),
+        "process wiring must call confidence::policy directly for candidate scoring"
     );
     for required in [
+        "struct CandidateMatchScorePolicy",
+        "fn candidate_match_score",
         "match_heuristic_confidence(",
         "MatchHeuristicConfidencePolicy",
         "apply_known_prefix_floor(",
     ] {
         assert!(
-            scoring.contains(required),
-            "engine scoring must use direct confidence-owner token {required:?}"
+            policy.contains(required),
+            "confidence::policy must own candidate scoring token {required:?}"
         );
     }
     for forbidden in [
@@ -237,8 +240,8 @@ fn engine_scoring_confidence_adjustments_use_confidence_owner() {
         "confidence.max(floor)",
     ] {
         assert!(
-            !scoring.contains(forbidden),
-            "engine scoring must not own confidence adjustment token {forbidden:?}"
+            !process.contains(forbidden),
+            "engine process must not own confidence adjustment token {forbidden:?}"
         );
     }
 }
@@ -307,12 +310,12 @@ fn probabilistic_promise_confidence_routes_through_confidence_owner() {
         );
     }
 
-    let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
     assert!(
-        scoring.contains("probabilistic_promise_confidence_override(")
-            && !scoring.contains("super::scoring::probabilistic_promise_confidence_override("),
-        "engine scoring must use direct confidence owner for probabilistic promise confidence"
+        policy.contains("candidate_match_score")
+            && policy.contains("probabilistic_promise_confidence_override("),
+        "candidate scoring must use the confidence owner for probabilistic promise confidence"
     );
+    let process = uncommented_code(&read(&src.join("engine/process.rs")));
     for forbidden in [
         "ProbabilisticGate::looks_promising",
         "looks_like_word_separated_identifier(credential)",
@@ -320,8 +323,8 @@ fn probabilistic_promise_confidence_routes_through_confidence_owner() {
         "MlScoreResult::Final(0.1)",
     ] {
         assert!(
-            !scoring.contains(forbidden),
-            "engine scoring must not own probabilistic promise policy token {forbidden:?}"
+            !process.contains(forbidden),
+            "engine process must not own probabilistic promise policy token {forbidden:?}"
         );
     }
 }

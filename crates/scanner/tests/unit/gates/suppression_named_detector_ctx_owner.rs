@@ -489,15 +489,16 @@ fn decoded_postprocess_example_drops_route_through_adjudicator() {
 fn final_emit_context_hard_suppression_stays_out_of_scoring_owner() {
     let src = scanner_src();
     let adjudicate = adjudicate_code(&src);
-    let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
+    let confidence_policy = uncommented_code(&read(&src.join("confidence/policy.rs")));
     let process = uncommented_code(&read(&src.join("engine/process.rs")));
     let generic = uncommented_code(&read(&src.join("engine/phase2_generic.rs")));
     let entropy = uncommented_code(&read(&src.join("engine/phase2_entropy.rs")));
     let ml = uncommented_code(&read(&src.join("engine/scan_postprocess/ml.rs")));
 
     assert!(
-        !scoring.contains("should_hard_suppress("),
-        "engine/scoring.rs must not hide context hard suppression behind None/scoring_rejected"
+        !src.join("engine/scoring.rs").exists()
+            && !confidence_policy.contains("should_hard_suppress("),
+        "candidate scoring must not hide context hard suppression behind None/scoring_rejected"
     );
     assert!(
         adjudicate.contains("fn final_emit_suppression_stage(")

@@ -54,10 +54,9 @@ fn engine_emitters_do_not_call_checksum_policy_primitives_directly() {
         );
     }
 
-    let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
     assert!(
-        !scoring.contains("pub(super) use crate::confidence::policy"),
-        "engine::scoring must not re-export confidence policy as a facade"
+        !src.join("engine/scoring.rs").exists(),
+        "engine::scoring facade must stay deleted"
     );
 
     let process = uncommented_code(&read(&src.join("engine/process.rs")));

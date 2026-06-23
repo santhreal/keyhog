@@ -257,19 +257,34 @@ impl CompiledScanner {
         // fallbacks and weak anchors.
         let is_named_detector =
             crate::confidence::is_service_anchored_detector(&detector.id) && !weak_anchor;
-        let Some(score_result) = self.match_confidence(
-            entry,
-            chunk,
-            credential,
-            data,
-            line,
-            entropy,
-            !companions.is_empty(),
-            inferred_context,
-            keyword_nearby,
-            sensitive_file,
-            is_named_detector,
-            scan_state,
+        let Some(score_result) = crate::confidence::policy::candidate_match_score(
+            crate::confidence::policy::CandidateMatchScorePolicy {
+                // Per-PATTERN constant, memoized on the `LazyRegex` (see
+                // `LazyRegex::has_literal_prefix`): the prior inline
+                // `extract_literal_prefix(entry.regex.as_str()).is_some()`
+                // re-ran the allocating prefix parser on every surviving
+                // candidate. Identical value, computed at most once.
+                has_literal_prefix: entry.regex.has_literal_prefix(),
+                has_context_anchor: entry.group.is_some(),
+                entropy,
+                keyword_nearby,
+                sensitive_file,
+                match_length: credential.len(),
+                has_companion: !companions.is_empty(),
+                code_context: inferred_context,
+                penalize_test_paths: self.config.penalize_test_paths,
+                ml_enabled: self.config.ml_enabled,
+                credential,
+                is_named_detector,
+                #[cfg(feature = "ml")]
+                data,
+                #[cfg(feature = "ml")]
+                line,
+                #[cfg(feature = "ml")]
+                file_path: chunk.metadata.path.as_deref(),
+                #[cfg(feature = "ml")]
+                ml_context_radius_lines: crate::types::ML_CONTEXT_RADIUS_LINES,
+            },
         ) else {
             let scoring_ctx = crate::adjudicate::MatchCtx::for_process_signals(
                 crate::adjudicate::ProcessCandidateSignals::from_scoring_rejected(true),

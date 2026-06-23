@@ -68,6 +68,29 @@ pub(crate) struct MatchHeuristicConfidencePolicy {
     pub(crate) penalize_test_paths: bool,
 }
 
+pub(crate) struct CandidateMatchScorePolicy<'a> {
+    pub(crate) has_literal_prefix: bool,
+    pub(crate) has_context_anchor: bool,
+    pub(crate) entropy: f64,
+    pub(crate) keyword_nearby: bool,
+    pub(crate) sensitive_file: bool,
+    pub(crate) match_length: usize,
+    pub(crate) has_companion: bool,
+    pub(crate) code_context: context::CodeContext,
+    pub(crate) penalize_test_paths: bool,
+    pub(crate) ml_enabled: bool,
+    pub(crate) credential: &'a str,
+    pub(crate) is_named_detector: bool,
+    #[cfg(feature = "ml")]
+    pub(crate) data: &'a str,
+    #[cfg(feature = "ml")]
+    pub(crate) line: usize,
+    #[cfg(feature = "ml")]
+    pub(crate) file_path: Option<&'a str>,
+    #[cfg(feature = "ml")]
+    pub(crate) ml_context_radius_lines: usize,
+}
+
 pub(crate) fn match_heuristic_confidence(policy: MatchHeuristicConfidencePolicy) -> f64 {
     let raw_confidence =
         crate::confidence::compute_confidence(&crate::confidence::ConfidenceSignals {
@@ -84,6 +107,69 @@ pub(crate) fn match_heuristic_confidence(policy: MatchHeuristicConfidencePolicy)
         policy.code_context,
         policy.penalize_test_paths,
     )
+}
+
+pub(crate) fn candidate_match_score<'a>(
+    policy: CandidateMatchScorePolicy<'a>,
+) -> Option<MlScoreResult<'a>> {
+    let heuristic_conf = match_heuristic_confidence(MatchHeuristicConfidencePolicy {
+        has_literal_prefix: policy.has_literal_prefix,
+        has_context_anchor: policy.has_context_anchor,
+        entropy: policy.entropy,
+        keyword_nearby: policy.keyword_nearby,
+        sensitive_file: policy.sensitive_file,
+        match_length: policy.match_length,
+        has_companion: policy.has_companion,
+        code_context: policy.code_context,
+        penalize_test_paths: policy.penalize_test_paths,
+    });
+
+    #[cfg(not(feature = "ml"))]
+    let score_result = {
+        let _ = (policy.ml_enabled, policy.is_named_detector);
+        MlScoreResult::Final(heuristic_conf)
+    };
+
+    #[cfg(feature = "ml")]
+    let score_result = {
+        if !policy.ml_enabled {
+            MlScoreResult::Final(heuristic_conf)
+        } else if let Some(confidence) =
+            probabilistic_promise_confidence_override(policy.credential, policy.is_named_detector)
+        {
+            MlScoreResult::Final(confidence)
+        } else {
+            let text_context = crate::pipeline::local_context_window(
+                policy.data,
+                policy.line,
+                policy.ml_context_radius_lines,
+            );
+            let ml_context = match policy.file_path {
+                Some(path) => format!("file:{path}\n{text_context}"),
+                None => text_context.to_string(),
+            };
+
+            MlScoreResult::Pending {
+                heuristic_conf,
+                code_context: policy.code_context,
+                credential: std::borrow::Cow::Borrowed(policy.credential),
+                ml_context: std::borrow::Cow::Owned(ml_context),
+            }
+        }
+    };
+
+    match score_result {
+        MlScoreResult::Final(confidence) => Some(MlScoreResult::Final(apply_known_prefix_floor(
+            confidence,
+            policy.credential,
+        ))),
+        #[cfg(feature = "ml")]
+        MlScoreResult::Pending { .. } => Some(score_result),
+        #[cfg(not(feature = "ml"))]
+        MlScoreResult::_Lifetime(_) => {
+            unreachable!("_Lifetime is a never-constructed placeholder variant")
+        }
+    }
 }
 
 pub(crate) struct ReportConfidencePolicy<'a> {

@@ -44,7 +44,7 @@
 //! - confirmed-pattern extraction ................................... extract.rs
 //! - phase-2 prefilter + keyword/anchor/generic/entropy passes ...... phase2*.rs
 //! - hot-pattern fast path (simdsieve) ............................. hot_patterns.rs
-//! - confidence-scoring façade ..................................... scoring.rs
+//! - match confidence policy ...................................... confidence::policy
 //! - post-process (suppression, dedup, confidence, decode/ML) ...... scan_postprocess.rs, scan_postprocess/*
 //! - cross-chunk seam reassembly ................................... boundary.rs
 //! - loud GPU-degrade / fail-closed helpers ....................... gpu_forced.rs
@@ -114,7 +114,6 @@ mod scan_postprocess_ml;
 mod scan_postprocess_profile;
 #[path = "scan_postprocess/suffix_gate.rs"]
 mod scan_postprocess_suffix_gate;
-mod scoring;
 pub(crate) mod segment_attribution;
 mod trigger_bitmap;
 mod windowed;

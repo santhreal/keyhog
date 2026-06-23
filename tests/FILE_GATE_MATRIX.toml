@@ -377,6 +377,9 @@ path = "crates/scanner/src/compiler/compiler_prefix.rs"
 path = "crates/scanner/src/confidence/mod.rs"
 
 [[module]]
+path = "crates/scanner/src/confidence/policy.rs"
+
+[[module]]
 path = "crates/scanner/src/confidence/penalties.rs"
 
 [[module]]
@@ -417,6 +420,12 @@ path = "crates/scanner/src/decode/pipeline.rs"
 
 [[module]]
 path = "crates/scanner/src/decode/pipeline/extractor.rs"
+
+[[module]]
+path = "crates/scanner/src/decode/pipeline/registry.rs"
+
+[[module]]
+path = "crates/scanner/src/decode/pipeline/splice.rs"
 
 [[module]]
 path = "crates/scanner/src/decode/reverse.rs"
@@ -489,6 +498,9 @@ path = "crates/scanner/src/engine/gpu_region_batch.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_region_dispatch.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_region_dispatch_helpers.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/hot_patterns.rs"
@@ -1019,9 +1031,6 @@ path = "crates/scanner/src/engine/scan_postprocess/profile.rs"
 path = "crates/scanner/src/engine/scan_postprocess/suffix_gate.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/scoring.rs"
-
-[[module]]
 path = "crates/scanner/src/engine/trigger_bitmap.rs"
 
 [[module]]
@@ -1035,6 +1044,15 @@ path = "crates/scanner/src/anchored_regex.rs"
 
 [[module]]
 path = "crates/scanner/src/adjudicate/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/adjudicate/entropy.rs"
+
+[[module]]
+path = "crates/scanner/src/adjudicate/generic.rs"
+
+[[module]]
+path = "crates/scanner/src/adjudicate/stage.rs"
 
 [[module]]
 path = "crates/scanner/src/context/placeholder.rs"
@@ -1056,6 +1074,12 @@ path = "crates/scanner/src/engine/phase2_entropy/gates.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_entropy/helpers.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_entropy/example_suppression.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_entropy/line_context.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_generic/auth_value.rs"

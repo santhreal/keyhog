@@ -2,7 +2,7 @@
 //! is a per-PATTERN constant, memoized on `LazyRegex` instead of re-parsed on
 //! every surviving candidate.
 //!
-//! The scoring hot path (`engine::scoring::match_confidence`) feeds
+//! The candidate confidence policy feeds
 //! `ConfidenceSignals.has_literal_prefix` for EVERY candidate that survives
 //! suppression. It previously computed that inline as
 //! `extract_literal_prefix(entry.regex.as_str()).is_some()` — a full
