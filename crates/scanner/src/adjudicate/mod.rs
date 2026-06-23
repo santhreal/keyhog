@@ -455,6 +455,18 @@ pub(crate) fn record_checksum_invalid_suppression(
     record_suppression(path, credential, &ctx)
 }
 
+pub(crate) fn record_missing_required_companion_suppression(
+    path: Option<&str>,
+    credential: &str,
+) -> Option<StageId> {
+    let ctx = MatchCtx::for_process_signals(
+        ProcessCandidateSignals::from_missing_required_companion(true),
+    );
+    let recorded = record_suppression(path, credential, &ctx);
+    debug_assert_eq!(recorded, Some(StageId::MissingRequiredCompanion));
+    recorded
+}
+
 pub(crate) fn finalize_report_candidate(
     path: Option<&str>,
     credential: &str,

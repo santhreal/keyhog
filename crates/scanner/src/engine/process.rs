@@ -158,19 +158,9 @@ impl CompiledScanner {
             match self.match_companions(entry, preprocessed, line) {
                 Some(c) => c,
                 None => {
-                    let companion_ctx = crate::adjudicate::MatchCtx::for_process_signals(
-                        crate::adjudicate::ProcessCandidateSignals::from_missing_required_companion(
-                            true,
-                        ),
-                    );
-                    let recorded = crate::adjudicate::record_suppression(
+                    crate::adjudicate::record_missing_required_companion_suppression(
                         chunk.metadata.path.as_deref(),
                         credential,
-                        &companion_ctx,
-                    );
-                    debug_assert_eq!(
-                        recorded,
-                        Some(crate::adjudicate::StageId::MissingRequiredCompanion)
                     );
                     return;
                 }

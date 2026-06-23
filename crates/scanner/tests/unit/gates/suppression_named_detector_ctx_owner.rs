@@ -122,6 +122,10 @@ fn engine_named_detector_suppression_routes_through_adjudicator() {
         "engine/process.rs must route named-detector candidate decisions through the adjudicator recorder"
     );
     assert!(
+        !process.contains("crate::adjudicate::StageId::"),
+        "engine/process.rs must not name adjudicator stages directly"
+    );
+    assert!(
         !process.contains("suppress_named_detector_finding("),
         "engine/process.rs must not call suppress_named_detector_finding directly; the adjudicator owns the decision"
     );
@@ -164,8 +168,10 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
     assert!(
         process.contains("ProcessCandidateSignals::from_checksum_policy(")
             && !process.contains("ProcessCandidateSignals::from_checksum_invalid(")
+            && !process.contains("ProcessCandidateSignals::from_missing_required_companion(")
+            && process.contains("crate::adjudicate::record_missing_required_companion_suppression(")
             && !process.contains("crate::confidence::policy::checksum_policy_for("),
-        "engine/process.rs checksum drops must ask adjudicate to derive the checksum signal"
+        "engine/process.rs checksum and required-companion drops must ask adjudicate to derive the process signal"
     );
     let shape = uncommented_code(&read(&src.join("suppression/shape/mod.rs")));
     let generic_shape = uncommented_code(&read(&src.join("engine/phase2_generic_shape.rs")));
