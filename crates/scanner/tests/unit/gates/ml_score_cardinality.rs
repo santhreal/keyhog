@@ -47,8 +47,9 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         "every ML-pending drain path must pass through the report finalizer and adjudicator-owned rejection stages"
     );
     assert!(
-        !ml_postprocess.contains("raw_match.confidence ="),
-        "ML postprocess must not mutate finalized confidence outside adjudicate"
+        !ml_postprocess.contains("raw_match.confidence =")
+            && !ml_postprocess.contains("&pending.credential,"),
+        "ML postprocess must not mutate finalized confidence or pass a split credential into adjudicate"
     );
     assert!(
         scanner_config.contains("pub(crate) is_named_detector: bool")

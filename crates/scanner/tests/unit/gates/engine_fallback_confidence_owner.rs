@@ -118,6 +118,7 @@ fn report_confidence_tail_routes_through_confidence_owner() {
         "struct ReportAdjudicationPolicy",
         "fn finalize_report_candidate(",
         "fn finalize_report_raw_match(",
+        "let credential = raw_match.credential.as_ref();",
         "finalize_report_confidence(",
         "record_checksum_invalid_suppression(",
         "MatchCtx::for_final_emit(",
@@ -148,8 +149,9 @@ fn report_confidence_tail_routes_through_confidence_owner() {
         );
         if path == "engine/scan_postprocess/ml.rs" {
             assert!(
-                !code.contains("raw_match.confidence ="),
-                "{path} must not mutate RawMatch confidence outside adjudicate"
+                !code.contains("raw_match.confidence =")
+                    && !code.contains("&pending.credential,"),
+                "{path} must not mutate RawMatch confidence or pass a split credential into adjudicate"
             );
         }
         for forbidden in [

@@ -18,7 +18,6 @@ impl CompiledScanner {
         let file_path = pending.raw_match.location.file_path.clone();
         let Some(raw_match) = crate::adjudicate::finalize_report_raw_match(
             pending.raw_match,
-            &pending.credential,
             crate::adjudicate::ReportAdjudicationPolicy {
                 detector_id: detector_id.as_ref(),
                 code_context: pending.code_context,
