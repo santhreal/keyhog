@@ -671,7 +671,7 @@ fn document_starts_with_doctype_and_html() {
         "doc head: {:?}",
         &html[..32]
     );
-    assert!(html.contains("<html lang=\"en\" data-theme=\"obsidian\">"));
+    assert!(html.contains("<html lang=\"en\" data-theme=\"keyhog\">"));
 }
 
 #[test]

@@ -13,7 +13,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use keyhog_core::{
-    MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding, write_report,
+    write_report, HtmlScanMetadata, MatchLocation, ReportFormat, Severity, VerificationResult,
+    VerifiedFinding,
 };
 
 const PAYLOAD: &str = "</script><img src=x onerror=alert(1)>";
@@ -49,7 +50,29 @@ fn poisoned_finding() -> VerifiedFinding {
 
 fn render(finding: &VerifiedFinding) -> String {
     let mut buf: Vec<u8> = Vec::new();
-    write_report(&mut buf, ReportFormat::Html, &[finding.clone()]).expect("finish html report");
+    write_report(
+        &mut buf,
+        ReportFormat::Html {
+            skip_summary: Vec::new(),
+            metadata: None,
+        },
+        &[finding.clone()],
+    )
+    .expect("finish html report");
+    String::from_utf8(buf).expect("utf8 html output")
+}
+
+fn render_with_metadata(metadata: HtmlScanMetadata) -> String {
+    let mut buf: Vec<u8> = Vec::new();
+    write_report(
+        &mut buf,
+        ReportFormat::Html {
+            skip_summary: Vec::new(),
+            metadata: Some(metadata),
+        },
+        &[],
+    )
+    .expect("finish html report");
     String::from_utf8(buf).expect("utf8 html output")
 }
 
@@ -86,4 +109,29 @@ fn poisoned_finding_does_not_break_out_of_script_element() {
         out.contains("\\u003c\\u002fscript\\u003e"),
         "escaped `</script>` not found; escaping did not run on the inlined JSON"
     );
+}
+
+#[test]
+fn poisoned_scan_metadata_does_not_break_out_of_script_element() {
+    let out = render_with_metadata(HtmlScanMetadata {
+        keyhog_version: PAYLOAD.to_string(),
+        generated_at: PAYLOAD.to_string(),
+        scan_started_at: PAYLOAD.to_string(),
+        scan_finished_at: PAYLOAD.to_string(),
+        duration_ms: 42,
+        targets: vec![PAYLOAD.to_string()],
+        source_chunks_scanned: 7,
+        detector_count: 11,
+    });
+
+    assert_eq!(
+        out.matches("</script>").count(),
+        1,
+        "metadata must share the script-breakout-safe serialization path"
+    );
+    assert!(
+        !out.contains(PAYLOAD),
+        "attacker metadata payload `{PAYLOAD}` appears unescaped in the HTML report"
+    );
+    assert!(out.contains("\\u003c\\u002fscript\\u003e"));
 }

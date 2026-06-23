@@ -106,7 +106,13 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
 }
 
 buffered_reporter!(JsonlReporter, ReportFormat::Jsonl);
-buffered_reporter!(HtmlReporter, ReportFormat::Html);
+buffered_reporter!(
+    HtmlReporter,
+    ReportFormat::Html {
+        skip_summary: Vec::new(),
+        metadata: None
+    }
+);
 buffered_reporter!(JunitReporter, ReportFormat::Junit);
 
 pub struct JsonArrayReporter<W: Write + Send> {

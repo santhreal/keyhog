@@ -23,6 +23,27 @@ use crate::VerifiedFinding;
 /// Common error type used by all reporters.
 pub use anyhow::Error as ReportError;
 
+/// Operator-visible scan metadata for the self-contained HTML report.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HtmlScanMetadata {
+    /// KeyHog crate/binary version that produced the report.
+    pub keyhog_version: String,
+    /// UTC generation timestamp formatted as `YYYY-MM-DDTHH:MM:SS`.
+    pub generated_at: String,
+    /// UTC scan start timestamp formatted as `YYYY-MM-DDTHH:MM:SS`.
+    pub scan_started_at: String,
+    /// UTC scan finish timestamp formatted as `YYYY-MM-DDTHH:MM:SS`.
+    pub scan_finished_at: String,
+    /// Wall-clock scan duration in milliseconds.
+    pub duration_ms: u128,
+    /// Redacted operator-visible target labels for the requested scan sources.
+    pub targets: Vec<String>,
+    /// Number of source chunks the scanner consumed for this report.
+    pub source_chunks_scanned: usize,
+    /// Number of loaded detector specs used by this scan.
+    pub detector_count: usize,
+}
+
 /// Output format and formatter options for [`write_report`].
 pub enum ReportFormat {
     /// Human-oriented terminal output.
@@ -55,7 +76,14 @@ pub enum ReportFormat {
         scan_finished_at: String,
     },
     /// Self-contained HTML output.
-    Html,
+    Html {
+        /// Operator-visible scan coverage-gap summary entries (same data the
+        /// SARIF report surfaces), rendered as a "coverage" panel so the report
+        /// never reads as a clean bill of health when files went unscanned.
+        skip_summary: Vec<(String, usize)>,
+        /// Scan identity, timing, target, and size metadata for the report hero.
+        metadata: Option<HtmlScanMetadata>,
+    },
     /// JUnit XML output.
     Junit,
 }
@@ -95,7 +123,15 @@ pub fn write_report<W: Write + Send>(
             gitlab_sast::GitlabSastReporter::new(writer, scan_started_at, scan_finished_at),
             findings,
         ),
-        ReportFormat::Html => finish_reporter(html::HtmlReporter::new(writer), findings),
+        ReportFormat::Html {
+            skip_summary,
+            metadata,
+        } => finish_reporter(
+            html::HtmlReporter::new(writer)
+                .with_skip_summary(skip_summary)
+                .with_metadata(metadata),
+            findings,
+        ),
         ReportFormat::Junit => finish_reporter(junit::JunitReporter::new(writer), findings),
     }
 }

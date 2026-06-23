@@ -1,8 +1,8 @@
 //! Main scan run loop: hardening, sources, baseline, reporting, exit codes.
 
-use super::ScanOrchestrator;
 use super::allowlist::{load_allowlist, load_rule_suppressor};
 use super::reporting::{dump_dogfood_trace, report_completion_summary, report_skip_summary};
+use super::ScanOrchestrator;
 use crate::baseline::Baseline;
 use crate::exit_codes::{
     EXIT_FINDINGS, EXIT_LIVE_CREDENTIALS, EXIT_REQUIRE_GPU_UNMET, EXIT_SCANNER_PANIC,
@@ -348,8 +348,15 @@ impl ScanOrchestrator {
             super::reporting::stream_report_previews(&report_findings);
         }
 
-        let report_metadata =
-            crate::reporting::ReportMetadata::from_scan_times(wall_start, chrono::Utc::now());
+        let report_finished_at = chrono::Utc::now();
+        let report_metadata = crate::reporting::ReportMetadata::from_scan_run(
+            &self.args,
+            wall_start,
+            report_finished_at,
+            start.elapsed().as_millis(),
+            crate::SCANNED_CHUNKS.load(std::sync::atomic::Ordering::Relaxed),
+            self.detectors.len(),
+        );
         crate::reporting::report_findings_with_metadata(
             &report_findings,
             &self.args,

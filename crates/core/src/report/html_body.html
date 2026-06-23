@@ -2,16 +2,55 @@
   <!-- Header -->
   <header>
     <div class="logo-section">
-      <h1>🐗 Key<span>Hog</span></h1>
-      <p>Developer-first Secret Scanning Report &bull; Verified Findings</p>
+      <div class="logo-lockup">
+        <pre class="logo-hog" aria-hidden="true">⠀⣠⣶⣿⣿⣿⣿⣶⣄⠀
+⠀⣿⣿⠉⠛⠛⠉⣿⣿⠀
+⠀⢿⣿⣶⣿⣿⣶⣿⡿⠀
+⠀⠀⠙⣿⣦⣴⣿⠋⠀⠀
+⠀⠀⠀⢸⣿⣿⡇⠀⠀⠀
+⠀⠀⠀⣼⣿⣿⣧⠀⠀⠀</pre>
+        <div class="logo-word"><span class="logo-name">keyhog</span><span class="logo-sub">secret scan report</span></div>
+      </div>
     </div>
     <div class="theme-selector" aria-label="Report theme">
-      <button class="theme-btn active" onclick="setTheme('obsidian')" aria-label="Use Obsidian theme" aria-pressed="true">OBSIDIAN</button>
-      <button class="theme-btn" onclick="setTheme('cyberpunk')" aria-label="Use Cyberpunk theme" aria-pressed="false">CYBERPUNK</button>
-      <button class="theme-btn" onclick="setTheme('win98')" aria-label="Use Windows 98 theme" aria-pressed="false">WIN98</button>
+      <button class="theme-btn active" onclick="setTheme('keyhog')" aria-label="Use KeyHog theme" aria-pressed="true">KEYHOG</button>
+      <button class="theme-btn" onclick="setTheme('light')" aria-label="Use Light theme" aria-pressed="false">LIGHT</button>
       <button class="theme-btn" onclick="setTheme('matrix')" aria-label="Use Matrix theme" aria-pressed="false">MATRIX</button>
     </div>
   </header>
+
+  <!-- Risk posture hero — one-glance verdict for the whole scan -->
+  <div class="risk-hero" id="risk-hero">
+    <div class="risk-hero-verdict" id="risk-verdict">—</div>
+    <div class="risk-hero-sub" id="risk-sub" aria-live="polite">analyzing findings…</div>
+  </div>
+
+  <div class="scan-metadata" id="scan-metadata" style="display: none;">
+    <div class="metadata-item">
+      <span class="metadata-label">Target</span>
+      <span class="metadata-value" id="meta-targets">—</span>
+    </div>
+    <div class="metadata-item">
+      <span class="metadata-label">Generated</span>
+      <span class="metadata-value" id="meta-generated">—</span>
+    </div>
+    <div class="metadata-item">
+      <span class="metadata-label">Duration</span>
+      <span class="metadata-value" id="meta-duration">—</span>
+    </div>
+    <div class="metadata-item">
+      <span class="metadata-label">Source Chunks</span>
+      <span class="metadata-value" id="meta-source-chunks">—</span>
+    </div>
+    <div class="metadata-item">
+      <span class="metadata-label">Detectors</span>
+      <span class="metadata-value" id="meta-detectors">—</span>
+    </div>
+    <div class="metadata-item">
+      <span class="metadata-label">Version</span>
+      <span class="metadata-value" id="meta-version">—</span>
+    </div>
+  </div>
 
   <!-- Content Grid -->
   <div class="dashboard-grid">
@@ -46,16 +85,28 @@
       <div class="card">
         <h2>Severity Breakdown</h2>
         <div class="chart-container">
-          <svg class="chart-svg" viewBox="0 0 42 42" aria-hidden="true" focusable="false">
+          <svg class="chart-svg" viewBox="0 0 42 42" role="img" aria-label="Severity breakdown donut chart">
+            <defs>
+              <filter id="seg-glow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="0.9" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <circle class="chart-track" cx="21" cy="21" r="15.91549430918954"></circle>
             <circle class="chart-hole" cx="21" cy="21" r="15.91549430918954"></circle>
-            <circle class="chart-segment" id="seg-critical" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-critical)"></circle>
-            <circle class="chart-segment" id="seg-high" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-high)"></circle>
-            <circle class="chart-segment" id="seg-medium" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-medium)"></circle>
-            <circle class="chart-segment" id="seg-low" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-low)"></circle>
-            <circle class="chart-segment" id="seg-info" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-info)"></circle>
-            <circle class="chart-segment" id="seg-client" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-client-safe)"></circle>
+            <g filter="url(#seg-glow)">
+              <circle class="chart-segment" id="seg-critical" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-critical)"></circle>
+              <circle class="chart-segment" id="seg-high" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-high)"></circle>
+              <circle class="chart-segment" id="seg-medium" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-medium)"></circle>
+              <circle class="chart-segment" id="seg-low" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-low)"></circle>
+              <circle class="chart-segment" id="seg-info" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-info)"></circle>
+              <circle class="chart-segment" id="seg-client" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-client-safe)"></circle>
+            </g>
+            <text class="chart-center-num" id="chart-total" x="21" y="20.4" text-anchor="middle" dominant-baseline="central">0</text>
+            <text class="chart-center-lbl" x="21" y="25.6" text-anchor="middle" dominant-baseline="central">findings</text>
           </svg>
         </div>
+        <div class="chart-legend" id="severity-legend" aria-hidden="true"></div>
       </div>
 
       <!-- Top Services Chart -->
@@ -80,13 +131,24 @@
       </div>
     </div>
 
+    <!-- Scan coverage — honest account of what was NOT fully scanned, so "N
+         findings" is never read as a clean bill of health when files went
+         unscanned (unreadable, over-size, truncated archives, …). -->
+    <div class="coverage-panel" id="coverage-panel" style="display: none;">
+      <div class="card">
+        <h2><span class="coverage-dot" id="coverage-dot"></span> Scan Coverage</h2>
+        <div class="coverage-note" id="coverage-note"></div>
+        <ul class="coverage-list" id="coverage-list"></ul>
+      </div>
+    </div>
+
     <!-- Findings Listing -->
     <div class="findings-panel">
       <div class="card">
         <h2>Findings</h2>
         
         <!-- Search bar -->
-        <input type="text" class="search-input" id="search-box" placeholder="Search by file path, detector ID, service..." aria-label="Search findings by file path, detector, or service" aria-describedby="result-count" oninput="applyFilters()">
+        <input type="text" class="search-input" id="search-box" placeholder="Search by file path, detector ID, service..." aria-label="Search findings by file path, detector, or service" aria-describedby="result-count" oninput="applyFiltersDebounced()">
         <div class="result-count" id="result-count" aria-live="polite" aria-atomic="true">Showing 0 findings.</div>
 
         <!-- Status Filter Tabs -->

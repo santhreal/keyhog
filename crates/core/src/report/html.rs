@@ -4,7 +4,7 @@ use std::io::Write;
 
 use crate::VerifiedFinding;
 
-use super::{ReportError, Reporter, WriterBackedReporter};
+use super::{HtmlScanMetadata, ReportError, Reporter, WriterBackedReporter};
 
 /// Make a serialized JSON string safe to inline inside an HTML `<script>`
 /// element's raw-text content.
@@ -37,6 +37,10 @@ fn escape_for_script(serialized: &str) -> String {
 pub(crate) struct HtmlReporter<W: Write + Send> {
     writer: W,
     findings: Vec<VerifiedFinding>,
+    /// Non-empty `(reason, count)` coverage-gap entries, rendered as a panel so
+    /// "N findings" is never mistaken for "fully scanned, all clean".
+    skip_summary: Vec<(String, usize)>,
+    metadata: Option<HtmlScanMetadata>,
 }
 
 impl<W: Write + Send> HtmlReporter<W> {
@@ -45,7 +49,22 @@ impl<W: Write + Send> HtmlReporter<W> {
         Self {
             writer,
             findings: Vec::new(),
+            skip_summary: Vec::new(),
+            metadata: None,
         }
+    }
+
+    /// Attach the scan coverage-gap summary. Zero-count entries are dropped so
+    /// the panel only lists categories that actually reduced coverage.
+    pub(crate) fn with_skip_summary(mut self, skip_summary: Vec<(String, usize)>) -> Self {
+        self.skip_summary = skip_summary.into_iter().filter(|(_, n)| *n > 0).collect();
+        self
+    }
+
+    /// Attach scan metadata rendered in the report header.
+    pub(crate) fn with_metadata(mut self, metadata: Option<HtmlScanMetadata>) -> Self {
+        self.metadata = metadata;
+        self
     }
 }
 
@@ -75,8 +94,17 @@ impl<W: Write + Send> Reporter for HtmlReporter<W> {
         }
         let serialized_findings = escape_for_script(&serde_json::to_string(&findings_value)?);
 
+        // Coverage gaps as [{reason, count}], escaped on the same XSS-safe path.
+        let coverage_value: Vec<serde_json::Value> = self
+            .skip_summary
+            .iter()
+            .map(|(reason, count)| serde_json::json!({ "reason": reason, "count": count }))
+            .collect();
+        let serialized_coverage = escape_for_script(&serde_json::to_string(&coverage_value)?);
+        let serialized_metadata = escape_for_script(&serde_json::to_string(&self.metadata)?);
+
         writeln!(self.writer, "<!DOCTYPE html>")?;
-        writeln!(self.writer, "<html lang=\"en\" data-theme=\"obsidian\">")?;
+        writeln!(self.writer, "<html lang=\"en\" data-theme=\"keyhog\">")?;
         writeln!(self.writer, "<head>")?;
         writeln!(self.writer, "  <meta charset=\"UTF-8\">")?;
         writeln!(
@@ -97,6 +125,16 @@ impl<W: Write + Send> Reporter for HtmlReporter<W> {
             self.writer,
             "    const rawFindings = {};",
             serialized_findings
+        )?;
+        writeln!(
+            self.writer,
+            "    const coverageGaps = {};",
+            serialized_coverage
+        )?;
+        writeln!(
+            self.writer,
+            "    const scanMetadata = {};",
+            serialized_metadata
         )?;
         writeln!(self.writer, "{}", include_str!("html_script.js"))?;
         writeln!(self.writer, "  </script>")?;

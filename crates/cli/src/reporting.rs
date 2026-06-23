@@ -3,13 +3,18 @@
 use crate::args::{OutputFormat, ScanArgs};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use keyhog_core::{ReportFormat, VerifiedFinding};
+use keyhog_core::{HtmlScanMetadata, ReportFormat, VerifiedFinding};
 use std::io::{self, IsTerminal};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReportMetadata {
     scan_started_at: String,
     scan_finished_at: String,
+    duration_ms: u128,
+    targets: Vec<String>,
+    source_chunks_scanned: usize,
+    detector_count: usize,
+    keyhog_version: String,
 }
 
 impl ReportMetadata {
@@ -17,12 +22,46 @@ impl ReportMetadata {
         Self {
             scan_started_at: format_gitlab_time(started_at),
             scan_finished_at: format_gitlab_time(finished_at),
+            duration_ms: 0,
+            targets: Vec::new(),
+            source_chunks_scanned: 0,
+            detector_count: keyhog_core::embedded_detector_count(),
+            keyhog_version: env!("CARGO_PKG_VERSION").to_string(),
         }
+    }
+
+    pub(crate) fn from_scan_run(
+        args: &ScanArgs,
+        started_at: DateTime<Utc>,
+        finished_at: DateTime<Utc>,
+        duration_ms: u128,
+        source_chunks_scanned: usize,
+        detector_count: usize,
+    ) -> Self {
+        let mut metadata = Self::from_scan_times(started_at, finished_at);
+        metadata.duration_ms = duration_ms;
+        metadata.targets = scan_targets(args);
+        metadata.source_chunks_scanned = source_chunks_scanned;
+        metadata.detector_count = detector_count;
+        metadata
     }
 
     fn generated_now() -> Self {
         let now = Utc::now();
         Self::from_scan_times(now, now)
+    }
+
+    fn html(&self) -> HtmlScanMetadata {
+        HtmlScanMetadata {
+            keyhog_version: self.keyhog_version.clone(),
+            generated_at: self.scan_finished_at.clone(),
+            scan_started_at: self.scan_started_at.clone(),
+            scan_finished_at: self.scan_finished_at.clone(),
+            duration_ms: self.duration_ms,
+            targets: self.targets.clone(),
+            source_chunks_scanned: self.source_chunks_scanned,
+            detector_count: self.detector_count,
+        }
     }
 }
 
@@ -77,7 +116,7 @@ fn report_with<W: std::io::Write + 'static + Send>(
         OutputFormat::Json => ReportFormat::Json,
         OutputFormat::Jsonl => ReportFormat::Jsonl,
         OutputFormat::Sarif => ReportFormat::Sarif {
-            skip_summary: sarif_skip_summary(),
+            skip_summary: coverage_gap_summary(),
         },
         OutputFormat::Csv => ReportFormat::Csv,
         OutputFormat::GithubAnnotations => ReportFormat::GithubAnnotations,
@@ -85,7 +124,10 @@ fn report_with<W: std::io::Write + 'static + Send>(
             scan_started_at: metadata.scan_started_at.clone(),
             scan_finished_at: metadata.scan_finished_at.clone(),
         },
-        OutputFormat::Html => ReportFormat::Html,
+        OutputFormat::Html => ReportFormat::Html {
+            skip_summary: coverage_gap_summary(),
+            metadata: Some(metadata.html()),
+        },
         OutputFormat::Junit => ReportFormat::Junit,
     };
     keyhog_core::write_report(w, format, findings)?;
@@ -100,7 +142,7 @@ fn format_gitlab_time(time: DateTime<Utc>) -> String {
 /// non-zero category becomes one `(reason, count)` pair the SARIF reporter
 /// surfaces as a tool-execution notification, so a consuming platform sees the
 /// scan's coverage gaps (unreadable files especially — those are unknowns).
-fn sarif_skip_summary() -> Vec<(String, usize)> {
+fn coverage_gap_summary() -> Vec<(String, usize)> {
     let c = keyhog_sources::skip_counts();
     let summary = vec![
         ("exceeded --max-file-size".to_string(), c.over_max_size),
@@ -170,4 +212,109 @@ fn sarif_skip_summary() -> Vec<(String, usize)> {
     };
 
     summary.into_iter().filter(|(_, n)| *n > 0).collect()
+}
+
+fn scan_targets(args: &ScanArgs) -> Vec<String> {
+    let mut targets = Vec::new();
+    push_path_target(&mut targets, "input", args.input.as_ref());
+    push_path_target(&mut targets, "path", args.path.as_ref());
+    if args.stdin {
+        targets.push("stdin".to_string());
+    }
+
+    #[cfg(feature = "git")]
+    {
+        push_path_target(&mut targets, "git-blobs", args.git_blobs.as_ref());
+        if let Some(base) = &args.git_diff {
+            let repo = match args.git_diff_path.as_ref() {
+                Some(path) => path.display().to_string(),
+                None => ".".to_string(),
+            };
+            targets.push(format!("git-diff:{repo}@{base}"));
+        }
+        push_path_target(&mut targets, "git-history", args.git_history.as_ref());
+        if args.git_staged {
+            targets.push("git-staged".to_string());
+        }
+    }
+
+    #[cfg(feature = "github")]
+    if let Some(org) = &args.github_org {
+        targets.push(format!("github-org:{org}"));
+    }
+    #[cfg(feature = "gitlab")]
+    if let Some(group) = &args.gitlab_group {
+        targets.push(format!("gitlab-group:{group}"));
+    }
+    #[cfg(feature = "bitbucket")]
+    if let Some(workspace) = &args.bitbucket_workspace {
+        targets.push(format!("bitbucket-workspace:{workspace}"));
+    }
+    #[cfg(feature = "s3")]
+    if let Some(bucket) = &args.s3_bucket {
+        targets.push(match &args.s3_prefix {
+            Some(prefix) => format!("s3:{bucket}/{prefix}"),
+            None => format!("s3:{bucket}"),
+        });
+    }
+    #[cfg(feature = "gcs")]
+    if let Some(bucket) = &args.gcs_bucket {
+        targets.push(match &args.gcs_prefix {
+            Some(prefix) => format!("gcs:{bucket}/{prefix}"),
+            None => format!("gcs:{bucket}"),
+        });
+    }
+    #[cfg(feature = "azure")]
+    if let Some(url) = &args.azure_container_url {
+        targets.push(format!("azure:{}", redact_url_target(url)));
+    }
+    #[cfg(feature = "docker")]
+    if let Some(image) = &args.docker_image {
+        targets.push(format!("docker:{image}"));
+    }
+    #[cfg(feature = "web")]
+    if let Some(urls) = &args.url {
+        targets.extend(
+            urls.iter()
+                .map(|url| format!("url:{}", redact_url_target(url))),
+        );
+    }
+    if let Some(custom) = &args.source {
+        targets.extend(custom.iter().map(|name| format!("source:{name}")));
+    }
+
+    targets.sort();
+    targets.dedup();
+    targets
+}
+
+fn push_path_target(targets: &mut Vec<String>, kind: &str, path: Option<&std::path::PathBuf>) {
+    if let Some(path) = path {
+        targets.push(format!("{kind}:{}", path.display()));
+    }
+}
+
+fn redact_url_target(raw: &str) -> String {
+    let without_fragment = raw.split_once('#').map_or(raw, |(head, _)| head);
+    match without_fragment.split_once('?') {
+        Some((head, _)) => format!("{head}?<redacted>"),
+        None => without_fragment.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redact_url_target;
+
+    #[test]
+    fn url_targets_hide_queries_and_fragments() {
+        assert_eq!(
+            redact_url_target("https://example.com/app.js?token=secret#frag"),
+            "https://example.com/app.js?<redacted>"
+        );
+        assert_eq!(
+            redact_url_target("https://example.com/app.js#frag"),
+            "https://example.com/app.js"
+        );
+    }
 }

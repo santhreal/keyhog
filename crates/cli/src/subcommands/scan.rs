@@ -29,7 +29,7 @@ use crate::daemon::protocol::{Request, Response};
 #[cfg(unix)]
 use crate::daemon::server::default_socket_path;
 use crate::orchestrator::ScanOrchestrator;
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 // The daemon-only result-massaging path (unwrap_scan_results,
 // finalize_for_report) is the only consumer of `RawMatch` /
 // `VerifiedFinding` in this file. The in-process orchestrator path
@@ -475,8 +475,15 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
     };
 
     let findings = finalize_for_report(matches, args)?;
-    let report_metadata =
-        crate::reporting::ReportMetadata::from_scan_times(wall_start, chrono::Utc::now());
+    let report_finished_at = chrono::Utc::now();
+    let report_metadata = crate::reporting::ReportMetadata::from_scan_run(
+        args,
+        wall_start,
+        report_finished_at,
+        (report_finished_at - wall_start).num_milliseconds().max(0) as u128,
+        1,
+        keyhog_core::embedded_detector_count(),
+    );
     crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
 
     if findings.is_empty() {
