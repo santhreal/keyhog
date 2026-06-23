@@ -513,6 +513,7 @@ impl ScanOrchestrator {
                     no_suppress_test_fixtures: false,
                     hide_client_safe: false,
                 },
+                verify: crate::orchestrator_config::ResolvedVerifyPolicy::disabled(),
             },
         }
     }

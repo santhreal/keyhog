@@ -96,7 +96,7 @@ fn verify_low_confidence_skips_are_surfaced_loudly() {
         .nth(1)
         .expect("verify path must classify low-confidence verification skips");
     let block = block
-        .split("let rate = self.args.verify_rate")
+        .split("let verify = &self.effective_config.verify")
         .next()
         .unwrap_or(block);
     assert!(

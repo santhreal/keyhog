@@ -14,9 +14,9 @@ pub(crate) use detectors::{
 };
 pub(crate) use effective::{autoroute_config_digest, render_effective_config};
 pub(crate) use runtime::{
-    FUSED_BATCH_DEFAULT, MAX_THREADS_CAP, ML_THRESHOLD_DEFAULT, backend_override_label,
-    configure_hyperscan_cache_dir, configure_threads, fused_depth_default,
-    gpu_runtime_policy_from_args, parse_backend_override,
+    backend_override_label, configure_hyperscan_cache_dir, configure_threads, fused_depth_default,
+    gpu_runtime_policy_from_args, parse_backend_override, FUSED_BATCH_DEFAULT, MAX_THREADS_CAP,
+    ML_THRESHOLD_DEFAULT,
 };
 
 #[derive(Debug, Clone)]
@@ -343,6 +343,58 @@ impl ResolvedReportPolicy {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ResolvedVerifyPolicy {
+    pub(crate) rate: f64,
+    pub(crate) max_concurrent_per_service: usize,
+    pub(crate) timeout_secs: u64,
+    pub(crate) proxy: Option<String>,
+    pub(crate) insecure_tls: bool,
+    pub(crate) allow_script_verify: bool,
+    pub(crate) oob: ResolvedOobPolicy,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ResolvedOobPolicy {
+    pub(crate) enabled: bool,
+    pub(crate) server: String,
+    pub(crate) timeout_secs: u64,
+}
+
+impl ResolvedVerifyPolicy {
+    fn from_scan_args(args: &ScanArgs) -> Self {
+        Self {
+            rate: args.verify_rate,
+            max_concurrent_per_service: if args.verify_batch { 1 } else { args.rate },
+            timeout_secs: args.timeout,
+            proxy: args.proxy.clone(),
+            insecure_tls: args.insecure,
+            allow_script_verify: args.allow_script_verify,
+            oob: ResolvedOobPolicy {
+                enabled: args.verify_oob,
+                server: args.oob_server.clone(),
+                timeout_secs: args.oob_timeout,
+            },
+        }
+    }
+
+    pub(crate) fn disabled() -> Self {
+        Self {
+            rate: 1.0,
+            max_concurrent_per_service: 5,
+            timeout_secs: 5,
+            proxy: None,
+            insecure_tls: false,
+            allow_script_verify: false,
+            oob: ResolvedOobPolicy {
+                enabled: false,
+                server: "https://oob.invalid".into(),
+                timeout_secs: 30,
+            },
+        }
+    }
+}
+
 /// The single resolved scan configuration: the END of the precedence chain
 /// `compiled-default -> [scan] table -> flat ConfigFile fields -> CLI flags`,
 /// already merged into the engine's [`ScannerConfig`] PLUS the post-scan policy
@@ -429,6 +481,9 @@ pub(crate) struct ResolvedScanConfig {
     pub(crate) source_limits: keyhog_sources::SourceLimits,
     /// Resolved reporting/postprocess policy that can come from CLI or TOML.
     pub(crate) report: ResolvedReportPolicy,
+    /// Resolved verifier transport/execution policy consumed by verifier
+    /// postprocess without re-reading raw post-merge CLI args.
+    pub(crate) verify: ResolvedVerifyPolicy,
 }
 
 /// Resolve the full scan configuration in one place: run the precedence merge
@@ -439,9 +494,10 @@ pub(crate) struct ResolvedScanConfig {
 ///
 /// `args` is mutated in place by the config-file merge (CLI flags already win;
 /// the merge only fills fields the operator left at their default), exactly as
-/// the orchestrator's pre-existing `apply_config_file(&mut args)` call did. The
-/// caller keeps the same `args` for the surfaces that still read it directly
-/// (severity filter, dedup scope, verify/show-secrets gating).
+/// the orchestrator's pre-existing `apply_config_file(&mut args)` call did.
+/// Scanner, runtime, reporting, and verifier policy are captured into resolved
+/// structs here so scan execution does not re-derive those decisions from raw
+/// args.
 pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanConfig> {
     let outcome = crate::config::apply_config_file(args);
     if !outcome.config_errors.is_empty() {
@@ -458,6 +514,7 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
     keyhog_core::set_extra_canary_accounts(aws_canary_set);
     let runtime_input = ScanRuntimeInput::from_scan_args(args);
     let report = ResolvedReportPolicy::from_scan_args(args);
+    let verify = ResolvedVerifyPolicy::from_scan_args(args);
     configure_hyperscan_cache_dir(runtime_input.cache_dir.clone())?;
     let autoroute_cache_path = crate::autoroute_cache_path::resolve_autoroute_cache_path(
         runtime_input.autoroute_cache.as_deref(),
@@ -509,6 +566,7 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         },
         source_limits: runtime_input.source_limits,
         report,
+        verify,
     })
 }
 
@@ -555,6 +613,7 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
             no_suppress_test_fixtures: false,
             hide_client_safe: false,
         },
+        verify: ResolvedVerifyPolicy::disabled(),
     }
 }
 

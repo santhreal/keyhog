@@ -311,7 +311,8 @@ impl ScanOrchestrator {
             );
         }
 
-        let rate = self.args.verify_rate;
+        let verify = &self.effective_config.verify;
+        let rate = verify.rate;
         if !rate.is_finite() || rate <= 0.0 {
             tracing::warn!(
                 requested = rate,
@@ -322,12 +323,7 @@ impl ScanOrchestrator {
         }
         keyhog_verifier::rate_limit::set_global_default_rps(rate);
 
-        let per_service_concurrency = if self.args.verify_batch {
-            1
-        } else {
-            self.args.rate
-        };
-        if self.args.allow_script_verify {
+        if verify.allow_script_verify {
             eprintln!(
                 "warning: --allow-script-verify is active; trusted detector scripts may execute during verification"
             );
@@ -336,28 +332,28 @@ impl ScanOrchestrator {
         let mut verifier = VerificationEngine::new(
             &self.detectors,
             VerifyConfig {
-                timeout: Duration::from_secs(self.args.timeout),
-                max_concurrent_per_service: per_service_concurrency,
-                proxy: self.args.proxy.clone(),
-                insecure_tls: self.args.insecure,
-                allow_script_verify: self.args.allow_script_verify,
+                timeout: Duration::from_secs(verify.timeout_secs),
+                max_concurrent_per_service: verify.max_concurrent_per_service,
+                proxy: verify.proxy.clone(),
+                insecure_tls: verify.insecure_tls,
+                allow_script_verify: verify.allow_script_verify,
                 ..Default::default()
             },
         )
         .context("initializing verification engine")?;
 
-        if self.args.verify_oob {
+        if verify.oob.enabled {
             use keyhog_verifier::oob::OobConfig;
             let oob_config = OobConfig {
-                server: self.args.oob_server.clone(),
-                default_timeout: Duration::from_secs(self.args.oob_timeout),
-                max_timeout: Duration::from_secs(self.args.oob_timeout.max(120)),
+                server: verify.oob.server.clone(),
+                default_timeout: Duration::from_secs(verify.oob.timeout_secs),
+                max_timeout: Duration::from_secs(verify.oob.timeout_secs.max(120)),
                 ..OobConfig::default()
             };
             if let Err(e) = verifier.enable_oob(oob_config).await {
                 tracing::warn!(
                     error = %e,
-                    server = %self.args.oob_server,
+                    server = %verify.oob.server,
                     "OOB verification unavailable: collector handshake failed; \
                      detectors that require [detector.verify.oob] will return \
                      verification errors while non-OOB detectors continue"
@@ -366,7 +362,7 @@ impl ScanOrchestrator {
                     "warning: --verify-oob collector handshake failed for {}: {e}; \
                      detectors that require OOB verification will report verification errors \
                      while non-OOB detectors continue.",
-                    self.args.oob_server
+                    verify.oob.server
                 );
             }
         }

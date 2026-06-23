@@ -19,6 +19,10 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         "orchestrator_config must keep a resolved reporting/postprocess policy boundary"
     );
     assert!(
+        src.contains("struct ResolvedVerifyPolicy"),
+        "orchestrator_config must keep a resolved verifier policy boundary"
+    );
+    assert!(
         src.contains("fn build_scanner_config_from_input(input: &ScannerConfigInput)"),
         "ScannerConfig construction must have an input-owned implementation"
     );
@@ -44,6 +48,10 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         "resolve_scan_config must convert post-merge args into ResolvedReportPolicy once"
     );
     assert!(
+        resolve_body.contains("ResolvedVerifyPolicy::from_scan_args(args)"),
+        "resolve_scan_config must convert post-merge args into ResolvedVerifyPolicy once"
+    );
+    assert!(
         resolve_body.contains("build_scanner_config_from_input(&scanner_input)"),
         "resolve_scan_config must build ScannerConfig through the resolved input boundary"
     );
@@ -67,6 +75,16 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         "args.autoroute_calibrate",
         "args.regex_dfa_limit",
         "args.limits",
+        "args.verify_rate",
+        "args.verify_batch",
+        "args.rate",
+        "args.timeout",
+        "args.proxy",
+        "args.insecure",
+        "args.allow_script_verify",
+        "args.verify_oob",
+        "args.oob_server",
+        "args.oob_timeout",
     ] {
         assert!(
             !resolve_body.contains(forbidden),
@@ -99,6 +117,16 @@ fn postprocess_reads_resolved_report_policy() {
         "if self.args.verify {",
         "self.args.lockdown && self.args.show_secrets",
         "self.args.show_secrets",
+        "self.args.verify_rate",
+        "self.args.verify_batch",
+        "self.args.rate",
+        "self.args.timeout",
+        "self.args.proxy",
+        "self.args.insecure",
+        "self.args.allow_script_verify",
+        "self.args.verify_oob",
+        "self.args.oob_server",
+        "self.args.oob_timeout",
     ] {
         assert!(
             !postprocess.contains(forbidden),
