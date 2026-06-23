@@ -247,11 +247,7 @@ impl CompiledScanner {
     /// routes through the explicit GPU-failure policy.
     fn collect_triggered_patterns_gpu(&self, text: &str, backend: ScanBackend) -> Vec<u64> {
         let degrade = |reason: String| -> Vec<u64> {
-            if let Ok(mut slot) = self.gpu_last_degrade_reason.lock() {
-                *slot = Some(reason.clone());
-            }
-            self.gpu_degrade_count
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.record_gpu_degrade(reason.clone());
             super::gpu_forced::deny_silent_gpu_degrade_with_reason(self, backend, Some(&reason));
             self.collect_triggered_patterns_simd(text)
         };

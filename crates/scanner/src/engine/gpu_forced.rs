@@ -33,6 +33,17 @@ fn cached_gpu_runtime_policy_flags() -> (bool, bool) {
     })
 }
 
+impl CompiledScanner {
+    pub(super) fn record_gpu_degrade(&self, reason: impl Into<String>) {
+        let reason = reason.into();
+        if let Ok(mut slot) = self.gpu_last_degrade_reason.lock() {
+            *slot = Some(reason);
+        }
+        self.gpu_degrade_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 /// Error message when routing forces GPU/MegaScan but the scanner cannot dispatch.
 #[must_use]
 pub(crate) fn gpu_forced_unavailable_message(

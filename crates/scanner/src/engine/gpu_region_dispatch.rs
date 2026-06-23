@@ -85,11 +85,7 @@ impl CompiledScanner {
             let degraded = self.degraded_backend_after_gpu_failure();
             // Record the reason so operators (and the GPU self-test) can see WHY
             // the GPU path fell back, not just that it did.
-            if let Ok(mut slot) = self.gpu_last_degrade_reason.lock() {
-                *slot = Some(reason.clone());
-            }
-            self.gpu_degrade_count
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.record_gpu_degrade(reason.clone());
             tracing::warn!(
                 target: "keyhog::gpu",
                 %reason,
@@ -466,9 +462,9 @@ impl CompiledScanner {
             return GpuPositionEvidence::default();
         }
         let Some(matcher) = self.gpu_position_matcher() else {
-            report_positioned_gpu_candidate_loss(
-                "positioned literal matcher not built for this scanner",
-            );
+            let reason = "positioned literal matcher not built for this scanner";
+            self.record_gpu_degrade(reason);
+            report_positioned_gpu_candidate_loss(reason);
             return GpuPositionEvidence::default();
         };
         let matches = match super::gpu_literal_scratch::scan_gpu_literal_matches_with_scratch(
@@ -479,15 +475,21 @@ impl CompiledScanner {
         ) {
             Ok(matches) => matches,
             Err(error) => {
-                report_positioned_gpu_candidate_loss(error);
+                let reason = error.to_string();
+                self.record_gpu_degrade(format!(
+                    "positioned GPU candidate collection failed: {reason}"
+                ));
+                report_positioned_gpu_candidate_loss(reason);
                 return GpuPositionEvidence::default();
             }
         };
         if matches.len() >= GPU_POSITIONED_LITERAL_MAX_MATCHES as usize {
-            report_positioned_gpu_candidate_loss(format!(
+            let reason = format!(
                 "positioned literal scan reached cap {GPU_POSITIONED_LITERAL_MAX_MATCHES}; \
                  refusing incomplete positioned candidates"
-            ));
+            );
+            self.record_gpu_degrade(reason.clone());
+            report_positioned_gpu_candidate_loss(reason);
             return GpuPositionEvidence::default();
         }
         let confirmed_base = 0usize;

@@ -104,6 +104,28 @@ fn phase2_gpu_admission_loss_is_operator_visible() {
 }
 
 #[test]
+fn positioned_gpu_candidate_loss_updates_runtime_status() {
+    let src = engine_src("gpu_region_dispatch.rs");
+    assert!(
+        src.matches("self.record_gpu_degrade(").count() >= 4,
+        "coalesced GPU degrade and every positioned-candidate loss branch must update runtime status"
+    );
+    assert!(
+        src.contains("positioned literal matcher not built for this scanner")
+            && src.contains("positioned GPU candidate collection failed")
+            && src.contains("positioned literal scan reached cap"),
+        "positioned matcher-missing, scan-error, and cap branches must keep concrete degradation reasons"
+    );
+    let forced = engine_src("gpu_forced.rs");
+    assert!(
+        forced.contains("fn record_gpu_degrade(&self")
+            && forced.contains("gpu_last_degrade_reason")
+            && forced.contains("gpu_degrade_count"),
+        "GPU degradation status accounting must have one owner"
+    );
+}
+
+#[test]
 fn phase2_gpu_catalog_loss_is_operator_visible() {
     let src = engine_src("phase2_gpu_dfa.rs");
     assert!(
@@ -134,10 +156,11 @@ fn gpu_matcher_loss_is_operator_visible() {
     let src = engine_src("gpu_lazy.rs");
     assert!(
         src.contains("fn report_gpu_matcher_unavailable")
-            && src.contains("GPU_MATCHER_UNAVAILABLE_WARNED")
+            && src.contains("GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED")
+            && src.contains("GPU_POSITION_MATCHER_UNAVAILABLE_WARNED")
             && src.contains("eprintln!(")
             && src.contains("Use --require-gpu when GPU acceleration is mandatory"),
-        "GPU matcher compile loss must be visible to normal CLI stderr, not only tracing"
+        "GPU matcher compile loss must be visible to normal CLI stderr, with independent guards per matcher kind"
     );
     assert!(
         src.matches("report_gpu_matcher_unavailable(&error,").count() >= 2,

@@ -21,7 +21,9 @@
 use super::*;
 
 static GPU_MATCHER_CACHE_UNAVAILABLE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-static GPU_MATCHER_UNAVAILABLE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+static GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+static GPU_POSITION_MATCHER_UNAVAILABLE_WARNED: std::sync::OnceLock<()> =
+    std::sync::OnceLock::new();
 
 fn report_gpu_matcher_cache_unavailable(error: &super::gpu_cache::GpuMatcherCacheDirError) {
     tracing::warn!(
@@ -44,7 +46,12 @@ fn report_gpu_matcher_unavailable(error: &crate::error::ScanError, matcher_kind:
         %error,
         "GPU {matcher_kind} matcher unavailable; CPU/SIMD routes remain authoritative"
     );
-    if GPU_MATCHER_UNAVAILABLE_WARNED.set(()).is_ok() {
+    let warned = match matcher_kind {
+        "literal" => &GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED,
+        "positioned literal" => &GPU_POSITION_MATCHER_UNAVAILABLE_WARNED,
+        _ => &GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED,
+    };
+    if warned.set(()).is_ok() {
         eprintln!(
             "keyhog: GPU {matcher_kind} matcher unavailable ({error}); this scanner \
 cannot use that GPU matcher and will route through CPU/SIMD validation instead. \
