@@ -1,5 +1,7 @@
 use super::github::{base62_encode_u32, crc32};
 use super::{ChecksumResult, ChecksumValidator};
+use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
+use base64::Engine as _;
 
 /// Validates modern npm access tokens.
 ///
@@ -47,25 +49,28 @@ impl ChecksumValidator for PypiTokenValidator {
         if payload.len() < 20 {
             return ChecksumResult::Invalid;
         }
-        let decoded =
-            base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, payload)
-                .or_else(|_| {
-                    base64::Engine::decode(
-                        &base64::engine::general_purpose::STANDARD_NO_PAD,
-                        payload,
-                    )
-                })
-                .or_else(|_| {
-                    base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE, payload)
-                })
-                .or_else(|_| {
-                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, payload)
-                });
-
-        match decoded {
+        match decode_pypi_payload(payload) {
             Ok(bytes) if bytes.len() >= 32 => ChecksumResult::Valid,
             Ok(_) => ChecksumResult::Invalid,
             Err(_) => ChecksumResult::Invalid, // LAW10: decode failure => Invalid; structural precision gate (a matched-shape payload that will not decode is not the real token), fail-closed
         }
+    }
+}
+
+fn decode_pypi_payload(payload: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    let bytes = payload.as_bytes();
+    let has_url_safe_alphabet = bytes.iter().any(|byte| matches!(byte, b'-' | b'_'));
+    let has_standard_alphabet = bytes.iter().any(|byte| matches!(byte, b'+' | b'/'));
+    let has_padding = bytes.contains(&b'=');
+
+    if has_url_safe_alphabet && has_standard_alphabet {
+        return Err(base64::DecodeError::InvalidByte(0, b'?'));
+    }
+
+    match (has_url_safe_alphabet, has_padding) {
+        (true, true) => URL_SAFE.decode(payload),
+        (true, false) => URL_SAFE_NO_PAD.decode(payload),
+        (false, true) => STANDARD.decode(payload),
+        (false, false) => STANDARD_NO_PAD.decode(payload),
     }
 }

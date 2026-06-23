@@ -228,6 +228,36 @@ fn pypi_long_valid_base64_is_valid() {
     assert_eq!(PypiTokenValidator.validate(&token), ChecksumResult::Valid);
 }
 
+#[test]
+fn pypi_url_safe_padded_base64_is_valid() {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::URL_SAFE.encode(vec![0xfb; 64]);
+    assert!(
+        b64.contains('-') && b64.ends_with('='),
+        "fixture must exercise URL-safe padded routing, got {b64}"
+    );
+    let token = format!("pypi-{b64}");
+    assert_eq!(PypiTokenValidator.validate(&token), ChecksumResult::Valid);
+}
+
+#[test]
+fn pypi_standard_padded_base64_is_valid() {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(vec![0xff; 64]);
+    assert!(
+        b64.contains('/') && b64.ends_with('='),
+        "fixture must exercise standard padded routing, got {b64}"
+    );
+    let token = format!("pypi-{b64}");
+    assert_eq!(PypiTokenValidator.validate(&token), ChecksumResult::Valid);
+}
+
+#[test]
+fn pypi_mixed_base64_alphabet_is_invalid() {
+    let token = format!("pypi-{}-+", "A".repeat(32));
+    assert_eq!(PypiTokenValidator.validate(&token), ChecksumResult::Invalid);
+}
+
 // ── GitHub fine-grained PAT ───────────────────────────────────────────────────
 
 #[test]
