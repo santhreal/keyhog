@@ -16,14 +16,15 @@ mod mounts;
 use crate::args::ScanSystemArgs;
 use crate::exit_codes::EXIT_FINDINGS;
 use crate::format::format_bytes;
+use crate::orchestrator::DefaultScanRuntime;
 use crate::style;
 use anyhow::{Context, Result};
 use keyhog_scanner::CompiledScanner;
 use mounts::enumerate_mounts;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Hard ceiling on resident findings held in memory during a system scan.
 ///
@@ -283,13 +284,12 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
             e,
         )
     })?);
-    let router =
-        crate::orchestrator::cached_autoroute_router_for_default_config(&scanner, &detectors);
+    let scan_runtime = DefaultScanRuntime::new(scanner, &detectors);
     // System-wide scan touches every mounted drive and every git history:
     // detector regexes compile lazily on first use, so warm them all up
     // front (in parallel) rather than stalling the first file that hits each
     // detector across a multi-hour, multi-TB walk.
-    scanner.warm();
+    scan_runtime.warm();
 
     let mounts = enumerate_mounts(args.include_network)?;
     eprintln!("💾 will scan {} mount(s):", mounts.len());
@@ -335,8 +335,7 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
             mount.display()
         );
         scan_mount(
-            &scanner,
-            &router,
+            &scan_runtime,
             mount,
             &args,
             &bytes_scanned,
@@ -362,14 +361,7 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
                 style::info("INFO", &palette),
                 repo.display()
             );
-            scan_git_history(
-                &scanner,
-                &router,
-                repo,
-                &bytes_scanned,
-                space_cap,
-                &mut sink,
-            )?;
+            scan_git_history(&scan_runtime, repo, &bytes_scanned, space_cap, &mut sink)?;
         }
     }
 
@@ -535,8 +527,7 @@ fn discover_git_repos(root: &Path, out: &mut Vec<PathBuf>, _space_cap: u64) {
 }
 
 fn scan_mount(
-    scanner: &CompiledScanner,
-    router: &crate::orchestrator::CachedBackendRouter,
+    scan_runtime: &DefaultScanRuntime,
     root: &Path,
     args: &ScanSystemArgs,
     bytes_scanned: &AtomicU64,
@@ -571,17 +562,15 @@ fn scan_mount(
             }
         };
         bytes_scanned.fetch_add(chunk.data.len() as u64, Ordering::Relaxed);
-        let backend = router.choose(None, std::slice::from_ref(&chunk))?;
         // Convert + drop raw matches per chunk so plaintext-bearing RawMatch
         // entries are never accumulated (audit: memory).
-        out.absorb(scanner.scan_with_backend(&chunk, backend));
+        out.absorb(scan_runtime.scan_chunk(&chunk)?);
     }
     Ok(())
 }
 
 fn scan_git_history(
-    scanner: &CompiledScanner,
-    router: &crate::orchestrator::CachedBackendRouter,
+    scan_runtime: &DefaultScanRuntime,
     repo: &Path,
     bytes_scanned: &AtomicU64,
     space_cap: u64,
@@ -612,22 +601,21 @@ fn scan_git_history(
                 }
             };
             bytes_scanned.fetch_add(chunk.data.len() as u64, Ordering::Relaxed);
-            let backend = router.choose(None, std::slice::from_ref(&chunk))?;
             // Convert + drop raw matches per chunk (audit: memory).
-            out.absorb(scanner.scan_with_backend(&chunk, backend));
+            out.absorb(scan_runtime.scan_chunk(&chunk)?);
         }
         Ok(())
     }
     #[cfg(not(feature = "git"))]
     {
-        let _ = (scanner, router, bytes_scanned, space_cap); // LAW10: unused-binding marker; no runtime effect, not a fallback
-                                                             // Law 10: this binary was built WITHOUT the `git` feature, so the git
-                                                             // history of a discovered repo cannot be scanned — those commits are
-                                                             // unscanned bytes (a recall loss), not "nothing to do". The banner above
-                                                             // announced "git history: yes" and "discovered N git repo(s)", so a
-                                                             // trace-only skip would let a partial audit look complete.
-                                                             // Surface it LOUDLY on stderr AND count it as a skipped chunk so the
-                                                             // final summary's "did NOT cover everything" warning fires.
+        let _ = (scan_runtime, bytes_scanned, space_cap); // LAW10: unused-binding marker; no runtime effect, not a fallback
+        // Law 10: this binary was built WITHOUT the `git` feature, so the git
+        // history of a discovered repo cannot be scanned — those commits are
+        // unscanned bytes (a recall loss), not "nothing to do". The banner above
+        // announced "git history: yes" and "discovered N git repo(s)", so a
+        // trace-only skip would let a partial audit look complete.
+        // Surface it LOUDLY on stderr AND count it as a skipped chunk so the
+        // final summary's "did NOT cover everything" warning fires.
         let palette = style::for_stderr();
         eprintln!(
             "{} keyhog scan-system: git history of {} was NOT scanned — this binary \

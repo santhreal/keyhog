@@ -14,7 +14,7 @@ use crate::orchestrator_config::{
 };
 use crate::style;
 use anyhow::{Context, Result};
-use keyhog_core::{DetectorSpec, MerkleLoadStatus, RawMatch, Source};
+use keyhog_core::{Chunk, DetectorSpec, MerkleLoadStatus, RawMatch, Source};
 use keyhog_scanner::{CompiledScanner, GpuInitPolicy};
 #[cfg(feature = "git")]
 use std::path::PathBuf;
@@ -57,6 +57,27 @@ pub(crate) fn cached_autoroute_router_for_default_config(
         crate::autoroute_cache_path::resolve_autoroute_cache_path(None),
         scanner,
     )
+}
+
+pub(crate) struct DefaultScanRuntime {
+    scanner: Arc<CompiledScanner>,
+    router: CachedBackendRouter,
+}
+
+impl DefaultScanRuntime {
+    pub(crate) fn new(scanner: Arc<CompiledScanner>, detectors: &[DetectorSpec]) -> Self {
+        let router = cached_autoroute_router_for_default_config(&scanner, detectors);
+        Self { scanner, router }
+    }
+
+    pub(crate) fn warm(&self) {
+        self.scanner.warm();
+    }
+
+    pub(crate) fn scan_chunk(&self, chunk: &Chunk) -> Result<Vec<RawMatch>> {
+        let backend = self.router.choose(None, std::slice::from_ref(chunk))?;
+        Ok(self.scanner.scan_with_backend(chunk, backend))
+    }
 }
 
 #[doc(hidden)]
