@@ -196,6 +196,19 @@ impl<'a> FinalEmitSignals<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ReportAdjudicationPolicy<'a> {
+    pub(crate) detector_id: &'a str,
+    pub(crate) code_context: crate::context::CodeContext,
+    pub(crate) confidence: f64,
+    pub(crate) min_confidence_floor: f64,
+    pub(crate) penalize_test_paths: bool,
+    pub(crate) file_path: Option<&'a str>,
+    pub(crate) is_named_detector: bool,
+    pub(crate) allow_encoded_text_lift: bool,
+    pub(crate) calibration: Option<&'a keyhog_core::Calibration>,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct MatchCtx<'a> {
     explicit_stage: Option<StageId>,
@@ -359,6 +372,40 @@ pub(crate) fn record_checksum_invalid_suppression(
 ) -> Option<StageId> {
     let ctx = MatchCtx::for_process_signals(ProcessCandidateSignals::from_checksum_invalid(true));
     record_suppression(path, credential, &ctx)
+}
+
+pub(crate) fn finalize_report_candidate(
+    path: Option<&str>,
+    credential: &str,
+    policy: ReportAdjudicationPolicy<'_>,
+) -> Option<f64> {
+    let Some(confidence) = crate::confidence::policy::finalize_report_confidence(
+        policy.confidence,
+        crate::confidence::policy::ReportConfidencePolicy {
+            credential,
+            detector_id: policy.detector_id,
+            file_path: policy.file_path,
+            is_named_detector: policy.is_named_detector,
+            penalize_test_paths: policy.penalize_test_paths,
+            allow_encoded_text_lift: policy.allow_encoded_text_lift,
+            calibration: policy.calibration,
+        },
+    ) else {
+        record_checksum_invalid_suppression(path, credential);
+        return None;
+    };
+
+    let final_emit_ctx = MatchCtx::for_final_emit(FinalEmitSignals::new(
+        policy.detector_id,
+        policy.code_context,
+        confidence,
+        policy.min_confidence_floor,
+        policy.penalize_test_paths,
+    ));
+    if record_suppression(path, credential, &final_emit_ctx).is_some() {
+        return None;
+    }
+    Some(confidence)
 }
 
 pub(crate) fn record_example_suppression(

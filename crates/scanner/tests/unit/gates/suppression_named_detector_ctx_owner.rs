@@ -167,9 +167,9 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         "engine/process.rs checksum drops must use the adjudicator checksum signal"
     );
     assert!(
-        process.contains("crate::adjudicate::record_checksum_invalid_suppression(")
+        process.contains("crate::adjudicate::finalize_report_candidate(")
             && !process.contains("ProcessCandidateSignals::from_checksum_invalid(true)"),
-        "engine/process.rs finalizer checksum drops must route through the adjudicator helper"
+        "engine/process.rs finalizer checksum drops must route through the adjudicator final report helper"
     );
     assert!(
         adjudicate.contains("fn record_checksum_invalid_suppression(")
@@ -191,8 +191,8 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
         "engine/phase2_generic.rs must route generic suppression telemetry through the adjudicator"
     );
     assert!(
-        generic.contains("crate::adjudicate::record_checksum_invalid_suppression("),
-        "engine/phase2_generic.rs finalizer checksum drops must use the adjudicator checksum helper"
+        generic.contains("crate::adjudicate::finalize_report_candidate("),
+        "engine/phase2_generic.rs finalizer checksum drops must use the adjudicator final report helper"
     );
     assert!(
         !generic.contains("ProcessCandidateSignals::from_checksum_invalid(true)"),
@@ -272,16 +272,16 @@ fn entropy_and_ml_emit_reject_reasons_route_through_adjudicator() {
         "engine/phase2_entropy.rs must route entropy suppressions through the adjudicator"
     );
     assert!(
-        entropy.contains("crate::adjudicate::record_checksum_invalid_suppression("),
-        "engine/phase2_entropy.rs finalizer checksum drops must use the adjudicator checksum helper"
+        entropy.contains("crate::adjudicate::finalize_report_candidate("),
+        "engine/phase2_entropy.rs finalizer checksum drops must use the adjudicator final report helper"
     );
     assert!(
-        ml.contains("crate::adjudicate::record_suppression("),
-        "engine/scan_postprocess/ml.rs must route pending-match suppressions through the adjudicator"
+        ml.contains("crate::adjudicate::finalize_report_candidate("),
+        "engine/scan_postprocess/ml.rs must route pending-match suppressions through the adjudicator final report helper"
     );
     assert!(
-        ml.contains("crate::adjudicate::record_checksum_invalid_suppression("),
-        "engine/scan_postprocess/ml.rs checksum drops must use the adjudicator checksum helper"
+        ml.contains("crate::adjudicate::finalize_report_candidate("),
+        "engine/scan_postprocess/ml.rs checksum drops must use the adjudicator final report helper"
     );
     for (path, code) in [
         ("engine/phase2_entropy.rs", entropy.as_str()),
@@ -503,12 +503,24 @@ fn final_emit_context_hard_suppression_stays_out_of_scoring_owner() {
         adjudicate.contains("fn final_emit_suppression_stage(")
             && adjudicate.contains("StageId::HardSuppressedContext")
             && adjudicate.contains("fn final_emit_stage(")
-            && process.contains("crate::adjudicate::MatchCtx::for_final_emit(")
-            && generic.contains("crate::adjudicate::MatchCtx::for_final_emit(")
-            && entropy.contains("crate::adjudicate::MatchCtx::for_final_emit(")
-            && ml.contains("crate::adjudicate::MatchCtx::for_final_emit("),
-        "all final emit tails must route through adjudicate_match via MatchCtx::for_final_emit"
+            && adjudicate.contains("fn finalize_report_candidate(")
+            && process.contains("crate::adjudicate::finalize_report_candidate(")
+            && generic.contains("crate::adjudicate::finalize_report_candidate(")
+            && entropy.contains("crate::adjudicate::finalize_report_candidate(")
+            && ml.contains("crate::adjudicate::finalize_report_candidate("),
+        "all final emit tails must route through adjudicate final report candidate helper"
     );
+    for (path, code) in [
+        ("engine/process.rs", process.as_str()),
+        ("engine/phase2_generic.rs", generic.as_str()),
+        ("engine/phase2_entropy.rs", entropy.as_str()),
+        ("engine/scan_postprocess/ml.rs", ml.as_str()),
+    ] {
+        assert!(
+            !code.contains("crate::adjudicate::MatchCtx::for_final_emit("),
+            "{path} must not build final emit contexts directly"
+        );
+    }
     assert!(
         !process.contains("crate::adjudicate::final_emit_suppression_stage(")
             && !generic.contains("crate::adjudicate::final_emit_suppression_stage(")

@@ -100,6 +100,7 @@ fn report_confidence_tail_routes_through_scoring_owner() {
     let src = scanner_src();
     let owner = src.join("confidence/policy.rs");
     let scoring = uncommented_code(&read(&owner));
+    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
     for required in [
         "fn finalize_report_confidence(",
         "apply_post_ml_penalties_with_encoded_text_lift",
@@ -113,6 +114,18 @@ fn report_confidence_tail_routes_through_scoring_owner() {
             "confidence::policy must own report-confidence policy token {required:?}"
         );
     }
+    for required in [
+        "struct ReportAdjudicationPolicy",
+        "fn finalize_report_candidate(",
+        "finalize_report_confidence(",
+        "record_checksum_invalid_suppression(",
+        "MatchCtx::for_final_emit(",
+    ] {
+        assert!(
+            adjudicate.contains(required),
+            "adjudicate must own final report candidate routing token {required:?}"
+        );
+    }
 
     for path in [
         "engine/process.rs",
@@ -122,9 +135,22 @@ fn report_confidence_tail_routes_through_scoring_owner() {
     ] {
         let code = uncommented_code(&read(&src.join(path)));
         assert!(
-            code.contains("super::scoring::finalize_report_confidence("),
-            "{path} must route final report confidence through engine::scoring"
+            code.contains("crate::adjudicate::finalize_report_candidate(")
+                && code.contains("crate::adjudicate::ReportAdjudicationPolicy"),
+            "{path} must route final report confidence through adjudicate"
         );
+        for forbidden in [
+            "super::scoring::finalize_report_confidence(",
+            "super::scoring::ReportConfidencePolicy",
+            "crate::adjudicate::MatchCtx::for_final_emit(",
+            "crate::adjudicate::FinalEmitSignals::new(",
+            "crate::adjudicate::record_checksum_invalid_suppression(",
+        ] {
+            assert!(
+                !code.contains(forbidden),
+                "{path} must not own final report routing token {forbidden:?}"
+            );
+        }
     }
     let hot_patterns = uncommented_code(&read(&src.join("engine/hot_patterns.rs")));
     assert!(

@@ -12,44 +12,25 @@ impl CompiledScanner {
         &self,
         scan_state: &mut ScanState,
         pending: MlPendingMatch,
-        mut final_score: f64,
+        final_score: f64,
     ) {
-        let Some(adjusted_score) = super::scoring::finalize_report_confidence(
-            final_score,
-            super::scoring::ReportConfidencePolicy {
-                credential: &pending.credential,
+        let Some(final_score) = crate::adjudicate::finalize_report_candidate(
+            pending.raw_match.location.file_path.as_deref(),
+            &pending.credential,
+            crate::adjudicate::ReportAdjudicationPolicy {
                 detector_id: pending.raw_match.detector_id.as_ref(),
+                code_context: pending.code_context,
+                confidence: final_score,
+                min_confidence_floor: pending.min_confidence_floor,
+                penalize_test_paths: self.config.penalize_test_paths,
                 file_path: pending.raw_match.location.file_path.as_deref(),
                 is_named_detector: pending.is_named_detector,
-                penalize_test_paths: self.config.penalize_test_paths,
                 allow_encoded_text_lift: false,
                 calibration: self.config.calibration.as_deref(),
             },
         ) else {
-            crate::adjudicate::record_checksum_invalid_suppression(
-                pending.raw_match.location.file_path.as_deref(),
-                &pending.credential,
-            );
             return;
         };
-        final_score = adjusted_score;
-        let final_emit_ctx =
-            crate::adjudicate::MatchCtx::for_final_emit(crate::adjudicate::FinalEmitSignals::new(
-                pending.raw_match.detector_id.as_ref(),
-                pending.code_context,
-                final_score,
-                pending.min_confidence_floor,
-                self.config.penalize_test_paths,
-            ));
-        if crate::adjudicate::record_suppression(
-            pending.raw_match.location.file_path.as_deref(),
-            &pending.credential,
-            &final_emit_ctx,
-        )
-        .is_some()
-        {
-            return;
-        }
         let mut raw_match = pending.raw_match;
         raw_match.confidence = Some(final_score);
         scan_state.push_match(raw_match, self.config.max_matches_per_chunk);

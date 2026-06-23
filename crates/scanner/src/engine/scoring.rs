@@ -23,9 +23,8 @@ pub(super) use crate::confidence::policy::probabilistic_promise_confidence_overr
 #[cfg(feature = "ml")]
 pub(super) use crate::confidence::policy::MlConfidencePolicy;
 pub(super) use crate::confidence::policy::{
-    apply_known_prefix_floor, checksum_policy_for, finalize_report_confidence,
-    generic_secret_confidence, match_heuristic_confidence, MatchHeuristicConfidencePolicy,
-    ReportConfidencePolicy,
+    apply_known_prefix_floor, checksum_policy_for, generic_secret_confidence,
+    match_heuristic_confidence, MatchHeuristicConfidencePolicy,
 };
 
 impl CompiledScanner {

@@ -316,47 +316,23 @@ impl CompiledScanner {
                 // named-detector emit paths use. `is_named=false` keeps the
                 // generic fallback's shape penalties active; the encoded-text
                 // lift is the one extra raw signal this path contributes.
-                let Some(confidence) = super::scoring::finalize_report_confidence(
-                    confidence,
-                    super::scoring::ReportConfidencePolicy {
-                        credential: value,
+                let Some(confidence) = crate::adjudicate::finalize_report_candidate(
+                    chunk.metadata.path.as_deref(),
+                    value,
+                    crate::adjudicate::ReportAdjudicationPolicy {
                         detector_id: crate::detector_ids::GENERIC_SECRET,
+                        code_context: context,
+                        confidence,
+                        min_confidence_floor: self.config.min_confidence,
+                        penalize_test_paths: self.config.penalize_test_paths,
                         file_path: chunk.metadata.path.as_deref(),
                         is_named_detector: false,
-                        penalize_test_paths: self.config.penalize_test_paths,
                         allow_encoded_text_lift: allow_encoded_text_secret,
                         calibration: self.config.calibration.as_deref(),
                     },
                 ) else {
-                    // A prefix-bearing token with an INVALID embedded checksum is a
-                    // confirmed false positive — trace the drop (KH-L-0412, Law-10)
-                    // so it is not silent, mirroring the named path's
-                    // `checksum_invalid` engine gate.
-                    crate::adjudicate::record_checksum_invalid_suppression(
-                        chunk.metadata.path.as_deref(),
-                        value,
-                    );
                     continue;
                 };
-
-                let final_emit_ctx = crate::adjudicate::MatchCtx::for_final_emit(
-                    crate::adjudicate::FinalEmitSignals::new(
-                        crate::detector_ids::GENERIC_SECRET,
-                        context,
-                        confidence,
-                        self.config.min_confidence,
-                        self.config.penalize_test_paths,
-                    ),
-                );
-                if crate::adjudicate::record_suppression(
-                    chunk.metadata.path.as_deref(),
-                    value,
-                    &final_emit_ctx,
-                )
-                .is_some()
-                {
-                    continue;
-                }
 
                 // Defect #80: this branch hard-coded `offset: 0` for every
                 // generic-secret finding, so a `KEY = <secret>` on line 845

@@ -243,42 +243,23 @@ impl CompiledScanner {
 
             // Non-ML path emits directly through the same report-confidence
             // finalizer used by ML and detector hits.
-            let Some(confidence) = super::scoring::finalize_report_confidence(
-                confidence,
-                super::scoring::ReportConfidencePolicy {
-                    credential: &entropy_match.value,
+            let Some(confidence) = crate::adjudicate::finalize_report_candidate(
+                chunk.metadata.path.as_deref(),
+                &entropy_match.value,
+                crate::adjudicate::ReportAdjudicationPolicy {
                     detector_id: metadata.0.as_ref(),
+                    code_context: crate::context::CodeContext::Unknown,
+                    confidence,
+                    min_confidence_floor: self.config.min_confidence,
+                    penalize_test_paths: self.config.penalize_test_paths,
                     file_path: chunk.metadata.path.as_deref(),
                     is_named_detector: false,
-                    penalize_test_paths: self.config.penalize_test_paths,
                     allow_encoded_text_lift: false,
                     calibration: self.config.calibration.as_deref(),
                 },
             ) else {
-                crate::adjudicate::record_checksum_invalid_suppression(
-                    chunk.metadata.path.as_deref(),
-                    &entropy_match.value,
-                );
                 continue;
             };
-            let final_emit_ctx = crate::adjudicate::MatchCtx::for_final_emit(
-                crate::adjudicate::FinalEmitSignals::new(
-                    metadata.0.as_ref(),
-                    crate::context::CodeContext::Unknown,
-                    confidence,
-                    self.config.min_confidence,
-                    self.config.penalize_test_paths,
-                ),
-            );
-            if crate::adjudicate::record_suppression(
-                chunk.metadata.path.as_deref(),
-                &entropy_match.value,
-                &final_emit_ctx,
-            )
-            .is_some()
-            {
-                continue;
-            }
             scan_state.push_match_lazy(
                 crate::scanner_config::RawMatchPriority {
                     confidence: Some(confidence),

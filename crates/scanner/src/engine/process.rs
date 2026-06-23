@@ -261,44 +261,24 @@ impl CompiledScanner {
         };
 
         match score_result {
-            super::MlScoreResult::Final(mut confidence) => {
-                let Some(adjusted_confidence) = super::scoring::finalize_report_confidence(
-                    confidence,
-                    super::scoring::ReportConfidencePolicy {
-                        credential,
+            super::MlScoreResult::Final(confidence) => {
+                let Some(confidence) = crate::adjudicate::finalize_report_candidate(
+                    chunk.metadata.path.as_deref(),
+                    credential,
+                    crate::adjudicate::ReportAdjudicationPolicy {
                         detector_id: detector.id.as_ref(),
+                        code_context: inferred_context,
+                        confidence,
+                        min_confidence_floor,
+                        penalize_test_paths: self.config.penalize_test_paths,
                         file_path: chunk.metadata.path.as_deref(),
                         is_named_detector,
-                        penalize_test_paths: self.config.penalize_test_paths,
                         allow_encoded_text_lift: false,
                         calibration: self.config.calibration.as_deref(),
                     },
                 ) else {
-                    crate::adjudicate::record_checksum_invalid_suppression(
-                        chunk.metadata.path.as_deref(),
-                        credential,
-                    );
                     return;
                 };
-                confidence = adjusted_confidence;
-                let final_emit_ctx = crate::adjudicate::MatchCtx::for_final_emit(
-                    crate::adjudicate::FinalEmitSignals::new(
-                        detector.id.as_ref(),
-                        inferred_context,
-                        confidence,
-                        min_confidence_floor,
-                        self.config.penalize_test_paths,
-                    ),
-                );
-                if crate::adjudicate::record_suppression(
-                    chunk.metadata.path.as_deref(),
-                    credential,
-                    &final_emit_ctx,
-                )
-                .is_some()
-                {
-                    return;
-                }
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
                 let raw_match = build_raw_match(
