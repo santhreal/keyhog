@@ -14,7 +14,7 @@
 //! prefilter, the decode-recursion focus, and the confirmed-pass suffix gate, so
 //! this carries every recall-identical per-scan route lever in one place.
 //! Re-exported through `engine::phase2` (`pub use crate::tuning::*`).
-use crate::scanner_config::{ResolvedScannerTuningConfig, ScannerTuningConfig};
+use crate::scanner_config::{ResolvedRuntimeTuningConfig, ScannerTuningConfig};
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering::Relaxed};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -147,7 +147,7 @@ impl ScannerTuning {
     /// re-matching compiled defaults inside each phase-2 prefilter/admission
     /// call. Test hooks still mutate `ScannerTuning` before invoking a scan; the
     /// scan observes those mutations when it takes this snapshot.
-    pub(crate) fn resolve(&self) -> ResolvedScannerTuningConfig {
+    pub(crate) fn resolve(&self) -> ResolvedRuntimeTuningConfig {
         let hs_prefilter_max_len = match self.hs_max_len.load(Relaxed) {
             usize::MAX => ScannerTuningConfig::HS_PREFILTER_MAX_LEN_DEFAULT,
             value => value,
@@ -157,11 +157,10 @@ impl ScannerTuning {
             value => value,
         };
 
-        ResolvedScannerTuningConfig {
+        ResolvedRuntimeTuningConfig {
             fallback_hs: BoolOverride::from_raw(self.phase2_hs.load(Relaxed))
                 .resolve(ScannerTuningConfig::FALLBACK_HS_DEFAULT),
             hs_prefilter_max_len,
-            hs_shard_target: ScannerTuningConfig::HS_SHARD_TARGET_DEFAULT,
             fallback_anchor: BoolOverride::from_raw(self.phase2_anchor.load(Relaxed))
                 .resolve(ScannerTuningConfig::FALLBACK_ANCHOR_DEFAULT),
             homoglyph_gate: BoolOverride::from_raw(self.homoglyph_gate.load(Relaxed))

@@ -4,7 +4,7 @@ use super::phase2::*;
 use super::phase2_hs::Phase2HsEngine;
 use super::phase2_truncate::truncate_for_prefilter;
 use super::*;
-use crate::scanner_config::ResolvedScannerTuningConfig;
+use crate::scanner_config::ResolvedRuntimeTuningConfig;
 use aho_corasick::AhoCorasick;
 use std::sync::atomic::Ordering::Relaxed;
 
@@ -588,7 +588,7 @@ impl Phase2AlwaysActivePrefilter {
         match_text: &str,
         scratch: &mut ActivePatternsScratch,
         localize_plain: bool,
-        tuning: &ResolvedScannerTuningConfig,
+        tuning: &ResolvedRuntimeTuningConfig,
     ) {
         record_mark_call();
         // SWE-101 no-candidate gate (the user's #1 issue: "phase-2 must NEVER
@@ -774,7 +774,7 @@ impl Phase2AlwaysActivePrefilter {
         &self,
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         match_text: &str,
-        tuning: &ResolvedScannerTuningConfig,
+        tuning: &ResolvedRuntimeTuningConfig,
     ) -> bool {
         // Same no-candidate gate as `mark_matches`: on a pure-ASCII no-anchor chunk
         // no anchorable pattern can fire, so the active set is non-empty iff some

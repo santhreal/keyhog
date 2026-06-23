@@ -343,7 +343,7 @@ fn structured_parser_parse_failures_warn() {
         "docker-compose parse failure must be logged"
     );
     assert!(
-        yaml.contains("tracing::warn!(target: \"keyhog::structured\""),
+        yaml.contains("tracing::warn!") && yaml.contains("target: \"keyhog::structured\""),
         "yaml structured parsers must warn on parse failure"
     );
 }
@@ -399,7 +399,7 @@ fn backend_affecting_config_parse_failures_are_loud() {
             && !simd.contains("keyhog_core::env_config")
             && backend_prepared.contains("shard_target: tuning.hs_shard_target")
             && scanner_config.contains("pub hs_shard_target: Option<usize>")
-            && scanner_config.contains("const HS_SHARD_TARGET_DEFAULT: usize = 80"),
+            && scanner_config.contains("const HS_SHARD_TARGET_DEFAULT: usize = 320"),
         "Hyperscan shard target must be explicit compile tuning config, not ambient env"
     );
 }

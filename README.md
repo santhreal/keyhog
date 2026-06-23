@@ -613,7 +613,7 @@ knockoff_accounts = []         # treated the same way: do not live-verify
 [tuning]
 fallback_hs = true             # scanner recall-route defaults; printed by config --effective
 hs_prefilter_max_len = 4096
-hs_shard_target = 80
+hs_shard_target = 320
 decode_focus = true
 confirmed_suffix_gate = true
 no_candidate_gate = true

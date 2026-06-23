@@ -9,9 +9,9 @@ fn phase2_prefilter_consumes_resolved_tuning_snapshot() {
         .expect("phase2_compiled source readable");
 
     assert!(
-        prefilter.contains("use crate::scanner_config::ResolvedScannerTuningConfig;")
-            && prefilter.contains("tuning: &ResolvedScannerTuningConfig"),
-        "phase2 prefilter should consume a plain resolved tuning snapshot"
+        prefilter.contains("use crate::scanner_config::ResolvedRuntimeTuningConfig;")
+            && prefilter.contains("tuning: &ResolvedRuntimeTuningConfig"),
+        "phase2 prefilter should consume a runtime-only resolved tuning snapshot"
     );
     assert!(
         compiled.contains("let tuning = self.tuning.resolve();")
@@ -43,10 +43,10 @@ fn gpu_moe_timeout_uses_resolved_tuning_config() {
         .expect("scanner_config source readable");
 
     assert!(
-        tuning.contains("pub(crate) fn resolve(&self) -> ResolvedScannerTuningConfig")
-            && scanner_config.contains("impl ResolvedScannerTuningConfig")
+        tuning.contains("pub(crate) fn resolve(&self) -> ResolvedRuntimeTuningConfig")
+            && scanner_config.contains("impl ResolvedRuntimeTuningConfig")
             && scanner_config.contains("gpu_moe_timeout(&self) -> Duration"),
-        "resolved tuning config should own the plain GPU MoE timeout conversion"
+        "runtime tuning snapshot should own the plain GPU MoE timeout conversion"
     );
     assert!(
         ml.contains("let tuning = self.tuning.resolve();")

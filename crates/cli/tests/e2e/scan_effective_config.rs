@@ -622,7 +622,7 @@ fn config_effective_ignores_legacy_detection_tuning_env() {
     for required in [
         "tuning_fallback_hs = true",
         "tuning_hs_prefilter_max_len = 4096",
-        "tuning_hs_shard_target = 80",
+        "tuning_hs_shard_target = 320",
         "tuning_fallback_anchor = true",
         "tuning_homoglyph_gate = true",
         "tuning_homoglyph_ascii_skip = true",

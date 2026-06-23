@@ -161,7 +161,25 @@ pub struct ResolvedScannerTuningConfig {
     pub gpu_moe_timeout_ms: u64,
 }
 
-impl ResolvedScannerTuningConfig {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ResolvedRuntimeTuningConfig {
+    pub fallback_hs: bool,
+    pub hs_prefilter_max_len: usize,
+    pub fallback_anchor: bool,
+    pub homoglyph_gate: bool,
+    pub homoglyph_ascii_skip: bool,
+    pub fallback_reverse: bool,
+    pub prefilter_truncate: bool,
+    pub fallback_prefix_gate: bool,
+    pub decode_focus: bool,
+    pub confirmed_suffix_gate: bool,
+    pub no_candidate_gate: bool,
+    pub fallback_localizer: bool,
+    pub gpu_recall_floor: bool,
+    pub gpu_moe_timeout_ms: u64,
+}
+
+impl ResolvedRuntimeTuningConfig {
     #[cfg(feature = "ml")]
     pub(crate) fn gpu_moe_timeout(&self) -> Duration {
         Duration::from_millis(self.gpu_moe_timeout_ms)

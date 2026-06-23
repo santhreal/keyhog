@@ -263,7 +263,7 @@ running daemon cannot consume client-local `[aws]` config.
 [tuning]
 fallback_hs = true
 hs_prefilter_max_len = 4096
-hs_shard_target = 80
+hs_shard_target = 320
 fallback_anchor = true
 homoglyph_gate = true
 homoglyph_ascii_skip = true

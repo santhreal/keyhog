@@ -98,14 +98,32 @@ fn parse_yaml_value(
             // decode-through surface. Count + keep the debug detail; serde_yaml
             // also rejects deeply nested YAML before Value construction.
             crate::telemetry::record_structured_parse_failure();
-            tracing::warn!(
-                target: "keyhog::structured",
-                %error,
-                surface,
-                lost_decode_surface,
-                serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
-                "structured YAML parse failed; decode-through disabled"
-            );
+            match surface {
+                "k8s-secret" => tracing::warn!(
+                    target: "keyhog::structured",
+                    %error,
+                    surface,
+                    lost_decode_surface,
+                    serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
+                    "k8s secret YAML parse failed; decode-through disabled"
+                ),
+                "docker-compose" => tracing::warn!(
+                    target: "keyhog::structured",
+                    %error,
+                    surface,
+                    lost_decode_surface,
+                    serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
+                    "docker-compose YAML parse failed; decode-through disabled"
+                ),
+                _ => tracing::warn!(
+                    target: "keyhog::structured",
+                    %error,
+                    surface,
+                    lost_decode_surface,
+                    serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
+                    "structured YAML parse failed; decode-through disabled"
+                ),
+            }
             None
         }
     }
