@@ -94,6 +94,10 @@ impl RateLimiter {
             });
     }
 
+    pub(crate) fn error_count_for_test(&self) -> usize {
+        self.global_error_count.load(Ordering::Relaxed)
+    }
+
     pub async fn update_limit(&self, service: &str, rps: f64) {
         let interval = Duration::from_nanos(rps_to_nanos(rps));
         self.services.insert(

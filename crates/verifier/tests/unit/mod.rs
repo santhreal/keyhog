@@ -22,6 +22,7 @@ pub mod oob_config_defaults_safe;
 pub mod oob_interaction_protocol_parse_exact;
 pub mod oob_redact_transport_errors;
 pub mod rate_limit;
+pub mod rate_limit_feedback;
 pub mod rate_limit_nan_infinity_clamp;
 pub mod rate_limit_per_service_override;
 pub mod rate_limit_rps_to_nanos_clamps_invalid;

@@ -32,8 +32,9 @@ use crate::{into_finding, DedupedMatch, VerificationEngine, VerifyConfig, Verify
 
 pub(crate) use aws::{build_aws_probe, classify_aws_sts_failure, parse_aws_sts_success_metadata};
 pub(crate) use credential::{
-    retry_delay_bounds_for_attempt, retry_loop_preserves_metadata_on_exhaustion_for_test,
-    verify_with_retry, VerificationAttempt,
+    rate_limit_feedback_sequence_for_test, retry_delay_bounds_for_attempt,
+    retry_loop_preserves_metadata_on_exhaustion_for_test,
+    retry_loop_records_rate_limit_feedback_for_test, verify_with_retry, VerificationAttempt,
 };
 pub(crate) use request::{
     apply_header_body_templates, build_request_for_step, clear_pinned_client_cache_for_test,

@@ -441,6 +441,10 @@ pub mod testing {
             status: u16,
             body: &str,
         ) -> (keyhog_core::VerificationResult, bool);
+        fn rate_limit_feedback_sequence(&self) -> (usize, usize, usize, usize, usize);
+        fn retry_loop_records_rate_limit_feedback(
+            &self,
+        ) -> impl std::future::Future<Output = usize> + Send;
         fn interactsh_client_for_test(
             &self,
             server: &str,
@@ -628,6 +632,14 @@ pub mod testing {
             body: &str,
         ) -> (keyhog_core::VerificationResult, bool) {
             crate::verify::classify_aws_sts_failure(status, body)
+        }
+
+        fn rate_limit_feedback_sequence(&self) -> (usize, usize, usize, usize, usize) {
+            crate::verify::rate_limit_feedback_sequence_for_test()
+        }
+
+        async fn retry_loop_records_rate_limit_feedback(&self) -> usize {
+            crate::verify::retry_loop_records_rate_limit_feedback_for_test().await
         }
 
         fn interactsh_client_for_test(

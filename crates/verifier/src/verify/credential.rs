@@ -91,21 +91,26 @@ pub(crate) async fn verify_with_retry(
     allow_script_verify: bool,
     oob_session: Option<&Arc<OobSession>>,
 ) -> (VerificationResult, HashMap<String, String>) {
-    retry_loop(MAX_VERIFY_ATTEMPTS, RETRY_DELAY_MS, |_| {
-        verify_credential(
-            client,
-            spec,
-            credential,
-            companions,
-            timeout,
-            allow_private_ips,
-            allow_http,
-            proxy_in_use,
-            insecure_tls,
-            allow_script_verify,
-            oob_session,
-        )
-    })
+    retry_loop(
+        MAX_VERIFY_ATTEMPTS,
+        RETRY_DELAY_MS,
+        Some(crate::rate_limit::get_rate_limiter()),
+        |_| {
+            verify_credential(
+                client,
+                spec,
+                credential,
+                companions,
+                timeout,
+                allow_private_ips,
+                allow_http,
+                proxy_in_use,
+                insecure_tls,
+                allow_script_verify,
+                oob_session,
+            )
+        },
+    )
     .await
 }
 
@@ -120,6 +125,7 @@ pub(crate) async fn verify_with_retry(
 async fn retry_loop<F, Fut>(
     max_attempts: usize,
     base_delay_ms: u64,
+    limiter: Option<&crate::rate_limit::RateLimiter>,
     mut attempt_fn: F,
 ) -> (VerificationResult, HashMap<String, String>)
 where
@@ -141,6 +147,9 @@ where
         }
 
         let result = attempt_fn(attempt).await;
+        if let Some(limiter) = limiter {
+            record_rate_limit_feedback(limiter, &result);
+        }
 
         if !result.transient {
             return (result.result, result.metadata);
@@ -157,6 +166,20 @@ where
     })
 }
 
+fn record_rate_limit_feedback(
+    limiter: &crate::rate_limit::RateLimiter,
+    attempt: &VerificationAttempt,
+) {
+    match &attempt.result {
+        VerificationResult::RateLimited => limiter.record_error(),
+        VerificationResult::Error(_) if attempt.transient => limiter.record_error(),
+        VerificationResult::Live | VerificationResult::Dead | VerificationResult::Revoked => {
+            limiter.record_success();
+        }
+        _ => {}
+    }
+}
+
 pub(crate) fn retry_delay_bounds_for_attempt(attempt: usize, base_delay_ms: u64) -> (u64, u64) {
     if attempt == 0 || base_delay_ms == 0 {
         return (0, 0);
@@ -169,7 +192,7 @@ pub(crate) fn retry_delay_bounds_for_attempt(attempt: usize, base_delay_ms: u64)
 
 pub(crate) async fn retry_loop_preserves_metadata_on_exhaustion_for_test(
 ) -> (VerificationResult, HashMap<String, String>) {
-    retry_loop(2, 0, |_| async {
+    retry_loop(2, 0, None, |_| async {
         let mut metadata = HashMap::new();
         metadata.insert("oob_id".to_string(), "abc".to_string());
         VerificationAttempt {
@@ -179,6 +202,82 @@ pub(crate) async fn retry_loop_preserves_metadata_on_exhaustion_for_test(
         }
     })
     .await
+}
+
+pub(crate) fn rate_limit_feedback_sequence_for_test() -> (usize, usize, usize, usize, usize) {
+    let limiter = crate::rate_limit::RateLimiter::new(1_000.0);
+
+    record_rate_limit_feedback(
+        &limiter,
+        &VerificationAttempt {
+            result: VerificationResult::RateLimited,
+            metadata: HashMap::new(),
+            transient: true,
+        },
+    );
+    let after_rate_limited = limiter.error_count_for_test();
+
+    record_rate_limit_feedback(
+        &limiter,
+        &VerificationAttempt {
+            result: VerificationResult::Error("transient verifier failure".to_string()),
+            metadata: HashMap::new(),
+            transient: true,
+        },
+    );
+    let after_transient_error = limiter.error_count_for_test();
+
+    record_rate_limit_feedback(
+        &limiter,
+        &VerificationAttempt {
+            result: VerificationResult::Dead,
+            metadata: HashMap::new(),
+            transient: false,
+        },
+    );
+    let after_dead_response = limiter.error_count_for_test();
+
+    record_rate_limit_feedback(
+        &limiter,
+        &VerificationAttempt {
+            result: VerificationResult::Unverifiable,
+            metadata: HashMap::new(),
+            transient: false,
+        },
+    );
+    let after_local_unverifiable = limiter.error_count_for_test();
+
+    record_rate_limit_feedback(
+        &limiter,
+        &VerificationAttempt {
+            result: VerificationResult::Revoked,
+            metadata: HashMap::new(),
+            transient: false,
+        },
+    );
+    let after_revoked_response = limiter.error_count_for_test();
+
+    (
+        after_rate_limited,
+        after_transient_error,
+        after_dead_response,
+        after_local_unverifiable,
+        after_revoked_response,
+    )
+}
+
+pub(crate) async fn retry_loop_records_rate_limit_feedback_for_test() -> usize {
+    let limiter = crate::rate_limit::get_rate_limiter();
+    let before = limiter.error_count_for_test();
+    let _ = retry_loop(1, 0, Some(limiter), |_| async {
+        VerificationAttempt {
+            result: VerificationResult::RateLimited,
+            metadata: HashMap::new(),
+            transient: true,
+        }
+    })
+    .await;
+    limiter.error_count_for_test().saturating_sub(before)
 }
 
 pub(crate) async fn verify_credential(
