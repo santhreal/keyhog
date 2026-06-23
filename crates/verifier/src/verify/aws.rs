@@ -2,7 +2,10 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use keyhog_core::VerificationResult;
+use quick_xml::de::{Deserializer, PredefinedEntityResolver};
+use quick_xml::events::Event;
 use reqwest::Client;
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use crate::verify::request::{execute_request, resolved_client_for_url};
@@ -223,35 +226,127 @@ async fn build_sigv4_request(
     }
 
     if status == 200 {
-        let mut metadata = HashMap::new();
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&resp_body) {
-            if let Some(arn) =
-                json.pointer("/GetCallerIdentityResponse/GetCallerIdentityResult/Arn")
-            {
-                if let Some(arn) = arn.as_str() {
-                    metadata.insert("arn".into(), arn.into());
-                } else {
-                    tracing::warn!(
-                        "AWS STS GetCallerIdentity Arn field was not a string; omitting metadata field"
-                    );
-                }
+        let metadata = match parse_aws_sts_success_metadata(&resp_body) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                eprintln!(
+                    "keyhog: AWS STS GetCallerIdentity returned HTTP 200 but identity metadata \
+                     could not be parsed ({error}); reporting the credential as live with \
+                     metadata_parse_error."
+                );
+                tracing::warn!(
+                    %error,
+                    "AWS STS GetCallerIdentity success metadata could not be parsed"
+                );
+                HashMap::from([("metadata_parse_error".into(), error)])
             }
-            if let Some(account) =
-                json.pointer("/GetCallerIdentityResponse/GetCallerIdentityResult/Account")
-            {
-                if let Some(account) = account.as_str() {
-                    metadata.insert("account_id".into(), account.into());
-                } else {
-                    tracing::warn!(
-                        "AWS STS GetCallerIdentity Account field was not a string; omitting metadata field"
-                    );
-                }
-            }
-        }
+        };
         Ok((VerificationResult::Live, metadata, false))
     } else if status == 403 {
         Ok((VerificationResult::Dead, HashMap::new(), false))
     } else {
         Ok((VerificationResult::RateLimited, HashMap::new(), true))
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct StsGetCallerIdentityResponse {
+    #[serde(default)]
+    get_caller_identity_result: StsGetCallerIdentityResult,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct StsGetCallerIdentityResult {
+    #[serde(default)]
+    arn: Option<String>,
+    #[serde(default)]
+    account: Option<String>,
+    #[serde(default)]
+    user_id: Option<String>,
+}
+
+pub(crate) fn parse_aws_sts_success_metadata(
+    body: &str,
+) -> Result<HashMap<String, String>, String> {
+    if body.trim_start().starts_with('{') {
+        return parse_aws_sts_json_success_metadata(body);
+    }
+    parse_aws_sts_xml_success_metadata(body)
+}
+
+fn parse_aws_sts_json_success_metadata(body: &str) -> Result<HashMap<String, String>, String> {
+    let json = serde_json::from_str::<serde_json::Value>(body)
+        .map_err(|error| format!("failed to parse AWS STS success JSON: {error}"))?;
+    let result = json
+        .pointer("/GetCallerIdentityResponse/GetCallerIdentityResult")
+        .ok_or_else(|| "AWS STS success JSON missing GetCallerIdentityResult".to_string())?;
+    let mut metadata = HashMap::new();
+    insert_json_string_field(&mut metadata, result, "arn", "Arn")?;
+    insert_json_string_field(&mut metadata, result, "account_id", "Account")?;
+    insert_json_string_field(&mut metadata, result, "user_id", "UserId")?;
+    require_identity_metadata(metadata)
+}
+
+fn insert_json_string_field(
+    metadata: &mut HashMap<String, String>,
+    result: &serde_json::Value,
+    key: &str,
+    field: &str,
+) -> Result<(), String> {
+    let Some(value) = result.get(field) else {
+        return Ok(());
+    };
+    let Some(value) = value.as_str() else {
+        return Err(format!(
+            "AWS STS GetCallerIdentity {field} field was not a string"
+        ));
+    };
+    metadata.insert(key.to_string(), value.to_string());
+    Ok(())
+}
+
+fn parse_aws_sts_xml_success_metadata(body: &str) -> Result<HashMap<String, String>, String> {
+    reject_aws_sts_xml_doctype(body)?;
+    let mut deserializer = Deserializer::from_str_with_resolver(body, PredefinedEntityResolver);
+    let response = StsGetCallerIdentityResponse::deserialize(&mut deserializer)
+        .map_err(|error| format!("failed to parse AWS STS success XML: {error}"))?;
+    let mut metadata = HashMap::new();
+    if let Some(arn) = response.get_caller_identity_result.arn {
+        metadata.insert("arn".into(), arn);
+    }
+    if let Some(account) = response.get_caller_identity_result.account {
+        metadata.insert("account_id".into(), account);
+    }
+    if let Some(user_id) = response.get_caller_identity_result.user_id {
+        metadata.insert("user_id".into(), user_id);
+    }
+    require_identity_metadata(metadata)
+}
+
+fn reject_aws_sts_xml_doctype(body: &str) -> Result<(), String> {
+    let mut reader = quick_xml::Reader::from_str(body);
+    loop {
+        match reader.read_event() {
+            Ok(Event::DocType(_)) => {
+                return Err("AWS STS success XML contains unsupported DOCTYPE declarations".into());
+            }
+            Ok(Event::Eof) => return Ok(()),
+            Ok(_) => {}
+            Err(error) => {
+                return Err(format!("failed to validate AWS STS success XML: {error}"));
+            }
+        }
+    }
+}
+
+fn require_identity_metadata(
+    metadata: HashMap<String, String>,
+) -> Result<HashMap<String, String>, String> {
+    if metadata.contains_key("arn") && metadata.contains_key("account_id") {
+        Ok(metadata)
+    } else {
+        Err("AWS STS success response missing Arn or Account metadata".into())
     }
 }

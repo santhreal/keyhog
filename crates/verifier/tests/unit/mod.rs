@@ -1,4 +1,5 @@
 pub mod a6_lr2;
+pub mod aws_sts_success_metadata;
 pub mod bogon;
 pub mod cache;
 pub mod domain_allowlist;

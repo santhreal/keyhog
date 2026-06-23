@@ -432,6 +432,10 @@ pub mod testing {
         ) -> Result<(), String>;
         fn engine_inflight_count(&self, engine: &crate::VerificationEngine) -> usize;
         fn format_sigv4_timestamps(&self, unix_secs: u64) -> (String, String);
+        fn parse_aws_sts_success_metadata(
+            &self,
+            body: &str,
+        ) -> Result<HashMap<String, String>, String>;
         fn interactsh_client_for_test(
             &self,
             server: &str,
@@ -598,6 +602,13 @@ pub mod testing {
 
         fn format_sigv4_timestamps(&self, unix_secs: u64) -> (String, String) {
             crate::sigv4::format_sigv4_timestamps(unix_secs)
+        }
+
+        fn parse_aws_sts_success_metadata(
+            &self,
+            body: &str,
+        ) -> Result<HashMap<String, String>, String> {
+            crate::verify::parse_aws_sts_success_metadata(body)
         }
 
         fn interactsh_client_for_test(

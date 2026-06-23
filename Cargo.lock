@@ -2990,6 +2990,7 @@ dependencies = [
  "lazy_static",
  "parking_lot",
  "percent-encoding",
+ "quick-xml",
  "rand 0.8.5",
  "reqwest",
  "rsa",
