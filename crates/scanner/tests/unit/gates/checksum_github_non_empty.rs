@@ -18,4 +18,12 @@ fn checksum_github_non_empty() {
         !prod.contains("todo!()") && !prod.contains("unimplemented!()"),
         "checksum::github: todo!/unimplemented! forbidden in non-test source"
     );
+    assert!(
+        prod.contains("fn split_fine_grained_payload("),
+        "checksum::github: fine-grained PAT segment parsing must have one owner"
+    );
+    assert!(
+        !prod.contains("Vec<&str>") && !prod.contains(".split('_').collect()"),
+        "checksum::github: fine-grained PAT validation must not allocate split segments"
+    );
 }

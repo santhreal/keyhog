@@ -105,16 +105,22 @@ impl GithubFineGrainedPatValidator {
     }
 }
 
+fn split_fine_grained_payload(payload: &str) -> Option<(&str, &str)> {
+    let (left, right) = payload.split_once('_')?;
+    if right.contains('_') {
+        return None;
+    }
+    Some((left, right))
+}
+
 impl ChecksumValidator for GithubFineGrainedPatValidator {
     fn validate(&self, credential: &str) -> ChecksumResult {
         let Some(payload) = credential.strip_prefix("github_pat_") else {
             return ChecksumResult::NotApplicable;
         };
-        let parts: Vec<&str> = payload.split('_').collect();
-        if parts.len() != 2 {
+        let Some((left, right)) = split_fine_grained_payload(payload) else {
             return ChecksumResult::Invalid;
-        }
-        let (left, right) = (parts[0], parts[1]);
+        };
         if left.len() != 22 || right.len() != 59 {
             return ChecksumResult::Invalid;
         }

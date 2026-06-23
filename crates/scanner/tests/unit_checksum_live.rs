@@ -6,3 +6,6 @@
 
 #[path = "unit/checksum_extended.rs"]
 mod checksum_extended;
+
+#[path = "unit/sub_facade/sub_checksum.rs"]
+mod sub_checksum;

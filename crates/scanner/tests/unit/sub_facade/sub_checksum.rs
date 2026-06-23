@@ -93,6 +93,28 @@ fn github_fine_grained_wrong_segment_lengths_invalid() {
     );
 }
 
+#[test]
+fn github_fine_grained_extra_separator_invalid() {
+    let v = GithubFineGrainedPatValidator;
+    assert_eq!(
+        v.validate(
+            "github_pat_AbCdEfGhIjKlMnOpQrStUv_Zz9876543210AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcde_3ZXt5t"
+        ),
+        ChecksumResult::Invalid
+    );
+}
+
+#[test]
+fn github_fine_grained_missing_separator_invalid() {
+    let v = GithubFineGrainedPatValidator;
+    assert_eq!(
+        v.validate(
+            "github_pat_AbCdEfGhIjKlMnOpQrStUvZz9876543210AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcde3ZXt5t"
+        ),
+        ChecksumResult::Invalid
+    );
+}
+
 // ---------------------------------------------------------------------------
 // npm token validator
 // ---------------------------------------------------------------------------
