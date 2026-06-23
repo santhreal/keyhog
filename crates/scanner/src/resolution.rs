@@ -8,12 +8,12 @@ use keyhog_core::RawMatch;
 
 const ADJACENT_LINE_DISTANCE: usize = 2;
 const SINGLE_MATCH_COUNT: usize = 1;
-const SCORE_EPSILON: f64 = 1e-9;
-const ENTROPY_MATCH_SCORE: f64 = 0.0;
-const NAMED_DETECTOR_SCORE: f64 = 10.0;
+const PRIORITY_EPSILON: f64 = 1e-9;
+const ENTROPY_MATCH_PRIORITY: f64 = 0.0;
+const NAMED_DETECTOR_PRIORITY: f64 = 10.0;
 const CONFIDENCE_WEIGHT: f64 = 5.0;
 const DETECTOR_ID_LENGTH_WEIGHT: f64 = 0.1;
-const MAX_CREDENTIAL_SCORE_LENGTH: usize = 200;
+const MAX_CREDENTIAL_PRIORITY_LENGTH: usize = 200;
 const CREDENTIAL_LENGTH_WEIGHT: f64 = 0.01;
 
 /// Resolve overlapping matches: for each credential text region,
@@ -154,26 +154,26 @@ fn resolve_match_groups(mut matches: Vec<RawMatch>) -> Vec<RawMatch> {
 }
 
 fn best_matches_for_group(group: Vec<RawMatch>) -> Vec<RawMatch> {
-    let mut scored: Vec<(f64, RawMatch)> = group
+    let mut prioritized: Vec<(f64, RawMatch)> = group
         .into_iter()
-        .map(|matched| (match_priority_score(&matched), matched))
+        .map(|matched| (match_priority(&matched), matched))
         .collect();
-    // Total order: score desc via `total_cmp` (not `partial_cmp().unwrap_or`,
+    // Total order: priority desc via `total_cmp` (not `partial_cmp().unwrap_or`,
     // which collapses NaN/ties to Equal and leaves the survivor at insertion
-    // order), then the `RawMatch` total `Ord` so equal-score matches break ties
+    // order), then the `RawMatch` total `Ord` so equal-priority matches break ties
     // by content, not by the HashMap-iteration order they arrived in.
-    scored.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-    let top_score = scored[0].0;
-    scored
+    prioritized.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    let top_priority = prioritized[0].0;
+    prioritized
         .into_iter()
-        .take_while(|(score, _)| (*score - top_score).abs() < SCORE_EPSILON)
+        .take_while(|(priority, _)| (*priority - top_priority).abs() < PRIORITY_EPSILON)
         .map(|(_, matched)| matched)
         .collect()
 }
 
-/// Compute the priority score used to break ties between overlapping matches.
-fn match_priority_score(m: &RawMatch) -> f64 {
-    let mut score = ENTROPY_MATCH_SCORE;
+/// Compute the resolver priority used to break ties between overlapping matches.
+fn match_priority(m: &RawMatch) -> f64 {
+    let mut priority = ENTROPY_MATCH_PRIORITY;
 
     // Service-specific detectors beat generic/entropy fallbacks. A
     // high-confidence generic password that captures only the URL password
@@ -181,27 +181,27 @@ fn match_priority_score(m: &RawMatch) -> f64 {
     // line; the URL detector carries the service contract and fuller
     // credential boundary.
     if is_service_specific_detector(m.detector_id.as_ref()) {
-        score += NAMED_DETECTOR_SCORE;
+        priority += NAMED_DETECTOR_PRIORITY;
     }
 
-    // Confidence score contributes directly.
+    // Report confidence contributes directly to resolver priority.
     if let Some(conf) = m.confidence {
-        score += conf * CONFIDENCE_WEIGHT;
+        priority += conf * CONFIDENCE_WEIGHT;
     }
 
     // Longer detector ID prefix in the credential = more specific match.
-    score += (m.detector_id.len() as f64) * DETECTOR_ID_LENGTH_WEIGHT;
+    priority += (m.detector_id.len() as f64) * DETECTOR_ID_LENGTH_WEIGHT;
 
     // Credential length matters: longer credentials are more specific matches.
-    score +=
-        (m.credential.len().min(MAX_CREDENTIAL_SCORE_LENGTH) as f64) * CREDENTIAL_LENGTH_WEIGHT;
+    priority +=
+        (m.credential.len().min(MAX_CREDENTIAL_PRIORITY_LENGTH) as f64) * CREDENTIAL_LENGTH_WEIGHT;
 
     // Prefer specific detectors over generic ones for credentials with known prefixes.
     if crate::confidence::known_prefix_confidence_floor(&m.credential).is_some()
         && crate::detector_ids::is_service_anchored_detector(m.detector_id.as_ref())
     {
-        score += 5.0;
+        priority += 5.0;
     }
 
-    score
+    priority
 }
