@@ -380,6 +380,18 @@ pub(crate) fn batch_score_features(
         return None; // Too small for GPU, caller should use CPU
     }
 
+    // Honor the resolved GPU runtime policy BEFORE touching `get_gpu()` /
+    // `init_gpu()`, exactly as `gpu_probe()` does. Without this gate a
+    // `--no-gpu` scan that reaches a large MoE batch still triggers the wgpu
+    // adapter probe inside `init_gpu()` — which the team's own `gpu_probe`
+    // comment notes "can block for minutes on broken driver stacks." Policy
+    // disabled => return None so the caller scores this batch on CPU (identical
+    // scores), and the adapter is never probed. Mirrors the gpu_probe guard so
+    // the disabled-GPU path can never drift back into an unconditional probe.
+    if super::gpu_disabled_by_policy() {
+        return None;
+    }
+
     let gpu = get_gpu()?;
     let batch_size = features.len();
     let device = gpu.device();

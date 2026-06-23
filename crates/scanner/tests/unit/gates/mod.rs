@@ -150,6 +150,7 @@ pub mod fragment_cache_hot_path_shape;
 pub mod fragment_cache_no_inline_tests;
 pub mod fragment_cache_no_unwrap_expect;
 pub mod fragment_cache_non_empty;
+pub mod gpu_moe_policy;
 pub mod gpu_no_inline_tests;
 pub mod gpu_no_unwrap_expect;
 pub mod gpu_non_empty;
