@@ -1,7 +1,8 @@
 use crate::adjudicate::{
     adjudicate_match, CandidateMatch, EntropyFallbackSignal, EntropyGenerationSignal,
     EntropyShapeStage, FinalEmitSignals, GenericBridgeSignal, GenericValueShapeStage,
-    HotPatternSignal, MatchCtx, ProcessCandidateSignals, StageId, Verdict,
+    HotPatternSignal, MatchCtx, ProcessCandidateSignals, ReportAdjudicationPolicy, StageId,
+    Verdict,
 };
 use crate::context::CodeContext;
 use crate::suppression::NamedDetectorSuppressionCtx;
@@ -176,7 +177,7 @@ fn process_stage_reports_service_anchored_candidate() {
             0,
             credential.len()
         ),
-        Verdict::Reported
+        Verdict::Reported(None)
     );
 }
 
@@ -373,6 +374,43 @@ fn final_emit_stage_preserves_known_prefix_not_promising_root_cause() {
     );
 }
 
+#[test]
+fn final_emit_stage_reports_final_confidence() {
+    assert_eq!(
+        adjudicate_final_emit(
+            "datadog-api-key",
+            "dd_api_key_12345678901234567890123456789012",
+            CodeContext::Assignment,
+            0.91,
+            0.40,
+            true,
+        ),
+        Verdict::Reported(Some(0.91))
+    );
+}
+
+#[test]
+fn final_report_candidate_returns_adjudicator_reported_confidence() {
+    assert_eq!(
+        crate::adjudicate::finalize_report_candidate(
+            Some("service/config.rs"),
+            "dd_api_key_12345678901234567890123456789012",
+            ReportAdjudicationPolicy {
+                detector_id: "datadog-api-key",
+                code_context: CodeContext::Assignment,
+                confidence: 0.91,
+                min_confidence_floor: 0.40,
+                penalize_test_paths: true,
+                file_path: Some("service/config.rs"),
+                is_named_detector: true,
+                allow_encoded_text_lift: false,
+                calibration: None,
+            },
+        ),
+        Some(0.91)
+    );
+}
+
 #[cfg(feature = "simdsieve")]
 #[test]
 fn hot_pattern_suppression_owner_returns_adjudicator_stage() {
@@ -520,6 +558,6 @@ fn named_detector_stage_reports_service_anchored_identifier() {
 
     assert_eq!(
         adjudicate_match(CandidateMatch::new("getParameter"), &ctx),
-        Verdict::Reported
+        Verdict::Reported(None)
     );
 }

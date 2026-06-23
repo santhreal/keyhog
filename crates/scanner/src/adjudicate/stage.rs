@@ -59,17 +59,17 @@ pub(crate) enum StageOutcome {
     Suppress(StageId),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Verdict {
     Suppressed(StageId),
-    Reported,
+    Reported(Option<f64>),
 }
 
 impl Verdict {
     pub(crate) const fn suppressed_stage(self) -> Option<StageId> {
         match self {
             Self::Suppressed(stage_id) => Some(stage_id),
-            Self::Reported => None,
+            Self::Reported(_) => None,
         }
     }
 }

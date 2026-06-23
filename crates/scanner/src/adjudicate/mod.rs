@@ -351,7 +351,7 @@ pub(crate) fn adjudicate_match(candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>
             StageOutcome::Suppress(stage_id) => return Verdict::Suppressed(stage_id),
         }
     }
-    Verdict::Reported
+    Verdict::Reported(ctx.final_emit_signals.map(|signals| signals.confidence))
 }
 
 pub(crate) fn record_suppression(
@@ -402,10 +402,13 @@ pub(crate) fn finalize_report_candidate(
         policy.min_confidence_floor,
         policy.penalize_test_paths,
     ));
-    if record_suppression(path, credential, &final_emit_ctx).is_some() {
-        return None;
+    match adjudicate_match(CandidateMatch::new(credential), &final_emit_ctx) {
+        Verdict::Suppressed(stage_id) => {
+            crate::telemetry::record_shape_suppression(path, credential, stage_id.as_str());
+            None
+        }
+        Verdict::Reported(confidence) => confidence,
     }
-    Some(confidence)
 }
 
 pub(crate) fn record_example_suppression(

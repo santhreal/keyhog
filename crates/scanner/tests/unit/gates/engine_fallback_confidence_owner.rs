@@ -120,6 +120,7 @@ fn report_confidence_tail_routes_through_scoring_owner() {
         "finalize_report_confidence(",
         "record_checksum_invalid_suppression(",
         "MatchCtx::for_final_emit(",
+        "Verdict::Reported(confidence) => confidence",
     ] {
         assert!(
             adjudicate.contains(required),
