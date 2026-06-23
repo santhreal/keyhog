@@ -179,7 +179,7 @@ fn reap_only_touches_this_binarys_stashes() {
     let dir = tempfile::tempdir().unwrap();
     let exe = dir.path().join("keyhog");
     std::fs::write(&exe, b"bin").unwrap();
-    let mine = dir.path().join(".keyhog.keyhog-old-99999");
+    let mine = dir.path().join(".keyhog.keyhog-old-4294967295");
     let other = dir.path().join("unrelated.txt");
     std::fs::write(&mine, b"old").unwrap();
     std::fs::write(&other, b"keep").unwrap();
@@ -188,6 +188,68 @@ fn reap_only_touches_this_binarys_stashes() {
     assert!(!mine.exists(), "matching stash must be reaped");
     assert!(other.exists(), "unrelated files must be left alone");
     assert!(exe.exists(), "the live binary must never be reaped");
+}
+
+#[test]
+#[cfg(unix)]
+fn reap_stale_binaries_preserves_live_peer_pid_artifacts() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("keyhog");
+    std::fs::write(&exe, b"bin").unwrap();
+
+    let mut child = std::process::Command::new("sh")
+        .arg("-c")
+        .arg("sleep 30")
+        .spawn()
+        .expect("spawn live peer process");
+    let live_pid = child.id();
+    let live_stash = dir.path().join(format!(".keyhog.keyhog-old-{live_pid}"));
+    let live_backup = dir.path().join(format!(".keyhog.keyhog-bak-{live_pid}"));
+    let live_tmp = dir.path().join(format!(".keyhog-update-{live_pid}.tmp"));
+    for path in [&live_stash, &live_backup, &live_tmp] {
+        std::fs::write(path, b"in-flight").unwrap();
+    }
+
+    API.reap_stale_binaries(&exe);
+
+    assert!(live_stash.exists(), "live process stash must not be reaped");
+    assert!(
+        live_backup.exists(),
+        "live process rollback backup must not be reaped"
+    );
+    assert!(
+        live_tmp.exists(),
+        "live process staging tmp must not be reaped"
+    );
+
+    child.kill().expect("stop live peer process");
+    let _ = child.wait();
+}
+
+#[test]
+fn reap_stale_binaries_requires_parseable_pid_suffix() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("keyhog");
+    std::fs::write(&exe, b"bin").unwrap();
+
+    let malformed = [
+        dir.path().join(".keyhog.keyhog-old-"),
+        dir.path().join(".keyhog.keyhog-bak-not-a-pid"),
+        dir.path().join(".keyhog-update-123.tmp.extra"),
+    ];
+    for path in &malformed {
+        std::fs::write(path, b"keep").unwrap();
+    }
+
+    API.reap_stale_binaries(&exe);
+
+    for path in &malformed {
+        assert!(
+            path.exists(),
+            "malformed installer artifact name must not be reaped: {}",
+            path.display()
+        );
+    }
 }
 
 #[test]
@@ -201,6 +263,13 @@ fn reap_stale_binaries_does_not_flatten_read_dir_errors() {
     assert!(
         src.contains("cannot read installer artifact directory entry"),
         "installer stale-artifact reap must log unreadable directory entries"
+    );
+    assert!(
+        src.contains("fn installer_artifact_pid(")
+            && src.contains("fn process_is_running(")
+            && src.contains("!process_is_running(pid)")
+            && !src.contains("fname.starts_with(stash_prefix.as_str())\n            || fname.starts_with(backup_prefix.as_str())"),
+        "installer stale-artifact reap must parse PID suffixes and skip live owners"
     );
 }
 

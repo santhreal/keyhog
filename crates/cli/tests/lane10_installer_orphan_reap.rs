@@ -20,7 +20,7 @@ fn reap_clears_orphaned_backup_from_crashed_update() {
     std::fs::write(&exe, b"WORKING-BINARY").unwrap();
 
     // A backup left behind by a `keyhog update` that was killed mid-rollback.
-    let orphan_backup = dir.path().join(".keyhog.keyhog-bak-12345");
+    let orphan_backup = dir.path().join(".keyhog.keyhog-bak-4294967295");
     std::fs::write(&orphan_backup, b"PRIOR-WORKING-BINARY").unwrap();
 
     API.reap_stale_binaries(&exe);
@@ -44,7 +44,7 @@ fn reap_clears_orphaned_staging_tmp() {
     std::fs::write(&exe, b"WORKING-BINARY").unwrap();
 
     // A staging file left behind by install_binary killed mid-write.
-    let orphan_tmp = dir.path().join(".keyhog-update-67890.tmp");
+    let orphan_tmp = dir.path().join(".keyhog-update-4294967295.tmp");
     std::fs::write(&orphan_tmp, b"HALF-WRITTEN").unwrap();
 
     API.reap_stale_binaries(&exe);
@@ -61,8 +61,8 @@ fn reap_clears_orphaned_stash_and_backup_together() {
     let exe = dir.path().join("keyhog");
     std::fs::write(&exe, b"WORKING-BINARY").unwrap();
 
-    let orphan_stash = dir.path().join(".keyhog.keyhog-old-11111");
-    let orphan_backup = dir.path().join(".keyhog.keyhog-bak-22222");
+    let orphan_stash = dir.path().join(".keyhog.keyhog-old-4294967295");
+    let orphan_backup = dir.path().join(".keyhog.keyhog-bak-4294967294");
     std::fs::write(&orphan_stash, b"old").unwrap();
     std::fs::write(&orphan_backup, b"bak").unwrap();
 

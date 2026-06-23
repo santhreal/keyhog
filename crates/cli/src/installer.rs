@@ -208,12 +208,10 @@ where
 /// * `.<name>-update-<PID>.tmp` — the in-flight staging file `install_binary`
 ///   writes before the atomic rename; orphaned the same way on a hard kill.
 ///
-/// Called only from `update`/`repair` (BEFORE they create their own
-/// fresh-PID artifacts), never the hot scan path, so it adds no per-scan cost.
-/// PID-scoped naming means it never touches the in-flight artifacts of a
-/// CONCURRENT update — those carry a different PID, and a still-running peer's
-/// files reappear on its own reap; the worst case is a one-cycle delay, never
-/// clobbering a live update.
+/// Called only from `update`/`repair`, never the hot scan path, so it adds no
+/// per-scan cost. PID-scoped naming is honored by parsing the PID suffix and
+/// skipping artifacts whose owner process is still alive, so a concurrent
+/// update keeps its rollback backup until it finishes.
 pub(crate) fn reap_stale_binaries(exe: &Path) {
     let Some(parent) = exe.parent() else { return };
     let name = exe
@@ -223,11 +221,6 @@ pub(crate) fn reap_stale_binaries(exe: &Path) {
                                                   // Hidden rename-away artifacts: `.<name>.keyhog-old-*` / `.<name>.keyhog-bak-*`.
     let stash_prefix = format!(".{name}.keyhog-old-");
     let backup_prefix = format!(".{name}.keyhog-bak-");
-    // In-flight staging file from the unix `install_binary`: it hardcodes
-    // `.keyhog-update-<PID>.tmp` (NOT derived from the binary name), so match
-    // that literal prefix — a hard SIGKILL mid-write is the only thing that
-    // orphans it past `install_binary`'s own cleanup closure.
-    const TMP_PREFIX: &str = ".keyhog-update-";
     let Ok(entries) = std::fs::read_dir(parent) else {
         return;
     };
@@ -245,13 +238,84 @@ pub(crate) fn reap_stale_binaries(exe: &Path) {
         };
         let fname = entry.file_name();
         let fname = fname.to_string_lossy();
-        let is_orphan = fname.starts_with(stash_prefix.as_str())
-            || fname.starts_with(backup_prefix.as_str())
-            || (fname.starts_with(TMP_PREFIX) && fname.ends_with(".tmp"));
-        if is_orphan {
+        if should_reap_installer_artifact(&fname, &stash_prefix, &backup_prefix) {
             let _ = std::fs::remove_file(entry.path()); // LAW10: unused-binding marker; no runtime effect, not a fallback
         }
     }
+}
+
+fn should_reap_installer_artifact(fname: &str, stash_prefix: &str, backup_prefix: &str) -> bool {
+    installer_artifact_pid(fname, stash_prefix, backup_prefix)
+        .is_some_and(|pid| !process_is_running(pid))
+}
+
+fn installer_artifact_pid(fname: &str, stash_prefix: &str, backup_prefix: &str) -> Option<u32> {
+    if let Some(raw_pid) = fname.strip_prefix(stash_prefix) {
+        return parse_artifact_pid(raw_pid);
+    }
+    if let Some(raw_pid) = fname.strip_prefix(backup_prefix) {
+        return parse_artifact_pid(raw_pid);
+    }
+    fname
+        .strip_prefix(".keyhog-update-")
+        .and_then(|rest| rest.strip_suffix(".tmp"))
+        .and_then(parse_artifact_pid)
+}
+
+fn parse_artifact_pid(raw: &str) -> Option<u32> {
+    if raw.is_empty() || !raw.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    raw.parse().ok()
+}
+
+#[cfg(unix)]
+fn process_is_running(pid: u32) -> bool {
+    if pid == std::process::id() {
+        return false;
+    }
+    let Ok(pid) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    if pid <= 0 {
+        return false;
+    }
+    let rc = unsafe { libc::kill(pid, 0) };
+    if rc == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(windows)]
+fn process_is_running(pid: u32) -> bool {
+    use std::ffi::c_void;
+
+    if pid == std::process::id() {
+        return false;
+    }
+
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> *mut c_void;
+        fn CloseHandle(hObject: *mut c_void) -> i32;
+    }
+
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle.is_null() {
+        return false;
+    }
+    unsafe {
+        CloseHandle(handle);
+    }
+    true
+}
+
+#[cfg(not(any(unix, windows)))]
+fn process_is_running(_pid: u32) -> bool {
+    false
 }
 
 #[cfg(windows)]

@@ -123,9 +123,9 @@ fn local_install_reap_clears_orphans_keeps_unrelated_after_split() {
     let exe = dir.path().join("keyhog");
     std::fs::write(&exe, b"WORKING-BINARY").unwrap();
 
-    let orphan_stash = dir.path().join(".keyhog.keyhog-old-99999");
-    let orphan_backup = dir.path().join(".keyhog.keyhog-bak-99999");
-    let orphan_tmp = dir.path().join(".keyhog-update-99999.tmp");
+    let orphan_stash = dir.path().join(".keyhog.keyhog-old-4294967295");
+    let orphan_backup = dir.path().join(".keyhog.keyhog-bak-4294967294");
+    let orphan_tmp = dir.path().join(".keyhog-update-4294967293.tmp");
     let unrelated = dir.path().join("config.json");
     for p in [&orphan_stash, &orphan_backup, &orphan_tmp, &unrelated] {
         std::fs::write(p, b"x").unwrap();
