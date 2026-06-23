@@ -13,8 +13,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-pub use load::{load_detectors, read_detector_toml_file, SpecError, DETECTOR_TOML_FILE_BYTES};
-pub use validate::{validate_detector, QualityIssue};
+pub use load::{DETECTOR_TOML_FILE_BYTES, SpecError, load_detectors, read_detector_toml_file};
+pub use validate::{QualityIssue, validate_detector};
 
 /// Metadata field specification for verification results.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -415,6 +415,17 @@ pub enum Severity {
 }
 
 impl Severity {
+    pub(crate) const FILTER_EXPECTED_LABELS: &'static str =
+        "info|client-safe|low|medium|high|critical";
+    pub(crate) const ORDERED: [Severity; 6] = [
+        Severity::Info,
+        Severity::ClientSafe,
+        Severity::Low,
+        Severity::Medium,
+        Severity::High,
+        Severity::Critical,
+    ];
+
     /// Step the severity down one tier (Critical → High, High → Medium, …).
     /// `Info` stays at `Info` (no lower bucket).
     ///
@@ -447,6 +458,35 @@ impl Severity {
             Severity::Medium => "medium",
             Severity::High => "high",
             Severity::Critical => "critical",
+        }
+    }
+
+    pub(crate) fn from_filter_label(label: &str) -> Option<Self> {
+        match label.trim().to_ascii_lowercase().as_str() {
+            "client_safe" | "client-safe" | "clientsafe" => Some(Severity::ClientSafe),
+            "info" => Some(Severity::Info),
+            "low" => Some(Severity::Low),
+            "medium" => Some(Severity::Medium),
+            "high" => Some(Severity::High),
+            "critical" => Some(Severity::Critical),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn rank(self) -> usize {
+        match Self::ORDERED
+            .iter()
+            .position(|candidate| *candidate == self)
+        {
+            Some(rank) => rank,
+            None => Self::ORDERED.len() - 1, // LAW10: fail-closed/security: impossible enum/table drift clamps to highest severity so severity_lte cannot over-suppress.
+        }
+    }
+
+    pub(crate) fn label_for_rank(rank: usize) -> &'static str {
+        match Self::ORDERED.get(rank) {
+            Some(severity) => severity.as_str(),
+            None => Severity::Critical.as_str(), // LAW10: fail-closed/security: invalid rank maps to highest severity label so severity_lte cannot over-suppress.
         }
     }
 }

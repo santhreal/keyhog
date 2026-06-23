@@ -53,6 +53,7 @@ pub mod report_text_non_empty;
 pub mod rule_filter_no_inline_tests;
 pub mod rule_filter_no_unwrap_expect;
 pub mod rule_filter_non_empty;
+pub mod rule_filter_severity_single_owner;
 pub mod safe_bin_no_inline_tests;
 pub mod safe_bin_no_unwrap_expect;
 pub mod safe_bin_non_empty;

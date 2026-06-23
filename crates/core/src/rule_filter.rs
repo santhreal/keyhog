@@ -42,7 +42,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use serde::Deserialize;
-use vyre_libs::rule::{evaluate_formula, RuleCondition, RuleEvaluationContext, RuleFormula};
+use vyre_libs::rule::{RuleCondition, RuleEvaluationContext, RuleFormula, evaluate_formula};
 
 use crate::{Severity, VerifiedFinding};
 
@@ -155,9 +155,9 @@ impl RuleSuppressor {
         // match, so the finding is LESS likely to be suppressed and MORE likely
         // to be reported. A missing path can never silently drop a real finding.
         let path = finding.location.file_path.as_deref().unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
-                                                                        // `Finding.credential_hash` is the raw 32 bytes; rule predicates match
-                                                                        // against the hex form (see the module-doc example). Hex-encode into a
-                                                                        // local that outlives `ctx`'s borrow below.
+        // `Finding.credential_hash` is the raw 32 bytes; rule predicates match
+        // against the hex form (see the module-doc example). Hex-encode into a
+        // local that outlives `ctx`'s borrow below.
         let credential_hash_hex = crate::finding::hex_encode(&finding.credential_hash);
         let ctx = FindingContext {
             detector_id: finding.detector_id.as_ref(),
@@ -272,23 +272,15 @@ fn eq_field(field: &'static str, value: &str) -> RuleCondition {
 }
 
 fn normalise_severity(s: &str) -> Result<String, String> {
-    // Normalise to the kebab-case wire form that `Severity::as_str` emits
-    // (`client-safe`, not `clientsafe` or `client_safe`) - that is the string
-    // `FindingContext::field_value` reports for the `severity` field. Both
-    // `severity =` and `severity_lte =` compare against it, so the underscore
-    // alias must fold to the hyphen form or a `severity = "client_safe"` rule
-    // would never match a client-safe finding.
-    let lower = s.trim().to_ascii_lowercase();
-    let canonical = match lower.as_str() {
-        "client_safe" | "client-safe" | "clientsafe" => "client-safe",
-        "info" | "low" | "medium" | "high" | "critical" => lower.as_str(),
-        other => {
-            return Err(format!(
-                "unknown severity {other:?}; expected info|client-safe|low|medium|high|critical"
-            ));
-        }
-    };
-    Ok(canonical.to_string())
+    Severity::from_filter_label(s)
+        .map(|severity| severity.as_str().to_string())
+        .ok_or_else(|| {
+            format!(
+                "unknown severity {:?}; expected {}",
+                s.trim().to_ascii_lowercase(),
+                Severity::FILTER_EXPECTED_LABELS
+            )
+        })
 }
 
 /// Rank ordering MUST match the `Severity` enum's derived `Ord`
@@ -298,26 +290,13 @@ fn normalise_severity(s: &str) -> Result<String, String> {
 /// particular, omitting `client-safe` made `severity_lte = "low"` silently
 /// skip client-safe findings that rank *below* low.
 fn severity_rank(s: &str) -> Result<usize, String> {
-    match s {
-        "info" => Ok(0),
-        "client-safe" => Ok(1),
-        "low" => Ok(2),
-        "medium" => Ok(3),
-        "high" => Ok(4),
-        "critical" => Ok(5),
-        other => Err(format!("unknown severity rank {other:?}")),
-    }
+    Severity::from_filter_label(s)
+        .map(Severity::rank)
+        .ok_or_else(|| format!("unknown severity rank {s:?}"))
 }
 
 fn severity_label(rank: usize) -> &'static str {
-    match rank {
-        0 => "info",
-        1 => "client-safe",
-        2 => "low",
-        3 => "medium",
-        4 => "high",
-        _ => "critical",
-    }
+    Severity::label_for_rank(rank)
 }
 
 /// Errors from loading or parsing `.keyhogignore.toml`.
