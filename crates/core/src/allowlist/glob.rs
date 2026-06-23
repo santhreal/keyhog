@@ -54,14 +54,15 @@ pub(super) struct PathGlobIndex {
     /// `.` / `..` noise). `glob_match_segments(&[], path)` is true only for the
     /// empty path, so these are kept apart and only consulted for that case.
     empty_pattern: Vec<CompiledGlob>,
-    /// Number of source patterns this index was compiled from. `ignored_paths`
-    /// is a PUBLIC, mutable field: callers may push/extend/clear it directly
-    /// after construction (the documented `.gitignore`-append workflow). The
-    /// matcher compares this against the live `ignored_paths.len()` and rebuilds
-    /// on mismatch, so a directly-mutated allowlist never silently under- or
-    /// over-suppresses. Construction paths (`parse`/`load`/`empty`) keep it in
-    /// sync, so the hot scanner path never pays the rebuild.
-    source_len: usize,
+    /// Source patterns this index was compiled from. `ignored_paths` is a
+    /// PUBLIC, mutable field: callers may push/extend/clear OR replace entries
+    /// directly after construction. The matcher compares this against the live
+    /// `ignored_paths` and rebuilds on mismatch, so a directly-mutated allowlist
+    /// never silently under- or over-suppresses. Construction paths
+    /// (`parse`/`load`/`empty`) keep it in sync, so the hot scanner path pays
+    /// only a Vec equality check over the same small rule list the old
+    /// length-only guard already inspected.
+    source_patterns: Vec<String>,
 }
 
 impl PathGlobIndex {
@@ -70,7 +71,7 @@ impl PathGlobIndex {
     /// `glob_match_normalized` previously repeated on every finding).
     pub(super) fn build(patterns: &[String]) -> Self {
         let mut index = PathGlobIndex {
-            source_len: patterns.len(),
+            source_patterns: patterns.to_vec(),
             ..PathGlobIndex::default()
         };
         for pattern in patterns {
@@ -106,11 +107,12 @@ impl PathGlobIndex {
         index
     }
 
-    /// The number of source patterns this index was compiled from. The
-    /// allowlist compares this against the live `ignored_paths.len()` to decide
-    /// whether a hand-mutated patterns list requires a rebuild.
-    pub(super) fn source_len(&self) -> usize {
-        self.source_len
+    /// True when this index was compiled from the current public pattern list.
+    /// Length-only checks miss in-place replacement (`ignored_paths[0] = ...`)
+    /// because the public Vec shape stays the same while suppression semantics
+    /// change.
+    pub(super) fn matches_sources(&self, patterns: &[String]) -> bool {
+        self.source_patterns == patterns
     }
 
     /// True when any compiled glob matches `normalized_path`. Tests only the

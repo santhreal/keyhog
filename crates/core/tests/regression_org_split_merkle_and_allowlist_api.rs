@@ -320,7 +320,7 @@ fn allowlist_hash_suppression_unchanged_after_split() {
 
 #[test]
 fn allowlist_directly_mutated_paths_trigger_rebuild_after_split() {
-    // The `source_len`-mismatch rebuild path (now `glob::PathGlobIndex::source_len()`)
+    // The source-mismatch rebuild path (now `glob::PathGlobIndex::matches_sources()`)
     // must still fire when `ignored_paths` is mutated directly after parse.
     let mut al = keyhog_core::testing::CoreTestApi::allowlist_parse(
         &keyhog_core::testing::TestApi,

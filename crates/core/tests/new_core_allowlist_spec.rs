@@ -144,12 +144,31 @@ fn allowlist_single_star_does_not_cross_segment() {
 #[test]
 fn allowlist_mutating_ignored_paths_directly_rebuilds_index() {
     // Public field mutation after construction must still be honored
-    // (length-mismatch rebuild path).
+    // (source-mismatch rebuild path).
     let mut al = Allowlist::default();
     al.ignored_paths.push("secret/**".to_string());
     assert!(
         al.is_path_ignored("secret/keys/id_rsa"),
-        "directly-pushed glob must suppress (index rebuilds on len mismatch)"
+        "directly-pushed glob must suppress (index rebuilds on source mismatch)"
+    );
+}
+
+#[test]
+fn allowlist_replacing_ignored_path_rebuilds_index_without_len_change() {
+    let mut al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "path:old/**\n",
+    );
+    assert!(al.is_path_ignored("old/keys.txt"));
+    al.ignored_paths[0] = "new/**".to_string();
+
+    assert!(
+        !al.is_path_ignored("old/keys.txt"),
+        "same-length public ignored_paths replacement must not use the stale compiled index"
+    );
+    assert!(
+        al.is_path_ignored("new/keys.txt"),
+        "same-length public ignored_paths replacement must rebuild the compiled index"
     );
 }
 

@@ -13,8 +13,8 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use crate::VerifiedFinding;
 use crate::merkle_spec_hash::hex_to_array;
+use crate::VerifiedFinding;
 
 // Submodules live in `allowlist/` (native resolution), matching the
 // `foo.rs` + `foo/` layout used across the workspace.
@@ -25,7 +25,7 @@ use metadata::*;
 // index) is its own subsystem; the `Allowlist` holds a precompiled index and
 // delegates every path decision to it.
 mod glob;
-use glob::{PathGlobIndex, normalize_path};
+use glob::{normalize_path, PathGlobIndex};
 
 /// User-defined suppressions loaded from `.keyhogignore`: credential hashes, detector IDs, and path globs.
 ///
@@ -556,12 +556,12 @@ impl Allowlist {
 
     /// Run the precompiled path-glob index against an already-normalized path,
     /// rebuilding the index first iff the public `ignored_paths` field was
-    /// mutated directly since construction (detected by a length mismatch).
-    /// The construction paths keep the index in sync, so the scanner hot path
-    /// always takes the fast branch; only a hand-mutated allowlist pays the
-    /// one-off rebuild, and it pays it for correctness, not silently skips it.
+    /// mutated directly since construction. The construction paths keep the
+    /// index in sync, so the scanner hot path always takes the fast branch;
+    /// only a hand-mutated allowlist pays the one-off rebuild, and it pays it
+    /// for correctness, not silently skips it.
     fn path_matches(&self, normalized_path: &str) -> bool {
-        if self.path_index.source_len() == self.ignored_paths.len() {
+        if self.path_index.matches_sources(&self.ignored_paths) {
             self.path_index.matches(normalized_path)
         } else {
             PathGlobIndex::build(&self.ignored_paths).matches(normalized_path)
