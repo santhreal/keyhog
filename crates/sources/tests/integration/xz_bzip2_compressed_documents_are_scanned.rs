@@ -1,11 +1,11 @@
 //! xz and bzip2 are compressed source containers, not binary skip extensions.
 
+use crate::support::archive::{encode_xz, tar_with_file};
 use crate::support::collect_chunks;
 use bzip2::write::BzEncoder;
 use bzip2::Compression;
 use keyhog_sources::FilesystemSource;
 use std::io::Write;
-use xz2::write::XzEncoder;
 
 fn scan_file(name: &str, bytes: Vec<u8>) -> Vec<keyhog_core::Chunk> {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -19,28 +19,6 @@ fn encode_bzip2(plaintext: &[u8]) -> Vec<u8> {
     let mut encoder = BzEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(plaintext).expect("write bzip2 input");
     encoder.finish().expect("finish bzip2")
-}
-
-fn encode_xz(plaintext: &[u8]) -> Vec<u8> {
-    let mut encoder = XzEncoder::new(Vec::new(), 6);
-    encoder.write_all(plaintext).expect("write xz input");
-    encoder.finish().expect("finish xz")
-}
-
-fn tar_with_file(name: &str, content: &[u8]) -> Vec<u8> {
-    let mut tar_bytes = Vec::new();
-    {
-        let mut builder = tar::Builder::new(&mut tar_bytes);
-        let mut header = tar::Header::new_gnu();
-        header.set_size(content.len() as u64);
-        header.set_mode(0o644);
-        header.set_cksum();
-        builder
-            .append_data(&mut header, name, content)
-            .expect("append tar entry");
-        builder.finish().expect("finish tar");
-    }
-    tar_bytes
 }
 
 #[test]

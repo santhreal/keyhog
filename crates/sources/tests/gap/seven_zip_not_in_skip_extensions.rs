@@ -39,6 +39,7 @@ fn seven_zip_routes_to_dedicated_extractor() {
         "read_file_for_compressed_input",
         "SourceSkipEvent::Unreadable",
         "report_archive_truncation",
+        "validate_scan_archive_entry_name",
         "EncoderMethod::LZMA",
         "filesystem/archive",
         "filesystem/archive-binary",

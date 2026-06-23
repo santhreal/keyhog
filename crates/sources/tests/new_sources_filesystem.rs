@@ -311,6 +311,7 @@ fn skip_counts_total_sums_all_categories() {
         binary_section_name_unresolved: 13,
         source_truncated: 17,
         structured_source_parse_failures: 19,
+        archive_duplicate_scan_unavailable: 23,
     };
     assert_eq!(
         c.total(),
@@ -338,6 +339,7 @@ fn reset_skip_counters_zeroes_every_category() {
         binary_section_name_unresolved: 55,
         source_truncated: 66,
         structured_source_parse_failures: 77,
+        archive_duplicate_scan_unavailable: 88,
     });
 
     TestApi.reset_skip_counters();
@@ -358,6 +360,10 @@ fn reset_skip_counters_zeroes_every_category() {
     assert_eq!(
         snap.structured_source_parse_failures, 0,
         "reset_skip_counters must also zero structured source parse-failure counters"
+    );
+    assert_eq!(
+        snap.archive_duplicate_scan_unavailable, 0,
+        "reset_skip_counters must also zero archive duplicate-scan partial-coverage counters"
     );
     assert_eq!(snap.total(), 0);
 }

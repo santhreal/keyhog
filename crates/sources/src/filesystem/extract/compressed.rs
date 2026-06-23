@@ -1,6 +1,6 @@
 //! Compressed stream and tar-container extraction for filesystem entries.
 
-use super::archive::emit_archive_unreadable_error;
+use super::archive::{emit_archive_unreadable_error, validate_scan_archive_entry_name};
 use super::{
     display_path, extraction_total_budget, extraction_total_budget_usize, is_symlink, read,
     record_binary_without_printable_strings, record_default_excluded_archive_entry,
@@ -186,6 +186,16 @@ pub(super) fn emit_tar_entries(
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_else(|| "<tar-entry>".to_string()); // LAW10: missing/non-string field => empty/placeholder; recall-safe
 
+        if let Err(reason) = validate_scan_archive_entry_name(&entry_name) {
+            tracing::warn!(
+                archive = %container_display,
+                entry = %entry_name,
+                reason,
+                "skipping unsafe tar entry name"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            continue;
+        }
         if super::super::filter::is_default_excluded(&entry_name) {
             record_default_excluded_archive_entry(container_display, &entry_name);
             continue;

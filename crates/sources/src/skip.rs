@@ -58,6 +58,16 @@ static SOURCE_TRUNCATED: AtomicUsize = AtomicUsize::new(0);
 /// scanned as text, but request/response/body expansion is missing.
 static STRUCTURED_SOURCE_PARSE_FAILURES: AtomicUsize = AtomicUsize::new(0);
 
+/// How many archives matched the zip duplicate-entry detector but it could not
+/// run (e.g. a zip64 central directory it does not model, or a malformed/truncated
+/// central directory), so only the standard zip parser was used. That parser
+/// surfaces one entry per name, so a duplicated/shadow central-directory entry an
+/// attacker hid a secret in could be missed. Partial coverage, not a whole-file
+/// skip: the archive's ordinary entries are still scanned. Previously the error
+/// was discarded by an `if let Ok(Some(..))` and the degrade was invisible (Law
+/// 10 false-clean); now surfaced.
+static ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE: AtomicUsize = AtomicUsize::new(0);
+
 /// Immutable snapshot of the skip counters, read once at end-of-scan so every
 /// reporter (human summary + structured JSON/SARIF) surfaces the same numbers.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -76,13 +86,18 @@ pub struct SkipCounts {
     /// Structured source files whose format-specific parser failed; raw text was
     /// still scanned, but derived chunks/decoded bodies were not expanded.
     pub structured_source_parse_failures: usize,
+    /// Archives where zip duplicate-entry detection could not run (zip64 or a
+    /// malformed central directory); the standard parser still scanned them but
+    /// may have missed a duplicated/shadow entry.
+    pub archive_duplicate_scan_unavailable: usize,
 }
 
 impl SkipCounts {
     /// Total files skipped (not scanned) across all categories.
     ///
-    /// `binary_section_name_unresolved`, `source_truncated`, and
-    /// `structured_source_parse_failures` are partial-coverage signals, not
+    /// `binary_section_name_unresolved`, `source_truncated`,
+    /// `structured_source_parse_failures`, and
+    /// `archive_duplicate_scan_unavailable` are partial-coverage signals, not
     /// whole-file skips, so they are surfaced separately and are NOT added into
     /// this file-skip total.
     pub fn total(&self) -> usize {
@@ -103,6 +118,7 @@ pub(crate) enum SourceSkipEvent {
     BinarySectionNameUnresolved,
     SourceTruncated,
     StructuredSourceParseFailure,
+    ArchiveDuplicateScanUnavailable,
 }
 
 impl SourceSkipEvent {
@@ -117,6 +133,7 @@ impl SourceSkipEvent {
             Self::BinarySectionNameUnresolved => &BINARY_SECTION_NAME_UNRESOLVED,
             Self::SourceTruncated => &SOURCE_TRUNCATED,
             Self::StructuredSourceParseFailure => &STRUCTURED_SOURCE_PARSE_FAILURES,
+            Self::ArchiveDuplicateScanUnavailable => &ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE,
         }
     }
 }
@@ -154,6 +171,7 @@ pub fn skip_counts() -> SkipCounts {
         binary_section_name_unresolved: BINARY_SECTION_NAME_UNRESOLVED.load(Relaxed),
         source_truncated: SOURCE_TRUNCATED.load(Relaxed),
         structured_source_parse_failures: STRUCTURED_SOURCE_PARSE_FAILURES.load(Relaxed),
+        archive_duplicate_scan_unavailable: ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE.load(Relaxed),
     }
 }
 
@@ -168,6 +186,7 @@ pub(crate) fn reset_skip_counters() {
     BINARY_SECTION_NAME_UNRESOLVED.store(0, Relaxed);
     SOURCE_TRUNCATED.store(0, Relaxed);
     STRUCTURED_SOURCE_PARSE_FAILURES.store(0, Relaxed);
+    ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE.store(0, Relaxed);
 }
 
 /// Reset the over-max-size counter. Retained for API compatibility (Law 3);
@@ -186,4 +205,5 @@ pub(crate) fn set_skip_counts_for_test(counts: SkipCounts) {
     BINARY_SECTION_NAME_UNRESOLVED.store(counts.binary_section_name_unresolved, Relaxed);
     SOURCE_TRUNCATED.store(counts.source_truncated, Relaxed);
     STRUCTURED_SOURCE_PARSE_FAILURES.store(counts.structured_source_parse_failures, Relaxed);
+    ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE.store(counts.archive_duplicate_scan_unavailable, Relaxed);
 }

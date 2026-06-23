@@ -28,16 +28,38 @@ pub(super) fn extract_zip_archive(
     total_budget: u64,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
-    if let Ok(Some(entries)) = duplicates::duplicate_central_zip_entries(path) {
-        duplicates::extract_zip_archive_from_central_entries(
-            path,
-            archive_display,
-            per_entry_cap,
-            total_budget,
-            emit,
-            entries,
-        );
-        return;
+    match duplicates::duplicate_central_zip_entries(path) {
+        Ok(Some(entries)) => {
+            duplicates::extract_zip_archive_from_central_entries(
+                path,
+                archive_display,
+                per_entry_cap,
+                total_budget,
+                emit,
+                entries,
+            );
+            return;
+        }
+        // No duplicate central-directory entries: the standard parser below sees
+        // every entry, so its coverage of this archive is complete.
+        Ok(None) => {}
+        Err(error) => {
+            // LAW 10: do NOT silently degrade. The duplicate-entry detector could
+            // not run (e.g. a zip64 central directory it does not model, or a
+            // malformed/truncated central directory), so the standard `zip` parser
+            // below surfaces only one entry per name and may miss a duplicated /
+            // shadow central-directory entry an attacker hid a secret in. Surface
+            // the partial-coverage gap loudly and record it so the recall gap is
+            // visible in the scan summary instead of vanishing.
+            tracing::warn!(
+                archive = %path.display(),
+                %error,
+                "zip duplicate-entry detection unavailable; scanning with the standard \
+                 parser, which may miss a duplicated/shadow central-directory entry"
+            );
+            let _event =
+                crate::record_skip_event(crate::SourceSkipEvent::ArchiveDuplicateScanUnavailable);
+        }
     }
 
     let file = match File::open(path) {

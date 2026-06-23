@@ -1,5 +1,6 @@
 //! 7z archive extraction for filesystem entries.
 
+use super::archive::validate_scan_archive_entry_name;
 use super::{
     display_path, extraction_total_budget, is_symlink, read,
     record_binary_without_printable_strings, record_default_excluded_archive_entry,
@@ -77,6 +78,17 @@ pub(super) fn extract_seven_zip_chunks(
         }
 
         let entry_name = entry.name().to_string();
+        if let Err(reason) = validate_scan_archive_entry_name(&entry_name) {
+            tracing::warn!(
+                archive = %archive_display,
+                entry = %entry_name,
+                reason,
+                "skipping unsafe 7z entry name"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            drain_entry(entry_reader)?;
+            return Ok(true);
+        }
         if super::super::filter::is_default_excluded(&entry_name) {
             record_default_excluded_archive_entry(&archive_display, &entry_name);
             drain_entry(entry_reader)?;
