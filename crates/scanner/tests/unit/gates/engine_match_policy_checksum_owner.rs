@@ -39,25 +39,40 @@ fn uncommented_code(src: &str) -> String {
 
 #[test]
 fn engine_emitters_do_not_call_checksum_policy_primitives_directly() {
-    let owner = scanner_src().join("engine/scoring.rs");
+    let src = scanner_src();
+    let owner = src.join("confidence/policy.rs");
     let owner_code = uncommented_code(&read(&owner));
+    for required in [
+        "fn checksum_policy_for(",
+        "fn apply_checksum_confidence(",
+        "ChecksumConfidenceDecision::for_credential",
+        ".adjusted_confidence(",
+    ] {
+        assert!(
+            owner_code.contains(required),
+            "confidence::policy must own checksum confidence handoff token {required:?}"
+        );
+    }
+
+    let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
     assert!(
-        owner_code.contains("ChecksumConfidenceDecision::for_credential"),
-        "engine::scoring must own the checksum policy handoff"
+        scoring.contains("checksum_policy_for")
+            && scoring.contains("finalize_report_confidence")
+            && scoring.contains("crate::confidence::policy"),
+        "engine::scoring must only re-export checksum/report confidence policy"
     );
 
     let mut files = Vec::new();
-    collect_rs_files(&scanner_src().join("engine"), &mut files);
+    collect_rs_files(&src.join("engine"), &mut files);
     let mut offenders = Vec::new();
     for path in files {
-        if path == owner {
-            continue;
-        }
         let code = uncommented_code(&read(&path));
         for forbidden in [
             "checksum::checksum_adjusted_confidence",
             "checksum::validate_checksum",
             "checksum::CHECKSUM_VALID_FLOOR",
+            "ChecksumConfidenceDecision::for_credential",
+            ".adjusted_confidence(",
         ] {
             if code.contains(forbidden) {
                 offenders.push(format!("{} contains {forbidden}", path.display()));
@@ -67,6 +82,6 @@ fn engine_emitters_do_not_call_checksum_policy_primitives_directly() {
 
     assert!(
         offenders.is_empty(),
-        "engine emission paths must route checksum confidence through engine::scoring: {offenders:#?}"
+        "engine emission paths must route checksum confidence through confidence::policy via engine::scoring: {offenders:#?}"
     );
 }
