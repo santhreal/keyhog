@@ -223,21 +223,15 @@ impl CompiledScanner {
                     Some(path) => format!("file:{path}\n{text_context}"),
                     None => text_context.to_string(),
                 };
-                scan_state.ml_pending.push(crate::types::MlPendingMatch {
-                    raw_match,
-                    heuristic_conf: confidence,
-                    // The entropy fallback infers no rich code context (its anchor
-                    // is keyword PROXIMITY, not an assignment parse) and the
-                    // surrounding gates already handle test/docs shapes; Unknown
-                    // applies no extra context multiplier, matching the
-                    // pre-unification entropy emit.
-                    code_context: crate::context::CodeContext::Unknown,
-                    credential: entropy_match.value.to_string(),
-                    ml_context,
-                    min_confidence_floor: self.config.min_confidence,
-                    is_named_detector: false,
-                    model_authoritative: true,
-                });
+                scan_state
+                    .ml_pending
+                    .push(crate::types::MlPendingMatch::entropy_authoritative(
+                        raw_match,
+                        confidence,
+                        entropy_match.value.to_string(),
+                        ml_context,
+                        self.config.min_confidence,
+                    ));
                 continue;
             }
 

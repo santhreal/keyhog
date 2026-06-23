@@ -51,9 +51,13 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
     );
     assert!(
         scan_state.contains("pub(crate) is_named_detector: bool")
+            && scan_state.contains("fn detector_candidate(")
+            && scan_state.contains("fn entropy_authoritative(")
             && process.contains("&& !weak_anchor")
-            && process.contains("is_named_detector,")
-            && entropy.contains("is_named_detector: false")
+            && process.contains("MlPendingMatch::detector_candidate(")
+            && entropy.contains("MlPendingMatch::entropy_authoritative(")
+            && !process.contains("MlPendingMatch {")
+            && !entropy.contains("MlPendingMatch {")
             && ml_postprocess.contains("is_named_detector: pending.is_named_detector")
             && !ml_postprocess.contains(
                 "is_service_anchored_detector(\n                    &pending.raw_match.detector_id"

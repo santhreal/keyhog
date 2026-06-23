@@ -38,6 +38,49 @@ pub(crate) struct MlPendingMatch {
     pub(crate) model_authoritative: bool,
 }
 
+#[cfg(feature = "ml")]
+impl MlPendingMatch {
+    pub(crate) fn detector_candidate(
+        raw_match: keyhog_core::RawMatch,
+        heuristic_conf: f64,
+        code_context: crate::context::CodeContext,
+        credential: String,
+        ml_context: String,
+        min_confidence_floor: f64,
+        is_named_detector: bool,
+    ) -> Self {
+        Self {
+            raw_match,
+            heuristic_conf,
+            code_context,
+            credential,
+            ml_context,
+            min_confidence_floor,
+            is_named_detector,
+            model_authoritative: false,
+        }
+    }
+
+    pub(crate) fn entropy_authoritative(
+        raw_match: keyhog_core::RawMatch,
+        heuristic_conf: f64,
+        credential: String,
+        ml_context: String,
+        min_confidence_floor: f64,
+    ) -> Self {
+        Self {
+            raw_match,
+            heuristic_conf,
+            code_context: crate::context::CodeContext::Unknown,
+            credential,
+            ml_context,
+            min_confidence_floor,
+            is_named_detector: false,
+            model_authoritative: true,
+        }
+    }
+}
+
 /// Borrowed ordering key for a `RawMatch` candidate.
 ///
 /// Hot emitters can decide whether a candidate can enter the capped match heap
