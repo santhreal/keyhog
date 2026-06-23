@@ -125,7 +125,7 @@ fn stream_git_history_chunks(
     let mut current_date: Option<String> = None;
     let mut current_path: Option<String> = None;
     let mut current_content = String::new();
-    let mut in_hunk = false;
+    let mut diff_parser = super::UnifiedDiffParser::new();
     let mut done = false;
     let mut wait_after_final_chunk = false;
     let mut line_buf = Vec::new();
@@ -188,17 +188,14 @@ fn stream_git_history_chunks(
                         .err()
                         .map(Err);
                     }
-                    Ok(_) => {
-                        let l = String::from_utf8_lossy(&line_buf);
-                        l.trim_end_matches('\n').trim_end_matches('\r').to_string()
-                    }
+                    Ok(_) => super::trim_diff_line_bytes(&line_buf),
                     Err(e) => {
                         done = true;
                         return Some(Err(SourceError::Io(e)));
                     }
                 };
 
-            if let Some(commit) = line.strip_prefix("commit ") {
+            if let Some(commit) = line.strip_prefix(b"commit ") {
                 let prev_chunk = if let (Some(commit), Some(author), Some(date), Some(path)) = (
                     &current_commit,
                     &current_author,
@@ -228,12 +225,12 @@ fn stream_git_history_chunks(
                     None
                 };
 
-                current_commit = Some(commit.trim().to_string());
+                current_commit = Some(String::from_utf8_lossy(commit).trim().to_string());
                 current_author = None;
                 current_date = None;
                 current_path = None;
                 current_content.clear();
-                in_hunk = false;
+                diff_parser = super::UnifiedDiffParser::new();
                 // New commit/file: the next `@@` sets the base for its hunks.
                 current_base_line = 0;
 
@@ -243,118 +240,110 @@ fn stream_git_history_chunks(
                 continue;
             }
 
-            if let Some(author) = line.strip_prefix("Author: ") {
-                current_author = Some(author.trim().to_string());
+            if let Some(author) = line.strip_prefix(b"Author: ") {
+                current_author = Some(String::from_utf8_lossy(author).trim().to_string());
                 continue;
             }
 
-            if let Some(date) = line.strip_prefix("Date: ") {
-                current_date = Some(date.trim().to_string());
+            if let Some(date) = line.strip_prefix(b"Date: ") {
+                current_date = Some(String::from_utf8_lossy(date).trim().to_string());
                 continue;
             }
 
-            if line.starts_with("diff --git ") {
-                let prev_chunk = if let (Some(commit), Some(author), Some(date), Some(path)) = (
-                    &current_commit,
-                    &current_author,
-                    &current_date,
-                    &current_path,
-                ) {
-                    if !current_content.trim().is_empty() {
-                        Some(Chunk {
-                            data: current_content.trim().to_string().into(),
-                            metadata: ChunkMetadata {
-                                base_offset: 0,
-                                base_line: current_base_line,
-                                source_type: "git-history".into(),
-                                path: Some(path.clone()),
-                                commit: Some(commit.clone()),
-                                author: Some(author.clone()),
-                                date: Some(date.clone()),
-                                mtime_ns: None,
-                                size_bytes: None,
-                                decoded_span: None,
-                            },
-                        })
+            let event = match diff_parser.parse_line(line, "git log") {
+                Ok(event) => event,
+                Err(error) => {
+                    done = true;
+                    return Some(Err(error));
+                }
+            };
+
+            match event {
+                super::UnifiedDiffEvent::FileHeader { new_path } => {
+                    let prev_chunk = if let (Some(commit), Some(author), Some(date), Some(path)) = (
+                        &current_commit,
+                        &current_author,
+                        &current_date,
+                        &current_path,
+                    ) {
+                        if !current_content.trim().is_empty() {
+                            Some(Chunk {
+                                data: current_content.trim().to_string().into(),
+                                metadata: ChunkMetadata {
+                                    base_offset: 0,
+                                    base_line: current_base_line,
+                                    source_type: "git-history".into(),
+                                    path: Some(path.clone()),
+                                    commit: Some(commit.clone()),
+                                    author: Some(author.clone()),
+                                    date: Some(date.clone()),
+                                    mtime_ns: None,
+                                    size_bytes: None,
+                                    decoded_span: None,
+                                },
+                            })
+                        } else {
+                            None
+                        }
                     } else {
                         None
+                    };
+
+                    current_path = new_path;
+                    current_content.clear();
+                    // New commit/file: the next `@@` sets the base for its hunks.
+                    current_base_line = 0;
+
+                    if let Some(chunk) = prev_chunk {
+                        return Some(Ok(chunk));
                     }
-                } else {
-                    None
-                };
-
-                current_path = extract_new_path(&line);
-                current_content.clear();
-                in_hunk = false;
-                // New commit/file: the next `@@` sets the base for its hunks.
-                current_base_line = 0;
-
-                if let Some(chunk) = prev_chunk {
-                    return Some(Ok(chunk));
+                    continue;
                 }
-                continue;
-            }
-
-            if line.starts_with("new file mode")
-                || line.starts_with("index ")
-                || line.starts_with("--- ")
-            {
-                continue;
-            }
-
-            if let Some(path_part) = line.strip_prefix("+++ b/") {
-                current_path = sanitize_path(path_part);
-                continue;
-            }
-
-            if line.starts_with("@@") && line.contains("@@") {
-                // New hunk: flush the previous hunk's added lines as their own
-                // chunk (carrying their base line), then adopt this hunk's
-                // new-file start for the lines that follow.
-                let new_start = match super::parse_hunk_new_start_or_error(&line, "git log") {
-                    Ok(new_start) => new_start,
-                    Err(error) => {
-                        done = true;
-                        return Some(Err(error));
-                    }
-                };
-                let prev_content = std::mem::take(&mut current_content);
-                let prev_base_line = current_base_line;
-                current_base_line = new_start.saturating_sub(1);
-                in_hunk = true;
-                if let (Some(commit), Some(author), Some(date), Some(path)) = (
-                    &current_commit,
-                    &current_author,
-                    &current_date,
-                    &current_path,
-                ) {
-                    if !prev_content.trim().is_empty() {
-                        return Some(Ok(Chunk {
-                            data: prev_content.trim().to_string().into(),
-                            metadata: ChunkMetadata {
-                                base_offset: 0,
-                                base_line: prev_base_line,
-                                source_type: "git-history".into(),
-                                path: Some(path.clone()),
-                                commit: Some(commit.clone()),
-                                author: Some(author.clone()),
-                                date: Some(date.clone()),
-                                mtime_ns: None,
-                                size_bytes: None,
-                                decoded_span: None,
-                            },
-                        }));
-                    }
+                super::UnifiedDiffEvent::DeletedFile => {
+                    current_path = None;
+                    current_content.clear();
+                    current_base_line = 0;
+                    continue;
                 }
-                continue;
-            }
-
-            if (in_hunk || line.starts_with('+'))
-                && line.starts_with('+')
-                && !line.starts_with("+++")
-            {
-                current_content.push_str(&line[1..]);
-                current_content.push('\n');
+                super::UnifiedDiffEvent::Metadata => continue,
+                super::UnifiedDiffEvent::HunkStart { base_line } => {
+                    // New hunk: flush the previous hunk's added lines as their own
+                    // chunk (carrying their base line), then adopt this hunk's
+                    // new-file start for the lines that follow.
+                    let prev_content = std::mem::take(&mut current_content);
+                    let prev_base_line = current_base_line;
+                    current_base_line = base_line;
+                    if let (Some(commit), Some(author), Some(date), Some(path)) = (
+                        &current_commit,
+                        &current_author,
+                        &current_date,
+                        &current_path,
+                    ) {
+                        if !prev_content.trim().is_empty() {
+                            return Some(Ok(Chunk {
+                                data: prev_content.trim().to_string().into(),
+                                metadata: ChunkMetadata {
+                                    base_offset: 0,
+                                    base_line: prev_base_line,
+                                    source_type: "git-history".into(),
+                                    path: Some(path.clone()),
+                                    commit: Some(commit.clone()),
+                                    author: Some(author.clone()),
+                                    date: Some(date.clone()),
+                                    mtime_ns: None,
+                                    size_bytes: None,
+                                    decoded_span: None,
+                                },
+                            }));
+                        }
+                    }
+                    continue;
+                }
+                super::UnifiedDiffEvent::AddedLine(bytes) => {
+                    current_content.push_str(&String::from_utf8_lossy(bytes));
+                    current_content.push('\n');
+                }
+                super::UnifiedDiffEvent::Other => {}
             }
 
             // Safety cap to prevent unlimited memory growth per file hunk.
@@ -393,43 +382,4 @@ fn stream_git_history_chunks(
             }
         }
     }))
-}
-
-fn extract_new_path(line: &str) -> Option<String> {
-    line.find(" b/")
-        .and_then(|index| sanitize_path(&line[index + 3..]))
-}
-
-fn sanitize_path(path: &str) -> Option<String> {
-    let path = path.trim().replace('\\', "/");
-    if path.is_empty() || path == "/dev/null" {
-        return None;
-    }
-
-    let candidate = Path::new(&path);
-    if candidate.is_absolute() || path.chars().any(char::is_control) {
-        return None;
-    }
-
-    let mut normalized = Vec::new();
-    for component in candidate.components() {
-        match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::Normal(part) => {
-                normalized.push(part.to_string_lossy().into_owned());
-            }
-            std::path::Component::ParentDir => {
-                normalized.pop()?;
-            }
-            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
-                return None;
-            }
-        }
-    }
-
-    if normalized.is_empty() {
-        None
-    } else {
-        Some(normalized.join("/"))
-    }
 }

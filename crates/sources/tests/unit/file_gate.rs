@@ -2,7 +2,7 @@
 
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
-use keyhog_sources::{create_source, reset_skipped_over_max_size, FilesystemSource, StdinSource};
+use keyhog_sources::{FilesystemSource, StdinSource, create_source, reset_skipped_over_max_size};
 
 // ── crates/sources/src/lib.rs ─────────────────────────────────────────
 #[test]
@@ -343,10 +343,11 @@ fn git_diff_hot_path_consolidates_git_processes_and_reuses_buffers() {
         "git-diff must read author/date with one git log process"
     );
     assert!(
-        diff.contains("trim_diff_line_bytes(&line_buf)")
-            && diff.contains("line.starts_with(b\"diff --git \")")
+        diff.contains("super::trim_diff_line_bytes(&line_buf)")
+            && diff.contains("UnifiedDiffParser::new()")
+            && diff.contains("diff_parser.parse_line(line, \"git diff\")")
             && !diff.contains("let l = String::from_utf8_lossy(&line_buf);"),
-        "git-diff line dispatch must operate on the capped byte buffer instead of allocating one String per diff line"
+        "git-diff line dispatch must operate on capped bytes through the shared parser instead of allocating one String per diff line"
     );
     assert!(
         diff.contains("current_content.clear();")

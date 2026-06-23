@@ -150,7 +150,7 @@ fn stream_added_lines(
 
     let mut current_path: Option<String> = None;
     let mut current_content = String::new();
-    let mut in_hunk = false;
+    let mut diff_parser = super::UnifiedDiffParser::new();
     let mut done = false;
     let mut emit_untracked = false;
     let mut wait_after_final_chunk = false;
@@ -193,7 +193,7 @@ fn stream_added_lines(
         loop {
             let line =
                 match super::read_capped_line(&mut reader, &mut line_buf, limits.git_line_bytes) {
-                    Ok(n) if n > 0 => trim_diff_line_bytes(&line_buf),
+                    Ok(n) if n > 0 => super::trim_diff_line_bytes(&line_buf),
                     Err(e) => {
                         done = true;
                         return Some(Err(SourceError::Io(e)));
@@ -236,98 +236,87 @@ fn stream_added_lines(
                     }
                 };
 
-            if line.starts_with(b"diff --git ") {
-                let prev_path = current_path.take();
-                let prev_content = current_content.trim().to_string();
-                let prev_base_line = current_base_line;
-                current_content.clear();
-
-                in_hunk = false;
-                // New file: its first `@@` will set the base for its hunks.
-                current_base_line = 0;
-
-                if let Some(path) = prev_path {
-                    if !prev_content.trim().is_empty() {
-                        return Some(Ok(Chunk {
-                            data: prev_content.trim().to_string().into(),
-                            metadata: ChunkMetadata {
-                                base_offset: 0,
-                                base_line: prev_base_line,
-                                source_type: "git-diff".into(),
-                                path: Some(path),
-                                commit: Some(metadata_commit.clone()),
-                                author: Some(metadata.author.clone()),
-                                date: Some(metadata.date.clone()),
-                                mtime_ns: None,
-                                size_bytes: None,
-                                decoded_span: None,
-                            },
-                        }));
-                    }
+            let event = match diff_parser.parse_line(line, "git diff") {
+                Ok(event) => event,
+                Err(error) => {
+                    done = true;
+                    return Some(Err(error));
                 }
-                continue;
-            }
+            };
 
-            if line.starts_with(b"deleted file mode") {
-                current_path = None;
-                continue;
-            }
+            match event {
+                super::UnifiedDiffEvent::FileHeader { new_path } => {
+                    let prev_path = current_path.take();
+                    let prev_content = current_content.trim().to_string();
+                    let prev_base_line = current_base_line;
+                    current_content.clear();
 
-            if line.starts_with(b"new file mode")
-                || line.starts_with(b"index ")
-                || line.starts_with(b"--- ")
-            {
-                continue;
-            }
+                    // New file: its first `@@` will set the base for its hunks.
+                    current_base_line = 0;
+                    current_path = new_path;
 
-            if let Some(path_part) = line.strip_prefix(b"+++ b/") {
-                current_path =
-                    Some(String::from_utf8_lossy(trim_ascii_whitespace(path_part)).into_owned());
-                continue;
-            }
-
-            if line.starts_with(b"@@") && memchr::memmem::find(&line[2..], b"@@").is_some() {
-                // Start of a new hunk: flush the previous hunk as its own
-                // chunk (so its base line applies cleanly), then adopt this
-                // hunk's new-file start as the base for the lines that follow.
-                let hunk_line = String::from_utf8_lossy(line);
-                let new_start = match super::parse_hunk_new_start_or_error(&hunk_line, "git diff") {
-                    Ok(new_start) => new_start,
-                    Err(error) => {
-                        done = true;
-                        return Some(Err(error));
+                    if let Some(path) = prev_path {
+                        if !prev_content.trim().is_empty() {
+                            return Some(Ok(Chunk {
+                                data: prev_content.trim().to_string().into(),
+                                metadata: ChunkMetadata {
+                                    base_offset: 0,
+                                    base_line: prev_base_line,
+                                    source_type: "git-diff".into(),
+                                    path: Some(path),
+                                    commit: Some(metadata_commit.clone()),
+                                    author: Some(metadata.author.clone()),
+                                    date: Some(metadata.date.clone()),
+                                    mtime_ns: None,
+                                    size_bytes: None,
+                                    decoded_span: None,
+                                },
+                            }));
+                        }
                     }
-                };
-                let prev_content = current_content.trim().to_string();
-                let prev_base_line = current_base_line;
-                current_content.clear();
-                current_base_line = new_start.saturating_sub(1);
-                in_hunk = true;
-                if let Some(ref path) = current_path {
-                    if !prev_content.trim().is_empty() {
-                        return Some(Ok(Chunk {
-                            data: prev_content.trim().to_string().into(),
-                            metadata: ChunkMetadata {
-                                base_offset: 0,
-                                base_line: prev_base_line,
-                                source_type: "git-diff".into(),
-                                path: Some(path.clone()),
-                                commit: Some(metadata_commit.clone()),
-                                author: Some(metadata.author.clone()),
-                                date: Some(metadata.date.clone()),
-                                mtime_ns: None,
-                                size_bytes: None,
-                                decoded_span: None,
-                            },
-                        }));
-                    }
+                    continue;
                 }
-                continue;
-            }
-
-            if in_hunk && line.starts_with(b"+") && !line.starts_with(b"+++") {
-                current_content.push_str(&String::from_utf8_lossy(&line[1..]));
-                current_content.push('\n');
+                super::UnifiedDiffEvent::DeletedFile => {
+                    current_path = None;
+                    current_content.clear();
+                    current_base_line = 0;
+                    continue;
+                }
+                super::UnifiedDiffEvent::Metadata => continue,
+                super::UnifiedDiffEvent::HunkStart { base_line } => {
+                    // Start of a new hunk: flush the previous hunk as its own
+                    // chunk (so its base line applies cleanly), then adopt this
+                    // hunk's new-file start as the base for the lines that follow.
+                    let prev_content = current_content.trim().to_string();
+                    let prev_base_line = current_base_line;
+                    current_content.clear();
+                    current_base_line = base_line;
+                    if let Some(ref path) = current_path {
+                        if !prev_content.trim().is_empty() {
+                            return Some(Ok(Chunk {
+                                data: prev_content.trim().to_string().into(),
+                                metadata: ChunkMetadata {
+                                    base_offset: 0,
+                                    base_line: prev_base_line,
+                                    source_type: "git-diff".into(),
+                                    path: Some(path.clone()),
+                                    commit: Some(metadata_commit.clone()),
+                                    author: Some(metadata.author.clone()),
+                                    date: Some(metadata.date.clone()),
+                                    mtime_ns: None,
+                                    size_bytes: None,
+                                    decoded_span: None,
+                                },
+                            }));
+                        }
+                    }
+                    continue;
+                }
+                super::UnifiedDiffEvent::AddedLine(bytes) => {
+                    current_content.push_str(&String::from_utf8_lossy(bytes));
+                    current_content.push('\n');
+                }
+                super::UnifiedDiffEvent::Other => {}
             }
 
             if current_content.len() > hunk_byte_cap {
@@ -363,26 +352,6 @@ fn stream_added_lines(
             }
         }
     }))
-}
-
-fn trim_diff_line_bytes(mut line: &[u8]) -> &[u8] {
-    if line.ends_with(b"\n") {
-        line = &line[..line.len() - 1];
-    }
-    if line.ends_with(b"\r") {
-        line = &line[..line.len() - 1];
-    }
-    line
-}
-
-fn trim_ascii_whitespace(mut bytes: &[u8]) -> &[u8] {
-    while matches!(bytes.first(), Some(byte) if byte.is_ascii_whitespace()) {
-        bytes = &bytes[1..];
-    }
-    while matches!(bytes.last(), Some(byte) if byte.is_ascii_whitespace()) {
-        bytes = &bytes[..bytes.len() - 1];
-    }
-    bytes
 }
 
 fn list_untracked_worktree_chunks(

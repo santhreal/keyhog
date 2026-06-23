@@ -18,6 +18,7 @@ pub mod git_commit_enumerator_contract;
 pub mod git_diff_no_inline_tests;
 pub mod git_diff_no_unwrap_expect;
 pub mod git_diff_non_empty;
+pub mod git_diff_parser_contract;
 pub mod git_history_no_inline_tests;
 pub mod git_history_no_unwrap_expect;
 pub mod git_history_non_empty;

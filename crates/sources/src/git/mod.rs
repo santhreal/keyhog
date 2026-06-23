@@ -7,6 +7,7 @@ use std::process::{Child, ChildStderr, ChildStdout, Command};
 use std::thread::JoinHandle;
 
 mod diff;
+mod diff_parser;
 mod history;
 mod source;
 
@@ -29,6 +30,8 @@ pub(crate) fn git_bin() -> Result<PathBuf, SourceError> {
 pub use diff::GitDiffSource;
 pub use history::GitHistorySource;
 pub use source::GitSource;
+
+pub(crate) use diff_parser::{UnifiedDiffEvent, UnifiedDiffParser, trim_diff_line_bytes};
 
 pub(crate) fn git_blob_bytes_limit_usize(limits: crate::SourceLimits) -> usize {
     match usize::try_from(limits.git_blob_bytes) {

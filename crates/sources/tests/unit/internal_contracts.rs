@@ -440,11 +440,19 @@ fn git_hunk_headers_must_not_default_to_line_one() {
         "git/mod.rs must own a loud hunk-header parser for line attribution"
     );
 
+    let parser =
+        std::fs::read_to_string(root.join("src/git/diff_parser.rs")).expect("read git parser");
+    assert!(
+        parser.contains("parse_hunk_new_start_or_error")
+            && parser.contains("UnifiedDiffEvent::HunkStart"),
+        "git/diff_parser.rs must fail on malformed hunk headers before callers build chunks"
+    );
+
     for rel in ["src/git/diff.rs", "src/git/history.rs"] {
         let source = std::fs::read_to_string(root.join(rel)).expect("read git source");
         assert!(
-            source.contains("parse_hunk_new_start_or_error"),
-            "{rel} must fail on malformed hunk headers instead of inventing a base line"
+            source.contains("diff_parser.parse_line("),
+            "{rel} must route hunk headers through the shared fail-closed parser"
         );
         assert!(
             !source.contains("parse_hunk_new_start(&line).unwrap_or(1)")
@@ -483,9 +491,11 @@ fn binary_literal_extraction_contracts() {
 #[cfg(feature = "binary")]
 #[test]
 fn binary_section_extraction_rejects_bad_inputs_without_panic() {
-    assert!(TestApi
-        .extract_sections(&[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc], "junk.bin")
-        .is_none());
+    assert!(
+        TestApi
+            .extract_sections(&[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc], "junk.bin")
+            .is_none()
+    );
     assert!(TestApi.extract_sections(&[], "empty.bin").is_none());
 
     let mut bytes = vec![0x7f, b'E', b'L', b'F', 2, 1, 1, 0];
@@ -936,12 +946,16 @@ fn web_dns_screen_and_proxy_contracts() {
     assert!(addrs.iter().all(|a| !TestApi.is_disallowed_ip(a.ip())));
 
     let cfg = keyhog_sources::http::HttpClientConfig::default();
-    assert!(TestApi
-        .build_web_client(&cfg, "http://127.0.0.1:9/", false, false)
-        .is_err());
-    assert!(TestApi
-        .build_web_client(&cfg, "http://127.0.0.1:9/", false, true)
-        .is_ok());
+    assert!(
+        TestApi
+            .build_web_client(&cfg, "http://127.0.0.1:9/", false, false)
+            .is_err()
+    );
+    assert!(
+        TestApi
+            .build_web_client(&cfg, "http://127.0.0.1:9/", false, true)
+            .is_ok()
+    );
 
     match TestApi.build_web_client(&cfg, "https://example.com/app.js", false, false) {
         Ok(_) => {}
@@ -958,9 +972,11 @@ fn web_dns_screen_and_proxy_contracts() {
         proxy: Some("http://127.0.0.1:8080".into()),
         ..Default::default()
     };
-    assert!(TestApi
-        .build_web_client(&proxied, "http://127.0.0.1:9/", true, false)
-        .is_ok());
+    assert!(
+        TestApi
+            .build_web_client(&proxied, "http://127.0.0.1:9/", true, false)
+            .is_ok()
+    );
 }
 
 #[cfg(feature = "s3")]
