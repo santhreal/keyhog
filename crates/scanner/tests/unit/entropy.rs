@@ -206,6 +206,57 @@ fn entropy_generation_rejection_is_dogfood_visible() {
 }
 
 #[test]
+fn isolated_bare_rejection_is_dogfood_visible() {
+    let _guard = super::telemetry_serial::lock();
+    let canonical_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    let trace = Arc::new(ScanTelemetry::new());
+
+    telemetry::testing::reset();
+    trace.enable_dogfood();
+    let matches = telemetry::with_scan_telemetry(&trace, || {
+        find_secrets(
+            &format!("{canonical_sha256}\n"),
+            16,
+            0,
+            HIGH_ENTROPY_THRESHOLD,
+        )
+    });
+    assert!(
+        matches.is_empty(),
+        "canonical isolated bare token must stay suppressed; matches={matches:?}"
+    );
+    let reasons: Vec<String> = trace
+        .drain()
+        .dogfood_events
+        .into_iter()
+        .filter_map(|event| match event {
+            DogfoodEvent::ShapeSuppressed {
+                credential_redacted,
+                reason,
+                ..
+            } if credential_redacted.starts_with("e3b0") => Some(reason.into_owned()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(reasons, vec!["entropy_canonical_non_secret_shape"]);
+
+    telemetry::testing::reset();
+    let trace = Arc::new(ScanTelemetry::new());
+    let _ = telemetry::with_scan_telemetry(&trace, || {
+        find_secrets(
+            &format!("{canonical_sha256}\n"),
+            16,
+            0,
+            HIGH_ENTROPY_THRESHOLD,
+        )
+    });
+    assert!(
+        trace.drain().dogfood_events.is_empty(),
+        "dogfood-off isolated bare rejection must not emit trace events"
+    );
+}
+
+#[test]
 fn entropy_extraction_rejection_is_dogfood_visible() {
     let _guard = super::telemetry_serial::lock();
     let placeholder = "YOUR_API_KEY_HERE";

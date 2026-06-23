@@ -4,6 +4,7 @@ use super::{
     shannon_entropy, EntropyMatch, HIGH_ENTROPY_THRESHOLD, ISOLATED_BARE_ENTROPY_LABEL,
     MIXED_ALNUM_TOKEN_THRESHOLD,
 };
+use crate::adjudicate::{EntropyShapeStage, StageId};
 
 const KEYWORD_FREE_ISOLATED_MIN_LEN: usize = 16;
 const FIRST_SOURCE_LINE_NUMBER: usize = 1;
@@ -160,10 +161,18 @@ pub(super) fn collect_isolated_bare_candidates(
         return;
     }
     visit_isolated_bare_candidates(line, context.min_len, |candidate, candidate_offset| {
-        let Some(entropy) =
-            isolated_bare_secret_entropy(candidate, context.threshold, placeholder_keywords)
-        else {
-            return;
+        let entropy = match isolated_bare_secret_entropy_decision(
+            candidate,
+            context.threshold,
+            placeholder_keywords,
+        ) {
+            Ok(entropy) => entropy,
+            Err(stage_id) => {
+                if crate::telemetry::is_dogfood_enabled() {
+                    crate::adjudicate::record_stage_suppression(None, candidate, stage_id);
+                }
+                return;
+            }
         };
         if seen.contains(candidate) {
             return;
@@ -184,13 +193,37 @@ fn isolated_bare_secret_entropy(
     threshold: f64,
     placeholder_keywords: &[String],
 ) -> Option<f64> {
+    // LAW10: side-effect-free probe path; production collection calls the
+    // Result-returning decision helper and records the typed adjudication stage.
+    if let Ok(entropy) =
+        isolated_bare_secret_entropy_decision(candidate, threshold, placeholder_keywords)
+    {
+        Some(entropy)
+    } else {
+        None
+    }
+}
+
+fn isolated_bare_secret_entropy_decision(
+    candidate: &str,
+    threshold: f64,
+    placeholder_keywords: &[String],
+) -> Result<f64, StageId> {
     if super::scanner::is_canonical_non_secret_shape(candidate) {
-        return None;
+        return Err(StageId::EntropyValueShape(
+            EntropyShapeStage::CanonicalNonSecretShape,
+        ));
     }
     let entropy = shannon_entropy(candidate.as_bytes());
-    (isolated_bare_entropy_floor_met(candidate, entropy, threshold)
-        && is_isolated_bare_secret_plausible(candidate, placeholder_keywords))
-    .then_some(entropy)
+    if !isolated_bare_entropy_floor_met(candidate, entropy, threshold) {
+        return Err(StageId::EntropyBelowFloor);
+    }
+    if !is_isolated_bare_secret_plausible(candidate, placeholder_keywords) {
+        return Err(StageId::EntropyValueShape(
+            EntropyShapeStage::SecretPlausibilityRejected,
+        ));
+    }
+    Ok(entropy)
 }
 
 fn visit_isolated_bare_candidates<'a>(
