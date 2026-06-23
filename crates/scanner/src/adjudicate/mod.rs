@@ -544,6 +544,48 @@ pub(crate) fn record_match_example_suppression(
     );
 }
 
+#[cfg(feature = "decode")]
+pub(crate) fn record_decoded_parent_example_suppression(
+    m: &RawMatch,
+    fallback_path: Option<&str>,
+    parent_data: &str,
+) -> bool {
+    if crate::context::is_known_example_credential(&m.credential)
+        && parent_data.contains(m.credential.as_ref())
+    {
+        record_match_example_suppression(m, fallback_path, "decoded_parent_example");
+        true
+    } else {
+        false
+    }
+}
+
+#[cfg(feature = "decode")]
+pub(crate) fn record_decoded_reverse_placeholder_suppression(
+    m: &RawMatch,
+    fallback_path: Option<&str>,
+    decoded_source_type: &str,
+) -> bool {
+    if !decoded_source_type.contains("/reverse") {
+        return false;
+    }
+    let reversed = crate::decode::reverse::reverse_str(&m.credential).to_uppercase();
+    if decoded_reverse_placeholder_marker(&reversed) {
+        record_match_example_suppression(m, fallback_path, "decoded_reverse_placeholder");
+        true
+    } else {
+        false
+    }
+}
+
+#[cfg(feature = "decode")]
+fn decoded_reverse_placeholder_marker(reversed: &str) -> bool {
+    reversed.contains("EXAMPLE")
+        || reversed.contains("PLACEHOLDER")
+        || reversed.contains("SAMPLE")
+        || reversed.contains("YOUR_")
+}
+
 fn explicit_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {
     if let Some(stage_id) = ctx.explicit_stage {
         StageOutcome::Suppress(stage_id)

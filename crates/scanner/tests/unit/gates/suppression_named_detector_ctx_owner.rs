@@ -550,15 +550,23 @@ fn example_suppression_telemetry_is_only_called_by_adjudicator() {
 fn decoded_postprocess_example_drops_route_through_adjudicator() {
     let src = scanner_src();
     let code = uncommented_code(&read(&src.join("engine/scan_postprocess.rs")));
+    let adjudicate = adjudicate_code(&src);
     assert!(
-        code.contains("crate::adjudicate::record_match_example_suppression(")
-            && code.contains("\"decoded_parent_example\"")
-            && code.contains("\"decoded_reverse_placeholder\""),
-        "decoded postprocess example/reverse drops must emit adjudicator-owned example telemetry"
+        code.contains("crate::adjudicate::record_decoded_parent_example_suppression(")
+            && code.contains("crate::adjudicate::record_decoded_reverse_placeholder_suppression(")
+            && adjudicate.contains("fn record_decoded_parent_example_suppression(")
+            && adjudicate.contains("fn record_decoded_reverse_placeholder_suppression(")
+            && adjudicate.contains("\"decoded_parent_example\"")
+            && adjudicate.contains("\"decoded_reverse_placeholder\""),
+        "decoded postprocess example/reverse drops must ask adjudicator-owned helpers to decide and emit example telemetry"
     );
     assert!(
-        !code.contains("crate::telemetry::record_example_suppression("),
-        "scan_postprocess.rs must not bypass adjudicator for decoded suppression telemetry"
+        !code.contains("crate::telemetry::record_example_suppression(")
+            && !code.contains("crate::context::is_known_example_credential(")
+            && !code.contains("crate::decode::reverse::reverse_str(")
+            && !code.contains("\"decoded_parent_example\"")
+            && !code.contains("\"decoded_reverse_placeholder\""),
+        "scan_postprocess.rs must not own decoded example/placeholder suppression predicates or telemetry reasons"
     );
 }
 

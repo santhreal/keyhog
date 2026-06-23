@@ -155,36 +155,23 @@ impl CompiledScanner {
                     DECODE_SCAN_NS.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
                 }
                 for m in decoded_matches {
-                    if crate::context::is_known_example_credential(&m.credential)
-                        && chunk.data.as_ref().contains(m.credential.as_ref())
-                    {
-                        crate::adjudicate::record_match_example_suppression(
-                            &m,
-                            chunk.metadata.path.as_deref(),
-                            "decoded_parent_example",
-                        );
+                    if crate::adjudicate::record_decoded_parent_example_suppression(
+                        &m,
+                        chunk.metadata.path.as_deref(),
+                        chunk.data.as_ref(),
+                    ) {
                         continue;
                     }
-                    // Reverse can hide documentation markers from forward
-                    // example checks, so reverse the candidate before guarding.
-                    if decoded_chunk.metadata.source_type.contains("/reverse") {
-                        let rev = crate::decode::reverse::reverse_str(&m.credential).to_uppercase();
-                        if rev.contains("EXAMPLE")
-                            || rev.contains("PLACEHOLDER")
-                            || rev.contains("SAMPLE")
-                            || rev.contains("YOUR_")
-                        {
-                            crate::adjudicate::record_match_example_suppression(
-                                &m,
-                                decoded_chunk
-                                    .metadata
-                                    .path
-                                    .as_deref()
-                                    .or(chunk.metadata.path.as_deref()),
-                                "decoded_reverse_placeholder",
-                            );
-                            continue;
-                        }
+                    if crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+                        &m,
+                        decoded_chunk
+                            .metadata
+                            .path
+                            .as_deref()
+                            .or(chunk.metadata.path.as_deref()),
+                        &decoded_chunk.metadata.source_type,
+                    ) {
+                        continue;
                     }
                     decoded_candidates.push(m);
                 }
