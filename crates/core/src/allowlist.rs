@@ -25,7 +25,7 @@ use metadata::*;
 // index) is its own subsystem; the `Allowlist` holds a precompiled index and
 // delegates every path decision to it.
 mod glob;
-use glob::{PathGlobIndex, normalize_path};
+use glob::{normalize_path, PathGlobIndex};
 
 /// User-defined suppressions loaded from `.keyhogignore`: credential hashes, detector IDs, and path globs.
 ///
@@ -196,19 +196,31 @@ impl Allowlist {
             // Drop entries whose `expires` is past - keeps `.keyhogignore`
             // self-cleaning for short-lived approvals (Tier-B #18 governance).
             if let Some(exp) = parsed_meta.expires.as_deref() {
-                if exp < today.as_str() {
-                    al.expired_entries.push(ExpiredAllowlistEntry {
-                        line_number: line_number + 1,
-                        entry: entry.to_string(),
-                        expires: exp.to_string(),
-                    });
-                    tracing::warn!(
-                        "allowlist entry expired on {} (today is {}): '{}'",
-                        exp,
-                        today,
-                        entry
-                    );
-                    continue;
+                match parse_yyyy_mm_dd_days(exp) {
+                    Some(exp_days) if exp_days < today_days => {
+                        al.expired_entries.push(ExpiredAllowlistEntry {
+                            line_number: line_number + 1,
+                            entry: entry.to_string(),
+                            expires: exp.to_string(),
+                        });
+                        tracing::warn!(
+                            "allowlist entry expired on {} (today is {}): '{}'",
+                            exp,
+                            today,
+                            entry
+                        );
+                        continue;
+                    }
+                    Some(_) => {}
+                    None => {
+                        al.push_policy_violation(
+                            line_number + 1,
+                            entry,
+                            "expires",
+                            "must use YYYY-MM-DD".to_string(),
+                        );
+                        continue;
+                    }
                 }
             }
 

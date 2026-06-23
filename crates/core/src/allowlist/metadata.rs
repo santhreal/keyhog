@@ -4,17 +4,14 @@ use super::InlineMetadata;
 
 pub(super) fn parse_inline_metadata(s: &str) -> InlineMetadata {
     let mut meta = InlineMetadata::default();
-    for token in s.split(';') {
+    for token in metadata_tokens(s) {
         let token = token.trim();
         if token.is_empty() {
             continue;
         }
         let Some(eq) = token.find('=') else { continue };
         let key = token[..eq].trim();
-        let value = token[eq + 1..]
-            .trim()
-            .trim_matches(|c: char| c == '"' || c == '\'')
-            .to_string();
+        let value = unquote_metadata_value(token[eq + 1..].trim()).to_string();
         match key {
             "reason" => meta.reason = Some(value),
             "expires" => meta.expires = Some(value),
@@ -25,6 +22,46 @@ pub(super) fn parse_inline_metadata(s: &str) -> InlineMetadata {
         }
     }
     meta
+}
+
+fn metadata_tokens(s: &str) -> impl Iterator<Item = &str> {
+    let mut tokens = Vec::new();
+    let mut start = 0;
+    let mut quote = None;
+    let mut escaped = false;
+    for (idx, ch) in s.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if quote.is_some() && ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        match (quote, ch) {
+            (Some(active), current) if active == current => quote = None,
+            (None, '"' | '\'') => quote = Some(ch),
+            (None, ';') => {
+                tokens.push(&s[start..idx]);
+                start = idx + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    tokens.push(&s[start..]);
+    tokens.into_iter()
+}
+
+fn unquote_metadata_value(value: &str) -> &str {
+    let bytes = value.as_bytes();
+    if bytes.len() >= 2
+        && ((bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\''))
+    {
+        &value[1..value.len() - 1]
+    } else {
+        value
+    }
 }
 
 pub(super) fn log_metadata_audit(kind: &str, entry: &str, meta: &InlineMetadata) {
