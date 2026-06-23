@@ -1,6 +1,6 @@
 use crate::args::ScanArgs;
 
-use super::{parse_config_byte_size, schema::LimitsSection};
+use super::{scan::parse_config_byte_size, schema::LimitsSection};
 
 fn merge_limit_bytes(
     errors: &mut Vec<String>,

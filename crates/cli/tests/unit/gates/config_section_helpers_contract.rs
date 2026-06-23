@@ -7,6 +7,8 @@ fn config_file_merge_uses_section_helpers() {
         "/src/config/sections.rs"
     ))
     .expect("config sections source readable");
+    let scan = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/config/scan.rs"))
+        .expect("config scan source readable");
     let apply = src
         .split("fn apply_config_file_impl(")
         .nth(1)
@@ -27,11 +29,20 @@ fn config_file_merge_uses_section_helpers() {
     for helper in [
         "fn apply_scan_section(",
         "fn apply_top_level_scan_fields(",
-        "fn resolve_policy_outcome(",
+        "fn parse_config_byte_size(",
+        "fn parse_config_decode_depth(",
+        "fn keyword_list_is_nonempty(",
     ] {
         assert!(
+            scan.contains(helper),
+            "config/scan.rs must keep {helper} as a focused scan config owner"
+        );
+    }
+
+    for helper in ["fn resolve_policy_outcome("] {
+        assert!(
             src.contains(helper),
-            "config.rs must keep {helper} as a focused config section owner"
+            "config.rs must keep {helper} as the config policy outcome owner"
         );
     }
 
