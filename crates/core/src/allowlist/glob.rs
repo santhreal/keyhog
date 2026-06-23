@@ -192,21 +192,26 @@ fn glob_match_segments<S: AsRef<str>>(pattern: &[S], path: &[&str]) -> bool {
 
 fn segment_match(pattern: &str, text: &str) -> bool {
     if pattern.is_ascii() && text.is_ascii() {
-        return segment_match_ascii(pattern.as_bytes(), text.as_bytes());
+        return segment_match_units(pattern.as_bytes(), text.as_bytes(), b'*');
     }
 
-    segment_match_chars(pattern, text)
+    let pattern_chars: Vec<char> = pattern.chars().collect();
+    let text_chars: Vec<char> = text.chars().collect();
+    segment_match_units(&pattern_chars, &text_chars, '*')
 }
 
 #[allow(clippy::similar_names)] // star_pi / star_ti name the same Kleene-star state in two coordinate systems
-fn segment_match_ascii(pattern: &[u8], text: &[u8]) -> bool {
+fn segment_match_units<T>(pattern: &[T], text: &[T], star_unit: T) -> bool
+where
+    T: Copy + Eq,
+{
     let mut pi = 0usize;
     let mut ti = 0usize;
     let mut star_pi = None;
     let mut star_ti = 0usize;
 
     while ti < text.len() {
-        if pi < pattern.len() && pattern[pi] == b'*' {
+        if pi < pattern.len() && pattern[pi] == star_unit {
             star_pi = Some(pi);
             star_ti = ti;
             pi += 1;
@@ -229,52 +234,11 @@ fn segment_match_ascii(pattern: &[u8], text: &[u8]) -> bool {
         return false;
     }
 
-    while pi < pattern.len() && pattern[pi] == b'*' {
+    while pi < pattern.len() && pattern[pi] == star_unit {
         pi += 1;
     }
 
     pi == pattern.len()
-}
-
-#[allow(clippy::similar_names)] // star_pi / star_ti name the same Kleene-star state in two coordinate systems
-fn segment_match_chars(pattern: &str, text: &str) -> bool {
-    let pattern_chars: Vec<char> = pattern.chars().collect();
-    let text_chars: Vec<char> = text.chars().collect();
-
-    let mut pi = 0usize;
-    let mut ti = 0usize;
-    let mut star_pi = None;
-    let mut star_ti = 0usize;
-
-    while ti < text_chars.len() {
-        if pi < pattern_chars.len() && pattern_chars[pi] == '*' {
-            star_pi = Some(pi);
-            star_ti = ti;
-            pi += 1;
-            continue;
-        }
-
-        if pi < pattern_chars.len() && pattern_chars[pi] == text_chars[ti] {
-            pi += 1;
-            ti += 1;
-            continue;
-        }
-
-        if let Some(star) = star_pi {
-            star_ti += 1;
-            ti = star_ti;
-            pi = star + 1;
-            continue;
-        }
-
-        return false;
-    }
-
-    while pi < pattern_chars.len() && pattern_chars[pi] == '*' {
-        pi += 1;
-    }
-
-    pi == pattern_chars.len()
 }
 
 pub(super) fn normalize_path(path: &str) -> String {

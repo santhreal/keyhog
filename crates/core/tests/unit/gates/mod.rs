@@ -1,3 +1,4 @@
+pub mod allowlist_glob_segment_match_single_owner;
 pub mod allowlist_hash_hex_single_owner;
 pub mod allowlist_no_inline_tests;
 pub mod allowlist_no_unwrap_expect;
