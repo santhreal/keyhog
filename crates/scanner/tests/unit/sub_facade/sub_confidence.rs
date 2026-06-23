@@ -17,7 +17,8 @@ use keyhog_scanner::testing::confidence::{
 };
 #[cfg(feature = "ml")]
 use keyhog_scanner::testing::confidence::{
-    ml_pending_confidence, probabilistic_promise_confidence_override,
+    apply_empty_candidate_score_policy, ml_pending_confidence, ml_score_for_candidate_text,
+    probabilistic_promise_confidence_override,
 };
 
 fn all_false_signals() -> ConfidenceSignals {
@@ -380,6 +381,21 @@ fn ml_context_policy_honors_scan_comments_opt_out() {
     let unpenalized = ml_pending_confidence(0.7, 0.7, 0.5, false, CodeContext::Comment, true, true);
     assert!(penalized < unpenalized, "{penalized} vs {unpenalized}");
     assert!((unpenalized - 0.7).abs() < 1e-9);
+}
+
+#[test]
+#[cfg(feature = "ml")]
+fn ml_empty_candidate_score_policy_returns_zero() {
+    assert_eq!(ml_score_for_candidate_text("", 0.87), 0.0);
+    assert_eq!(ml_score_for_candidate_text("secret", 0.87), 0.87);
+}
+
+#[test]
+#[cfg(feature = "ml")]
+fn ml_empty_candidate_batch_policy_changes_only_empty_texts() {
+    let mut scores = [0.91, 0.82, 0.73];
+    apply_empty_candidate_score_policy(&["alpha", "", "omega"], &mut scores);
+    assert_eq!(scores, [0.91, 0.0, 0.73]);
 }
 
 #[test]

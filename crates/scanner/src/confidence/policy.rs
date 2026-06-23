@@ -237,6 +237,28 @@ pub(crate) fn ml_pending_confidence(policy: MlConfidencePolicy) -> f64 {
 }
 
 #[cfg(feature = "ml")]
+#[inline]
+pub(crate) fn ml_score_for_candidate_text(text: &str, score: impl FnOnce() -> f64) -> f64 {
+    if text.is_empty() {
+        0.0
+    } else {
+        score()
+    }
+}
+
+#[cfg(feature = "ml")]
+pub(crate) fn apply_empty_candidate_score_policy<'a>(
+    texts: impl IntoIterator<Item = &'a str>,
+    scores: &mut [f64],
+) {
+    for (text, score) in texts.into_iter().zip(scores.iter_mut()) {
+        if text.is_empty() {
+            *score = 0.0;
+        }
+    }
+}
+
+#[cfg(feature = "ml")]
 pub(crate) fn probabilistic_promise_confidence_override(
     credential: &str,
     is_named_detector: bool,

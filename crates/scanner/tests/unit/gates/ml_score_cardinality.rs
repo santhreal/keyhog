@@ -91,6 +91,9 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
     assert!(
         gpu.contains("let score_features_on_cpu = || -> Vec<f64>")
             && gpu.contains("scores.len() == candidates.len()")
+            && gpu.contains("crate::confidence::policy::ml_score_for_candidate_text(")
+            && gpu.contains("crate::confidence::policy::apply_empty_candidate_score_policy(")
+            && !gpu.contains("*score = 0.0;")
             && gpu.contains(
                 "GPU MoE score count mismatch; recomputing CPU MoE scores for this batch"
             ),

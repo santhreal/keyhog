@@ -243,6 +243,16 @@ pub mod confidence {
     }
 
     #[cfg(all(test, feature = "ml"))]
+    pub(crate) fn ml_score_for_candidate_text(text: &str, score: f64) -> f64 {
+        crate::confidence::policy::ml_score_for_candidate_text(text, || score)
+    }
+
+    #[cfg(all(test, feature = "ml"))]
+    pub(crate) fn apply_empty_candidate_score_policy(texts: &[&str], scores: &mut [f64]) {
+        crate::confidence::policy::apply_empty_candidate_score_policy(texts.iter().copied(), scores)
+    }
+
+    #[cfg(all(test, feature = "ml"))]
     pub(crate) fn probabilistic_promise_confidence_override(
         credential: &str,
         is_named_detector: bool,

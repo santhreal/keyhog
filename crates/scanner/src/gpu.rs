@@ -157,11 +157,9 @@ pub(crate) fn batch_ml_inference_with_timeout(
             let scores: Vec<f64> = candidates
                 .iter()
                 .map(|(text, ctx)| {
-                    if text.is_empty() {
-                        0.0
-                    } else {
+                    crate::confidence::policy::ml_score_for_candidate_text(text, || {
                         crate::ml_scorer::score_features(&feat_of(text, ctx))
-                    }
+                    })
                 })
                 .collect();
             if let Some(t) = t {
@@ -194,11 +192,9 @@ pub(crate) fn batch_ml_inference_with_timeout(
                 .par_iter()
                 .zip(features.par_iter())
                 .map(|((text, _ctx), features)| {
-                    if text.is_empty() {
-                        0.0
-                    } else {
+                    crate::confidence::policy::ml_score_for_candidate_text(text, || {
                         crate::ml_scorer::score_features(features)
-                    }
+                    })
                 })
                 .collect()
         };
@@ -207,11 +203,10 @@ pub(crate) fn batch_ml_inference_with_timeout(
             {
                 match backend::batch_score_features(&features, gpu_moe_timeout) {
                     Some(mut scores) if scores.len() == candidates.len() => {
-                        for ((text, _ctx), score) in candidates.iter().zip(scores.iter_mut()) {
-                            if text.is_empty() {
-                                *score = 0.0;
-                            }
-                        }
+                        crate::confidence::policy::apply_empty_candidate_score_policy(
+                            candidates.iter().map(|(text, _ctx)| *text),
+                            &mut scores,
+                        );
                         scores
                     }
                     Some(scores) => {
