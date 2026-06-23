@@ -109,6 +109,12 @@ const MMAP_THRESHOLD: u64 = 64 * 1024;
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 const MMAP_THRESHOLD: u64 = 1024 * 1024;
 
+#[derive(Clone, Copy)]
+struct FileLiveMetadata {
+    mtime_ns: u64,
+    size_bytes: u64,
+}
+
 /// Per-entry chunk extraction. Reads the file, archive, or compressed
 /// stream and feeds each resulting `Chunk` to `emit` as it is produced.
 #[allow(clippy::too_many_arguments)]
@@ -169,9 +175,10 @@ pub(super) fn process_entry(
         return;
     }
 
-    let live_mtime_ns = file_mtime_ns(&path);
-    if let (Some(idx), Some(mtime_ns)) = (merkle.as_ref(), live_mtime_ns) {
-        if idx.metadata_unchanged(&path, mtime_ns, file_size) {
+    let live_metadata = file_live_metadata(&path);
+    let live_mtime_ns = live_metadata.map(|meta| meta.mtime_ns);
+    if let (Some(idx), Some(meta)) = (merkle.as_ref(), live_metadata) {
+        if idx.metadata_unchanged(&path, meta.mtime_ns, meta.size_bytes) {
             skipped.fetch_add(1, Ordering::Relaxed);
             return;
         }
@@ -541,14 +548,17 @@ pub(super) fn process_entry(
     }
 }
 
-/// Read the mtime as nanoseconds-since-UNIX-epoch via a single `stat`.
+/// Read live metadata via a single `stat`.
 /// Returns `None` when the platform/filesystem doesn't expose a usable
 /// modified time - in that case the cache fast-path simply doesn't fire,
 /// which is strictly better than a false skip.
-fn file_mtime_ns(path: &Path) -> Option<u64> {
+fn file_live_metadata(path: &Path) -> Option<FileLiveMetadata> {
     let meta = std::fs::metadata(path).ok()?; // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
     let modified = meta.modified().ok()?; // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
     let dur = modified.duration_since(std::time::UNIX_EPOCH).ok()?; // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
     let nanos = dur.as_secs() as u128 * 1_000_000_000 + dur.subsec_nanos() as u128;
-    Some(u64::try_from(nanos).unwrap_or(u64::MAX)) // LAW10: empty/absent => documented numeric default, recall-safe
+    Some(FileLiveMetadata {
+        mtime_ns: u64::try_from(nanos).unwrap_or(u64::MAX), // LAW10: empty/absent => documented numeric default, recall-safe
+        size_bytes: meta.len(),
+    })
 }

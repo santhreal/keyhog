@@ -80,12 +80,12 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
     );
     assert!(
         extract
-            .find("idx.metadata_unchanged(&path, mtime_ns, file_size)")
+            .find("idx.metadata_unchanged(&path, meta.mtime_ns, meta.size_bytes)")
             .expect("merkle unchanged check must be present")
             < extract
                 .find("read::read_file_prefix_safe(&path, &mut buf)")
                 .expect("extensionless prefix sniff must be present"),
-        "merkle unchanged files must skip before the extensionless prefix reader opens the file"
+        "merkle unchanged files must compare live mtime and live size before the extensionless prefix reader opens the file"
     );
     assert!(
         raw.contains("fn read_file_prefix_safe(")

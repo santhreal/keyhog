@@ -189,7 +189,7 @@ pub(in crate::filesystem::read) fn looks_binary(bytes: &[u8]) -> bool {
 }
 
 pub(in crate::filesystem) fn looks_binary_prefix(bytes: &[u8]) -> bool {
-    has_binary_magic(bytes) || has_repeated_nul_run(bytes)
+    has_unambiguous_prefix_magic(bytes) || has_repeated_nul_run(bytes)
 }
 
 fn has_repeated_nul_run(bytes: &[u8]) -> bool {
@@ -205,6 +205,9 @@ fn has_binary_magic(bytes: &[u8]) -> bool {
     // O(n) controls-density scan for files that already declare what
     // they are. Adding new magics here is cheap; removing them is the
     // dangerous direction.
+    if has_bmp_header(bytes) || has_pe_header(bytes) || has_bzip2_header(bytes) {
+        return true;
+    }
     const MAGIC_HEADERS: &[&[u8]] = &[
         b"%PDF-",
         b"PK\x03\x04", // ZIP / JAR / DOCX / XLSX / PPTX / APK / OOXML
@@ -215,26 +218,71 @@ fn has_binary_magic(bytes: &[u8]) -> bool {
         b"\xfe\xed\xfa\xcf",   // Mach-O 64-bit
         b"\xcf\xfa\xed\xfe",   // Mach-O 64-bit reversed
         b"\xca\xfe\xba\xbe",   // Java .class (universal Mach-O collision)
-        b"MZ",                 // Windows PE / .exe / .dll / .sys
         b"\x1f\x8b",           // gzip (.gz)
-        b"BZh",                // bzip2 (.bz2)
         b"\xfd7zXZ\x00",       // xz (.xz)
         b"7z\xbc\xaf\x27\x1c", // 7z (.7z)
         b"Rar!\x1a\x07",       // RAR
         b"GIF87a",             // GIF
         b"GIF89a",             // GIF
         b"\xff\xd8\xff",       // JPEG (any variant)
-        b"BM",                 // BMP - too short alone, but combined with the
-        // density check below this is safe
-        b"\x00\x00\x01\x00", // ICO
-        b"OggS",             // Ogg container
-        b"ID3",              // MP3 with ID3 tag
-        b"fLaC",             // FLAC
-        b"\x00asm",          // WebAssembly module
-        b"!<arch>\n",        // Unix `ar` archives (.a, .deb)
-        b"\x80\x02",         // Python pickle (protocol 2+) - common stub
+        b"\x00\x00\x01\x00",   // ICO
+        b"OggS",               // Ogg container
+        b"fLaC",               // FLAC
+        b"\x00asm",            // WebAssembly module
+        b"!<arch>\n",          // Unix `ar` archives (.a, .deb)
+        b"\x80\x02",           // Python pickle (protocol 2+) - common stub
     ];
     MAGIC_HEADERS.iter().any(|header| bytes.starts_with(header))
+}
+
+fn has_unambiguous_prefix_magic(bytes: &[u8]) -> bool {
+    const PREFIX_MAGIC_HEADERS: &[&[u8]] = &[
+        b"%PDF-",
+        b"PK\x03\x04",
+        b"\x89PNG\r\n\x1a\n",
+        b"\xD0\xCF\x11\xE0",
+        b"\x7fELF",
+        b"\xfe\xed\xfa\xce",
+        b"\xfe\xed\xfa\xcf",
+        b"\xcf\xfa\xed\xfe",
+        b"\xca\xfe\xba\xbe",
+        b"\x1f\x8b",
+        b"\xfd7zXZ\x00",
+        b"7z\xbc\xaf\x27\x1c",
+        b"Rar!\x1a\x07",
+        b"GIF87a",
+        b"GIF89a",
+        b"\xff\xd8\xff",
+        b"\x00\x00\x01\x00",
+        b"OggS",
+        b"fLaC",
+        b"\x00asm",
+        b"!<arch>\n",
+    ];
+    PREFIX_MAGIC_HEADERS
+        .iter()
+        .any(|header| bytes.starts_with(header))
+}
+
+fn has_bmp_header(bytes: &[u8]) -> bool {
+    bytes.len() >= 14
+        && bytes.starts_with(b"BM")
+        && bytes[6..10] == [0, 0, 0, 0]
+        && u32::from_le_bytes([bytes[10], bytes[11], bytes[12], bytes[13]]) >= 14
+}
+
+fn has_pe_header(bytes: &[u8]) -> bool {
+    if bytes.len() < 64 || !bytes.starts_with(b"MZ") {
+        return false;
+    }
+    let pe_offset = u32::from_le_bytes([bytes[60], bytes[61], bytes[62], bytes[63]]) as usize;
+    pe_offset
+        .checked_add(4)
+        .is_some_and(|end| end <= bytes.len() && &bytes[pe_offset..end] == b"PE\0\0")
+}
+
+fn has_bzip2_header(bytes: &[u8]) -> bool {
+    bytes.len() >= 4 && bytes.starts_with(b"BZh") && matches!(bytes[3], b'1'..=b'9')
 }
 
 fn has_utf16_nul_pattern(bytes: &[u8]) -> bool {

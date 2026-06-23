@@ -637,18 +637,34 @@ fn elf_magic_with_nonskip_extension_falls_back_to_strings_not_text() {
 }
 
 #[test]
-fn extensionless_mz_magic_is_skipped() {
-    // "MZ" header (PE/exe) detected by the sniff on an extensionless file.
+fn extensionless_mz_text_like_prefix_is_scanned() {
+    // A bare "MZ" prefix is not enough evidence to discard extensionless text;
+    // real PE validation needs the later PE header, and the prefix sniff only
+    // sees the first 16 bytes.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("program"); // no extension
-    let mut bytes = b"MZ".to_vec();
-    bytes.extend_from_slice(b"\x90\x00\x03 padding KEY=mz");
-    fs::write(&path, &bytes).unwrap();
+    fs::write(&path, b"MZ_TOKEN=text_prefix_value").unwrap();
     let chunks = scan_single_file(&path);
-    assert!(
-        chunks.is_empty(),
-        "MZ-magic extensionless file must be skipped"
+    assert_eq!(
+        chunks.len(),
+        1,
+        "bare MZ-prefixed text must stay on the recall-preserving scan path"
     );
+    assert!(chunks[0].data.contains("MZ_TOKEN=text_prefix_value"));
+}
+
+#[test]
+fn extensionless_bm_text_like_prefix_is_scanned() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bitmap-note"); // no extension
+    fs::write(&path, b"BM_TOKEN=text_prefix_value").unwrap();
+    let chunks = scan_single_file(&path);
+    assert_eq!(
+        chunks.len(),
+        1,
+        "bare BM-prefixed text must not be classified as BMP binary"
+    );
+    assert!(chunks[0].data.contains("BM_TOKEN=text_prefix_value"));
 }
 
 #[test]

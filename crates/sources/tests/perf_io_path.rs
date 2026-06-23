@@ -7,7 +7,7 @@
 //! through `filesystem::extract::process_entry`, which for a sub-64-KiB text
 //! file (the dominant case in any real source tree) does, per file:
 //!
-//!   1. `file_mtime_ns(&path)` -> `std::fs::metadata(path)`  (extract.rs:111,
+//!   1. `file_live_metadata(&path)` -> `std::fs::metadata(path)`  (extract.rs:111,
 //!      extract.rs:673-678) — a path-based, symlink-FOLLOWING `statx`. Its only
 //!      consumer is the merkle/incremental cache: the `live_mtime_ns` it
 //!      produces is read in `crates/cli/src/orchestrator/dispatch.rs:378/387`
@@ -45,7 +45,7 @@
 //!     buffer + one 0-byte EOF probe). `read_to_end` on an empty `Vec` is the
 //!     defect.
 //!   * metadata stats per file: ~3-4 (the walker's own stat + the post-open fd
-//!     stat the std read path issues). Dropping the unused `file_mtime_ns`
+//!     stat the std read path issues). Dropping the unused `file_live_metadata`
 //!     follow-`stat` on the non-`--incremental` path removes ~1 full path-stat
 //!     per file outright.
 //!
@@ -70,7 +70,7 @@
 //! green — in particular `crates/sources/tests/all_tests.rs` (filesystem
 //! read/decode coverage) and `crates/sources/tests/property/filesystem_fuzz.rs`.
 //!
-//! The originally-proposed second half — gating the per-file `file_mtime_ns`
+//! The originally-proposed second half — gating the per-file `file_live_metadata`
 //! stat on `merkle.is_some()` — was NOT applied: `FilesystemSource` populates
 //! `Chunk.metadata.mtime_ns` on every scan by contract (see the three
 //! `mtime_ns.is_some()` assertions cited on `MAX_META_STATS_PER_FILE`), so that
@@ -91,8 +91,8 @@ const MAX_READS_PER_FILE: f64 = 3.5;
 /// scanned file (statx + stat + fstat + newfstatat). Measured ~7-8.5/file
 /// across hosts.
 ///
-/// NOTE — the original "drop the unused `file_mtime_ns` follow-stat → ~3-4/file"
-/// target was REFUTED. `file_mtime_ns` is NOT waste: `FilesystemSource` populates
+/// NOTE — the original "drop the unused `file_live_metadata` follow-stat → ~3-4/file"
+/// target was REFUTED. `file_live_metadata` is NOT waste: `FilesystemSource` populates
 /// `Chunk.metadata.mtime_ns` on EVERY scan (not just `--incremental`), a contract
 /// asserted by `tests/integration/filesystem.rs` (mtime_ns.is_some() at L378 and
 /// L635) and `tests/gaps/filesystem_source.rs:942`. Gating that stat behind
@@ -307,12 +307,12 @@ fn io_path_per_file_syscall_budget_is_not_blown() {
          (statx+stat+fstat+newfstatat, best of {RUNS}, N={N_FILES})\n  ceiling:  \
          <= {MAX_META_STATS_PER_FILE:.1}/file (a GROSS-regression backstop, not a tight \
          target)\n  expected floor: ~7-8.5/file = codewalk's intrinsic per-entry \
-         walk + the ONE contract-required `file_mtime_ns` stat that populates \
+         walk + the ONE contract-required `file_live_metadata` stat that populates \
          Chunk.metadata.mtime_ns (asserted is_some() by tests/integration/\
          filesystem.rs and tests/gaps/filesystem_source.rs). A value above the \
          ceiling means a NEW redundant per-file stat was added (e.g. a second \
          path-stat, or an fd-stat the small-file buffered path does not need). \
-         Find and remove the added stat; do NOT drop file_mtime_ns (it is the \
+         Find and remove the added stat; do NOT drop file_live_metadata (it is the \
          mtime_ns contract and codewalk \"=0.2.5\" does not surface mtime)."
     );
 }

@@ -4,7 +4,7 @@
 //! through `pub(in crate::filesystem::read)`.
 
 use super::bytes::read_file_for_compressed_input;
-use super::decode::{decode_text_file, decode_utf16, looks_binary};
+use super::decode::{decode_text_file, decode_utf16, looks_binary, looks_binary_prefix};
 use super::window::{for_each_file_windowed_mmap, read_file_windowed_mmap, slice_into_windows};
 
 #[test]
@@ -51,6 +51,29 @@ fn looks_binary_single_control_in_short_text_is_text() {
 fn looks_binary_repeated_nul_run_is_binary() {
     let bytes = b"prefix\0\0\0\0suffix";
     assert!(looks_binary(bytes));
+}
+
+#[test]
+fn binary_magic_short_ascii_prefixes_require_structure() {
+    assert!(!looks_binary(b"BM_TOKEN=text_prefix_value"));
+    assert!(!looks_binary_prefix(b"BM_TOKEN=text"));
+    assert!(!looks_binary(b"MZ_TOKEN=text_prefix_value"));
+    assert!(!looks_binary_prefix(b"MZ_TOKEN=text"));
+    assert!(!looks_binary(b"BZh_TOKEN=text_prefix_value"));
+}
+
+#[test]
+fn binary_magic_structural_bmp_and_pe_headers_are_binary() {
+    let bmp = [b'B', b'M', 70, 0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0, b'd', b'a'];
+    assert!(looks_binary(&bmp));
+    assert!(looks_binary_prefix(&bmp));
+
+    let mut pe = vec![0u8; 132];
+    pe[0..2].copy_from_slice(b"MZ");
+    pe[60..64].copy_from_slice(&128u32.to_le_bytes());
+    pe[128..132].copy_from_slice(b"PE\0\0");
+    assert!(looks_binary(&pe));
+    assert!(looks_binary_prefix(&pe[..16]));
 }
 
 #[test]
