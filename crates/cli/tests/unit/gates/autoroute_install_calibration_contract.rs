@@ -62,6 +62,11 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
         "/src/orchestrator/dispatch/fused.rs"
     ))
     .expect("fused dispatch source readable");
+    let streaming = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/streaming.rs"
+    ))
+    .expect("streaming source helper readable");
     let config = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/orchestrator_config.rs"
@@ -72,6 +77,11 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
         "/src/orchestrator_config/effective.rs"
     ))
     .expect("effective config source readable");
+    let calibration_config = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator_config/calibration.rs"
+    ))
+    .expect("calibration config source readable");
     let orchestrator_mod = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/orchestrator/mod.rs"
@@ -285,9 +295,10 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && effective_config.contains("tuning_gpu_recall_floor")
             && effective_config.contains("detector_min_confidence")
             && effective_config.contains("disabled_detectors")
-            && config.contains("StableHasher::new(\"calibration-store-digest\")")
+            && calibration_config.contains("StableHasher::new(\"calibration-store-digest\")")
             && !backend.contains("DefaultHasher")
             && !effective_config.contains("DefaultHasher")
+            && !calibration_config.contains("DefaultHasher")
             && !config.contains("DefaultHasher"),
         "autoroute cache identity must include the fully resolved scan config and runtime backend knobs through stable BLAKE3 hashing, not Rust DefaultHasher state"
     );
@@ -312,11 +323,13 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && (daemon_server.contains("source_type: \"filesystem\"")
                 || daemon_server.contains("FilesystemSource::new"))
             && scan_system.contains("compile_default_scan_runtime")
-            && scan_system.contains("scan_runtime.scan_chunk(&chunk)")
+            && scan_system.contains("scan_streaming_source(")
+            && streaming.contains("scan_runtime.scan_chunk(&chunk)")
             && installer_release.contains("scan_with_backend(&chunk, ScanBackend::CpuFallback)")
             && !watch.contains("scanner.scan(&chunk)")
             && !daemon_server.contains("scanner.scan(&chunk)")
             && !scan_system.contains("scanner.scan(&chunk)")
+            && !streaming.contains("scanner.scan(&chunk)")
             && !installer_release.contains("scanner.scan(&chunk)"),
         "daemon, watch, scan-system, and installer release self-test paths must not use CompiledScanner's heuristic default scan path"
     );
@@ -329,6 +342,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && install_sh.contains("Autoroute calibration")
             && install_sh.contains("kib_sizes=\"4 64\"")
             && install_sh.contains("mib_sizes=\"1 8 32\"")
+            && install_sh.contains("many_file_counts=\"4 16 32\"")
             && install_sh.contains("elapsed_ms_since")
             && install_sh.contains("PASS %s (%sms)")
             && install_sh.contains("FAIL %s (%sms)")
@@ -339,7 +353,9 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && install_sh.contains("run_autoroute_stdin_probe")
             && install_sh.contains("scan --autoroute-calibrate --stdin")
             && install_sh.contains("make_calibration_tree_kib")
-            && install_sh.contains("32 x 4 KiB files workload")
+            && install_sh.contains("for file_count in $many_file_counts")
+            && install_sh.contains("${file_count} x 4 KiB files workload")
+            && install_sh.contains("many-${file_count}x4k")
             && install_sh.contains("decode-heavy 256 KiB workload")
             && install_sh.contains("make_decode_heavy_calibration_probe_kib")
             && install_sh.contains("plain_calibration_block")
@@ -394,13 +410,16 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && install_ps1.contains("FAIL {0} ({1}ms)")
             && install_ps1.contains("@(4, 64)")
             && install_ps1.contains("@(1, 8, 32)")
+            && install_ps1.contains("@(4, 16, 32)")
             && install_ps1.contains("empty stdin workload")
             && install_ps1.contains("stdin 64 KiB workload")
             && install_ps1.contains("Mode = 'stdin'")
             && install_ps1.contains("'scan', '--stdin'")
             && install_ps1.contains("RedirectStandardInput")
             && install_ps1.contains("New-CalibrationTreeKiB")
-            && install_ps1.contains("32 x 4 KiB files workload")
+            && install_ps1.contains("foreach ($fileCount in @(4, 16, 32))")
+            && install_ps1.contains("${fileCount} x 4 KiB files workload")
+            && install_ps1.contains("many-${fileCount}x4k")
             && install_ps1.contains("decode-heavy 256 KiB workload")
             && install_ps1.contains("New-DecodeHeavyCalibrationProbeKiB")
             && install_ps1.contains("New-PlainCalibrationBlock")

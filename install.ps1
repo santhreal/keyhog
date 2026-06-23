@@ -812,15 +812,17 @@ function Invoke-AutorouteCalibration {
                 Stdout = Join-Path $tmpDir 'stdout-decode-heavy-256kib.txt'
                 Stderr = Join-Path $tmpDir 'stderr-decode-heavy-256kib.txt'
             }
-            $tree = Join-Path $tmpDir 'many-4k'
-            New-CalibrationTreeKiB -Path $tree -Files 32 -KiB 4
-            $workloads += [pscustomobject]@{
-                Label = '32 x 4 KiB files workload'
-                Target = $tree
-                Mode = 'path'
-                Out = Join-Path $tmpDir 'out-many-4k.json'
-                Stdout = Join-Path $tmpDir 'stdout-many-4k.txt'
-                Stderr = Join-Path $tmpDir 'stderr-many-4k.txt'
+            foreach ($fileCount in @(4, 16, 32)) {
+                $tree = Join-Path $tmpDir "many-${fileCount}x4k"
+                New-CalibrationTreeKiB -Path $tree -Files $fileCount -KiB 4
+                $workloads += [pscustomobject]@{
+                    Label = "${fileCount} x 4 KiB files workload"
+                    Target = $tree
+                    Mode = 'path'
+                    Out = Join-Path $tmpDir "out-many-${fileCount}x4k.json"
+                    Stdout = Join-Path $tmpDir "stdout-many-${fileCount}x4k.txt"
+                    Stderr = Join-Path $tmpDir "stderr-many-${fileCount}x4k.txt"
+                }
             }
             if ($gitCalibration) {
                 $gitRepo = Join-Path $tmpDir 'git-source'

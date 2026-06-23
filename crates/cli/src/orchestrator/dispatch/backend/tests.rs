@@ -171,6 +171,36 @@ fn workload_key_coalesces_parallel_reader_adjacent_bucket_jitter() {
 }
 
 #[test]
+fn calibration_tree_representatives_cover_default_fused_residual_chunk_keys() {
+    let representative_counts = [1usize, 4, 16, 32];
+    let representative_keys = representative_counts
+        .iter()
+        .map(|&count| {
+            let batch = (0..count)
+                .map(|_| test_chunk("a".repeat(4 * 1024)))
+                .collect::<Vec<_>>();
+            workload_key(&batch, 902).expect("representative 4 KiB batch classifies")
+        })
+        .collect::<HashSet<_>>();
+
+    assert_eq!(
+        crate::orchestrator_config::FUSED_BATCH_DEFAULT,
+        32,
+        "install-time autoroute calibration representatives must be revisited if the default fused batch changes"
+    );
+    for count in 1..=crate::orchestrator_config::FUSED_BATCH_DEFAULT {
+        let batch = (0..count)
+            .map(|_| test_chunk("a".repeat(4 * 1024)))
+            .collect::<Vec<_>>();
+        let key = workload_key(&batch, 902).expect("4 KiB residual batch classifies");
+        assert!(
+            representative_keys.contains(&key),
+            "install calibration representatives must cover {count} x 4 KiB residual fused batch key {key:?}"
+        );
+    }
+}
+
+#[test]
 fn source_class_hash_uses_stable_top_level_source_family() {
     let plain = source_class_hash(&[test_chunk_with_source("a".repeat(64), "filesystem")])
         .expect("filesystem source class hashes");

@@ -1120,6 +1120,7 @@ prime_autoroute_cache() {
 
     kib_sizes="4 64"
     mib_sizes="1 8 32"
+    many_file_counts="4 16 32"
     total=0
     total=$((total + 1)) # empty stdin
     total=$((total + 1)) # stdin 64 KiB
@@ -1130,7 +1131,9 @@ prime_autoroute_cache() {
         total=$((total + 1))
     done
     total=$((total + 1)) # decode-heavy 256 KiB
-    total=$((total + 1)) # 32 x 4 KiB files
+    for _count in $many_file_counts; do
+        total=$((total + 1))
+    done
     if [ "$git_calibration" = "1" ]; then
         total=$((total + 3))
     fi
@@ -1213,18 +1216,20 @@ prime_autoroute_cache() {
         failed=1
     fi
 
-    idx=$((idx + 1))
-    probe_dir="$tmpdir/many-4k"
-    out="$tmpdir/out-many-4k.json"
-    err="$tmpdir/err-many-4k.txt"
-    label="32 x 4 KiB files workload"
-    if ! make_calibration_tree_kib "$probe_dir" 32 4; then
-        printf '  [%s/%s] FAIL %s\n' "$idx" "$total" "$label"
-        err "Could not create many-file autoroute calibration probe at $probe_dir."
-        failed=1
-    elif ! run_autoroute_probe "$idx" "$total" "$label" "$probe_dir" "$out" "$err"; then
-        failed=1
-    fi
+    for file_count in $many_file_counts; do
+        idx=$((idx + 1))
+        probe_dir="$tmpdir/many-${file_count}x4k"
+        out="$tmpdir/out-many-${file_count}x4k.json"
+        err="$tmpdir/err-many-${file_count}x4k.txt"
+        label="${file_count} x 4 KiB files workload"
+        if ! make_calibration_tree_kib "$probe_dir" "$file_count" 4; then
+            printf '  [%s/%s] FAIL %s\n' "$idx" "$total" "$label"
+            err "Could not create ${file_count}-file autoroute calibration probe at $probe_dir."
+            failed=1
+        elif ! run_autoroute_probe "$idx" "$total" "$label" "$probe_dir" "$out" "$err"; then
+            failed=1
+        fi
+    done
 
     if [ "$git_calibration" = "1" ]; then
         git_repo="$tmpdir/git-source"
