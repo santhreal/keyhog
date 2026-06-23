@@ -23,7 +23,9 @@ pub(super) use bytes::read_file_for_compressed_input;
 /// walker, rather than each one inventing its own weaker read (Law 10 recall
 /// parity + no-duplication).
 pub(crate) use decode::decode_text_file;
-pub(super) use raw::{read_file_buffered, read_file_mmap, read_file_safe, BufferedFileRead};
+pub(super) use raw::{
+    read_file_buffered, read_file_mmap, read_file_prefix_safe, read_file_safe, BufferedFileRead,
+};
 pub(super) use window::for_each_file_windowed_mmap;
 
 /// Cap on any mmap-based read. The walker already enforces the user's

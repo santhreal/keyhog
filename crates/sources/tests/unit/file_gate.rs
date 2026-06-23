@@ -72,6 +72,17 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
         "filesystem extract hot path must not allocate a lowercase extension per file"
     );
     assert!(
+        extract.contains("let mut buf = [0u8; 16]")
+            && extract.contains("read::read_file_prefix_safe(&path, &mut buf)")
+            && !extract.contains("if let Ok(mut f) = std::fs::File::open(&path)"),
+        "extensionless header sniff must use a stack buffer plus the no-follow prefix reader, not symlink-following File::open"
+    );
+    assert!(
+        raw.contains("fn read_file_prefix_safe(")
+            && raw.contains("let mut file = open_file_safe(path)?"),
+        "safe prefix reads must share the canonical no-follow open helper"
+    );
+    assert!(
         filesystem.contains("EXPANDABLE_SYMLINK_EXTS")
             && filesystem.contains("ext.eq_ignore_ascii_case(candidate)")
             && !filesystem.contains(".to_ascii_lowercase();"),

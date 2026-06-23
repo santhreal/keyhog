@@ -95,6 +95,23 @@ pub(in crate::filesystem) fn open_file_safe(path: &Path) -> std::io::Result<File
     options.open(path)
 }
 
+pub(in crate::filesystem) fn read_file_prefix_safe(
+    path: &Path,
+    buf: &mut [u8],
+) -> std::io::Result<usize> {
+    let mut file = open_file_safe(path)?;
+    let mut filled = 0;
+    while filled < buf.len() {
+        match file.read(&mut buf[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(filled)
+}
+
 pub(in crate::filesystem) fn read_file_safe(
     path: &Path,
     size_hint: u64,

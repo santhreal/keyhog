@@ -170,20 +170,21 @@ pub(super) fn process_entry(
     }
 
     if ext.is_empty() {
-        // Sniff the first 16 bytes of files without extensions to quickly skip binary structures without full content reads (KH-50)
-        if let Ok(mut f) = std::fs::File::open(&path) {
-            let mut buf = [0u8; 16];
-            if let Ok(n) = f.read(&mut buf) {
-                if n > 0 {
-                    let is_binary = buf.starts_with(b"\x7fELF")
-                        || buf.starts_with(b"MZ")
-                        || buf.starts_with(b"%PDF")
-                        || buf.starts_with(b"PK\x03\x04");
-                    if is_binary {
-                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                        return;
-                    }
-                }
+        // Sniff the first 16 bytes of files without extensions to quickly skip
+        // binary structures without full content reads (KH-50). Use the same
+        // no-follow safe open as the real file reader: an extensionless symlink
+        // must not get a pre-guard `File::open` of its target just because this
+        // is only a header sniff.
+        let mut buf = [0u8; 16];
+        if let Ok(n) = read::read_file_prefix_safe(&path, &mut buf) {
+            let head = &buf[..n];
+            let is_binary = head.starts_with(b"\x7fELF")
+                || head.starts_with(b"MZ")
+                || head.starts_with(b"%PDF")
+                || head.starts_with(b"PK\x03\x04");
+            if is_binary {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                return;
             }
         }
     }
