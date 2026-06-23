@@ -146,38 +146,68 @@ pub(crate) fn detect_unicode_attacks(text: &str) -> Vec<EvasionMatch> {
 pub(crate) fn normalize_homoglyphs(text: &str) -> std::borrow::Cow<'_, str> {
     match ascii_normalization_scan(text.as_bytes()) {
         AsciiNormalizationScan::CleanAscii => return std::borrow::Cow::Borrowed(text),
-        AsciiNormalizationScan::EvasiveAscii => {}
-        AsciiNormalizationScan::NonAscii => {
-            if !contains_evasion(text) {
-                return std::borrow::Cow::Borrowed(text);
+        AsciiNormalizationScan::EvasiveAscii | AsciiNormalizationScan::NonAscii => {}
+    }
+    normalize_evasive_chars(text)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NormalizedChar {
+    Keep,
+    Replace(char),
+    Drop,
+}
+
+fn normalized_char(ch: char) -> NormalizedChar {
+    if let Some(latin) = cyrillic_to_latin(ch) {
+        return NormalizedChar::Replace(latin);
+    }
+    if let Some(latin) = greek_to_latin(ch) {
+        return NormalizedChar::Replace(latin);
+    }
+    if is_fullwidth(ch) {
+        return NormalizedChar::Replace(fullwidth_to_ascii(ch));
+    }
+    if is_zero_width(ch)
+        || is_rtl_override(ch)
+        || is_unicode_separator_evasion(ch)
+        || is_combining_mark(ch)
+        || is_ascii_evasion_control(ch)
+    {
+        return NormalizedChar::Drop;
+    }
+    NormalizedChar::Keep
+}
+
+fn normalize_evasive_chars(text: &str) -> std::borrow::Cow<'_, str> {
+    let mut normalized: Option<String> = None;
+    for (byte_pos, ch) in text.char_indices() {
+        match normalized_char(ch) {
+            NormalizedChar::Keep => {
+                if let Some(out) = &mut normalized {
+                    out.push(ch);
+                }
+            }
+            NormalizedChar::Replace(replacement) => {
+                let out = normalized.get_or_insert_with(|| {
+                    let mut out = String::with_capacity(text.len());
+                    out.push_str(&text[..byte_pos]);
+                    out
+                });
+                out.push(replacement);
+            }
+            NormalizedChar::Drop => {
+                normalized.get_or_insert_with(|| {
+                    let mut out = String::with_capacity(text.len());
+                    out.push_str(&text[..byte_pos]);
+                    out
+                });
             }
         }
     }
-    let mut normalized = String::with_capacity(text.len());
-    for ch in text.chars() {
-        if let Some(latin) = cyrillic_to_latin(ch) {
-            normalized.push(latin);
-            continue;
-        }
-        if let Some(latin) = greek_to_latin(ch) {
-            normalized.push(latin);
-            continue;
-        }
-        if is_fullwidth(ch) {
-            normalized.push(fullwidth_to_ascii(ch));
-            continue;
-        }
-        if is_zero_width(ch)
-            || is_rtl_override(ch)
-            || is_unicode_separator_evasion(ch)
-            || is_combining_mark(ch)
-            || is_ascii_evasion_control(ch)
-        {
-            continue;
-        }
-        normalized.push(ch);
-    }
-    std::borrow::Cow::Owned(normalized)
+    normalized
+        .map(std::borrow::Cow::Owned)
+        .unwrap_or(std::borrow::Cow::Borrowed(text))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -316,8 +346,7 @@ pub(crate) fn strip_interior_evasion_controls(text: &str) -> std::borrow::Cow<'_
     // Body window cap: bounds the per-anchor walk so a pathological input can't
     // turn the strip into an O(n^2) scan.
     const MAX_BODY_WINDOW: usize = 256;
-    let mut drop_mask = vec![false; bytes.len()];
-    let mut any_drop = false;
+    let mut drop_indices = Vec::new();
     for mat in ac.find_iter(text) {
         let start = mat.start();
         let end = mat.end();
@@ -339,26 +368,28 @@ pub(crate) fn strip_interior_evasion_controls(text: &str) -> std::borrow::Cow<'_
             {
                 // A control with a credential byte on both sides: interior to the
                 // body, so it's evasion — drop it and keep walking.
-                drop_mask[j] = true;
-                any_drop = true;
+                drop_indices.push(j);
                 j += 1;
             } else {
                 break;
             }
         }
     }
-    if !any_drop {
+    if drop_indices.is_empty() {
         return std::borrow::Cow::Borrowed(text);
     }
+    drop_indices.sort_unstable();
+    drop_indices.dedup();
     // Rebuild dropping only the flagged ASCII control bytes. Removing standalone
     // ASCII bytes from valid UTF-8 yields valid UTF-8, so `from_utf8` succeeds;
     // the `unwrap_or` keeps us safe even if that invariant ever changes.
-    let mut out = Vec::with_capacity(bytes.len());
-    for (i, &b) in bytes.iter().enumerate() {
-        if !drop_mask[i] {
-            out.push(b);
-        }
+    let mut out = Vec::with_capacity(bytes.len() - drop_indices.len());
+    let mut keep_start = 0;
+    for drop_index in drop_indices {
+        out.extend_from_slice(&bytes[keep_start..drop_index]);
+        keep_start = drop_index + 1;
     }
+    out.extend_from_slice(&bytes[keep_start..]);
     String::from_utf8(out)
         .map(std::borrow::Cow::Owned)
         .unwrap_or(std::borrow::Cow::Borrowed(text)) // LAW10: no transform / invalid codepoint => original text/char unchanged; recall-safe identity

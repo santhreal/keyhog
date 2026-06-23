@@ -232,6 +232,7 @@ pub mod telemetry_non_empty;
 pub mod types_no_inline_tests;
 pub mod types_no_unwrap_expect;
 pub mod types_non_empty;
+pub mod unicode_hardening_hot_path_shape;
 pub mod unicode_hardening_no_inline_tests;
 pub mod unicode_hardening_no_unwrap_expect;
 pub mod unicode_hardening_non_empty;
