@@ -15,11 +15,12 @@
 //! unit-tested directly against `resolve_section_name` inside
 //! `crates/sources/src/binary/sections.rs`.
 
-#![cfg(feature = "binary")]
-
+#[cfg(feature = "binary")]
 use keyhog_sources::skip_counts;
+#[cfg(feature = "binary")]
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 
+#[cfg(feature = "binary")]
 #[test]
 fn binary_section_name_unresolved_is_a_public_resettable_counter() {
     TestApi.reset_skip_counters();
@@ -37,5 +38,14 @@ fn binary_section_name_unresolved_is_a_public_resettable_counter() {
         c.total(),
         0,
         "a freshly-reset SkipCounts has a zero file-skip total"
+    );
+}
+
+#[cfg(not(feature = "binary"))]
+#[test]
+fn binary_section_name_counter_requires_binary_feature() {
+    assert!(
+        !cfg!(feature = "binary"),
+        "compile with --features binary to run the binary section-name counter regression"
     );
 }
