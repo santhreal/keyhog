@@ -258,28 +258,25 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
         }
     };
 
-    let (verification, metadata) = match &detector {
-        Some(det) => match &det.verify {
-            Some(verify_spec) => {
-                verify_with_retry(
-                    &client,
-                    verify_spec,
-                    &group.credential,
-                    &group.companions,
-                    timeout,
-                    shared.danger_allow_private_ips,
-                    shared.danger_allow_http,
-                    shared.proxy_in_use,
-                    shared.insecure_tls,
-                    shared.allow_script_verify,
-                    shared.oob_session.as_ref(),
-                )
-                .await
-            }
-            None => (VerificationResult::Unverifiable, HashMap::new()),
-        },
-        None => (VerificationResult::Unverifiable, HashMap::new()),
-    };
+    let (verification, metadata) =
+        if let Some(verify_spec) = detector.as_ref().and_then(|det| det.verify.as_ref()) {
+            verify_with_retry(
+                &client,
+                verify_spec,
+                &group.credential,
+                &group.companions,
+                timeout,
+                shared.danger_allow_private_ips,
+                shared.danger_allow_http,
+                shared.proxy_in_use,
+                shared.insecure_tls,
+                shared.allow_script_verify,
+                shared.oob_session.as_ref(),
+            )
+            .await
+        } else {
+            (VerificationResult::Unverifiable, HashMap::new())
+        };
 
     cache.put(
         &group.credential,

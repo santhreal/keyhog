@@ -26,6 +26,7 @@ pub mod verify_auth_non_empty;
 pub mod verify_aws_no_inline_tests;
 pub mod verify_aws_no_unwrap_expect;
 pub mod verify_aws_non_empty;
+pub mod verify_control_flow_elegance;
 pub mod verify_credential_no_inline_tests;
 pub mod verify_credential_no_unwrap_expect;
 pub mod verify_credential_non_empty;

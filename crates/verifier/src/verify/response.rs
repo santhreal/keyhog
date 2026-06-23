@@ -69,10 +69,10 @@ pub(crate) fn evaluate_success(spec: &keyhog_core::SuccessSpec, status: u16, bod
     if let Some(ref json_path) = spec.json_path {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
             if let Some(val) = json.pointer(json_path) {
-                if let Some(ref expected) = spec.equals {
-                    return val.as_str() == Some(expected);
-                }
-                return !val.is_null();
+                return spec
+                    .equals
+                    .as_ref()
+                    .map_or(!val.is_null(), |expected| val.as_str() == Some(expected));
             }
         }
         return false;
@@ -117,18 +117,11 @@ const JSON_ERROR_KEYS: &[&str] = &["error", "errors", "invalid", "expired", "rev
 /// Recursively decide whether a JSON body carries a *populated* error signal.
 fn json_indicates_error(value: &serde_json::Value) -> bool {
     match value {
-        serde_json::Value::Object(map) => {
-            for (key, val) in map {
-                let lk = key.to_lowercase();
-                if JSON_ERROR_KEYS.contains(&lk.as_str()) && json_value_is_truthy_error(val) {
-                    return true;
-                }
-                if json_indicates_error(val) {
-                    return true;
-                }
-            }
-            false
-        }
+        serde_json::Value::Object(map) => map.iter().any(|(key, val)| {
+            let lk = key.to_lowercase();
+            (JSON_ERROR_KEYS.contains(&lk.as_str()) && json_value_is_truthy_error(val))
+                || json_indicates_error(val)
+        }),
         serde_json::Value::Array(items) => items.iter().any(json_indicates_error),
         _ => false,
     }
@@ -140,7 +133,7 @@ fn json_value_is_truthy_error(value: &serde_json::Value) -> bool {
     match value {
         serde_json::Value::Null => false,
         serde_json::Value::Bool(b) => *b,
-        serde_json::Value::Number(n) => n.as_f64().map(|f| f != 0.0).unwrap_or(true), // LAW10: non-f64-representable number => treated as a present error (true), conservative; never misses a real error signal
+        serde_json::Value::Number(n) => n.as_f64().map_or(true, |f| f != 0.0), // LAW10: non-f64-representable number => treated as a present error (true), conservative; never misses a real error signal
         serde_json::Value::String(s) => !s.is_empty(),
         serde_json::Value::Array(a) => !a.is_empty(),
         serde_json::Value::Object(o) => !o.is_empty(),

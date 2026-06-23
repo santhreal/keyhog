@@ -149,13 +149,12 @@ where
         last_attempt = Some((result.result, result.metadata));
     }
 
-    match last_attempt {
-        Some(attempt) => attempt,
-        None => (
+    last_attempt.unwrap_or_else(|| {
+        (
             VerificationResult::Error("max retries exceeded".into()),
             HashMap::new(),
-        ),
-    }
+        )
+    })
 }
 
 pub(crate) fn retry_delay_bounds_for_attempt(attempt: usize, base_delay_ms: u64) -> (u64, u64) {
@@ -376,11 +375,7 @@ pub(crate) async fn verify_credential(
     let status = response.status;
     let body = response.body;
 
-    let is_live = if let Some(s) = success {
-        evaluate_success(s, status, &body)
-    } else {
-        status == 200
-    };
+    let is_live = success.map_or(status == 200, |s| evaluate_success(s, status, &body));
 
     let is_actually_live = is_live && !body_indicates_error(&body);
     let mut metadata = extract_metadata(&spec.metadata, &body);
@@ -441,10 +436,7 @@ async fn combine_oob(
 
     metadata.insert("oob_unique_id".to_string(), ctx.unique_id.clone());
     let observed = matches!(observation, OobObservation::Observed { .. });
-    metadata.insert(
-        "oob_observed".to_string(),
-        if observed { "true" } else { "false" }.to_string(),
-    );
+    metadata.insert("oob_observed".to_string(), observed.to_string());
     if let OobObservation::Observed {
         protocol,
         remote_address,
