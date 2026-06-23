@@ -96,7 +96,7 @@ pub trait CliTestApi {
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
     ) -> Result<Vec<Box<dyn Source>>>;
     fn merge_scan_ignore_paths(&self, args: &ScanArgs, allowlist_paths: Vec<String>)
-        -> Vec<String>;
+    -> Vec<String>;
     fn validate_cli_path_arg(&self, path: &Path, name: &str) -> Result<()>;
     fn report_findings(&self, findings: &[VerifiedFinding], args: &ScanArgs) -> Result<()>;
     fn filter_inline_suppressions(&self, matches: Vec<RawMatch>) -> Vec<RawMatch>;
@@ -138,6 +138,12 @@ pub trait CliTestApi {
     fn test_fixture_exact_count(&self, suppressions: &TestFixtureSuppressions) -> usize;
 
     fn asset_name(&self, os: &str, arch: &str, cuda: bool) -> Option<String>;
+    fn select_release_asset_name(
+        &self,
+        tag_name: &str,
+        asset_names: &[&str],
+        want_cuda: bool,
+    ) -> Result<String>;
     fn parse_semver(&self, tag: &str) -> Option<(u64, u64, u64)>;
     fn is_newer(&self, current: &str, latest: &str) -> bool;
     fn looks_like_native_executable(&self, bytes: &[u8]) -> bool;
@@ -450,6 +456,24 @@ impl CliTestApi for TestApi {
 
     fn asset_name(&self, os: &str, arch: &str, cuda: bool) -> Option<String> {
         crate::installer::asset_name(os, arch, cuda)
+    }
+    fn select_release_asset_name(
+        &self,
+        tag_name: &str,
+        asset_names: &[&str],
+        want_cuda: bool,
+    ) -> Result<String> {
+        let release = crate::installer::Release {
+            tag_name: tag_name.to_string(),
+            assets: asset_names
+                .iter()
+                .map(|name| crate::installer::Asset {
+                    name: (*name).to_string(),
+                    browser_download_url: format!("https://example.invalid/{name}"),
+                })
+                .collect(),
+        };
+        crate::installer::select_asset(&release, want_cuda).map(|asset| asset.name.clone())
     }
     fn parse_semver(&self, tag: &str) -> Option<(u64, u64, u64)> {
         crate::installer::parse_semver(tag)

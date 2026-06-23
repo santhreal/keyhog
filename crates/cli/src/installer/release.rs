@@ -14,9 +14,9 @@
 //! the whole gate. There is no opt-out: no environment variable can disable the
 //! signature gate (config-policy mandate + security).
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
-use keyhog_scanner::{hw_probe::ScanBackend, CompiledScanner};
+use keyhog_scanner::{CompiledScanner, hw_probe::ScanBackend};
 use serde::Deserialize;
 
 pub(crate) const REPO: &str = "santhsecurity/keyhog";
@@ -188,31 +188,34 @@ pub(crate) async fn resolve_release(
         .ok_or_else(|| anyhow!("no recent GitHub release has any assets uploaded; pass --version"))
 }
 
-/// Pick the asset for this host. `want_cuda` selects the CUDA Linux build,
-/// falling back to the portable build if a release didn't ship the CUDA asset.
+/// Pick the asset for this host. `want_cuda` is an explicit CUDA request, so it
+/// must resolve to the CUDA Linux asset or fail closed.
 pub(crate) fn select_asset(release: &Release, want_cuda: bool) -> Result<&Asset> {
-    let target = asset_name(std::env::consts::OS, std::env::consts::ARCH, want_cuda).ok_or_else(
-        || {
+    let target = if want_cuda {
+        match (std::env::consts::OS, std::env::consts::ARCH) {
+            ("linux", "x86_64") => "keyhog-linux-x86_64-cuda".to_string(),
+            (os, arch) => {
+                return Err(anyhow!(
+                    "CUDA release variant is only available for linux-x86_64; host is {os}-{arch}"
+                ));
+            }
+        }
+    } else {
+        asset_name(std::env::consts::OS, std::env::consts::ARCH, false).ok_or_else(|| {
             anyhow!(
                 "no prebuilt asset for {}-{} (supported: linux-x86_64, macos-aarch64, macos-x86_64)",
                 std::env::consts::OS,
                 std::env::consts::ARCH
             )
-        },
-    )?;
-    let fallback = asset_name(std::env::consts::OS, std::env::consts::ARCH, false);
+        })?
+    };
     release
         .assets
         .iter()
         .find(|a| a.name == target)
-        .or_else(|| {
-            fallback
-                .as_deref()
-                .and_then(|f| release.assets.iter().find(|a| a.name == f))
-        })
         .ok_or_else(|| {
             anyhow!(
-                "release {} has no asset named {target} (or its portable fallback)",
+                "release {} has no asset named {target}; explicit release variants fail closed",
                 release.tag_name
             )
         })

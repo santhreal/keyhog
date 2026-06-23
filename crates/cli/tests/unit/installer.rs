@@ -1,4 +1,4 @@
-use keyhog::testing::{CliTestApi as _, API};
+use keyhog::testing::{API, CliTestApi as _};
 
 #[test]
 fn asset_name_matches_release_convention() {
@@ -40,6 +40,47 @@ fn asset_name_matches_release_convention() {
     assert_eq!(API.asset_name("linux", "riscv64", false), None);
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn explicit_cuda_asset_selection_requires_cuda_asset() {
+    let portable_only = ["keyhog-linux-x86_64"];
+    let err = API
+        .select_release_asset_name("v9.9.9", &portable_only, true)
+        .expect_err("explicit CUDA update/repair must not install the portable asset");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("keyhog-linux-x86_64-cuda") && msg.contains("fail closed"),
+        "error must name the missing exact CUDA asset and fail-closed semantics: {msg}"
+    );
+
+    let with_cuda = ["keyhog-linux-x86_64", "keyhog-linux-x86_64-cuda"];
+    assert_eq!(
+        API.select_release_asset_name("v9.9.9", &with_cuda, true)
+            .expect("CUDA asset present"),
+        "keyhog-linux-x86_64-cuda"
+    );
+}
+
+#[test]
+fn release_selector_has_no_portable_fallback_for_explicit_cuda() {
+    let src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/installer/release.rs"
+    ))
+    .expect("release installer source readable");
+    let selector = src
+        .split("pub(crate) fn select_asset")
+        .nth(1)
+        .and_then(|tail| tail.split("/// Download an asset").next())
+        .expect("select_asset body is present");
+    assert!(
+        selector.contains("explicit release variants fail closed")
+            && !selector.contains(".or_else(")
+            && !selector.contains("portable fallback"),
+        "select_asset must not silently downgrade explicit --variant cuda to the portable asset"
+    );
+}
+
 #[test]
 fn semver_parsing_handles_v_prefix_and_suffix() {
     assert_eq!(API.parse_semver("v0.5.36"), Some((0, 5, 36)));
@@ -66,8 +107,12 @@ fn rejects_non_executable_download() {
     #[cfg(target_os = "linux")]
     assert!(API.looks_like_native_executable(&[0x7F, b'E', b'L', b'F', 2, 1, 1, 0]));
 
-    assert!(API.looks_like_native_executable_for_os(&[0x7F, b'E', b'L', b'F', 2, 1, 1, 0], "linux"));
-    assert!(API.looks_like_native_executable_for_os(&[0xFE, 0xED, 0xFA, 0xCF, 0, 0, 0, 0], "macos"));
+    assert!(
+        API.looks_like_native_executable_for_os(&[0x7F, b'E', b'L', b'F', 2, 1, 1, 0], "linux")
+    );
+    assert!(
+        API.looks_like_native_executable_for_os(&[0xFE, 0xED, 0xFA, 0xCF, 0, 0, 0, 0], "macos")
+    );
     assert!(API.looks_like_native_executable_for_os(&[b'M', b'Z', 0x90, 0x00], "windows"));
     assert!(!API.looks_like_native_executable_for_os(b"<!DOCTYPE html><html>Not Found", "windows"));
 }
@@ -106,9 +151,10 @@ fn release_signature_rejects_tampered_payload() {
 
 #[test]
 fn release_signature_rejects_malformed_signature() {
-    assert!(API
-        .verify_release_signature(FIXTURE_DATA, "not a minisig file")
-        .is_err());
+    assert!(
+        API.verify_release_signature(FIXTURE_DATA, "not a minisig file")
+            .is_err()
+    );
     assert!(API.verify_release_signature(FIXTURE_DATA, "").is_err());
 }
 

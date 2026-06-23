@@ -11,7 +11,7 @@
 //! moved helper that drifted its logic is caught, plus a compile-time
 //! reachability check over the full call list the subcommands depend on.
 
-use keyhog::testing::{CliTestApi as _, API};
+use keyhog::testing::{API, CliTestApi as _};
 
 // ── release (network/trust) half: pure functions keep exact behavior ────────
 
@@ -179,6 +179,8 @@ fn full_installer_call_surface_reachable_after_split() {
     let _parse_semver = |tag: &str| API.parse_semver(tag);
     let _is_newer = |current: &str, latest: &str| API.is_newer(current, latest);
     let _asset_name = |os: &str, arch: &str, cuda: bool| API.asset_name(os, arch, cuda);
+    let _select_release_asset_name =
+        |tag: &str, names: &[&str], cuda: bool| API.select_release_asset_name(tag, names, cuda);
     let _release_api_base_with_override = |base: &str| API.release_api_base_with_override(base);
     let _looks_like_native_executable = |bytes: &[u8]| API.looks_like_native_executable(bytes);
     let _verify_release_signature =
