@@ -18,6 +18,16 @@ use anyhow::Result;
 use keyhog_scanner::hw_probe::probe_hardware;
 use std::process::ExitCode;
 
+fn canonicalize_for_shadow_check(path: std::path::PathBuf) -> std::path::PathBuf {
+    std::fs::canonicalize(&path).unwrap_or(path) // LAW10: canonicalize failure => original path for reporting-only PATH-shadow diagnostic; recall-safe
+}
+
+fn current_exe_for_shadow_check() -> Option<std::path::PathBuf> {
+    std::env::current_exe()
+        .ok() // LAW10: unavailable executable path => omit reporting-only shadow comparison; recall-safe
+        .map(canonicalize_for_shadow_check)
+}
+
 pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
     let mut healthy = true;
     let mut warned = false;
@@ -127,16 +137,14 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
         for dir in std::env::split_paths(&pathvar) {
             let cand = dir.join(exe_name);
             if cand.is_file() {
-                let canon = std::fs::canonicalize(&cand).unwrap_or(cand); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
+                let canon = canonicalize_for_shadow_check(cand);
                 if !on_path.contains(&canon) {
                     on_path.push(canon);
                 }
             }
         }
     }
-    let running = std::env::current_exe()
-        .ok() // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
-        .and_then(|p| std::fs::canonicalize(&p).ok()); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
+    let running = current_exe_for_shadow_check();
     match on_path.len() {
         0 => println!(
             "  resolves       {dim}not on PATH (invoke by full path or add its dir){reset}"
@@ -241,5 +249,11 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
             style::fail("FAIL", &stderr_palette)
         );
         Ok(ExitCode::from(EXIT_DOCTOR_UNHEALTHY))
+    }
+}
+
+pub(crate) mod testing {
+    pub(crate) fn canonicalize_for_shadow_check(path: std::path::PathBuf) -> std::path::PathBuf {
+        super::canonicalize_for_shadow_check(path)
     }
 }

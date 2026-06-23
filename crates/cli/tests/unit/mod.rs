@@ -19,6 +19,7 @@ pub mod sources;
 pub mod style;
 pub mod subcommands_backend;
 pub mod subcommands_detectors;
+pub mod subcommands_doctor;
 pub mod subcommands_explain;
 pub mod subcommands_hook;
 pub mod subcommands_scan_system;

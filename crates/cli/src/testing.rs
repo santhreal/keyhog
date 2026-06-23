@@ -193,6 +193,7 @@ pub trait CliTestApi {
         lowered: &str,
     ) -> anyhow::Error;
     fn render_failing_ac_probe_json(&self) -> Result<String>;
+    fn doctor_canonicalize_for_shadow_check(&self, path: PathBuf) -> PathBuf;
     fn canonical_scan_args(&self) -> &'static str;
     fn hook_content(&self) -> &'static str;
 
@@ -572,6 +573,9 @@ impl CliTestApi for TestApi {
     }
     fn render_failing_ac_probe_json(&self) -> Result<String> {
         crate::subcommands::backend::testing::render_failing_ac_probe_json()
+    }
+    fn doctor_canonicalize_for_shadow_check(&self, path: PathBuf) -> PathBuf {
+        crate::subcommands::doctor::testing::canonicalize_for_shadow_check(path)
     }
     fn canonical_scan_args(&self) -> &'static str {
         crate::subcommands::hook::testing::CANONICAL_SCAN_ARGS
