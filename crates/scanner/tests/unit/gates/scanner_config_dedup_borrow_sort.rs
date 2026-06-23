@@ -11,11 +11,15 @@ fn scan_state_into_matches_dedups_by_borrowed_identity_for_all_sizes() {
         .expect("ScanState::into_matches body present");
 
     assert!(
-        src.contains("fn raw_match_identity_cmp(")
+        src.contains("struct MatchIdentity<'a>")
+            && src.contains("impl<'a> From<&'a keyhog_core::RawMatch> for MatchIdentity<'a>")
+            && src.contains("fn raw_match_identity_cmp(")
             && src.contains("fn same_raw_match_identity(")
+            && src.contains("MatchIdentity::from(a).cmp(&MatchIdentity::from(b))")
+            && src.contains("MatchIdentity::from(a) == MatchIdentity::from(b)")
             && body.contains("matches.sort_by(raw_match_identity_cmp);")
             && body.contains("matches.dedup_by(|a, b| same_raw_match_identity(a, b));"),
-        "ScanState::into_matches should dedup every size through borrowed identity sorting"
+        "ScanState::into_matches should dedup every size through named borrowed identity sorting"
     );
     assert!(
         !body.contains("std::collections::HashSet<(std::sync::Arc<str>, SensitiveString, usize)>")

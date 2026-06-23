@@ -76,13 +76,12 @@ fn raw_match_deduplication_key_is_detector_and_credential() {
         loc("a.env", 1, 0),
         Some(0.9),
     );
-    assert_eq!(
-        keyhog_core::testing::CoreTestApi::raw_match_deduplication_key(
-            &keyhog_core::testing::TestApi,
-            &m
-        ),
-        ("aws-access-key", "AKIAIOSFODNN7EXAMPLE")
+    let key = keyhog_core::testing::CoreTestApi::raw_match_deduplication_key(
+        &keyhog_core::testing::TestApi,
+        &m,
     );
+    assert_eq!(key.detector_id, "aws-access-key");
+    assert_eq!(key.credential, "AKIAIOSFODNN7EXAMPLE");
 }
 
 #[test]

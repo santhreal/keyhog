@@ -13,6 +13,13 @@ use std::sync::Arc;
 
 use crate::{SensitiveString, Severity};
 
+/// Borrowed raw-match identity used before report-scope deduplication.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RawMatchDedupKey<'a> {
+    pub detector_id: &'a str,
+    pub credential: &'a str,
+}
+
 /// A raw pattern match before verification or deduplication.
 ///
 /// `entropy` and `confidence` are stored as `f64` but are guaranteed never to
@@ -308,8 +315,11 @@ impl RawMatch {
     /// This intentionally excludes location. Window/raw-span dedup uses
     /// `(detector, credential, offset)` in the scanner, while report grouping
     /// applies `DedupScope` in `core::dedup`.
-    pub(crate) fn deduplication_key(&self) -> (&str, &str) {
-        (&self.detector_id, &self.credential)
+    pub(crate) fn deduplication_key(&self) -> RawMatchDedupKey<'_> {
+        RawMatchDedupKey {
+            detector_id: &self.detector_id,
+            credential: &self.credential,
+        }
     }
 
     /// Convert into a serialization-safe DTO that never carries the plaintext

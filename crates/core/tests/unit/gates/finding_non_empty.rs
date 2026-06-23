@@ -26,4 +26,12 @@ fn finding_non_empty() {
             && !prod.contains("Option::<String>::deserialize(deserializer)"),
         "finding: deserialization adapters must borrow input strings and decode credential_hash into a stack array"
     );
+    assert!(
+        src.contains("pub struct RawMatchDedupKey<'a>")
+            && src.contains("pub(crate) fn deduplication_key(&self) -> RawMatchDedupKey<'_>")
+            && src.contains("detector_id: &self.detector_id")
+            && src.contains("credential: &self.credential")
+            && !src.contains("pub(crate) fn deduplication_key(&self) -> (&str, &str)"),
+        "finding: raw-match deduplication identity should be a named key, not an anonymous tuple"
+    );
 }

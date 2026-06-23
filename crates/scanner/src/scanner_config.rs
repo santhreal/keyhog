@@ -470,16 +470,28 @@ fn raw_match_identity_cmp(
     a: &keyhog_core::RawMatch,
     b: &keyhog_core::RawMatch,
 ) -> std::cmp::Ordering {
-    a.detector_id
-        .cmp(&b.detector_id)
-        .then_with(|| a.credential.cmp(&b.credential))
-        .then_with(|| a.location.offset.cmp(&b.location.offset))
+    MatchIdentity::from(a).cmp(&MatchIdentity::from(b))
 }
 
 fn same_raw_match_identity(a: &keyhog_core::RawMatch, b: &keyhog_core::RawMatch) -> bool {
-    a.detector_id == b.detector_id
-        && a.credential == b.credential
-        && a.location.offset == b.location.offset
+    MatchIdentity::from(a) == MatchIdentity::from(b)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct MatchIdentity<'a> {
+    detector_id: &'a str,
+    credential: &'a str,
+    offset: usize,
+}
+
+impl<'a> From<&'a keyhog_core::RawMatch> for MatchIdentity<'a> {
+    fn from(raw_match: &'a keyhog_core::RawMatch) -> Self {
+        Self {
+            detector_id: raw_match.detector_id.as_ref(),
+            credential: raw_match.credential.as_ref(),
+            offset: raw_match.location.offset,
+        }
+    }
 }
 
 /// Internal state for a single scan operation (tracks matches and ML cache).

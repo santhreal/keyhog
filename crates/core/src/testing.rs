@@ -9,8 +9,8 @@ use crate::credential::Credential;
 use crate::merkle_index::{MerkleIndex, MerkleLoadReport};
 use crate::registry::{CustomVerifier, SourceRegistry, VerifierRegistry};
 use crate::{
-    DetectorSpec, RawMatch, RuleSuppressor, RuleSuppressorError, Severity, SpecError,
-    VerifiedFinding,
+    DetectorSpec, RawMatch, RawMatchDedupKey, RuleSuppressor, RuleSuppressorError, Severity,
+    SpecError, VerifiedFinding,
 };
 
 pub struct TestApi;
@@ -91,7 +91,7 @@ pub trait CoreTestApi {
         -> Result<RuleSuppressor, RuleSuppressorError>;
     fn rule_suppressor_load(&self, path: &Path) -> Result<RuleSuppressor, RuleSuppressorError>;
     fn raw_match_sanitize_floats(&self, raw_match: RawMatch) -> RawMatch;
-    fn raw_match_deduplication_key<'a>(&self, raw_match: &'a RawMatch) -> (&'a str, &'a str);
+    fn raw_match_deduplication_key<'a>(&self, raw_match: &'a RawMatch) -> RawMatchDedupKey<'a>;
     fn dedup_lost_singleton_load(&self, ordering: std::sync::atomic::Ordering) -> u64;
     fn scan_config_validate(&self, config: &ScanConfig) -> Result<(), String>;
     fn max_decode_depth_limit(&self) -> usize;
@@ -366,7 +366,7 @@ impl CoreTestApi for TestApi {
         raw_match.sanitize_floats()
     }
 
-    fn raw_match_deduplication_key<'a>(&self, raw_match: &'a RawMatch) -> (&'a str, &'a str) {
+    fn raw_match_deduplication_key<'a>(&self, raw_match: &'a RawMatch) -> RawMatchDedupKey<'a> {
         raw_match.deduplication_key()
     }
 
