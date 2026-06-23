@@ -84,6 +84,7 @@ pub trait CliTestApi {
     fn parse_dedup_scope(&self, s: &str) -> Option<crate::args::CliDedupScope>;
 
     fn format_gpu_summary(&self) -> String;
+    fn format_gpu_max_buffer(&self, max_buffer_mb: u64) -> String;
     fn find_config_file(&self, start: Option<&Path>) -> Option<PathBuf>;
     fn apply_config_file_quiet(&self, args: &mut ScanArgs);
     fn build_sources(
@@ -312,6 +313,9 @@ impl CliTestApi for TestApi {
 
     fn format_gpu_summary(&self) -> String {
         crate::benchmark::format_gpu_summary()
+    }
+    fn format_gpu_max_buffer(&self, max_buffer_mb: u64) -> String {
+        crate::subcommands::backend::testing::format_gpu_max_buffer(max_buffer_mb)
     }
     fn find_config_file(&self, start: Option<&Path>) -> Option<PathBuf> {
         crate::config::find_config_file(start)

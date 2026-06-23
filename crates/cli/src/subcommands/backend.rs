@@ -19,6 +19,8 @@ use keyhog_scanner::hw_probe::{
 use serde::Serialize;
 use std::process::ExitCode;
 
+const KEYHOG_GPU_MAX_BUFFER_CAP_MB: u64 = 256 * 1024;
+
 pub(crate) fn run(args: BackendArgs) -> Result<ExitCode> {
     let gpu_policy = if args.require_gpu {
         keyhog_scanner::gpu::GpuRuntimePolicy::Required
@@ -71,11 +73,7 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
         // not VRAM (wgpu has no portable VRAM query). Display under
         // the accurate label so this report doesn't claim an 8 GB
         // laptop GPU has 256 GB of memory.
-        if buf >= 1024 {
-            println!("  gpu_max_buffer:    {} GB", buf / 1024);
-        } else {
-            println!("  gpu_max_buffer:    {buf} MB");
-        }
+        println!("  gpu_max_buffer:    {}", format_gpu_max_buffer(buf));
     }
     if let Some(mem) = hw.total_memory_mb {
         println!("  total_memory:      {mem} MB");
@@ -484,6 +482,19 @@ fn render_self_test_json_for_contract(report: &BackendSelfTestReport) -> Result<
     serde_json::to_string_pretty(report).map_err(Into::into)
 }
 
+fn format_gpu_max_buffer(max_buffer_mb: u64) -> String {
+    let base = if max_buffer_mb >= 1024 {
+        format!("{} GB", max_buffer_mb / 1024)
+    } else {
+        format!("{max_buffer_mb} MB")
+    };
+    if max_buffer_mb >= KEYHOG_GPU_MAX_BUFFER_CAP_MB {
+        format!("{base} (keyhog cap; wgpu max_buffer_size)")
+    } else {
+        format!("{base} (wgpu max_buffer_size)")
+    }
+}
+
 #[doc(hidden)]
 pub(crate) mod testing {
     use anyhow::Result;
@@ -541,6 +552,10 @@ pub(crate) mod testing {
         };
 
         super::render_self_test_json_for_contract(&report)
+    }
+
+    pub(crate) fn format_gpu_max_buffer(max_buffer_mb: u64) -> String {
+        super::format_gpu_max_buffer(max_buffer_mb)
     }
 }
 
