@@ -1,7 +1,8 @@
 //! Entropy-fallback candidate suppression predicate.
 use super::helpers::*;
 use super::line_context::{
-    value_line_has_random_byte_blob_owner, value_line_has_same_line_credential_keyword,
+    entropy_value_line, value_line_has_random_byte_blob_owner,
+    value_line_has_same_line_credential_keyword,
 };
 use crate::adjudicate::EntropyShapeStage;
 use crate::engine::*;
@@ -226,47 +227,40 @@ pub(crate) fn entropy_match_suppression_stage(
     // `CONTRACT_ADDRESS=0x…`, `WALLET=…`). These are PUBLIC
     // identifiers, not credentials. Cheap line lookup via the
     // preprocessed text + line_offsets table.
-    let line_idx = entropy_match.line.saturating_sub(1);
-    if let Some(&line_start) = line_offsets.get(line_idx) {
-        let line_end = line_offsets
-            .get(line_idx + 1)
-            .copied()
-            .unwrap_or(preprocessed.text.len()); // LAW10: bounds-checked next-line offset; last line => end-of-text span, recall-safe boundary default
-        if let Some(line_text) = preprocessed.text.get(line_start..line_end) {
-            let line_upper = line_text.to_ascii_uppercase();
-            const BLOCKCHAIN_ADDR_KEYWORDS: &[&str] = &[
-                "_ADDR=",
-                "_ADDR ",
-                "_ADDR\"",
-                "_ADDR:",
-                "_ADDRS=",
-                "_ADDRS ",
-                "_ADDRS\"",
-                "_ADDRESS=",
-                "_ADDRESS ",
-                "_ADDRESS\"",
-                "_WALLET=",
-                "_WALLET ",
-                "_WALLET\"",
-                "_MINT_ADDR",
-                "_PUBKEY=",
-                "_PUBKEY ",
-                "_PUBLIC_KEY=",
-                "_PUBLIC_KEY ",
-                "_PUBLIC_KEY\"",
-                "_CONTRACT=",
-                "_CONTRACT ",
-                "_OWNER=",
-                "_ACCOUNT_ID=",
-                "_PEER_ID=",
-                "_NODE_ID=",
-            ];
-            if BLOCKCHAIN_ADDR_KEYWORDS
-                .iter()
-                .any(|kw| line_upper.contains(kw))
-            {
-                return Some(EntropyShapeStage::BlockchainOrNetworkAddress);
-            }
+    if let Some(line_text) = entropy_value_line(entropy_match, preprocessed, line_offsets) {
+        let line_upper = line_text.to_ascii_uppercase();
+        const BLOCKCHAIN_ADDR_KEYWORDS: &[&str] = &[
+            "_ADDR=",
+            "_ADDR ",
+            "_ADDR\"",
+            "_ADDR:",
+            "_ADDRS=",
+            "_ADDRS ",
+            "_ADDRS\"",
+            "_ADDRESS=",
+            "_ADDRESS ",
+            "_ADDRESS\"",
+            "_WALLET=",
+            "_WALLET ",
+            "_WALLET\"",
+            "_MINT_ADDR",
+            "_PUBKEY=",
+            "_PUBKEY ",
+            "_PUBLIC_KEY=",
+            "_PUBLIC_KEY ",
+            "_PUBLIC_KEY\"",
+            "_CONTRACT=",
+            "_CONTRACT ",
+            "_OWNER=",
+            "_ACCOUNT_ID=",
+            "_PEER_ID=",
+            "_NODE_ID=",
+        ];
+        if BLOCKCHAIN_ADDR_KEYWORDS
+            .iter()
+            .any(|kw| line_upper.contains(kw))
+        {
+            return Some(EntropyShapeStage::BlockchainOrNetworkAddress);
         }
     }
     // Vendored 3rd-party minified bundle: any "secret-like"
