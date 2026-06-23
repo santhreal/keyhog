@@ -253,6 +253,36 @@ fn reap_stale_binaries_requires_parseable_pid_suffix() {
 }
 
 #[test]
+fn reap_stale_binaries_reaps_digit_only_overflow_pid_artifacts() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("keyhog");
+    std::fs::write(&exe, b"bin").unwrap();
+
+    let overflow_pid = "42949672950000000000000000000000000000000000000000";
+    let artifacts = [
+        dir.path()
+            .join(format!(".keyhog.keyhog-old-{overflow_pid}")),
+        dir.path()
+            .join(format!(".keyhog.keyhog-bak-{overflow_pid}")),
+        dir.path()
+            .join(format!(".keyhog-update-{overflow_pid}.tmp")),
+    ];
+    for path in &artifacts {
+        std::fs::write(path, b"stale").unwrap();
+    }
+
+    API.reap_stale_binaries(&exe);
+
+    for path in &artifacts {
+        assert!(
+            !path.exists(),
+            "numeric overflow PID installer artifact must be treated as stale: {}",
+            path.display()
+        );
+    }
+}
+
+#[test]
 fn reap_stale_binaries_does_not_flatten_read_dir_errors() {
     let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/installer.rs"))
         .expect("installer source readable");

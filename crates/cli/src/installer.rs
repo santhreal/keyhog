@@ -271,7 +271,17 @@ fn parse_artifact_pid(raw: &str) -> Option<u32> {
     if raw.is_empty() || !raw.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
-    raw.parse().ok()
+    match raw.parse() {
+        Ok(pid) => Some(pid),
+        Err(error) => {
+            tracing::warn!(
+                pid = raw,
+                %error,
+                "installer artifact filename carries an invalid PID; treating it as stale"
+            );
+            Some(u32::MAX)
+        }
+    }
 }
 
 #[cfg(unix)]

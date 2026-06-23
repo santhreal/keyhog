@@ -149,12 +149,13 @@ where
         last_attempt = Some((result.result, result.metadata));
     }
 
-    last_attempt.unwrap_or_else(|| {
-        (
+    match last_attempt {
+        Some(attempt) => attempt,
+        None => (
             VerificationResult::Error("max retries exceeded".into()),
             HashMap::new(),
-        )
-    })
+        ),
+    }
 }
 
 pub(crate) fn retry_delay_bounds_for_attempt(attempt: usize, base_delay_ms: u64) -> (u64, u64) {

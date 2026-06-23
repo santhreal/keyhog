@@ -336,13 +336,13 @@ fn decode_candidate(s: &str) -> Option<Vec<u8>> {
     // valid base64 under the same padding/alphabet contract used by decode
     // through and suppression rechecks.
     if s.as_bytes().contains(&b'_') && is_underscore_hex_candidate(s) {
-        return crate::decode::hex_decode(s).ok();
+        return crate::decode::hex_decode(s).ok(); // LAW10: gated trial decode; malformed underscore-hex candidate yields None so callers keep the original undecoded candidate path.
     }
     if let Ok(bytes) = crate::decode::base64_decode(s) {
         return Some(bytes);
     }
     if s.len() >= MIN_DECODE_LEN && s.len().is_multiple_of(2) && is_plain_hex_candidate(s) {
-        return crate::decode::hex_decode(s).ok();
+        return crate::decode::hex_decode(s).ok(); // LAW10: gated trial decode; malformed plain-hex candidate yields None so callers keep the original undecoded candidate path.
     }
     None
 }
