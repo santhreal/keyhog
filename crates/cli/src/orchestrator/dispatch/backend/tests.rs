@@ -39,6 +39,24 @@ fn test_workload_key() -> WorkloadKey {
     }
 }
 
+fn test_hw_caps() -> keyhog_scanner::hw_probe::HardwareCaps {
+    keyhog_scanner::hw_probe::HardwareCaps {
+        physical_cores: 8,
+        logical_cores: 16,
+        has_avx2: true,
+        has_avx512: false,
+        has_neon: false,
+        gpu_available: false,
+        gpu_name: None,
+        gpu_vram_mb: None,
+        gpu_runtime_identity: None,
+        gpu_is_software: false,
+        total_memory_mb: Some(65_536),
+        io_uring_available: false,
+        hyperscan_available: true,
+    }
+}
+
 fn write_tampered_decision_cache(
     path: &std::path::Path,
     digest: u64,
@@ -673,6 +691,87 @@ fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
         Some(ScanBackend::CpuFallback),
         "once the bucket is measured during this calibration run, duplicate batches may reuse the new in-memory decision"
     );
+}
+
+#[test]
+fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_cached_router_hit_miss_{}.json",
+        std::process::id()
+    ));
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired pre-state, recall-irrelevant
+
+    let scanner = CompiledScanner::compile_with_gpu_policy(
+        Vec::new(),
+        keyhog_scanner::GpuInitPolicy::ForceDisabled,
+    )
+    .expect("compile scanner");
+    let caps = test_hw_caps();
+    let runtime_status = scanner.runtime_status();
+    let host = AutorouteHostProfile::from_caps(&caps, runtime_status.gpu_backend);
+    let pattern_count = 902;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let hit_batch = vec![test_chunk_with_source(
+        "token = abc\n".repeat(64),
+        "filesystem",
+    )];
+    let hit_key = workload_key(&hit_batch, pattern_count).expect("hit workload classified");
+    let miss_batch = vec![test_chunk_with_source(
+        "token = abc\n".repeat(4096),
+        "filesystem",
+    )];
+    let miss_key = workload_key(&miss_batch, pattern_count).expect("miss workload classified");
+    assert_ne!(
+        hit_key, miss_key,
+        "test must exercise a real cache miss for a different workload bucket"
+    );
+
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        hit_key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 9, Some(12), None),
+    );
+    save_autoroute_cache(
+        &path,
+        runtime_status.detector_digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &decisions,
+    )
+    .expect("autoroute cache hit fixture should persist");
+
+    let router = CachedBackendRouter::new(
+        caps,
+        pattern_count,
+        test_rules_digest().to_string(),
+        config_digest,
+        Ok(Some(path.clone())),
+        &scanner,
+    );
+    assert_eq!(
+        router
+            .choose(None, &hit_batch)
+            .expect("cache hit should choose persisted backend"),
+        ScanBackend::SimdCpu
+    );
+    let miss = router
+        .choose(None, &miss_batch)
+        .expect_err("cache miss must fail loud instead of guessing a backend")
+        .to_string();
+    assert!(
+        miss.contains("autoroute calibration required")
+            && miss.contains("Normal auto scans never benchmark, guess, or substitute"),
+        "cache miss must preserve operator-visible autoroute contract; got {miss}"
+    );
+    assert_eq!(
+        router
+            .choose(Some(ScanBackend::CpuFallback), &miss_batch)
+            .expect("explicit backend diagnostics bypass autoroute cache"),
+        ScanBackend::CpuFallback
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 }
 
 #[test]
