@@ -23,4 +23,15 @@ fn daemon_server_non_empty() {
             && !prod.contains("tracing::debug!(\"daemon: connection ended with error: {e:#}\");"),
         "daemon connection framing/protocol errors must be warn-visible, not debug-only"
     );
+    assert!(
+        prod.contains(".context(\"daemon: accept loop task failed during shutdown\")?")
+            && prod.contains("fn remove_daemon_socket_on_shutdown(")
+            && prod.contains("daemon: remove socket {} during shutdown"),
+        "daemon shutdown must surface accept-loop join and socket cleanup failures"
+    );
+    assert!(
+        !prod.contains("let _ = accept_task.await")
+            && !prod.contains("let _ = std::fs::remove_file(&socket_path)"),
+        "daemon shutdown must not discard accept-loop or socket cleanup results"
+    );
 }

@@ -250,9 +250,24 @@ pub(crate) async fn run_with_backend_override(
     });
 
     shutdown.notified().await;
-    let _ = accept_task.await; // LAW10: unused-binding marker; no runtime effect, not a fallback
-    let _ = std::fs::remove_file(&socket_path); // LAW10: unused-binding marker; no runtime effect, not a fallback
+    accept_task
+        .await
+        .context("daemon: accept loop task failed during shutdown")?;
+    remove_daemon_socket_on_shutdown(&socket_path)?;
     Ok(())
+}
+
+fn remove_daemon_socket_on_shutdown(socket_path: &std::path::Path) -> Result<()> {
+    match std::fs::remove_file(socket_path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).with_context(|| {
+            format!(
+                "daemon: remove socket {} during shutdown",
+                socket_path.display()
+            )
+        }),
+    }
 }
 
 /// Classify an `accept()` I/O error as transient (recoverable — back off and
