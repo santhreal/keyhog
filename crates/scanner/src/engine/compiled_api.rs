@@ -46,6 +46,17 @@ impl CompiledScanner {
         (Arc::clone(id), Arc::clone(name), Arc::clone(service))
     }
 
+    /// Precomputed weak-anchor classification for `detector_index`.
+    ///
+    /// The vector is built from the same detector list that creates every
+    /// `CompiledPattern::detector_index`. Index directly, like
+    /// `interned_detector_metadata`, so an index-parallel construction bug is
+    /// loud instead of recomputing a policy value on the hot path.
+    #[inline]
+    pub(crate) fn detector_weak_anchor_by_detector_index(&self, detector_index: usize) -> bool {
+        self.detector_weak_anchor_by_index[detector_index]
+    }
+
     /// Total number of patterns (AC + phase-2 capture).
     pub(crate) fn pattern_count(&self) -> usize {
         self.ac_map.len() + self.phase2_patterns.len()

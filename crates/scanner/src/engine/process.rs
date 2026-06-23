@@ -113,20 +113,11 @@ impl CompiledScanner {
             chunk.metadata.path.as_deref(),
             documentation_lines,
         );
-        // Per-detector constant, resolved once at scanner construction
-        // (`detector_weak_anchor_by_index`) instead of re-running
-        // `detector_weak_anchor`'s regex-string scan for every surviving
-        // candidate. `.get(...).copied().unwrap_or_else(...)` falls back to the
-        // live computation only if the index is somehow out of range (it never
-        // is — the vec is index-parallel with `detectors` — but the fallback
-        // keeps this byte-identical to the prior inline call rather than
-        // panicking on a malformed index, matching the resilience the extract
-        // path already applies to `detector_index`).
-        let weak_anchor = self
-            .detector_weak_anchor_by_index
-            .get(entry.detector_index)
-            .copied()
-            .unwrap_or_else(|| crate::suppression::detector_weak_anchor(detector)); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
+        // Per-detector constant, resolved once at scanner construction.
+        // `CompiledPattern::detector_index` and the weak-anchor cache are
+        // index-parallel with `detectors`; a mismatch is an internal
+        // construction bug and must be loud instead of recomputing policy here.
+        let weak_anchor = self.detector_weak_anchor_by_detector_index(entry.detector_index);
         let named_suppression_ctx =
             crate::suppression::NamedDetectorSuppressionCtx::with_weak_anchor(
                 chunk.metadata.path.as_deref(),
