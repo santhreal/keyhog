@@ -18,10 +18,10 @@
 //! they can always invoke `keyhog scan` separately.
 
 use crate::args::WatchArgs;
+use crate::orchestrator::{DefaultScanRuntime, compile_default_scan_runtime};
 use crate::style;
 use anyhow::{Context, Result};
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::CompiledScanner;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -51,12 +51,10 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
     }
 
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
-    let detector_count = detectors.len();
-    let scanner = CompiledScanner::compile(detectors.clone()).map_err(|e| {
+    let scan_runtime = compile_default_scan_runtime(detectors, |e| {
         crate::orchestrator_config::detector_compile_failed("keyhog watch", &args.detectors, e)
     })?;
-    let router =
-        crate::orchestrator::cached_autoroute_router_for_default_config(&scanner, &detectors);
+    let detector_count = scan_runtime.detector_count();
 
     if !args.quiet {
         eprintln!(
@@ -138,7 +136,7 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
             if path.is_dir() || should_skip(&path) {
                 continue;
             }
-            scan_file(&scanner, &router, &path, &mut recently_scanned);
+            scan_file(&scan_runtime, &path, &mut recently_scanned);
         }
     }
     Ok(())
@@ -158,8 +156,7 @@ fn content_hash(data: &str) -> u64 {
 }
 
 fn scan_file(
-    scanner: &CompiledScanner,
-    router: &crate::orchestrator::CachedBackendRouter,
+    scan_runtime: &DefaultScanRuntime,
     path: &std::path::Path,
     recently_scanned: &mut HashMap<PathBuf, (Instant, u64)>,
 ) {
@@ -228,15 +225,14 @@ fn scan_file(
             decoded_span: None,
         },
     };
-    let backend = match router.choose(None, std::slice::from_ref(&chunk)) {
-        Ok(backend) => backend,
+    let matches = match scan_runtime.scan_chunk(&chunk) {
+        Ok(matches) => matches,
         Err(error) => {
             let palette = style::for_stderr();
             eprintln!("{} keyhog watch: {error}", style::fail("FAIL", &palette));
             return;
         }
     };
-    let matches = scanner.scan_with_backend(&chunk, backend);
     for m in matches {
         let line = m.location.line.map(|l| format!(":{l}")).unwrap_or_default(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
         let conf = m

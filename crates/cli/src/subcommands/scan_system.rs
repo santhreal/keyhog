@@ -16,10 +16,9 @@ mod mounts;
 use crate::args::ScanSystemArgs;
 use crate::exit_codes::EXIT_FINDINGS;
 use crate::format::format_bytes;
-use crate::orchestrator::DefaultScanRuntime;
+use crate::orchestrator::{DefaultScanRuntime, compile_default_scan_runtime};
 use crate::style;
 use anyhow::{Context, Result};
-use keyhog_scanner::CompiledScanner;
 use mounts::enumerate_mounts;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -277,14 +276,13 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         style::info("INFO", &palette),
         detectors.len()
     );
-    let scanner = Arc::new(CompiledScanner::compile(detectors.clone()).map_err(|e| {
+    let scan_runtime = compile_default_scan_runtime(detectors, |e| {
         crate::orchestrator_config::detector_compile_failed(
             "keyhog scan-system",
             &args.detectors,
             e,
         )
-    })?);
-    let scan_runtime = DefaultScanRuntime::new(scanner, &detectors);
+    })?;
     // System-wide scan touches every mounted drive and every git history:
     // detector regexes compile lazily on first use, so warm them all up
     // front (in parallel) rather than stalling the first file that hits each

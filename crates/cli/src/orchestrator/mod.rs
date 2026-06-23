@@ -62,12 +62,21 @@ pub(crate) fn cached_autoroute_router_for_default_config(
 pub(crate) struct DefaultScanRuntime {
     scanner: Arc<CompiledScanner>,
     router: CachedBackendRouter,
+    detector_count: usize,
 }
 
 impl DefaultScanRuntime {
     pub(crate) fn new(scanner: Arc<CompiledScanner>, detectors: &[DetectorSpec]) -> Self {
         let router = cached_autoroute_router_for_default_config(&scanner, detectors);
-        Self { scanner, router }
+        Self {
+            scanner,
+            router,
+            detector_count: detectors.len(),
+        }
+    }
+
+    pub(crate) fn detector_count(&self) -> usize {
+        self.detector_count
     }
 
     pub(crate) fn warm(&self) {
@@ -78,6 +87,20 @@ impl DefaultScanRuntime {
         let backend = self.router.choose(None, std::slice::from_ref(chunk))?;
         Ok(self.scanner.scan_with_backend(chunk, backend))
     }
+
+    pub(crate) fn into_parts(self) -> (Arc<CompiledScanner>, CachedBackendRouter) {
+        (self.scanner, self.router)
+    }
+}
+
+pub(crate) fn compile_default_scan_runtime(
+    detectors: Vec<DetectorSpec>,
+    map_compile_error: impl FnOnce(&dyn std::fmt::Display) -> anyhow::Error,
+) -> Result<DefaultScanRuntime> {
+    let scanner = Arc::new(
+        CompiledScanner::compile(detectors.clone()).map_err(|error| map_compile_error(&error))?,
+    );
+    Ok(DefaultScanRuntime::new(scanner, &detectors))
 }
 
 #[doc(hidden)]

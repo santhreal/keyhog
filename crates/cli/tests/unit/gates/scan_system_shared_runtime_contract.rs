@@ -13,6 +13,7 @@ fn scan_system_uses_shared_scan_runtime_boundary() {
 
     for required in [
         "struct DefaultScanRuntime",
+        "fn compile_default_scan_runtime(",
         "fn scan_chunk(&self, chunk: &Chunk)",
         "self.router.choose(None, std::slice::from_ref(chunk))",
         "self.scanner.scan_with_backend(chunk, backend)",
@@ -24,8 +25,8 @@ fn scan_system_uses_shared_scan_runtime_boundary() {
     }
 
     for required in [
-        "use crate::orchestrator::DefaultScanRuntime;",
-        "let scan_runtime = DefaultScanRuntime::new(",
+        "use crate::orchestrator::{DefaultScanRuntime, compile_default_scan_runtime};",
+        "let scan_runtime = compile_default_scan_runtime(",
         "scan_runtime.warm();",
         "scan_runtime.scan_chunk(&chunk)?",
     ] {

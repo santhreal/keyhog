@@ -9,8 +9,8 @@ use anyhow::{Context, Result};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch, Source};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Notify, Semaphore};
@@ -83,7 +83,7 @@ struct ServerState {
 
 impl ServerState {
     fn new(
-        scanner: CompiledScanner,
+        scanner: Arc<CompiledScanner>,
         router: crate::orchestrator::CachedBackendRouter,
         shutdown: Arc<Notify>,
         detector_count: usize,
@@ -95,7 +95,7 @@ impl ServerState {
             .unwrap_or(4); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
         let max_conns = (cores * 4).clamp(8, 256);
         Self {
-            scanner: Arc::new(scanner),
+            scanner,
             router: Arc::new(router),
             started_at: Instant::now(),
             scans_served: AtomicU64::new(0),
@@ -131,15 +131,15 @@ pub(crate) async fn run_with_backend_override(
     options: ServerOptions,
     backend_override: Option<ScanBackend>,
 ) -> Result<()> {
-    let detector_count = detectors.len();
-    let scanner = CompiledScanner::compile(detectors.clone())
-        .context("daemon: compiling scanner from detector specs")?;
-    let router =
-        crate::orchestrator::cached_autoroute_router_for_default_config(&scanner, &detectors);
+    let scan_runtime = crate::orchestrator::compile_default_scan_runtime(detectors, |error| {
+        anyhow::anyhow!("daemon: compiling scanner from detector specs: {error}")
+    })?;
+    let detector_count = scan_runtime.detector_count();
     // The daemon is long-lived and serves many scan requests; pay the lazy
     // regex compile once, up front and in parallel, so no client request
     // eats a detector's first-use compile latency.
-    scanner.warm();
+    scan_runtime.warm();
+    let (scanner, router) = scan_runtime.into_parts();
 
     if let Some(parent) = socket_path.parent() {
         trust::ensure_private_socket_dir(parent)?;
