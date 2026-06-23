@@ -48,6 +48,7 @@ pub mod context_false_positive_non_empty;
 pub mod context_inference_no_inline_tests;
 pub mod context_inference_no_unwrap_expect;
 pub mod context_inference_non_empty;
+pub mod decode_base64_classifier_hot_path_shape;
 pub mod decode_base64_no_inline_tests;
 pub mod decode_base64_no_unwrap_expect;
 pub mod decode_base64_non_empty;

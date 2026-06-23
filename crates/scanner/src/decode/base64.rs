@@ -180,18 +180,14 @@ fn find_classified_base64_string_spans(text: &str, min_length: usize) -> Vec<Bas
 }
 
 fn classify_base64(candidate: &str) -> Option<Base64Variant> {
-    if !has_valid_base64_padding(candidate) {
-        return None;
-    }
-
-    let has_standard = candidate.contains('+') || candidate.contains('/');
-    let has_urlsafe = candidate.contains('-') || candidate.contains('_');
+    let facts = scan_base64_candidate(candidate)?;
+    let has_standard = facts.has_standard;
+    let has_urlsafe = facts.has_urlsafe;
     if has_standard && has_urlsafe {
         return None;
     }
 
-    let padded = candidate.contains('=');
-    match (has_urlsafe, padded, candidate.len() % 4) {
+    match (has_urlsafe, facts.padded, candidate.len() % 4) {
         (_, true, 0) => Some(if has_urlsafe {
             Base64Variant::UrlSafe
         } else {
@@ -205,17 +201,39 @@ fn classify_base64(candidate: &str) -> Option<Base64Variant> {
     }
 }
 
-fn has_valid_base64_padding(candidate: &str) -> bool {
-    let first_padding = match candidate.find('=') {
-        Some(index) => index,
-        None => return true,
-    };
+#[derive(Clone, Copy)]
+struct Base64CandidateFacts {
+    has_standard: bool,
+    has_urlsafe: bool,
+    padded: bool,
+}
 
-    let padding = &candidate[first_padding..];
-    first_padding > 0
-        && padding.len() <= 2
-        && padding.bytes().all(|byte| byte == b'=')
-        && candidate[..first_padding].bytes().all(|byte| byte != b'=')
+fn scan_base64_candidate(candidate: &str) -> Option<Base64CandidateFacts> {
+    let mut facts = Base64CandidateFacts {
+        has_standard: false,
+        has_urlsafe: false,
+        padded: false,
+    };
+    let mut padding_len = 0usize;
+    for (index, byte) in candidate.bytes().enumerate() {
+        match byte {
+            b'+' | b'/' if !facts.padded => facts.has_standard = true,
+            b'-' | b'_' if !facts.padded => facts.has_urlsafe = true,
+            b'=' => {
+                if index == 0 {
+                    return None;
+                }
+                facts.padded = true;
+                padding_len += 1;
+                if padding_len > 2 {
+                    return None;
+                }
+            }
+            _ if facts.padded => return None,
+            _ => {}
+        }
+    }
+    Some(facts)
 }
 
 /// Maximum base64 input length we'll decode (prevents OOM from malicious input).
