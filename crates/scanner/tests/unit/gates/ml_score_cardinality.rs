@@ -1,10 +1,8 @@
 #[test]
 fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
-    let scanner_config = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/scanner_config.rs"
-    ))
-    .expect("scanner_config.rs readable");
+    let scan_state =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/scan_state.rs"))
+            .expect("scan_state.rs readable");
     let process = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/engine/process.rs"
@@ -52,7 +50,7 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         "ML postprocess must not mutate finalized confidence or pass a split credential into adjudicate"
     );
     assert!(
-        scanner_config.contains("pub(crate) is_named_detector: bool")
+        scan_state.contains("pub(crate) is_named_detector: bool")
             && process.contains("&& !weak_anchor")
             && process.contains("is_named_detector,")
             && entropy.contains("is_named_detector: false")

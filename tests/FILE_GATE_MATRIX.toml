@@ -671,6 +671,9 @@ path = "crates/scanner/src/resolution.rs"
 path = "crates/scanner/src/scanner_config.rs"
 
 [[module]]
+path = "crates/scanner/src/scan_state.rs"
+
+[[module]]
 path = "crates/scanner/src/shared_regexes.rs"
 
 [[module]]

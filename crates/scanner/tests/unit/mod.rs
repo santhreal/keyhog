@@ -115,7 +115,7 @@ pub mod prefix_trie_extended;
 pub mod resolution;
 pub mod resolution_extended;
 pub mod root_facade;
-pub mod scanner_config_state;
+pub mod scan_state;
 pub mod scanner_misc;
 pub mod segment_attribution;
 pub mod shape_canonical;

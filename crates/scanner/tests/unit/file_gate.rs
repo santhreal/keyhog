@@ -932,7 +932,7 @@ fn engine_hot_patterns_error() {
 
 #[test]
 fn engine_hot_and_entropy_metadata_clones_are_heap_admission_gated() {
-    let state_src = include_str!("../../src/scanner_config.rs");
+    let state_src = include_str!("../../src/scan_state.rs");
     assert!(
         state_src.contains("struct RawMatchPriority"),
         "ScanState must expose a borrowed RawMatch priority key for admission"

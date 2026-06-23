@@ -207,7 +207,7 @@ pub mod process_exit_non_empty;
 pub mod resolution_no_inline_tests;
 pub mod resolution_no_unwrap_expect;
 pub mod resolution_non_empty;
-pub mod scanner_config_dedup_borrow_sort;
+pub mod scan_state_dedup_borrow_sort;
 pub mod shared_regexes_no_inline_tests;
 pub mod shared_regexes_no_unwrap_expect;
 pub mod shared_regexes_non_empty;

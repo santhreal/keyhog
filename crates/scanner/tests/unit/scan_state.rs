@@ -1,5 +1,5 @@
 use keyhog_core::{MatchLocation, RawMatch, Severity};
-use keyhog_scanner::scanner_config::{RawMatchPriority, ScanState};
+use keyhog_scanner::scan_state::{RawMatchPriority, ScanState};
 use std::collections::HashMap;
 use std::sync::Arc;
 

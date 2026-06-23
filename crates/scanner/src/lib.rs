@@ -10,8 +10,8 @@
 //! method-level map in [`engine`] (`engine::mod` "# The one flow"). To find a
 //! responsibility, locate its stage:
 //!
-//! - **Config / shared types** — [`scanner_config`], [`types`], [`hw_probe`]
-//!   (hardware routing), [`error`].
+//! - **Config / state / shared types** — [`scanner_config`], [`scan_state`],
+//!   [`types`], [`hw_probe`] (hardware routing), [`error`].
 //! - **Phase 1 · prefilter** (cheap "could a detector fire here?") —
 //!   [`alphabet_filter`], [`bigram_bloom`], [`prefix_trie`], `ascii_ci`,
 //!   `simd` / `simdsieve_prefilter` (feature-gated), `prefilter_degrade`
@@ -107,6 +107,8 @@ pub(crate) mod platform_compat;
 pub(crate) mod process_exit;
 /// Match resolution and deduplication.
 pub mod resolution;
+/// Runtime match heap, interners, and ML pending queue for one scan.
+pub(crate) mod scan_state;
 /// Scanner configuration and state.
 pub(crate) mod scanner_config;
 /// Static-string interner backed by vyre's CHD perfect hash.

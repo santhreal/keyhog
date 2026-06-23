@@ -261,7 +261,7 @@ impl CompiledScanner {
                 continue;
             };
             scan_state.push_match_lazy(
-                crate::scanner_config::RawMatchPriority {
+                crate::types::RawMatchPriority {
                     confidence: Some(confidence),
                     severity: keyhog_core::Severity::High,
                     detector_id: metadata.0.as_ref(),

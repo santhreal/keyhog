@@ -663,7 +663,7 @@ pub(crate) fn scan_state_drain(
     matches: Vec<keyhog_core::RawMatch>,
     limit: usize,
 ) -> Vec<keyhog_core::RawMatch> {
-    let mut state = crate::scanner_config::ScanState::default();
+    let mut state = crate::scan_state::ScanState::default();
     for m in matches {
         state.push_match(m, limit);
     }
@@ -676,7 +676,7 @@ pub(crate) fn scan_state_drain_with_static_intern(
     limit: usize,
 ) -> Vec<keyhog_core::RawMatch> {
     let interner = std::sync::Arc::new(crate::static_intern::StaticInterner::default());
-    let mut state = crate::scanner_config::ScanState::with_static_intern(interner);
+    let mut state = crate::scan_state::ScanState::with_static_intern(interner);
     for m in matches {
         state.push_match(m, limit);
     }

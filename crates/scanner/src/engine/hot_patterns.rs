@@ -172,7 +172,7 @@ impl CompiledScanner {
                     preprocessed.source_offset_for_match(&chunk.data, offset, credential);
                 let absolute_offset = source_offset + chunk.metadata.base_offset;
                 scan_state.push_match_lazy(
-                    crate::scanner_config::RawMatchPriority {
+                    crate::types::RawMatchPriority {
                         confidence: Some(confidence),
                         severity: Severity::Critical,
                         detector_id: metadata.0.as_ref(),
