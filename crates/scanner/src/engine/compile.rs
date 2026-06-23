@@ -151,6 +151,12 @@ impl CompiledScanner {
                 None => (None, CsrU32::default()),
             };
 
+        validate_compiled_pattern_detector_indices(
+            &state.ac_map,
+            &state.phase2_patterns,
+            detectors.len(),
+        )?;
+
         let (phase2_keyword_ac, phase2_keyword_to_patterns, phase2_keywords) =
             build_phase2_keyword_ac(&state.phase2_patterns);
         let phase2_keyword_count = phase2_keywords.len();
@@ -486,6 +492,43 @@ impl CompiledScanner {
         self.tuning.apply_config(&config);
         self
     }
+}
+
+fn validate_compiled_pattern_detector_indices(
+    ac_map: &[CompiledPattern],
+    phase2_patterns: &[(CompiledPattern, Vec<String>)],
+    detectors_len: usize,
+) -> Result<()> {
+    for (pattern_index, pattern) in ac_map.iter().enumerate() {
+        validate_compiled_pattern_detector_index("ac_map", pattern_index, pattern, detectors_len)?;
+    }
+    for (pattern_index, (pattern, _keywords)) in phase2_patterns.iter().enumerate() {
+        validate_compiled_pattern_detector_index(
+            "phase2_patterns",
+            pattern_index,
+            pattern,
+            detectors_len,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_compiled_pattern_detector_index(
+    table: &str,
+    pattern_index: usize,
+    pattern: &CompiledPattern,
+    detectors_len: usize,
+) -> Result<()> {
+    if pattern.detector_index >= detectors_len {
+        return Err(crate::error::ScanError::Config(format!(
+            "compiled scanner invariant violation: {table}[{pattern_index}] references \
+             detector_index {} but only {detectors_len} detector(s) are loaded. \
+             Fix: rebuild detector compilation so every compiled pattern keeps its source \
+             detector index before scanner construction completes",
+            pattern.detector_index
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(feature = "simdsieve")]

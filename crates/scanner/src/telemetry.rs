@@ -190,11 +190,6 @@ thread_local! {
     static THREAD_DECODE_TRUNCATIONS: std::cell::Cell<usize> =
         const { std::cell::Cell::new(0) };
 }
-/// A compiled pattern pointed at a detector index outside the loaded detector
-/// table. That is a scanner invariant violation: the affected pattern cannot
-/// safely emit a finding because metadata lookup would be wrong/panic, so the
-/// scan is partial and the operator must see the count.
-static INVALID_DETECTOR_INDEX_SKIPS: AtomicUsize = AtomicUsize::new(0);
 /// A trigger bitmap or compiled pattern-index side table referenced a pattern
 /// outside the compiled pattern bitmap. That loses phase-2 admission/expansion
 /// coverage for the affected pattern, so the operator must see the partial scan.
@@ -210,7 +205,6 @@ static BOUNDARY_RESULT_CARDINALITY_MISMATCHES: AtomicUsize = AtomicUsize::new(0)
 pub(crate) enum ScannerCoverageGapEvent {
     StructuredParseFailure,
     DecodeTruncation,
-    InvalidDetectorIndexSkip,
     InvalidPatternIndexSkip,
     BoundaryResultCardinalityMismatch,
 }
@@ -220,7 +214,6 @@ impl ScannerCoverageGapEvent {
         match self {
             Self::StructuredParseFailure => &STRUCTURED_PARSE_FAILURES,
             Self::DecodeTruncation => &DECODE_TRUNCATIONS,
-            Self::InvalidDetectorIndexSkip => &INVALID_DETECTOR_INDEX_SKIPS,
             Self::InvalidPatternIndexSkip => &INVALID_PATTERN_INDEX_SKIPS,
             Self::BoundaryResultCardinalityMismatch => &BOUNDARY_RESULT_CARDINALITY_MISMATCHES,
         }
@@ -477,18 +470,6 @@ pub fn decode_truncation_count() -> usize {
     THREAD_DECODE_TRUNCATIONS.with(|count| count.get())
 }
 
-/// Record that a compiled pattern could not be extracted because its
-/// `detector_index` no longer resolves to a loaded detector.
-pub(crate) fn record_invalid_detector_index_skip() {
-    let _receipt = record_scanner_coverage_gap(ScannerCoverageGapEvent::InvalidDetectorIndexSkip);
-}
-
-/// Count of compiled-pattern extraction attempts skipped by invalid detector
-/// indices this scan.
-pub fn invalid_detector_index_skip_count() -> usize {
-    INVALID_DETECTOR_INDEX_SKIPS.load(Ordering::Relaxed)
-}
-
 /// Record that compiled pattern-index side data referenced an out-of-range
 /// pattern and the affected expansion/admission edge had to be skipped.
 pub(crate) fn record_invalid_pattern_index_skip() {
@@ -587,7 +568,6 @@ pub fn reset_for_scan() {
     DECODE_TRUNCATIONS.store(0, Ordering::Relaxed);
     #[cfg(test)]
     THREAD_DECODE_TRUNCATIONS.with(|count| count.set(0));
-    INVALID_DETECTOR_INDEX_SKIPS.store(0, Ordering::Relaxed);
     INVALID_PATTERN_INDEX_SKIPS.store(0, Ordering::Relaxed);
     BOUNDARY_RESULT_CARDINALITY_MISMATCHES.store(0, Ordering::Relaxed);
     if let Ok(mut events) = t.events.lock() {

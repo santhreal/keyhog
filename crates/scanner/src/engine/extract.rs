@@ -66,20 +66,7 @@ impl CompiledScanner {
         cursor_range: Option<(usize, usize)>,
         deadline: Option<std::time::Instant>,
     ) {
-        // Resilient lookup: a malformed `entry.detector_index` would otherwise
-        // panic mid-scan and abort the whole rayon worker. The compiler should
-        // never produce out-of-range indices, but this is the kind of
-        // invariant whose violation should degrade one finding gracefully
-        // rather than crash an entire repository scan.
-        let Some(detector) = self.detectors.get(entry.detector_index) else {
-            crate::telemetry::record_invalid_detector_index_skip();
-            tracing::warn!(
-                detector_index = entry.detector_index,
-                detectors_len = self.detectors.len(),
-                "extract_matches: detector_index out of range; skipping pattern"
-            );
-            return;
-        };
+        let detector = &self.detectors[entry.detector_index];
 
         if let Some(group) = entry.group {
             self.extract_grouped_matches(

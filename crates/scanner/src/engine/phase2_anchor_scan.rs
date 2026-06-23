@@ -41,14 +41,7 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
     ) {
-        let Some(detector) = self.detectors.get(entry.detector_index) else {
-            crate::telemetry::record_invalid_detector_index_skip();
-            tracing::warn!(
-                detector_index = entry.detector_index,
-                "extract_anchored: detector_index out of range; skipping pattern"
-            );
-            return;
-        };
+        let detector = &self.detectors[entry.detector_index];
         let search_text: &str = &preprocessed.text;
         let bytes_total = search_text.len();
         // Per-pattern signal cache: constant across this pattern's matches but
