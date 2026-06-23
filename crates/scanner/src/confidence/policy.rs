@@ -29,7 +29,21 @@ pub(crate) fn checksum_policy_for(credential: &str) -> CredentialChecksumPolicy 
 
 #[inline]
 pub(crate) fn apply_checksum_confidence(confidence: f64, credential: &str) -> Option<f64> {
-    checksum_policy_for(credential).adjusted_confidence(confidence)
+    apply_checksum_decision_confidence(confidence, checksum_policy_for(credential))
+}
+
+#[inline]
+pub(crate) fn apply_checksum_decision_confidence(
+    confidence: f64,
+    decision: CredentialChecksumPolicy,
+) -> Option<f64> {
+    match decision.result() {
+        crate::checksum::ChecksumResult::Invalid => None,
+        crate::checksum::ChecksumResult::Valid => {
+            Some(confidence.max(crate::checksum::CHECKSUM_VALID_FLOOR))
+        }
+        crate::checksum::ChecksumResult::NotApplicable => Some(confidence),
+    }
 }
 
 pub(crate) fn apply_known_prefix_floor(confidence: f64, credential: &str) -> f64 {

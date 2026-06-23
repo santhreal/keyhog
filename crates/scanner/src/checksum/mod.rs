@@ -104,26 +104,17 @@ impl ChecksumConfidenceDecision {
     }
 
     #[inline]
-    pub(crate) fn adjusted_confidence(self, confidence: f64) -> Option<f64> {
-        match self.result {
-            ChecksumResult::Invalid => None,
-            ChecksumResult::Valid => Some(confidence.max(CHECKSUM_VALID_FLOOR)),
-            ChecksumResult::NotApplicable => Some(confidence),
-        }
+    pub(crate) fn result(self) -> ChecksumResult {
+        self.result
     }
 }
 
-/// Map a credential's embedded-checksum verdict onto a confidence decision.
+/// Compatibility wrapper for applying a credential's embedded-checksum verdict
+/// to a confidence score.
 ///
-/// This is the single source of truth for how a [`ChecksumResult`] adjusts a
-/// freshly-scored confidence. EVERY match-emission path - the hot-pattern fast
-/// path ([`crate::engine`] `hot_patterns`), the regex/`process_match` path, and
-/// the batched ML scorer (`apply_ml_batch_scores`) - routes through it so a
-/// `ghp_`/`xoxb-`/npm/Stripe/GitLab/PyPI token is adjudicated identically no
-/// matter which backend produced the match. Before this existed the fast path
-/// skipped checksums entirely (a fabricated `ghp_` survived; a confirmed one
-/// never got the boost), so the `--precision` "drops checksum-failing matches"
-/// contract was only honoured on the slow regex path.
+/// The confidence adjustment policy lives in [`crate::confidence::policy`];
+/// this public wrapper preserves the checksum module API used by tests and
+/// callers while keeping match-scoring ownership in the confidence subsystem.
 ///
 /// - `Valid` -> floor the confidence at [`CHECKSUM_VALID_FLOOR`].
 /// - `Invalid` -> the embedded CRC does not match its body (fabricated or
@@ -132,7 +123,7 @@ impl ChecksumConfidenceDecision {
 ///   unchanged.
 #[inline]
 pub fn checksum_adjusted_confidence(confidence: f64, credential: &str) -> Option<f64> {
-    ChecksumConfidenceDecision::for_credential(credential).adjusted_confidence(confidence)
+    crate::confidence::policy::apply_checksum_confidence(confidence, credential)
 }
 
 pub(crate) fn warm_runtime_regexes() {

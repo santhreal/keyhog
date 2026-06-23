@@ -42,17 +42,29 @@ fn engine_emitters_do_not_call_checksum_policy_primitives_directly() {
     let src = scanner_src();
     let owner = src.join("confidence/policy.rs");
     let owner_code = uncommented_code(&read(&owner));
+    let checksum_code = uncommented_code(&read(&src.join("checksum/mod.rs")));
     for required in [
         "fn checksum_policy_for(",
         "fn apply_checksum_confidence(",
+        "fn apply_checksum_decision_confidence(",
         "ChecksumConfidenceDecision::for_credential",
-        ".adjusted_confidence(",
+        "decision.result()",
+        "CHECKSUM_VALID_FLOOR",
     ] {
         assert!(
             owner_code.contains(required),
             "confidence::policy must own checksum confidence handoff token {required:?}"
         );
     }
+    assert!(
+        checksum_code.contains("fn result(self) -> ChecksumResult")
+            && checksum_code.contains(
+                "crate::confidence::policy::apply_checksum_confidence(confidence, credential)"
+            )
+            && !checksum_code.contains(".max(CHECKSUM_VALID_FLOOR)")
+            && !checksum_code.contains("fn adjusted_confidence("),
+        "checksum must expose checksum facts and delegate confidence adjustment to confidence::policy"
+    );
 
     assert!(
         !src.join("engine/scoring.rs").exists(),
