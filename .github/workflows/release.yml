@@ -41,6 +41,7 @@ jobs:
             # compatible adapter, SIMD covers the CPU path.
             install: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
             features: ''
+            artifact_features: 'ml,entropy,decode,multiline,simdsieve,simd'
             cuda_toolkit: false
           # CUDA-enabled Linux build. install.sh prefers this asset
           # when nvidia-smi + libcuda.so are both present at install
@@ -53,6 +54,7 @@ jobs:
             asset: keyhog-linux-x86_64-cuda
             install: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
             features: '--features cuda'
+            artifact_features: 'ml,entropy,decode,multiline,simdsieve,simd'
             cuda_toolkit: true
           # macOS: no `libhyperscan-dev` in the homebrew repo, so the
           # default `cargo build` fails on the simd feature. We ship a
@@ -66,6 +68,7 @@ jobs:
             asset: keyhog-macos-aarch64
             install: ''
             features: '--no-default-features --features portable'
+            artifact_features: 'ml,entropy,decode,multiline'
           # macOS x86_64 (Intel): same feature subset as Apple Silicon.
           # macos-15-intel is GitHub's supported x86_64 runner after the
           # macos-13 retirement (2026-04). actionlint flags `macos-13`
@@ -75,6 +78,7 @@ jobs:
             asset: keyhog-macos-x86_64
             install: ''
             features: '--no-default-features --features portable'
+            artifact_features: 'ml,entropy,decode,multiline'
           # Windows MSVC: same portable subset. Hyperscan is not
           # shipped on Windows, and daemon IPC is Unix-socket-only
           # (already gated with #[cfg(unix)]), so the portable
@@ -83,6 +87,7 @@ jobs:
             asset: keyhog-windows-x86_64.exe
             install: ''
             features: '--no-default-features --features portable'
+            artifact_features: 'ml,entropy,decode,multiline'
     runs-on: ${{ matrix.os }}
     steps:
       - name: Resolve tag
@@ -151,7 +156,7 @@ jobs:
             -p keyhog-scanner \
             --bin keyhog-scanner-artifacts \
             --no-default-features \
-            --features ml,entropy,decode,multiline \
+            --features "${{ matrix.artifact_features }}" \
             -- \
             --out-dir "$bundle_dir"
           tar -czf "$bundle_dir.tar.gz" "$bundle_dir"

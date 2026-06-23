@@ -191,7 +191,7 @@ case "$1" in
   doctor)    echo "mock doctor: healthy"; exit 0 ;;
   scan)
     case "${2:-}" in
-      --help) echo "Usage: keyhog scan [--no-config]" ;;
+      --help) echo "Usage: keyhog scan [--no-config] [--autoroute-calibrate]" ;;
       *) case " $* " in *" --autoroute-calibrate "*) write_mock_autoroute_cache ;; esac ;;
     esac
     exit 0
@@ -240,7 +240,7 @@ case "$1" in
   doctor)    echo "mock doctor: healthy"; exit 0 ;;
   scan)
     case "${2:-}" in
-      --help) echo "Usage: keyhog scan [--no-config]" ;;
+      --help) echo "Usage: keyhog scan [--no-config] [--autoroute-calibrate]" ;;
       *) case " $* " in *" --autoroute-calibrate "*) write_mock_autoroute_cache ;; esac ;;
     esac
     exit 0
@@ -288,7 +288,7 @@ case "$1" in
   doctor)    echo "mock doctor: healthy"; exit 0 ;;
   scan)
     case "$2" in
-      --help) echo "Usage: keyhog scan [--docker-image IMAGE]" ;;
+      --help) echo "Usage: keyhog scan [--docker-image IMAGE] [--autoroute-calibrate]" ;;
       *) case " $* " in *" --autoroute-calibrate "*) write_mock_autoroute_cache ;; esac ;;
     esac
     exit 0
@@ -309,7 +309,7 @@ case "$1" in
   doctor)    echo "mock doctor: healthy"; exit 0 ;;
   scan)
     case "${2:-}" in
-      --help) echo "Usage: keyhog scan [--no-config]"; exit 0 ;;
+      --help) echo "Usage: keyhog scan [--no-config] [--autoroute-calibrate]"; exit 0 ;;
       *) ;;
     esac
     mkdir -p "${MOCK_STATE_DIR:-/tmp}"
@@ -369,7 +369,7 @@ case "$1" in
   doctor)    echo "mock doctor: UNHEALTHY" >&2; exit 4 ;;
   scan)
     case "${2:-}" in
-      --help) echo "Usage: keyhog scan [--no-config]" ;;
+      --help) echo "Usage: keyhog scan [--no-config] [--autoroute-calibrate]" ;;
       *) case " $* " in *" --autoroute-calibrate "*) write_mock_autoroute_cache ;; esac ;;
     esac
     exit 0
@@ -383,6 +383,10 @@ sha_of() {
     else shasum -a 256 "$1" | awk '{print $1}'; fi
 }
 
+mkdir -p "$FIX_DIR/gpu-sidecar/keyhog-linux-x86_64.gpu-literals"
+printf 'mock gpu literal artifact\n' > "$FIX_DIR/gpu-sidecar/keyhog-linux-x86_64.gpu-literals/lit-mock.bin"
+tar -czf "$FIX_DIR/gpu-literals.tar.gz" -C "$FIX_DIR/gpu-sidecar" keyhog-linux-x86_64.gpu-literals
+
 # ── sandbox builder ───────────────────────────────────────────────────
 # build_sandbox writes a bin/ of mocks. Behaviour is steered by env vars
 # the mock curl reads at runtime (exported into the run via run_install):
@@ -390,6 +394,7 @@ sha_of() {
 #   MOCK_ASSET      - path to the binary to serve, or "404"
 #   MOCK_LATEST_ASSET - legacy latest-redirect fixture hook, or "404"
 #   MOCK_FALLBACK   - path to serve for the *fallback* asset, or "404"
+#   MOCK_GPU_LITERAL_SIDECAR - path to serve for <asset>.gpu-literals.tar.gz, or "404"
 #   MOCK_SIG        - "match" | "invalid" | "absent"
 #   MOCK_SHA        - "match" | "mismatch" | "absent"
 #   MOCK_LDD        - "ok" | path-to-missing-lib-name (e.g. "libhyperscan.so.5")
@@ -400,7 +405,7 @@ build_sandbox() {
     for tool in sh dash bash grep sed head tail awk cut tr cat mv cp rm mkdir rmdir \
                 chmod chown ls find dirname basename printf date sleep test true false \
                 command type stat readlink realpath sort uniq wc env tee xargs mktemp \
-                sha256sum shasum touch; do
+                sha256sum shasum touch tar gzip; do
         real=$(command -v "$tool" 2>/dev/null) || continue
         ln -sf "$real" "$sb/bin/$tool" 2>/dev/null || true
     done
@@ -541,14 +546,29 @@ case "$url" in
         printf '%s  asset\n' "$h" | emit; exit 0 ;;
     esac ;;
   *releases/latest/download/*)
-    if [ "${MOCK_LATEST_ASSET:-${MOCK_ASSET:-404}}" = "404" ]; then exit 22; fi
-    served="${MOCK_LATEST_ASSET:-$MOCK_ASSET}"
+    asset_name="${url##*/}"
+    case "$asset_name" in
+      *.gpu-literals.tar.gz)
+        served="${MOCK_GPU_LITERAL_SIDECAR:-$FIX_DIR/gpu-literals.tar.gz}" ;;
+      *)
+        served="${MOCK_LATEST_ASSET:-${MOCK_ASSET:-404}}" ;;
+    esac
+    if [ "$served" = "404" ]; then exit 22; fi
     printf '%s' "$served" > "$sd/served"
     if [ -n "$out" ]; then cat "$served" > "$out"; fi
-    asset_name="${url##*/}"
     emit_redirect_url "https://github.com/santhsecurity/keyhog/releases/download/${MOCK_LATEST_TAG:-v9.9.9}/$asset_name"
     exit 0 ;;
   *releases/download/*)
+    asset_name="${url##*/}"
+    case "$asset_name" in
+      *.gpu-literals.tar.gz)
+        served="${MOCK_GPU_LITERAL_SIDECAR:-$FIX_DIR/gpu-literals.tar.gz}"
+        if [ "$served" = "404" ]; then exit 22; fi
+        printf '%s' "$served" > "$sd/served"
+        cat "$served" > "$out"
+        emit_redirect_url "$url"
+        exit 0 ;;
+    esac
     # First download attempt = primary asset, second = fallback. Tracked
     # via a marker file so the ordering survives across curl processes.
     if [ ! -e "$sd/primary_attempted" ]; then
@@ -585,6 +605,7 @@ run_install() {
         MOCK_ASSET="${MOCK_ASSET:-404}" \
         MOCK_LATEST_ASSET="${MOCK_LATEST_ASSET:-${MOCK_ASSET:-404}}" \
         MOCK_FALLBACK="${MOCK_FALLBACK:-404}" \
+        MOCK_GPU_LITERAL_SIDECAR="${MOCK_GPU_LITERAL_SIDECAR:-$FIX_DIR/gpu-literals.tar.gz}" \
         MOCK_SIG="${MOCK_SIG:-match}" \
         MOCK_SHA="${MOCK_SHA:-absent}" \
         MOCK_LDD="${MOCK_LDD:-ok}" \
@@ -603,7 +624,7 @@ echo " install.sh edge-case battery"
 echo "=============================================================="
 
 reset_mocks() {
-    unset MOCK_RELEASES MOCK_ASSET MOCK_LATEST_ASSET MOCK_FALLBACK MOCK_SIG MOCK_SHA MOCK_LDD \
+    unset MOCK_RELEASES MOCK_ASSET MOCK_LATEST_ASSET MOCK_FALLBACK MOCK_GPU_LITERAL_SIDECAR MOCK_SIG MOCK_SHA MOCK_LDD \
           KEYHOG_VERSION INSTALL_DIR_OVERRIDE GITHUB_TOKEN
 }
 
@@ -779,13 +800,22 @@ expect_exec   "6.4 binary is executable"      "$h/.local/bin/keyhog"
 expect_match  "6.4a calibration summary table printed" "Autoroute calibration decisions" "$out"
 expect_match  "6.4b calibration summary reports persisted decision count" "decisions persisted: 2" "$out"
 expect_match  "6.4c calibration summary shows backend margin" "gpu-region-presence.*7\\.0ms" "$out"
+expect_match  "6.4d GPU literal sidecar is installed" "Installed 1 GPU literal matcher artifact" "$out"
+expect_file   "6.4e GPU literal artifact seeds runtime cache" "$h/.cache/keyhog/programs/lit-mock.bin"
 rm -rf "$h"
-# 6.4d missing .minisig refuses by default.
+# 6.4f missing GPU literal sidecar refuses before binary overwrite.
+h=$(newhome)
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match MOCK_GPU_LITERAL_SIDECAR=404 run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_match  "6.4f missing GPU literal sidecar refuses" "No GPU literal artifact sidecar" "$out"
+expect_status "6.4g missing GPU literal sidecar exits 1" 1 "$st"
+expect_nofile "6.4h no binary written without GPU literal sidecar" "$h/.local/bin/keyhog"
+rm -rf "$h"
+# 6.4i missing .minisig refuses by default.
 h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=absent MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "6.4d absent .minisig refuses unverified install" "No \\.minisig signature|Refusing to install an unverified" "$out"
-expect_status "6.4e absent .minisig exits 1" 1 "$st"
-expect_nofile "6.4f no binary written without signature" "$h/.local/bin/keyhog"
+expect_match  "6.4i absent .minisig refuses unverified install" "No \\.minisig signature|Refusing to install an unverified" "$out"
+expect_status "6.4j absent .minisig exits 1" 1 "$st"
+expect_nofile "6.4k no binary written without signature" "$h/.local/bin/keyhog"
 rm -rf "$h"
 # 6.4g missing .minisig with --insecure is loud and still requires checksum.
 h=$(newhome)

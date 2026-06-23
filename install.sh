@@ -738,6 +738,113 @@ verify_local_checksum() {
 # roll back to the previously-working binary instead of leaving the user with a
 # broken one. Empty when there was nothing to back up (fresh install).
 INSTALL_BACKUP=""
+GPU_LITERAL_SIDECAR_TMP=""
+
+gpu_programs_cache_dir_for_install() {
+    if [ "$OS" = "darwin" ]; then
+        printf '%s/Library/Caches/keyhog/programs\n' "$HOME"
+    elif [ -n "${XDG_CACHE_HOME:-}" ]; then
+        printf '%s/keyhog/programs\n' "$XDG_CACHE_HOME"
+    else
+        printf '%s/.cache/keyhog/programs\n' "$HOME"
+    fi
+}
+
+cleanup_gpu_literal_sidecar_tmp() {
+    if [ -n "$GPU_LITERAL_SIDECAR_TMP" ]; then
+        rm -f "$GPU_LITERAL_SIDECAR_TMP" 2>/dev/null || true
+        GPU_LITERAL_SIDECAR_TMP=""
+    fi
+}
+
+download_verified_gpu_literal_sidecar() {
+    [ -z "$FROM_FILE" ] || return 0
+    sidecar_name="$ASSET.gpu-literals.tar.gz"
+    sidecar_tmp=$(mktemp)
+    if ! download_asset "$sidecar_name" "$sidecar_tmp" 2>/dev/null || [ ! -s "$sidecar_tmp" ]; then
+        rm -f "$sidecar_tmp"
+        err "No GPU literal artifact sidecar was published for $ASSET at $TAG."
+        err "Refusing to install a release that would recompile shipped detector matchers at runtime."
+        err "Fix: rebuild the release workflow so $sidecar_name, $sidecar_name.sha256, and $sidecar_name.minisig are uploaded."
+        return 1
+    fi
+    if ! verify_release_signature "$sidecar_tmp" "$sidecar_name"; then
+        rm -f "$sidecar_tmp"
+        return 1
+    fi
+    if ! verify_checksum "$sidecar_tmp" "$sidecar_name"; then
+        rm -f "$sidecar_tmp"
+        return 1
+    fi
+    cleanup_gpu_literal_sidecar_tmp
+    GPU_LITERAL_SIDECAR_TMP="$sidecar_tmp"
+}
+
+validate_gpu_literal_sidecar_archive() {
+    archive="$1"
+    if ! tar -tzf "$archive" >/dev/null 2>&1; then
+        err "GPU literal artifact sidecar is not a readable tar.gz archive."
+        return 1
+    fi
+    tar -tzf "$archive" | while IFS= read -r entry; do
+        case "$entry" in
+          ""|/*|../*|*/../*|*/..)
+            printf '%s\n' "$entry"
+            exit 1
+            ;;
+        esac
+    done
+}
+
+install_verified_gpu_literal_sidecar() {
+    [ -n "$GPU_LITERAL_SIDECAR_TMP" ] || return 0
+    if ! validate_gpu_literal_sidecar_archive "$GPU_LITERAL_SIDECAR_TMP"; then
+        cleanup_gpu_literal_sidecar_tmp
+        err "Refusing GPU literal sidecar with unsafe archive paths."
+        return 1
+    fi
+    programs_dir="$(gpu_programs_cache_dir_for_install)"
+    extract_dir=$(mktemp -d -t keyhog-gpu-literals-XXXXXX)
+    if ! mkdir -p "$programs_dir"; then
+        rm -rf "$extract_dir"
+        cleanup_gpu_literal_sidecar_tmp
+        err "Could not create GPU literal cache directory at $programs_dir."
+        return 1
+    fi
+    if ! tar -xzf "$GPU_LITERAL_SIDECAR_TMP" -C "$extract_dir"; then
+        rm -rf "$extract_dir"
+        cleanup_gpu_literal_sidecar_tmp
+        err "Could not extract GPU literal artifact sidecar."
+        return 1
+    fi
+    find "$extract_dir" -type f -name '*.bin' | while IFS= read -r artifact; do
+        base=$(basename "$artifact")
+        tmp_target="$programs_dir/.$base.$$"
+        if ! cp "$artifact" "$tmp_target"; then
+            rm -f "$tmp_target"
+            exit 2
+        fi
+        if ! mv -f "$tmp_target" "$programs_dir/$base"; then
+            rm -f "$tmp_target"
+            exit 3
+        fi
+        installed=$(cat "$extract_dir/.installed-count" 2>/dev/null || printf '0')
+        printf '%s\n' "$((installed + 1))" > "$extract_dir/.installed-count"
+    done
+    install_status=$?
+    installed=$(cat "$extract_dir/.installed-count" 2>/dev/null || printf '0')
+    rm -rf "$extract_dir"
+    cleanup_gpu_literal_sidecar_tmp
+    if [ "$install_status" != "0" ]; then
+        err "Could not install GPU literal artifacts into $programs_dir."
+        return 1
+    fi
+    if [ "$installed" = "0" ]; then
+        err "GPU literal artifact sidecar contained no matcher .bin files."
+        return 1
+    fi
+    ok "Installed $installed GPU literal matcher artifact(s) into $programs_dir."
+}
 
 download_selected_release_asset() {
     out="$1"
@@ -838,6 +945,12 @@ stage_and_install() {
         fi
         if ! verify_checksum "$tmp" "$ASSET"; then
             rm -f "$tmp"
+            trap - EXIT INT TERM
+            exit 1
+        fi
+        if ! download_verified_gpu_literal_sidecar; then
+            rm -f "$tmp"
+            cleanup_gpu_literal_sidecar_tmp
             trap - EXIT INT TERM
             exit 1
         fi
@@ -2108,7 +2221,12 @@ do_install() {
 
     stage_and_install
     if ! finalize_install; then
+        cleanup_gpu_literal_sidecar_tmp
         err "Install failed verification; see above."
+        exit 1
+    fi
+    if ! install_verified_gpu_literal_sidecar; then
+        err "Install failed while seeding shipped GPU literal artifacts."
         exit 1
     fi
     post_install_wizard
@@ -2128,7 +2246,12 @@ do_repair() {
         warn "No existing keyhog binary found. Installing fresh."
         stage_and_install
         if ! finalize_install; then
+            cleanup_gpu_literal_sidecar_tmp
             err "Repair failed; see above."
+            exit 1
+        fi
+        if ! install_verified_gpu_literal_sidecar; then
+            err "Repair failed while seeding shipped GPU literal artifacts."
             exit 1
         fi
         ok "Repair complete."
@@ -2142,7 +2265,12 @@ do_repair() {
     fi
     stage_and_install
     if ! finalize_install; then
+        cleanup_gpu_literal_sidecar_tmp
         err "Repair failed; your previous binary state was preserved where possible (see above)."
+        exit 1
+    fi
+    if ! install_verified_gpu_literal_sidecar; then
+        err "Repair failed while seeding shipped GPU literal artifacts."
         exit 1
     fi
     ok "Repair complete."

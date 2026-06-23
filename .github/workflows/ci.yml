@@ -312,7 +312,7 @@ jobs:
       - name: scanner standalone, all data features
         run: cargo check -p keyhog-scanner --features "entropy,multiline,ml,decode"
       - name: scanner artifact writer release command
-        run: cargo run -p keyhog-scanner --bin keyhog-scanner-artifacts --no-default-features --features ml,entropy,decode,multiline -- --out-dir "$RUNNER_TEMP/keyhog-gpu-literals"
+        run: cargo run -p keyhog-scanner --bin keyhog-scanner-artifacts --no-default-features --features ml,entropy,decode,multiline,simdsieve,simd -- --out-dir "$RUNNER_TEMP/keyhog-gpu-literals"
 
   clippy:
     name: Clippy (advisory)
