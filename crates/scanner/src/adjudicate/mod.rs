@@ -11,7 +11,7 @@ pub(crate) enum EntropyShapeStage {
     SourceIdentifierInSourceContext,
     MissingSameLineCredential,
     CaesarSource,
-    KnownExampleOrPlaceholder,
+    SuppressionStage(&'static str),
     KebabIdentifier,
     Filename,
     PureIdentifier,
@@ -52,7 +52,7 @@ impl EntropyShapeStage {
             Self::SourceIdentifierInSourceContext => "entropy_source_identifier_in_source_context",
             Self::MissingSameLineCredential => "entropy_missing_same_line_credential",
             Self::CaesarSource => "entropy_caesar_source",
-            Self::KnownExampleOrPlaceholder => "entropy_known_example_or_placeholder",
+            Self::SuppressionStage(reason) => reason,
             Self::KebabIdentifier => "entropy_kebab_identifier",
             Self::Filename => "entropy_filename",
             Self::PureIdentifier => "entropy_pure_identifier",
@@ -405,7 +405,7 @@ pub(crate) struct MatchCtx<'a> {
 }
 
 impl<'a> MatchCtx<'a> {
-    #[cfg(test)]
+    #[cfg(any(feature = "simdsieve", test))]
     pub(crate) const fn for_stage(stage_id: StageId) -> Self {
         Self {
             explicit_stage: Some(stage_id),

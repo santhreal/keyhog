@@ -66,13 +66,6 @@ impl<'a> KnownExampleSuppressionCtx<'a> {
     }
 }
 
-pub(crate) fn suppress_known_example_credential(
-    credential: &str,
-    ctx: KnownExampleSuppressionCtx<'_>,
-) -> bool {
-    suppress_known_example_credential_stage(credential, ctx).is_some()
-}
-
 pub(crate) fn suppress_known_example_credential_stage(
     credential: &str,
     ctx: KnownExampleSuppressionCtx<'_>,

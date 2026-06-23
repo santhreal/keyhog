@@ -47,8 +47,10 @@ pub(crate) fn entropy_match_suppression_stage(
         entropy_match.entropy,
     );
     // Keep shared content gates live even when canonical shape gates are lifted.
-    if entropy_fallback_example_suppressed(entropy_match, chunk, canonical_lift) {
-        return Some(EntropyShapeStage::KnownExampleOrPlaceholder);
+    if let Some(stage) =
+        entropy_fallback_example_suppression_stage(entropy_match, chunk, canonical_lift)
+    {
+        return Some(stage);
     }
 
     // Kebab identifiers near `key` words are usually config names, not secrets.
@@ -537,11 +539,11 @@ fn random_byte_assignment_key_is_high_signal(normalized: &str) -> bool {
 ///
 /// Every CONTENT gate stays live on both paths; only the recall-load-bearing
 /// SHAPE arms are released, and only for the model-arbitrated lift surface.
-fn entropy_fallback_example_suppressed(
+fn entropy_fallback_example_suppression_stage(
     entropy_match: &crate::entropy::EntropyMatch,
     chunk: &Chunk,
     canonical_lift: bool,
-) -> bool {
+) -> Option<EntropyShapeStage> {
     let value = entropy_match.value.as_str();
     let path = chunk.metadata.path.as_deref();
     let source = Some(chunk.metadata.source_type.as_str());
@@ -558,7 +560,11 @@ fn entropy_fallback_example_suppressed(
             isolated_bare_token,
             false,
         );
-        return crate::suppression::api::suppress_known_example_credential(value, example_ctx);
+        return crate::suppression::api::suppress_known_example_credential_stage(
+            value,
+            example_ctx,
+        )
+        .map(|stage_id| EntropyShapeStage::SuppressionStage(stage_id.as_str()));
     }
 
     // Lift path. ALL lifted canonical shapes (UUID, hex digest, serial) first
@@ -569,11 +575,16 @@ fn entropy_fallback_example_suppressed(
     // `deadbeef`-style). These are the SAME content markers the strict path
     // applies; only the shape arm is what the lift releases, so a documentation
     // placeholder of ANY canonical shape stays dropped.
-    if crate::context::is_known_example_credential(value)
-        || crate::confidence::contains_placeholder_word(value)
-        || crate::suppression::shape::has_three_or_more_consecutive_identical(value)
-    {
-        return true;
+    if crate::context::is_known_example_credential(value) {
+        return Some(EntropyShapeStage::SuppressionStage(
+            "algorithmic_placeholder",
+        ));
+    }
+    if crate::confidence::contains_placeholder_word(value) {
+        return Some(EntropyShapeStage::SuppressionStage("placeholder_word"));
+    }
+    if crate::suppression::shape::has_three_or_more_consecutive_identical(value) {
+        return Some(EntropyShapeStage::SuppressionStage("repetitive_run"));
     }
 
     // An EXACT-UUID value cannot be exempted inside `suppression_stage_inner` (its
@@ -581,7 +592,7 @@ fn entropy_fallback_example_suppressed(
     // clean UUID the content gate above is the whole verdict — let it through to
     // the model.
     if crate::suppression::shape::is_uuid_v4_shape(value) {
-        return false;
+        return None;
     }
 
     // Non-UUID lifted value (canonical hex / serial). The entropy-aware variant
@@ -598,5 +609,6 @@ fn entropy_fallback_example_suppressed(
         false,
         false,
     );
-    crate::suppression::api::suppress_known_example_credential(value, example_ctx)
+    crate::suppression::api::suppress_known_example_credential_stage(value, example_ctx)
+        .map(|stage_id| EntropyShapeStage::SuppressionStage(stage_id.as_str()))
 }

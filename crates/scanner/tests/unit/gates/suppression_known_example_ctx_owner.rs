@@ -42,10 +42,11 @@ fn engine_uses_typed_known_example_suppression_context() {
     let api = read(&scanner_src().join("suppression/api.rs"));
     assert!(
         api.contains("struct KnownExampleSuppressionCtx")
-            && api.contains("fn suppress_known_example_credential("),
-        "suppression::api must expose the typed known-example suppression entry point"
+            && api.contains("fn suppress_known_example_credential_stage("),
+        "suppression::api must expose the typed stage-returning known-example suppression entry point"
     );
     for forbidden in [
+        "fn suppress_known_example_credential(",
         "fn should_suppress_known_example_credential(",
         "fn should_suppress_known_example_credential_with_source(",
         "fn should_suppress_known_example_credential_with_source_and_entropy(",

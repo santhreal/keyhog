@@ -540,8 +540,8 @@ pub fn known_example_suppressed(
         crate::suppression::api::KnownExampleSuppressionCtx::new(path, context, None),
     );
     if let Some(stage) = stage {
-        crate::telemetry::record_shape_suppression(path, credential, stage.as_str());
-        true
+        let ctx = crate::adjudicate::MatchCtx::for_stage(stage);
+        crate::adjudicate::record_suppression(path, credential, &ctx).is_some()
     } else {
         false
     }
@@ -559,8 +559,8 @@ pub fn known_example_suppressed_with_source(
         crate::suppression::api::KnownExampleSuppressionCtx::new(path, context, source_type),
     );
     if let Some(stage) = stage {
-        crate::telemetry::record_shape_suppression(path, credential, stage.as_str());
-        true
+        let ctx = crate::adjudicate::MatchCtx::for_stage(stage);
+        crate::adjudicate::record_suppression(path, credential, &ctx).is_some()
     } else {
         false
     }
