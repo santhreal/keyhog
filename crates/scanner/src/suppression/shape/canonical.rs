@@ -248,6 +248,36 @@ pub(crate) fn looks_like_standard_base64_blob(credential: &str) -> bool {
     crate::decode_structure::is_random_base64_blob(credential, 40, 80, 32)
 }
 
+/// Pure standard-base64 random-byte decoy shape in the 40-80 char band.
+///
+/// This is the decode-through sibling for decoys that miss the punctuation /
+/// padding hard-drop gates: pure base62-looking standard-base64 values that
+/// decode to bytes which are neither printable text nor recognizable binary
+/// magic. It is a shape predicate, not a generic-engine concern; callers decide
+/// whether their surrounding evidence is strong enough to apply it.
+pub(crate) fn looks_like_random_byte_base64_blob(value: &str) -> bool {
+    if !(40..=80).contains(&value.len()) {
+        return false;
+    }
+    if value.bytes().any(|b| matches!(b, b'+' | b'/')) {
+        return false;
+    }
+    if !value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'=')
+    {
+        return false;
+    }
+    let structure = crate::decode_structure::analyze(value);
+    if !structure.decodable {
+        return false;
+    }
+    if structure.magic.is_some() {
+        return true;
+    }
+    structure.printable_ratio < 0.85
+}
+
 fn is_uniform_hex(s: &str) -> bool {
     let bytes = s.as_bytes();
     if bytes.is_empty() {
@@ -482,7 +512,7 @@ pub(crate) fn is_dash_segmented_alnum_decoy_with_randomness(
 
 #[cfg(test)]
 mod tests {
-    use super::is_structured_dotted_token;
+    use super::{is_structured_dotted_token, looks_like_random_byte_base64_blob};
 
     #[test]
     fn structured_dotted_token_accepts_jwt_like_shape() {
@@ -503,5 +533,26 @@ mod tests {
         assert!(!is_structured_dotted_token("this.someService.copilotToken"));
         assert!(!is_structured_dotted_token("example.com"));
         assert!(!is_structured_dotted_token("alpha.beta.gamma.delta"));
+    }
+
+    #[test]
+    fn random_byte_base64_blob_accepts_pure_alnum_decoy() {
+        assert!(looks_like_random_byte_base64_blob(
+            "VqsjpzT2Jauz6vo76xb5vNB8XXxfBTQyNX6G5Kx1AEEk"
+        ));
+    }
+
+    #[test]
+    fn random_byte_base64_blob_rejects_slash_bearing_token() {
+        assert!(!looks_like_random_byte_base64_blob(
+            "PvgsQdw6b5r9JqFzmaVkh/PBOtxkvFtq3OLNhcdqlOcoSqgnQx"
+        ));
+    }
+
+    #[test]
+    fn random_byte_base64_blob_rejects_urlsafe_token_shape() {
+        assert!(!looks_like_random_byte_base64_blob(
+            "ghp_0123456789abcdefghijklmnopqrstuvwxyzABCDEF"
+        ));
     }
 }

@@ -222,3 +222,36 @@ fn entropy_canonical_shapes_live_in_shape_owner() {
         }
     }
 }
+
+#[test]
+fn random_byte_base64_shape_lives_in_shape_owner() {
+    let src = scanner_src();
+    let shape = uncommented_code(&read(&src.join("suppression/shape/canonical.rs")));
+    let shape_mod = uncommented_code(&read(&src.join("suppression/shape/mod.rs")));
+    let generic_helpers =
+        uncommented_code(&read(&src.join("engine/phase2_generic/shape_helpers.rs")));
+    let generic_shape = uncommented_code(&read(&src.join("engine/phase2_generic_shape.rs")));
+    let entropy_gates = uncommented_code(&read(&src.join("engine/phase2_entropy/gates.rs")));
+
+    assert!(
+        shape.contains("fn looks_like_random_byte_base64_blob(")
+            && shape_mod.contains("looks_like_random_byte_base64_blob"),
+        "suppression::shape must own and re-export the random-byte base64 blob predicate"
+    );
+    assert!(
+        !generic_helpers.contains("fn generic_path_looks_like_random_byte_blob("),
+        "generic engine helpers must not own the random-byte base64 blob shape predicate"
+    );
+    assert!(
+        generic_shape.contains("crate::suppression::shape::looks_like_random_byte_base64_blob(value)")
+            && entropy_gates.contains(
+                "crate::suppression::shape::looks_like_random_byte_base64_blob(&entropy_match.value)"
+            ),
+        "generic and entropy callers must use the shared suppression::shape owner"
+    );
+    assert!(
+        !generic_shape.contains("generic_path_looks_like_random_byte_blob(")
+            && !entropy_gates.contains("generic_path_looks_like_random_byte_blob("),
+        "scanner paths must not call the removed generic-owned random-byte predicate"
+    );
+}

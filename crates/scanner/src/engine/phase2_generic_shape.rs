@@ -12,7 +12,7 @@
 //! helpers (the gauntlet's only callers) move with it.
 use super::phase2_generic::shape_helpers::{
     generic_path_allows_ambiguous_base64_candidate, generic_path_looks_like_random_base64_blob,
-    generic_path_looks_like_random_byte_blob, generic_path_looks_like_trimmed_aws_arn,
+    generic_path_looks_like_trimmed_aws_arn,
 };
 use super::*;
 
@@ -364,7 +364,7 @@ impl CompiledScanner {
             && !allow_canonical_hex_key
             && !allow_ambiguous_base64_candidate
             && !allow_encoded_text_secret
-            && generic_path_looks_like_random_byte_blob(value)
+            && crate::suppression::shape::looks_like_random_byte_base64_blob(value)
         {
             return Some("random_byte_blob");
         }

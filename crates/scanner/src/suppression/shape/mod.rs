@@ -17,8 +17,8 @@ pub(crate) use canonical::{
     looks_like_dashed_serial_key, looks_like_entropy_canonical_hex_digest,
     looks_like_entropy_canonical_non_secret_shape, looks_like_entropy_uuid_shape,
     looks_like_prefixed_hash_digest, looks_like_prefixed_masked_sequence,
-    looks_like_standard_base64_blob, looks_like_truncated_uuid_v4_suffix,
-    RFC7519_EXAMPLE_JWT_PREFIX,
+    looks_like_random_byte_base64_blob, looks_like_standard_base64_blob,
+    looks_like_truncated_uuid_v4_suffix, RFC7519_EXAMPLE_JWT_PREFIX,
 };
 pub(crate) use path::{looks_like_scheme_prefixed_uri, looks_like_url_or_path_segment};
 #[cfg(any(feature = "entropy", test))]

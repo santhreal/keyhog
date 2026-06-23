@@ -374,9 +374,7 @@ pub(crate) fn entropy_match_suppression_stage(
         && !same_line_high_signal_assignment_owner
         && !high_entropy_punctuation_payload
         && crate::decode_structure::decoded_contains_nul_byte(&entropy_match.value)
-        && crate::engine::phase2_generic::shape_helpers::generic_path_looks_like_random_byte_blob(
-            &entropy_match.value,
-        )
+        && crate::suppression::shape::looks_like_random_byte_base64_blob(&entropy_match.value)
     {
         return Some(EntropyShapeStage::RandomByteBlob);
     }
