@@ -228,15 +228,36 @@ fn fetch_url(
         )))];
     }
 
-    // Route by URL extension
-    let lower = url.to_lowercase();
-    if lower.ends_with(".wasm") {
-        handle_wasm(resp, url, max_response_bytes)
-    } else if lower.ends_with(".map") || lower.contains(".map?") {
-        handle_sourcemap(resp, url, max_response_bytes)
-    } else {
-        handle_js(resp, url, max_response_bytes)
+    match classify_web_response(url) {
+        WebResponseKind::Wasm => handle_wasm(resp, url, max_response_bytes),
+        WebResponseKind::SourceMap => handle_sourcemap(resp, url, max_response_bytes),
+        WebResponseKind::JavaScript => handle_js(resp, url, max_response_bytes),
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WebResponseKind {
+    JavaScript,
+    SourceMap,
+    Wasm,
+}
+
+fn classify_web_response(url: &str) -> WebResponseKind {
+    let path = url.split_once(['?', '#']).map_or(url, |(path, _)| path);
+    if ends_with_ignore_ascii_case(path, ".wasm") {
+        WebResponseKind::Wasm
+    } else if ends_with_ignore_ascii_case(path, ".map") {
+        WebResponseKind::SourceMap
+    } else {
+        WebResponseKind::JavaScript
+    }
+}
+
+fn ends_with_ignore_ascii_case(value: &str, suffix: &str) -> bool {
+    value
+        .as_bytes()
+        .get(value.len().saturating_sub(suffix.len())..)
+        .is_some_and(|tail| tail.eq_ignore_ascii_case(suffix.as_bytes()))
 }
 
 fn send_with_pinned_redirects(

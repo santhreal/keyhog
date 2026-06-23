@@ -541,6 +541,14 @@ fn slack_ok_json_requires_endpoint_payload() {
 fn web_happy() {
     let source = keyhog_sources::WebSource::new(vec!["https://example.com/app.js".to_string()]);
     assert_eq!(source.name(), "web");
+    let web = include_str!("../../src/web.rs");
+    assert!(
+        web.contains("fn classify_web_response(url: &str) -> WebResponseKind")
+            && web.contains("ends_with_ignore_ascii_case(path, \".wasm\")")
+            && web.contains("ends_with_ignore_ascii_case(path, \".map\")")
+            && !web.contains("url.to_lowercase()"),
+        "WebSource URL routing must classify extensions without allocating a lowercase copy of the full URL"
+    );
 }
 #[cfg(feature = "web")]
 #[test]

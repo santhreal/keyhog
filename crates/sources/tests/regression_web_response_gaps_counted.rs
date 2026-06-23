@@ -258,6 +258,38 @@ fn malformed_sourcemap_is_raw_scanned_and_counted_partial() {
 }
 
 #[test]
+fn uppercase_sourcemap_extension_with_query_routes_to_sourcemap() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+
+    let server = httpmock::MockServer::start();
+    let body = r#"{"version":3,"sources":["src.ts"],"sourcesContent":["const token = 'ghp_UpperMapRoute000000000000000';"]}"#;
+    let _map = server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/APP.JS.MAP");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(body);
+    });
+
+    let chunks: Vec<_> = loopback_calibration_source(format!("{}?v=1", server.url("/APP.JS.MAP")))
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("uppercase sourcemap URL should scan");
+
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.metadata.source_type == "web:sourcemap"
+                && chunk
+                    .metadata
+                    .path
+                    .as_deref()
+                    .is_some_and(|path| path.ends_with("!src.ts"))),
+        "uppercase .MAP path with query must route through sourcemap expansion, got {chunks:?}"
+    );
+}
+
+#[test]
 fn partially_malformed_sourcemap_scans_decoded_entries_and_raw_map() {
     let _guard = counter_guard();
     TestApi.reset_skip_counters();
