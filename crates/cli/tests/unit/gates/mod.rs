@@ -1,3 +1,4 @@
+pub mod args_maintenance_split;
 pub mod args_no_inline_tests;
 pub mod args_no_unwrap_expect;
 pub mod args_non_empty;
