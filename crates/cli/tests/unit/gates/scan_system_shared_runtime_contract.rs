@@ -32,6 +32,7 @@ fn scan_system_uses_shared_scan_runtime_boundary() {
         "enum StreamingSourceEvent",
         "fn scan_streaming_source(",
         "for chunk_result in source.chunks()",
+        "should_stop_before_chunk(chunk_len)",
         "StreamingSourceEvent::UnreadableChunk",
         "StreamingSourceEvent::Matches { chunk_len, matches }",
     ] {
@@ -46,6 +47,7 @@ fn scan_system_uses_shared_scan_runtime_boundary() {
         "let scan_runtime = compile_default_scan_runtime(",
         "scan_runtime.warm();",
         "crate::orchestrator::scan_streaming_source(",
+        "chunk_fits_space_cap(bytes_scanned.load(Ordering::Relaxed), chunk_len, space_cap)",
         "handle_streaming_source_event(event, bytes_scanned, out);",
         "\"filesystem\"",
         "\"git-history\"",

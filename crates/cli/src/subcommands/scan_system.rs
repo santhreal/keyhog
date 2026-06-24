@@ -151,6 +151,14 @@ impl FindingSink {
 pub(crate) mod testing {
     pub(crate) const MAX_RESIDENT_FINDINGS: usize = super::MAX_RESIDENT_FINDINGS;
 
+    pub(crate) fn chunk_fits_space_cap(
+        bytes_scanned: u64,
+        chunk_len: usize,
+        space_cap: u64,
+    ) -> bool {
+        super::chunk_fits_space_cap(bytes_scanned, chunk_len, space_cap)
+    }
+
     pub(crate) struct FindingSink {
         inner: super::FindingSink,
     }
@@ -336,7 +344,7 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
             style::info("INFO", &palette),
             mount.display()
         );
-        scan_mount(
+        let stopped_by_space_cap = scan_mount(
             &scan_runtime,
             mount,
             &args,
@@ -344,7 +352,7 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
             space_cap,
             &mut sink,
         )?;
-        if bytes_scanned.load(Ordering::Relaxed) >= space_cap {
+        if stopped_by_space_cap || bytes_scanned.load(Ordering::Relaxed) >= space_cap {
             record_space_cap_gap(&mut sink, space_cap, "stopping filesystem walk");
             break;
         }
@@ -363,8 +371,9 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
                 style::info("INFO", &palette),
                 repo.display()
             );
-            scan_git_history(&scan_runtime, repo, &bytes_scanned, space_cap, &mut sink)?;
-            if bytes_scanned.load(Ordering::Relaxed) >= space_cap {
+            let stopped_by_space_cap =
+                scan_git_history(&scan_runtime, repo, &bytes_scanned, space_cap, &mut sink)?;
+            if stopped_by_space_cap || bytes_scanned.load(Ordering::Relaxed) >= space_cap {
                 record_space_cap_gap(&mut sink, space_cap, "stopping git history walk");
                 break;
             }
@@ -595,6 +604,13 @@ fn record_space_cap_gap(out: &mut FindingSink, space_cap: u64, skipped_scope: &'
     );
 }
 
+fn chunk_fits_space_cap(bytes_scanned: u64, chunk_len: usize, space_cap: u64) -> bool {
+    bytes_scanned < space_cap
+        && bytes_scanned
+            .checked_add(chunk_len as u64)
+            .is_some_and(|total| total <= space_cap)
+}
+
 fn scan_mount(
     scan_runtime: &DefaultScanRuntime,
     root: &Path,
@@ -602,7 +618,7 @@ fn scan_mount(
     bytes_scanned: &AtomicU64,
     space_cap: u64,
     out: &mut FindingSink,
-) -> Result<()> {
+) -> Result<bool> {
     use keyhog_sources::FilesystemSource;
 
     // scan-system is paranoid by default - walks files even if listed in
@@ -610,17 +626,26 @@ fn scan_mount(
     // would gitignore it; respecting gitignore here would let that hide.
     let source =
         FilesystemSource::new(root.to_path_buf()).with_respect_gitignore(args.respect_gitignore);
+    let mut stopped_by_space_cap = false;
     crate::orchestrator::scan_streaming_source(
         scan_runtime,
         &source,
         "filesystem",
         root,
-        || bytes_scanned.load(Ordering::Relaxed) >= space_cap,
+        |chunk_len| {
+            let fits =
+                chunk_fits_space_cap(bytes_scanned.load(Ordering::Relaxed), chunk_len, space_cap);
+            if !fits {
+                stopped_by_space_cap = true;
+            }
+            !fits
+        },
         |event| {
             handle_streaming_source_event(event, bytes_scanned, out);
             Ok(())
         },
-    )
+    )?;
+    Ok(stopped_by_space_cap)
 }
 
 fn scan_git_history(
@@ -629,21 +654,33 @@ fn scan_git_history(
     bytes_scanned: &AtomicU64,
     space_cap: u64,
     out: &mut FindingSink,
-) -> Result<()> {
+) -> Result<bool> {
     #[cfg(feature = "git")]
     {
         let source = keyhog_sources::GitSource::new(repo.to_path_buf());
+        let mut stopped_by_space_cap = false;
         crate::orchestrator::scan_streaming_source(
             scan_runtime,
             &source,
             "git-history",
             repo,
-            || bytes_scanned.load(Ordering::Relaxed) >= space_cap,
+            |chunk_len| {
+                let fits = chunk_fits_space_cap(
+                    bytes_scanned.load(Ordering::Relaxed),
+                    chunk_len,
+                    space_cap,
+                );
+                if !fits {
+                    stopped_by_space_cap = true;
+                }
+                !fits
+            },
             |event| {
                 handle_streaming_source_event(event, bytes_scanned, out);
                 Ok(())
             },
-        )
+        )?;
+        Ok(stopped_by_space_cap)
     }
     #[cfg(not(feature = "git"))]
     {
@@ -665,7 +702,7 @@ fn scan_git_history(
             repo.display()
         );
         out.record_skipped_chunk();
-        Ok(())
+        Ok(false)
     }
 }
 

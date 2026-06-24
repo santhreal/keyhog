@@ -234,6 +234,12 @@ pub trait CliTestApi {
     fn hook_content(&self) -> &'static str;
 
     fn max_resident_findings(&self) -> usize;
+    fn scan_system_chunk_fits_space_cap(
+        &self,
+        bytes_scanned: u64,
+        chunk_len: usize,
+        space_cap: u64,
+    ) -> bool;
     fn finding_sink_new(&self) -> FindingSink;
     fn finding_sink_with_cap(&self, cap: usize) -> FindingSink;
     fn finding_sink_record_skipped_chunk(&self, sink: &mut FindingSink);
@@ -687,6 +693,18 @@ impl CliTestApi for TestApi {
 
     fn max_resident_findings(&self) -> usize {
         crate::subcommands::scan_system::testing::MAX_RESIDENT_FINDINGS
+    }
+    fn scan_system_chunk_fits_space_cap(
+        &self,
+        bytes_scanned: u64,
+        chunk_len: usize,
+        space_cap: u64,
+    ) -> bool {
+        crate::subcommands::scan_system::testing::chunk_fits_space_cap(
+            bytes_scanned,
+            chunk_len,
+            space_cap,
+        )
     }
     fn finding_sink_new(&self) -> FindingSink {
         FindingSink(crate::subcommands::scan_system::testing::FindingSink::new())

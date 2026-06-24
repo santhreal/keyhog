@@ -16,13 +16,10 @@ pub(crate) fn scan_streaming_source(
     source: &dyn Source,
     source_kind: &'static str,
     root: &Path,
-    mut should_stop: impl FnMut() -> bool,
+    mut should_stop_before_chunk: impl FnMut(usize) -> bool,
     mut handle_event: impl FnMut(StreamingSourceEvent) -> Result<()>,
 ) -> Result<()> {
     for chunk_result in source.chunks() {
-        if should_stop() {
-            return Ok(());
-        }
         let chunk = match chunk_result {
             Ok(chunk) => chunk,
             // Law 10: an unreadable source chunk is unscanned bytes. This shared
@@ -40,6 +37,9 @@ pub(crate) fn scan_streaming_source(
             }
         };
         let chunk_len = chunk.data.len();
+        if should_stop_before_chunk(chunk_len) {
+            return Ok(());
+        }
         let matches = scan_runtime.scan_chunk(&chunk)?;
         handle_event(StreamingSourceEvent::Matches { chunk_len, matches })?;
     }

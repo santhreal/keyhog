@@ -96,6 +96,26 @@ fn default_cap_is_the_module_ceiling() {
 }
 
 #[test]
+fn space_cap_policy_refuses_first_over_cap_chunk_before_absorb() {
+    assert!(
+        API.scan_system_chunk_fits_space_cap(0, 10, 10),
+        "a chunk that exactly reaches the cap is allowed"
+    );
+    assert!(
+        !API.scan_system_chunk_fits_space_cap(9, 2, 10),
+        "a chunk that would exceed the cap must be refused before scan/absorb"
+    );
+    assert!(
+        !API.scan_system_chunk_fits_space_cap(10, 0, 10),
+        "once the cap is reached, even zero-byte follow-up chunks stop the scope"
+    );
+    assert!(
+        !API.scan_system_chunk_fits_space_cap(u64::MAX - 1, usize::MAX, u64::MAX),
+        "overflow in cap arithmetic must fail closed instead of wrapping under the cap"
+    );
+}
+
+#[test]
 fn skipped_chunks_start_at_zero_and_accumulate() {
     // Law 10: an unreadable source chunk (corrupt git object, perm-denied path)
     // is unscanned bytes. The sink counts each one so the final summary can warn
