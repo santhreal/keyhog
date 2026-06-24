@@ -62,6 +62,7 @@ fn release_executable_magic_check_unchanged_after_split() {
     assert!(!API.looks_like_native_executable_for_os(html, "linux"));
     assert!(!API.looks_like_native_executable_for_os(html, "macos"));
     assert!(!API.looks_like_native_executable_for_os(html, "windows"));
+    assert!(!API.looks_like_native_executable_for_os(html, "freebsd"));
     assert!(!API.looks_like_native_executable(&[0x7F, b'E']));
 }
 

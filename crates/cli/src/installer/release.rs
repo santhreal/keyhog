@@ -137,7 +137,7 @@ pub(crate) fn looks_like_native_executable_for_os(bytes: &[u8], os: &str) -> boo
                 | [0xBE, 0xBA, 0xFE, 0xCA]
         ),
         "windows" => bytes.starts_with(b"MZ"),
-        _ => true,
+        _ => false,
     }
 }
 

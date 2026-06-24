@@ -243,6 +243,7 @@ fn rejects_non_executable_download() {
     );
     assert!(API.looks_like_native_executable_for_os(&[b'M', b'Z', 0x90, 0x00], "windows"));
     assert!(!API.looks_like_native_executable_for_os(b"<!DOCTYPE html><html>Not Found", "windows"));
+    assert!(!API.looks_like_native_executable_for_os(b"<!DOCTYPE html><html>Not Found", "freebsd"));
 }
 
 #[test]
