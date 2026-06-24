@@ -1,5 +1,6 @@
 use super::report_common::sample_finding;
 use crate::support::reporters::JunitReporter;
+use keyhog_core::VerificationResult;
 
 fn render(finding: &keyhog_core::VerifiedFinding) -> String {
     let mut buf: Vec<u8> = Vec::new();
@@ -90,4 +91,25 @@ fn junit_strips_xml_illegal_control_chars_from_untrusted_fields() {
         out.trim_end().ends_with("</testsuites>"),
         "doc closed: {out:?}"
     );
+}
+
+#[test]
+fn junit_uses_canonical_structured_verification_tokens() {
+    for (verification, expected) in [
+        (VerificationResult::Live, "live"),
+        (VerificationResult::Revoked, "revoked"),
+        (VerificationResult::Dead, "dead"),
+        (VerificationResult::RateLimited, "rate_limited"),
+        (VerificationResult::Error("boom".to_string()), "error: boom"),
+        (VerificationResult::Unverifiable, "unverifiable"),
+        (VerificationResult::Skipped, "skipped"),
+    ] {
+        let mut finding = sample_finding();
+        finding.verification = verification;
+        let out = render(&finding);
+        assert!(
+            out.contains(&format!("Verification:  {expected}")),
+            "JUnit must use the canonical structured verification token {expected:?}: {out:?}"
+        );
+    }
 }

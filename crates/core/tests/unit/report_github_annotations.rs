@@ -80,3 +80,24 @@ fn github_annotation_empty_report_is_empty_stdout() {
         "GitHub annotations emit one command per finding and no empty-report skeleton"
     );
 }
+
+#[test]
+fn github_annotation_uses_canonical_structured_verification_tokens() {
+    for (verification, expected) in [
+        (VerificationResult::Live, "live"),
+        (VerificationResult::Revoked, "revoked"),
+        (VerificationResult::Dead, "dead"),
+        (VerificationResult::RateLimited, "rate_limited"),
+        (VerificationResult::Error("boom".to_string()), "error: boom"),
+        (VerificationResult::Unverifiable, "unverifiable"),
+        (VerificationResult::Skipped, "skipped"),
+    ] {
+        let mut finding = sample_finding();
+        finding.verification = verification;
+        let out = render(&finding);
+        assert!(
+            out.contains(&format!("verification={expected}")),
+            "GitHub annotations must use the canonical structured verification token {expected:?}: {out:?}"
+        );
+    }
+}

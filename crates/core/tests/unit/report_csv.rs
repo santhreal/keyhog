@@ -1,5 +1,6 @@
 use super::report_common::sample_finding;
 use crate::support::reporters::CsvReporter;
+use keyhog_core::VerificationResult;
 
 fn render(finding: &keyhog_core::VerifiedFinding) -> String {
     let mut buf: Vec<u8> = Vec::new();
@@ -29,4 +30,26 @@ fn csv_emits_header_then_escaped_row() {
         lines.next().is_none(),
         "exactly one data row expected: {out:?}"
     );
+}
+
+#[test]
+fn csv_uses_canonical_structured_verification_tokens() {
+    for (verification, expected) in [
+        (VerificationResult::Live, "live"),
+        (VerificationResult::Revoked, "revoked"),
+        (VerificationResult::Dead, "dead"),
+        (VerificationResult::RateLimited, "rate_limited"),
+        (VerificationResult::Error("boom".to_string()), "error: boom"),
+        (VerificationResult::Unverifiable, "unverifiable"),
+        (VerificationResult::Skipped, "skipped"),
+    ] {
+        let mut finding = sample_finding();
+        finding.verification = verification;
+        let out = render(&finding);
+        let row = out.lines().nth(1).expect("csv data row");
+        assert!(
+            row.ends_with(&format!(",,,,{expected},0.875")),
+            "CSV must use the canonical structured verification token: {out:?}"
+        );
+    }
 }
