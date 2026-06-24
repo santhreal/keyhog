@@ -268,10 +268,12 @@ pub(crate) fn read_text_object_body(
     let mut body = Vec::with_capacity(initial_capacity);
     let mut reader = response.take(ctx.max_bytes + 1);
     Read::read_to_end(&mut reader, &mut body).map_err(|error| {
-        SourceError::Other(format!(
-            "failed to read {} body: {}: {error}",
-            ctx.source, ctx.item_name
-        ))
+        record_unreadable_object_skip(
+            ctx.source,
+            ctx.item_kind,
+            &ctx.display_path,
+            format!("failed to read body for {}: {error}", ctx.item_name),
+        )
     })?;
     if body.len() as u64 > ctx.max_bytes {
         tracing::warn!(
