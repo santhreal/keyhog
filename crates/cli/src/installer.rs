@@ -267,6 +267,8 @@ pub(crate) fn reap_stale_binaries(exe: &Path) {
                                                   // Hidden rename-away artifacts: `.<name>.keyhog-old-*` / `.<name>.keyhog-bak-*`.
     let stash_prefix = format!(".{name}.keyhog-old-");
     let backup_prefix = format!(".{name}.keyhog-bak-");
+    // LAW10: stale installer artifact reap is best-effort and recall-safe;
+    // read-dir failure preserves current install behavior and drops no scan coverage.
     let Ok(entries) = std::fs::read_dir(parent) else {
         return;
     };

@@ -102,10 +102,43 @@ def _iter_src_files():
 def _has_exemption_line(lines: list[str], idx: int) -> bool:
     if EXEMPT.search(lines[idx]):
         return True
+    prev = idx - 1
+    while prev >= 0 and lines[prev].strip().startswith("//"):
+        if EXEMPT.search(lines[prev]):
+            return True
+        prev -= 1
     if idx + 1 >= len(lines):
         return False
     next_line = lines[idx + 1].strip()
     return next_line.startswith("//") and EXEMPT.search(next_line)
+
+
+def _has_exemption_in_range(lines: list[str], start: int, end: int) -> bool:
+    lo = start
+    prev = start - 1
+    while prev >= 0 and lines[prev].strip().startswith("//"):
+        lo = prev
+        prev -= 1
+    hi = min(len(lines), end + 2)
+    return any(EXEMPT.search(lines[i]) for i in range(lo, hi))
+
+
+def _collect_macro(lines: list[str], start: int) -> tuple[str, int]:
+    parts: list[str] = []
+    depth = 0
+    seen_open = False
+    for idx in range(start, min(len(lines), start + 32)):
+        line = lines[idx]
+        parts.append(line.strip())
+        for ch in line:
+            if ch == "(":
+                depth += 1
+                seen_open = True
+            elif ch == ")" and depth:
+                depth -= 1
+        if seen_open and depth == 0 and ";" in line:
+            return " ".join(parts), idx
+    return " ".join(parts), start
 
 
 def collect() -> set[str]:
@@ -113,15 +146,9 @@ def collect() -> set[str]:
     found: set[str] = set()
     for f in _iter_src_files():
         rel = f.relative_to(REPO).as_posix()
-        in_test_mod = 0
         lines = f.read_text(errors="replace").splitlines()
         for idx, line in enumerate(lines):
             stripped = line.strip()
-            # Skip lines inside a `#[cfg(test)]` module (best-effort: track the
-            # attribute; the gate is about shipped scan code, not test code).
-            if stripped.startswith("#[cfg(test)]"):
-                in_test_mod = 1
-                continue
             if _has_exemption_line(lines, idx):
                 continue
             if stripped.startswith("//"):
@@ -134,10 +161,33 @@ def collect() -> set[str]:
                     matched = True
                     break
             # Second class: a debug/trace log whose message carries degrade-language.
-            if not matched and DEGRADE_LOG.search(line) and DEGRADE_WORDS.search(line):
-                norm = WS.sub(" ", stripped)[:160]
-                found.add(f"{rel}::{norm}")
+            # Reconstruct the whole macro call so rustfmt-multiline logs cannot
+            # hide the degrade word on a later line.
+            if not matched and DEGRADE_LOG.search(line):
+                macro, end_idx = _collect_macro(lines, idx)
+                if DEGRADE_WORDS.search(macro) and not _has_exemption_in_range(
+                    lines, idx, end_idx
+                ):
+                    norm = WS.sub(" ", macro)[:160]
+                    found.add(f"{rel}::{norm}")
     return found
+
+
+def _snippet_is_candidate(lines: list[str]) -> bool:
+    for idx, line in enumerate(lines):
+        if line.strip().startswith("//"):
+            continue
+        if _has_exemption_line(lines, idx):
+            continue
+        if any(rx.search(line) for rx in IDIOMS):
+            return True
+        if DEGRADE_LOG.search(line):
+            macro, end_idx = _collect_macro(lines, idx)
+            if DEGRADE_WORDS.search(macro) and not _has_exemption_in_range(
+                lines, idx, end_idx
+            ):
+                return True
+    return False
 
 
 def load_baseline() -> set[str]:
@@ -149,15 +199,7 @@ def load_baseline() -> set[str]:
 
 def _line_is_candidate(line: str, next_line: str = "") -> bool:
     """True if `line` would be flagged (mirrors the per-line logic in collect)."""
-    stripped = line.strip()
-    if stripped.startswith("//") or EXEMPT.search(line):
-        return False
-    next_stripped = next_line.strip()
-    if next_stripped.startswith("//") and EXEMPT.search(next_stripped):
-        return False
-    if any(rx.search(line) for rx in IDIOMS):
-        return True
-    return bool(DEGRADE_LOG.search(line) and DEGRADE_WORDS.search(line))
+    return _snippet_is_candidate([line, next_line] if next_line else [line])
 
 
 def self_test() -> int:
@@ -194,6 +236,29 @@ def self_test() -> int:
     if rustfmt_adjacent:
         ok = False
         print("  FAIL rustfmt-adjacent LAW10 comment was not exempt", file=sys.stderr)
+    multiline_debug = _snippet_is_candidate(
+        [
+            "tracing::debug!(",
+            '    target: "keyhog::routing",',
+            '    "backend prewarm skipped during autoroute calibration"',
+            ");",
+        ]
+    )
+    if not multiline_debug:
+        ok = False
+        print("  FAIL multiline degrade debug log was not flagged", file=sys.stderr)
+    multiline_debug_exempt = _snippet_is_candidate(
+        [
+            "// LAW10: calibration measures all backends directly; no scan coverage is dropped.",
+            "tracing::debug!(",
+            '    target: "keyhog::routing",',
+            '    "backend prewarm skipped during autoroute calibration"',
+            ");",
+        ]
+    )
+    if multiline_debug_exempt:
+        ok = False
+        print("  FAIL preceding LAW10 comment did not exempt multiline log", file=sys.stderr)
     print("self-test PASS" if ok else "self-test FAIL", file=sys.stderr)
     return 0 if ok else 1
 

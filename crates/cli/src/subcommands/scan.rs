@@ -86,6 +86,8 @@ pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
                         "keyhog: daemon auto route unavailable ({e:#}); running in-process scanner"
                     );
                 }
+                // LAW10: opportunistic daemon failure is reported on stderr in
+                // auto mode, then the same scan runs in-process.
                 tracing::debug!(
                     error = %e,
                     "daemon auto route unavailable; running in-process scanner"

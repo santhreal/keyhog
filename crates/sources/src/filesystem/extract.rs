@@ -72,6 +72,8 @@ pub(super) fn record_binary_without_printable_strings(path: &str) {
 
 pub(super) fn record_default_excluded_archive_entry(archive_display: &str, entry_name: &str) {
     let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
+    // LAW10: default-excluded archive entries are counted in SourceSkipEvent
+    // telemetry and reported in scan coverage summaries.
     tracing::debug!(
         archive = archive_display,
         entry = entry_name,

@@ -41,6 +41,8 @@ pub(super) fn sweep_stale_tmp_files(cache_path: &Path) {
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
+                // LAW10: stale tmp cleanup is best-effort maintenance and
+                // recall-safe; a failed directory entry read drops no scan coverage.
                 tracing::debug!(
                     dir = %parent.display(),
                     %error,
@@ -66,6 +68,8 @@ pub(super) fn sweep_stale_tmp_files(cache_path: &Path) {
             continue;
         }
         let Ok(meta) = path.metadata() else {
+            // LAW10: stat failure only skips conservative cleanup of a temp
+            // candidate; the merkle cache load/save path still runs.
             tracing::debug!(
                 path = %path.display(),
                 "cannot stat cache tmp candidate while sweeping stale files; skipping entry"

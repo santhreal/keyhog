@@ -158,6 +158,8 @@ impl ScanOrchestrator {
 
         let calibration_mode = self.effective_config.autoroute_calibration;
         if calibration_mode {
+            // LAW10: calibration prewarm skip is perf-only and recall-safe
+            // because calibration measures all eligible backends directly.
             tracing::debug!(
                 target: "keyhog::routing",
                 "backend prewarm skipped during autoroute calibration"

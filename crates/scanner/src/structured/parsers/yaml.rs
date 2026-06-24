@@ -30,6 +30,8 @@ pub(crate) fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
                 Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
                 Err(error) => {
                     crate::telemetry::record_structured_parse_failure();
+                    // LAW10: invalid k8s Secret base64 is counted as a
+                    // structured parse/decode coverage gap before debug detail.
                     tracing::debug!(
                         target: "keyhog::structured",
                         key,

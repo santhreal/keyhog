@@ -316,6 +316,8 @@ fn drain_skipped_entry_if_needed(
     count_unreadable: bool,
 ) {
     if !archive_requires_skip_drain {
+        // LAW10: non-solid 7z entries are independently seekable; skipped
+        // entries were already counted, and no later entry is dropped.
         tracing::debug!(
             archive = %archive_display,
             entry = %entry_name,
