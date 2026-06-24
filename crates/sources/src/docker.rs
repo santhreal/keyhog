@@ -570,11 +570,11 @@ fn validate_extracted_tree_with_limits<R: std::io::Read>(
         }
         if size > limits.docker_tar_entry_bytes {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            return Err(SourceError::Other(format!(
-                "docker archive entry '{}' exceeds {} bytes",
-                path.display(),
-                limits.docker_tar_entry_bytes
-            )));
+            return Err(docker_archive_entry_over_entry_cap_error(
+                &path,
+                size,
+                limits.docker_tar_entry_bytes,
+            ));
         }
         // Zip-bomb defense: a malicious archive can ship 1000+ entries
         // each just under the per-entry cap (127 MiB × 1000 = 127 GiB).
@@ -645,6 +645,7 @@ fn extract_docker_archive_entries<R: std::io::Read>(
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             report.push_error(docker_archive_entry_over_entry_cap_error(
                 &path,
+                size,
                 limits.docker_tar_entry_bytes,
             ));
             continue;
@@ -710,10 +711,15 @@ fn validate_docker_archive_entry(
     Ok(())
 }
 
-fn docker_archive_entry_over_entry_cap_error(path: &Path, entry_cap: u64) -> SourceError {
+fn docker_archive_entry_over_entry_cap_error(
+    path: &Path,
+    entry_size: u64,
+    entry_cap: u64,
+) -> SourceError {
     SourceError::Other(format!(
-        "docker archive entry '{}' exceeds {} bytes and was not scanned",
+        "docker archive entry '{}': uncompressed size {} exceeds per-file cap {}; entry was not scanned",
         path.display(),
+        entry_size,
         entry_cap
     ))
 }

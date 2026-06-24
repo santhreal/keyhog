@@ -25,7 +25,10 @@ fn docker_tar_single_entry_exceeds_cap_rejected() {
     let err = TestApi.validate_docker_tar_archive(&tar_path).unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("exceeds"),
+        msg.contains("huge.bin")
+            && msg.contains("uncompressed size 134217729")
+            && msg.contains("per-file cap 134217728")
+            && msg.contains("entry was not scanned"),
         "expected per-entry cap rejection, got {msg:?}"
     );
     let counts = skip_counts();
@@ -86,7 +89,10 @@ fn docker_layer_over_cap_regular_entry_is_reported_without_dropping_safe_sibling
     assert_eq!(errors.len(), 1, "expected one visible skip error");
     let msg = errors[0].to_string();
     assert!(
-        msg.contains("huge.bin") && msg.contains("not scanned"),
+        msg.contains("huge.bin")
+            && msg.contains("uncompressed size 5")
+            && msg.contains("per-file cap 4")
+            && msg.contains("entry was not scanned"),
         "over-cap skip must be operator-visible, got {msg:?}"
     );
 
