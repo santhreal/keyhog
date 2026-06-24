@@ -112,6 +112,32 @@ fn scan_system_git_discovery_gaps_are_counted_and_surfaced() {
 }
 
 #[test]
+fn scan_system_git_discovery_continues_inside_worktrees_for_nested_repos() {
+    let s = src("src/subcommands/scan_system.rs");
+    let after_marker = s
+        .split("if dot_git.exists() {")
+        .nth(1)
+        .expect("git discovery must check for working-tree .git markers");
+    let working_tree_block = after_marker
+        .split("if dir")
+        .next()
+        .expect("working-tree marker block must precede bare-repo detection");
+    assert!(
+        working_tree_block.contains("out.push(dir.clone())")
+            && !working_tree_block.contains("continue;"),
+        "discovering a working-tree repo must not stop traversal; nested repos \
+         and submodules under that worktree still need git-history discovery"
+    );
+    assert!(
+        s.contains("entry")
+            && s.contains(".file_name()")
+            && s.contains("skip_dirs.is_git_discovery_component(name)"),
+        "repo discovery must skip child .git/admin directories before descending, \
+         so continuing inside worktrees does not double-count the parent .git dir"
+    );
+}
+
+#[test]
 fn scan_system_space_cap_partial_scan_is_counted_and_nonzero() {
     let s = src("src/subcommands/scan_system.rs");
     assert!(

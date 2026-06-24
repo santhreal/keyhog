@@ -479,7 +479,6 @@ fn discover_git_repos(
         let dot_git = dir.join(".git");
         if dot_git.exists() {
             out.push(dir.clone());
-            continue;
         }
         if dir
             .file_name()
@@ -524,6 +523,13 @@ fn discover_git_repos(
                         }
                     };
                     if file_type.is_dir() {
+                        if entry
+                            .file_name()
+                            .to_str()
+                            .is_some_and(|name| skip_dirs.is_git_discovery_component(name))
+                        {
+                            continue;
+                        }
                         match fs::canonicalize(entry.path()) {
                             Ok(canon) => {
                                 if !visited.contains(&canon) {
