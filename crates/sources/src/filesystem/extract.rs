@@ -95,6 +95,13 @@ pub(super) fn report_archive_truncation(
     ))
 }
 
+fn filesystem_over_max_size_error(path: &Path, size_bytes: u64, max_size: u64) -> SourceError {
+    SourceError::Other(format!(
+        "failed to scan filesystem file '{}': size {size_bytes} exceeds --max-file-size cap {max_size}; file was not scanned",
+        display_path(path)
+    ))
+}
+
 /// Minimum file size to use memory mapping. The crossover point is
 /// platform-specific:
 ///
@@ -172,6 +179,11 @@ pub(super) fn process_entry(
             "skipping file: size exceeds --max-file-size cap"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+        if !emit(Err(filesystem_over_max_size_error(
+            &path, file_size, max_size,
+        ))) {
+            return;
+        }
         return;
     }
 

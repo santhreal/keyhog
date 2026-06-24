@@ -11,6 +11,8 @@ use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use std::fs;
 
+use crate::support::split_chunk_results;
+
 #[test]
 fn max_file_size_cap_skips_oversized_files() {
     let dir = tempfile::tempdir().unwrap();
@@ -28,12 +30,25 @@ fn max_file_size_cap_skips_oversized_files() {
     // Cap at 256 bytes - the large file is well over, the small one is
     // safely under.
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(256);
-    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
 
     assert_eq!(
         chunks.len(),
         1,
         "expected only the small file under the 256-byte cap"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "expected one visible SourceError for the oversized file"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("large.py")
+            && error.contains("exceeds --max-file-size cap 256")
+            && error.contains("file was not scanned"),
+        "over-cap SourceError must name the skipped file and cap, got {error}"
     );
     assert!(
         chunks[0].data.contains("short_token_under_cap"),

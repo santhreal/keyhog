@@ -71,6 +71,7 @@ mod tests {
         let read = read_to_cap(std::io::empty(), u64::MAX, Some(u64::MAX)).expect("read");
 
         assert!(read.bytes.is_empty());
+        assert!(read.bytes.capacity() <= super::MAX_PREALLOCATED_READ_BYTES as usize);
         assert!(!read.truncated);
     }
 }

@@ -13,7 +13,7 @@
 //!   * `process_entry` (extract.rs:44) gate order:
 //!       1. `is_default_excluded(filename)`  (filename component only)
 //!       2. `.min.` / `.bundle.` / `.chunk.js` / `.min.js` / `.bundle.js`
-//!       3. `max_size > 0 && file_size > max_size` -> warn + counter + return
+//!       3. `max_size > 0 && file_size > max_size` -> warn + counter + SourceError
 //!       4. `is_skip_extension(ext)` ASCII-case-insensitive extension gate
 //!       5. merkle skip
 //!       6. empty-ext: sniff a bounded structural prefix for binary magic /
@@ -352,11 +352,26 @@ fn oversize_plain_file_is_skipped_and_undersize_kept() {
     fs::write(dir.path().join("big.txt"), &big).unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(512);
-    let chunks = collect_chunks(&source);
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
     assert_eq!(chunks.len(), 1, "only the under-cap file should emit");
     assert!(chunks[0].data.contains("K=under_cap_marker"));
+    assert_eq!(
+        errors.len(),
+        1,
+        "over-cap sibling must emit one SourceError row"
+    );
+    let error = errors[0].to_string();
     assert!(
-        !combined_body(&chunks).contains(&"y".repeat(64)),
+        error.contains("big.txt")
+            && error.contains("exceeds --max-file-size cap 512")
+            && error.contains("file was not scanned"),
+        "over-cap SourceError must name the unscanned file and reason, got {error}"
+    );
+    assert!(
+        !chunks
+            .iter()
+            .any(|chunk| chunk.data.contains(&"y".repeat(64))),
         "oversize file bytes must not leak through the cap"
     );
 }
@@ -385,8 +400,19 @@ fn file_one_byte_over_cap_is_skipped() {
     fs::write(dir.path().join("over.txt"), content).unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(10);
-    let chunks = collect_chunks(&source);
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
     assert_eq!(chunks.len(), 0, "size == cap+1 must be skipped");
+    assert_eq!(
+        errors.len(),
+        1,
+        "size == cap+1 must emit a visible SourceError"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("over.txt") && error.contains("exceeds --max-file-size cap 10"),
+        "over-cap SourceError must name the skipped file and cap, got {error}"
+    );
 }
 
 #[test]
@@ -397,13 +423,22 @@ fn live_size_over_cap_wins_over_stale_recorded_size() {
     fs::write(&path, "SECRET=stale-size-should-not-leak\n").unwrap();
 
     let rows = TestApi.process_entry_with_recorded_size(path, 4, 8);
-    let chunks: Vec<_> = rows
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()
-        .expect("over-cap live file should skip cleanly");
+    let (chunks, errors) = split_chunk_results(&rows);
     assert!(
         chunks.is_empty(),
         "live over-cap file must not emit a partial prefix from stale walker size"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "live over-cap file must emit one SourceError"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("grown.txt")
+            && error.contains("exceeds --max-file-size cap 8")
+            && error.contains("file was not scanned"),
+        "live over-cap SourceError must name the unscanned file and cap, got {error}"
     );
     assert_eq!(
         skip_counts().over_max_size,
