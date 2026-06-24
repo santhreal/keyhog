@@ -63,6 +63,59 @@ fn load_with_metadata_policy_rejects_expiry_beyond_max_days() {
 }
 
 #[test]
+fn load_with_metadata_policy_rejects_unknown_metadata_keys() {
+    let (_dir, path) =
+        write_allowlist("detector:aws-access-key ; reasno=\"typo\" ; reason=\"noise\"\n");
+    let err = Allowlist::load_with_metadata_policy(&path, false, false, None)
+        .expect_err("unknown governance metadata keys must fail closed");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("allowlist governance")
+            && msg.contains("line 1")
+            && msg.contains("unknown key `reasno`")
+            && msg.contains("supported keys are reason, expires, approved_by")
+            && msg.contains("refusing to scan with unapproved suppressions"),
+        "unknown metadata key error must name the typo and supported fields; got: {msg}"
+    );
+}
+
+#[test]
+fn load_with_metadata_policy_rejects_metadata_tokens_missing_equals() {
+    let (_dir, path) =
+        write_allowlist("detector:aws-access-key ; reason=\"noise\" ; expires 2099-01-01\n");
+    let err = Allowlist::load_with_metadata_policy(&path, false, false, None)
+        .expect_err("metadata tokens without equals must fail closed");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("allowlist governance")
+            && msg.contains("line 1")
+            && msg.contains("metadata token `expires 2099-01-01` is missing `=`")
+            && msg.contains("refusing to scan with unapproved suppressions"),
+        "missing equals error must name the malformed token; got: {msg}"
+    );
+}
+
+#[test]
+fn load_with_metadata_policy_rejects_unterminated_metadata_quotes() {
+    let (_dir, path) =
+        write_allowlist("detector:aws-access-key ; reason=\"unclosed ; expires=2099-01-01\n");
+    let err = Allowlist::load_with_metadata_policy(&path, false, false, None)
+        .expect_err("unterminated metadata quotes must fail closed");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("allowlist governance")
+            && msg.contains("line 1")
+            && msg.contains("unterminated")
+            && msg.contains("quote")
+            && msg.contains("refusing to scan with unapproved suppressions"),
+        "unterminated quote error must name the syntax problem; got: {msg}"
+    );
+}
+
+#[test]
 fn load_with_metadata_policy_accepts_complete_metadata() {
     let (_dir, path) = write_allowlist(
         "detector:aws-access-key ; reason=\"known generated fixture\" ; approved_by=\"sec@example.com\" ; expires=2099-01-01\n",

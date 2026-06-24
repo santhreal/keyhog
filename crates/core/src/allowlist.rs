@@ -25,7 +25,7 @@ use metadata::*;
 // index) is its own subsystem; the `Allowlist` holds a precompiled index and
 // delegates every path decision to it.
 mod glob;
-use glob::{normalize_path, PathGlobIndex};
+use glob::{PathGlobIndex, normalize_path};
 
 /// User-defined suppressions loaded from `.keyhogignore`: credential hashes, detector IDs, and path globs.
 ///
@@ -192,6 +192,17 @@ impl Allowlist {
             let entry = parts.next().unwrap_or("").trim(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
             let metadata = parts.next().unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
             let parsed_meta = parse_inline_metadata(metadata);
+            for key in &parsed_meta.unknown_keys {
+                al.push_policy_violation(
+                    line_number + 1,
+                    entry,
+                    "metadata",
+                    format!("unknown key `{key}`; supported keys are reason, expires, approved_by"),
+                );
+            }
+            for detail in &parsed_meta.malformed_tokens {
+                al.push_policy_violation(line_number + 1, entry, "metadata", detail.clone());
+            }
 
             // Drop entries whose `expires` is past - keeps `.keyhogignore`
             // self-cleaning for short-lived approvals (Tier-B #18 governance).
@@ -614,4 +625,6 @@ struct InlineMetadata {
     reason: Option<String>,
     expires: Option<String>,
     approved_by: Option<String>,
+    unknown_keys: Vec<String>,
+    malformed_tokens: Vec<String>,
 }

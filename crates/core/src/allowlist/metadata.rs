@@ -4,12 +4,21 @@ use super::InlineMetadata;
 
 pub(super) fn parse_inline_metadata(s: &str) -> InlineMetadata {
     let mut meta = InlineMetadata::default();
-    for token in metadata_tokens(s) {
+    let parsed = metadata_tokens(s);
+    if let Some(quote) = parsed.unterminated_quote {
+        meta.malformed_tokens
+            .push(format!("unterminated {quote} quote in metadata trailer"));
+    }
+    for token in parsed.tokens {
         let token = token.trim();
         if token.is_empty() {
             continue;
         }
-        let Some(eq) = token.find('=') else { continue };
+        let Some(eq) = token.find('=') else {
+            meta.malformed_tokens
+                .push(format!("metadata token `{token}` is missing `=`"));
+            continue;
+        };
         let key = token[..eq].trim();
         let value = unquote_metadata_value(token[eq + 1..].trim()).to_string();
         match key {
@@ -17,14 +26,19 @@ pub(super) fn parse_inline_metadata(s: &str) -> InlineMetadata {
             "expires" => meta.expires = Some(value),
             "approved_by" => meta.approved_by = Some(value),
             _ => {
-                tracing::warn!("unknown allowlist metadata key '{key}' (ignored)");
+                meta.unknown_keys.push(key.to_string());
             }
         }
     }
     meta
 }
 
-fn metadata_tokens(s: &str) -> impl Iterator<Item = &str> {
+struct MetadataTokens<'a> {
+    tokens: Vec<&'a str>,
+    unterminated_quote: Option<char>,
+}
+
+fn metadata_tokens(s: &str) -> MetadataTokens<'_> {
     let mut tokens = Vec::new();
     let mut start = 0;
     let mut quote = None;
@@ -49,7 +63,10 @@ fn metadata_tokens(s: &str) -> impl Iterator<Item = &str> {
         }
     }
     tokens.push(&s[start..]);
-    tokens.into_iter()
+    MetadataTokens {
+        tokens,
+        unterminated_quote: quote,
+    }
 }
 
 fn unquote_metadata_value(value: &str) -> &str {
