@@ -154,6 +154,20 @@ impl AutorouteRoutingError {
         }
     }
 
+    fn candidate_backend_rejected(backend: ScanBackend, reason: impl fmt::Display) -> Self {
+        Self {
+            message: format!(
+                "autoroute calibration rejected eligible backend {}: {reason}. Autoroute cannot \
+                 prove fastest-correct routing while skipping an eligible backend candidate, so \
+                 no routing decision was persisted. Fix the backend correctness/degradation \
+                 failure and rerun `install.sh --calibrate` or `install.ps1 -Calibrate`; or pass \
+                 an explicit `--backend <{}>` diagnostic override.",
+                backend.label(),
+                backend_override_hint()
+            ),
+        }
+    }
+
     pub(super) fn unsupported_backend(backend: ScanBackend) -> Self {
         Self {
             message: format!(

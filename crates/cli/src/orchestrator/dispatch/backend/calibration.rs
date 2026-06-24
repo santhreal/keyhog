@@ -1,15 +1,15 @@
 //! Install-time autoroute calibration measurement.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use keyhog_scanner::CompiledScanner;
+use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::evidence::{
-    canonical_match_digest, canonical_matches, gpu_cold_warm_route_evidence,
-    selected_backend_margin_ns, AutorouteDecision, BackendTimingEvidence,
+    AutorouteDecision, BackendTimingEvidence, canonical_match_digest, canonical_matches,
+    gpu_cold_warm_route_evidence, selected_backend_margin_ns,
 };
-use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS};
+use super::{AUTOROUTE_CALIBRATION_TRIALS, AutorouteRoutingError, is_gpu_backend};
 
 pub(super) fn calibrate_fastest_correct_backend(
     scanner: &CompiledScanner,
@@ -29,13 +29,12 @@ pub(super) fn calibrate_fastest_correct_backend(
         sample,
         ScanBackend::CpuFallback,
         &reference_matches,
-    );
-    if let Some(cpu_timing) = cpu_timing.clone() {
-        if cpu_timing.best_ns < best.1 {
-            best = (ScanBackend::CpuFallback, cpu_timing.best_ns);
-        }
-        candidates.push((ScanBackend::CpuFallback, cpu_timing.best_ns));
+    )?;
+    if cpu_timing.best_ns < best.1 {
+        best = (ScanBackend::CpuFallback, cpu_timing.best_ns);
     }
+    candidates.push((ScanBackend::CpuFallback, cpu_timing.best_ns));
+    let cpu_timing = Some(cpu_timing);
 
     let mut gpu_timing = None;
     let mut gpu_cold_ns = None;
@@ -43,27 +42,29 @@ pub(super) fn calibrate_fastest_correct_backend(
     let mut gpu_route_ns = None;
     let gpu_candidate_allowed = autoroute_gpu && hw_caps.gpu_available && !hw_caps.gpu_is_software;
     if gpu_candidate_allowed {
-        if let Some(measured_gpu_timing) =
-            measure_candidate_backend(scanner, sample, ScanBackend::Gpu, &reference_matches)
+        let measured_gpu_timing =
+            measure_candidate_backend(scanner, sample, ScanBackend::Gpu, &reference_matches)?;
+        if let Some((cold_ns, warm_timing, route_ns)) =
+            gpu_cold_warm_route_evidence(&measured_gpu_timing)
         {
-            if let Some((cold_ns, warm_timing, route_ns)) =
-                gpu_cold_warm_route_evidence(&measured_gpu_timing)
-            {
-                if route_ns < best.1 {
-                    best = (ScanBackend::Gpu, route_ns);
-                }
-                candidates.push((ScanBackend::Gpu, route_ns));
-                gpu_cold_ns = Some(cold_ns);
-                gpu_warm_timing = Some(warm_timing);
-                gpu_route_ns = Some(route_ns);
-                gpu_timing = Some(measured_gpu_timing);
-            } else {
-                tracing::warn!(
-                    target: "keyhog::routing",
-                    backend = ScanBackend::Gpu.label(),
-                    "backend rejected by autoroute GPU cold/warm evidence check"
-                );
+            if route_ns < best.1 {
+                best = (ScanBackend::Gpu, route_ns);
             }
+            candidates.push((ScanBackend::Gpu, route_ns));
+            gpu_cold_ns = Some(cold_ns);
+            gpu_warm_timing = Some(warm_timing);
+            gpu_route_ns = Some(route_ns);
+            gpu_timing = Some(measured_gpu_timing);
+        } else {
+            tracing::error!(
+                target: "keyhog::routing",
+                backend = ScanBackend::Gpu.label(),
+                "backend rejected by autoroute GPU cold/warm evidence check"
+            );
+            return Err(AutorouteRoutingError::candidate_backend_rejected(
+                ScanBackend::Gpu,
+                "GPU cold/warm route evidence was incomplete or invalid",
+            ));
         }
     }
 
@@ -168,7 +169,7 @@ fn measure_candidate_backend(
     sample: &[Chunk],
     backend: ScanBackend,
     reference_matches: &[Vec<keyhog_core::RawMatch>],
-) -> Option<BackendTimingEvidence> {
+) -> Result<BackendTimingEvidence, AutorouteRoutingError> {
     let reference_key = canonical_matches(reference_matches);
     let mut durations = Vec::with_capacity(AUTOROUTE_CALIBRATION_TRIALS);
     for _ in 0..AUTOROUTE_CALIBRATION_TRIALS {
@@ -182,7 +183,7 @@ fn measure_candidate_backend(
         if let Some(before) = gpu_degrade_count_before {
             let after = scanner.runtime_status().gpu_degrade_count;
             if after != before {
-                tracing::warn!(
+                tracing::error!(
                     target: "keyhog::routing",
                     backend = backend.label(),
                     gpu_degrade_count_before = before,
@@ -190,22 +191,35 @@ fn measure_candidate_backend(
                     "backend rejected by autoroute GPU degrade check"
                 );
                 scanner.clear_fragment_cache();
-                return None;
+                return Err(AutorouteRoutingError::candidate_backend_rejected(
+                    backend,
+                    format!(
+                        "GPU degrade count changed from {before} to {after} during calibration"
+                    ),
+                ));
             }
         }
         if canonical_matches(&matches) != reference_key {
-            tracing::warn!(
+            tracing::error!(
                 target: "keyhog::routing",
                 backend = backend.label(),
                 "backend rejected by autoroute parity check"
             );
             scanner.clear_fragment_cache();
-            return None;
+            return Err(AutorouteRoutingError::candidate_backend_rejected(
+                backend,
+                "candidate findings diverged from the SIMD reference",
+            ));
         }
         durations.push(dur);
     }
     scanner.clear_fragment_cache();
-    BackendTimingEvidence::from_durations(durations)
+    BackendTimingEvidence::from_durations(durations).ok_or_else(|| {
+        AutorouteRoutingError::candidate_backend_rejected(
+            backend,
+            "candidate timing evidence had no recorded trials",
+        )
+    })
 }
 
 fn timed<T>(f: impl FnOnce() -> T) -> (T, Duration) {

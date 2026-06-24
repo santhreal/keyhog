@@ -1649,6 +1649,39 @@ fn autoroute_reference_inconsistency_aborts_calibration_contract() {
 }
 
 #[test]
+fn autoroute_candidate_rejection_aborts_calibration_contract() {
+    let error = AutorouteRoutingError::candidate_backend_rejected(
+        ScanBackend::Gpu,
+        "candidate findings diverged from the SIMD reference",
+    )
+    .to_string();
+    assert!(
+        error.contains("rejected eligible backend gpu")
+            && error.contains("cannot prove fastest-correct routing")
+            && error.contains("no routing decision was persisted"),
+        "eligible candidate rejection must be an autoroute calibration failure, got: {error}"
+    );
+
+    let calibration = include_str!("calibration.rs");
+    assert!(
+        calibration.contains("measure_candidate_backend(")
+            && calibration.contains("ScanBackend::CpuFallback")
+            && calibration.contains(")?;")
+            && calibration
+                .contains("return Err(AutorouteRoutingError::candidate_backend_rejected(")
+            && calibration.contains("backend rejected by autoroute parity check")
+            && calibration.contains("backend rejected by autoroute GPU degrade check")
+            && calibration.contains("backend rejected by autoroute GPU cold/warm evidence check"),
+        "eligible CPU/GPU candidate rejection must abort calibration instead of dropping the candidate"
+    );
+    assert!(
+        !calibration.contains("if let Some(cpu_timing) = cpu_timing.clone()")
+            && !calibration.contains("return None;"),
+        "old candidate-drop path must not remain in autoroute calibration"
+    );
+}
+
+#[test]
 fn autoroute_cache_rejects_missing_correctness_digest() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_missing_correctness_{}.json",
