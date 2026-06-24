@@ -1,13 +1,13 @@
 use super::evidence::{
-    AutorouteDecision, BackendTimingEvidence, route_candidates, selected_backend_margin_ns,
+    route_candidates, selected_backend_margin_ns, AutorouteDecision, BackendTimingEvidence,
 };
 use super::host::AutorouteHostProfile;
 use super::store::{
-    AUTOROUTE_CACHE_FILE_BYTES, AutorouteCache, load_autoroute_cache, save_autoroute_cache,
+    load_autoroute_cache, save_autoroute_cache, AutorouteCache, AUTOROUTE_CACHE_FILE_BYTES,
 };
 use super::workload::{
-    WorkloadKey, autoroute_stable_bucket, autoroute_stable_density_bucket, source_class_hash,
-    workload_key,
+    autoroute_stable_bucket, autoroute_stable_density_bucket, source_class_hash, workload_key,
+    WorkloadKey,
 };
 use super::*;
 
@@ -1645,6 +1645,50 @@ fn autoroute_reference_inconsistency_aborts_calibration_contract() {
     assert!(
         !calibration.contains("reference backend produced inconsistent calibration results\"\\n            );\\n            continue;"),
         "old warn-and-continue reference mismatch path must not return"
+    );
+}
+
+#[test]
+fn autoroute_reference_mismatch_evidence_names_divergent_records() {
+    let evidence = calibration::calibration_match_identity_set(&[vec![keyhog_core::RawMatch {
+        detector_id: "aws-access-key".into(),
+        detector_name: "AWS Access Key".into(),
+        service: "aws".into(),
+        severity: keyhog_core::Severity::High,
+        credential: "AKIAIOSFODNN7EXAMPLE".into(),
+        credential_hash: [0xAB; 32].into(),
+        companions: std::collections::HashMap::new(),
+        location: keyhog_core::MatchLocation {
+            source: "filesystem".into(),
+            file_path: Some("src/secrets.rs".into()),
+            line: Some(42),
+            offset: 1337,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: Some(4.2),
+        confidence: Some(0.99),
+    }]]);
+    let rendered = evidence
+        .iter()
+        .next()
+        .expect("one calibration mismatch identity");
+
+    assert!(
+        rendered.contains("chunk=0")
+            && rendered.contains("detector=aws-access-key")
+            && rendered.contains(
+                "cred_hash=abababababababababababababababababababababababababababababababab"
+            )
+            && rendered.contains("file=Some(\"src/secrets.rs\")")
+            && rendered.contains("line=Some(42)")
+            && rendered.contains("offset=1337"),
+        "autoroute mismatch evidence must name the divergent record, got: {rendered}"
+    );
+    assert!(
+        !rendered.contains("AKIAIOSFODNN7EXAMPLE"),
+        "autoroute mismatch diagnostics must not log plaintext credentials: {rendered}"
     );
 }
 

@@ -1,15 +1,16 @@
 //! Install-time autoroute calibration measurement.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::CompiledScanner;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
+use keyhog_scanner::CompiledScanner;
+use std::collections::BTreeSet;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::evidence::{
-    AutorouteDecision, BackendTimingEvidence, canonical_match_digest, canonical_matches,
-    gpu_cold_warm_route_evidence, selected_backend_margin_ns,
+    canonical_match_digest, canonical_matches, gpu_cold_warm_route_evidence,
+    selected_backend_margin_ns, AutorouteDecision, BackendTimingEvidence,
 };
-use super::{AUTOROUTE_CALIBRATION_TRIALS, AutorouteRoutingError, is_gpu_backend};
+use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS};
 
 pub(super) fn calibrate_fastest_correct_backend(
     scanner: &CompiledScanner,
@@ -137,10 +138,16 @@ fn measure_reference_simd(
         scanner.clear_fragment_cache();
         let (matches, dur) = timed(|| scanner.scan_coalesced(sample));
         if canonical_matches(&matches) != reference_key {
+            let reference_set = calibration_match_identity_set(&reference);
+            let trial_set = calibration_match_identity_set(&matches);
+            let only_in_reference: Vec<&String> = reference_set.difference(&trial_set).collect();
+            let only_in_trial: Vec<&String> = trial_set.difference(&reference_set).collect();
             tracing::error!(
                 target: "keyhog::routing",
                 backend = ScanBackend::SimdCpu.label(),
                 trial = trial_idx + 1,
+                only_in_reference = ?only_in_reference,
+                only_in_trial = ?only_in_trial,
                 "reference backend produced inconsistent calibration results; autoroute calibration aborted"
             );
             scanner.clear_fragment_cache();
@@ -162,6 +169,31 @@ fn measure_reference_simd(
         ));
     }
     Ok((reference, timing))
+}
+
+pub(super) fn calibration_match_identity_set(
+    results: &[Vec<keyhog_core::RawMatch>],
+) -> BTreeSet<String> {
+    let mut set = BTreeSet::new();
+    for (chunk_idx, chunk_matches) in results.iter().enumerate() {
+        for m in chunk_matches {
+            let credential_hash_hex: String = m
+                .credential_hash
+                .as_bytes()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            set.insert(format!(
+                "chunk={chunk_idx} detector={} cred_hash={} file={:?} line={:?} offset={}",
+                m.detector_id,
+                credential_hash_hex,
+                m.location.file_path.as_deref(),
+                m.location.line,
+                m.location.offset,
+            ));
+        }
+    }
+    set
 }
 
 fn measure_candidate_backend(
