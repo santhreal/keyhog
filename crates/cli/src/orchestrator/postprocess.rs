@@ -1,7 +1,6 @@
 //! Post-scan filtering, deduplication, and optional live verification.
 
 use super::ScanOrchestrator;
-#[cfg(feature = "verify")]
 use anyhow::Context;
 use anyhow::Result;
 use keyhog_core::{DedupScope, DedupedMatch, RawMatch, VerificationResult, VerifiedFinding};
@@ -199,7 +198,7 @@ impl ScanOrchestrator {
         &self,
         matches: Vec<RawMatch>,
         allowlist: &keyhog_core::Allowlist,
-    ) -> Vec<RawMatch> {
+    ) -> Result<Vec<RawMatch>> {
         let mut filtered = matches
             .into_iter()
             .filter(|m| {
@@ -297,8 +296,12 @@ impl ScanOrchestrator {
             })
             .collect::<Vec<_>>();
 
-        filtered = keyhog_scanner::resolution::resolve_matches(filtered);
-        crate::inline_suppression::filter_inline_suppressions(filtered)
+        filtered = keyhog_scanner::resolution::try_resolve_matches(filtered)
+            .map_err(anyhow::Error::msg)
+            .context("failed to resolve matches; fix rules/detector-classification.toml")?;
+        Ok(crate::inline_suppression::filter_inline_suppressions(
+            filtered,
+        ))
     }
 
     pub(crate) async fn finalize(&self, matches: Vec<RawMatch>) -> Result<Vec<VerifiedFinding>> {

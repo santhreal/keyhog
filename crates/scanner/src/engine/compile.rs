@@ -21,6 +21,7 @@ impl CompiledScanner {
         gpu_policy: GpuInitPolicy,
         tuning_config: &crate::scanner_config::ScannerTuningConfig,
     ) -> Result<Self> {
+        crate::detector_classification::validate().map_err(crate::error::ScanError::Config)?;
         // LAW10: cfg-only Hyperscan tuning marker; no runtime effect.
         #[cfg(not(feature = "simd"))]
         let _tuning_config = tuning_config;
@@ -332,6 +333,22 @@ impl CompiledScanner {
         let generic_named_assignment_keywords =
             crate::generic_keyword_owner::build_generic_named_assignment_keywords(&detectors);
 
+        let stripe_hot_confirmed_prefixes =
+            crate::detector_classification::stripe_hot_confirmed_prefixes()
+                .map_err(crate::error::ScanError::Config)?;
+        let stripe_hot_confirmed_by_pattern: Vec<bool> = state
+            .ac_map
+            .iter()
+            .map(|entry| {
+                detectors.get(entry.detector_index).is_some_and(|detector| {
+                    detector.id.as_str() == crate::detector_ids::STRIPE_SECRET_KEY
+                        && stripe_hot_confirmed_prefixes
+                            .iter()
+                            .any(|prefix| entry.regex.as_str().starts_with(prefix.as_str()))
+                })
+            })
+            .collect();
+
         let pattern_boundary_context = boundary::derive_pattern_boundary_context(
             state
                 .ac_map
@@ -435,6 +452,7 @@ impl CompiledScanner {
             ac_match_upper_bounds,
             suffix_gate_ac,
             ac_suffix_gate,
+            stripe_hot_confirmed_by_pattern,
             confirmed_anchor_index,
             ac_map: state.ac_map,
             pattern_boundary_context,
@@ -536,7 +554,7 @@ fn build_hot_ac_map_index_by_index(
     detectors: &[DetectorSpec],
     ac_map: &[CompiledPattern],
 ) -> Vec<Option<usize>> {
-    use crate::simdsieve_prefilter::{HOT_PATTERNS, HOT_PATTERN_DETECTOR_IDS};
+    use crate::simdsieve_prefilter::{HOT_PATTERN_DETECTOR_IDS, HOT_PATTERNS};
 
     HOT_PATTERN_DETECTOR_IDS
         .iter()

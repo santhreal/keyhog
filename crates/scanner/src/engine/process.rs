@@ -5,8 +5,8 @@
 //! heuristic scoring. Outputs either a `Final` finding into `scan_state.matches`
 //! or queues an `MlPendingMatch` for the post-scan ML batch.
 
-use super::scan_filters::*;
 use super::CompiledScanner;
+use super::scan_filters::*;
 use crate::confidence::policy::MlScoreResult;
 use crate::context;
 use crate::pipeline::*;
@@ -162,8 +162,7 @@ impl CompiledScanner {
         };
         let entropy = match_entropy(credential.as_bytes());
 
-        let is_generic = crate::detector_ids::is_generic_detector(detector.id.as_ref())
-            && detector.id.as_str() != crate::detector_ids::GENERIC_PRIVATE_KEY;
+        let is_generic = crate::detector_ids::is_generic_detector(detector.id.as_ref());
         let is_weakly_anchored = weak_anchor;
         let entropy_shape_ctx = crate::adjudicate::MatchCtx::for_process_signals(
             crate::adjudicate::ProcessCandidateSignals::from_process_entropy_shape(

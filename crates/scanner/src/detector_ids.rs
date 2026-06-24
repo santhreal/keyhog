@@ -8,7 +8,6 @@ pub(crate) const GENERIC_KEYWORD_SECRET: &str = "generic-keyword-secret";
 pub(crate) const GENERIC_API_KEY: &str = "generic-api-key";
 pub(crate) const GENERIC_PASSWORD: &str = "generic-password";
 pub(crate) const GENERIC_DATABASE_URL: &str = "generic-database-url";
-pub(crate) const GENERIC_PRIVATE_KEY: &str = "generic-private-key";
 
 pub(crate) const ENTROPY: &str = "entropy";
 #[cfg(feature = "entropy")]
@@ -21,8 +20,6 @@ pub(crate) const ENTROPY_TOKEN: &str = "entropy-token";
 pub(crate) const ENTROPY_API_KEY: &str = "entropy-api-key";
 
 pub(crate) const PRIVATE_KEY: &str = "private-key";
-pub(crate) const SSH_PRIVATE_KEY: &str = "ssh-private-key";
-pub(crate) const GITHUB_APP_PRIVATE_KEY: &str = "github-app-private-key";
 
 pub(crate) const AWS_ACCESS_KEY: &str = "aws-access-key";
 pub(crate) const GITHUB_CLASSIC_PAT: &str = "github-classic-pat";
@@ -77,9 +74,6 @@ pub(crate) fn is_service_anchored_detector(detector_id: &str) -> bool {
 }
 
 #[inline]
-pub(crate) fn is_private_key_block_detector(detector_id: &str) -> bool {
-    matches!(
-        detector_id,
-        PRIVATE_KEY | SSH_PRIVATE_KEY | GITHUB_APP_PRIVATE_KEY
-    )
+pub(crate) fn is_private_key_block_detector(detector_id: &str) -> Result<bool, String> {
+    crate::detector_classification::is_private_key_block_detector(detector_id)
 }

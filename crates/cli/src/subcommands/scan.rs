@@ -29,7 +29,7 @@ use crate::daemon::protocol::{Request, Response};
 #[cfg(unix)]
 use crate::daemon::server::default_socket_path;
 use crate::orchestrator::ScanOrchestrator;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 // The daemon-only result-massaging path (unwrap_scan_results,
 // finalize_for_report) is the only consumer of `RawMatch` /
 // `VerifiedFinding` in this file. The in-process orchestrator path
@@ -597,7 +597,9 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Result<Vec<Ve
     // before cross-detector dedup picks a winner. Without this, daemon stdin can
     // report `entropy-api-key` for an AKIA value even though the scanner also
     // found the canonical `aws-access-key`.
-    matches = keyhog_scanner::resolution::resolve_matches(matches);
+    matches = keyhog_scanner::resolution::try_resolve_matches(matches)
+        .map_err(anyhow::Error::msg)
+        .context("failed to resolve matches; fix rules/detector-classification.toml")?;
 
     // Inline `keyhog:ignore` / `gitleaks:allow` comment suppression. The
     // shared filter only acts on matches whose source is "filesystem"

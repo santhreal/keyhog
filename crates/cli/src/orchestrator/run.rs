@@ -1,8 +1,8 @@
 //! Main scan run loop: hardening, sources, baseline, reporting, exit codes.
 
+use super::ScanOrchestrator;
 use super::allowlist::{load_allowlist, load_rule_suppressor};
 use super::reporting::{dump_dogfood_trace, report_completion_summary, report_skip_summary};
-use super::ScanOrchestrator;
 use crate::baseline::Baseline;
 use crate::exit_codes::{
     EXIT_FINDINGS, EXIT_LIVE_CREDENTIALS, EXIT_REQUIRE_GPU_UNMET, EXIT_SCANNER_PANIC,
@@ -231,7 +231,7 @@ impl ScanOrchestrator {
 
         let all_matches =
             self.scan_sources(sources, show_progress, merkle, incremental_cache_path)?;
-        let filtered = self.filter_and_resolve(all_matches, &allowlist);
+        let filtered = self.filter_and_resolve(all_matches, &allowlist)?;
         let findings_pre_rules = self.finalize(filtered).await?;
 
         let rule_suppressor = load_rule_suppressor(self.args.path.as_deref())?;

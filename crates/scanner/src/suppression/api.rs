@@ -8,14 +8,14 @@ use super::path_filter::{
     looks_like_secret_scanner_source, looks_like_vendored_minified_path,
 };
 use super::shape::{
-    contains_uuid_v4_substring, looks_like_credential_colliding_punctuation,
+    PublicShapeScope, contains_uuid_v4_substring, looks_like_credential_colliding_punctuation,
     looks_like_email_address, looks_like_pure_identifier, looks_like_regex_literal_tail,
     looks_like_scheme_prefixed_uri, looks_like_syntactic_punctuation_marker,
     looks_like_url_or_path_segment, looks_like_word_separated_identifier,
-    public_noncredential_shape_with_randomness, PublicShapeScope,
+    public_noncredential_shape_with_randomness,
 };
 use super::token_randomness::{
-    keep_identifier_gate_with_randomness, keep_word_separated_gate_with_randomness, TokenRandomness,
+    TokenRandomness, keep_identifier_gate_with_randomness, keep_word_separated_gate_with_randomness,
 };
 use crate::context;
 
@@ -440,7 +440,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
         );
         return shape_stage("regex_literal_tail");
     }
-    // Generic detectors (generic-secret, generic-private-key, entropy-*)
+    // Generic detectors (generic-secret, generic-api-key, entropy-*)
     // never use this bypass - their anchor is keyword-class, not
     // service-specific, and shape gates are load-bearing for them.
     // Weakly anchored named detectors (e.g. datadog-api-key) also do not

@@ -4,12 +4,10 @@
 //! Stripe direct-prefix duplicate filter. It stays separate from decode
 //! recursion and ML scoring so the postprocess folder has one owner per job.
 
-use super::{scan_postprocess, scan_postprocess_profile, CompiledScanner};
+use super::{CompiledScanner, scan_postprocess, scan_postprocess_profile};
 use crate::types::{ScanState, ScannerPreprocessedText};
 use keyhog_core::Chunk;
 use std::sync::atomic::Ordering::Relaxed;
-
-const STRIPE_HOT_CONFIRMED_PREFIXES: &[&str] = &["sk_live_", "sk_test_", "rk_live_", "rk_test_"];
 
 impl CompiledScanner {
     #[allow(clippy::too_many_arguments)]
@@ -266,15 +264,13 @@ impl CompiledScanner {
     }
 
     fn is_stripe_hot_confirmed_pattern(&self, pat_idx: usize) -> bool {
-        let Some(entry) = self.ac_map.get(pat_idx) else {
-            return false;
-        };
-        let Some(detector) = self.detectors.get(entry.detector_index) else {
-            return false;
-        };
-        detector.id.as_str() == crate::detector_ids::STRIPE_SECRET_KEY
-            && STRIPE_HOT_CONFIRMED_PREFIXES
-                .iter()
-                .any(|prefix| entry.regex.as_str().starts_with(prefix))
+        match self.stripe_hot_confirmed_by_pattern.get(pat_idx) {
+            Some(is_hot) => *is_hot,
+            None => {
+                panic!(
+                    "internal invariant violation: missing Stripe hot-confirmed classification for pattern index {pat_idx}"
+                );
+            }
+        }
     }
 }

@@ -19,38 +19,74 @@ const CREDENTIAL_LENGTH_WEIGHT: f64 = 0.01;
 /// Resolve overlapping matches: for each credential text region,
 /// keep only the best match. Also suppress entropy findings when
 /// a named detector already found a secret on the same line.
-pub fn resolve_matches(mut matches: Vec<RawMatch>) -> Vec<RawMatch> {
-    if matches.len() <= SINGLE_MATCH_COUNT {
-        return matches;
+pub fn resolve_matches(matches: Vec<RawMatch>) -> Vec<RawMatch> {
+    match try_resolve_matches(matches) {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            panic!(
+                "detector classification rules are invalid during match resolution: {error}. Fix: correct rules/detector-classification.toml"
+            );
+        }
     }
-    suppress_matches_nested_in_private_key_blocks(&mut matches);
-    suppress_entropy_matches_near_named_detectors(&mut matches);
-    resolve_match_groups(matches)
 }
 
-fn suppress_matches_nested_in_private_key_blocks(matches: &mut Vec<RawMatch>) {
+/// Checked match resolution for operator paths that must report rule failures
+/// instead of aborting through the compatibility API.
+pub fn try_resolve_matches(mut matches: Vec<RawMatch>) -> Result<Vec<RawMatch>, String> {
+    if matches.len() <= SINGLE_MATCH_COUNT {
+        return Ok(matches);
+    }
+    suppress_matches_nested_in_private_key_blocks(&mut matches)?;
+    suppress_entropy_matches_near_named_detectors(&mut matches);
+    Ok(resolve_match_groups(matches))
+}
+
+fn suppress_matches_nested_in_private_key_blocks(
+    matches: &mut Vec<RawMatch>,
+) -> Result<(), String> {
     let private_key_spans: Vec<(Arc<str>, usize, usize)> = matches
         .iter()
-        .filter(|m| is_private_key_block_detector(m.detector_id.as_ref()))
+        .filter_map(|m| {
+            is_private_key_block_detector(m.detector_id.as_ref())
+                .map(|is_block| is_block.then(|| m))
+                .transpose()
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
         .filter_map(match_span)
         .collect();
     if private_key_spans.is_empty() {
-        return;
+        return Ok(());
     }
 
-    matches.retain(|m| {
-        if is_private_key_block_detector(m.detector_id.as_ref()) {
-            return true;
+    let mut retain = Vec::with_capacity(matches.len());
+    for m in matches.iter() {
+        if is_private_key_block_detector(m.detector_id.as_ref())? {
+            retain.push(true);
+            continue;
         }
         let Some((file, start, end)) = match_span(m) else {
-            return true;
+            retain.push(true);
+            continue;
         };
-        !private_key_spans
-            .iter()
-            .any(|(block_file, block_start, block_end)| {
-                block_file.as_ref() == file.as_ref() && *block_start <= start && end <= *block_end
-            })
-    });
+        retain.push(
+            !private_key_spans
+                .iter()
+                .any(|(block_file, block_start, block_end)| {
+                    block_file.as_ref() == file.as_ref()
+                        && *block_start <= start
+                        && end <= *block_end
+                }),
+        );
+    }
+    let mut retained = Vec::with_capacity(matches.len());
+    for (m, keep) in matches.drain(..).zip(retain) {
+        if keep {
+            retained.push(m);
+        }
+    }
+    *matches = retained;
+    Ok(())
 }
 
 fn match_span(m: &RawMatch) -> Option<(Arc<str>, usize, usize)> {
@@ -112,7 +148,7 @@ fn is_generic_detector(detector_id: &str) -> bool {
     crate::detector_ids::is_generic_or_private_key_detector(detector_id)
 }
 
-fn is_private_key_block_detector(detector_id: &str) -> bool {
+fn is_private_key_block_detector(detector_id: &str) -> Result<bool, String> {
     crate::detector_ids::is_private_key_block_detector(detector_id)
 }
 

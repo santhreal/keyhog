@@ -124,15 +124,15 @@ mod windowed_support;
 // sole call site in compile.rs is `#[cfg(feature = "simd")]` too. Gate the
 // import to match, or non-simd builds (the `portable` feature used for the
 // macOS/Windows/musl release assets) fail with E0432.
+pub(crate) use backend_prepared::PreparedChunk;
 #[cfg(feature = "simd")]
 pub(crate) use backend_prepared::build_simd_scanner;
 pub(crate) use backend_prepared::code_lines_from_offsets;
-pub(crate) use backend_prepared::PreparedChunk;
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries;
 pub use gpu_artifacts::{
-    compile_gpu_literal_artifacts, compile_gpu_literal_artifacts_default, GpuLiteralArtifact,
-    GpuLiteralArtifacts,
+    GpuLiteralArtifact, GpuLiteralArtifacts, compile_gpu_literal_artifacts,
+    compile_gpu_literal_artifacts_default,
 };
 #[cfg(test)]
 pub(crate) use gpu_forced::gpu_forced_unavailable_message;
@@ -226,6 +226,11 @@ pub struct CompiledScanner {
     /// from the chunk cannot match and is skipped (see `extract_confirmed_patterns`).
     pub(crate) suffix_gate_ac: Option<AhoCorasick>,
     pub(crate) ac_suffix_gate: Vec<Vec<u32>>,
+    /// Per-`ac_map` bit marking confirmed Stripe secret-key regexes whose
+    /// literal prefix is already emitted by the direct hot path. Built from
+    /// Tier-B detector classification data at compile time so candidate
+    /// extraction only pays an indexed bool load.
+    pub(crate) stripe_hot_confirmed_by_pattern: Vec<bool>,
     /// Shared-anchor localization index over the confirmed `ac_map`. Eligible
     /// triggered patterns are verified at required-prefix candidate positions
     /// instead of each walking the whole scan window; non-eligible patterns keep

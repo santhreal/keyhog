@@ -6,6 +6,14 @@ fn scanner_src() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
 }
 
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("scanner crate must live under crates/scanner")
+        .to_path_buf()
+}
+
 fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{} not readable: {e}", path.display()))
 }
@@ -120,12 +128,34 @@ fn detector_ids_module_owns_scanner_detector_identity() {
     );
 
     let classification = read(&src.join("detector_classification.rs"));
+    let rules = read(&repo_root().join("rules/detector-classification.toml"));
+    let confirmed_extract = read(
+        &src.join("engine")
+            .join("scan_postprocess")
+            .join("confirmed_extract.rs"),
+    );
     assert!(
         !owner.contains("RESIDUAL_WEAK_ANCHORED")
             && !owner.contains("is_residual_weak_anchored")
-            && classification.contains("include_str!(\"../../../rules/detector-classification.toml\")")
+            && classification
+                .contains("include_str!(\"../../../rules/detector-classification.toml\")")
             && classification.contains("weak_anchor")
             && classification.contains("is_residual_weak_anchor"),
         "residual weak-anchor classification must live in Tier-B detector-classification rules, not detector_ids.rs"
+    );
+    assert!(
+        !owner.contains("PRIVATE_KEY | SSH_PRIVATE_KEY | GITHUB_APP_PRIVATE_KEY")
+            && classification.contains("private_key_block")
+            && classification.contains("is_private_key_block_detector")
+            && rules.contains("private_key_block = ["),
+        "private-key block detector classification must live in Tier-B detector-classification rules, not detector_ids.rs"
+    );
+    assert!(
+        classification.contains("stripe_hot_confirmed_prefix")
+            && rules.contains("stripe_hot_confirmed_prefix = [")
+            && !confirmed_extract.contains("sk_live_")
+            && !confirmed_extract.contains("rk_test_")
+            && confirmed_extract.contains("stripe_hot_confirmed_by_pattern"),
+        "Stripe confirmed hot-prefix classification must be Tier-B data precomputed on the scanner, not an inline extraction list"
     );
 }

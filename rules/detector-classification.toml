@@ -4,6 +4,13 @@
 # - weak_anchor: detector ids whose regex captures are service-anchored but
 #   still structurally collide with generic values, so scanner suppression keeps
 #   generic shape gates active for them.
+# - private_key_block: detector ids whose match spans represent enclosing
+#   private-key blocks; resolution suppresses lower-specificity child findings
+#   fully nested inside those spans.
+# - stripe_hot_confirmed_prefix: Stripe secret-key regex prefixes that overlap
+#   the direct hot-path detector; confirmed extraction uses them to skip
+#   duplicate anchored candidates when the hot path already emitted the same
+#   offset.
 
 weak_anchor = [
   "aerisweather-api-credentials",
@@ -27,4 +34,17 @@ weak_anchor = [
   "foundation-api-key",
   "getresponse-api-key",
   "rudder-api-token",
+]
+
+private_key_block = [
+  "private-key",
+  "ssh-private-key",
+  "github-app-private-key",
+]
+
+stripe_hot_confirmed_prefix = [
+  "sk_live_",
+  "sk_test_",
+  "rk_live_",
+  "rk_test_",
 ]
