@@ -100,6 +100,24 @@ fn ascending_hex_pair_columns_wrap_f_to_zero() {
 }
 
 #[test]
+fn descending_single_byte_hex_sequence_is_example() {
+    let cred = "fedcba9876543210fedcba9876543210";
+    assert!(
+        is_known_example_credential(cred),
+        "single-byte descending hex placeholders must suppress, including 0->f wrap"
+    );
+}
+
+#[test]
+fn descending_hex_byte_values_are_example() {
+    let cred = "fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0";
+    assert!(
+        is_known_example_credential(cred),
+        "reverse byte-value hex placeholders must suppress"
+    );
+}
+
+#[test]
 fn uppercase_hex_sequence_still_suppresses_without_allocating_lowercase_copy() {
     let cred = "0123456789ABCDEF0123456789ABCDEF";
     assert!(
