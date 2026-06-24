@@ -362,16 +362,21 @@ fn fetch_object_chunk(
 
     let encoded_key = crate::cloud::encode_object_key_path(key);
     let url = format!("{}/{}", base_url.trim_end_matches('/'), encoded_key);
+    let display_path = format!("s3://{bucket}/{key}");
     let request = client.get(&url);
     let request = if let Some(auth) = aws_auth {
         auth.sign(request, &url)?
     } else {
         request
     };
-    let response = request
-        .send()
-        .map_err(|e| SourceError::Other(format!("failed to download S3 object: {key}: {e}")))?;
-    let display_path = format!("s3://{bucket}/{key}");
+    let response = request.send().map_err(|error| {
+        crate::cloud::record_unreadable_object_skip(
+            "S3 object",
+            "object",
+            &display_path,
+            format!("download failed for {key}: {error}"),
+        )
+    })?;
     let Some(object_text) = crate::cloud::read_text_object_body(
         response,
         crate::cloud::TextObjectBodyContext {

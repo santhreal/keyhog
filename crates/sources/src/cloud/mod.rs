@@ -161,6 +161,21 @@ pub(crate) fn record_unscanned_object_skip(
     unscanned_object_error(source, item_kind, display_path, reason)
 }
 
+pub(crate) fn record_unreadable_object_skip(
+    source: &str,
+    item_kind: &str,
+    display_path: &str,
+    reason: impl std::fmt::Display,
+) -> SourceError {
+    record_unscanned_object_skip(
+        crate::SourceSkipEvent::Unreadable,
+        source,
+        item_kind,
+        display_path,
+        reason,
+    )
+}
+
 pub(crate) struct TextObjectBodyContext<'a> {
     pub(crate) source: &'static str,
     pub(crate) item_kind: &'static str,

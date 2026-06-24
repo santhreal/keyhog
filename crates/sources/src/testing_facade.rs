@@ -99,6 +99,14 @@ pub mod testing {
             url: &str,
             max_bytes: u64,
         ) -> Result<Option<String>, keyhog_core::SourceError>;
+        #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
+        fn cloud_record_unreadable_object_skip(
+            &self,
+            source: &str,
+            item_kind: &str,
+            display_path: &str,
+            reason: &str,
+        ) -> keyhog_core::SourceError;
 
         #[cfg(any(
             feature = "azure",
@@ -588,6 +596,17 @@ pub mod testing {
                     max_bytes,
                 },
             )
+        }
+
+        #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
+        fn cloud_record_unreadable_object_skip(
+            &self,
+            source: &str,
+            item_kind: &str,
+            display_path: &str,
+            reason: &str,
+        ) -> keyhog_core::SourceError {
+            crate::cloud::record_unreadable_object_skip(source, item_kind, display_path, reason)
         }
 
         #[cfg(any(

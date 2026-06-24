@@ -53,3 +53,37 @@ fn cloud_text_object_content_length_over_cap_yields_source_error() {
     );
     assert_eq!(skip_counts().over_max_size, 1);
 }
+
+#[test]
+fn cloud_transport_failures_count_as_unreadable_objects() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+
+    let err = TestApi.cloud_record_unreadable_object_skip(
+        "unit-cloud",
+        "object",
+        "cloud://bucket/missing.txt",
+        "download failed: connection refused",
+    );
+
+    let message = err.to_string();
+    assert!(
+        message.contains("download failed: connection refused")
+            && message.contains("cloud://bucket/missing.txt")
+            && message.contains("object was not scanned"),
+        "unexpected cloud transport error: {message}"
+    );
+    let counts = skip_counts();
+    assert_eq!(
+        counts.unreadable, 1,
+        "cloud download transport failures must be counted as unreadable coverage gaps"
+    );
+    assert_eq!(
+        counts.over_max_size, 0,
+        "download transport failures must not pollute size-cap accounting"
+    );
+    assert_eq!(
+        counts.binary, 0,
+        "download transport failures must not pollute binary-skip accounting"
+    );
+}

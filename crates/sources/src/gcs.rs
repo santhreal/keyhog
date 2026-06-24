@@ -310,10 +310,15 @@ fn fetch_gcs_object_chunk(
     if let Some(token) = bearer {
         request = request.bearer_auth(token);
     }
-    let response = request.send().map_err(|error| {
-        SourceError::Other(format!("failed to download GCS object: {name}: {error}"))
-    })?;
     let display_path = format!("gs://{bucket}/{name}");
+    let response = request.send().map_err(|error| {
+        crate::cloud::record_unreadable_object_skip(
+            "GCS object",
+            "object",
+            &display_path,
+            format!("download failed for {name}: {error}"),
+        )
+    })?;
     let Some(object_text) = crate::cloud::read_text_object_body(
         response,
         crate::cloud::TextObjectBodyContext {

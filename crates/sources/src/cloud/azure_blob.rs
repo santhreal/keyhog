@@ -270,11 +270,16 @@ fn fetch_azure_blob_chunk(
         }
     }
 
+    let display_path = azure_blob_display_path(container_url, name)?;
     let url = azure_blob_url(container_url, name);
     let response = client.get(url).send().map_err(|error| {
-        SourceError::Other(format!("failed to download Azure blob: {name}: {error}"))
+        crate::cloud::record_unreadable_object_skip(
+            "Azure blob",
+            "blob",
+            &display_path,
+            format!("download failed for {name}: {error}"),
+        )
     })?;
-    let display_path = azure_blob_display_path(container_url, name)?;
     let Some(object_text) = crate::cloud::read_text_object_body(
         response,
         crate::cloud::TextObjectBodyContext {
