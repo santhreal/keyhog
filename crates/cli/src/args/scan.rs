@@ -621,19 +621,16 @@ pub struct ScanArgs {
     pub no_keyword_low_entropy: bool,
 
     /// Minimum ML confidence score for generic entropy secrets (0.0 to 1.0).
-    /// When raised above the resolved confidence floor it tightens the bar a
-    /// generic/entropy finding must clear (composed via `.max()` in
-    /// `orchestrator_config::build_scanner_config`); a value at or below the
-    /// floor is a no-op. The `default_value` literal here is the canonical
-    /// `orchestrator_config::ML_THRESHOLD_DEFAULT` (kept in sync); an unset
-    /// flag leaves the canonical floor untouched.
+    /// When present it tightens the bar a generic/entropy finding must clear
+    /// by composing with the resolved confidence floor via `.max()` in
+    /// `orchestrator_config::build_scanner_config`. Absence leaves the
+    /// canonical floor untouched.
     #[arg(
         long,
-        default_value = "0.5",
         value_name = "THRESHOLD",
         value_parser = crate::value_parsers::parse_ml_threshold
     )]
-    pub ml_threshold: f64,
+    pub ml_threshold: Option<f64>,
 
     /// Minimum confidence score (0.0 - 1.0) to report findings (default: 0.40).
     #[arg(long, value_name = "FLOAT", value_parser = crate::value_parsers::parse_min_confidence)]

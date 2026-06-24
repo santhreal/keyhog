@@ -21,6 +21,8 @@ pub(super) struct ConfigFile {
     pub no_entropy: Option<bool>,
     /// Minimum confidence score (0.0 - 1.0).
     pub min_confidence: Option<f64>,
+    /// Minimum ML confidence score for generic entropy secrets (0.0 - 1.0).
+    pub ml_threshold: Option<f64>,
     /// Number of parallel scanning threads.
     pub threads: Option<usize>,
     /// Dedicated filesystem reader threads.
@@ -107,6 +109,7 @@ pub(super) struct ConfigFile {
 pub(super) struct ScanSection {
     pub severity: Option<String>,
     pub min_confidence: Option<f64>,
+    pub ml_threshold: Option<f64>,
     pub decode_depth: Option<usize>,
     pub min_secret_len: Option<usize>,
     pub format: Option<String>,

@@ -10,9 +10,10 @@
 //! The fix wires `--ml-threshold` into the resolved confidence floor
 //! (`ScannerConfig::min_confidence`) via `.max()` composition: a raised
 //! threshold tightens the bar a generic/entropy finding must clear, a value at
-//! or below the floor is a no-op, and an UNSET flag (value == the declared
-//! default) leaves the canonical floor untouched so default behavior is
-//! unchanged.
+//! or below the floor is a no-op, and an UNSET flag leaves the canonical floor
+//! untouched so default behavior is unchanged. An explicit value equal to the
+//! documented ML default is still operator intent and must not collapse into
+//! "unset".
 //!
 //! These assertions exercise the public `keyhog::orchestrator_config`
 //! surface (`build_scanner_config` / `render_effective_config`), which is the
@@ -38,24 +39,25 @@ fn args(extra: &[&str]) -> ScanArgs {
 
 #[test]
 fn ml_threshold_unset_leaves_canonical_floor_untouched() {
-    // No `--ml-threshold` on the command line: the field defaults to
-    // API.ml_threshold_default() and must NOT silently raise the 0.40 floor.
+    // No `--ml-threshold` on the command line must NOT silently raise the 0.40
+    // floor.
     let cfg = API.build_scanner_config(&args(&[]));
     assert_eq!(
         cfg.min_confidence,
         canonical_floor(),
         "unset --ml-threshold must leave the canonical confidence floor untouched"
     );
+    assert_eq!(API.ml_threshold_default(), 0.5);
+}
 
-    // Explicitly passing the default value is also a no-op.
+#[test]
+fn ml_threshold_explicit_default_raises_confidence_floor() {
     let cfg_default = API.build_scanner_config(&args(&["--ml-threshold", "0.5"]));
     assert_eq!(
         cfg_default.min_confidence,
-        canonical_floor(),
-        "--ml-threshold at its declared default must be a no-op"
+        API.ml_threshold_default(),
+        "explicit --ml-threshold 0.5 must be treated as operator intent, not as unset"
     );
-    // Guard the const/string-literal sync the wiring relies on.
-    assert_eq!(API.ml_threshold_default(), 0.5);
 }
 
 #[test]

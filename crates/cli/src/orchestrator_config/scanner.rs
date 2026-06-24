@@ -1,8 +1,6 @@
 use crate::args::ScanArgs;
 use keyhog_scanner::ScannerConfig;
 
-use super::runtime::ML_THRESHOLD_DEFAULT;
-
 #[derive(Debug, Clone)]
 pub(super) struct ScannerConfigInput {
     precision: bool,
@@ -12,7 +10,7 @@ pub(super) struct ScannerConfigInput {
     no_decode: bool,
     decode_size_limit: Option<usize>,
     min_confidence: Option<f64>,
-    ml_threshold: f64,
+    ml_threshold: Option<f64>,
     no_suppress_test_fixtures: bool,
     no_entropy: bool,
     entropy_threshold: Option<f64>,
@@ -121,11 +119,12 @@ pub(super) fn build_scanner_config_from_input(input: &ScannerConfigInput) -> Sca
     // composition just above and the "minimum score" wording of the flag - so a
     // raised threshold tightens the bar a generic/entropy finding must clear,
     // while a lowered one can never punch below an operator's `--min-confidence`
-    // (or the precision floor). Gated on a real move off the declared default
-    // (`ML_THRESHOLD_DEFAULT`): an unset flag leaves the canonical 0.40 floor
-    // untouched, so behaviour off the bug path is unchanged.
-    if input.ml_threshold != ML_THRESHOLD_DEFAULT {
-        config.min_confidence = config.min_confidence.max(input.ml_threshold);
+    // (or the precision floor). An unset flag leaves the canonical 0.40 floor
+    // untouched, so behaviour off the bug path is unchanged. Presence, not a
+    // float sentinel, is the intent signal: an explicit `--ml-threshold 0.5`
+    // is still an operator request and must not collapse into "unset".
+    if let Some(ml_threshold) = input.ml_threshold {
+        config.min_confidence = config.min_confidence.max(ml_threshold);
     }
     // Keep the fixture opt-out coherent: skip both value suppressions and the
     // test/example path confidence penalty.

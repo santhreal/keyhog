@@ -2,7 +2,8 @@ use super::limits::apply_limits_section;
 use super::schema::{ConfigFile, ScanSection};
 use crate::args::ScanArgs;
 use crate::value_parsers::{
-    parse_byte_size, parse_dedup_scope, parse_output_format, parse_severity_filter,
+    parse_byte_size, parse_dedup_scope, parse_ml_threshold, parse_output_format,
+    parse_severity_filter,
 };
 use std::path::PathBuf;
 
@@ -51,6 +52,17 @@ fn parse_config_decode_depth(errors: &mut Vec<String>, field: &str, depth: usize
     None
 }
 
+fn parse_config_ml_threshold(errors: &mut Vec<String>, field: &str, threshold: f64) -> Option<f64> {
+    let rendered = threshold.to_string();
+    match parse_ml_threshold(&rendered) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            errors.push(super::invalid_config_value(field, &rendered, &error));
+            None
+        }
+    }
+}
+
 pub(super) fn apply_scan_section(
     args: &mut ScanArgs,
     config_errors: &mut Vec<String>,
@@ -83,6 +95,13 @@ pub(super) fn apply_scan_section(
         }
         if args.min_confidence.is_none() {
             args.min_confidence = scan.min_confidence;
+        }
+        if let Some(threshold) = scan.ml_threshold {
+            let parsed_threshold =
+                parse_config_ml_threshold(config_errors, "[scan].ml_threshold", threshold);
+            if args.ml_threshold.is_none() {
+                args.ml_threshold = parsed_threshold;
+            }
         }
         if let Some(depth) = scan.decode_depth {
             let parsed_depth =
@@ -253,6 +272,13 @@ pub(super) fn apply_top_level_scan_fields(
     if let Some(min_conf) = config.min_confidence {
         if args.min_confidence.is_none() {
             args.min_confidence = Some(min_conf);
+        }
+    }
+
+    if let Some(threshold) = config.ml_threshold {
+        let parsed_threshold = parse_config_ml_threshold(config_errors, "ml_threshold", threshold);
+        if args.ml_threshold.is_none() {
+            args.ml_threshold = parsed_threshold;
         }
     }
 

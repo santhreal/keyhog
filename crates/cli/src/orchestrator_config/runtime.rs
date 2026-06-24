@@ -7,7 +7,10 @@ use std::path::PathBuf;
 /// the OS scheduler without speeding the scan up.
 pub(crate) const MAX_THREADS_CAP: usize = 256;
 
-/// Canonical default for `--ml-threshold` (`ScanArgs::ml_threshold`).
+/// Documented conventional ML threshold value.
+///
+/// `ScanArgs::ml_threshold` is optional so the runtime can distinguish an
+/// absent flag/config from an explicit `0.5`.
 pub(crate) const ML_THRESHOLD_DEFAULT: f64 = 0.5;
 
 /// Default chunk batch size for the fused filesystem read+scan pipeline.

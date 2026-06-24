@@ -82,6 +82,34 @@ fn effective_config(args: &[&str]) -> (String, String, Option<i32>) {
     )
 }
 
+fn effective_config_with_toml(
+    config: &str,
+    scan_args: &[&str],
+) -> (TempDir, String, String, Option<i32>) {
+    let dir = TempDir::new().expect("tempdir");
+    let cfg = dir.path().join(".keyhog.toml");
+    std::fs::write(&cfg, config).expect("write keyhog config");
+
+    let mut args = vec![
+        "config".to_string(),
+        "--effective".to_string(),
+        "--config".to_string(),
+        cfg.to_string_lossy().into_owned(),
+    ];
+    args.extend(scan_args.iter().map(|arg| (*arg).to_string()));
+
+    let out: Output = Command::new(binary())
+        .args(&args)
+        .output()
+        .expect("spawn keyhog config --effective");
+    (
+        dir,
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+        out.status.code(),
+    )
+}
+
 /// Write `content` to `name` inside a fresh tempdir and scan it as JSON
 /// in-process (`--no-daemon`). Returns (stdout, stderr, code) plus the dir
 /// guard (kept alive by the caller).
@@ -786,16 +814,49 @@ fn deep_preset_enables_ml_entropy_keeps_default_floor() {
 // --ml-threshold composition with the floor
 // ============================================================================
 
-/// `--ml-threshold` at its declared default (0.5 == `ML_THRESHOLD_DEFAULT`) is
-/// a NO-OP: the canonical 0.40 floor is left untouched (the gate is
-/// `args.ml_threshold != ML_THRESHOLD_DEFAULT`).
+/// Unset `--ml-threshold` is a NO-OP: the canonical 0.40 floor is left
+/// untouched. An explicit threshold equal to the documented ML default is still
+/// operator intent and raises the floor to 0.5.
 #[test]
-fn ml_threshold_default_is_noop_on_floor() {
+fn ml_threshold_unset_is_noop_explicit_default_raises_floor() {
+    let (unset_out, unset_err, unset_code) = effective_config(&["scan", "--no-daemon"]);
+    assert_eq!(unset_code, Some(0), "stderr={unset_err}");
+    assert!(
+        unset_out.contains("min_confidence = 0.4"),
+        "unset --ml-threshold must not move the 0.40 floor; got {unset_out}"
+    );
+
     let (out, err, code) = effective_config(&["scan", "--no-daemon", "--ml-threshold", "0.5"]);
     assert_eq!(code, Some(0), "stderr={err}");
     assert!(
-        out.contains("min_confidence = 0.4"),
-        "--ml-threshold 0.5 (the default) must not move the 0.40 floor; got {out}"
+        out.contains("min_confidence = 0.5"),
+        "explicit --ml-threshold 0.5 must raise the 0.40 floor; got {out}"
+    );
+}
+
+#[test]
+fn ml_threshold_config_file_raises_floor_and_cli_wins() {
+    let (_dir, out, err, code) = effective_config_with_toml("ml_threshold = 0.5\n", &[]);
+    assert_eq!(code, Some(0), "stderr={err}");
+    assert!(
+        out.contains("min_confidence = 0.5"),
+        "top-level TOML ml_threshold must raise the floor to 0.5; got {out}"
+    );
+
+    let (_dir, nested_out, nested_err, nested_code) =
+        effective_config_with_toml("[scan]\nml_threshold = 0.6\n", &[]);
+    assert_eq!(nested_code, Some(0), "stderr={nested_err}");
+    assert!(
+        nested_out.contains("min_confidence = 0.6"),
+        "[scan].ml_threshold must raise the floor to 0.6; got {nested_out}"
+    );
+
+    let (_dir, cli_out, cli_err, cli_code) =
+        effective_config_with_toml("ml_threshold = 0.9\n", &["--ml-threshold", "0.5"]);
+    assert_eq!(cli_code, Some(0), "stderr={cli_err}");
+    assert!(
+        cli_out.contains("min_confidence = 0.5"),
+        "CLI --ml-threshold must override TOML ml_threshold; got {cli_out}"
     );
 }
 

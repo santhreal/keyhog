@@ -29,7 +29,7 @@ use crate::daemon::protocol::{Request, Response};
 #[cfg(unix)]
 use crate::daemon::server::default_socket_path;
 use crate::orchestrator::ScanOrchestrator;
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 // The daemon-only result-massaging path (unwrap_scan_results,
 // finalize_for_report) is the only consumer of `RawMatch` /
 // `VerifiedFinding` in this file. The in-process orchestrator path
@@ -403,7 +403,7 @@ fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
         || args.max_file_size.is_some()
         || args.regex_dfa_limit.is_some()
         || args.cache_dir.is_some()
-        || args.ml_threshold != crate::orchestrator_config::ML_THRESHOLD_DEFAULT
+        || args.ml_threshold.is_some()
     {
         return Some(
             "this scan changes scanner or source-limit configuration that the precompiled daemon scanner cannot honor",
