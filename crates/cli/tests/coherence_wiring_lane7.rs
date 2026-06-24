@@ -459,6 +459,38 @@ fn readme_states_correct_default_confidence_floor() {
     );
 }
 
+#[test]
+fn docs_describe_simd_regex_as_backend_contract_not_hyperscan_requirement() {
+    let readme = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../README.md"));
+    let detection = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/src/detection.md"
+    ));
+    let readme_norm = normalize_surface_text(readme);
+    let detection_norm = normalize_surface_text(detection);
+    for (name, text) in [
+        ("README.md", &readme_norm),
+        ("docs/src/detection.md", &detection_norm),
+    ] {
+        assert!(
+            !text.contains("simd-regex | avx-512 / avx2 / neon + hyperscan"),
+            "{name} must not imply the simd-regex backend requires Hyperscan; portable builds use the same backend label"
+        );
+        assert!(
+            text.contains("portable") && text.contains("hyperscan"),
+            "{name} must explain that Hyperscan is feature/build dependent and portable builds keep an alternate path"
+        );
+    }
+    assert!(
+        readme_norm.contains("hyperscan when compiled"),
+        "README backend table must state that Hyperscan is conditional"
+    );
+    assert!(
+        detection_norm.contains("pure-rust trigger path"),
+        "detection docs must name the portable no-Hyperscan trigger path"
+    );
+}
+
 /// Backend override is now explicit CLI surface, not an ambient env var. Env
 /// docs must not resurrect `KEYHOG_BACKEND`, and configuration docs must point
 /// operators to `--backend`.

@@ -57,17 +57,18 @@ lefthook recipes: [`docs/DROP_IN_USAGE.md`](docs/DROP_IN_USAGE.md).
 
 ### How it works
 
-keyhog compiles its 902 detectors into a single Hyperscan NFA database,
-decodes nested encodings before matching, and can apply explicit per-detector
-Bayesian Beta(α,β) confidence calibration. Hardware acceleration is an
-explicit backend selection layer; every selected backend must preserve the
-same detector ids and findings contract:
+keyhog compiles its 902 detectors into a shared trigger/extraction plan,
+uses Hyperscan when that feature is present, decodes nested encodings before
+matching, and can apply explicit per-detector Bayesian Beta(α,β) confidence
+calibration. Hardware acceleration is an explicit backend selection layer;
+every selected backend must preserve the same detector ids and findings
+contract:
 
 | Layer / Backend | When | How |
 |---|---|---|
 | `simdsieve` prefilter | AVX-512 / AVX2 / NEON | Layer 1: skims every file for the 8 highest-value secret prefixes (AWS `AKIA`/`ASIA`, GitHub `ghp_`, OpenAI `sk-proj-`, Slack `xoxb-`/`xoxp-`, SendGrid `SG.`, Square `sq0csp-`) in a single SIMD pass, before the regex backend runs |
 | `gpu-region-presence` | discrete GPU + persisted calibration proof | vyre literal-set region-presence pass on GPU via WGPU (cross-platform) or optional CUDA backend, followed by the shared CPU validation tail |
-| `simd-regex` | AVX-512 / AVX2 / NEON + Hyperscan | parallel multi-pattern NFA at ~500 MB/s |
+| `simd-regex` | AVX-512 / AVX2 / NEON; Hyperscan when compiled | parallel trigger scan plus full-regex extraction; portable builds keep the same backend label without linking Hyperscan |
 | `cpu-fallback` | no SIMD, no GPU | Aho-Corasick prefix + Rust `regex` extraction |
 
 ### Autoroute Contract
@@ -670,8 +671,9 @@ tools/        Contract generators (gen_contracts.py, gen_companion_contracts.py)
 
 Two-phase coalesced scan:
 
-1. **Phase 1** . Hyperscan NFA on raw bytes, parallel across all files
-   via rayon. 95 %+ of files have no hits and pay zero cost.
+1. **Phase 1** . shared trigger scan on raw bytes, parallel across all files
+   via rayon. Hyperscan accelerates this phase when compiled; portable builds
+   use the pure-Rust trigger path. 95 %+ of files have no hits and pay zero cost.
 2. **Phase 2** . full extraction on hits only: regex capture groups,
    companion matching, checksum validation, entropy gating, ML
    confidence + explicit Bayesian damping when configured.

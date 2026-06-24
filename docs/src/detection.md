@@ -48,10 +48,12 @@ Three gates, in order, each cheaper than the next:
    discard. Catches the "this is a Go source file with no `key=`
    anywhere" case in microseconds.
 
-3. **SIMD prefilter (Hyperscan).** A multi-pattern SIMD regex scanner.
-   The detector corpus is compiled to a single Hyperscan database;
-   one scan call returns "which detector IDs have a candidate match."
-   On AVX-512 hardware this runs at ~3 GB/s.
+3. **SIMD prefilter (`simd-regex`).** A multi-pattern trigger scanner.
+   When the `simd` feature is compiled, the detector corpus is also compiled
+   into Hyperscan databases; portable builds keep the same backend contract
+   through the pure-Rust trigger path. One scan pass returns "which detector IDs
+   have a candidate match." On AVX-512 + Hyperscan hardware this runs at
+   ~3 GB/s.
 
    On GPUs above the breakeven threshold (2 MiB on 5090-class, 16 MiB
    on 4090-class), the prefilter switches to a CUDA literal-set scan
@@ -121,7 +123,7 @@ A finding that survives stage 4 makes it to output.
 | Chunker           | ~5 GB/s (mmap + magic-byte sniff) |
 | Alphabet screen   | ~12 GB/s (256-bit table lookup, vectorized) |
 | Bigram bloom      | ~8 GB/s (4096-bit table, vectorized) |
-| Hyperscan SIMD    | ~3 GB/s (multi-pattern regex) |
+| `simd-regex` trigger scan | ~3 GB/s with Hyperscan on AVX-512; portable builds use the pure-Rust trigger path |
 | Per-detector regex | ~150 MB/s × detectors flagged |
 | Post-process      | ~200 MB/s |
 
@@ -156,7 +158,7 @@ file.env contains: AWS_SECRET_ACCESS_KEY=ev0BsFtSD7S/4VWYObxiEhME3hJBXeYzR43jgiB
 stage 1 - chunker:        emit chunk{ path: "file.env", data: "AWS_SECRET..." }
 stage 2 - alphabet:       PASS (chunk has `=`, alphanumerics from the corpus)
 stage 2 - bigram bloom:   PASS (`AW`, `WS`, `_S` are in the bloom)
-stage 2 - Hyperscan:      MATCH → triggers `aws-secret-access-key` + `generic-password`
+stage 2 - simd-regex:     MATCH → triggers `aws-secret-access-key` + `generic-password`
 stage 3 - regex eval:
   `aws-secret-access-key` regex `(?i)(?:AWS[_-]?SECRET[_-]?ACCESS[_-]?KEY|...)[=:\s"']+([0-9a-zA-Z/+=]{40})(?:[^0-9a-zA-Z/+=]|$)`
     captures `ev0BsFtSD7S/4VWYObxiEhME3hJBXeYzR43jgiB1`
