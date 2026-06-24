@@ -1,20 +1,22 @@
-//! R5-T archive adversarial: nested tar respects extraction budget.
+//! R5-T archive adversarial: nested tar entries are unpacked, not treated as
+//! opaque binary blobs.
 
-use super::support::collect_chunks;
+use crate::support::split_chunk_results;
+use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 
 #[test]
-fn r5t_nested_tar_two_levels_budget() {
+fn r5t_nested_tar_two_levels_inner_entry_scanned() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut inner = tar::Builder::new(Vec::new());
     let mut header = tar::Header::new_gnu();
     header.set_path("inner.env").expect("path");
-    header.set_size(20);
+    let secret = b"TAIL=AKIAQYLPMN5HFIQR7XYA\n";
+    header.set_size(secret.len() as u64);
     header.set_cksum();
-    inner
-        .append(&header, &b"TAIL=SHOULDNOTAPPEAR\n"[..])
-        .expect("append");
+    inner.append(&header, &secret[..]).expect("append");
     let inner_bytes = inner.into_inner().expect("inner tar");
+
     let mut outer = tar::Builder::new(Vec::new());
     let mut outer_header = tar::Header::new_gnu();
     outer_header.set_path("nested.tar").expect("path");
@@ -28,13 +30,29 @@ fn r5t_nested_tar_two_levels_budget() {
         outer.into_inner().expect("outer"),
     )
     .expect("write");
-    let bodies: Vec<String> =
-        collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(64))
-            .into_iter()
-            .map(|c| c.data.to_string())
-            .collect();
+
+    let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
+        .with_max_file_size(10 * 1024)
+        .chunks()
+        .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
     assert!(
-        !bodies.iter().any(|b| b.contains("SHOULDNOTAPPEAR")),
-        "nested tar budget must block; got {bodies:?}"
+        errors.is_empty(),
+        "nested tar recall fixture should not emit SourceErrors; got {errors:?}"
+    );
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
+    assert!(
+        bodies.iter().any(|b| b.contains("AKIAQYLPMN5HFIQR7XYA")),
+        "nested tar inner entry must be scanned; got {bodies:?}"
+    );
+    let paths: Vec<_> = chunks
+        .iter()
+        .filter_map(|chunk| chunk.metadata.path.as_deref())
+        .collect();
+    assert!(
+        paths
+            .iter()
+            .any(|path| path.contains("nested.tar//nested.tar//inner.env")),
+        "nested tar metadata must include both archive levels; got {paths:?}"
     );
 }

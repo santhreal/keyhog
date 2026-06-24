@@ -136,7 +136,28 @@ pub(super) fn emit_tar_entries(
     max_size: u64,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
+    let mut total_uncompressed: u64 = 0;
+    emit_tar_entries_with_state(
+        tar_bytes,
+        container_display,
+        max_size,
+        &mut total_uncompressed,
+        0,
+        emit,
+    );
+}
+
+fn emit_tar_entries_with_state(
+    tar_bytes: &[u8],
+    container_display: &str,
+    max_size: u64,
+    total_uncompressed: &mut u64,
+    nested_depth: usize,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) {
     use std::io::Read as _;
+
+    const MAX_EMBEDDED_TAR_DEPTH: usize = 8;
 
     let mut archive = tar::Archive::new(std::io::Cursor::new(tar_bytes));
     let entries = match archive.entries() {
@@ -159,7 +180,6 @@ pub(super) fn emit_tar_entries(
     };
 
     let total_budget: u64 = extraction_total_budget(max_size);
-    let mut total_uncompressed: u64 = 0;
 
     for entry in entries {
         let mut entry = match entry {
@@ -238,15 +258,15 @@ pub(super) fn emit_tar_entries(
             }
             continue;
         }
-        total_uncompressed = total_uncompressed.saturating_add(entry_size);
-        if total_budget > 0 && total_uncompressed > total_budget {
+        *total_uncompressed = (*total_uncompressed).saturating_add(entry_size);
+        if total_budget > 0 && *total_uncompressed > total_budget {
             // Law 10: a tar-bomb abort truncates extraction — the remaining
             // entries are NOT scanned, so this is partial coverage the operator
             // must see (the old `tracing::warn!` was invisible at default
             // verbosity). Surface loudly + count.
             let error = super::report_archive_truncation(
                 container_display,
-                total_uncompressed,
+                *total_uncompressed,
                 total_budget,
             );
             if !emit(Err(error)) {
@@ -276,6 +296,28 @@ pub(super) fn emit_tar_entries(
             ) {
                 return;
             }
+            continue;
+        }
+
+        if entry_is_embedded_tar(&entry_name, &content) {
+            let nested_display = format!("{container_display}//{entry_name}");
+            if nested_depth >= MAX_EMBEDDED_TAR_DEPTH {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit(Err(SourceError::Other(format!(
+                    "failed to scan embedded tar archive '{nested_display}': maximum nested archive depth {MAX_EMBEDDED_TAR_DEPTH} exceeded; embedded archive was not scanned"
+                )))) {
+                    return;
+                }
+                continue;
+            }
+            emit_tar_entries_with_state(
+                &content,
+                &nested_display,
+                max_size,
+                total_uncompressed,
+                nested_depth + 1,
+                emit,
+            );
             continue;
         }
 
@@ -314,6 +356,14 @@ pub(super) fn emit_tar_entries(
             }
         }
     }
+}
+
+fn entry_is_embedded_tar(entry_name: &str, content: &[u8]) -> bool {
+    let has_tar_ext = Path::new(entry_name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("tar"));
+    has_tar_ext && looks_like_tar(content)
 }
 
 fn emit_tar_entry_error(

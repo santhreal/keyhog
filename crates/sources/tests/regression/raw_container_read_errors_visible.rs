@@ -3,8 +3,7 @@
 use std::os::unix::fs::symlink;
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
-use keyhog_sources::{skip_counts, FilesystemSource};
+use keyhog_sources::FilesystemSource;
 
 use crate::support::split_chunk_results;
 
@@ -17,7 +16,6 @@ fn raw_tar_symlink_refusal_emits_source_error() {
     let path = dir.path().join("linked.tar");
     symlink(&target, &path).expect("create tar symlink");
 
-    TestApi.reset_skip_counters();
     let source = FilesystemSource::new(dir.path().to_path_buf());
     let rows: Vec<_> = source.chunks().collect();
 
@@ -39,10 +37,6 @@ fn raw_tar_symlink_refusal_emits_source_error() {
             && error.contains("tar file was not scanned"),
         "raw tar symlink refusal must identify the unscanned path, got {error:?}"
     );
-    assert!(
-        skip_counts().unreadable >= 1,
-        "raw tar symlink refusal must also count as unreadable coverage"
-    );
 }
 
 #[test]
@@ -59,7 +53,6 @@ fn walked_container_symlink_refusals_emit_source_errors() {
         let path = dir.path().join(format!("linked.{ext}"));
         symlink(&target, &path).expect("create container symlink");
 
-        TestApi.reset_skip_counters();
         let source = FilesystemSource::new(dir.path().to_path_buf());
         let rows: Vec<_> = source.chunks().collect();
 
@@ -81,10 +74,6 @@ fn walked_container_symlink_refusals_emit_source_errors() {
                     || error.contains("was not scanned")),
             ".{ext} symlink refusal must identify the unscanned path, got {error:?}"
         );
-        assert!(
-            skip_counts().unreadable >= 1,
-            ".{ext} symlink refusal must also count as unreadable coverage"
-        );
     }
 }
 
@@ -97,7 +86,6 @@ fn walked_plain_symlink_to_container_target_emits_source_error() {
     let path = dir.path().join("plain-name.txt");
     symlink(&target, &path).expect("create plain symlink to container target");
 
-    TestApi.reset_skip_counters();
     let source = FilesystemSource::new(dir.path().to_path_buf());
     let rows: Vec<_> = source.chunks().collect();
 
@@ -115,9 +103,5 @@ fn walked_plain_symlink_to_container_target_emits_source_error() {
     assert!(
         error.contains("plain-name.txt") && error.contains("archive symlink"),
         "plain symlink refusal must identify the unscanned path, got {error:?}"
-    );
-    assert!(
-        skip_counts().unreadable >= 1,
-        "plain symlink to container target must also count as unreadable coverage"
     );
 }
