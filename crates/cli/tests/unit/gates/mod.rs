@@ -37,6 +37,7 @@ pub mod daemon_server_non_empty;
 pub mod daemon_trust_ancestor_single_owner;
 pub mod default_exclude_owner;
 pub mod duplicate_primitive_leads;
+pub mod e2e_binary_simd_default_build_contract;
 pub mod effective_config_hyperscan_cache_feature_gate;
 pub mod git_staged_exclude_empty_source;
 pub mod inline_suppression_no_inline_tests;
