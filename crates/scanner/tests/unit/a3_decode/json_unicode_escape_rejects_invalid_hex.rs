@@ -18,3 +18,35 @@ fn json_unicode_escape_rejects_invalid_hex() {
         "invalid \\u hex must not emit json-decoded chunks"
     );
 }
+
+#[test]
+fn json_unicode_escape_rejects_unpaired_high_surrogate() {
+    let text = r#"{"token": "\uD83DAKIAIOSFODNN7EXAMPLE"}"#;
+    let chunk = Chunk {
+        data: text.into(),
+        metadata: Default::default(),
+    };
+    let decoded = decode_chunk(&chunk, 2, false, None, None);
+    assert!(
+        decoded
+            .iter()
+            .all(|c| !c.metadata.source_type.contains("/json")),
+        "unpaired JSON high surrogate must not emit a partially decoded credential"
+    );
+}
+
+#[test]
+fn json_unicode_escape_rejects_unpaired_low_surrogate() {
+    let text = r#"{"token": "\uDE00AKIAIOSFODNN7EXAMPLE"}"#;
+    let chunk = Chunk {
+        data: text.into(),
+        metadata: Default::default(),
+    };
+    let decoded = decode_chunk(&chunk, 2, false, None, None);
+    assert!(
+        decoded
+            .iter()
+            .all(|c| !c.metadata.source_type.contains("/json")),
+        "unpaired JSON low surrogate must not emit a partially decoded credential"
+    );
+}

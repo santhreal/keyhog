@@ -127,11 +127,35 @@ fn json_unescape(input: &str) -> Result<String, ()> {
             Some('t') => decoded.push('\t'),
             Some('u') => {
                 let code = take_hex_digits(&mut chars, 4)?;
-                decoded.push(char::from_u32(code).ok_or(())?);
+                decoded.push(json_escape_codepoint(code, &mut chars)?);
             }
             _ => return Err(()),
         }
     }
 
     Ok(decoded)
+}
+
+fn json_escape_codepoint(
+    code: u32,
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) -> Result<char, ()> {
+    if (0xD800..=0xDBFF).contains(&code) {
+        match (chars.next(), chars.next()) {
+            (Some('\\'), Some('u')) => {}
+            _ => return Err(()),
+        }
+        let low = take_hex_digits(chars, 4)?;
+        if !(0xDC00..=0xDFFF).contains(&low) {
+            return Err(());
+        }
+        let scalar = 0x10000 + (((code - 0xD800) << 10) | (low - 0xDC00));
+        return char::from_u32(scalar).ok_or(());
+    }
+
+    if (0xDC00..=0xDFFF).contains(&code) {
+        return Err(());
+    }
+
+    char::from_u32(code).ok_or(())
 }

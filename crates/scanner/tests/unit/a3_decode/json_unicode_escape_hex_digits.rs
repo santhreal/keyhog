@@ -16,3 +16,21 @@ fn json_unicode_escape_decodes_uppercase_hex() {
         "json \\u escapes must decode via take_hex_digits"
     );
 }
+
+#[test]
+fn json_unicode_escape_decodes_surrogate_pair_without_dropping_secret() {
+    let text = r#"{"api_key": "\uD83D\uDE00AKIAIOSFODNN7EXAMPLE"}"#;
+    let chunk = Chunk {
+        data: text.into(),
+        metadata: Default::default(),
+    };
+    let decoded = decode_chunk(&chunk, 2, false, None, None);
+    assert!(
+        decoded.iter().any(|c| {
+            c.metadata.source_type.contains("/json")
+                && c.data.contains("😀AKIAIOSFODNN7EXAMPLE")
+                && c.data.contains("api_key")
+        }),
+        "valid JSON UTF-16 surrogate pair must decode without hiding the credential: {decoded:?}"
+    );
+}
