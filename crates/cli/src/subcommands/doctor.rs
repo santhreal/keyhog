@@ -209,8 +209,16 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
     // while `backend --self-test` exited 4 on a broken GPU AC kernel - the
     // two health checks disagreed and a user trusting `doctor` never learned
     // their GPU path was dead. Surface the production GPU verdict here too.
-    // A FAIL is a WARNING, not unhealthy: explicit CPU/SIMD scan routes keep
-    // recall available; only explicit/calibrated GPU acceleration is lost.
+    //
+    // A FAIL is UNHEALTHY, not a warning: on a GPU-capable host the default
+    // auto-scan resolves to the GPU route, and autoroute is fail-closed - it
+    // refuses to silently substitute CPU/SIMD for a GPU decision it cannot
+    // make (Law 10). A broken GPU AC kernel therefore breaks the DEFAULT scan
+    // the moment calibration tries to record a GPU runtime identity, so
+    // "keyhog is healthy" while the GPU scan path is dead is a lie. `doctor`
+    // must agree with `backend --self-test` (which exits 4) and report
+    // unhealthy. (Explicit `--backend cpu/simd` runs still work, but that is a
+    // manual override of a broken default, not health.)
     // Skipped on no-GPU / software-renderer hosts (matches backend --self-test's
     // SKIP path, so a headless CI box stays green).
     if hw.gpu_available && !hw.gpu_is_software {
@@ -222,10 +230,10 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
                 report.backend_id
             ),
             Err(e) => {
-                warned = true;
+                healthy = false;
                 println!(
-                    "  gpu scan path  {}  GPU AC kernel self-test failed; GPU routes are unavailable until fixed (CPU/SIMD routes preserve recall, large-file GPU acceleration lost).\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test` for the full GPU diagnostic{reset}",
-                    style::warn("WARN", &palette)
+                    "  gpu scan path  {}  GPU AC kernel self-test failed; the default GPU scan route is BROKEN on this host (auto scans fail closed rather than silently route to CPU/SIMD). Fix the GPU path, or scan with an explicit `--backend cpu`/`--backend simd` override.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test` for the full GPU diagnostic{reset}",
+                    style::fail("FAIL", &palette)
                 );
             }
         }
