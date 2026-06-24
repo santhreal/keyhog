@@ -318,7 +318,7 @@ fn render_indeterminate_bar(phase: usize, width: usize, color: bool) -> String {
 
 /// Format an elapsed/eta duration compactly: `8.2s`, or `1m04s` past a minute.
 fn fmt_secs(s: f64) -> String {
-    if s < 60.0 {
+    if (s * 10.0).round() < 600.0 {
         format!("{s:.1}s")
     } else {
         let total = s.round() as u64;
@@ -954,6 +954,8 @@ mod ticker_tests {
     #[test]
     fn fmt_secs_switches_to_minutes_past_a_minute() {
         assert_eq!(fmt_secs(8.25), "8.2s");
+        assert_eq!(fmt_secs(59.94), "59.9s");
+        assert_eq!(fmt_secs(59.96), "1m00s");
         assert_eq!(fmt_secs(64.0), "1m04s");
         assert_eq!(fmt_secs(119.6), "2m00s");
     }
