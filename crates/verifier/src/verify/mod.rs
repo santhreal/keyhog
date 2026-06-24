@@ -25,7 +25,7 @@ use futures_util::FutureExt;
 use keyhog_core::{SensitiveString, VerificationResult, VerifiedFinding};
 use reqwest::Client;
 use tokio::sync::{Notify, Semaphore};
-use tokio::task::JoinSet;
+use tokio::task::{Id as TaskId, JoinSet};
 
 use crate::cache;
 use crate::{into_finding, DedupedMatch, VerificationEngine, VerifyConfig, VerifyError};
@@ -186,6 +186,17 @@ where
         }
     }
     out
+}
+
+fn spawn_tracked_verify_task(
+    join_set: &mut JoinSet<VerifiedFinding>,
+    task_groups: &mut HashMap<TaskId, DedupedMatch>,
+    shared: VerifyTaskShared,
+    group: DedupedMatch,
+) {
+    let group_for_error = group.clone();
+    let abort_handle = join_set.spawn(verify_group_task_safe(shared, group));
+    task_groups.insert(abort_handle.id(), group_for_error);
 }
 
 async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> VerifiedFinding {
@@ -393,27 +404,45 @@ impl VerificationEngine {
         };
         let mut pending = groups.into_iter();
         let mut join_set = JoinSet::new();
+        let mut task_groups = HashMap::new();
 
         while join_set.len() < max_active {
             let Some(group) = pending.next() else {
                 break;
             };
-            join_set.spawn(verify_group_task_safe(shared.clone(), group));
+            spawn_tracked_verify_task(&mut join_set, &mut task_groups, shared.clone(), group);
         }
 
-        // Drain every task, refilling from `pending` after each completion. The
-        // drain is extracted into `drain_join_set` so its `JoinError` arm — only
-        // reachable on task cancellation / runtime shutdown, since the per-task
-        // body is panic-safe via `catch_unwind` — is unit-testable: one lost
-        // task must never truncate the remaining work. The previous
-        // `while let Some(Ok(_))` silently dropped every still-`pending` group on
-        // the first such error.
-        drain_join_set(join_set, total, move || {
-            pending
-                .next()
-                .map(|group| verify_group_task_safe(shared.clone(), group))
-        })
-        .await
+        let mut out = Vec::with_capacity(total);
+        while let Some(result) = join_set.join_next_with_id().await {
+            match result {
+                Ok((task_id, finding)) => {
+                    task_groups.remove(&task_id);
+                    out.push(finding);
+                }
+                Err(join_error) => {
+                    let task_id = join_error.id();
+                    tracing::error!(
+                        %join_error,
+                        %task_id,
+                        "a verification task failed to join; preserving the credential group as a verification error"
+                    );
+                    if let Some(group) = task_groups.remove(&task_id) {
+                        out.push(into_finding(
+                            group,
+                            VerificationResult::Error(format!(
+                                "verification task failed to join: {join_error}"
+                            )),
+                            HashMap::new(),
+                        ));
+                    }
+                }
+            }
+            if let Some(group) = pending.next() {
+                spawn_tracked_verify_task(&mut join_set, &mut task_groups, shared.clone(), group);
+            }
+        }
+        out
     }
 
     /// Enable out-of-band callback verification for detectors with
