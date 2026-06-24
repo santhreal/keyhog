@@ -188,8 +188,10 @@ fn har_render_hot_paths_size_and_borrow_bodies() {
     assert!(
         har.contains("fn decoded_content_text(content: &HarContent) -> Option<Cow<'_, str>>")
             && har.contains("Some(Cow::Borrowed(text))")
+            && har.contains("String::from_utf8(bytes)")
+            && har.contains("for ch in text.chars()")
             && !har.contains("Some(text.clone())"),
-        "HAR non-base64 and malformed-base64 bodies must borrow raw text instead of cloning it"
+        "HAR non-base64 and malformed-base64 bodies must borrow raw text, and base64 decode must avoid happy-path recopy/corrupt byte-to-char compaction"
     );
 }
 

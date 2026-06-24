@@ -159,19 +159,10 @@ fn har_source_truncated_error(path_str: &str, budget: u64) -> SourceError {
 }
 
 fn trim_bom_and_whitespace(text: &str) -> &str {
-    let mut s = text;
-    if let Some(rest) = s.strip_prefix('\u{FEFF}') {
-        s = rest;
+    match text.strip_prefix('\u{FEFF}') {
+        Some(rest) => rest.trim_start(),
+        None => text.trim_start(),
     }
-    while let Some(ch) = s.chars().next() {
-        if ch.is_whitespace() {
-            let rest = &s[ch.len_utf8()..];
-            s = rest;
-        } else {
-            break;
-        }
-    }
-    s
 }
 
 fn contains_har_marker(text: &str) -> bool {
@@ -381,7 +372,10 @@ fn decoded_content_text(content: &HarContent) -> Option<Cow<'_, str>> {
     {
         let encoded = compact_base64_text(text);
         match base64::engine::general_purpose::STANDARD.decode(encoded.as_bytes()) {
-            Ok(bytes) => Some(Cow::Owned(String::from_utf8_lossy(&bytes).into_owned())),
+            Ok(bytes) => Some(Cow::Owned(match String::from_utf8(bytes) {
+                Ok(text) => text,
+                Err(error) => String::from_utf8_lossy(&error.into_bytes()).into_owned(),
+            })),
             // Recall-safe: malformed base64 is scanned raw, but the failed
             // structured decode is still a visible partial-coverage signal.
             Err(error) => {
@@ -404,9 +398,9 @@ fn compact_base64_text(text: &str) -> Cow<'_, str> {
         return Cow::Borrowed(text);
     }
     let mut compact = String::with_capacity(text.len());
-    for byte in text.bytes() {
-        if !byte.is_ascii_whitespace() {
-            compact.push(byte as char);
+    for ch in text.chars() {
+        if !ch.is_ascii_whitespace() {
+            compact.push(ch);
         }
     }
     Cow::Owned(compact)
@@ -729,6 +723,35 @@ mod tests {
         assert!(
             response.data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"), // keyhog:ignore detector=aws-access-key (synthetic test fixture)
             "base64 line wrapping must not force a raw-base64 fallback"
+        );
+    }
+
+    #[test]
+    fn compact_base64_text_preserves_non_ascii_noise() {
+        let compacted = compact_base64_text("ab\né\tcd");
+        assert_eq!(
+            compacted.as_ref(),
+            "abécd",
+            "base64 whitespace compaction must not byte-cast and corrupt non-ASCII text"
+        );
+    }
+
+    #[test]
+    fn base64_decoded_invalid_utf8_response_body_is_scanned_lossy() {
+        use base64::Engine as _;
+
+        let b64 = base64::engine::general_purpose::STANDARD.encode([0xff, b'A', b'K', b'I', b'A']);
+        let har = har_with_response_body(Some("base64"), &b64);
+        let chunks =
+            try_expand_har(har.as_bytes(), "cap.har", 10 * 1024 * 1024).expect("HAR should parse");
+        let response = chunks
+            .into_iter()
+            .map(|c| c.unwrap())
+            .find(|c| c.metadata.source_type == "wire:har:response")
+            .expect("a response chunk");
+        assert!(
+            response.data.as_ref().contains("\u{FFFD}AKIA"),
+            "invalid UTF-8 decoded from base64 must be scanned through lossy text, not dropped: {response:?}"
         );
     }
 
