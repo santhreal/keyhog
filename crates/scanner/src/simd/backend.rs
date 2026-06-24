@@ -755,7 +755,7 @@ impl HsScanner {
     fn scratch_pool_size() -> usize {
         std::thread::available_parallelism()
             .map(|cores| cores.get())
-            .unwrap_or(1) // LAW10: host core-count probe failure preallocates one scratch per shard; scan coverage still fails loud on exhaustion instead of dropping findings.
+            .unwrap_or(1) // LAW10: host core-count probe failure seeds one scratch per shard; on-demand growth runs the same precise scan and never drops shard coverage.
             .clamp(1, MAX_COMPILE_SHARDS)
     }
 

@@ -169,12 +169,13 @@ impl CompiledScanner {
         // budget. 1M iterations per pattern is ~6 orders of magnitude
         // above any legitimate detector's per-chunk match count.
         const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
+        let loop_deadline = crate::deadline::LoopDeadline::from_deadline(deadline);
         let mut match_count: usize = 0;
         while cursor <= cursor_end {
             if match_count >= MAX_INNER_LOOP_ITERS {
                 break;
             }
-            if crate::deadline::expired_on_cadence(deadline, match_count, 64) {
+            if crate::deadline::loop_expired_on_cadence(loop_deadline, match_count, 64) {
                 break;
             }
             match_count += 1;
@@ -259,7 +260,7 @@ impl CompiledScanner {
                 keyword_nearby,
                 sensitive_file,
             );
-            if crate::deadline::expired(deadline) {
+            if crate::deadline::loop_expired(loop_deadline) {
                 break;
             }
         }
@@ -315,11 +316,12 @@ impl CompiledScanner {
         let mut cursor = range_start;
         // Compile-on-first-use (see LazyRegex); bind once for the walk.
         let rx = entry.regex.get();
+        let loop_deadline = crate::deadline::LoopDeadline::from_deadline(deadline);
         while cursor <= range_end {
             if match_count >= MAX_INNER_LOOP_ITERS {
                 break;
             }
-            if crate::deadline::expired_on_cadence(deadline, match_count, 64) {
+            if crate::deadline::loop_expired_on_cadence(loop_deadline, match_count, 64) {
                 break;
             }
             let Some(matched) = rx.find_at(search_text, cursor) else {
@@ -369,7 +371,7 @@ impl CompiledScanner {
                 keyword_nearby,
                 sensitive_file,
             );
-            if crate::deadline::expired(deadline) {
+            if crate::deadline::loop_expired(loop_deadline) {
                 break;
             }
         }

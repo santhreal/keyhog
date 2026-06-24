@@ -82,6 +82,7 @@ impl CompiledScanner {
         // loops so an adversarial chunk can't run unbounded under the anchored
         // path either.
         const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
+        let loop_deadline = crate::deadline::LoopDeadline::from_deadline(deadline);
         let mut iters: usize = 0;
         for &(_, pos) in positions {
             let pos = pos as usize;
@@ -91,7 +92,7 @@ impl CompiledScanner {
             if iters >= MAX_INNER_LOOP_ITERS {
                 break;
             }
-            if crate::deadline::expired_on_cadence(deadline, iters, 64) {
+            if crate::deadline::loop_expired_on_cadence(loop_deadline, iters, 64) {
                 break;
             }
             iters += 1;
@@ -198,7 +199,7 @@ impl CompiledScanner {
                 keyword_nearby,
                 sensitive_file,
             );
-            if crate::deadline::expired(deadline) {
+            if crate::deadline::loop_expired(loop_deadline) {
                 break;
             }
         }
