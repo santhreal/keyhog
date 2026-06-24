@@ -25,7 +25,7 @@ use metadata::*;
 // index) is its own subsystem; the `Allowlist` holds a precompiled index and
 // delegates every path decision to it.
 mod glob;
-use glob::{PathGlobIndex, normalize_path};
+use glob::{normalize_path, PathGlobIndex};
 
 /// User-defined suppressions loaded from `.keyhogignore`: credential hashes, detector IDs, and path globs.
 ///
@@ -265,6 +265,12 @@ impl Allowlist {
                     al.credential_hashes.insert(valid_hash);
                     log_metadata_audit("hash", trimmed, &parsed_meta);
                 } else {
+                    al.push_invalid_entry_violation(
+                        line_number + 1,
+                        entry,
+                        "hash",
+                        "must be a 64-character SHA-256 hex digest",
+                    );
                     tracing::warn!(
                         "invalid hash allowlist entry at line {}: '{}'",
                         line_number + 1,
@@ -274,6 +280,12 @@ impl Allowlist {
             } else if let Some(detector) = entry.strip_prefix("detector:") {
                 let detector = detector.trim();
                 if detector.is_empty() {
+                    al.push_invalid_entry_violation(
+                        line_number + 1,
+                        entry,
+                        "detector",
+                        "detector id must not be empty",
+                    );
                     tracing::warn!(
                         "invalid detector allowlist entry at line {}: detector id is empty",
                         line_number + 1
@@ -294,6 +306,12 @@ impl Allowlist {
             } else if let Some(path) = entry.strip_prefix("path:") {
                 let path = path.trim();
                 if path.is_empty() {
+                    al.push_invalid_entry_violation(
+                        line_number + 1,
+                        entry,
+                        "path",
+                        "path glob must not be empty",
+                    );
                     tracing::warn!(
                         "invalid path allowlist entry at line {}: glob is empty",
                         line_number + 1
@@ -440,6 +458,16 @@ impl Allowlist {
             }
         }
         allowed
+    }
+
+    fn push_invalid_entry_violation(
+        &mut self,
+        line_number: usize,
+        entry: &str,
+        field: &'static str,
+        detail: &'static str,
+    ) {
+        self.push_policy_violation(line_number, entry, field, detail.to_string());
     }
 
     fn push_policy_violation(

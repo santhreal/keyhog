@@ -132,6 +132,33 @@ fn load_with_metadata_policy_rejects_metadata_only_lines() {
 }
 
 #[test]
+fn load_with_metadata_policy_rejects_malformed_explicit_entries() {
+    for (entry, field, detail) in [
+        (
+            "hash:not-a-sha256\n",
+            "hash",
+            "must be a 64-character SHA-256 hex digest",
+        ),
+        ("detector:\n", "detector", "detector id must not be empty"),
+        ("path:\n", "path", "path glob must not be empty"),
+    ] {
+        let (_dir, path) = write_allowlist(entry);
+        let err = Allowlist::load_with_metadata_policy(&path, false, false, None)
+            .expect_err("malformed explicit allowlist entries must fail closed");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("allowlist governance")
+                && msg.contains("line 1")
+                && msg.contains(field)
+                && msg.contains(detail)
+                && msg.contains("refusing to scan with unapproved suppressions"),
+            "malformed {field} entry must be actionable; got: {msg}"
+        );
+    }
+}
+
+#[test]
 fn load_with_metadata_policy_accepts_complete_metadata() {
     let (_dir, path) = write_allowlist(
         "detector:aws-access-key ; reason=\"known generated fixture\" ; approved_by=\"sec@example.com\" ; expires=2099-01-01\n",
