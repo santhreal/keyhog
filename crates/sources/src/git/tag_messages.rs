@@ -76,15 +76,24 @@ pub(crate) fn decode_unreachable_tag_message_chunks(
     total_bytes: &mut usize,
     chunk_count: &mut usize,
 ) -> VecDeque<Chunk> {
-    let mut tag_refs = VecDeque::new();
-    while let Some(oid) = tags.pop_front() {
-        tag_refs.push_back(GitTagMessageRef {
+    let mut chunks = VecDeque::new();
+    while super::git_history_cap_status(*total_bytes, *chunk_count, limits).is_none() {
+        let Some(oid) = tags.pop_front() else {
+            break;
+        };
+        let tag_ref = GitTagMessageRef {
             oid,
             path: format!(".git/unreachable/{oid}"),
             source_type: "git/unreachable",
-        });
+        };
+        let Some(chunk) = decode_tag_message_chunk(repo, tag_ref, limits) else {
+            continue;
+        };
+        *total_bytes = total_bytes.saturating_add(chunk.data.len());
+        *chunk_count += 1;
+        chunks.push_back(chunk);
     }
-    decode_tag_message_chunks(repo, &mut tag_refs, limits, total_bytes, chunk_count)
+    chunks
 }
 
 pub(crate) fn decode_tag_message_chunks(

@@ -92,6 +92,32 @@ fn commit_only(repo: &Path, message: &str) -> String {
     String::from_utf8_lossy(&rev.stdout).trim().to_string()
 }
 
+fn write_loose_blob(repo: &Path, content: &[u8]) -> String {
+    let mut child = Command::new("git")
+        .args(["hash-object", "-w", "--stdin"])
+        .current_dir(repo)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn git hash-object");
+    child
+        .stdin
+        .take()
+        .expect("hash-object stdin")
+        .write_all(content)
+        .expect("write loose blob stdin");
+    let output = child.wait_with_output().expect("hash-object output");
+    assert!(
+        output.status.success(),
+        "git hash-object failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout)
+        .expect("hash-object oid utf8")
+        .trim()
+        .to_string()
+}
+
 /// Drain `GitSource` over `repo` into a Vec of successful chunks (panicking on
 /// any error, so a regression that turns a chunk into an error is loud).
 fn collect_chunks(repo: &Path, max_commits: usize) -> Vec<Chunk> {
@@ -1272,29 +1298,7 @@ fn secret_only_in_unreachable_loose_blob_is_found() {
     let (_t, repo) = init_repo();
     commit_file(&repo, "main.txt", b"base=1\n", "base on main");
 
-    let mut child = Command::new("git")
-        .args(["hash-object", "-w", "--stdin"])
-        .current_dir(&repo)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("spawn git hash-object");
-    child
-        .stdin
-        .take()
-        .expect("hash-object stdin")
-        .write_all(b"K=ghp_unreachableLooseBlobSecret0001\n")
-        .expect("write loose blob stdin");
-    let output = child.wait_with_output().expect("hash-object output");
-    assert!(
-        output.status.success(),
-        "git hash-object failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let oid = String::from_utf8(output.stdout)
-        .expect("hash-object oid utf8")
-        .trim()
-        .to_string();
+    let oid = write_loose_blob(&repo, b"K=ghp_unreachableLooseBlobSecret0001\n");
 
     let chunks = collect_chunks(&repo, 100);
     let c = chunks
@@ -1315,29 +1319,7 @@ fn secret_in_unreachable_tree_keeps_tree_relative_path() {
     let (_t, repo) = init_repo();
     commit_file(&repo, "main.txt", b"base=1\n", "base on main");
 
-    let mut blob_child = Command::new("git")
-        .args(["hash-object", "-w", "--stdin"])
-        .current_dir(&repo)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("spawn git hash-object");
-    blob_child
-        .stdin
-        .take()
-        .expect("hash-object stdin")
-        .write_all(b"K=ghp_unreachableTreeSecret0000001\n")
-        .expect("write tree blob stdin");
-    let blob_output = blob_child.wait_with_output().expect("hash-object output");
-    assert!(
-        blob_output.status.success(),
-        "git hash-object failed: {}",
-        String::from_utf8_lossy(&blob_output.stderr)
-    );
-    let blob_oid = String::from_utf8(blob_output.stdout)
-        .expect("blob oid utf8")
-        .trim()
-        .to_string();
+    let blob_oid = write_loose_blob(&repo, b"K=ghp_unreachableTreeSecret0000001\n");
 
     let mut tree_child = Command::new("git")
         .arg("mktree")
@@ -1378,6 +1360,14 @@ fn secret_in_unreachable_tree_keeps_tree_relative_path() {
         c.metadata.author, None,
         "unreachable tree has no commit author"
     );
+    assert!(
+        !chunks.iter().any(|c| {
+            c.data.contains("ghp_unreachableTreeSecret0000001")
+                && c.metadata.path.as_deref()
+                    == Some(format!(".git/unreachable/{blob_oid}").as_str())
+        }),
+        "a blob reachable through an unreachable tree must not also emit a pathless loose-blob fallback"
+    );
 }
 
 #[test]
@@ -1404,8 +1394,12 @@ fn git_source_commit_enumerator_names_reflog_stash_and_unreachable_coverage() {
             && source.contains("unreachable commit ")
             && source.contains("unreachable blob ")
             && source.contains("unreachable tree ")
-            && source.contains("unreachable tag "),
-        "GitSource must enumerate commits, loose blobs, trees, and tags that are neither refs nor reflogs"
+            && source.contains("unreachable tag ")
+            && source.contains("dangling commit ")
+            && source.contains("dangling blob ")
+            && source.contains("dangling tree ")
+            && source.contains("dangling tag "),
+        "GitSource must enumerate commits, loose blobs, trees, and tags that are neither refs nor reflogs, including Git fsck's dangling label"
     );
     assert!(
         tag_messages.contains("\"for-each-ref\"")

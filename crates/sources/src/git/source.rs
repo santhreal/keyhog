@@ -54,6 +54,7 @@ struct UnreachableGitObjects {
     blobs: VecDeque<gix::ObjectId>,
     trees: VecDeque<gix::ObjectId>,
     tags: VecDeque<gix::ObjectId>,
+    tree_blob_oids: HashSet<gix::ObjectId>,
 }
 
 type GitBlobPathKey = (gix::ObjectId, Vec<u8>);
@@ -282,6 +283,7 @@ impl GitCommitEnumerator {
             blobs: std::mem::take(&mut self.unreachable_blobs),
             trees: std::mem::take(&mut self.unreachable_trees),
             tags: std::mem::take(&mut self.unreachable_tags),
+            tree_blob_oids: HashSet::new(),
         }
     }
 }
@@ -825,6 +827,34 @@ fn parse_git_object_id_line(
     }
 }
 
+#[derive(Clone, Copy)]
+enum FsckUnreachableObjectKind {
+    Commit,
+    Blob,
+    Tree,
+    Tag,
+}
+
+const FSCK_UNREACHABLE_OBJECT_PREFIXES: &[(&str, FsckUnreachableObjectKind)] = &[
+    ("unreachable commit ", FsckUnreachableObjectKind::Commit),
+    ("unreachable blob ", FsckUnreachableObjectKind::Blob),
+    ("unreachable tree ", FsckUnreachableObjectKind::Tree),
+    ("unreachable tag ", FsckUnreachableObjectKind::Tag),
+    ("dangling commit ", FsckUnreachableObjectKind::Commit),
+    ("dangling blob ", FsckUnreachableObjectKind::Blob),
+    ("dangling tree ", FsckUnreachableObjectKind::Tree),
+    ("dangling tag ", FsckUnreachableObjectKind::Tag),
+];
+
+fn parse_fsck_unreachable_object_line(line: &str) -> Option<(FsckUnreachableObjectKind, &str)> {
+    FSCK_UNREACHABLE_OBJECT_PREFIXES
+        .iter()
+        .find_map(|(prefix, kind)| {
+            line.strip_prefix(prefix)
+                .map(|object_id| (*kind, object_id))
+        })
+}
+
 fn collect_unreachable_objects(
     repo_arg: &str,
     remaining_commits: Option<usize>,
@@ -854,35 +884,37 @@ fn collect_unreachable_objects(
     {
         let line = String::from_utf8_lossy(&line_buf);
         let line = line.trim_end_matches('\n').trim_end_matches('\r');
-        if let Some(commit_id) = line.strip_prefix("unreachable commit ") {
-            if remaining_commits.is_some_and(|limit| out.commits.len() >= limit) {
-                continue;
+        let Some((kind, object_id)) = parse_fsck_unreachable_object_line(line) else {
+            continue;
+        };
+        match kind {
+            FsckUnreachableObjectKind::Commit => {
+                if remaining_commits.is_some_and(|limit| out.commits.len() >= limit) {
+                    continue;
+                }
+                let Some(id) = parse_git_object_id_line(object_id, "commit")? else {
+                    continue;
+                };
+                out.commits.push_back(id);
             }
-            let Some(id) = parse_git_object_id_line(commit_id, "commit")? else {
-                continue;
-            };
-            out.commits.push_back(id);
-            continue;
-        }
-        if let Some(blob_id) = line.strip_prefix("unreachable blob ") {
-            let Some(id) = parse_git_object_id_line(blob_id, "blob")? else {
-                continue;
-            };
-            out.blobs.push_back(id);
-            continue;
-        }
-        if let Some(tree_id) = line.strip_prefix("unreachable tree ") {
-            let Some(id) = parse_git_object_id_line(tree_id, "tree")? else {
-                continue;
-            };
-            out.trees.push_back(id);
-            continue;
-        }
-        if let Some(tag_id) = line.strip_prefix("unreachable tag ") {
-            let Some(id) = parse_git_object_id_line(tag_id, "tag")? else {
-                continue;
-            };
-            out.tags.push_back(id);
+            FsckUnreachableObjectKind::Blob => {
+                let Some(id) = parse_git_object_id_line(object_id, "blob")? else {
+                    continue;
+                };
+                out.blobs.push_back(id);
+            }
+            FsckUnreachableObjectKind::Tree => {
+                let Some(id) = parse_git_object_id_line(object_id, "tree")? else {
+                    continue;
+                };
+                out.trees.push_back(id);
+            }
+            FsckUnreachableObjectKind::Tag => {
+                let Some(id) = parse_git_object_id_line(object_id, "tag")? else {
+                    continue;
+                };
+                out.tags.push_back(id);
+            }
         }
     }
     super::wait_for_git_child(&mut child, "git fsck", "enumerating unreachable objects")?;
@@ -896,16 +928,28 @@ fn collect_unreachable_non_commit_blob_metadata(
 ) -> Vec<(gix::ObjectId, Vec<u8>)> {
     let mut metadata = Vec::new();
     while metadata.len() < GIT_PARALLEL_BLOB_BATCH_ITEMS {
-        let Some(id) = objects.blobs.pop_front() else {
-            break;
-        };
-        metadata.push((id, format!(".git/unreachable/{id}").into_bytes()));
-    }
-    while metadata.len() < GIT_PARALLEL_BLOB_BATCH_ITEMS {
         let Some(id) = objects.trees.pop_front() else {
             break;
         };
-        collect_unreachable_tree_blob_metadata(repo, id, seen_blob_paths, &mut metadata);
+        collect_unreachable_tree_blob_metadata(
+            repo,
+            id,
+            seen_blob_paths,
+            &mut objects.tree_blob_oids,
+            &mut metadata,
+        );
+    }
+    if !objects.trees.is_empty() {
+        return metadata;
+    }
+    while metadata.len() < GIT_PARALLEL_BLOB_BATCH_ITEMS {
+        let Some(id) = objects.blobs.pop_front() else {
+            break;
+        };
+        if objects.tree_blob_oids.contains(&id) {
+            continue;
+        }
+        metadata.push((id, format!(".git/unreachable/{id}").into_bytes()));
     }
     metadata
 }
@@ -914,6 +958,7 @@ fn collect_unreachable_tree_blob_metadata(
     repo: &gix::Repository,
     tree_id: gix::ObjectId,
     seen_blob_paths: &mut HashSet<GitBlobPathKey>,
+    tree_blob_oids: &mut HashSet<gix::ObjectId>,
     blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
 ) {
     let obj = match repo.find_object(tree_id) {
@@ -943,6 +988,11 @@ fn collect_unreachable_tree_blob_metadata(
 
     let before = blob_metadata.len();
     collect_tree_blobs_metadata(repo, &tree, seen_blob_paths, blob_metadata, b"");
+    tree_blob_oids.extend(
+        blob_metadata[before..]
+            .iter()
+            .map(|(oid, _)| oid.to_owned()),
+    );
     let prefix = format!(".git/unreachable/{tree_id}/").into_bytes();
     for (_, path) in &mut blob_metadata[before..] {
         let mut synthetic = Vec::with_capacity(prefix.len() + path.len());
