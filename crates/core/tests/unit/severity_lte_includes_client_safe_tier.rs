@@ -92,6 +92,22 @@ fn severity_eq_client_safe_matches_only_client_safe() {
 }
 
 #[test]
+fn severity_eq_rejects_undocumented_clientsafe_spelling() {
+    let toml = "[[suppress]]\ndetector = \"aws-access-key\"\nseverity = \"clientsafe\"\n";
+    let err = keyhog_core::testing::CoreTestApi::rule_suppressor_parse(
+        &keyhog_core::testing::TestApi,
+        toml,
+    )
+    .expect_err("no-separator clientsafe must not parse as a severity label");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("unknown severity \"clientsafe\"")
+            && msg.contains("info|client-safe|low|medium|high|critical"),
+        "severity parse error must reject clientsafe and print the documented labels: {msg}"
+    );
+}
+
+#[test]
 fn severity_lte_client_safe_keeps_low_and_above() {
     let toml = r#"
 [[suppress]]

@@ -463,7 +463,7 @@ impl Severity {
 
     pub(crate) fn from_filter_label(label: &str) -> Option<Self> {
         match label.trim().to_ascii_lowercase().as_str() {
-            "client_safe" | "client-safe" | "clientsafe" => Some(Severity::ClientSafe),
+            "client_safe" | "client-safe" => Some(Severity::ClientSafe),
             "info" => Some(Severity::Info),
             "low" => Some(Severity::Low),
             "medium" => Some(Severity::Medium),
