@@ -380,7 +380,9 @@ fn join_coalesced_scanner_thread(
             drop(error);
             tracing::error!("scanner thread panicked mid-scan; results are incomplete");
             let _receipt = crate::record_scanner_panic();
-            Ok(Vec::new())
+            Err(anyhow::anyhow!(
+                "scanner thread panicked mid-scan; results are incomplete"
+            ))
         }
     };
     progress.stop();

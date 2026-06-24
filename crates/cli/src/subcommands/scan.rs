@@ -14,7 +14,7 @@
 
 use crate::args::{DaemonMode, ScanArgs};
 #[cfg(unix)]
-use crate::exit_codes::EXIT_CREDENTIALS_FOUND;
+use crate::exit_codes::{EXIT_CREDENTIALS_FOUND, EXIT_SOURCE_FAILED};
 // Daemon module is unix-only - Windows has no `tokio::net::UnixListener`
 // or `std::os::unix::net::UnixStream`, so the whole `crate::daemon`
 // subtree is `#[cfg(unix)]`. See `lib.rs` for the rationale. On
@@ -25,7 +25,7 @@ use crate::exit_codes::EXIT_CREDENTIALS_FOUND;
 #[cfg(unix)]
 use crate::daemon::client;
 #[cfg(unix)]
-use crate::daemon::protocol::{Request, Response};
+use crate::daemon::protocol::{Request, Response, SourceCoverageGaps};
 #[cfg(unix)]
 use crate::daemon::server::default_socket_path;
 use crate::orchestrator::ScanOrchestrator;
@@ -450,7 +450,7 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
         )
     })?;
 
-    let matches = if args.stdin {
+    let (matches, source_coverage_gaps) = if args.stdin {
         let text = read_stdin_to_string(args)?;
         let resp = conn
             .round_trip(&Request::ScanText { path: None, text })
@@ -486,7 +486,17 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
     );
     crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
 
-    if findings.is_empty() {
+    if !source_coverage_gaps.is_empty() {
+        eprintln!(
+            "warning: daemon input coverage was incomplete ({} source gap(s)); some requested bytes were not scanned.",
+            source_coverage_gaps.total()
+        );
+    }
+
+    if findings.is_empty() && !source_coverage_gaps.is_empty() {
+        eprintln!("error: not reporting \"clean\" after incomplete daemon input coverage.");
+        Ok(ExitCode::from(EXIT_SOURCE_FAILED))
+    } else if findings.is_empty() {
         Ok(ExitCode::SUCCESS)
     } else {
         Ok(ExitCode::from(EXIT_CREDENTIALS_FOUND))
@@ -513,12 +523,13 @@ fn read_stdin_to_string(args: &ScanArgs) -> Result<String> {
 }
 
 #[cfg(unix)]
-fn unwrap_scan_results(resp: Response) -> Result<Vec<RawMatch>> {
+fn unwrap_scan_results(resp: Response) -> Result<(Vec<RawMatch>, SourceCoverageGaps)> {
     match resp {
         Response::ScanResults {
             matches,
             engine_example_suppressions,
             dogfood_events,
+            source_coverage_gaps,
             ..
         } => {
             // Merge daemon-side telemetry into the CLI's process-local
@@ -536,7 +547,7 @@ fn unwrap_scan_results(resp: Response) -> Result<Vec<RawMatch>> {
             if !dogfood_events.is_empty() {
                 keyhog_scanner::telemetry::append_events(dogfood_events);
             }
-            Ok(matches)
+            Ok((matches, source_coverage_gaps))
         }
         Response::Error { message } => bail!("daemon: {message}"),
         other => bail!("daemon route: expected ScanResults, got {other:?}"),

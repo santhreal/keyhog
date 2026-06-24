@@ -41,6 +41,30 @@ pub(crate) fn git_blob_bytes_limit_usize(limits: crate::SourceLimits) -> usize {
     }
 }
 
+pub(crate) fn parse_git_object_id_line(
+    line: &str,
+    object_label: &'static str,
+) -> Option<gix::ObjectId> {
+    let object_id = line.split_whitespace().next()?;
+    match gix::ObjectId::from_hex(object_id.as_bytes()) {
+        Ok(id) => Some(id),
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                object = object_id,
+                object_kind = object_label,
+                "git reported an unparsable object id; object NOT scanned"
+            );
+            record_git_object_unreadable();
+            None
+        }
+    }
+}
+
+pub(crate) fn record_git_object_unreadable() {
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::GitObjectUnreadable);
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GitHistoryCap {
     TotalBytes { total: usize, cap: usize },

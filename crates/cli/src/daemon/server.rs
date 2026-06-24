@@ -2,7 +2,7 @@
 //! and serves scan requests over a Unix socket.
 
 use crate::daemon::frame;
-use crate::daemon::protocol::{Request, Response, WIRE_VERSION};
+use crate::daemon::protocol::{Request, Response, SourceCoverageGaps, WIRE_VERSION};
 use crate::daemon::trust;
 use crate::style;
 use anyhow::{Context, Result};
@@ -17,6 +17,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Notify, Semaphore};
 
 const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
+static DAEMON_SOURCE_COVERAGE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 const DEFAULT_REQUEST_READ_TIMEOUT_SECS: u64 = 300;
 
@@ -415,6 +416,7 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
             matches,
             engine_example_suppressions,
             dogfood_events,
+            source_coverage_gaps: SourceCoverageGaps::default(),
         },
         Ok(Err(e)) => Response::Error {
             message: format!("daemon: scan_text failed: {e:#}"),
@@ -477,13 +479,19 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
         Vec<RawMatch>,
         u64,
         Vec<keyhog_scanner::telemetry::DogfoodEvent>,
+        SourceCoverageGaps,
     );
     let res = tokio::task::spawn_blocking(move || -> Result<ScanOutput> {
-        let chunks = daemon_scan_path_chunks(&resolved_owned)?;
+        let (chunks, source_coverage_gaps) = daemon_scan_path_chunks(&resolved_owned)?;
         if chunks.is_empty() {
             let (engine_example_suppressions, dogfood_events) =
                 drain_daemon_scan_telemetry(&telemetry);
-            return Ok((Vec::new(), engine_example_suppressions, dogfood_events));
+            return Ok((
+                Vec::new(),
+                engine_example_suppressions,
+                dogfood_events,
+                source_coverage_gaps,
+            ));
         }
         let matches = keyhog_scanner::telemetry::with_scan_telemetry(
             &telemetry,
@@ -498,19 +506,27 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
             },
         )?;
         let (engine_example_suppressions, dogfood_events) = drain_daemon_scan_telemetry(&telemetry);
-        Ok((matches, engine_example_suppressions, dogfood_events))
+        Ok((
+            matches,
+            engine_example_suppressions,
+            dogfood_events,
+            source_coverage_gaps,
+        ))
     })
     .await;
     state.active_scans.fetch_sub(1, Ordering::Relaxed);
     state.scans_served.fetch_add(1, Ordering::Relaxed);
 
     match res {
-        Ok(Ok((matches, engine_example_suppressions, dogfood_events))) => Response::ScanResults {
-            path: Some(resolved.to_string_lossy().into_owned()),
-            matches,
-            engine_example_suppressions,
-            dogfood_events,
-        },
+        Ok(Ok((matches, engine_example_suppressions, dogfood_events, source_coverage_gaps))) => {
+            Response::ScanResults {
+                path: Some(resolved.to_string_lossy().into_owned()),
+                matches,
+                engine_example_suppressions,
+                dogfood_events,
+                source_coverage_gaps,
+            }
+        }
         Ok(Err(e)) => Response::Error {
             message: format!("daemon: scan_path failed: {e:#}"),
         },
@@ -520,7 +536,11 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
     }
 }
 
-fn daemon_scan_path_chunks(path: &Path) -> Result<Vec<Chunk>> {
+fn daemon_scan_path_chunks(path: &Path) -> Result<(Vec<Chunk>, SourceCoverageGaps)> {
+    let _coverage_guard = DAEMON_SOURCE_COVERAGE_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("daemon: source coverage lock poisoned"))?;
+    let before = keyhog_sources::skip_counts();
     let source = keyhog_sources::FilesystemSource::new(path.to_path_buf());
     let mut chunks = Vec::new();
     for chunk in source.chunks() {
@@ -539,7 +559,34 @@ fn daemon_scan_path_chunks(path: &Path) -> Result<Vec<Chunk>> {
         }
         chunks.push(chunk);
     }
-    Ok(chunks)
+    Ok((chunks, source_coverage_gaps_since(before)))
+}
+
+fn source_coverage_gaps_since(before: keyhog_sources::SkipCounts) -> SourceCoverageGaps {
+    let after = keyhog_sources::skip_counts();
+    SourceCoverageGaps {
+        over_max_size: after.over_max_size.saturating_sub(before.over_max_size),
+        binary: after.binary.saturating_sub(before.binary),
+        unreadable: after.unreadable.saturating_sub(before.unreadable),
+        git_object_unreadable: after
+            .git_object_unreadable
+            .saturating_sub(before.git_object_unreadable),
+        archive_truncated: after
+            .archive_truncated
+            .saturating_sub(before.archive_truncated),
+        binary_section_name_unresolved: after
+            .binary_section_name_unresolved
+            .saturating_sub(before.binary_section_name_unresolved),
+        source_truncated: after
+            .source_truncated
+            .saturating_sub(before.source_truncated),
+        structured_source_parse_failures: after
+            .structured_source_parse_failures
+            .saturating_sub(before.structured_source_parse_failures),
+        archive_duplicate_scan_unavailable: after
+            .archive_duplicate_scan_unavailable
+            .saturating_sub(before.archive_duplicate_scan_unavailable),
+    }
 }
 
 fn drain_daemon_scan_telemetry(

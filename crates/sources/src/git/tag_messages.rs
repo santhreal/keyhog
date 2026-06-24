@@ -3,7 +3,7 @@ use std::process::Command;
 
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 
-use super::git_unscanned_object_error;
+use super::{git_unscanned_object_error, parse_git_object_id_line, record_git_object_unreadable};
 
 const GIT_TAG_REF_LINE_BYTES: usize = 4096;
 
@@ -242,27 +242,4 @@ fn decode_tag_message_chunk(
             decoded_span: None,
         },
     }))
-}
-
-fn parse_git_object_id_line(line: &str, object_label: &'static str) -> Option<gix::ObjectId> {
-    let Some(object_id) = line.split_whitespace().next() else {
-        return None;
-    };
-    match gix::ObjectId::from_hex(object_id.as_bytes()) {
-        Ok(id) => Some(id),
-        Err(error) => {
-            tracing::warn!(
-                %error,
-                object = object_id,
-                object_kind = object_label,
-                "git reported an unparsable object id; object NOT scanned"
-            );
-            record_git_object_unreadable();
-            None
-        }
-    }
-}
-
-fn record_git_object_unreadable() {
-    let _event = crate::record_skip_event(crate::SourceSkipEvent::GitObjectUnreadable);
 }

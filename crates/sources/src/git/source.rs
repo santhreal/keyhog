@@ -10,11 +10,11 @@ use gix::objs::Kind;
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use rayon::prelude::*;
 
-use super::git_unscanned_object_error;
 use super::tag_messages::{
     collect_reachable_tag_messages, decode_tag_message_chunks,
     decode_unreachable_tag_message_chunks,
 };
+use super::{git_unscanned_object_error, parse_git_object_id_line, record_git_object_unreadable};
 
 /// Upper bound for one parallel blob decode batch.
 ///
@@ -278,7 +278,7 @@ impl GitCommitEnumerator {
             if !self.log_done {
                 match self.log_lines.next() {
                     Some(Ok(line)) => {
-                        if let Some(id) = parse_git_object_id_line(&line, "commit")? {
+                        if let Some(id) = parse_git_object_id_line(&line, "commit") {
                             return Ok(Some(id));
                         }
                         continue;
@@ -948,28 +948,6 @@ fn git_ref_exists(repo_arg: &str, ref_name: &str) -> Result<bool, SourceError> {
     Ok(output.status.success())
 }
 
-fn parse_git_object_id_line(
-    line: &str,
-    object_label: &'static str,
-) -> Result<Option<gix::ObjectId>, SourceError> {
-    let Some(object_id) = line.split_whitespace().next() else {
-        return Ok(None);
-    };
-    match gix::ObjectId::from_hex(object_id.as_bytes()) {
-        Ok(id) => Ok(Some(id)),
-        Err(error) => {
-            tracing::warn!(
-                %error,
-                object = object_id,
-                object_kind = object_label,
-                "git reported an unparsable object id; object NOT scanned"
-            );
-            record_git_object_unreadable();
-            Ok(None)
-        }
-    }
-}
-
 #[derive(Clone, Copy)]
 enum FsckUnreachableObjectKind {
     Commit,
@@ -1039,7 +1017,7 @@ fn collect_unreachable_objects(
                 if !out.has_collection_capacity(limits) {
                     continue;
                 }
-                let Some(id) = parse_git_object_id_line(object_id, "commit")? else {
+                let Some(id) = parse_git_object_id_line(object_id, "commit") else {
                     continue;
                 };
                 out.commits.push_back(id);
@@ -1048,7 +1026,7 @@ fn collect_unreachable_objects(
                 if !out.has_collection_capacity(limits) {
                     continue;
                 }
-                let Some(id) = parse_git_object_id_line(object_id, "blob")? else {
+                let Some(id) = parse_git_object_id_line(object_id, "blob") else {
                     continue;
                 };
                 out.blobs.push_back(id);
@@ -1057,7 +1035,7 @@ fn collect_unreachable_objects(
                 if !out.has_collection_capacity(limits) {
                     continue;
                 }
-                let Some(id) = parse_git_object_id_line(object_id, "tree")? else {
+                let Some(id) = parse_git_object_id_line(object_id, "tree") else {
                     continue;
                 };
                 out.trees.push_back(id);
@@ -1066,7 +1044,7 @@ fn collect_unreachable_objects(
                 if !out.has_collection_capacity(limits) {
                     continue;
                 }
-                let Some(id) = parse_git_object_id_line(object_id, "tag")? else {
+                let Some(id) = parse_git_object_id_line(object_id, "tag") else {
                     continue;
                 };
                 out.tags.push_back(id);
@@ -1359,10 +1337,6 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
         )));
         Ok(())
     }
-}
-
-fn record_git_object_unreadable() {
-    let _event = crate::record_skip_event(crate::SourceSkipEvent::GitObjectUnreadable);
 }
 
 struct HeadBlobPathCollector<'a> {

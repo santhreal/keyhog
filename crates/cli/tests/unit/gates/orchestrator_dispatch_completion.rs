@@ -11,6 +11,7 @@ fn coalesced_scan_completion_owns_progress_and_thread_join() {
         "impl CoalescedProgressTicker",
         "fn join_coalesced_scanner_thread(",
         "crate::record_scanner_panic()",
+        "Err(anyhow::anyhow!",
         "progress.stop();",
         "join_coalesced_scanner_thread(scanner_thread, progress)?",
     ] {
@@ -38,4 +39,14 @@ fn coalesced_scan_completion_owns_progress_and_thread_join() {
             "scan_sources must not re-own completion/progress detail `{forbidden}`"
         );
     }
+
+    let panic_arm = dispatch
+        .split("Err(error) => {")
+        .nth(1)
+        .and_then(|tail| tail.split("}\n    };").next())
+        .expect("scanner panic arm extractable");
+    assert!(
+        !panic_arm.contains("Ok(Vec::new())"),
+        "scanner-thread panic must be a hard error, never an empty successful scan"
+    );
 }

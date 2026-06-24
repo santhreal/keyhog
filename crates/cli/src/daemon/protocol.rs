@@ -26,6 +26,8 @@ use serde::{Deserialize, Serialize};
 ///   client's telemetry counter stayed at 0 because telemetry lives
 ///   in process-local OnceLock cells and the daemon scanner never
 ///   propagated its own counts back).
+/// * v2 extension - `ScanResults` carries serde-defaulted source
+///   coverage gaps so daemon-side skipped input cannot report clean.
 pub const WIRE_VERSION: u32 = 2;
 
 /// Maximum length of a single framed message body. 64 MiB ceiling
@@ -107,6 +109,12 @@ pub enum Response {
         /// Empty until the protocol has an explicit per-request dogfood field.
         #[serde(default)]
         dogfood_events: Vec<DogfoodEvent>,
+        /// Wire-v2 extension: source coverage gaps recorded inside the daemon
+        /// while expanding a `ScanPath` request. The client process cannot read
+        /// the daemon's process-local counters directly, so missing this field
+        /// used to let binary/unreadable/truncated daemon input exit clean.
+        #[serde(default)]
+        source_coverage_gaps: SourceCoverageGaps,
     },
     Health {
         uptime_secs: u64,
@@ -120,6 +128,46 @@ pub enum Response {
     /// Acknowledgement for `Shutdown`. The daemon closes the socket
     /// after sending this; the client should not write again.
     Shutdown,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceCoverageGaps {
+    #[serde(default)]
+    pub over_max_size: usize,
+    #[serde(default)]
+    pub binary: usize,
+    #[serde(default)]
+    pub unreadable: usize,
+    #[serde(default)]
+    pub git_object_unreadable: usize,
+    #[serde(default)]
+    pub archive_truncated: usize,
+    #[serde(default)]
+    pub binary_section_name_unresolved: usize,
+    #[serde(default)]
+    pub source_truncated: usize,
+    #[serde(default)]
+    pub structured_source_parse_failures: usize,
+    #[serde(default)]
+    pub archive_duplicate_scan_unavailable: usize,
+}
+
+impl SourceCoverageGaps {
+    pub fn total(self) -> usize {
+        self.over_max_size
+            + self.binary
+            + self.unreadable
+            + self.git_object_unreadable
+            + self.archive_truncated
+            + self.binary_section_name_unresolved
+            + self.source_truncated
+            + self.structured_source_parse_failures
+            + self.archive_duplicate_scan_unavailable
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.total() == 0
+    }
 }
 
 /// One-word kind label for a daemon [`Response`]. Use this in user-facing

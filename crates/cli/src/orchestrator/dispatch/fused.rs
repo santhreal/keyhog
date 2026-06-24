@@ -354,6 +354,7 @@ impl ScanOrchestrator {
         if drain.join().is_err() {
             tracing::error!("fused source drain thread panicked mid-scan; results are incomplete");
             let _receipt = crate::record_scanner_panic();
+            anyhow::bail!("fused source drain thread panicked mid-scan; results are incomplete");
         }
 
         let routing_error = match routing_error.lock() {
