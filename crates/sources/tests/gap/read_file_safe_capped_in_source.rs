@@ -11,8 +11,10 @@ fn read_file_safe_capped_in_source() {
         "read_file_safe must define a hard byte cap"
     );
     assert!(
-        src.contains(".take(MAX_BUFFERED_READ_BYTES)"),
-        "read_file_safe must bound the read with take()"
+        src.contains("crate::capped_read::read_to_cap")
+            && src.contains("MAX_BUFFERED_READ_BYTES")
+            && src.contains("read.truncated"),
+        "read_file_safe must route unknown-size buffered reads through the shared capped-read owner"
     );
     assert!(
         !src.contains("read_to_end(&mut file, &mut bytes)?"),

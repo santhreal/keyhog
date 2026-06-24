@@ -2,6 +2,8 @@
 mod a5_lr2_http_proxy_flag_overrides_env;
 #[path = "a5_lr2/http_proxy_off_preserved.rs"]
 mod a5_lr2_http_proxy_off_preserved;
+#[path = "a5_lr2/read_safe_cap_refuses_huge.rs"]
+mod a5_lr2_read_safe_cap_refuses_huge;
 pub mod basic_sources;
 pub mod binary;
 #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]

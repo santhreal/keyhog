@@ -33,11 +33,15 @@ fn mmap_fallback_buffered_reads_are_capped() {
     assert!(
         !raw.contains("read_to_end(&mut file, &mut bytes)"),
         "read_file_mmap must NOT fall back to an unbounded `read_to_end(&mut file, ...)`: \
-         a TOCTOU-grown file would OOM the process. Bound it with `.take(MMAP_TOCTOU_SANITY_CAP_BYTES)`."
+         a TOCTOU-grown file would OOM the process. Bound it with `capped_read::read_to_cap`."
     );
-    let lock_start = raw
+    let mmap_fn_start = raw
+        .find("pub(in crate::filesystem) fn read_file_mmap")
+        .expect("read_file_mmap function");
+    let lock_start = raw[mmap_fn_start..]
         .find("if unsafe { libc::flock(fd, libc::LOCK_SH | libc::LOCK_NB) } != 0")
-        .expect("raw read lock branch");
+        .map(|offset| mmap_fn_start + offset)
+        .expect("raw read mmap lock branch");
     let mmap_start = raw[lock_start..]
         .find("// SAFETY: the mapping is read-only")
         .map(|offset| lock_start + offset)
@@ -49,17 +53,16 @@ fn mmap_fallback_buffered_reads_are_capped() {
         "locked-file contention must skip visibly as unreadable"
     );
     assert!(
-        !lock_branch.contains("read_to_end") && !lock_branch.contains(".take("),
+        !lock_branch.contains("read_to_end")
+            && !lock_branch.contains("crate::capped_read::read_to_cap"),
         "locked-file contention must not have a buffered fallback; it must skip visibly"
     );
-    // The mmap-failure fallback must still bound via the cap.
-    let bounded = raw
-        .matches("(&mut file).take(MMAP_TOCTOU_SANITY_CAP_BYTES)")
-        .count();
     assert!(
-        bounded >= 1,
-        "the mmap-failure buffered fallback must cap the read at \
-         MMAP_TOCTOU_SANITY_CAP_BYTES (found {bounded} bounded fallback(s), expected >= 1)"
+        raw.contains("crate::capped_read::read_to_cap")
+            && raw.contains("MMAP_TOCTOU_SANITY_CAP_BYTES")
+            && raw.contains("read.truncated")
+            && raw.contains("SourceSkipEvent::OverMaxSize"),
+        "the mmap-failure buffered fallback must use the shared capped-read owner and count over-cap growth"
     );
 }
 
@@ -80,8 +83,11 @@ fn compressed_fallback_read_is_bounded_and_no_follow() {
         "the bounded no-follow read helper must exist"
     );
     assert!(
-        bytes.contains("open_file_safe(path)") && bytes.contains(".take(cap)"),
-        "read_capped_no_follow must open via open_file_safe (no-follow) and `.take(cap)` the read"
+        bytes.contains("open_file_safe(path)")
+            && bytes.contains("crate::capped_read::read_to_cap")
+            && bytes.contains("read.truncated")
+            && bytes.contains("SourceSkipEvent::OverMaxSize"),
+        "read_capped_no_follow must open via open_file_safe, use the shared capped-read owner, and count over-cap growth"
     );
     let used = bytes.matches("read_capped_no_follow(path,").count();
     assert!(

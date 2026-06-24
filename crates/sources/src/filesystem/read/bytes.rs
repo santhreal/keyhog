@@ -5,7 +5,6 @@
 //! the decompressor ever started.
 
 use memmap2::MmapOptions;
-use std::io::Read as _;
 use std::path::Path;
 
 use super::raw::open_file_safe;
@@ -21,9 +20,29 @@ use super::raw::open_file_safe;
 /// (KH-GAP-OOM-compressed-fallback)
 fn read_capped_no_follow(path: &Path, cap: u64) -> std::io::Result<Vec<u8>> {
     let file = open_file_safe(path)?;
-    let mut bytes = Vec::new();
-    file.take(cap).read_to_end(&mut bytes)?;
-    Ok(bytes)
+    let metadata = file.metadata()?;
+    if metadata.len() > cap {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "compressed file '{}' exceeds {} byte cap",
+                path.display(),
+                cap
+            ),
+        ));
+    }
+    let read = crate::capped_read::read_to_cap(file, cap, Some(metadata.len()), "compressed file")?;
+    if read.truncated {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "compressed file '{}' grew beyond {} byte cap while reading",
+                path.display(),
+                cap
+            ),
+        ));
+    }
+    Ok(read.bytes)
 }
 
 /// File bytes returned to a caller that needs `&[u8]` but doesn't
@@ -178,18 +197,25 @@ pub(in crate::filesystem) fn read_file_for_compressed_input(
             // Law 10: recall-safe + bounded/no-follow. The bare `std::fs::read`
             // here was both unbounded (OOM on a TOCTOU-grown compressed file)
             // and symlink-following; `read_capped_no_follow` fixes both while
-            // recovering the same bytes for the decompressor.
-            read_capped_no_follow(path, effective_size_cap)
-                .ok() // LAW10: mmap/read failure => release lock + buffered read path / loud-skip counter; recall-preserving
-                .or_else(|| {
+            // refusing a TOCTOU-grown over-cap prefix instead of silently
+            // treating truncated compressed bytes as a complete file.
+            match read_capped_no_follow(path, effective_size_cap) {
+                Ok(bytes) => Some(FileBytes::Owned(bytes)),
+                Err(error) => {
                     tracing::warn!(
                         path = %path.display(),
+                        %error,
                         "cannot read compressed file after mmap failure; skipping"
                     );
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    let skip = if error.kind() == std::io::ErrorKind::InvalidData {
+                        crate::SourceSkipEvent::OverMaxSize
+                    } else {
+                        crate::SourceSkipEvent::Unreadable
+                    };
+                    let _event = crate::record_skip_event(skip);
                     None
-                })
-                .map(FileBytes::Owned)
+                }
+            }
         }
     }
 }

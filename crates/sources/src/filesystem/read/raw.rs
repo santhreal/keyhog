@@ -49,7 +49,12 @@ pub(in crate::filesystem) fn read_file_buffered(
                 %error,
                 "cannot read file; skipping"
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            let skip = if error.kind() == std::io::ErrorKind::InvalidData {
+                crate::SourceSkipEvent::OverMaxSize
+            } else {
+                crate::SourceSkipEvent::Unreadable
+            };
+            let _event = crate::record_skip_event(skip);
             return None;
         }
     };
@@ -162,9 +167,22 @@ pub(in crate::filesystem) fn read_file_safe(
     if cap == 0 {
         // The caller did not know the size (size_hint == 0): fall back to the
         // grow-from-empty read, still bounded by the cap.
-        let mut bytes = Vec::new();
-        file.take(MAX_BUFFERED_READ_BYTES).read_to_end(&mut bytes)?;
-        return Ok(bytes);
+        let read = crate::capped_read::read_to_cap(
+            file,
+            MAX_BUFFERED_READ_BYTES,
+            None,
+            "filesystem buffered read",
+        )?;
+        if read.truncated {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "filesystem buffered read exceeded {} byte cap",
+                    MAX_BUFFERED_READ_BYTES
+                ),
+            ));
+        }
+        return Ok(read.bytes);
     }
 
     // Sized read (PERF-io_path-2). The walker already stat'd this file, so we
@@ -210,8 +228,10 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileR
     // size check and our mmap. The walker's max_file_size is the
     // user-configurable budget; this constant is a HARD ceiling on
     // any mmap-based read regardless of user config.
+    let mut live_size_hint = None;
     if let Ok(meta) = file.metadata() {
         // LAW10: failed post-open metadata probe only skips TOCTOU optimization; bounded read path still enforces the cap.
+        live_size_hint = Some(meta.len());
         if meta.len() > MMAP_TOCTOU_SANITY_CAP_BYTES {
             tracing::warn!(
                 path = %path.display(),
@@ -254,13 +274,23 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileR
             // read at the TOCTOU sanity ceiling so an mmap failure does not become
             // an unbounded `read_to_end` of a TOCTOU-grown file.
             // (KH-GAP-OOM-mmap-fallback)
-            let mut bytes = Vec::new();
-            match std::io::Read::read_to_end(
-                &mut (&mut file).take(MMAP_TOCTOU_SANITY_CAP_BYTES),
-                &mut bytes,
+            match crate::capped_read::read_to_cap(
+                &mut file,
+                MMAP_TOCTOU_SANITY_CAP_BYTES,
+                live_size_hint,
+                "mmap fallback read",
             ) {
-                Ok(_) => {
-                    return Some(match decode_text_file_owned_or_bytes(bytes) {
+                Ok(read) => {
+                    if read.truncated {
+                        tracing::warn!(
+                            path = %path.display(),
+                            cap = MMAP_TOCTOU_SANITY_CAP_BYTES,
+                            "file grew beyond mmap fallback sanity cap while reading"
+                        );
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+                        return None;
+                    }
+                    return Some(match decode_text_file_owned_or_bytes(read.bytes) {
                         Ok(text) => BufferedFileRead::Text(text),
                         Err(bytes) => BufferedFileRead::Bytes(bytes),
                     });
