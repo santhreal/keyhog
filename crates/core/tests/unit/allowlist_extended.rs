@@ -41,6 +41,22 @@ fn parse_empty_content_produces_empty_allowlist() {
 }
 
 #[test]
+fn metadata_only_line_does_not_create_empty_path_glob() {
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "; reason=\"temporary suppression\"",
+    );
+    assert!(
+        al.ignored_paths.is_empty(),
+        "metadata-only lines must not become an empty path glob"
+    );
+    assert!(
+        !al.is_path_ignored(""),
+        "metadata-only lines must not suppress pathless findings"
+    );
+}
+
+#[test]
 fn parse_only_comments_and_blank_lines_produces_empty() {
     let content = "# This is a comment\n\n# Another comment\n   \n";
     let al =

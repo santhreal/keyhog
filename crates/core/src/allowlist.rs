@@ -203,6 +203,15 @@ impl Allowlist {
             for detail in &parsed_meta.malformed_tokens {
                 al.push_policy_violation(line_number + 1, entry, "metadata", detail.clone());
             }
+            if entry.is_empty() {
+                al.push_policy_violation(
+                    line_number + 1,
+                    entry,
+                    "entry",
+                    "empty allowlist entry before metadata; add `detector:`, `path:`, `hash:`, or a glob before `;`".to_string(),
+                );
+                continue;
+            }
 
             // Drop entries whose `expires` is past - keeps `.keyhogignore`
             // self-cleaning for short-lived approvals (Tier-B #18 governance).

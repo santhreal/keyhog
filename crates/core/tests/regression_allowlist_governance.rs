@@ -116,6 +116,22 @@ fn load_with_metadata_policy_rejects_unterminated_metadata_quotes() {
 }
 
 #[test]
+fn load_with_metadata_policy_rejects_metadata_only_lines() {
+    let (_dir, path) = write_allowlist("; reason=\"temporary suppression\"\n");
+    let err = Allowlist::load_with_metadata_policy(&path, false, false, None)
+        .expect_err("metadata-only allowlist lines must fail closed");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("allowlist governance")
+            && msg.contains("line 1")
+            && msg.contains("empty allowlist entry before metadata")
+            && msg.contains("refusing to scan with unapproved suppressions"),
+        "metadata-only line error must name the missing suppression entry; got: {msg}"
+    );
+}
+
+#[test]
 fn load_with_metadata_policy_accepts_complete_metadata() {
     let (_dir, path) = write_allowlist(
         "detector:aws-access-key ; reason=\"known generated fixture\" ; approved_by=\"sec@example.com\" ; expires=2099-01-01\n",
