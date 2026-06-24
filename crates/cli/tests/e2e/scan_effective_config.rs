@@ -404,6 +404,34 @@ fn config_effective_prints_regex_dfa_limit_cli_and_toml() {
 }
 
 #[test]
+fn config_effective_reports_active_default_caps_not_off() {
+    // With no --regex-dfa-limit / --max-file-size override the engine still
+    // enforces a compiled-default DFA cache cap (1 MiB) and a default max file
+    // size (100 MiB; files above it are silently skipped). `--effective` must
+    // report the real active default, never "off": rendering "off" would tell
+    // the operator no cap is in force when one is, hiding a coverage gap.
+    let (stdout, stderr, code) = effective_config_with_toml("");
+
+    assert_eq!(
+        code,
+        Some(0),
+        "config --effective should exit 0; stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("regex_dfa_limit = 1048576 (default)"),
+        "unset regex_dfa_limit must report the compiled 1 MiB default, not 'off'; stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("max_file_size = 104857600 (default)"),
+        "unset max_file_size must report the compiled 100 MiB default, not 'off'; stdout={stdout}"
+    );
+    assert!(
+        !stdout.contains("regex_dfa_limit = off") && !stdout.contains("max_file_size = off"),
+        "neither cap may render as 'off' while a default cap is active; stdout={stdout}"
+    );
+}
+
+#[test]
 fn config_effective_prints_source_policy_controls() {
     let dir = TempDir::new().expect("tempdir");
     let cache_path = dir.path().join("incremental.db");

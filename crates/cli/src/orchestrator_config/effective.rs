@@ -84,17 +84,23 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         s.per_chunk_timeout_ms
             .map_or_else(|| "off".to_string(), |ms| ms.to_string())
     ));
+    // An unset regex DFA limit / max file size is NOT "off": the engine falls
+    // back to a compiled default cap (the regex DFA cache is capped, and files
+    // above the default size are silently skipped). Report the real active
+    // default so `--effective` can never imply "no cap" when a cap is in force.
     out.push_str(&format!(
         "regex_dfa_limit = {}\n",
-        resolved
-            .regex_dfa_limit
-            .map_or_else(|| "off".to_string(), |bytes| bytes.to_string())
+        resolved.regex_dfa_limit.map_or_else(
+            || format!("{} (default)", keyhog_scanner::regex_dfa_limit_default()),
+            |bytes| bytes.to_string()
+        )
     ));
     out.push_str(&format!(
         "max_file_size = {}\n",
-        resolved
-            .max_file_size
-            .map_or_else(|| "off".to_string(), |bytes| bytes.to_string())
+        resolved.max_file_size.map_or_else(
+            || format!("{} (default)", keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES),
+            |bytes| bytes.to_string()
+        )
     ));
     #[cfg(feature = "git")]
     out.push_str(&format!("max_commits = {}\n", resolved.max_commits));
