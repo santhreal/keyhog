@@ -104,8 +104,13 @@ pub(crate) fn filter_inline_suppressions(matches: Vec<RawMatch>) -> Vec<RawMatch
 }
 
 pub(crate) fn attach_inline_suppression_context(chunks: &[Chunk], per_chunk: &mut [Vec<RawMatch>]) {
-    for (chunk, matches) in chunks.iter().zip(per_chunk.iter_mut()) {
-        attach_inline_suppression_context_to_matches(chunk, matches);
+    for (chunk_index, matches) in per_chunk.iter_mut().enumerate() {
+        let Some(primary_chunk) = chunks.get(chunk_index) else {
+            continue;
+        };
+        for m in matches {
+            attach_inline_suppression_context_to_match(chunks, primary_chunk, m);
+        }
     }
 }
 
@@ -113,23 +118,54 @@ pub(crate) fn attach_inline_suppression_context_to_matches(
     chunk: &Chunk,
     matches: &mut [RawMatch],
 ) {
-    if chunk.metadata.source_type != "filesystem" || chunk.metadata.path.is_none() {
+    for m in matches {
+        attach_inline_suppression_context_from_chunk(chunk, m);
+    }
+}
+
+fn attach_inline_suppression_context_to_match(
+    chunks: &[Chunk],
+    primary_chunk: &Chunk,
+    m: &mut RawMatch,
+) {
+    if attach_inline_suppression_context_from_chunk(primary_chunk, m) {
         return;
     }
-    let text = chunk.data.as_ref();
-    for m in matches {
-        let Some(relative_offset) = m.location.offset.checked_sub(chunk.metadata.base_offset)
-        else {
-            continue;
-        };
-        let Some((prev_line, current_line)) = line_context_at_offset(text, relative_offset) else {
-            continue;
-        };
-        m.companions
-            .insert(INLINE_CONTEXT_PREV_LINE.to_string(), prev_line);
-        m.companions
-            .insert(INLINE_CONTEXT_CURRENT_LINE.to_string(), current_line);
+    if primary_chunk.metadata.source_type != "filesystem" || primary_chunk.metadata.path.is_none() {
+        return;
     }
+    for candidate in chunks {
+        if !same_filesystem_chunk_identity(primary_chunk, candidate) {
+            continue;
+        }
+        if attach_inline_suppression_context_from_chunk(candidate, m) {
+            return;
+        }
+    }
+}
+
+fn attach_inline_suppression_context_from_chunk(chunk: &Chunk, m: &mut RawMatch) -> bool {
+    if chunk.metadata.source_type != "filesystem" || chunk.metadata.path.is_none() {
+        return false;
+    }
+    let text = chunk.data.as_ref();
+    let Some(relative_offset) = m.location.offset.checked_sub(chunk.metadata.base_offset) else {
+        return false;
+    };
+    let Some((prev_line, current_line)) = line_context_at_offset(text, relative_offset) else {
+        return false;
+    };
+    m.companions
+        .insert(INLINE_CONTEXT_PREV_LINE.to_string(), prev_line);
+    m.companions
+        .insert(INLINE_CONTEXT_CURRENT_LINE.to_string(), current_line);
+    true
+}
+
+fn same_filesystem_chunk_identity(left: &Chunk, right: &Chunk) -> bool {
+    left.metadata.source_type == "filesystem"
+        && right.metadata.source_type == "filesystem"
+        && left.metadata.path.as_deref() == right.metadata.path.as_deref()
 }
 
 fn take_inline_context(m: &mut RawMatch) -> Option<(String, String)> {

@@ -115,6 +115,11 @@ pub trait CliTestApi {
         chunk: &keyhog_core::Chunk,
         matches: &mut [RawMatch],
     );
+    fn attach_inline_suppression_context_for_chunks_for_test(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        per_chunk: &mut [Vec<RawMatch>],
+    );
     fn filter_inline_suppressions(&self, matches: Vec<RawMatch>) -> Vec<RawMatch>;
     fn format_bytes(&self, n: u64) -> String;
     fn ensure_private_socket_dir(&self, parent: &Path) -> Result<()>;
@@ -408,6 +413,13 @@ impl CliTestApi for TestApi {
         matches: &mut [RawMatch],
     ) {
         crate::inline_suppression::attach_inline_suppression_context_to_matches(chunk, matches)
+    }
+    fn attach_inline_suppression_context_for_chunks_for_test(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        per_chunk: &mut [Vec<RawMatch>],
+    ) {
+        crate::inline_suppression::attach_inline_suppression_context(chunks, per_chunk)
     }
     fn filter_inline_suppressions(&self, matches: Vec<RawMatch>) -> Vec<RawMatch> {
         crate::inline_suppression::filter_inline_suppressions(matches)
