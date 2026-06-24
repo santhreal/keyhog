@@ -253,16 +253,21 @@ fn validate_socket_file(socket_path: &Path) -> Result<()> {
     use std::os::unix::fs::{FileTypeExt, MetadataExt};
     let meta = std::fs::symlink_metadata(socket_path)
         .with_context(|| format!("stat daemon socket {}", socket_path.display()))?;
+    // This trust check guards both the client's connect-and-send path
+    // (validate_socket_for_connect) and the server's bind-time paths
+    // (remove_stale_socket_if_trusted, set_socket_mode_user_only), so the
+    // messages stay context-neutral ("refusing to trust") rather than
+    // client-framed ("refusing to send") - a `daemon start` failure must not
+    // print "daemon client:" at the operator.
     if meta.file_type().is_symlink() {
         bail!(
-            "daemon client: socket {} is a symlink; refusing to send scan paths or content \
-             through a redirectable daemon socket.",
+            "daemon: socket {} is a symlink; refusing to trust a redirectable daemon socket.",
             socket_path.display()
         );
     }
     if !meta.file_type().is_socket() {
         bail!(
-            "daemon client: {} is not a Unix socket; refusing to treat it as a keyhog daemon.",
+            "daemon: {} is not a Unix socket; refusing to treat it as a keyhog daemon.",
             socket_path.display()
         );
     }
@@ -270,16 +275,16 @@ fn validate_socket_file(socket_path: &Path) -> Result<()> {
     let me = current_uid();
     if owner != me {
         bail!(
-            "daemon client: socket {} is owned by uid {owner}, not this user uid {me}; refusing \
-             to send scan paths or content to it.",
+            "daemon: socket {} is owned by uid {owner}, not this user uid {me}; refusing to \
+             trust it.",
             socket_path.display()
         );
     }
     let mode = unix_mode(&meta);
     if mode != 0o600 {
         bail!(
-            "daemon client: socket {} is mode {mode:#o}, expected 0o600; refusing to send scan \
-             paths or content through a group/other-accessible daemon socket.",
+            "daemon: socket {} is mode {mode:#o}, expected 0o600; refusing to trust a \
+             group/other-accessible daemon socket.",
             socket_path.display()
         );
     }

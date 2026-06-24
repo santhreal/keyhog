@@ -93,6 +93,14 @@ fn daemon_stale_socket_cleanup_refuses_regular_file() {
     let msg = format!("{err:#}");
     assert!(msg.contains("not a Unix socket"), "{msg}");
     assert!(
+        msg.contains("daemon:"),
+        "shared trust validator must use server-safe daemon wording: {msg}"
+    );
+    assert!(
+        !msg.contains("daemon client:") && !msg.contains("send scan paths"),
+        "server-side stale-socket cleanup must not report client-only framing: {msg}"
+    );
+    assert!(
         socket.exists(),
         "refused non-socket path must not be removed"
     );
@@ -119,6 +127,14 @@ fn daemon_client_refuses_group_accessible_socket_file() {
         .expect_err("group-accessible daemon socket must be refused");
     let msg = format!("{err:#}");
     assert!(msg.contains("expected 0o600"), "{msg}");
+    assert!(
+        msg.contains("refusing to trust"),
+        "shared trust validator must describe the trust failure: {msg}"
+    );
+    assert!(
+        !msg.contains("send scan paths"),
+        "shared trust validator must not bake client-only consequences into socket-file errors: {msg}"
+    );
 }
 
 #[test]
@@ -133,6 +149,10 @@ fn daemon_client_refuses_regular_file_socket_path() {
         .expect_err("regular file must not be treated as daemon socket");
     let msg = format!("{err:#}");
     assert!(msg.contains("not a Unix socket"), "{msg}");
+    assert!(
+        msg.contains("daemon:") && !msg.contains("daemon client:"),
+        "socket-file validation wording must remain context-neutral: {msg}"
+    );
 }
 
 #[test]
@@ -148,6 +168,10 @@ fn daemon_client_refuses_symlink_socket_path() {
         .expect_err("symlinked daemon socket path must be refused");
     let msg = format!("{err:#}");
     assert!(msg.contains("symlink"), "{msg}");
+    assert!(
+        msg.contains("refusing to trust") && !msg.contains("send scan paths"),
+        "socket symlink refusal must be usable from both client and server paths: {msg}"
+    );
 }
 
 #[tokio::test]
