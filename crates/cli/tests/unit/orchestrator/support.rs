@@ -1,7 +1,9 @@
 use clap::Parser;
 use keyhog::args::ScanArgs;
 use keyhog::testing::{CliTestApi as _, ScanOrchestrator, API};
-use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity, Source, SourceError};
+use keyhog_core::{
+    Chunk, ChunkMetadata, DetectorSpec, PatternSpec, RawMatch, Severity, Source, SourceError,
+};
 use keyhog_scanner::CompiledScanner;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -73,5 +75,21 @@ pub fn make_orchestrator_with_args(
         scanner,
         signatures,
         API.bundled_test_fixture_suppressions(),
+    )
+}
+
+pub fn scan_sources_for_test(
+    orchestrator: &ScanOrchestrator,
+    sources: Vec<Box<dyn Source>>,
+    show_progress: bool,
+    merkle: Option<Arc<keyhog_core::MerkleIndex>>,
+) -> anyhow::Result<Vec<RawMatch>> {
+    let guard = API.scan_runtime_guard_for_test();
+    API.scan_orchestrator_scan_sources_for_test(
+        orchestrator,
+        sources,
+        show_progress,
+        merkle,
+        &guard,
     )
 }

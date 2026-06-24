@@ -1,7 +1,8 @@
 //! Pipeline: merkle index records chunk metadata under threaded handoff.
 
-use super::support::{make_chunk, make_detector, make_orchestrator, StaticSource};
-use keyhog::testing::{CliTestApi as _, API};
+use super::support::{
+    make_chunk, make_detector, make_orchestrator, scan_sources_for_test, StaticSource,
+};
 use keyhog_core::Source;
 use std::sync::Arc;
 
@@ -17,9 +18,8 @@ fn pipeline_with_merkle_records_metadata_for_chunks_seen() {
     let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource {
         chunks: vec![chunk],
     })];
-    let findings = API
-        .scan_orchestrator_scan_sources_for_test(&orch, sources, false, Some(merkle.clone()))
-        .expect("scan sources");
+    let findings =
+        scan_sources_for_test(&orch, sources, false, Some(merkle.clone())).expect("scan sources");
     assert_eq!(findings.len(), 1);
     assert!(merkle.metadata_unchanged(
         std::path::Path::new("x.rs"),

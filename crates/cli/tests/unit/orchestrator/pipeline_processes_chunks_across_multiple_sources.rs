@@ -1,7 +1,8 @@
 //! Pipeline: findings from multiple sources accumulate.
 
-use super::support::{make_chunk, make_detector, make_orchestrator, StaticSource};
-use keyhog::testing::{CliTestApi as _, API};
+use super::support::{
+    make_chunk, make_detector, make_orchestrator, scan_sources_for_test, StaticSource,
+};
 use keyhog_core::Source;
 
 #[test]
@@ -15,9 +16,7 @@ fn pipeline_processes_chunks_across_multiple_sources() {
             chunks: vec![make_chunk("STATIC_SECRET_2 there", "b.rs")],
         }),
     ];
-    let findings = API
-        .scan_orchestrator_scan_sources_for_test(&orch, sources, false, None)
-        .expect("scan sources");
+    let findings = scan_sources_for_test(&orch, sources, false, None).expect("scan sources");
     assert_eq!(findings.len(), 2);
     let mut creds: Vec<String> = findings.iter().map(|f| f.credential.to_string()).collect();
     creds.sort();

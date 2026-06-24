@@ -156,6 +156,42 @@ fn scan_runtime_reset_clears_process_global_scan_state() {
 }
 
 #[test]
+fn scan_runtime_test_facade_guards_in_process_global_state() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let testing = std::fs::read_to_string(root.join("src/testing.rs")).expect("read test facade");
+
+    for required in [
+        "fn report_findings(\n        &self,\n        findings: &[VerifiedFinding],\n        args: &ScanArgs,\n        _guard: &ScanRuntimeGuard,",
+        "fn scan_orchestrator_scan_sources_for_test(\n        &self,\n        orchestrator: &ScanOrchestrator,\n        sources: Vec<Box<dyn Source>>,\n        show_progress: bool,\n        merkle: Option<Arc<keyhog_core::MerkleIndex>>,\n        _guard: &ScanRuntimeGuard,",
+        "fn seed_scan_runtime_state_for_test(&self, _guard: &ScanRuntimeGuard)",
+        "fn reset_scan_runtime_state_for_test(&self, _guard: &ScanRuntimeGuard)",
+        "fn scan_runtime_snapshot(&self, _guard: &ScanRuntimeGuard)",
+    ] {
+        assert!(
+            testing.contains(required),
+            "CLI test facade must require ScanRuntimeGuard for process-global scan state seam: {required}"
+        );
+    }
+
+    let orchestrator_dir = root.join("tests/unit/orchestrator");
+    for entry in std::fs::read_dir(&orchestrator_dir).expect("read orchestrator tests") {
+        let entry = entry.expect("orchestrator test entry");
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("rs")
+            || path.file_name().and_then(|name| name.to_str()) == Some("support.rs")
+        {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("read orchestrator test");
+        assert!(
+            !source.contains("scan_orchestrator_scan_sources_for_test("),
+            "{} must use support::scan_sources_for_test so the scan-runtime guard is held",
+            path.display()
+        );
+    }
+}
+
+#[test]
 fn scan_runtime_reset_runs_before_dogfood_enablement() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let run = std::fs::read_to_string(root.join("src/orchestrator/run.rs")).expect("read run");
@@ -404,8 +440,9 @@ fn path_validation_error() {
 // ── crates/cli/src/reporting.rs ───────────────────────────────────────
 #[test]
 fn reporting_error() {
+    let _guard = API.scan_runtime_guard_for_test();
     let args = ScanArgs::try_parse_from(["scan", ".", "--output", "/"]).unwrap();
-    assert!(API.report_findings(&[], &args).is_err());
+    assert!(API.report_findings(&[], &args, &_guard).is_err());
 }
 
 #[test]
@@ -432,7 +469,7 @@ fn reporting_sarif_includes_scanner_decode_truncation_gap() {
     let out_s = out.to_string_lossy().into_owned();
     let args = ScanArgs::try_parse_from(["scan", ".", "--format", "sarif", "--output", &out_s])
         .expect("parse sarif output args");
-    API.report_findings(&[], &args)
+    API.report_findings(&[], &args, &_guard)
         .expect("write SARIF report with scanner coverage gap");
 
     let sarif: serde_json::Value =

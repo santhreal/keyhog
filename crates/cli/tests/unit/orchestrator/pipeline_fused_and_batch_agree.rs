@@ -7,10 +7,11 @@
 //! 128 KiB-overlapping windows anyway. This test is the parity guard for that
 //! claim: same corpus, same detectors, the two pipelines must agree exactly.
 
-use super::support::{make_detector, make_orchestrator, make_orchestrator_with_args};
+use super::support::{
+    make_detector, make_orchestrator, make_orchestrator_with_args, scan_sources_for_test,
+};
 use clap::Parser;
 use keyhog::args::ScanArgs;
-use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::Source;
 use std::collections::BTreeSet;
 use std::io::Write;
@@ -47,7 +48,7 @@ fn scan_findings(dir: &Path, batch_pipeline: bool) -> BTreeSet<(String, String, 
     let sources: Vec<Box<dyn Source>> = vec![Box::new(keyhog_sources::FilesystemSource::new(
         dir.to_path_buf(),
     ))];
-    API.scan_orchestrator_scan_sources_for_test(&orch, sources, false, None)
+    scan_sources_for_test(&orch, sources, false, None)
         .expect("scan sources")
         .into_iter()
         .map(|m| {

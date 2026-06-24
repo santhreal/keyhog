@@ -1,7 +1,8 @@
 //! Pipeline: single chunk yields one finding.
 
-use super::support::{make_chunk, make_detector, make_orchestrator, StaticSource};
-use keyhog::testing::{CliTestApi as _, API};
+use super::support::{
+    make_chunk, make_detector, make_orchestrator, scan_sources_for_test, StaticSource,
+};
 use keyhog_core::Source;
 
 #[test]
@@ -10,9 +11,7 @@ fn pipeline_finds_secret_in_single_source_single_chunk() {
     let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource {
         chunks: vec![make_chunk("let key = STATIC_SECRET_12345;", "fixture.rs")],
     })];
-    let findings = API
-        .scan_orchestrator_scan_sources_for_test(&orch, sources, false, None)
-        .expect("scan sources");
+    let findings = scan_sources_for_test(&orch, sources, false, None).expect("scan sources");
     assert_eq!(findings.len(), 1);
     assert_eq!(&*findings[0].credential, "STATIC_SECRET_12345");
 }

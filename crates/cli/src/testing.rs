@@ -104,7 +104,12 @@ pub trait CliTestApi {
     fn merge_scan_ignore_paths(&self, args: &ScanArgs, allowlist_paths: Vec<String>)
         -> Vec<String>;
     fn validate_cli_path_arg(&self, path: &Path, name: &str) -> Result<()>;
-    fn report_findings(&self, findings: &[VerifiedFinding], args: &ScanArgs) -> Result<()>;
+    fn report_findings(
+        &self,
+        findings: &[VerifiedFinding],
+        args: &ScanArgs,
+        _guard: &ScanRuntimeGuard,
+    ) -> Result<()>;
     fn filter_inline_suppressions(&self, matches: Vec<RawMatch>) -> Vec<RawMatch>;
     fn format_bytes(&self, n: u64) -> String;
     fn ensure_private_socket_dir(&self, parent: &Path) -> Result<()>;
@@ -299,6 +304,7 @@ pub trait CliTestApi {
         sources: Vec<Box<dyn Source>>,
         show_progress: bool,
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
+        _guard: &ScanRuntimeGuard,
     ) -> Result<Vec<RawMatch>>;
 
     fn scan_runtime_guard_for_test(&self) -> ScanRuntimeGuard;
@@ -383,7 +389,12 @@ impl CliTestApi for TestApi {
     fn validate_cli_path_arg(&self, path: &Path, name: &str) -> Result<()> {
         crate::path_validation::validate_cli_path_arg(path, name)
     }
-    fn report_findings(&self, findings: &[VerifiedFinding], args: &ScanArgs) -> Result<()> {
+    fn report_findings(
+        &self,
+        findings: &[VerifiedFinding],
+        args: &ScanArgs,
+        _guard: &ScanRuntimeGuard,
+    ) -> Result<()> {
         crate::reporting::report_findings(findings, args)
     }
     fn filter_inline_suppressions(&self, matches: Vec<RawMatch>) -> Vec<RawMatch> {
@@ -824,6 +835,7 @@ impl CliTestApi for TestApi {
         sources: Vec<Box<dyn Source>>,
         show_progress: bool,
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
+        _guard: &ScanRuntimeGuard,
     ) -> Result<Vec<RawMatch>> {
         orchestrator
             .0
