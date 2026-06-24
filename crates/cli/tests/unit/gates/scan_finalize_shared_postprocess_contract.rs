@@ -66,13 +66,30 @@ fn verification_progress_ticker_is_drop_guarded() {
     ))
     .expect("postprocess source readable");
 
+    let reporting = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/reporting.rs"
+    ))
+    .expect("reporting source readable");
     for required in [
-        "struct VerificationTickerGuard",
-        "impl Drop for VerificationTickerGuard",
+        "struct TickerGuard",
+        "impl Drop for TickerGuard",
         "fn stop_inner(&mut self)",
         "self.done.store(true",
         "handle.join()",
-        "VerificationTickerGuard::spawn(verify_candidates.len())",
+        "ticker_guard_stop_signals_and_joins_worker",
+        "std::thread::sleep(tick / 9)",
+    ] {
+        assert!(
+            reporting.contains(required),
+            "shared progress ticker must keep guarded cleanup boundary `{required}`"
+        );
+    }
+
+    for required in [
+        "super::reporting::TickerGuard::spawn(",
+        "\"verification\"",
+        "super::reporting::verification_ticker(",
         "guard.stop();",
     ] {
         assert!(
@@ -91,4 +108,65 @@ fn verification_progress_ticker_is_drop_guarded() {
             "verify_findings must not reintroduce detached progress primitive `{forbidden}`"
         );
     }
+}
+
+#[test]
+fn reporting_progress_ticker_wraps_blocking_report_write() {
+    let run = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/run.rs"
+    ))
+    .expect("orchestrator run source readable");
+    let reporting = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/reporting.rs"
+    ))
+    .expect("orchestrator reporting source readable");
+
+    for required in [
+        "struct TickerGuard",
+        "impl Drop for TickerGuard",
+        "fn stop_inner(&mut self)",
+        "self.done.store(true",
+        "handle.join()",
+        "fn terminal_ticker_loop",
+        "fn reporting_ticker(",
+        "render_reporting_ticker_line(",
+    ] {
+        assert!(
+            reporting.contains(required),
+            "reporting progress ticker must keep guarded cleanup boundary `{required}`"
+        );
+    }
+
+    let report_write = run
+        .split("let show_reporting_progress =")
+        .nth(1)
+        .and_then(|tail| tail.split("report_result?;").next())
+        .expect("reporting progress block around report write must be extractable");
+    for required in [
+        "show_reporting_progress",
+        "show_progress",
+        "!self.args.stream",
+        "self.args.output.is_some() || !std::io::stdout().is_terminal()",
+        "TickerGuard::spawn(",
+        "\"reporting\"",
+        "super::reporting::reporting_ticker(",
+        "crate::reporting::report_findings_with_metadata(",
+        "guard.stop();",
+    ] {
+        assert!(
+            report_write.contains(required),
+            "scan finalization must keep reporting progress write boundary `{required}`"
+        );
+    }
+
+    let before_report = report_write
+        .split("crate::reporting::report_findings_with_metadata(")
+        .next()
+        .expect("report write prefix extractable");
+    assert!(
+        before_report.contains("TickerGuard::spawn("),
+        "reporting ticker must start before the blocking report write"
+    );
 }

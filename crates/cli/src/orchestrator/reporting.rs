@@ -3,6 +3,7 @@
 use keyhog_core::{Severity, VerifiedFinding};
 use std::io::Write;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
 use crate::style::{terminal_clear_line_prefix, terminal_palette};
@@ -512,6 +513,113 @@ fn render_verification_ticker_line(
     )
 }
 
+fn render_reporting_ticker_line(total: usize, elapsed: f64, frame: usize, color: bool) -> String {
+    const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    const BAR_WIDTH: usize = 22;
+    let (brand, muted, bold, reset) = if color {
+        (C_BRAND, C_MUTED, C_BOLD, C_RESET)
+    } else {
+        ("", "", "", "")
+    };
+    let spin = FRAMES[frame % FRAMES.len()];
+    let sweep = render_indeterminate_bar(frame, BAR_WIDTH, color);
+    let noun = if total == 1 { "finding" } else { "findings" };
+    format!(
+        "{brand}{spin}{reset} {bold}reporting{reset} {muted}·{reset} {sweep} {muted}·{reset} writing {bold}{total}{reset} {noun} {muted}·{reset} {muted}{}{reset}",
+        fmt_secs(elapsed)
+    )
+}
+
+/// Drop-guarded lifecycle for phase progress threads.
+pub(crate) struct TickerGuard {
+    done: Arc<AtomicBool>,
+    handle: Option<std::thread::JoinHandle<()>>,
+    label: &'static str,
+}
+
+impl TickerGuard {
+    pub(crate) fn spawn<F>(label: &'static str, run: F) -> Self
+    where
+        F: FnOnce(Arc<AtomicBool>, Instant) + Send + 'static,
+    {
+        let done = Arc::new(AtomicBool::new(false));
+        let ticker_done = Arc::clone(&done);
+        let started = Instant::now();
+        let handle = std::thread::spawn(move || run(ticker_done, started));
+        Self {
+            done,
+            handle: Some(handle),
+            label,
+        }
+    }
+
+    pub(crate) fn stop(mut self) {
+        self.stop_inner();
+    }
+
+    fn stop_inner(&mut self) {
+        use std::sync::atomic::Ordering;
+        self.done.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.handle.take() {
+            if handle.join().is_err() {
+                tracing::debug!(
+                    ticker = self.label,
+                    "progress thread panicked while shutting down"
+                );
+            }
+        }
+    }
+}
+
+impl Drop for TickerGuard {
+    fn drop(&mut self) {
+        self.stop_inner();
+    }
+}
+
+fn terminal_ticker_loop<F>(
+    done: Arc<AtomicBool>,
+    started: Instant,
+    redraw_error_label: &'static str,
+    mut render: F,
+) where
+    F: FnMut(f64, usize, bool) -> String,
+{
+    use std::io::IsTerminal;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+    if !std::io::stderr().is_terminal() {
+        return;
+    }
+    let color = std::env::var_os("NO_COLOR").is_none();
+    let tick = Duration::from_millis(90);
+    let mut frame = 0usize;
+    loop {
+        let elapsed = started.elapsed().as_secs_f64();
+        let clear = terminal_clear_line_prefix(true);
+        let line = render(elapsed, frame, color);
+        let mut err = std::io::stderr().lock();
+        if let Err(error) = write!(err, "{clear}{line}") {
+            tracing::debug!(%error, ticker = redraw_error_label, "progress redraw write error");
+        }
+        let _ = err.flush(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+        drop(err);
+        if done.load(Ordering::Relaxed) {
+            break;
+        }
+        for _ in 0..9 {
+            if done.load(Ordering::Relaxed) {
+                break;
+            }
+            std::thread::sleep(tick / 9);
+        }
+        frame = frame.wrapping_add(1);
+    }
+    let mut err = std::io::stderr().lock();
+    let _ = write!(err, "{}", terminal_clear_line_prefix(true)); // LAW10: unused-binding marker; no runtime effect, not a fallback
+    let _ = err.flush(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+}
+
 /// Live progress ticker - overwrites the previous line via CR.
 ///
 /// Paints IMMEDIATELY (no pre-sleep) and animates every 90 ms so the line is
@@ -523,79 +631,32 @@ fn render_verification_ticker_line(
 /// - chunks streaming: a smooth determinate bar with percent, scanned/total,
 ///   live findings (lit amber the moment the first one lands), throughput
 ///   (chunks/s) and a computed ETA.
-pub(crate) fn progress_ticker(done: Arc<std::sync::atomic::AtomicBool>, started: Instant) {
-    use std::io::IsTerminal;
-    use std::sync::atomic::Ordering;
-    use std::time::Duration;
-    if !std::io::stderr().is_terminal() {
-        return;
-    }
-    let color = std::env::var_os("NO_COLOR").is_none();
-    let tick = Duration::from_millis(90);
-    let mut frame = 0usize;
-    loop {
-        let scanned = crate::SCANNED_CHUNKS.load(Ordering::Relaxed);
-        let total = crate::TOTAL_CHUNKS.load(Ordering::Relaxed);
-        let findings = crate::FINDINGS_COUNT.load(Ordering::Relaxed);
-        let elapsed = started.elapsed().as_secs_f64();
-        let clear = terminal_clear_line_prefix(true);
-        let line = render_ticker_line(scanned, total, findings, elapsed, frame, color);
-        let mut err = std::io::stderr().lock();
-        if let Err(error) = write!(err, "{clear}{line}") {
-            tracing::debug!(%error, "progress redraw write error");
-        }
-        let _ = err.flush(); // LAW10: unused-binding marker; no runtime effect, not a fallback
-        drop(err);
-        // Check AFTER painting so spawn always yields one immediate frame and the
-        // terminal state at completion is the last thing rendered before clear.
-        if done.load(Ordering::Relaxed) {
-            break;
-        }
-        std::thread::sleep(tick);
-        frame = frame.wrapping_add(1);
-    }
-    let mut err = std::io::stderr().lock();
-    let _ = write!(err, "{}", terminal_clear_line_prefix(true)); // LAW10: unused-binding marker; no runtime effect, not a fallback
-    let _ = err.flush(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+pub(crate) fn progress_ticker(done: Arc<AtomicBool>, started: Instant) {
+    terminal_ticker_loop(done, started, "scan", |elapsed, frame, color| {
+        let scanned = crate::SCANNED_CHUNKS.load(std::sync::atomic::Ordering::Relaxed);
+        let total = crate::TOTAL_CHUNKS.load(std::sync::atomic::Ordering::Relaxed);
+        let findings = crate::FINDINGS_COUNT.load(std::sync::atomic::Ordering::Relaxed);
+        render_ticker_line(scanned, total, findings, elapsed, frame, color)
+    });
 }
 
 /// Live verification ticker. Verification happens after scan chunks have
 /// completed, so the scan ticker is no longer alive. This keeps `--verify`
 /// operator-visible during the network phase instead of going quiet between
 /// scanning and the final report.
-pub(crate) fn verification_ticker(
-    done: Arc<std::sync::atomic::AtomicBool>,
-    started: Instant,
-    total: usize,
-) {
-    use std::io::IsTerminal;
-    use std::sync::atomic::Ordering;
-    use std::time::Duration;
-    if !std::io::stderr().is_terminal() {
-        return;
-    }
-    let color = std::env::var_os("NO_COLOR").is_none();
-    let tick = Duration::from_millis(90);
-    let mut frame = 0usize;
-    loop {
-        let elapsed = started.elapsed().as_secs_f64();
-        let clear = terminal_clear_line_prefix(true);
-        let line = render_verification_ticker_line(total, elapsed, frame, color);
-        let mut err = std::io::stderr().lock();
-        if let Err(error) = write!(err, "{clear}{line}") {
-            tracing::debug!(%error, "verification progress redraw write error");
-        }
-        let _ = err.flush(); // LAW10: unused-binding marker; no runtime effect, not a fallback
-        drop(err);
-        if done.load(Ordering::Relaxed) {
-            break;
-        }
-        std::thread::sleep(tick);
-        frame = frame.wrapping_add(1);
-    }
-    let mut err = std::io::stderr().lock();
-    let _ = write!(err, "{}", terminal_clear_line_prefix(true)); // LAW10: unused-binding marker; no runtime effect, not a fallback
-    let _ = err.flush(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+pub(crate) fn verification_ticker(done: Arc<AtomicBool>, started: Instant, total: usize) {
+    terminal_ticker_loop(done, started, "verification", |elapsed, frame, color| {
+        render_verification_ticker_line(total, elapsed, frame, color)
+    });
+}
+
+/// Live reporting ticker. Report serialization and atomic-file fsync happen
+/// after scanning/verification tickers have stopped. Keep that blocking phase
+/// visible on interactive terminals without writing anything to stdout.
+pub(crate) fn reporting_ticker(done: Arc<AtomicBool>, started: Instant, total: usize) {
+    terminal_ticker_loop(done, started, "reporting", |elapsed, frame, color| {
+        render_reporting_ticker_line(total, elapsed, frame, color)
+    });
 }
 
 pub(crate) fn report_skip_summary(ansi: bool) {
@@ -848,9 +909,12 @@ pub(crate) fn dump_dogfood_trace() {
 #[cfg(test)]
 mod ticker_tests {
     use super::{
-        fmt_secs, render_progress_bar, render_severity_line, render_ticker_line,
-        render_verification_line, render_verification_ticker_line, verification_breakdown,
+        TickerGuard, fmt_secs, render_progress_bar, render_reporting_ticker_line,
+        render_severity_line, render_ticker_line, render_verification_line,
+        render_verification_ticker_line, verification_breakdown,
     };
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
 
     fn finding(v: keyhog_core::VerificationResult) -> keyhog_core::VerifiedFinding {
         use std::borrow::Cow;
@@ -1100,6 +1164,34 @@ mod ticker_tests {
     }
 
     #[test]
+    fn reporting_line_carries_stage_and_finding_count() {
+        let line = render_reporting_ticker_line(3, 1.2, 0, false);
+        assert!(line.contains("reporting"), "stage label: {line}");
+        assert!(line.contains("writing 3 findings"), "finding count: {line}");
+        assert!(
+            !line.contains('%'),
+            "reporting is indeterminate while serialization/fsync runs: {line}"
+        );
+        let one = render_reporting_ticker_line(1, 1.2, 0, false);
+        assert!(one.contains("writing 1 finding"), "singular noun: {one}");
+    }
+
+    #[test]
+    fn ticker_guard_stop_signals_and_joins_worker() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let guard = TickerGuard::spawn("test", move |done, _started| {
+            while !done.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            tx.send(()).expect("test receiver alive");
+        });
+
+        guard.stop();
+        rx.recv_timeout(Duration::from_secs(1))
+            .expect("ticker guard must signal and join promptly");
+    }
+
+    #[test]
     fn plain_mode_emits_no_ansi_color_mode_does() {
         let plain = render_ticker_line(50, 100, 3, 2.0, 0, false);
         assert!(
@@ -1117,6 +1209,16 @@ mod ticker_tests {
         assert!(
             verify_colored.contains('\x1b'),
             "color verification line must carry SGR codes"
+        );
+        let report_plain = render_reporting_ticker_line(3, 1.2, 0, false);
+        assert!(
+            !report_plain.contains('\x1b'),
+            "plain reporting line must be ansi-free: {report_plain:?}"
+        );
+        let report_colored = render_reporting_ticker_line(3, 1.2, 0, true);
+        assert!(
+            report_colored.contains('\x1b'),
+            "color reporting line must carry SGR codes"
         );
     }
 
