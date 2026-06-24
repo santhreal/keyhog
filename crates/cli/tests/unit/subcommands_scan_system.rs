@@ -1,4 +1,4 @@
-use keyhog::testing::{API, CliTestApi as _};
+use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use std::sync::Arc;
 
@@ -144,14 +144,22 @@ fn git_repo_discovery_does_not_flatten_read_dir_errors() {
         "scan-system repo discovery must match read_dir entry errors explicitly so skipped subtrees are logged"
     );
     assert!(
-        src.contains("cannot read directory entry while discovering git repositories")
-            && src.contains("cannot read directory while discovering git repositories")
-            && src.contains("cannot canonicalize root path while discovering git repositories")
-            && src.contains("cannot canonicalize directory while discovering git repositories"),
-        "scan-system repo discovery must warn for canonicalization, per-entry, and whole-directory read failures"
+        src.contains("record_git_discovery_gap")
+            && src.contains("\"directory entry read\"")
+            && src.contains("\"directory read\"")
+            && src.contains("\"root canonicalization\"")
+            && src.contains("\"subtree canonicalization\""),
+        "scan-system repo discovery must use the shared loud discovery-gap reporter for canonicalization, per-entry, and whole-directory read failures"
     );
+    let discovery_fn = src
+        .split("fn discover_git_repos")
+        .nth(1)
+        .and_then(|rest| rest.split("fn record_git_discovery_gap").next())
+        .expect(
+            "scan-system source must contain discover_git_repos before record_git_discovery_gap",
+        );
     assert!(
-        !src.contains("_space_cap"),
+        !discovery_fn.contains("space_cap"),
         "scan-system repo discovery must not advertise a fake space-cap traversal contract"
     );
 }
