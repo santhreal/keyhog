@@ -441,6 +441,23 @@ pub mod testing {
             status: u16,
             body: &str,
         ) -> (keyhog_core::VerificationResult, bool);
+        fn valid_aws_format_for_test(&self, access_key: &str, secret_key: &str) -> bool;
+        fn validate_aws_region_for_test(
+            &self,
+            region: &str,
+        ) -> Result<(), keyhog_core::VerificationResult>;
+        fn build_aws_probe_final_for_test(
+            &self,
+            access_key: &str,
+            secret_key: &str,
+            region: &str,
+        ) -> impl std::future::Future<
+            Output = (
+                keyhog_core::VerificationResult,
+                HashMap<String, String>,
+                bool,
+            ),
+        > + Send;
         fn rate_limit_feedback_sequence(&self) -> (usize, usize, usize, usize, usize);
         fn retry_loop_records_rate_limit_feedback(
             &self,
@@ -517,6 +534,12 @@ pub mod testing {
             addrs: &[std::net::SocketAddr],
             allow_private_ips: bool,
         ) -> Result<(), keyhog_core::VerificationResult>;
+        fn proxied_request_target_for_test(
+            &self,
+            raw_url: &str,
+            allow_private_ips: bool,
+            allow_http: bool,
+        ) -> impl std::future::Future<Output = Result<(), keyhog_core::VerificationResult>> + Send;
         fn clear_pinned_request_client_cache(&self);
         fn pinned_request_client_cache_len(&self) -> usize;
         fn pinned_request_client_cache_len_for_host(&self, host: &str) -> usize;
@@ -643,6 +666,59 @@ pub mod testing {
             body: &str,
         ) -> (keyhog_core::VerificationResult, bool) {
             crate::verify::classify_aws_sts_failure(status, body)
+        }
+
+        fn valid_aws_format_for_test(&self, access_key: &str, secret_key: &str) -> bool {
+            crate::verify::valid_aws_format(access_key, secret_key)
+        }
+
+        fn validate_aws_region_for_test(
+            &self,
+            region: &str,
+        ) -> Result<(), keyhog_core::VerificationResult> {
+            crate::verify::validate_aws_region(region)
+        }
+
+        async fn build_aws_probe_final_for_test(
+            &self,
+            access_key: &str,
+            secret_key: &str,
+            region: &str,
+        ) -> (
+            keyhog_core::VerificationResult,
+            HashMap<String, String>,
+            bool,
+        ) {
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("test verifier client builds");
+            let companions = HashMap::new();
+            match crate::verify::build_aws_probe(
+                access_key,
+                secret_key,
+                &None,
+                region,
+                access_key,
+                &companions,
+                Duration::from_millis(10),
+                &client,
+                false,
+                false,
+                false,
+                false,
+            )
+            .await
+            {
+                crate::verify::RequestBuildResult::Final {
+                    result,
+                    metadata,
+                    transient,
+                } => (result, metadata, transient),
+                crate::verify::RequestBuildResult::Ready(_) => {
+                    panic!("AWS probe preflight unexpectedly reached network-ready request")
+                }
+            }
         }
 
         fn rate_limit_feedback_sequence(&self) -> (usize, usize, usize, usize, usize) {
@@ -786,6 +862,29 @@ pub mod testing {
                 addrs,
                 allow_private_ips,
             )
+        }
+
+        async fn proxied_request_target_for_test(
+            &self,
+            raw_url: &str,
+            allow_private_ips: bool,
+            allow_http: bool,
+        ) -> Result<(), keyhog_core::VerificationResult> {
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("test verifier client builds");
+            crate::verify::resolved_client_for_url(
+                &client,
+                raw_url,
+                Duration::from_millis(10),
+                allow_private_ips,
+                allow_http,
+                true,
+                false,
+            )
+            .await
+            .map(|_| ())
         }
 
         fn clear_pinned_request_client_cache(&self) {

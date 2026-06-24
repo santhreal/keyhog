@@ -32,7 +32,10 @@ use tokio::task::{Id as TaskId, JoinError, JoinSet};
 use crate::cache;
 use crate::{into_finding, DedupedMatch, VerificationEngine, VerifyConfig, VerifyError};
 
-pub(crate) use aws::{build_aws_probe, classify_aws_sts_failure, parse_aws_sts_success_metadata};
+pub(crate) use aws::{
+    build_aws_probe, classify_aws_sts_failure, parse_aws_sts_success_metadata, valid_aws_format,
+    validate_aws_region,
+};
 pub(crate) use credential::{
     rate_limit_feedback_sequence_for_test, retry_delay_bounds_for_attempt,
     retry_loop_preserves_metadata_on_exhaustion_for_test,

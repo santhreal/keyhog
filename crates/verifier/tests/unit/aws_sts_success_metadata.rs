@@ -1,4 +1,8 @@
+use keyhog_core::VerificationResult;
 use keyhog_verifier::testing::{TestApi, VerifierTestApi};
+
+const VALID_AWS_ACCESS_KEY: &str = "AKIA1234567890ABCDEF";
+const VALID_AWS_SECRET_KEY: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 #[test]
 fn aws_sts_xml_success_metadata_preserves_identity_fields() {
@@ -102,6 +106,79 @@ fn aws_sts_plain_403_still_means_dead() {
         TestApi.classify_aws_sts_failure(403, "<Error><Code>InvalidClientTokenId</Code></Error>");
     assert!(!transient, "ordinary STS 403 remains conclusive");
     assert!(matches!(result, keyhog_core::VerificationResult::Dead));
+}
+
+#[test]
+fn aws_sts_format_validation_rejects_bad_access_or_secret_shapes() {
+    assert!(TestApi.valid_aws_format_for_test(
+        VALID_AWS_ACCESS_KEY,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa+/="
+    ));
+    assert!(!TestApi.valid_aws_format_for_test("ZZZZ1234567890ABCDEF", VALID_AWS_SECRET_KEY));
+    assert!(!TestApi.valid_aws_format_for_test("AKIA1234567890ABCDE", VALID_AWS_SECRET_KEY));
+    assert!(!TestApi.valid_aws_format_for_test("AKIA1234567890ABCDE!", VALID_AWS_SECRET_KEY));
+    assert!(!TestApi.valid_aws_format_for_test(VALID_AWS_ACCESS_KEY, "short"));
+    assert!(!TestApi.valid_aws_format_for_test(
+        VALID_AWS_ACCESS_KEY,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:"
+    ));
+}
+
+#[test]
+fn aws_sts_region_validation_rejects_ssrf_shapes() {
+    for region in ["us-east-1", "us-gov-west-1", "ap-south-2"] {
+        TestApi
+            .validate_aws_region_for_test(region)
+            .expect("ordinary AWS region syntax remains valid");
+    }
+
+    for region in [
+        "",
+        "us.east.1",
+        "us east 1",
+        "us/east-1",
+        "us\\east-1",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    ] {
+        let error = TestApi
+            .validate_aws_region_for_test(region)
+            .expect_err("invalid AWS region shape must be rejected before URL construction");
+        assert_eq!(
+            error,
+            VerificationResult::Error("invalid AWS region".into())
+        );
+    }
+}
+
+#[tokio::test]
+async fn aws_sts_invalid_format_result_is_dead_with_metadata_before_network() {
+    let (result, metadata, transient) = TestApi
+        .build_aws_probe_final_for_test("ZZZZ1234567890ABCDEF", VALID_AWS_SECRET_KEY, "us-east-1")
+        .await;
+
+    assert_eq!(result, VerificationResult::Dead);
+    assert_eq!(
+        metadata.get("format_valid").map(String::as_str),
+        Some("false")
+    );
+    assert!(!transient);
+}
+
+#[tokio::test]
+async fn aws_sts_invalid_region_result_is_error_before_network() {
+    let (result, metadata, transient) = TestApi
+        .build_aws_probe_final_for_test(VALID_AWS_ACCESS_KEY, VALID_AWS_SECRET_KEY, "us/east-1")
+        .await;
+
+    assert_eq!(
+        result,
+        VerificationResult::Error("invalid AWS region".into())
+    );
+    assert!(
+        metadata.is_empty(),
+        "invalid region must not claim AWS format metadata"
+    );
+    assert!(!transient);
 }
 
 #[test]

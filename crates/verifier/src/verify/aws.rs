@@ -8,7 +8,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use crate::verify::request::{RequestError, execute_request, resolved_client_for_url};
+use crate::verify::request::{execute_request, resolved_client_for_url, RequestError};
 use crate::verify::response::read_response_body;
 
 const AWS_VALID_ACCESS_KEY_PREFIXES: &[&str] = &["AKIA", "ASIA", "AROA", "AIDA", "AGPA"];
@@ -83,16 +83,9 @@ pub(crate) async fn build_aws_probe(
         };
     }
 
-    // Validate region to prevent SSRF via malicious detector specs.
-    // AWS regions are alphanumeric with hyphens only (e.g., us-east-1).
-    if !region
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        || region.is_empty()
-        || region.len() > 30
-    {
+    if let Err(result) = validate_aws_region(region) {
         return super::request::RequestBuildResult::Final {
-            result: VerificationResult::Error("invalid AWS region".into()),
+            result,
             metadata: HashMap::new(),
             transient: false,
         };
@@ -159,6 +152,21 @@ pub(crate) fn valid_aws_format(access_key: &str, secret_key: &str) -> bool {
         && secret_key
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
+}
+
+pub(crate) fn validate_aws_region(region: &str) -> std::result::Result<(), VerificationResult> {
+    // Validate region to prevent SSRF via malicious detector specs.
+    // AWS regions are alphanumeric with hyphens only (e.g., us-east-1).
+    if region
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        && !region.is_empty()
+        && region.len() <= 30
+    {
+        Ok(())
+    } else {
+        Err(VerificationResult::Error("invalid AWS region".into()))
+    }
 }
 
 async fn build_sigv4_request(

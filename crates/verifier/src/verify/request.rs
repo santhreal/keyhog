@@ -95,17 +95,17 @@ pub(crate) async fn resolved_client_for_url(
     let url = parse_target_url(raw_url)?;
     enforce_target_url_policy(&url, allow_private_ips, allow_http)?;
 
-    // When a proxy is in use, DNS resolution is the proxy's job (the
-    // verifier sends an absolute-form HTTP request or HTTP CONNECT and
-    // the proxy resolves the target hostname). Pre-resolving on the
-    // verifier side and pinning via `.resolve_to_addrs` would build a
-    // per-request client that DROPS the proxy + insecure_tls config
-    // baked into `base_client` - exactly the macro-wiring bug we'"'"'re
-    // closing. Skip the pinning entirely; `base_client` already carries
-    // the proxy. The DNS-rebinding mitigation that pinning provides is
-    // moot through a proxy (the proxy resolves once; reqwest doesn'"'"'t
-    // re-resolve).
+    // When a proxy is in use, keep the proxy-bearing base client, but still
+    // resolve and screen the target locally before handing it to the proxy.
+    // Without this preflight, single-label/custom internal domains and public
+    // hostnames resolving to private IPs bypass the post-resolution SSRF veto
+    // because the proxy owns DNS.
     if proxy_in_use {
+        if !allow_private_ips {
+            let host = target_host(&url);
+            let _screened_addrs =
+                resolve_direct_target_addrs(&url, &host, allow_private_ips).await?;
+        }
         return Ok(proxied_target(base_client, url));
     }
 

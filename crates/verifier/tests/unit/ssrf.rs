@@ -34,6 +34,11 @@ fn metadata_internal_domain_is_private_url() {
 }
 
 #[test]
+fn single_label_domain_is_private_url() {
+    assert!(is_private_url("https://admin/"));
+}
+
+#[test]
 fn malformed_url_string_is_treated_as_private() {
     assert!(is_private_url("http://not a valid url"));
 }
@@ -78,6 +83,43 @@ fn nat64_resolved_loopback_is_blocked_by_shared_screen() {
         err,
         VerificationResult::Error("blocked: private URL".into())
     );
+}
+
+#[tokio::test]
+async fn proxied_requests_block_unpinnable_internal_hostnames() {
+    let single_label = TestApi
+        .proxied_request_target_for_test("https://internal-router/", false, false)
+        .await
+        .expect_err("proxy path must not send single-label hosts to proxy DNS");
+    assert_eq!(
+        single_label,
+        VerificationResult::Error("blocked: private URL".into())
+    );
+
+    let custom_domain = TestApi
+        .proxied_request_target_for_test("https://api.corp/", false, false)
+        .await
+        .expect_err("proxy path must locally resolve and screen custom domains before proxying");
+    match custom_domain {
+        VerificationResult::Error(message) => assert!(
+            message == "blocked: private URL"
+                || message.starts_with("blocked: DNS resolution failed:"),
+            "custom proxy target must fail closed, got {message}"
+        ),
+        other => panic!("custom proxy target must fail closed as Error, got {other:?}"),
+    }
+
+    for url in ["https://internal-router/", "https://api.corp/"] {
+        TestApi
+            .proxied_request_target_for_test(url, true, false)
+            .await
+            .expect("explicit private-IP allowance is required to proxy internal hostnames");
+    }
+
+    TestApi
+        .proxied_request_target_for_test("https://example.com/", false, false)
+        .await
+        .expect("ordinary public domain remains proxy-verifiable");
 }
 
 #[test]
