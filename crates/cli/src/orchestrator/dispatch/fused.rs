@@ -1,8 +1,8 @@
 //! Fused filesystem read+scan dispatch path.
 
 use super::backend::{
-    AutorouteRoutingError, CachedBackendRouter, MeasuredBackendRouter,
-    backend_requires_coalesced_batch_pipeline,
+    backend_requires_coalesced_batch_pipeline, AutorouteRoutingError, CachedBackendRouter,
+    MeasuredBackendRouter,
 };
 use crate::orchestrator::ScanOrchestrator;
 use crate::orchestrator_config::{autoroute_config_digest, fused_depth_default};
@@ -367,6 +367,19 @@ impl ScanOrchestrator {
                 let _ = h.join(); // LAW10: unused-binding marker; no runtime effect, not a fallback
             }
             return Err(error.into());
+        }
+        if let ActiveBackendRouter::Measured(router) = &active_router {
+            let commit = match router.lock() {
+                Ok(mut guard) => guard.commit(),
+                Err(poisoned) => poisoned.into_inner().commit(),
+            };
+            if let Err(error) = commit {
+                progress_done.store(true, Ordering::Relaxed);
+                if let Some(h) = progress_handle {
+                    let _ = h.join(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+                }
+                return Err(error.into());
+            }
         }
 
         if self.effective_config.scanner.perf_trace {

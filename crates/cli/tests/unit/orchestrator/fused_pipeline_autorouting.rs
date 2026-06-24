@@ -76,9 +76,13 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
             && !evidence.contains("ToString::to_string")
             && calibration.contains("backend rejected by autoroute parity check")
             && calibration.contains("clear_fragment_cache")
-            && backend.contains("self.save_cache()?")
+            && backend.contains("pub(super) fn commit")
+            && backend.contains("self.save_cache()")
+            && dispatch.contains("self.router.commit()?")
+            && fused.contains("guard.commit()")
+            && !backend.contains("self.save_cache()?;\n        Ok(backend)")
             && !calibration.contains("sampling_closed"),
-        "autoroute must probe missing buckets only in calibration mode, reject parity-divergent candidates, and persist every measured decision"
+        "autoroute must probe missing buckets only in calibration mode, reject parity-divergent candidates, and persist measured decisions only after the whole scan succeeds"
     );
     assert!(
         !calibration.contains("gpu_could_engage")
@@ -112,9 +116,14 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
         "autoroute must persist decisions to an on-disk cache keyed by detector digest and host profile"
     );
     assert!(
-        backend.contains("impl Drop for MeasuredBackendRouter")
-            || backend.contains("fn drop(&mut self)") && backend.contains("MeasuredBackendRouter"),
-        "autoroute cache must be flushed when the router is dropped"
+        backend.contains("pub(super) fn commit")
+            && backend.contains("self.save_cache()")
+            && dispatch.contains("self.router.commit()?")
+            && fused.contains("guard.commit()")
+            && !backend.contains("self.save_cache()?;\n        Ok(backend)")
+            && !backend.contains("impl Drop for MeasuredBackendRouter")
+            && !backend.contains("fn drop(&mut self)"),
+        "autoroute cache persistence must be explicit and successful before routing trust; Drop must not flush partial dirty calibration state"
     );
     assert!(
         cache_path.contains("[system].autoroute_cache"),

@@ -13,15 +13,15 @@ mod backend;
 mod fused;
 mod pipeline;
 use anyhow::Result;
-pub(crate) use backend::CachedBackendRouter;
 pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
+pub(crate) use backend::CachedBackendRouter;
 use backend::{AutorouteRoutingError, MeasuredBackendRouter};
 use keyhog_core::{Chunk, RawMatch, Source};
-use keyhog_scanner::CompiledScanner;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
-use pipeline::{CoalescedPipelinePlan, coalesced_pipeline_plan};
-use std::sync::Arc;
+use keyhog_scanner::CompiledScanner;
+use pipeline::{coalesced_pipeline_plan, CoalescedPipelinePlan};
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::Instant;
 
 const COALESCED_CHUNK_SCAN_CEILING_BYTES: usize = 512 * 1024 * 1024;
@@ -70,6 +70,13 @@ impl CoalescedBatchRouter {
         match self {
             Self::Explicit(backend) => Ok(*backend),
             Self::Measured(router) => router.choose(scanner, None, batch),
+        }
+    }
+
+    fn commit(&mut self) -> std::result::Result<(), AutorouteRoutingError> {
+        match self {
+            Self::Explicit(_) => Ok(()),
+            Self::Measured(router) => router.commit(),
         }
     }
 }
@@ -123,6 +130,7 @@ impl CoalescedScannerWorker {
             last_end = std::time::Instant::now();
         }
 
+        self.router.commit()?;
         self.dump_perf_trace(sc_t0, scan_dur, recv_dur);
         self.scanner.dump_profile_reports("keyhog scan");
         Ok(findings)

@@ -10,10 +10,10 @@ use self::calibration::calibrate_fastest_correct_backend;
 use self::evidence::AutorouteDecision;
 use self::host::AutorouteHostProfile;
 use self::store::{load_autoroute_cache, save_autoroute_cache};
-use self::workload::{WorkloadClassificationError, WorkloadKey, workload_key};
+use self::workload::{workload_key, WorkloadClassificationError, WorkloadKey};
 use keyhog_core::Chunk;
-use keyhog_scanner::CompiledScanner;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
+use keyhog_scanner::CompiledScanner;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
@@ -326,7 +326,6 @@ impl MeasuredBackendRouter {
         self.decisions.insert(key, decision);
         self.measured_this_run.insert(key);
         self.cache_dirty = true;
-        self.save_cache()?;
         Ok(backend)
     }
 
@@ -337,18 +336,34 @@ impl MeasuredBackendRouter {
         self.decisions.get(key).and_then(AutorouteDecision::backend)
     }
 
+    pub(super) fn commit(&mut self) -> Result<(), AutorouteRoutingError> {
+        self.save_cache()
+    }
+
     fn save_cache(&mut self) -> Result<(), AutorouteRoutingError> {
         if !self.cache_dirty {
             return Ok(());
         }
         let path = self.persist_cache_path()?;
+        let measured_decisions;
+        let decisions = if self.calibration_mode {
+            measured_decisions = self
+                .decisions
+                .iter()
+                .filter(|(key, _)| self.measured_this_run.contains(key))
+                .map(|(key, decision)| (*key, decision.clone()))
+                .collect::<HashMap<_, _>>();
+            &measured_decisions
+        } else {
+            &self.decisions
+        };
         save_autoroute_cache(
             path,
             self.detector_digest,
             &self.rules_digest,
             self.config_digest,
             &self.host_profile,
-            &self.decisions,
+            decisions,
         )
         .map_err(AutorouteRoutingError::calibration_not_persisted)?;
         self.cache_dirty = false;
@@ -366,18 +381,6 @@ impl MeasuredBackendRouter {
             return Err(AutorouteRoutingError::calibration_not_persisted(reason));
         };
         Ok(path)
-    }
-}
-
-impl Drop for MeasuredBackendRouter {
-    fn drop(&mut self) {
-        if let Err(error) = self.save_cache() {
-            tracing::error!(
-                target: "keyhog::routing",
-                %error,
-                "autoroute calibration cache write failed during router drop"
-            );
-        }
     }
 }
 
