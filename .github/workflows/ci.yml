@@ -203,6 +203,8 @@ jobs:
         run: cargo test -p keyhog --test all_tests --no-default-features --features ci-lean --profile release-fast
       - name: cli vendor staleness target spec
         run: cargo test -p keyhog --test vyre_vendor_staleness_target_spec --no-default-features --features ci-lean --profile release-fast
+      - name: cli Vyre pin coherence
+        run: cargo test -p keyhog --test vyre_pin_coherence_lane3 --no-default-features --features ci-lean --profile release-fast
       # Coherence test binaries: standalone (not in all_tests) so they stay
       # bounded; each drives the real keyhog binary + reads the committed
       # docs/README to pin doc<->binary coherence (format set, exit codes,

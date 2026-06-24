@@ -28,14 +28,6 @@ import tomllib
 REPO = pathlib.Path(__file__).resolve().parents[2]
 ROOT_CARGO = REPO / "Cargo.toml"
 REQUIRED_VERSION = "0.6.3"
-GENERATED_PARTS = {
-    ".git",
-    "target",
-    "docs/book",
-    "benchmarks/corpora",
-    "benchmarks/results",
-    "benchmarks/results-cross-device",
-}
 
 # Logical dep key in [workspace.dependencies] -> published crate name.
 VYRE_DEPS: dict[str, str] = {
@@ -100,10 +92,19 @@ def _cargo_manifests() -> list[pathlib.Path]:
 
 def _is_generated_path(path: pathlib.Path) -> bool:
     try:
-        rel = path.relative_to(REPO).as_posix()
+        parts = path.relative_to(REPO).parts
     except ValueError:
         return True
-    return any(rel == part or rel.startswith(f"{part}/") for part in GENERATED_PARTS)
+    return (
+        ".git" in parts
+        or "target" in parts
+        or parts[:2] == ("docs", "book")
+        or (
+            len(parts) >= 2
+            and parts[0] == "benchmarks"
+            and (parts[1] == "corpora" or parts[1].startswith("results"))
+        )
+    )
 
 
 def _vendor_dirs() -> list[pathlib.Path]:
@@ -112,6 +113,15 @@ def _vendor_dirs() -> list[pathlib.Path]:
         for path in REPO.rglob("vendor")
         if path.is_dir() and not _is_generated_path(path)
     )
+
+
+def _path_has_component(value: str, component: str) -> bool:
+    parts = [part for part in value.replace("\\", "/").split("/") if part]
+    return component in parts
+
+
+def _manifest_path_values(text: str) -> list[str]:
+    return re.findall(r"""path\s*=\s*["']([^"']+)["']""", text)
 
 
 def check() -> list[str]:
@@ -174,23 +184,21 @@ def check() -> list[str]:
             + ", ".join(f"{k}={v}" for k, v in sorted(versions.items()))
         )
 
-    vendor_path_re = re.compile(r'path\s*=\s*"[^"]*vendor/[^"]*"')
-    retired_mirror_re = re.compile(r'path\s*=\s*"[^"]*third_party/vyre[^"]*"')
-    live_tree_re = re.compile(r'path\s*=\s*"[^"]*libs/performance/matching/vyre[^"]*"')
     for cargo in _cargo_manifests():
         rel = cargo.relative_to(REPO).as_posix()
         text = cargo.read_text(encoding="utf-8")
-        if vendor_path_re.search(text):
+        path_values = [value.replace("\\", "/") for value in _manifest_path_values(text)]
+        if any(_path_has_component(value, "vendor") for value in path_values):
             violations.append(
                 f"{rel} declares a Cargo path dependency into vendor/. Keyhog "
                 "must not resolve dependencies from repository vendored snapshots."
             )
-        if retired_mirror_re.search(text):
+        if any("third_party/vyre" in value for value in path_values):
             violations.append(
                 f"{rel} declares a Cargo path dependency into retired third_party/vyre. "
                 f"Use the crates.io `={REQUIRED_VERSION}` Vyre pins."
             )
-        if live_tree_re.search(text):
+        if any("libs/performance/matching/vyre" in value for value in path_values):
             violations.append(
                 f"{rel} declares a Cargo path dependency into the Santh live Vyre tree. "
                 "That breaks source ships on hosts without the mounted share."

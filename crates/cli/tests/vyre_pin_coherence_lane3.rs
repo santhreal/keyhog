@@ -24,16 +24,20 @@ fn root_cargo() -> Value {
 fn is_generated_path(root: &Path, path: &Path) -> bool {
     let rel = path.strip_prefix(root).unwrap_or(path);
     let text = rel.to_string_lossy().replace('\\', "/");
-    [
-        ".git",
-        "target",
-        "docs/book",
-        "benchmarks/corpora",
-        "benchmarks/results",
-        "benchmarks/results-cross-device",
-    ]
-    .iter()
-    .any(|part| text == *part || text.starts_with(&format!("{part}/")))
+    let parts: Vec<&str> = text.split('/').collect();
+    parts
+        .iter()
+        .any(|part| *part == ".git" || *part == "target")
+        || parts.starts_with(&["docs", "book"])
+        || (parts.first() == Some(&"benchmarks")
+            && parts
+                .get(1)
+                .is_some_and(|part| *part == "corpora" || part.starts_with("results")))
+}
+
+fn contains_path_component(text: &str, component: &str) -> bool {
+    text.split(|ch: char| ch == '/' || ch == '"' || ch == '\'' || ch.is_whitespace() || ch == '=')
+        .any(|part| part == component)
 }
 
 fn collect_cargo_manifests(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
@@ -42,10 +46,15 @@ fn collect_cargo_manifests(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
     }
     for entry in std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display())) {
         let path = entry.expect("dir entry").path();
+        let metadata = std::fs::symlink_metadata(&path)
+            .unwrap_or_else(|e| panic!("stat {}: {e}", path.display()));
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
         if is_generated_path(root, &path) {
             continue;
         }
-        if path.is_dir() {
+        if metadata.is_dir() {
             collect_cargo_manifests(root, &path, out);
         } else if path.file_name().is_some_and(|name| name == "Cargo.toml") {
             out.push(path);
@@ -59,10 +68,15 @@ fn collect_vendor_dirs(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
     }
     for entry in std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display())) {
         let path = entry.expect("dir entry").path();
+        let metadata = std::fs::symlink_metadata(&path)
+            .unwrap_or_else(|e| panic!("stat {}: {e}", path.display()));
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
         if is_generated_path(root, &path) {
             continue;
         }
-        if path.is_dir() {
+        if metadata.is_dir() {
             if path.file_name().is_some_and(|name| name == "vendor") {
                 out.push(path);
             } else {
@@ -197,7 +211,7 @@ fn repository_vendor_tree_is_absent_and_never_a_build_dependency() {
             let normalized = line.replace('\\', "/");
             if normalized.contains("path")
                 && normalized.contains('=')
-                && (normalized.contains("vendor/")
+                && (contains_path_component(&normalized, "vendor")
                     || normalized.contains("third_party/vyre")
                     || normalized.contains("libs/performance/matching/vyre"))
             {
