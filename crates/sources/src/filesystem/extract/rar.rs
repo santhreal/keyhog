@@ -9,8 +9,10 @@ use super::{
 };
 use keyhog_core::{Chunk, SourceError};
 use rars::{Archive, ArchiveReader};
+use std::cell::RefCell;
 use std::io::Write;
 use std::path::Path;
+use std::rc::Rc;
 
 pub(super) fn extract_rar_chunks(
     path: &Path,
@@ -99,6 +101,9 @@ pub(super) fn extract_rar_chunks(
             }
         }
         Archive::Rar15To40(archive) => {
+            if extract_rar15_40_solid_regular_chunks(archive, &mut state, emit) {
+                return;
+            }
             for entry in archive.files() {
                 let entry_name = entry.name_lossy();
                 let entry_size = entry.unp_size;
@@ -145,6 +150,9 @@ pub(super) fn extract_rar_chunks(
             }
         }
         Archive::Rar50Plus(archive) => {
+            if extract_rar50_solid_regular_chunks(archive, &mut state, emit) {
+                return;
+            }
             for entry in archive.files() {
                 let entry_name = entry.name_lossy();
                 let entry_size = entry.unpacked_size;
@@ -208,10 +216,11 @@ pub(super) fn extract_rar_chunks(
     }
 }
 
-const RAR_UNIX_HOST_OS: u64 = 3;
+const RAR_LEGACY_UNIX_HOST_OS: u64 = 3;
+const RAR5_UNIX_HOST_OS: u64 = 1;
 
 fn rar15_40_entry_is_special(entry: &rars::rar15_40::FileHeader) -> bool {
-    if u64::from(entry.host_os) != RAR_UNIX_HOST_OS {
+    if u64::from(entry.host_os) != RAR_LEGACY_UNIX_HOST_OS {
         return false;
     }
     archive_unix_mode_is_special(entry.attr) || archive_unix_mode_is_special(entry.attr >> 16)
@@ -222,7 +231,137 @@ fn rar50_entry_is_special(entry: &rars::rar50::FileHeader) -> bool {
 }
 
 fn rar_unix_attr_is_special(host_os: u64, attr: u64) -> bool {
-    host_os == RAR_UNIX_HOST_OS && archive_unix_mode_is_special((attr & u64::from(u32::MAX)) as u32)
+    matches!(host_os, RAR_LEGACY_UNIX_HOST_OS | RAR5_UNIX_HOST_OS)
+        && archive_unix_mode_is_special((attr & u64::from(u32::MAX)) as u32)
+}
+
+fn extract_rar15_40_solid_regular_chunks(
+    archive: &rars::rar15_40::Archive,
+    state: &mut RarExtractionState<'_>,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let files: Vec<_> = archive.files().collect();
+    if !archive.main.is_solid() && !files.iter().any(|entry| entry.is_solid()) {
+        return false;
+    }
+    if !files.iter().all(|entry| {
+        state.entry_is_solid_regular_candidate(
+            &entry.name_lossy(),
+            entry.unp_size,
+            entry.is_directory(),
+        ) && !entry.is_encrypted()
+            && !entry.is_split_before()
+            && !entry.is_split_after()
+            && !rar15_40_entry_is_special(entry)
+    }) {
+        return false;
+    }
+    let Some(total) = files.iter().try_fold(0u64, |total, entry| {
+        total
+            .checked_add(entry.unp_size)
+            .filter(|sum| *sum <= state.total_budget)
+    }) else {
+        return false;
+    };
+    if total > state.total_budget {
+        return false;
+    }
+    let cap = state.total_budget;
+    extract_solid_regular_entries(
+        state,
+        emit,
+        |decoded| {
+            archive.extract_to(rars::ArchiveReadOptions::default(), |meta| {
+                Ok(Box::new(SolidRarEntrySink::new(
+                    String::from_utf8_lossy(&meta.name).into_owned(),
+                    cap,
+                    Rc::clone(decoded),
+                )))
+            })
+        },
+        "RAR 1.5-4.0 solid archive",
+    );
+    true
+}
+
+fn extract_rar50_solid_regular_chunks(
+    archive: &rars::rar50::Archive,
+    state: &mut RarExtractionState<'_>,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let files: Vec<_> = archive.files().collect();
+    if !archive.main.is_solid()
+        && !files.iter().any(|entry| {
+            entry
+                .decoded_compression_info()
+                .is_ok_and(|info| info.solid)
+        })
+    {
+        return false;
+    }
+    if !files.iter().all(|entry| {
+        state.entry_is_solid_regular_candidate(
+            &entry.name_lossy(),
+            entry.unpacked_size,
+            entry.is_directory(),
+        ) && !entry.encrypted
+            && !entry.is_split_before()
+            && !entry.is_split_after()
+            && !entry.is_redirection()
+            && !rar50_entry_is_special(entry)
+    }) {
+        return false;
+    }
+    let Some(total) = files.iter().try_fold(0u64, |total, entry| {
+        total
+            .checked_add(entry.unpacked_size)
+            .filter(|sum| *sum <= state.total_budget)
+    }) else {
+        return false;
+    };
+    if total > state.total_budget {
+        return false;
+    }
+    let cap = state.total_budget;
+    extract_solid_regular_entries(
+        state,
+        emit,
+        |decoded| {
+            archive.extract_to(rars::ArchiveReadOptions::default(), |meta| {
+                Ok(Box::new(SolidRarEntrySink::new(
+                    String::from_utf8_lossy(&meta.name).into_owned(),
+                    cap,
+                    Rc::clone(decoded),
+                )))
+            })
+        },
+        "RAR5 solid archive",
+    );
+    true
+}
+
+fn extract_solid_regular_entries<F>(
+    state: &mut RarExtractionState<'_>,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+    extract: F,
+    archive_kind: &str,
+) where
+    F: FnOnce(&Rc<RefCell<Vec<RarDecodedEntry>>>) -> rars::Result<()>,
+{
+    let decoded = Rc::new(RefCell::new(Vec::new()));
+    match extract(&decoded) {
+        Ok(()) => {
+            for entry in decoded.borrow_mut().drain(..) {
+                state.emit_entry(emit, RarEntrySink::from_decoded(entry));
+                if state.consumer_stopped || state.archive_truncated {
+                    return;
+                }
+            }
+        }
+        Err(error) => {
+            state.report_archive_decode_error(archive_kind, &error, emit);
+        }
+    }
 }
 
 struct RarExtractionState<'a> {
@@ -291,6 +430,18 @@ impl<'a> RarExtractionState<'a> {
             return false;
         }
         true
+    }
+
+    fn entry_is_solid_regular_candidate(
+        &self,
+        entry_name: &str,
+        entry_size: u64,
+        is_directory: bool,
+    ) -> bool {
+        !is_directory
+            && !super::super::filter::is_default_excluded(entry_name)
+            && validate_scan_archive_entry_name(entry_name).is_ok()
+            && entry_size <= self.per_entry_cap
     }
 
     fn report_unreadable_entry(
@@ -417,6 +568,30 @@ impl<'a> RarExtractionState<'a> {
         self.archive_truncated = true;
         self.consumer_stopped = !emit(Err(error));
     }
+
+    fn report_archive_decode_error(
+        &mut self,
+        archive_kind: &str,
+        error: &rars::Error,
+        emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+    ) {
+        tracing::warn!(
+            archive = %self.archive_path.display(),
+            %archive_kind,
+            %error,
+            "cannot read solid RAR archive; skipping"
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        self.consumer_stopped = !emit(Err(SourceError::Other(format!(
+            "failed to scan {archive_kind} '{}': cannot read archive ({error}); archive was not scanned",
+            self.archive_display
+        ))));
+    }
+}
+
+struct RarDecodedEntry {
+    entry_name: String,
+    content: Vec<u8>,
 }
 
 struct RarEntrySink {
@@ -433,6 +608,15 @@ impl RarEntrySink {
             entry_name,
             content: Vec::with_capacity(capacity),
             cap,
+            hit_cap: false,
+        }
+    }
+
+    fn from_decoded(entry: RarDecodedEntry) -> Self {
+        Self {
+            entry_name: entry.entry_name,
+            content: entry.content,
+            cap: u64::MAX,
             hit_cap: false,
         }
     }
@@ -458,5 +642,56 @@ impl Write for RarEntrySink {
 
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
+    }
+}
+
+struct SolidRarEntrySink {
+    entry_name: String,
+    content: Vec<u8>,
+    cap: u64,
+    hit_cap: bool,
+    decoded: Rc<RefCell<Vec<RarDecodedEntry>>>,
+}
+
+impl SolidRarEntrySink {
+    fn new(entry_name: String, cap: u64, decoded: Rc<RefCell<Vec<RarDecodedEntry>>>) -> Self {
+        Self {
+            entry_name,
+            content: Vec::with_capacity(64 * 1024),
+            cap,
+            hit_cap: false,
+            decoded,
+        }
+    }
+}
+
+impl Write for SolidRarEntrySink {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let next_len = self.content.len().saturating_add(buf.len()) as u64;
+        if next_len > self.cap {
+            self.hit_cap = true;
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "RAR solid entry decoded size exceeds configured extraction cap",
+            ));
+        }
+        self.content.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Drop for SolidRarEntrySink {
+    fn drop(&mut self) {
+        if self.hit_cap {
+            return;
+        }
+        self.decoded.borrow_mut().push(RarDecodedEntry {
+            entry_name: std::mem::take(&mut self.entry_name),
+            content: std::mem::take(&mut self.content),
+        });
     }
 }

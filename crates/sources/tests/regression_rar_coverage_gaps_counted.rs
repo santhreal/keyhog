@@ -11,7 +11,8 @@ use support::split_chunk_results;
 
 const UNIX_SYMLINK_MODE: u64 = 0o120777;
 const UNIX_REGULAR_MODE: u64 = 0o100644;
-const UNIX_HOST_OS: u64 = 3;
+const RAR15_40_UNIX_HOST_OS: u64 = 3;
+const RAR50_UNIX_HOST_OS: u64 = 1;
 
 #[cfg(unix)]
 fn lock_exclusive(path: &std::path::Path) -> std::fs::File {
@@ -107,7 +108,7 @@ fn rar15_40_unix_special_entry_emits_source_error_and_keeps_safe_sibling() {
                 data: b"SHOULD_NOT_SCAN=rar29_link_payload\n",
                 file_time: 0,
                 file_attr: (UNIX_SYMLINK_MODE as u32) << 16,
-                host_os: UNIX_HOST_OS as u8,
+                host_os: RAR15_40_UNIX_HOST_OS as u8,
                 password: None,
                 file_comment: None,
             },
@@ -116,7 +117,7 @@ fn rar15_40_unix_special_entry_emits_source_error_and_keeps_safe_sibling() {
                 data: b"SAFE_RAR29_SECRET=visible\n",
                 file_time: 0,
                 file_attr: (UNIX_REGULAR_MODE as u32) << 16,
-                host_os: UNIX_HOST_OS as u8,
+                host_os: RAR15_40_UNIX_HOST_OS as u8,
                 password: None,
                 file_comment: None,
             },
@@ -175,14 +176,14 @@ fn rar50_unix_special_entry_emits_source_error_and_keeps_safe_sibling() {
             data: b"SHOULD_NOT_SCAN=rar50_link_payload\n",
             mtime: None,
             attributes: UNIX_SYMLINK_MODE,
-            host_os: UNIX_HOST_OS,
+            host_os: RAR50_UNIX_HOST_OS,
         },
         rar50::StoredEntry {
             name: b"safe.env",
             data: b"SAFE_RAR50_SECRET=visible\n",
             mtime: None,
             attributes: UNIX_REGULAR_MODE,
-            host_os: UNIX_HOST_OS,
+            host_os: RAR50_UNIX_HOST_OS,
         },
     ])
     .finish()
@@ -219,5 +220,105 @@ fn rar50_unix_special_entry_emits_source_error_and_keeps_safe_sibling() {
         skip_counts().unreadable,
         1,
         "the refused RAR50 special entry must count as unreadable"
+    );
+}
+
+#[test]
+fn rar15_40_solid_archive_scans_every_regular_member() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let archive_path = dir.path().join("rar29-solid.rar");
+    let mut features = FeatureSet::store_only();
+    features.solid = true;
+    let archive = rar15_40::write_compressed_archive(
+        &[
+            rar15_40::FileEntry {
+                name: b"one.env",
+                data: b"RAR29_SOLID_ONE=visible\n",
+                file_time: 0,
+                file_attr: UNIX_REGULAR_MODE as u32,
+                host_os: RAR15_40_UNIX_HOST_OS as u8,
+                password: None,
+                file_comment: None,
+            },
+            rar15_40::FileEntry {
+                name: b"two.env",
+                data: b"RAR29_SOLID_TWO=visible\n",
+                file_time: 0,
+                file_attr: UNIX_REGULAR_MODE as u32,
+                host_os: RAR15_40_UNIX_HOST_OS as u8,
+                password: None,
+                file_comment: None,
+            },
+        ],
+        rar15_40::WriterOptions::new(ArchiveVersion::Rar29, features),
+    )
+    .expect("write solid rar29 fixture");
+    std::fs::write(&archive_path, archive).expect("write solid rar29 archive");
+
+    let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
+        .chunks()
+        .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+
+    assert!(
+        errors.is_empty(),
+        "solid RAR29 regular members must not emit errors; errors={errors:?}"
+    );
+    assert!(
+        bodies.iter().any(|body| body.contains("RAR29_SOLID_ONE"))
+            && bodies.iter().any(|body| body.contains("RAR29_SOLID_TWO")),
+        "solid RAR29 must scan every regular member; bodies={bodies:?}"
+    );
+}
+
+#[test]
+fn rar50_solid_archive_scans_every_regular_member() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let archive_path = dir.path().join("rar50-solid.rar");
+    let mut features = FeatureSet::store_only();
+    features.solid = true;
+    let first = b"RAR50_SOLID_ONE=visible\n".repeat(16);
+    let second = b"RAR50_SOLID_TWO=visible\n".repeat(8);
+    let archive =
+        rar50::Rar50Writer::new(rar50::WriterOptions::new(ArchiveVersion::Rar50, features))
+            .compressed_entries(&[
+                rar50::CompressedEntry {
+                    name: b"one.env",
+                    data: &first,
+                    mtime: Some(0),
+                    attributes: UNIX_REGULAR_MODE,
+                    host_os: RAR50_UNIX_HOST_OS,
+                },
+                rar50::CompressedEntry {
+                    name: b"two.env",
+                    data: &second,
+                    mtime: Some(0),
+                    attributes: UNIX_REGULAR_MODE,
+                    host_os: RAR50_UNIX_HOST_OS,
+                },
+            ])
+            .finish()
+            .expect("write solid rar50 fixture");
+    std::fs::write(&archive_path, archive).expect("write solid rar50 archive");
+
+    let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
+        .chunks()
+        .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+
+    assert!(
+        errors.is_empty(),
+        "solid RAR50 regular members must not emit errors; errors={errors:?}"
+    );
+    assert!(
+        bodies.iter().any(|body| body.contains("RAR50_SOLID_ONE"))
+            && bodies.iter().any(|body| body.contains("RAR50_SOLID_TWO")),
+        "solid RAR50 must scan every regular member; bodies={bodies:?}"
     );
 }
