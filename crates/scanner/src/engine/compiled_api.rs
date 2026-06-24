@@ -16,11 +16,6 @@ impl CompiledScanner {
     /// `#[cfg(feature = "simd")]` across each call site.
     ///
     #[inline]
-    pub(crate) fn has_simd_prefilter(&self) -> bool {
-        self.simd_backend_usable()
-    }
-
-    #[inline]
     pub(crate) fn simd_backend_usable(&self) -> bool {
         #[cfg(feature = "simd")]
         {

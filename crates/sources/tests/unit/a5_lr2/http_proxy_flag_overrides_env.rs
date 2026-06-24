@@ -4,6 +4,7 @@
 //! not silently reroute secret-verification traffic.
 
 use keyhog_sources::testing::{SourceTestApi, TestApi};
+use rusty_fork::rusty_fork_test;
 use std::sync::Mutex;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -21,32 +22,36 @@ impl Drop for RestoreEnv {
     }
 }
 
-#[test]
-fn http_proxy_flag_overrides_env() {
-    let _guard = ENV_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let _restore = RestoreEnv {
-        proxy: std::env::var("KEYHOG_PROXY").ok(),
-    };
-    std::env::set_var("KEYHOG_PROXY", "http://env:8080");
+rusty_fork_test! {
+    #![rusty_fork(timeout_ms = 5000)]
 
-    // Explicit flag set: that value is used verbatim (env irrelevant).
-    let with_flag = keyhog_sources::http::HttpClientConfig {
-        proxy: Some("http://flag:9090".into()),
-        ..Default::default()
-    };
-    assert_eq!(
-        TestApi.http_effective_proxy(&with_flag).as_deref(),
-        Some("http://flag:9090"),
-    );
+    #[test]
+    fn http_proxy_flag_overrides_env() {
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _restore = RestoreEnv {
+            proxy: std::env::var("KEYHOG_PROXY").ok(),
+        };
+        std::env::set_var("KEYHOG_PROXY", "http://env:8080");
 
-    // No flag: the env var is IGNORED — effective proxy is None, NOT the env
-    // value. This is the security-load-bearing assertion.
-    let no_flag = keyhog_sources::http::HttpClientConfig::default();
-    assert_eq!(
-        TestApi.http_effective_proxy(&no_flag),
-        None,
-        "KEYHOG_PROXY must not set a proxy when --proxy is unset",
-    );
+        // Explicit flag set: that value is used verbatim (env irrelevant).
+        let with_flag = keyhog_sources::http::HttpClientConfig {
+            proxy: Some("http://flag:9090".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            TestApi.http_effective_proxy(&with_flag).as_deref(),
+            Some("http://flag:9090"),
+        );
+
+        // No flag: the env var is IGNORED - effective proxy is None, NOT the env
+        // value. This is the security-load-bearing assertion.
+        let no_flag = keyhog_sources::http::HttpClientConfig::default();
+        assert_eq!(
+            TestApi.http_effective_proxy(&no_flag),
+            None,
+            "KEYHOG_PROXY must not set a proxy when --proxy is unset",
+        );
+    }
 }

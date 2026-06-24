@@ -148,6 +148,7 @@ chrono = { workspace = true }
 criterion = { workspace = true }
 keyhog-verifier = { workspace = true }
 proptest = { workspace = true }
+rusty-fork = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tempfile = { workspace = true }
 md5 = "0.7"

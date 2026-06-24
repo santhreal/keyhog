@@ -18,15 +18,43 @@ mod support;
 use support::gpu_gate::require_gpu_or_panic;
 use support::paths::detector_dir;
 
+use std::ffi::OsString;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 
 const GPU_AC_RECALL_CORPUS_ENV: &str = "KEYHOG_GPU_AC_RECALL_CORPUS";
+const GPU_KERNEL_ENV: &str = "KEYHOG_GPU_KERNEL";
 const GPU_AC_RECALL_CORPUS_REPO_REL: &str = "benchmarks/corpora/gpu_ac_recall/big_with_secrets.txt";
 const GENERATED_CORPUS_LEN: usize = 33 * 1024 * 1024;
+static GPU_KERNEL_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+struct RestoreGpuKernelEnv {
+    original: Option<OsString>,
+}
+
+impl RestoreGpuKernelEnv {
+    fn set(value: &str) -> Self {
+        let original = std::env::var_os(GPU_KERNEL_ENV);
+        unsafe {
+            std::env::set_var(GPU_KERNEL_ENV, value);
+        }
+        Self { original }
+    }
+}
+
+impl Drop for RestoreGpuKernelEnv {
+    fn drop(&mut self) {
+        unsafe {
+            match self.original.take() {
+                Some(value) => std::env::set_var(GPU_KERNEL_ENV, value),
+                None => std::env::remove_var(GPU_KERNEL_ENV),
+            }
+        }
+    }
+}
 
 fn bench_corpus_path() -> PathBuf {
     if let Some(path) = std::env::var_os(GPU_AC_RECALL_CORPUS_ENV) {
@@ -323,6 +351,9 @@ fn bisect_gpu_ac_recall_by_window_size() {
 /// recall assertion executable in a fresh checkout.
 #[test]
 fn gpu_ac_kernel_must_find_stackblitz_token_on_full_corpus() {
+    let _env_guard = GPU_KERNEL_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let bytes = corpus_bytes().to_vec();
     // Sanity: the planted token must live at the expected offset.
     require_stackblitz_token(&bytes);
@@ -349,14 +380,7 @@ fn gpu_ac_kernel_must_find_stackblitz_token_on_full_corpus() {
     // with `KEYHOG_GPU_KERNEL=ac` set. This is the path the
     // binary takes when invoked as `keyhog scan --backend gpu`
     // with the env var on.
-    // SAFETY: single-threaded integration test; process-wide env
-    // var write is safe (Rust 2024 marked set_var unsafe to
-    // signal the multi-threading hazard, which doesn't apply
-    // here - cargo runs each integration test binary in its own
-    // process).
-    unsafe {
-        std::env::set_var("KEYHOG_GPU_KERNEL", "ac");
-    }
+    let _restore_gpu_kernel = RestoreGpuKernelEnv::set("ac");
     let routed_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu);
     let routed_flat: Vec<_> = routed_results.into_iter().flatten().collect();
     let routed_has_stackblitz = finds_stackblitz(&routed_flat);

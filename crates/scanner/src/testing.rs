@@ -42,6 +42,25 @@ pub fn scan_windowed_with_triggered_for_test(
     scanner.scan_windowed_with_triggered(chunk, triggered_patterns, None, None, None, None, None)
 }
 
+#[cfg(feature = "simd")]
+pub fn scan_windowed_with_triggered_evidence_for_test(
+    scanner: &crate::CompiledScanner,
+    chunk: &keyhog_core::Chunk,
+    triggered_patterns: &[u64],
+    confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
+    generic_keyword_positions: Option<&[u32]>,
+) -> Vec<keyhog_core::RawMatch> {
+    scanner.scan_windowed_with_triggered(
+        chunk,
+        triggered_patterns,
+        None,
+        None,
+        None,
+        confirmed_anchor_literal_matches,
+        generic_keyword_positions,
+    )
+}
+
 #[cfg(test)]
 pub(crate) fn scan_with_deadline(
     scanner: &crate::CompiledScanner,

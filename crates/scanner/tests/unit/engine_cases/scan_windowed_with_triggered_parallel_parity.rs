@@ -1,5 +1,7 @@
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, RawMatch, Severity};
-use keyhog_scanner::testing::scan_windowed_with_triggered_for_test;
+use keyhog_scanner::testing::{
+    scan_windowed_with_triggered_evidence_for_test, scan_windowed_with_triggered_for_test,
+};
 use keyhog_scanner::CompiledScanner;
 
 fn detector() -> DetectorSpec {
@@ -75,6 +77,46 @@ fn coalesced_triggered_large_chunk_matches_windowed_scan() {
             token.to_string(),
             1024 * 1024 - 24 + 1 + "export TOKEN=".len(),
             Some(2)
+        )]
+    );
+}
+
+#[test]
+fn windowed_triggered_evidence_before_later_window_does_not_underflow() {
+    let scanner = CompiledScanner::compile(vec![detector()]).expect("scanner compile");
+    let token = "tok_live_bZ9kQ2mX7pL4rT8wE1nB6vY3cF5dH0jL";
+    let mut text = String::with_capacity(1024 * 1024 + 256);
+    text.push_str("export TOKEN=");
+    let token_offset = text.len();
+    text.push_str(token);
+    text.push('\n');
+    text.push_str(&"b".repeat(1024 * 1024 + 256));
+    let chunk = Chunk {
+        data: text.into(),
+        metadata: ChunkMetadata {
+            source_type: "unit".into(),
+            path: Some("windowed-evidence.env".into()),
+            ..Default::default()
+        },
+    };
+
+    let confirmed = [(0u32, token_offset as u32)];
+    let generic_positions = [token_offset as u32];
+    let triggered = scan_windowed_with_triggered_evidence_for_test(
+        &scanner,
+        &chunk,
+        &[1],
+        Some(&confirmed),
+        Some(&generic_positions),
+    );
+
+    assert_eq!(
+        canonical(&triggered),
+        vec![(
+            "windowed-trigger-token".to_string(),
+            token.to_string(),
+            token_offset,
+            Some(1)
         )]
     );
 }

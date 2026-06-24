@@ -3,6 +3,7 @@
 #![cfg(feature = "simd")]
 
 use keyhog_scanner::testing::{set_hyperscan_cache_dir, HsScanner};
+use rusty_fork::rusty_fork_test;
 use std::ffi::OsString;
 
 struct CacheEnvGuard {
@@ -28,29 +29,33 @@ impl Drop for CacheEnvGuard {
     }
 }
 
-#[test]
-fn explicit_cache_dir_wins_and_legacy_env_is_ignored() {
-    let _guard = CacheEnvGuard::poison_legacy_env();
-    let home = dirs::home_dir().expect("home directory required for cache-dir allowlist");
-    let root = tempfile::TempDir::new_in(home).expect("home tempdir");
-    let cache_dir = root.path().join("hs-cache");
-    set_hyperscan_cache_dir(Some(cache_dir.clone()));
+rusty_fork_test! {
+    #![rusty_fork(timeout_ms = 5000)]
 
-    let (_scanner, unsupported) = HsScanner::compile(&[(0, 0, "khcache_[A-Z0-9]{8}", false)])
-        .expect("explicit cache dir must compile despite poisoned legacy env");
-    assert!(unsupported.is_empty(), "simple pattern should compile");
+    #[test]
+    fn explicit_cache_dir_wins_and_legacy_env_is_ignored() {
+        let _guard = CacheEnvGuard::poison_legacy_env();
+        let home = dirs::home_dir().expect("home directory required for cache-dir allowlist");
+        let root = tempfile::TempDir::new_in(home).expect("home tempdir");
+        let cache_dir = root.path().join("hs-cache");
+        set_hyperscan_cache_dir(Some(cache_dir.clone()));
 
-    let entries: Vec<_> = std::fs::read_dir(&cache_dir)
-        .expect("explicit cache dir exists")
-        .map(|entry| entry.expect("cache entry").path())
-        .collect();
-    assert!(
-        entries.iter().any(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("hs-") && name.ends_with(".db"))
-        }),
-        "expected a Hyperscan cache database under {}; entries={entries:?}",
-        cache_dir.display()
-    );
+        let (_scanner, unsupported) = HsScanner::compile(&[(0, 0, "khcache_[A-Z0-9]{8}", false)])
+            .expect("explicit cache dir must compile despite poisoned legacy env");
+        assert!(unsupported.is_empty(), "simple pattern should compile");
+
+        let entries: Vec<_> = std::fs::read_dir(&cache_dir)
+            .expect("explicit cache dir exists")
+            .map(|entry| entry.expect("cache entry").path())
+            .collect();
+        assert!(
+            entries.iter().any(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("hs-") && name.ends_with(".db"))
+            }),
+            "expected a Hyperscan cache database under {}; entries={entries:?}",
+            cache_dir.display()
+        );
+    }
 }

@@ -102,7 +102,7 @@ impl CompiledScanner {
                             .filter_map(|&(literal_idx, pos)| {
                                 let pos = pos as usize;
                                 (pos >= offset && pos < end)
-                                    .then_some((literal_idx, (pos - offset) as u32))
+                                    .then(|| (literal_idx, (pos - offset) as u32))
                             })
                             .collect::<Vec<_>>();
                         Some(window_confirmed_anchor_matches.as_slice())
@@ -115,7 +115,7 @@ impl CompiledScanner {
                         .iter()
                         .filter_map(|&pos| {
                             let pos = pos as usize;
-                            (pos >= offset && pos < end).then_some((pos - offset) as u32)
+                            (pos >= offset && pos < end).then(|| (pos - offset) as u32)
                         })
                         .collect::<Vec<_>>();
                     Some(window_generic_keyword_positions.as_slice())

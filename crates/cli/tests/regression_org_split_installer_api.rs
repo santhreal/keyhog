@@ -11,7 +11,23 @@
 //! moved helper that drifted its logic is caught, plus a compile-time
 //! reachability check over the full call list the subcommands depend on.
 
-use keyhog::testing::{API, CliTestApi as _};
+use keyhog::testing::{CliTestApi as _, API};
+use std::sync::Mutex;
+
+static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+struct RestoreEnv {
+    release_api_base: Option<String>,
+}
+
+impl Drop for RestoreEnv {
+    fn drop(&mut self) {
+        match &self.release_api_base {
+            Some(value) => std::env::set_var("KEYHOG_RELEASE_API_BASE", value),
+            None => std::env::remove_var("KEYHOG_RELEASE_API_BASE"),
+        }
+    }
+}
 
 // ── release (network/trust) half: pure functions keep exact behavior ────────
 
@@ -99,6 +115,12 @@ fn release_public_constants_and_self_test_reachable_after_split() {
 
 #[test]
 fn release_api_base_ignores_ambient_env_after_split() {
+    let _guard = ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _restore = RestoreEnv {
+        release_api_base: std::env::var("KEYHOG_RELEASE_API_BASE").ok(),
+    };
     std::env::set_var("KEYHOG_RELEASE_API_BASE", "http://attacker.invalid");
     assert_eq!(
         API.release_api_base(),
@@ -110,7 +132,6 @@ fn release_api_base_ignores_ambient_env_after_split() {
         "http://127.0.0.1:1234",
         "offline tests must use the explicit argv/test seam instead"
     );
-    std::env::remove_var("KEYHOG_RELEASE_API_BASE");
 }
 
 // ── local-install half: surface reachable + reaping behavior unchanged ──────

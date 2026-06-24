@@ -473,26 +473,14 @@ impl CompiledScanner {
         }
     }
 
-    // `#[cfg(feature = "gpu")]`: callers are the GPU per-chunk trigger path and
-    // the coalesced region dispatch's failure path (`gpu_region_dispatch.rs`), so this — and its
-    // `has_simd_prefilter` helper — are needed exactly when `gpu` is compiled.
-    // A no-`gpu` build never recovers from a GPU failure, so leaving it
-    // ungated is dead code there (Law 11).
-    #[cfg(feature = "gpu")]
     pub(crate) fn degraded_backend_after_gpu_failure(&self) -> ScanBackend {
         // Route to the backend that is ACTUALLY live: `SimdCpu` only when a
         // Hyperscan prefilter is compiled in and built, else the pure-CPU AC
         // `CpuFallback` — otherwise the operator-visible backend would claim
-        // SimdCpu while silently running the weaker AC path (Law 10). `gpu`
-        // implies `simd`, so the prefilter is always compiled in here; the
-        // `has_simd_prefilter` accessor still gates on whether the Hyperscan
-        // database actually BUILT at runtime (it can be `None` on a build
-        // failure), keeping the degraded-backend label honest.
-        if self.has_simd_prefilter() {
-            ScanBackend::SimdCpu
-        } else {
-            ScanBackend::CpuFallback
-        }
+        // SimdCpu while silently running the weaker AC path (Law 10). This is
+        // compiled even without the `gpu` feature because the generic
+        // per-backend trigger dispatcher still typechecks the GPU match arm.
+        self.live_cpu_backend()
     }
 }
 
