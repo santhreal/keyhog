@@ -79,13 +79,10 @@ impl Phase2HsEngine {
         let mut dropped = Vec::new();
         for &i in &unsupported {
             let Some((phase2_idx, _, _, _)) = refs.get(i).copied() else {
-                tracing::warn!(
-                    target: "keyhog::phase2",
-                    unsupported_id = i,
-                    refs = refs.len(),
-                    "HS always-active prefilter returned unsupported pattern id outside refs; using RegexSet path",
+                panic!(
+                    "compiled scanner invariant violation: HS always-active prefilter returned unsupported pattern id outside refs; unsupported_id={i}; refs_len={}; refusing to disable the prefilter",
+                    refs.len()
                 );
-                return None;
             };
             dropped.push((phase2_idx, phase2_patterns[phase2_idx].0.regex.clone()));
         }

@@ -63,12 +63,16 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
     assert!(
         engine_backend_prepared
             .contains("HS compile returned unsupported pattern id outside the deduped AC table")
+            && engine_backend_prepared.contains("compiled scanner invariant violation")
+            && engine_backend_prepared.contains("refusing to disable the SIMD prefilter")
             && !engine_backend_prepared.contains(".filter_map(|&hs_id| index_map.get(hs_id))")
             && phase2_hs.contains(
                 "HS always-active prefilter returned unsupported pattern id outside refs"
             )
+            && phase2_hs.contains("compiled scanner invariant violation")
+            && phase2_hs.contains("refusing to disable the prefilter")
             && !phase2_hs.contains(".filter_map(|&i| refs.get(i).map(|r| r.0))"),
-        "Hyperscan unsupported-id mapping must fail closed instead of silently dropping unmappable backend ids"
+        "Hyperscan unsupported-id mapping must fail closed instead of disabling SIMD/prefilter routes"
     );
     assert!(
         scan.contains("static SCRATCH_TLS")

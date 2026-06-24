@@ -122,12 +122,10 @@ pub(crate) fn build_simd_scanner(
             let mut unsupported_ac = Vec::new();
             for &hs_id in &unsupported {
                 let Some(indices) = index_map.get(hs_id) else {
-                    tracing::warn!(
-                        hs_id,
-                        unique = hs_patterns.len(),
-                        "HS compile returned unsupported pattern id outside the deduped AC table; disabling SIMD prefilter"
+                    panic!(
+                        "compiled scanner invariant violation: HS compile returned unsupported pattern id outside the deduped AC table; hs_id={hs_id}; unique={}; refusing to disable the SIMD prefilter",
+                        hs_patterns.len()
                     );
-                    return None;
                 };
                 unsupported_ac.extend(indices.iter().copied());
             }
