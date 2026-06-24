@@ -1,7 +1,8 @@
 //! Fused filesystem read+scan dispatch path.
 
 use super::backend::{
-    backend_requires_coalesced_batch_pipeline, CachedBackendRouter, MeasuredBackendRouter,
+    AutorouteRoutingError, CachedBackendRouter, MeasuredBackendRouter,
+    backend_requires_coalesced_batch_pipeline,
 };
 use crate::orchestrator::ScanOrchestrator;
 use crate::orchestrator_config::{autoroute_config_digest, fused_depth_default};
@@ -286,19 +287,7 @@ impl ScanOrchestrator {
                 let backend = match selected_backend {
                     Ok(backend) => backend,
                     Err(error) => {
-                        match routing_error_ref.lock() {
-                            Ok(mut guard) => {
-                                if guard.is_none() {
-                                    *guard = Some(error);
-                                }
-                            }
-                            Err(poisoned) => {
-                                let mut guard = poisoned.into_inner();
-                                if guard.is_none() {
-                                    *guard = Some(error);
-                                }
-                            }
-                        }
+                        record_routing_error(&routing_error_ref, error);
                         return Vec::new();
                     }
                 };
@@ -324,7 +313,18 @@ impl ScanOrchestrator {
                             &batch,
                             keyhog_scanner::hw_probe::ScanBackend::CpuFallback,
                         ),
-                    _ => scanner_ref.scan_coalesced(&batch),
+                    keyhog_scanner::hw_probe::ScanBackend::SimdCpu => scanner_ref
+                        .scan_coalesced_with_backend(
+                            &batch,
+                            keyhog_scanner::hw_probe::ScanBackend::SimdCpu,
+                        ),
+                    backend => {
+                        record_routing_error(
+                            &routing_error_ref,
+                            AutorouteRoutingError::unsupported_backend(backend),
+                        );
+                        return Vec::new();
+                    }
                 };
                 crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
 
@@ -397,5 +397,24 @@ impl ScanOrchestrator {
         );
 
         Ok(findings)
+    }
+}
+
+fn record_routing_error(
+    slot: &Arc<Mutex<Option<AutorouteRoutingError>>>,
+    error: AutorouteRoutingError,
+) {
+    match slot.lock() {
+        Ok(mut guard) => {
+            if guard.is_none() {
+                *guard = Some(error);
+            }
+        }
+        Err(poisoned) => {
+            let mut guard = poisoned.into_inner();
+            if guard.is_none() {
+                *guard = Some(error);
+            }
+        }
     }
 }

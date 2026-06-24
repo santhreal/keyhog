@@ -13,15 +13,15 @@ mod backend;
 mod fused;
 mod pipeline;
 use anyhow::Result;
-pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 pub(crate) use backend::CachedBackendRouter;
+pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 use backend::{AutorouteRoutingError, MeasuredBackendRouter};
 use keyhog_core::{Chunk, RawMatch, Source};
-use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use keyhog_scanner::CompiledScanner;
-use pipeline::{coalesced_pipeline_plan, CoalescedPipelinePlan};
-use std::sync::atomic::Ordering;
+use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
+use pipeline::{CoalescedPipelinePlan, coalesced_pipeline_plan};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 const COALESCED_CHUNK_SCAN_CEILING_BYTES: usize = 512 * 1024 * 1024;
@@ -157,7 +157,9 @@ impl CoalescedScannerWorker {
             ScanBackend::CpuFallback => self
                 .scanner
                 .scan_chunks_with_backend(batch, ScanBackend::CpuFallback),
-            ScanBackend::SimdCpu => self.scanner.scan_coalesced(batch),
+            ScanBackend::SimdCpu => self
+                .scanner
+                .scan_coalesced_with_backend(batch, ScanBackend::SimdCpu),
             backend => return Err(AutorouteRoutingError::unsupported_backend(backend)),
         };
         append_scanned_batch_findings(findings, batch, per_chunk, scanned_count, ran_on_gpu);

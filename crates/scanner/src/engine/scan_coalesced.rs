@@ -86,6 +86,20 @@ impl CompiledScanner {
 
     /// High-throughput coalesced scan: all files scanned in parallel, zero
     /// overhead for non-hit files.
+    pub fn scan_coalesced_with_backend(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        backend: crate::hw_probe::ScanBackend,
+    ) -> Vec<Vec<keyhog_core::RawMatch>> {
+        if backend == crate::hw_probe::ScanBackend::SimdCpu {
+            self.deny_silent_selected_backend_degrade(backend);
+            return self.scan_coalesced(chunks);
+        }
+        self.scan_chunks_with_backend(chunks, backend)
+    }
+
+    /// High-throughput coalesced scan: all files scanned in parallel, zero
+    /// overhead for non-hit files.
     #[allow(clippy::needless_return)] // return needed under non-simd cfg branch
     pub fn scan_coalesced(&self, chunks: &[keyhog_core::Chunk]) -> Vec<Vec<keyhog_core::RawMatch>> {
         use rayon::prelude::*;
