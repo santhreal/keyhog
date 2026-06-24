@@ -337,8 +337,28 @@ impl MerkleIndex {
         size: u64,
         content: &[u8],
     ) -> bool {
+        self.record_chunk_path_at_offset_and_check_unchanged(
+            path.as_path(),
+            chunk_offset,
+            mtime_ns,
+            size,
+            content,
+        )
+    }
+
+    /// Borrowing variant for hot dispatch loops that already hold a path
+    /// string/reference. The index still owns the persisted key, but callers do
+    /// not need to allocate a temporary `PathBuf` before handing it off.
+    pub fn record_chunk_path_at_offset_and_check_unchanged(
+        &self,
+        path: &Path,
+        chunk_offset: u64,
+        mtime_ns: u64,
+        size: u64,
+        content: &[u8],
+    ) -> bool {
         let content_hash = Self::hash_content(content);
-        let key = CacheKey::chunk(path, chunk_offset);
+        let key = CacheKey::chunk(path.to_path_buf(), chunk_offset);
         let unchanged = self.unchanged_key(&key, &content_hash);
         self.record_key_with_metadata(
             key,

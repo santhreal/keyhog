@@ -329,9 +329,8 @@ impl CoalescedBatchProducer {
         let Some(path_str) = c.metadata.path.as_deref() else {
             return false;
         };
-        let path = std::path::PathBuf::from(path_str);
-        let unchanged = idx.record_chunk_at_offset_and_check_unchanged(
-            path,
+        let unchanged = idx.record_chunk_path_at_offset_and_check_unchanged(
+            std::path::Path::new(path_str),
             c.metadata.base_offset as u64,
             c.metadata.mtime_ns.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
             c.metadata.size_bytes.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe

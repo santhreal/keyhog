@@ -85,11 +85,13 @@ fn merkle_chunk_offset_source_contract_is_on_production_path() {
 
     let dispatch_source = std::fs::read_to_string("../cli/src/orchestrator/dispatch.rs")
         .expect("read dispatch source");
-    assert!(dispatch_source.contains("record_chunk_at_offset_and_check_unchanged"));
+    assert!(dispatch_source.contains("record_chunk_path_at_offset_and_check_unchanged"));
     assert!(dispatch_source.contains("c.metadata.base_offset as u64"));
+    assert!(!dispatch_source.contains("PathBuf::from(path_str)"));
 
     let fused_source = std::fs::read_to_string("../cli/src/orchestrator/dispatch/fused.rs")
         .expect("read fused dispatch source");
-    assert!(fused_source.contains("record_chunk_at_offset_and_check_unchanged"));
+    assert!(fused_source.contains("record_chunk_path_at_offset_and_check_unchanged"));
     assert!(fused_source.contains("c.metadata.base_offset as u64"));
+    assert!(!fused_source.contains("PathBuf::from(path_str)"));
 }
