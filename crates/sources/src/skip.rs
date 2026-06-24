@@ -83,6 +83,9 @@ pub struct SkipCounts {
     pub binary: usize,
     pub excluded: usize,
     pub unreadable: usize,
+    /// Git commit/tree/blob objects referenced by Git metadata but not scanned
+    /// because the object was unreadable or the wrong kind.
+    pub git_object_unreadable: usize,
     /// Archives truncated by a decompression-bomb guard (partial coverage).
     pub archive_truncated: usize,
     /// Binary sections dropped because their name could not be resolved from a
@@ -102,8 +105,8 @@ pub struct SkipCounts {
 impl SkipCounts {
     /// Total files skipped (not scanned) across all categories.
     ///
-    /// Git object unreadability is exposed through `git_object_unreadable()`;
-    /// `binary_section_name_unresolved`, `source_truncated`,
+    /// Git object unreadability is source-object partial coverage, not a
+    /// whole-file skip. `binary_section_name_unresolved`, `source_truncated`,
     /// `structured_source_parse_failures`, and
     /// `archive_duplicate_scan_unavailable` are partial-coverage signals, not
     /// whole-file skips, so they are surfaced separately and are NOT added into
@@ -177,6 +180,7 @@ pub fn skip_counts() -> SkipCounts {
         binary: SKIPPED_BINARY.load(Relaxed),
         excluded: SKIPPED_EXCLUDED.load(Relaxed),
         unreadable: SKIPPED_UNREADABLE.load(Relaxed),
+        git_object_unreadable: GIT_OBJECT_UNREADABLE.load(Relaxed),
         archive_truncated: SKIPPED_ARCHIVE_TRUNCATED.load(Relaxed),
         binary_section_name_unresolved: BINARY_SECTION_NAME_UNRESOLVED.load(Relaxed),
         source_truncated: SOURCE_TRUNCATED.load(Relaxed),
@@ -188,7 +192,7 @@ pub fn skip_counts() -> SkipCounts {
 /// Git commit/tree/blob objects that were referenced by Git metadata but not
 /// scanned because the object was unreadable or had the wrong kind.
 pub fn git_object_unreadable() -> usize {
-    GIT_OBJECT_UNREADABLE.load(Relaxed)
+    skip_counts().git_object_unreadable
 }
 
 /// Reset every skip counter. Public so test fixtures and the orchestrator can
@@ -218,7 +222,7 @@ pub(crate) fn set_skip_counts_for_test(counts: SkipCounts) {
     SKIPPED_BINARY.store(counts.binary, Relaxed);
     SKIPPED_EXCLUDED.store(counts.excluded, Relaxed);
     SKIPPED_UNREADABLE.store(counts.unreadable, Relaxed);
-    GIT_OBJECT_UNREADABLE.store(0, Relaxed);
+    GIT_OBJECT_UNREADABLE.store(counts.git_object_unreadable, Relaxed);
     SKIPPED_ARCHIVE_TRUNCATED.store(counts.archive_truncated, Relaxed);
     BINARY_SECTION_NAME_UNRESOLVED.store(counts.binary_section_name_unresolved, Relaxed);
     SOURCE_TRUNCATED.store(counts.source_truncated, Relaxed);

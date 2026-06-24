@@ -728,7 +728,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
     }
 
     let c = keyhog_sources::skip_counts();
-    let git_object_unreadable = keyhog_sources::git_object_unreadable();
+    let git_object_unreadable = c.git_object_unreadable;
     // Whether the binary source recorded any degradation/drop. Checked here so a
     // run whose ONLY coverage gap is a Ghidra fallback / unreadable binary (with
     // zero file-walk skips) still emits its summary line below.

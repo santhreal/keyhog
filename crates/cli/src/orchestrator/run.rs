@@ -426,7 +426,7 @@ fn source_coverage_incomplete() -> bool {
     let source_gaps = counts.over_max_size
         + counts.binary
         + counts.unreadable
-        + keyhog_sources::git_object_unreadable()
+        + counts.git_object_unreadable
         + counts.archive_truncated
         + counts.binary_section_name_unresolved
         + counts.source_truncated

@@ -306,6 +306,7 @@ fn skip_counts_total_sums_all_categories() {
         binary: 3,
         excluded: 5,
         unreadable: 7,
+        git_object_unreadable: 29,
         archive_truncated: 11,
         // Partial-coverage signals — deliberately NOT part of the whole-file
         // skip total, so non-zero values here must not change total().
@@ -337,13 +338,13 @@ fn reset_skip_counters_zeroes_every_category() {
         binary: 22,
         excluded: 33,
         unreadable: 44,
+        git_object_unreadable: 99,
         archive_truncated: 0,
         binary_section_name_unresolved: 55,
         source_truncated: 66,
         structured_source_parse_failures: 77,
         archive_duplicate_scan_unavailable: 88,
     });
-    TestApi.bump_git_object_unreadable(99);
 
     TestApi.reset_skip_counters();
 
@@ -353,8 +354,7 @@ fn reset_skip_counters_zeroes_every_category() {
     assert_eq!(snap.excluded, 0);
     assert_eq!(snap.unreadable, 0);
     assert_eq!(
-        keyhog_sources::git_object_unreadable(),
-        0,
+        snap.git_object_unreadable, 0,
         "reset_skip_counters must also zero git object coverage-gap counters"
     );
     assert_eq!(
@@ -381,16 +381,22 @@ fn skip_counts_reads_live_counters() {
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     TestApi.bump_git_object_unreadable(5);
+    let snap = skip_counts();
+    assert_eq!(snap.binary, 0, "unrelated skip counters stay untouched");
+    assert_eq!(
+        snap.git_object_unreadable, 5,
+        "snapshot must read the live git-object coverage-gap atomic value"
+    );
     TestApi.set_skip_counts(SkipCounts {
         binary: 9,
+        git_object_unreadable: 7,
         ..SkipCounts::default()
     });
     let snap = skip_counts();
-    assert_eq!(snap.binary, 9, "snapshot must read the live atomic value");
+    assert_eq!(snap.binary, 9, "set_skip_counts must set binary skips");
     assert_eq!(
-        keyhog_sources::git_object_unreadable(),
-        0,
-        "set_skip_counts must clear the separate git-object unreadable counter so fixtures do not inherit stale state"
+        snap.git_object_unreadable, 7,
+        "set_skip_counts must set git object coverage gaps through SkipCounts"
     );
     TestApi.reset_skip_counters();
 }

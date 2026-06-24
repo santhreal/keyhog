@@ -111,18 +111,18 @@ fn git_object_coverage_gaps_are_reported_separately() {
     let report = std::fs::read_to_string(root.join("src/reporting.rs")).expect("read report");
 
     assert!(
-        run.contains("keyhog_sources::git_object_unreadable()"),
-        "git object drops must make clean-looking scans exit as incomplete coverage"
+        run.contains("counts.git_object_unreadable"),
+        "git object drops must make clean-looking scans exit as incomplete coverage through the central skip snapshot"
     );
     assert!(
         reporting.contains("Git object(s) NOT scanned")
-            && reporting.contains("keyhog_sources::git_object_unreadable()"),
-        "terminal summary must not lump unreadable Git objects under unreadable file wording"
+            && reporting.contains("c.git_object_unreadable"),
+        "terminal summary must not lump unreadable Git objects under unreadable file wording and must read the central skip snapshot"
     );
     assert!(
         report.contains("Git object unreadable or wrong object kind")
-            && report.contains("keyhog_sources::git_object_unreadable()"),
-        "structured report coverage summaries must surface the Git object gap category"
+            && report.contains("c.git_object_unreadable"),
+        "structured report coverage summaries must surface the Git object gap category from the central skip snapshot"
     );
 }
 
