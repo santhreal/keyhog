@@ -179,7 +179,13 @@ impl Allowlist {
 
     fn parse_with_policy(content: &str, policy: AllowlistMetadataPolicy) -> Self {
         let mut al = Self::empty();
-        let today_days = today_days_since_epoch();
+        let today_days = match try_today_days_since_epoch() {
+            Ok(days) => days,
+            Err(detail) => {
+                al.push_policy_violation(1, "<allowlist>", "system_clock", detail);
+                return al;
+            }
+        };
         let today = yyyy_mm_dd_from_days(today_days);
         for (line_number, raw_line) in content.lines().enumerate() {
             let raw_line = raw_line.trim();
@@ -624,6 +630,12 @@ impl Default for Allowlist {
 
 fn parse_sha256_hex(input: &str) -> Option<CredentialHash> {
     hex_to_array(input.trim()).map(CredentialHash::from_bytes)
+}
+
+pub(crate) fn allowlist_days_since_epoch_for_test(
+    now: std::time::SystemTime,
+) -> Result<i64, String> {
+    metadata::days_since_epoch_for_test(now)
 }
 
 /// Inline metadata parsed from a `.keyhogignore` line trailer. Used to

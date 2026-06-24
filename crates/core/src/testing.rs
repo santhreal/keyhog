@@ -84,6 +84,10 @@ pub trait CoreTestApi {
     ) -> Vec<PathBuf>;
     fn lockdown_cache_entry_error_is_violation(&self) -> bool;
     fn allowlist_parse(&self, content: &str) -> Allowlist;
+    fn allowlist_days_since_epoch_for_test(
+        &self,
+        now: std::time::SystemTime,
+    ) -> Result<i64, String>;
     fn allowlist_is_allowed(&self, allowlist: &Allowlist, finding: &VerifiedFinding) -> bool;
     fn allowlist_is_hash_allowed(&self, allowlist: &Allowlist, credential: &str) -> bool;
     fn allowlist_is_raw_hash_ignored(&self, allowlist: &Allowlist, hash_hex: &str) -> bool;
@@ -338,6 +342,13 @@ impl CoreTestApi for TestApi {
 
     fn allowlist_parse(&self, content: &str) -> Allowlist {
         Allowlist::parse(content)
+    }
+
+    fn allowlist_days_since_epoch_for_test(
+        &self,
+        now: std::time::SystemTime,
+    ) -> Result<i64, String> {
+        crate::allowlist::allowlist_days_since_epoch_for_test(now)
     }
 
     fn allowlist_is_allowed(&self, allowlist: &Allowlist, finding: &VerifiedFinding) -> bool {

@@ -1,5 +1,7 @@
 //! Allowlist inline metadata parsing.
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use super::InlineMetadata;
 
 pub(super) fn parse_inline_metadata(s: &str) -> InlineMetadata {
@@ -95,12 +97,27 @@ pub(super) fn log_metadata_audit(kind: &str, entry: &str, meta: &InlineMetadata)
     );
 }
 
-pub(super) fn today_days_since_epoch() -> i64 {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0); // LAW10: empty/absent => documented numeric default, recall-safe
-    secs.div_euclid(86_400)
+pub(super) fn try_today_days_since_epoch() -> Result<i64, String> {
+    days_since_epoch(SystemTime::now())
+}
+
+pub(super) fn days_since_epoch_for_test(now: SystemTime) -> Result<i64, String> {
+    days_since_epoch(now)
+}
+
+fn days_since_epoch(now: SystemTime) -> Result<i64, String> {
+    let secs = now
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| {
+            format!(
+                "system clock is before UNIX_EPOCH ({error}); fix host time before loading allowlist suppressions"
+            )
+        })?
+        .as_secs();
+    let secs = i64::try_from(secs).map_err(|error| {
+        format!("system clock value is too large to enforce allowlist expiry ({error})")
+    })?;
+    Ok(secs.div_euclid(86_400))
 }
 
 pub(super) fn yyyy_mm_dd_from_days(days: i64) -> String {
