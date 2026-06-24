@@ -4,6 +4,11 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/simd/backend.rs"))
             .expect("simd backend source readable");
 
+    assert!(
+        !source.contains("~1.7 s Hyperscan compile"),
+        "Hyperscan cache comments must not carry stale fixed compile-time claims; cold compile cost is host/profile dependent and warm-cache behavior is the contract"
+    );
+
     for required in [
         "const MAX_HS_PATTERN_LEN: usize = 500;",
         "const BASE_PATTERN_COST: u64 = 16;",

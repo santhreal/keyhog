@@ -140,10 +140,11 @@ fn resolve_cache_dir() -> Result<PathBuf, String> {
         validate_configured_cache_dir(&path)?;
         path
     } else {
-        // Persistent per-user cache so the ~1.7 s Hyperscan compile is paid
-        // once per (machine, pattern-set, hyperscan version, CPU features) -
-        // NOT once per reboot. Falls back to the per-uid temp cache only when
-        // no platform cache directory is resolvable.
+        // Persistent per-user cache so cold Hyperscan compilation is paid once
+        // per (machine, pattern-set, hyperscan version, CPU features), then
+        // warm scans reload serialized shards instead of recompiling. Falls
+        // back to the per-uid temp cache only when no platform cache directory
+        // is resolvable.
         default_cache_dir()
     };
 
