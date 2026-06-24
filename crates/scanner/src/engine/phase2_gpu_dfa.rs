@@ -514,7 +514,7 @@ mod tests {
         ];
         let candidates = [usize::MAX, 1, 9, 0];
 
-        // LAW10: intentional should-panic probe for corrupt construction-owned phase-2 indices; production indices are derived from enumerate().
+        // LAW10: intentional should-panic probe for corrupt construction-owned phase-2 indices; test-only no runtime effect in production.
         prioritized_phase2_gpu_dfa_candidates(&patterns, &candidates, 8);
     }
 

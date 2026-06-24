@@ -31,7 +31,7 @@ pub use diff::GitDiffSource;
 pub use history::GitHistorySource;
 pub use source::GitSource;
 
-pub(crate) use diff_parser::{UnifiedDiffEvent, UnifiedDiffParser, trim_diff_line_bytes};
+pub(crate) use diff_parser::{trim_diff_line_bytes, UnifiedDiffEvent, UnifiedDiffParser};
 
 pub(crate) fn git_blob_bytes_limit_usize(limits: crate::SourceLimits) -> usize {
     match usize::try_from(limits.git_blob_bytes) {
@@ -302,7 +302,7 @@ mod capped_line_tests {
 
 #[cfg(test)]
 mod git_child_tests {
-    use super::{GIT_STDERR_EXCERPT_BYTES, spawn_git_child, wait_for_git_child};
+    use super::{spawn_git_child, wait_for_git_child, GIT_STDERR_EXCERPT_BYTES};
     use std::io::{Read, Write};
     use std::process::{Command, Stdio};
 
@@ -364,7 +364,7 @@ pub(crate) fn parse_hunk_new_start_bytes(header: &[u8]) -> Option<usize> {
     let digits_end = after_plus
         .iter()
         .position(|b| !b.is_ascii_digit())
-        .unwrap_or(after_plus.len()); // LAW10: hunk header digits run to end => borrowed digit slice, no error swallowed
+        .unwrap_or(after_plus.len()); // LAW10: hunk header digits run to end => borrowed digit slice, no error swallowed; recall-safe
     if digits_end == 0 {
         return None;
     }

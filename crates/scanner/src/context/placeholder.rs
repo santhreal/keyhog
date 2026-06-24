@@ -166,8 +166,8 @@ fn count_pair_value_steps(bytes: &[u8], pair_count: usize, step: fn(u8, u8) -> b
 }
 
 fn hex_pair_value(bytes: &[u8], pair: usize) -> Option<u8> {
-    let hi = crate::decode::util::hex_val(bytes[pair * 2]).ok()?; // LAW10: non-hex pair => not a sequential hex placeholder, so candidate remains reportable
-    let lo = crate::decode::util::hex_val(bytes[pair * 2 + 1]).ok()?; // LAW10: non-hex pair => not a sequential hex placeholder, so candidate remains reportable
+    let hi = crate::decode::util::hex_val(bytes[pair * 2]).ok()?; // LAW10: non-hex pair => not a sequential hex placeholder, so candidate remains reportable; recall-safe
+    let lo = crate::decode::util::hex_val(bytes[pair * 2 + 1]).ok()?; // LAW10: non-hex pair => not a sequential hex placeholder, so candidate remains reportable; recall-safe
     Some((hi << 4) | lo)
 }
 

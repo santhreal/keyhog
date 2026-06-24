@@ -147,9 +147,9 @@ const EXPANDABLE_SYMLINK_EXTS: &[&str] = &[
 
 fn is_expandable_path(path: &Path) -> bool {
     path.extension()
-        // LAW10: missing extension means a plain path; target-extension classification still runs separately
+        // LAW10: missing extension means a plain path; target-extension classification still runs separately; recall-safe
         .and_then(|e| e.to_str())
-        // LAW10: non-UTF8 extension cannot match the curated ASCII archive-extension set
+        // LAW10: non-UTF8 extension cannot match the curated ASCII archive-extension set; fail-closed
         .is_some_and(|ext| {
             EXPANDABLE_SYMLINK_EXTS
                 .iter()
@@ -160,14 +160,14 @@ fn is_expandable_path(path: &Path) -> bool {
 fn resolved_link_target_for_classification(path: &Path) -> Option<PathBuf> {
     let target = match std::fs::read_link(path) {
         Ok(target) => target,
-        Err(_error) => return None, // LAW10: unreadable link target falls back to link-name classification; expandable link names are still refused
+        Err(_error) => return None, // LAW10: unreadable link target falls back to link-name classification; expandable link names are still refused; recall-preserving
     };
     if target.is_absolute() {
         Some(target)
     } else {
         Some(
             path.parent()
-                .unwrap_or_else(|| Path::new("")) // LAW10: parentless relative target classification never opens or follows the link target
+                .unwrap_or_else(|| Path::new("")) // LAW10: parentless relative target classification never opens or follows the link target; recall-safe
                 .join(target),
         )
     }
@@ -175,7 +175,7 @@ fn resolved_link_target_for_classification(path: &Path) -> Option<PathBuf> {
 
 fn archive_symlink_error(path: &Path) -> SourceError {
     let path_display = display_path(path);
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or(""); // LAW10: missing/non-UTF8 extension falls back to generic archive-symlink wording; the symlink remains refused
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or(""); // LAW10: missing/non-UTF8 extension falls back to generic archive-symlink wording; the symlink remains refused; recall-preserving
     let message = if ext.eq_ignore_ascii_case("tar") {
         format!(
             "failed to scan tar file '{path_display}': refusing to open archive at a symlink path; tar file was not scanned"
@@ -226,7 +226,7 @@ fn collect_walk_archive_symlink_errors(
         for path in paths {
             let relative_path = match path.strip_prefix(root) {
                 Ok(relative) => relative.to_string_lossy(),
-                Err(_) => path.to_string_lossy(), // LAW10: prefix mismatch only affects default-exclude classification; target bytes are never opened
+                Err(_) => path.to_string_lossy(), // LAW10: prefix mismatch only affects default-exclude classification; target bytes are never opened; recall-safe
             };
             if respect_default_excludes && filter::is_default_excluded(&relative_path) {
                 continue;
@@ -238,7 +238,7 @@ fn collect_walk_archive_symlink_errors(
             let file_type = metadata.file_type();
             if file_type.is_symlink() {
                 let target =
-                    resolved_link_target_for_classification(&path).unwrap_or_else(|| path.clone()); // LAW10: target read failure keeps link-name classification and still refuses expandable link names
+                    resolved_link_target_for_classification(&path).unwrap_or_else(|| path.clone()); // LAW10: target read failure keeps link-name classification and still refuses expandable link names; recall-preserving
                 if is_expandable_path(&path) || is_expandable_path(&target) {
                     tracing::warn!(
                         path = %path.display(),
