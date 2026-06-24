@@ -33,7 +33,9 @@ use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 
 mod release;
+mod variant;
 pub(crate) use release::*;
+pub(crate) use variant::*;
 
 /// Resolve the running binary, following symlinks so we replace the real file.
 pub(crate) fn current_binary() -> Result<std::path::PathBuf> {

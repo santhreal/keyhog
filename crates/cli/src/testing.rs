@@ -144,6 +144,15 @@ pub trait CliTestApi {
         asset_names: &[&str],
         want_cuda: bool,
     ) -> Result<String>;
+    fn default_wants_cuda_variant_for_host(
+        &self,
+        os: &str,
+        arch: &str,
+        nvidia_gpu: bool,
+        libcuda: bool,
+        cuda_toolkit: bool,
+    ) -> bool;
+    fn wants_cuda_variant(&self, explicit: Option<&str>) -> Result<bool>;
     fn parse_semver(&self, tag: &str) -> Option<(u64, u64, u64)>;
     fn is_newer(&self, current: &str, latest: &str) -> bool;
     fn looks_like_native_executable(&self, bytes: &[u8]) -> bool;
@@ -481,6 +490,25 @@ impl CliTestApi for TestApi {
                 .collect(),
         };
         crate::installer::select_asset(&release, want_cuda).map(|asset| asset.name.clone())
+    }
+    fn default_wants_cuda_variant_for_host(
+        &self,
+        os: &str,
+        arch: &str,
+        nvidia_gpu: bool,
+        libcuda: bool,
+        cuda_toolkit: bool,
+    ) -> bool {
+        crate::installer::default_wants_cuda_variant_for_host(
+            os,
+            arch,
+            nvidia_gpu,
+            libcuda,
+            cuda_toolkit,
+        )
+    }
+    fn wants_cuda_variant(&self, explicit: Option<&str>) -> Result<bool> {
+        crate::installer::wants_cuda_variant(explicit)
     }
     fn parse_semver(&self, tag: &str) -> Option<(u64, u64, u64)> {
         crate::installer::parse_semver(tag)

@@ -21,6 +21,7 @@ pub(crate) async fn run(args: UpdateArgs) -> Result<ExitCode> {
         ..
     } = palette;
     let current = env!("CARGO_PKG_VERSION");
+    let want_cuda = installer::wants_cuda_variant(args.variant.as_deref())?;
     let client = installer::http_client()?;
     let release = installer::resolve_release(
         &client,
@@ -30,10 +31,6 @@ pub(crate) async fn run(args: UpdateArgs) -> Result<ExitCode> {
     .await?;
     let latest = release.tag_name.clone();
 
-    // Default to the portable build unless `--variant cuda`; without an
-    // install manifest we can't know the currently-installed variant, and the
-    // portable build runs everywhere (still GPU-accelerated via WGPU).
-    let want_cuda = args.variant.as_deref() == Some("cuda");
     let asset = installer::select_asset(&release, want_cuda)?;
 
     println!("{bold}keyhog update{reset}");

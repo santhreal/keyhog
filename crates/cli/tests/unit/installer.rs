@@ -82,6 +82,65 @@ fn release_selector_has_no_portable_fallback_for_explicit_cuda() {
 }
 
 #[test]
+fn omitted_variant_uses_install_script_cuda_default_contract() {
+    assert!(
+        API.default_wants_cuda_variant_for_host("linux", "x86_64", true, true, true),
+        "Linux x86_64 with NVIDIA GPU, libcuda, and CUDA toolkit must default to the CUDA asset"
+    );
+    for (os, arch, nvidia_gpu, libcuda, cuda_toolkit) in [
+        ("macos", "aarch64", true, true, true),
+        ("windows", "x86_64", true, true, true),
+        ("linux", "aarch64", true, true, true),
+        ("linux", "x86_64", false, true, true),
+        ("linux", "x86_64", true, false, true),
+        ("linux", "x86_64", true, true, false),
+    ] {
+        assert!(
+            !API.default_wants_cuda_variant_for_host(os, arch, nvidia_gpu, libcuda, cuda_toolkit),
+            "host tuple {os}-{arch} nvidia={nvidia_gpu} libcuda={libcuda} toolkit={cuda_toolkit} must default to portable"
+        );
+    }
+}
+
+#[test]
+fn explicit_variant_resolution_is_strict() {
+    assert!(API.wants_cuda_variant(Some("cuda")).unwrap());
+    assert!(!API.wants_cuda_variant(Some("cpu")).unwrap());
+    let err = API
+        .wants_cuda_variant(Some("portable"))
+        .expect_err("unknown variants must not silently select portable");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("invalid release variant") && msg.contains("--variant cpu"),
+        "invalid variant error must explain the accepted values: {msg}"
+    );
+}
+
+#[test]
+fn update_and_repair_use_shared_variant_resolver() {
+    for rel in ["src/subcommands/update.rs", "src/subcommands/repair.rs"] {
+        let src = std::fs::read_to_string(format!("{}/{}", env!("CARGO_MANIFEST_DIR"), rel))
+            .expect("subcommand source readable");
+        assert!(
+            src.contains("installer::wants_cuda_variant(args.variant.as_deref())?"),
+            "{rel} must use the shared strict/default variant resolver"
+        );
+        let variant_pos = src
+            .find("installer::wants_cuda_variant(args.variant.as_deref())?")
+            .expect("variant resolver call present");
+        let client_pos = src.find("installer::http_client()?").expect("HTTP client call present");
+        assert!(
+            variant_pos < client_pos,
+            "{rel} must reject invalid variants before network setup"
+        );
+        assert!(
+            !src.contains("args.variant.as_deref() == Some(\"cuda\")"),
+            "{rel} must not make omitted/invalid variants silently portable"
+        );
+    }
+}
+
+#[test]
 fn semver_parsing_handles_v_prefix_and_suffix() {
     assert_eq!(API.parse_semver("v0.5.36"), Some((0, 5, 36)));
     assert_eq!(API.parse_semver("0.5.36"), Some((0, 5, 36)));
