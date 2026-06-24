@@ -14,8 +14,11 @@ fn jar_chunk_source_type_archive() {
     let mut zip = ZipWriter::new(file);
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     zip.start_file("META-INF/env", opts).expect("start");
-    zip.write_all(b"K=1
-").expect("write");
+    zip.write_all(
+        b"K=1
+",
+    )
+    .expect("write");
     zip.finish().expect("finish");
 
     let types: Vec<String> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))

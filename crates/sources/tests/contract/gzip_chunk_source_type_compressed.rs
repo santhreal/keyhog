@@ -12,8 +12,11 @@ fn gzip_chunk_source_type_compressed() {
     let dir = tempfile::tempdir().expect("tempdir");
     let file = File::create(dir.path().join("a.gz")).expect("create");
     let mut enc = GzEncoder::new(file, Compression::default());
-    enc.write_all(b"X=1
-").expect("write");
+    enc.write_all(
+        b"X=1
+",
+    )
+    .expect("write");
     enc.finish().expect("finish");
 
     let types: Vec<String> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
@@ -21,7 +24,9 @@ fn gzip_chunk_source_type_compressed() {
         .map(|c| c.metadata.source_type.clone())
         .collect();
     assert!(
-        types.iter().any(|t| t.contains("compressed") || t == "filesystem"),
+        types
+            .iter()
+            .any(|t| t.contains("compressed") || t == "filesystem"),
         "gzip chunk source_type must identify compressed path; got {types:?}"
     );
 }
