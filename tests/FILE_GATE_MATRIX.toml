@@ -248,6 +248,9 @@ path = "crates/core/src/finding.rs"
 path = "crates/core/src/hardening.rs"
 
 [[module]]
+path = "crates/core/src/hyperscan_cache.rs"
+
+[[module]]
 path = "crates/core/src/lib.rs"
 
 [[module]]
@@ -273,6 +276,9 @@ path = "crates/core/src/report/banner.rs"
 
 [[module]]
 path = "crates/core/src/report/csv.rs"
+
+[[module]]
+path = "crates/core/src/report/escape.rs"
 
 [[module]]
 path = "crates/core/src/report/github_annotations.rs"
@@ -324,6 +330,9 @@ path = "crates/core/src/spec/load.rs"
 
 [[module]]
 path = "crates/core/src/spec/validate.rs"
+
+[[module]]
+path = "crates/core/src/spec/validate/regex_complexity.rs"
 
 [[module]]
 path = "crates/core/src/spec/validate_regex.rs"

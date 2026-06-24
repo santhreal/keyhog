@@ -116,8 +116,9 @@ pub(crate) fn verification_label(result: &VerificationResult, color: bool) -> St
 /// `#[serde(rename_all = "snake_case")]` on [`VerificationResult`]. This is the
 /// single source of truth: the per-format copies had diverged — SARIF derived
 /// its value from `format!("{:?}", v).to_lowercase()`, emitting `ratelimited`
-/// (no underscore) and `error("..")` (Debug-quoted) where every other format and
-/// the JSON serialization emit `rate_limited` and `error: ..`. Distinct from
+/// (no underscore) and `error("..")` (Debug-quoted). JSON keeps the serde object
+/// form for `VerificationResult::Error`, while these string-token formats use
+/// `error: ..`; both avoid Debug-derived text. Distinct from
 /// [`verification_label`], which is the colored, human-facing display label.
 pub(crate) fn verification_token(result: &VerificationResult) -> std::borrow::Cow<'static, str> {
     use std::borrow::Cow;
