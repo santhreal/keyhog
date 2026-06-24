@@ -30,7 +30,7 @@ use std::sync::{Mutex, MutexGuard};
 use support::split_chunk_results;
 
 use keyhog_core::Source;
-use keyhog_sources::{skip_counts, GitDiffSource, GitSource};
+use keyhog_sources::{skip_counts, GitDiffSource, GitHistorySource, GitSource};
 
 /// `MAX_GIT_BLOB_BYTES` from `git/source.rs`.
 const MAX_GIT_BLOB_BYTES: usize = 10 * 1024 * 1024;
@@ -164,6 +164,91 @@ fn binary_git_blob_is_counted_binary() {
         after.over_max_size - before.over_max_size,
         0,
         "a binary git blob must NOT be miscounted as an over-size skip"
+    );
+}
+
+/// A tracked binary-file change represented by `git diff` as a binary patch is
+/// still an unscanned input and must increment binary skip telemetry.
+#[test]
+fn tracked_binary_git_diff_patch_is_counted_binary() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path();
+    init_repo(repo);
+
+    let mut base = vec![0x7f, b'E', b'L', b'F', 0];
+    base.extend_from_slice(&[1u8; 512]);
+    std::fs::write(repo.join("app.bin"), &base).expect("write base binary");
+    git(repo, &["add", "app.bin"]);
+    git(repo, &["commit", "-m", "base binary"]);
+
+    let mut changed = vec![0x7f, b'E', b'L', b'F', 0];
+    changed.extend_from_slice(&[2u8; 512]);
+    std::fs::write(repo.join("app.bin"), &changed).expect("write changed binary");
+
+    let chunks: Vec<_> = GitDiffSource::new(repo.to_path_buf(), "HEAD")
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(
+        chunks.is_empty(),
+        "binary-only tracked git-diff patch yields no scannable chunks"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.binary - before.binary,
+        1,
+        "tracked binary git-diff patches MUST bump SKIPPED_BINARY exactly once"
+    );
+    assert_eq!(
+        after.over_max_size - before.over_max_size,
+        0,
+        "tracked binary git-diff patches must not be miscounted as over-size skips"
+    );
+}
+
+/// A binary-file commit represented by `git log -p` as a binary patch is still
+/// an unscanned input and must increment binary skip telemetry.
+#[test]
+fn binary_git_history_patch_is_counted_binary() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path();
+    init_repo(repo);
+
+    let mut elf = vec![0x7f, b'E', b'L', b'F', 0];
+    elf.extend_from_slice(&[0u8; 512]);
+    std::fs::write(repo.join("app.bin"), &elf).expect("write binary blob");
+    git(repo, &["add", "app.bin"]);
+    git(repo, &["commit", "-m", "binary commit"]);
+
+    let chunks: Vec<_> = GitHistorySource::new(repo.to_path_buf())
+        .with_max_commits(1)
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(
+        chunks.is_empty(),
+        "binary-only git-history patch yields no scannable chunks"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.binary - before.binary,
+        1,
+        "binary git-history patches MUST bump SKIPPED_BINARY exactly once"
+    );
+    assert_eq!(
+        after.over_max_size - before.over_max_size,
+        0,
+        "binary git-history patches must not be miscounted as over-size skips"
     );
 }
 

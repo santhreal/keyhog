@@ -355,6 +355,13 @@ fn stream_git_history_chunks(
                     current_content.extend_from_slice(bytes);
                     current_content.push(b'\n');
                 }
+                super::UnifiedDiffEvent::BinaryFile => {
+                    current_path = None;
+                    current_content.clear();
+                    current_base_line = 0;
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                    continue;
+                }
                 super::UnifiedDiffEvent::Other => {}
             }
 

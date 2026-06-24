@@ -12,6 +12,7 @@ pub(crate) enum UnifiedDiffEvent<'a> {
         base_line: usize,
     },
     AddedLine(&'a [u8]),
+    BinaryFile,
     Other,
 }
 
@@ -44,6 +45,11 @@ impl UnifiedDiffParser {
 
         if line.starts_with(b"new file mode") || line.starts_with(b"index ") {
             return Ok(UnifiedDiffEvent::Metadata);
+        }
+
+        if line.starts_with(b"Binary files ") || line.starts_with(b"Binary file ") {
+            self.in_hunk = false;
+            return Ok(UnifiedDiffEvent::BinaryFile);
         }
 
         if line.starts_with(b"--- ") {
@@ -387,6 +393,15 @@ mod tests {
                 .parse_line(b"+after file header", "git diff")
                 .unwrap(),
             UnifiedDiffEvent::Other
+        ));
+        assert!(matches!(
+            parser
+                .parse_line(
+                    b"Binary files a/image.png and b/image.png differ",
+                    "git diff"
+                )
+                .unwrap(),
+            UnifiedDiffEvent::BinaryFile
         ));
     }
 

@@ -19,6 +19,8 @@ fn git_diff_sources_share_byte_oriented_parser() {
         "fn normalize_git_relative_path(",
         "quoted_git_path_body",
         "invalid_path: bool",
+        "UnifiedDiffEvent::BinaryFile",
+        "line.starts_with(b\"Binary files \")",
         "parse_hunk_new_start_bytes_or_error",
         "UnifiedDiffEvent::AddedLine(&line[1..])",
     ] {
@@ -84,10 +86,12 @@ fn git_diff_sources_share_byte_oriented_parser() {
                 && source.contains("if current_path.is_none()")
                 && source.contains("continue;")
                 && source.contains("SourceSkipEvent::Unreadable")
+                && source.contains("UnifiedDiffEvent::BinaryFile")
+                && source.contains("SourceSkipEvent::Binary")
                 && source.contains("pending_errors")
                 && source.contains("pending_errors.push_back(SourceError::Other")
                 && source.contains("pending_errors.pop_front()"),
-            "{rel} must emit SourceError rows for invalid unified-diff file headers instead of silently dropping added lines"
+            "{rel} must emit SourceError rows for invalid unified-diff file headers and count binary patch skips instead of silently dropping added lines"
         );
     }
 
