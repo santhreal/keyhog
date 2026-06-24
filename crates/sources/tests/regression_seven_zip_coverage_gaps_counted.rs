@@ -103,6 +103,10 @@ fn seven_zip_entry_read_errors_are_per_entry_skips() {
         "7z entry read errors must be operator-visible per-entry skips"
     );
     assert!(
+        source.contains("failed to scan 7z entry"),
+        "7z entry read errors must also emit machine-visible source errors"
+    );
+    assert!(
         source.contains("return Ok(true);"),
         "7z entry read errors must continue to the next archive entry"
     );

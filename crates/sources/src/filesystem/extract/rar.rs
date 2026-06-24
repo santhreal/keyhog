@@ -64,7 +64,11 @@ pub(super) fn extract_rar_chunks(
                     state.report_unreadable_entry(
                         &entry_name,
                         "unsupported encrypted or split RAR entry",
+                        emit,
                     );
+                    if state.consumer_stopped {
+                        return;
+                    }
                     continue;
                 }
                 let mut sink = RarEntrySink::new(entry_name.clone(), entry_size, state.sink_cap());
@@ -96,7 +100,11 @@ pub(super) fn extract_rar_chunks(
                     state.report_unreadable_entry(
                         &entry_name,
                         "unsupported encrypted or split RAR entry",
+                        emit,
                     );
+                    if state.consumer_stopped {
+                        return;
+                    }
                     continue;
                 }
                 let mut sink = RarEntrySink::new(entry_name.clone(), entry_size, state.sink_cap());
@@ -132,7 +140,11 @@ pub(super) fn extract_rar_chunks(
                     state.report_unreadable_entry(
                         &entry_name,
                         "unsupported encrypted, split, or redirected RAR entry",
+                        emit,
                     );
+                    if state.consumer_stopped {
+                        return;
+                    }
                     continue;
                 }
                 let mut sink = RarEntrySink::new(entry_name.clone(), entry_size, state.sink_cap());
@@ -231,7 +243,12 @@ impl<'a> RarExtractionState<'a> {
         true
     }
 
-    fn report_unreadable_entry(&self, entry_name: &str, reason: &str) {
+    fn report_unreadable_entry(
+        &mut self,
+        entry_name: &str,
+        reason: &str,
+        emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+    ) {
         tracing::warn!(
             archive = %self.archive_path.display(),
             entry = %entry_name,
@@ -239,6 +256,10 @@ impl<'a> RarExtractionState<'a> {
             "skipping RAR entry"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        self.consumer_stopped = !emit(Err(SourceError::Other(format!(
+            "failed to scan RAR entry '{}//{}': {reason}; entry was not scanned",
+            self.archive_display, entry_name
+        ))));
     }
 
     fn report_entry_error(
@@ -275,6 +296,10 @@ impl<'a> RarExtractionState<'a> {
             "cannot read RAR entry; skipping"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        self.consumer_stopped = !emit(Err(SourceError::Other(format!(
+            "failed to scan RAR entry '{}//{}': cannot read entry ({error}); entry was not scanned",
+            self.archive_display, entry_name
+        ))));
     }
 
     fn sink_cap(&self) -> u64 {

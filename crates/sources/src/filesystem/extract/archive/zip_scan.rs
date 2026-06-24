@@ -117,6 +117,11 @@ pub(super) fn extract_zip_archive(
                     "cannot read archive entry metadata; skipping entry"
                 );
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit(Err(SourceError::Other(format!(
+                    "failed to scan ZIP entry #{index} in '{archive_display}': cannot read entry metadata ({error}); entry was not scanned"
+                )))) {
+                    return;
+                }
                 continue;
             }
         };
@@ -187,6 +192,11 @@ pub(super) fn extract_zip_archive(
                 "cannot read archive entry; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit(Err(SourceError::Other(format!(
+                "failed to scan ZIP entry '{archive_display}//{entry_name}': cannot read entry ({error}); entry was not scanned"
+            )))) {
+                return;
+            }
             continue;
         }
 
@@ -200,6 +210,11 @@ pub(super) fn extract_zip_archive(
                     "archive entry decoded length cannot be represented; skipping"
                 );
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit(Err(SourceError::Other(format!(
+                    "failed to scan ZIP entry '{archive_display}//{entry_name}': decoded length cannot be represented ({error}); entry was not scanned"
+                )))) {
+                    return;
+                }
                 continue;
             }
         };

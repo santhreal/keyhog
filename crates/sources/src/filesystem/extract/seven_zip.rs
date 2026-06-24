@@ -132,6 +132,12 @@ pub(super) fn extract_seven_zip_chunks(
                 "cannot read 7z entry; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit(Err(SourceError::Other(format!(
+                "failed to scan 7z entry '{archive_display}//{entry_name}': cannot read entry ({error}); entry was not scanned"
+            )))) {
+                consumer_stopped = true;
+                return Ok(false);
+            }
             return Ok(true);
         }
         let content_len = content.len() as u64;

@@ -126,6 +126,12 @@ pub(super) fn extract_zip_archive_from_central_entries(
                     "cannot read archive entry payload; skipping"
                 );
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit(Err(SourceError::Other(format!(
+                    "failed to scan duplicate ZIP entry '{}//{}': cannot read local entry payload ({error}); entry was not scanned",
+                    archive_display, entry.name
+                )))) {
+                    return;
+                }
                 continue;
             }
         };
@@ -140,6 +146,12 @@ pub(super) fn extract_zip_archive_from_central_entries(
                     "cannot rebuild duplicate archive entry for isolated scan; skipping"
                 );
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit(Err(SourceError::Other(format!(
+                    "failed to scan duplicate ZIP entry '{}//{}': cannot rebuild isolated entry ({error}); entry was not scanned",
+                    archive_display, entry.name
+                )))) {
+                    return;
+                }
                 continue;
             }
         };
@@ -153,6 +165,12 @@ pub(super) fn extract_zip_archive_from_central_entries(
                     "cannot rebuild duplicate archive entry for isolated scan; skipping"
                 );
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit(Err(SourceError::Other(format!(
+                    "failed to scan duplicate ZIP entry '{}//{}': cannot open rebuilt isolated entry ({error}); entry was not scanned",
+                    archive_display, entry.name
+                )))) {
+                    return;
+                }
                 continue;
             }
         };
@@ -166,6 +184,12 @@ pub(super) fn extract_zip_archive_from_central_entries(
                     "cannot open duplicate archive entry for isolated scan; skipping"
                 );
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit(Err(SourceError::Other(format!(
+                    "failed to scan duplicate ZIP entry '{}//{}': cannot open isolated entry ({error}); entry was not scanned",
+                    archive_display, entry.name
+                )))) {
+                    return;
+                }
                 continue;
             }
         };
@@ -186,6 +210,12 @@ pub(super) fn extract_zip_archive_from_central_entries(
                 "cannot read duplicate archive entry; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit(Err(SourceError::Other(format!(
+                "failed to scan duplicate ZIP entry '{}//{}': cannot read entry ({error}); entry was not scanned",
+                archive_display, entry.name
+            )))) {
+                return;
+            }
             continue;
         }
         let actual_uncompressed = match u64::try_from(content.len()) {
@@ -198,6 +228,12 @@ pub(super) fn extract_zip_archive_from_central_entries(
                     "duplicate archive entry decoded length cannot be represented; skipping"
                 );
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit(Err(SourceError::Other(format!(
+                    "failed to scan duplicate ZIP entry '{}//{}': decoded length cannot be represented ({error}); entry was not scanned",
+                    archive_display, entry.name
+                )))) {
+                    return;
+                }
                 continue;
             }
         };
