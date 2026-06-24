@@ -54,3 +54,61 @@ fn coalesced_batch_producer_owns_source_to_batch_flow() {
         );
     }
 }
+
+#[test]
+fn unchanged_chunk_paths_are_borrowed_not_allocated_per_chunk() {
+    let dispatch = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/dispatch.rs"
+    ))
+    .expect("dispatch source readable");
+    let fused = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/dispatch/fused.rs"
+    ))
+    .expect("fused dispatch source readable");
+
+    let coalesced_unchanged = dispatch
+        .split("fn record_unchanged_chunk(&mut self, c: &Chunk) -> bool")
+        .nth(1)
+        .and_then(|tail| tail.split("fn push_chunk(&mut self, c: Chunk)").next())
+        .expect("coalesced unchanged-chunk recorder extractable");
+    assert_unchanged_chunk_path_borrow_contract(coalesced_unchanged, "coalesced");
+
+    let fused_unchanged = fused
+        .split("// Incremental skip (parallel across batches): hash each chunk")
+        .nth(1)
+        .and_then(|tail| tail.split_once(".collect()").map(|(block, _)| block))
+        .expect("fused unchanged-chunk filter extractable");
+    assert_unchanged_chunk_path_borrow_contract(fused_unchanged, "fused");
+}
+
+fn assert_unchanged_chunk_path_borrow_contract(block: &str, label: &str) {
+    let call = block
+        .split("record_chunk_path_at_offset_and_check_unchanged(")
+        .nth(1)
+        .and_then(|tail| tail.split_once(");").map(|(call, _)| call))
+        .unwrap_or_else(|| panic!("{label} unchanged-chunk Merkle call extractable"));
+    let first_arg = call
+        .split("c.metadata.base_offset as u64")
+        .next()
+        .unwrap_or(call);
+    assert!(
+        first_arg.contains("Path::new("),
+        "{label} unchanged-chunk Merkle call must borrow chunk paths with Path::new(...) instead of allocating a PathBuf per chunk"
+    );
+
+    for forbidden in [
+        "PathBuf::from(",
+        "std::path::PathBuf::from(",
+        ".to_path_buf(",
+        ".to_owned()",
+        ".to_string()",
+        ".into()",
+    ] {
+        assert!(
+            !first_arg.contains(forbidden),
+            "{label} unchanged-chunk Merkle path argument must not allocate with `{forbidden}`"
+        );
+    }
+}
