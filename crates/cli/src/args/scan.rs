@@ -261,7 +261,8 @@ pub struct ScanArgs {
         feature = "bitbucket",
         feature = "s3",
         feature = "gcs",
-        feature = "azure"
+        feature = "azure",
+        feature = "verify"
     ))]
     #[arg(long, value_name = "URL")]
     pub proxy: Option<String>,
@@ -279,7 +280,8 @@ pub struct ScanArgs {
         feature = "bitbucket",
         feature = "s3",
         feature = "gcs",
-        feature = "azure"
+        feature = "azure",
+        feature = "verify"
     ))]
     #[arg(long)]
     pub insecure: bool,
@@ -489,10 +491,12 @@ pub struct ScanArgs {
     pub output: Option<PathBuf>,
 
     /// Verification timeout in seconds
+    #[cfg(feature = "verify")]
     #[arg(long)]
     pub timeout: Option<u64>,
 
     /// Max concurrent verification requests per service
+    #[cfg(feature = "verify")]
     #[arg(long)]
     pub rate: Option<usize>,
 

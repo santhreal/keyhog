@@ -136,7 +136,8 @@ pub(super) fn apply_system_section(
     feature = "bitbucket",
     feature = "s3",
     feature = "gcs",
-    feature = "azure"
+    feature = "azure",
+    feature = "verify"
 ))]
 pub(super) fn apply_http_section(args: &mut ScanArgs, http: Option<&HttpSection>) {
     if let Some(http) = http {
@@ -158,7 +159,8 @@ pub(super) fn apply_http_section(args: &mut ScanArgs, http: Option<&HttpSection>
     feature = "bitbucket",
     feature = "s3",
     feature = "gcs",
-    feature = "azure"
+    feature = "azure",
+    feature = "verify"
 )))]
 pub(super) fn apply_http_section(
     _args: &mut ScanArgs,

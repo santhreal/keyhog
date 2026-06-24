@@ -26,7 +26,7 @@ impl ResolvedReportPolicy {
         Self {
             severity: args.severity.clone(),
             dedup: args.dedup.clone(),
-            verify: args.verify,
+            verify: scan_verify_enabled(args),
             lockdown: args.lockdown,
             show_secrets: args.show_secrets,
             no_suppress_test_fixtures: args.no_suppress_test_fixtures,
@@ -54,6 +54,7 @@ pub(crate) struct ResolvedOobPolicy {
 }
 
 impl ResolvedVerifyPolicy {
+    #[cfg(feature = "verify")]
     pub(super) fn from_scan_args(args: &ScanArgs) -> Self {
         Self {
             rate: args.verify_rate,
@@ -74,6 +75,11 @@ impl ResolvedVerifyPolicy {
         }
     }
 
+    #[cfg(not(feature = "verify"))]
+    pub(super) fn from_scan_args(_args: &ScanArgs) -> Self {
+        Self::disabled()
+    }
+
     pub(crate) fn disabled() -> Self {
         Self {
             rate: 1.0,
@@ -89,4 +95,14 @@ impl ResolvedVerifyPolicy {
             },
         }
     }
+}
+
+#[cfg(feature = "verify")]
+fn scan_verify_enabled(args: &ScanArgs) -> bool {
+    args.verify
+}
+
+#[cfg(not(feature = "verify"))]
+fn scan_verify_enabled(_args: &ScanArgs) -> bool {
+    false
 }

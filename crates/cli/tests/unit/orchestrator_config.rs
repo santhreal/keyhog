@@ -43,6 +43,48 @@ fn detector_toml(id: &str, prefix: &str) -> String {
 }
 
 #[test]
+fn no_verify_build_policy_and_config_keys_are_not_dead_surfaces() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let policy =
+        std::fs::read_to_string(root.join("src/orchestrator_config/policy.rs")).expect("policy.rs");
+    let scan_args = std::fs::read_to_string(root.join("src/args/scan.rs")).expect("scan args");
+    let config_scan =
+        std::fs::read_to_string(root.join("src/config/scan.rs")).expect("config scan");
+    let config = std::fs::read_to_string(root.join("src/config.rs")).expect("config.rs");
+    let sections =
+        std::fs::read_to_string(root.join("src/config/sections.rs")).expect("sections.rs");
+
+    assert!(
+        policy.contains("#[cfg(not(feature = \"verify\"))]")
+            && policy.contains("pub(super) fn from_scan_args(_args: &ScanArgs) -> Self")
+            && policy.contains("Self::disabled()")
+            && policy.contains("fn scan_verify_enabled(_args: &ScanArgs) -> bool")
+            && policy.contains("false"),
+        "no-verify builds must resolve verifier policy explicitly disabled"
+    );
+    assert!(
+        scan_args.contains("#[cfg(feature = \"verify\")]\n    #[arg(long)]\n    pub timeout")
+            && scan_args.contains("#[cfg(feature = \"verify\")]\n    #[arg(long)]\n    pub rate"),
+        "verifier-only CLI flags must not be accepted in no-verify builds"
+    );
+    for required in [
+        "- verify: this key requires the `verify` feature",
+        "- timeout: this key requires the `verify` feature",
+        "- rate: this key requires the `verify` feature",
+        "- max_commits: this key requires the `git` feature",
+    ] {
+        assert!(
+            config_scan.contains(required),
+            "verifier-only TOML key must fail loud in no-verify builds; missing {required:?}"
+        );
+    }
+    assert!(
+        config.contains("feature = \"verify\"") && sections.contains("feature = \"verify\""),
+        "[http] proxy/TLS config gates must include verifier HTTP usage"
+    );
+}
+
+#[test]
 fn sanitise_thread_count_rejects_zero() {
     assert_eq!(API.sanitise_thread_count(0, 8, "test"), 8);
     assert_eq!(API.sanitise_thread_count(0, 0, "test"), 1);

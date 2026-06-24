@@ -177,7 +177,8 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         feature = "bitbucket",
         feature = "s3",
         feature = "gcs",
-        feature = "azure"
+        feature = "azure",
+        feature = "verify"
     ))]
     apply_http_section(args, config.http.as_ref());
     #[cfg(not(any(
@@ -187,7 +188,8 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         feature = "bitbucket",
         feature = "s3",
         feature = "gcs",
-        feature = "azure"
+        feature = "azure",
+        feature = "verify"
     )))]
     apply_http_section(args, &mut config_errors, config.http.as_ref());
 

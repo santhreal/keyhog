@@ -332,30 +332,56 @@ pub(super) fn apply_top_level_scan_fields(
         }
     }
 
+    #[cfg(feature = "verify")]
     if let Some(verify) = config.verify {
-        #[cfg(feature = "verify")]
         if !args.verify {
             args.verify = verify;
         }
     }
+    #[cfg(not(feature = "verify"))]
+    if config.verify.is_some() {
+        config_errors.push(
+            "- verify: this key requires the `verify` feature in this keyhog build".to_string(),
+        );
+    }
 
+    #[cfg(feature = "verify")]
     if let Some(timeout) = config.timeout {
         if args.timeout.is_none() {
             args.timeout = Some(timeout);
         }
     }
+    #[cfg(not(feature = "verify"))]
+    if config.timeout.is_some() {
+        config_errors.push(
+            "- timeout: this key requires the `verify` feature in this keyhog build".to_string(),
+        );
+    }
 
+    #[cfg(feature = "verify")]
     if let Some(rate) = config.rate {
         if args.rate.is_none() {
             args.rate = Some(rate);
         }
     }
+    #[cfg(not(feature = "verify"))]
+    if config.rate.is_some() {
+        config_errors.push(
+            "- rate: this key requires the `verify` feature in this keyhog build".to_string(),
+        );
+    }
 
+    #[cfg(feature = "git")]
     if let Some(max_commits) = config.max_commits {
-        #[cfg(feature = "git")]
         if args.max_commits.is_none() {
             args.max_commits = Some(max_commits);
         }
+    }
+    #[cfg(not(feature = "git"))]
+    if config.max_commits.is_some() {
+        config_errors.push(
+            "- max_commits: this key requires the `git` feature in this keyhog build".to_string(),
+        );
     }
 
     if let Some(show_secrets) = config.show_secrets {
