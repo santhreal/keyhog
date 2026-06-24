@@ -310,14 +310,28 @@ pub mod testing {
             &self,
             archive_path: &std::path::Path,
             destination: &std::path::Path,
-        ) -> Result<(), keyhog_core::SourceError>;
+        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError>;
         #[cfg(feature = "docker")]
         fn unpack_docker_layer_archive_with_total_cap(
             &self,
             archive_path: &std::path::Path,
             destination: &std::path::Path,
             total_cap: u64,
-        ) -> Result<(), keyhog_core::SourceError>;
+        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError>;
+        #[cfg(feature = "docker")]
+        fn unpack_docker_layer_archive_with_entry_cap(
+            &self,
+            archive_path: &std::path::Path,
+            destination: &std::path::Path,
+            entry_cap: u64,
+        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError>;
+        #[cfg(feature = "docker")]
+        fn unpack_docker_image_archive_with_entry_cap(
+            &self,
+            archive_path: &std::path::Path,
+            destination: &std::path::Path,
+            entry_cap: u64,
+        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError>;
         #[cfg(feature = "docker")]
         fn docker_rewrite_layer_chunks<I>(
             &self,
@@ -938,7 +952,7 @@ pub mod testing {
             &self,
             archive_path: &std::path::Path,
             destination: &std::path::Path,
-        ) -> Result<(), keyhog_core::SourceError> {
+        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError> {
             crate::docker::unpack_layer_archive_for_test(archive_path, destination)
         }
 
@@ -948,11 +962,39 @@ pub mod testing {
             archive_path: &std::path::Path,
             destination: &std::path::Path,
             total_cap: u64,
-        ) -> Result<(), keyhog_core::SourceError> {
+        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError> {
             crate::docker::unpack_layer_archive_with_total_cap_for_test(
                 archive_path,
                 destination,
                 total_cap,
+            )
+        }
+
+        #[cfg(feature = "docker")]
+        fn unpack_docker_layer_archive_with_entry_cap(
+            &self,
+            archive_path: &std::path::Path,
+            destination: &std::path::Path,
+            entry_cap: u64,
+        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError> {
+            crate::docker::unpack_layer_archive_with_entry_cap_for_test(
+                archive_path,
+                destination,
+                entry_cap,
+            )
+        }
+
+        #[cfg(feature = "docker")]
+        fn unpack_docker_image_archive_with_entry_cap(
+            &self,
+            archive_path: &std::path::Path,
+            destination: &std::path::Path,
+            entry_cap: u64,
+        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError> {
+            crate::docker::unpack_image_archive_with_entry_cap_for_test(
+                archive_path,
+                destination,
+                entry_cap,
             )
         }
 

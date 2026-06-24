@@ -64,7 +64,7 @@ impl Source for DockerImageSource {
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
         match collect_docker_chunks(&self.image, self.limits) {
-            Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
+            Ok(rows) => Box::new(rows.into_iter()),
             Err(error) => Box::new(std::iter::once(Err(error))),
         }
     }
@@ -76,18 +76,54 @@ impl Source for DockerImageSource {
 fn collect_docker_chunks(
     image: &str,
     limits: crate::SourceLimits,
-) -> Result<Vec<Chunk>, SourceError> {
+) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     let image = validate_image_name(image)?;
     let workspace = DockerScanWorkspace::new()?;
     let docker_bin = resolve_docker_binary()?;
 
     export_docker_image_archive(&docker_bin, &image, workspace.archive_path())?;
-    unpack_tar(workspace.archive_path(), workspace.root_path(), limits)?;
+    let mut rows = Vec::new();
+    let mut error_rows =
+        unpack_tar(workspace.archive_path(), workspace.root_path(), limits)?.into_rows();
 
-    let mut chunks = find_manifest_config_chunks(workspace.root_path(), &image, limits)?;
-    chunks.extend(collect_docker_layer_chunks(&workspace, &image, limits)?);
+    match find_manifest_config_chunks(workspace.root_path(), &image, limits) {
+        Ok(chunks) => rows.extend(chunks.into_iter().map(Ok)),
+        Err(error) => error_rows.push(Err(error)),
+    }
+    for row in collect_docker_layer_chunks(&workspace, &image, limits) {
+        match row {
+            Ok(chunk) => rows.push(Ok(chunk)),
+            Err(error) => error_rows.push(Err(error)),
+        }
+    }
+    rows.extend(error_rows);
 
-    Ok(chunks)
+    Ok(rows)
+}
+
+#[derive(Default)]
+struct DockerExtractReport {
+    errors: Vec<SourceError>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DockerArchiveScope {
+    ImageArchive,
+    LayerArchive,
+}
+
+impl DockerExtractReport {
+    fn push_error(&mut self, error: SourceError) {
+        self.errors.push(error);
+    }
+
+    fn into_errors(self) -> Vec<SourceError> {
+        self.errors
+    }
+
+    fn into_rows(self) -> Vec<Result<Chunk, SourceError>> {
+        self.errors.into_iter().map(Err).collect()
+    }
 }
 
 struct DockerScanWorkspace {
@@ -150,12 +186,19 @@ fn collect_docker_layer_chunks(
     workspace: &DockerScanWorkspace,
     image: &str,
     limits: crate::SourceLimits,
-) -> Result<Vec<Chunk>, SourceError> {
-    let mut chunks = Vec::new();
-    for layer_tar in find_layer_archives(workspace.root_path(), limits)? {
-        chunks.extend(scan_docker_layer(workspace, image, &layer_tar, limits)?);
+) -> Vec<Result<Chunk, SourceError>> {
+    let layer_archives = match find_layer_archives(workspace.root_path(), limits) {
+        Ok(layer_archives) => layer_archives,
+        Err(error) => return vec![Err(error)],
+    };
+    let mut rows = Vec::new();
+    for layer_tar in layer_archives {
+        match scan_docker_layer(workspace, image, &layer_tar, limits) {
+            Ok(layer_rows) => rows.extend(layer_rows),
+            Err(error) => rows.push(Err(error)),
+        }
     }
-    Ok(chunks)
+    rows
 }
 
 fn scan_docker_layer(
@@ -163,18 +206,24 @@ fn scan_docker_layer(
     image: &str,
     layer_tar: &Path,
     limits: crate::SourceLimits,
-) -> Result<Vec<Chunk>, SourceError> {
+) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     let layer_name = docker_layer_name(layer_tar, workspace.root_path());
     let layer_dir = workspace.layer_dir(&layer_name);
     create_private_directory_all(&layer_dir)?;
-    unpack_layer_archive(layer_tar, &layer_dir, limits)?;
+    let error_rows = unpack_layer_archive(layer_tar, &layer_dir, limits)?.into_rows();
+    let mut rows = Vec::new();
 
-    rewrite_layer_chunks(
+    match rewrite_layer_chunks(
         FilesystemSource::new(layer_dir.clone()).chunks(),
         image,
         &layer_dir,
         &layer_name,
-    )
+    ) {
+        Ok(chunks) => rows.extend(chunks.into_iter().map(Ok)),
+        Err(error) => rows.push(Err(error)),
+    }
+    rows.extend(error_rows);
+    Ok(rows)
 }
 
 fn docker_layer_name(layer_tar: &Path, root_path: &Path) -> String {
@@ -364,44 +413,55 @@ fn unpack_tar(
     archive_path: &Path,
     destination: &Path,
     limits: crate::SourceLimits,
-) -> Result<(), SourceError> {
+) -> Result<DockerExtractReport, SourceError> {
     let file = File::open(archive_path).map_err(SourceError::Io)?;
-    unpack_open_tar(file, destination, limits)
+    unpack_open_tar(file, destination, limits, DockerArchiveScope::ImageArchive)
 }
 
 fn unpack_open_tar(
     mut file: File,
     destination: &Path,
     limits: crate::SourceLimits,
-) -> Result<(), SourceError> {
+    scope: DockerArchiveScope,
+) -> Result<DockerExtractReport, SourceError> {
     // Open the archive file exactly once to prevent TOCTOU race conditions.
     // A separate open for validation and extraction would allow the file to
     // be swapped between the two passes.
     let mut validation_archive = tar::Archive::new(&mut file);
-    validate_extracted_tree(&mut validation_archive, limits)?;
+    validate_docker_archive_plan(&mut validation_archive, limits, scope)?;
 
     // Rewind the same file descriptor for extraction - no second open.
     file.rewind().map_err(SourceError::Io)?;
-    let mut extract_archive = tar::Archive::new(&mut file);
-    extract_archive.unpack(destination).map_err(SourceError::Io)
+    unpack_tar_reader(&mut file, destination, limits, scope)
 }
 
 fn unpack_layer_archive(
     archive_path: &Path,
     destination: &Path,
     limits: crate::SourceLimits,
-) -> Result<(), SourceError> {
+) -> Result<DockerExtractReport, SourceError> {
     let mut file = File::open(archive_path).map_err(SourceError::Io)?;
     let encoding = layer_archive_encoding(&mut file)?;
     file.rewind().map_err(SourceError::Io)?;
 
     match encoding {
-        LayerArchiveEncoding::RawTar => unpack_open_tar(file, destination, limits),
+        LayerArchiveEncoding::RawTar => {
+            unpack_open_tar(file, destination, limits, DockerArchiveScope::LayerArchive)
+        }
         LayerArchiveEncoding::GzipTar => {
-            validate_tar_reader(flate2::read::MultiGzDecoder::new(&mut file), limits)?;
+            validate_tar_reader(
+                flate2::read::MultiGzDecoder::new(&mut file),
+                limits,
+                DockerArchiveScope::LayerArchive,
+            )?;
 
             file.rewind().map_err(SourceError::Io)?;
-            unpack_tar_reader(flate2::read::MultiGzDecoder::new(&mut file), destination)
+            unpack_tar_reader(
+                flate2::read::MultiGzDecoder::new(&mut file),
+                destination,
+                limits,
+                DockerArchiveScope::LayerArchive,
+            )
         }
         LayerArchiveEncoding::ZstdTar => {
             let mut validation_reader =
@@ -411,7 +471,7 @@ fn unpack_layer_archive(
                     limits.docker_tar_total_bytes,
                 ))
                 .map_err(SourceError::Io)?;
-            validate_tar_reader(validation_reader, limits)?;
+            validate_tar_reader(validation_reader, limits, DockerArchiveScope::LayerArchive)?;
 
             file.rewind().map_err(SourceError::Io)?;
             let mut extract_reader =
@@ -421,19 +481,33 @@ fn unpack_layer_archive(
                     limits.docker_tar_total_bytes,
                 ))
                 .map_err(SourceError::Io)?;
-            unpack_tar_reader(extract_reader, destination)
+            unpack_tar_reader(
+                extract_reader,
+                destination,
+                limits,
+                DockerArchiveScope::LayerArchive,
+            )
         }
     }
 }
 
-fn validate_tar_reader(reader: impl Read, limits: crate::SourceLimits) -> Result<(), SourceError> {
+fn validate_tar_reader(
+    reader: impl Read,
+    limits: crate::SourceLimits,
+    scope: DockerArchiveScope,
+) -> Result<(), SourceError> {
     let mut archive = tar::Archive::new(reader);
-    validate_extracted_tree(&mut archive, limits)
+    validate_docker_archive_plan(&mut archive, limits, scope)
 }
 
-fn unpack_tar_reader(reader: impl Read, destination: &Path) -> Result<(), SourceError> {
+fn unpack_tar_reader(
+    reader: impl Read,
+    destination: &Path,
+    limits: crate::SourceLimits,
+    scope: DockerArchiveScope,
+) -> Result<DockerExtractReport, SourceError> {
     let mut archive = tar::Archive::new(reader);
-    archive.unpack(destination).map_err(SourceError::Io)
+    extract_docker_archive_entries(&mut archive, destination, limits, scope)
 }
 
 enum LayerArchiveEncoding {
@@ -452,13 +526,6 @@ fn layer_archive_encoding(file: &mut File) -> Result<LayerArchiveEncoding, Sourc
         return Ok(LayerArchiveEncoding::ZstdTar);
     }
     Ok(LayerArchiveEncoding::RawTar)
-}
-
-fn validate_extracted_tree<R: std::io::Read>(
-    archive: &mut tar::Archive<R>,
-    limits: crate::SourceLimits,
-) -> Result<(), SourceError> {
-    validate_extracted_tree_with_limits(archive, limits)
 }
 
 fn validate_extracted_tree_with_limits<R: std::io::Read>(
@@ -525,6 +592,140 @@ fn validate_extracted_tree_with_limits<R: std::io::Read>(
     }
 
     Ok(())
+}
+
+fn validate_docker_archive_plan<R: std::io::Read>(
+    archive: &mut tar::Archive<R>,
+    limits: crate::SourceLimits,
+    scope: DockerArchiveScope,
+) -> Result<(), SourceError> {
+    let mut cumulative_bytes: u64 = 0;
+    for entry in archive.entries().map_err(SourceError::Io)? {
+        let entry = entry.map_err(SourceError::Io)?;
+        let path = entry.path().map_err(SourceError::Io)?;
+        let size = entry.header().entry_size().map_err(SourceError::Io)?;
+        let file_type = entry.header().entry_type();
+        validate_docker_archive_entry(&path, file_type)?;
+
+        if docker_archive_entry_exceeds_scan_cap(file_type, size, limits, scope) {
+            continue;
+        }
+
+        cumulative_bytes = cumulative_bytes.saturating_add(size);
+        if cumulative_bytes > limits.docker_tar_total_bytes {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+            return Err(SourceError::Other(format!(
+                "docker archive cumulative size exceeds {} bytes at entry '{}' \
+                 (likely zip-bomb)",
+                limits.docker_tar_total_bytes,
+                path.display(),
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn extract_docker_archive_entries<R: std::io::Read>(
+    archive: &mut tar::Archive<R>,
+    destination: &Path,
+    limits: crate::SourceLimits,
+    scope: DockerArchiveScope,
+) -> Result<DockerExtractReport, SourceError> {
+    let mut cumulative_bytes: u64 = 0;
+    let mut report = DockerExtractReport::default();
+    for entry in archive.entries().map_err(SourceError::Io)? {
+        let mut entry = entry.map_err(SourceError::Io)?;
+        let path = entry.path().map_err(SourceError::Io)?.into_owned();
+        let size = entry.header().entry_size().map_err(SourceError::Io)?;
+        validate_docker_archive_entry(&path, entry.header().entry_type())?;
+
+        if docker_archive_entry_exceeds_scan_cap(entry.header().entry_type(), size, limits, scope) {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            report.push_error(docker_archive_entry_over_entry_cap_error(
+                &path,
+                limits.docker_tar_entry_bytes,
+            ));
+            continue;
+        }
+
+        cumulative_bytes = cumulative_bytes.saturating_add(size);
+        if cumulative_bytes > limits.docker_tar_total_bytes {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+            return Err(SourceError::Other(format!(
+                "docker archive cumulative size exceeds {} bytes at entry '{}' \
+                 (likely zip-bomb)",
+                limits.docker_tar_total_bytes,
+                path.display(),
+            )));
+        }
+
+        let unpacked_inside_destination = entry.unpack_in(destination).map_err(SourceError::Io)?;
+        if !unpacked_inside_destination {
+            return Err(SourceError::Other(format!(
+                "docker archive entry '{}' could not be safely unpacked inside '{}'",
+                path.display(),
+                destination.display()
+            )));
+        }
+    }
+
+    Ok(report)
+}
+
+fn validate_docker_archive_entry(
+    path: &Path,
+    file_type: tar::EntryType,
+) -> Result<(), SourceError> {
+    // Security boundary: every extracted member must stay relative to the
+    // extraction root. Reject absolute paths, prefixes, and any `..`
+    // traversal before `tar` writes to disk.
+    //
+    // Also reject symlinks and hardlinks in Docker layers. These are
+    // frequently used in "link-swap" attacks to write outside the
+    // extraction root. Secret scanning doesn't need to resolve links
+    // inside the layer - we scan the raw file content anyway.
+    if file_type.is_symlink() || file_type.is_hard_link() {
+        return Err(SourceError::Other(format!(
+            "docker archive contains forbidden link '{}'",
+            path.display()
+        )));
+    }
+
+    if path.is_absolute()
+        || path.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(SourceError::Other(format!(
+            "docker archive contains unsafe path '{}'",
+            path.display()
+        )));
+    }
+
+    Ok(())
+}
+
+fn docker_archive_entry_over_entry_cap_error(path: &Path, entry_cap: u64) -> SourceError {
+    SourceError::Other(format!(
+        "docker archive entry '{}' exceeds {} bytes and was not scanned",
+        path.display(),
+        entry_cap
+    ))
+}
+
+fn docker_archive_entry_exceeds_scan_cap(
+    file_type: tar::EntryType,
+    size: u64,
+    limits: crate::SourceLimits,
+    scope: DockerArchiveScope,
+) -> bool {
+    scope == DockerArchiveScope::LayerArchive
+        && file_type.is_file()
+        && size > limits.docker_tar_entry_bytes
 }
 
 fn find_layer_archives(
@@ -1110,20 +1311,45 @@ pub(crate) fn manifest_config_chunks_for_test(
 pub(crate) fn unpack_layer_archive_for_test(
     archive_path: &Path,
     destination: &Path,
-) -> Result<(), SourceError> {
+) -> Result<Vec<SourceError>, SourceError> {
     unpack_layer_archive(archive_path, destination, crate::SourceLimits::default())
+        .map(DockerExtractReport::into_errors)
 }
 
 pub(crate) fn unpack_layer_archive_with_total_cap_for_test(
     archive_path: &Path,
     destination: &Path,
     total_cap: u64,
-) -> Result<(), SourceError> {
+) -> Result<Vec<SourceError>, SourceError> {
     let limits = crate::SourceLimits {
         docker_tar_total_bytes: total_cap,
         ..crate::SourceLimits::default()
     };
-    unpack_layer_archive(archive_path, destination, limits)
+    unpack_layer_archive(archive_path, destination, limits).map(DockerExtractReport::into_errors)
+}
+
+pub(crate) fn unpack_layer_archive_with_entry_cap_for_test(
+    archive_path: &Path,
+    destination: &Path,
+    entry_cap: u64,
+) -> Result<Vec<SourceError>, SourceError> {
+    let limits = crate::SourceLimits {
+        docker_tar_entry_bytes: entry_cap,
+        ..crate::SourceLimits::default()
+    };
+    unpack_layer_archive(archive_path, destination, limits).map(DockerExtractReport::into_errors)
+}
+
+pub(crate) fn unpack_image_archive_with_entry_cap_for_test(
+    archive_path: &Path,
+    destination: &Path,
+    entry_cap: u64,
+) -> Result<Vec<SourceError>, SourceError> {
+    let limits = crate::SourceLimits {
+        docker_tar_entry_bytes: entry_cap,
+        ..crate::SourceLimits::default()
+    };
+    unpack_tar(archive_path, destination, limits).map(DockerExtractReport::into_errors)
 }
 
 pub(crate) fn rewrite_layer_chunks_for_test<I>(
