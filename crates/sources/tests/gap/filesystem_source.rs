@@ -8,8 +8,8 @@
 //!
 //!   * `walker_config` (filter.rs:197): `follow_symlinks(false)`,
 //!     `skip_hidden(false)`, `respect_gitignore(true)`,
-//!     `ignore_files([".keyhogignore"])`, `exclude_dirs(SKIP_DIRS)`,
-//!     `exclude_extensions(SKIP_EXTENSIONS)`, `max_file_size(0)`.
+//!     `ignore_files([".keyhogignore"])`, `exclude_dirs(empty)`,
+//!     `exclude_extensions(empty)`, `max_file_size(0)`.
 //!   * `process_entry` (extract.rs:44) gate order:
 //!       1. `is_default_excluded(filename)`  (filename component only)
 //!       2. `.min.` / `.bundle.` / `.chunk.js` / `.min.js` / `.bundle.js`
@@ -27,12 +27,9 @@
 //!   * Source-level `with_max_file_size(0)` is "unlimited" because the gate
 //!     is `max_size > 0 && ...`.
 //!
-//! The whole-directory walk applies the `exclude_extensions` / `exclude_dirs`
-//! filter at walk time, so several of the `process_entry`-internal gates are
-//! exercised through the deterministic single-file `with_include_paths` path
-//! (which bypasses the walker's extension filter via `std::fs::metadata` +
-//! `std::iter::once`), keeping each assertion attributable to keyhog's own
-//! code rather than to codewalk internals.
+//! The whole-directory walk deliberately keeps `exclude_extensions` /
+//! `exclude_dirs` empty so source-owned default excludes reach `process_entry`
+//! and increment visible skip counters instead of disappearing inside codewalk.
 
 use crate::support::collect_chunks;
 use keyhog_core::testing as core_testing;

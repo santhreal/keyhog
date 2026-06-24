@@ -262,13 +262,6 @@ pub(super) fn walker_config(
     ignore_paths: &[String],
     respect_default_excludes: bool,
 ) -> WalkConfig {
-    let mut exclude_extensions = HashSet::new();
-    let mut exclude_dirs = HashSet::new();
-    if respect_default_excludes {
-        exclude_extensions.extend(default_excludes().extensions.iter().cloned());
-        exclude_dirs.extend(default_excludes().dirs.iter().cloned());
-    }
-
     let ignore_overrides = ignore_paths
         .iter()
         .map(|pattern| {
@@ -287,7 +280,11 @@ pub(super) fn walker_config(
     // binary-detect read, so disabling it adds ~4 KiB of extra read
     // per over-size file - negligible at the scale where users hit
     // the cap.
-    let _ = max_file_size; // LAW10: unused-binding marker; no runtime effect, not a fallback
+    // LAW10: unused-binding marker; no runtime effect, not a fallback.
+    let _ = max_file_size;
+    // Default excludes stay out of codewalk so every skipped file reaches
+    // `extract::process_entry`, where it is counted through SourceSkipEvent.
+    let _ = respect_default_excludes; // LAW10: walker does not own default-exclude decisions; process_entry owns visible skip accounting
 
     WalkConfig::default()
         .max_file_size(0)
@@ -295,8 +292,8 @@ pub(super) fn walker_config(
         .respect_gitignore(true)
         .skip_hidden(false)
         .skip_binary(false)
-        .exclude_extensions(exclude_extensions)
-        .exclude_dirs(exclude_dirs)
+        .exclude_extensions(HashSet::new())
+        .exclude_dirs(HashSet::new())
         .ignore_files(vec![".keyhogignore".to_string()])
         .ignore_patterns(ignore_overrides)
 }

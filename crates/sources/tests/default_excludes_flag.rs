@@ -53,10 +53,13 @@ fn make_corpus() -> tempfile::TempDir {
 
 #[test]
 fn default_excludes_drop_lockfiles_then_flag_includes_them() {
+    let _guard = SKIP_COUNTER_GUARD.lock().expect("counter guard");
     let dir = make_corpus();
 
-    // Default (respect = true): the lock file + min.js are excluded by the walker,
-    // so the sentinel never reaches a chunk. The control file is still scanned.
+    TestApi.reset_skip_counters();
+    // Default (respect = true): the lock file + min.js are excluded by the
+    // source-owned process_entry filter, so the sentinel never reaches a chunk.
+    // The control file is still scanned.
     let kept = scan_dir(dir.path(), true);
     assert!(
         body_contains(&kept, "normal_always_scanned_marker"),
@@ -66,10 +69,16 @@ fn default_excludes_drop_lockfiles_then_flag_includes_them() {
         !body_contains(&kept, SENTINEL),
         "package-lock.json / *.min.js must be excluded by default; sentinel leaked into a chunk"
     );
+    assert_eq!(
+        skip_counts().excluded,
+        2,
+        "walked default-excluded files must be counted instead of hidden by codewalk"
+    );
 
     // --no-default-excludes (respect = false): the previously-excluded files are
     // now scanned, so the sentinel reaches a chunk. This is the wiring the bug
     // dropped — the flag previously only touched the glob layer.
+    TestApi.reset_skip_counters();
     let included = scan_dir(dir.path(), false);
     assert!(
         body_contains(&included, "normal_always_scanned_marker"),
@@ -78,6 +87,11 @@ fn default_excludes_drop_lockfiles_then_flag_includes_them() {
     assert!(
         body_contains(&included, SENTINEL),
         "with --no-default-excludes the walker must scan package-lock.json / *.min.js"
+    );
+    assert_eq!(
+        skip_counts().excluded,
+        0,
+        "--no-default-excludes must not emit default-exclude skip counts"
     );
 }
 
@@ -140,10 +154,21 @@ fn default_excludes_apply_to_cache_directories() {
         !body_contains(&skipped, SENTINEL),
         ".cache directories must be source-owned default excludes, not CLI-only skips"
     );
+    assert_eq!(
+        skip_counts().excluded,
+        1,
+        "walked default-excluded directories must count skipped files instead of disappearing in codewalk"
+    );
 
+    TestApi.reset_skip_counters();
     let included = scan_dir(dir.path(), false);
     assert!(
         body_contains(&included, SENTINEL),
         "--no-default-excludes must scan .cache directories"
+    );
+    assert_eq!(
+        skip_counts().excluded,
+        0,
+        "--no-default-excludes must not count the .cache file as excluded"
     );
 }
