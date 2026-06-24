@@ -169,6 +169,14 @@ pub(super) fn emit_tar_entries(
                 // unreadable so coverage reflects it.
                 tracing::warn!(archive = %container_display, %error, "skipping unreadable tar entry");
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit_tar_entry_error(
+                    emit,
+                    container_display,
+                    "<tar-entry>",
+                    format!("cannot read tar entry header ({error})"),
+                ) {
+                    return;
+                }
                 continue;
             }
         };
@@ -194,6 +202,14 @@ pub(super) fn emit_tar_entries(
                 "skipping unsafe tar entry name"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit_tar_entry_error(
+                emit,
+                container_display,
+                &entry_name,
+                format!("{reason}; entry was not scanned"),
+            ) {
+                return;
+            }
             continue;
         }
         if super::super::filter::is_default_excluded(&entry_name) {
@@ -210,6 +226,16 @@ pub(super) fn emit_tar_entries(
                 "skipping tar entry: uncompressed size exceeds per-file cap"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            if !emit_tar_entry_error(
+                emit,
+                container_display,
+                &entry_name,
+                format!(
+                    "uncompressed size {entry_size} exceeds per-file cap {max_size}; entry was not scanned"
+                ),
+            ) {
+                return;
+            }
             continue;
         }
         total_uncompressed = total_uncompressed.saturating_add(entry_size);
@@ -242,6 +268,14 @@ pub(super) fn emit_tar_entries(
             // dropped from the scan — count it.
             tracing::warn!(archive = %container_display, entry = %entry_name, "failed to read tar entry body");
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit_tar_entry_error(
+                emit,
+                container_display,
+                &entry_name,
+                "cannot read entry body; entry was not scanned",
+            ) {
+                return;
+            }
             continue;
         }
 
@@ -280,6 +314,17 @@ pub(super) fn emit_tar_entries(
             }
         }
     }
+}
+
+fn emit_tar_entry_error(
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+    container_display: &str,
+    entry_name: &str,
+    reason: impl std::fmt::Display,
+) -> bool {
+    emit(Err(SourceError::Other(format!(
+        "failed to scan tar entry '{container_display}//{entry_name}': {reason}"
+    ))))
 }
 
 /// Decompress a `.gz` / `.zst` / `.lz4` / `.sz` / `.bz2` / `.xz` / `.tgz` file

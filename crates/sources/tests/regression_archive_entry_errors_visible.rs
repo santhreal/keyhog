@@ -53,3 +53,21 @@ fn rar_entry_read_failures_emit_source_errors() {
         "RAR entry error emission must respect consumer backpressure"
     );
 }
+
+#[test]
+fn tar_entry_failures_emit_source_errors() {
+    let compressed = source("src/filesystem/extract/compressed.rs");
+
+    assert!(
+        compressed.contains("failed to scan tar entry"),
+        "tar entry read/cap/name failures must emit machine-visible SourceError rows"
+    );
+    assert!(
+        compressed.contains("entry was not scanned"),
+        "tar entry errors must explain that one archive entry was unscanned"
+    );
+    assert!(
+        compressed.contains("fn emit_tar_entry_error("),
+        "tar entry error formatting must have one helper owner"
+    );
+}
