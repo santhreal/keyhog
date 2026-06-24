@@ -766,6 +766,54 @@ fn no_decode_and_no_entropy_compose_without_preset() {
     );
 }
 
+#[test]
+fn cli_deep_preset_wins_over_toml_no_entropy_and_no_decode() {
+    let (_dir, out, err, code) =
+        effective_config_with_toml("no_entropy = true\nno_decode = true\n", &["--deep"]);
+    assert_eq!(code, Some(0), "stderr={err}");
+    assert!(
+        out.contains("entropy_enabled = true"),
+        "CLI --deep must keep entropy enabled over TOML no_entropy; got {out}"
+    );
+    assert!(
+        out.contains("max_decode_depth = 10"),
+        "CLI --deep must keep deep decode over TOML no_decode; got {out}"
+    );
+}
+
+#[test]
+fn toml_deep_preset_still_composes_with_toml_no_entropy_and_no_decode() {
+    let (_dir, out, err, code) =
+        effective_config_with_toml("deep = true\nno_entropy = true\nno_decode = true\n", &[]);
+    assert_eq!(code, Some(0), "stderr={err}");
+    assert!(
+        out.contains("entropy_enabled = false"),
+        "TOML deep + TOML no_entropy must still disable entropy; got {out}"
+    );
+    assert!(
+        out.contains("max_decode_depth = 0"),
+        "TOML deep + TOML no_decode must still disable decode; got {out}"
+    );
+}
+
+#[test]
+fn cli_precision_preset_wins_over_toml_fast() {
+    let (_dir, out, err, code) = effective_config_with_toml("fast = true\n", &["--precision"]);
+    assert_eq!(code, Some(0), "stderr={err}");
+    assert!(
+        out.contains("min_confidence = 0.85"),
+        "CLI --precision must keep the precision floor over TOML fast; got {out}"
+    );
+    assert!(
+        out.contains("max_decode_depth = 1"),
+        "CLI --precision must keep shallow precision decode over TOML fast; got {out}"
+    );
+    assert!(
+        out.contains("ml_enabled = true"),
+        "CLI --precision must not inherit TOML fast's ML disable; got {out}"
+    );
+}
+
 /// `--fast` preset composition: ml off, entropy off, decode 0 — all three at
 /// once (`ScannerConfig::fast()` plus `ml_enabled = !fast && !no_ml`).
 #[test]

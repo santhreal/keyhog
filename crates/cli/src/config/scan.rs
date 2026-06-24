@@ -208,6 +208,7 @@ pub(super) fn apply_top_level_scan_fields(
     config: &mut ConfigFile,
 ) {
     // Apply config values only when no explicit CLI flag was given.
+    let cli_preset_selected = args.fast || args.deep || args.precision;
     if let Some(ref detectors_str) = config.detectors {
         if args.detectors == PathBuf::from("detectors") {
             args.detectors = PathBuf::from(detectors_str);
@@ -245,27 +246,27 @@ pub(super) fn apply_top_level_scan_fields(
         }
     }
 
-    if let Some(fast) = config.fast {
-        if !args.fast && !args.deep {
-            args.fast = fast;
-        }
-    }
-
-    if let Some(deep) = config.deep {
-        if !args.fast && !args.deep {
-            args.deep = deep;
-        }
-    }
-
     if let Some(no_decode) = config.no_decode {
-        if !args.no_decode {
+        if !args.no_decode && !cli_preset_selected {
             args.no_decode = no_decode;
         }
     }
 
     if let Some(no_entropy) = config.no_entropy {
-        if !args.no_entropy {
+        if !args.no_entropy && !cli_preset_selected {
             args.no_entropy = no_entropy;
+        }
+    }
+
+    if let Some(fast) = config.fast {
+        if !args.fast && !args.deep && !args.precision {
+            args.fast = fast;
+        }
+    }
+
+    if let Some(deep) = config.deep {
+        if !args.fast && !args.deep && !args.precision {
+            args.deep = deep;
         }
     }
 
