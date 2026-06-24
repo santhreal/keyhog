@@ -83,8 +83,11 @@ fn git_diff_sources_share_byte_oriented_parser() {
                 && source.contains(message)
                 && source.contains("if current_path.is_none()")
                 && source.contains("continue;")
-                && source.contains("SourceSkipEvent::Unreadable"),
-            "{rel} must count invalid unified-diff file headers as unreadable instead of silently dropping added lines"
+                && source.contains("SourceSkipEvent::Unreadable")
+                && source.contains("pending_errors")
+                && source.contains("pending_errors.push_back(SourceError::Other")
+                && source.contains("pending_errors.pop_front()"),
+            "{rel} must emit SourceError rows for invalid unified-diff file headers instead of silently dropping added lines"
         );
     }
 

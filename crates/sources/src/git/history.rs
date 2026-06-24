@@ -2,6 +2,7 @@
 //! that may have been committed and later removed.
 
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -130,6 +131,7 @@ fn stream_git_history_chunks(
     let mut diff_parser = super::UnifiedDiffParser::new();
     let mut done = false;
     let mut wait_after_final_chunk = false;
+    let mut pending_errors: VecDeque<SourceError> = VecDeque::new();
     let mut line_buf = Vec::new();
     let hunk_byte_cap = super::git_blob_bytes_limit_usize(limits);
     let mut total_bytes = 0usize;
@@ -152,6 +154,9 @@ fn stream_git_history_chunks(
         }
         if done {
             return None;
+        }
+        if let Some(error) = pending_errors.pop_front() {
+            return Some(Err(error));
         }
         if let Some(cap) = super::git_history_cap_status(total_bytes, chunk_count, limits) {
             let error = super::record_git_history_cap_once(cap, &mut aggregate_cap_reported);
@@ -290,6 +295,10 @@ fn stream_git_history_chunks(
                             "git history file header path failed sanitization; added lines for that file were NOT scanned"
                         );
                         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                        pending_errors.push_back(SourceError::Other(
+                            "git history file header path failed sanitization; added lines for that file were NOT scanned"
+                                .into(),
+                        ));
                     }
                     current_path = new_path;
                     current_content.clear();
@@ -298,6 +307,9 @@ fn stream_git_history_chunks(
 
                     if let Some(chunk) = prev_chunk {
                         return Some(Ok(chunk));
+                    }
+                    if let Some(error) = pending_errors.pop_front() {
+                        return Some(Err(error));
                     }
                     continue;
                 }

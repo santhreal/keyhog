@@ -2,6 +2,7 @@
 //! CI/CD pre-commit hooks that should only flag new secrets.
 
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
+use std::collections::VecDeque;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -161,6 +162,7 @@ fn stream_added_lines(
     let mut done = false;
     let mut emit_untracked = false;
     let mut wait_after_final_chunk = false;
+    let mut pending_errors: VecDeque<SourceError> = VecDeque::new();
     let mut line_buf: Vec<u8> = Vec::new();
     let hunk_byte_cap = super::git_blob_bytes_limit_usize(limits);
     let mut total_bytes = 0usize;
@@ -186,6 +188,9 @@ fn stream_added_lines(
                     return Some(Err(error));
                 }
             }
+        }
+        if let Some(error) = pending_errors.pop_front() {
+            return Some(Err(error));
         }
         if emit_untracked {
             let Some(scanner) = untracked_chunks.as_mut() else {
@@ -307,6 +312,10 @@ fn stream_added_lines(
                             "git diff file header path failed sanitization; added lines for that file were NOT scanned"
                         );
                         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                        pending_errors.push_back(SourceError::Other(
+                            "git diff file header path failed sanitization; added lines for that file were NOT scanned"
+                                .into(),
+                        ));
                     }
                     current_path = new_path;
 
@@ -323,6 +332,9 @@ fn stream_added_lines(
                                 &mut chunk_count,
                             )));
                         }
+                    }
+                    if let Some(error) = pending_errors.pop_front() {
+                        return Some(Err(error));
                     }
                     continue;
                 }

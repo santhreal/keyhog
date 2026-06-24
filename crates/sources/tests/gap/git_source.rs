@@ -1402,6 +1402,12 @@ fn git_source_commit_enumerator_names_reflog_stash_and_unreachable_coverage() {
         "GitSource must enumerate commits, loose blobs, trees, and tags that are neither refs nor reflogs, including Git fsck's dangling label"
     );
     assert!(
+        source.contains("tree_blob_oids: Option<&'a mut HashSet<gix::ObjectId>>")
+            && source.contains("tree_blob_oids.insert(oid.to_owned())")
+            && source.contains("objects.tree_blob_oids.contains(&id)"),
+        "unreachable tree blob OIDs must be recorded before path dedup so loose-blob fallback cannot duplicate tree-reachable blobs"
+    );
+    assert!(
         tag_messages.contains("\"for-each-ref\"")
             && tag_messages.contains("\"refs/tags\"")
             && tag_messages.contains("source_type: \"git/tag\""),

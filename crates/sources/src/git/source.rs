@@ -477,7 +477,7 @@ fn load_commit_blob_set(
     };
 
     let mut blob_metadata = Vec::new();
-    collect_tree_blobs_metadata(repo, &tree, seen_blob_paths, &mut blob_metadata, b"");
+    collect_tree_blobs_metadata(repo, &tree, seen_blob_paths, None, &mut blob_metadata, b"");
 
     Ok(Some(GitCommitBlobSet {
         commit_id,
@@ -987,7 +987,14 @@ fn collect_unreachable_tree_blob_metadata(
     };
 
     let before = blob_metadata.len();
-    collect_tree_blobs_metadata(repo, &tree, seen_blob_paths, blob_metadata, b"");
+    collect_tree_blobs_metadata(
+        repo,
+        &tree,
+        seen_blob_paths,
+        Some(tree_blob_oids),
+        blob_metadata,
+        b"",
+    );
     tree_blob_oids.extend(
         blob_metadata[before..]
             .iter()
@@ -1022,11 +1029,13 @@ fn collect_tree_blobs_metadata(
     repo: &gix::Repository,
     tree: &gix::Tree<'_>,
     seen_blob_paths: &mut HashSet<GitBlobPathKey>,
+    tree_blob_oids: Option<&mut HashSet<gix::ObjectId>>,
     blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
     prefix: &[u8],
 ) {
     let mut visitor = HistoricalBlobCollector {
         seen_blob_paths,
+        tree_blob_oids,
         blob_metadata,
     };
     if let Err(error) = super::walk_tree_recursive(repo, tree, prefix, &mut visitor) {
@@ -1085,6 +1094,7 @@ fn collect_head_blob_path_set(
 
 struct HistoricalBlobCollector<'a> {
     seen_blob_paths: &'a mut HashSet<GitBlobPathKey>,
+    tree_blob_oids: Option<&'a mut HashSet<gix::ObjectId>>,
     blob_metadata: &'a mut Vec<(gix::ObjectId, Vec<u8>)>,
 }
 
@@ -1099,6 +1109,9 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
     }
 
     fn visit_blob(&mut self, oid: gix::ObjectId, filepath: Vec<u8>) -> Result<(), SourceError> {
+        if let Some(tree_blob_oids) = self.tree_blob_oids.as_deref_mut() {
+            tree_blob_oids.insert(oid.to_owned());
+        }
         if self
             .seen_blob_paths
             .insert((oid.to_owned(), filepath.clone()))
