@@ -112,6 +112,10 @@ pub(crate) fn record_git_cap_once(
     )))
 }
 
+pub(crate) fn git_unscanned_object_error(reason: impl std::fmt::Display) -> SourceError {
+    SourceError::Git(format!("failed to scan git object: {reason}"))
+}
+
 pub(crate) fn drain_trimmed_hunk(buffer: &mut String) -> Option<String> {
     let trimmed = buffer.trim();
     if trimmed.is_empty() {

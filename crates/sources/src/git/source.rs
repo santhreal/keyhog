@@ -10,6 +10,7 @@ use gix::objs::Kind;
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use rayon::prelude::*;
 
+use super::git_unscanned_object_error;
 use super::tag_messages::{
     collect_reachable_tag_messages, decode_tag_message_chunks,
     decode_unreachable_tag_message_chunks,
@@ -361,6 +362,7 @@ fn stream_git_blobs(
                             limits,
                             &mut total_bytes,
                             &mut chunk_count,
+                            &mut pending_errors,
                         ));
                         if let Some(chunk) = current_tree_blobs.pop_front() {
                             return Some(Ok(chunk));
@@ -417,6 +419,7 @@ fn stream_git_blobs(
                     limits,
                     &mut total_bytes,
                     &mut chunk_count,
+                    &mut pending_errors,
                 ));
                 if let Some(chunk) = current_tree_blobs.pop_front() {
                     return Some(Ok(chunk));
@@ -1251,10 +1254,6 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
         )));
         Ok(())
     }
-}
-
-fn git_unscanned_object_error(reason: impl std::fmt::Display) -> SourceError {
-    SourceError::Git(format!("failed to scan git object: {reason}"))
 }
 
 fn record_git_object_unreadable() {

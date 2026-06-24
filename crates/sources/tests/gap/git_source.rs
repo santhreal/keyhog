@@ -27,7 +27,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use keyhog_core::{Chunk, Source, SourceError};
-use keyhog_sources::{FilesystemSource, GitSource};
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::{skip_counts, FilesystemSource, GitSource, SourceLimits};
 
 // ----------------------------------------------------------------------------
 // fixture helpers
@@ -1217,6 +1218,72 @@ fn secret_only_in_unreachable_annotated_tag_message_is_found() {
     );
     assert_eq!(c.metadata.commit, None, "tag object is not a commit");
     assert_eq!(c.metadata.author.as_deref(), Some("Gap Author"));
+}
+
+#[test]
+fn over_cap_annotated_tag_message_emits_source_error_without_dropping_siblings() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+
+    let (_t, repo) = init_repo();
+    commit_file(&repo, "main.txt", b"base=1\n", "base on main");
+    let oversized_message = format!("K={}", "A".repeat(128));
+    git(
+        &repo,
+        &[
+            "tag",
+            "-a",
+            "oversized-tag-message",
+            "-m",
+            &oversized_message,
+        ],
+    );
+
+    let limits = SourceLimits {
+        git_blob_bytes: 64,
+        ..SourceLimits::default()
+    };
+    let rows: Vec<Result<Chunk, SourceError>> = GitSource::new(repo.clone())
+        .with_limits(limits)
+        .chunks()
+        .collect();
+
+    let mut chunks = Vec::new();
+    let mut errors = Vec::new();
+    for row in rows {
+        match row {
+            Ok(chunk) => chunks.push(chunk),
+            Err(error) => errors.push(error),
+        }
+    }
+
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.metadata.source_type == "git/head"
+                && chunk.metadata.path.as_deref() == Some("main.txt")
+                && chunk.data.contains("base=1")),
+        "safe sibling git/head chunk must be preserved when tag message is over cap; chunks={chunks:?}"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "over-cap annotated tag message must emit exactly one SourceError row"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("oversized-tag-message")
+            && error.contains("exceeded")
+            && error.contains("tag message was not scanned"),
+        "tag-message SourceError must name the skipped tag and reason, got {error}"
+    );
+    assert_eq!(
+        skip_counts().over_max_size,
+        1,
+        "over-cap tag message must increment over-max-size coverage telemetry"
+    );
+
+    TestApi.reset_skip_counters();
 }
 
 #[test]
