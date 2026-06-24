@@ -30,6 +30,7 @@ use keyhog_core::{
     ScriptEngine, Severity, VerificationResult, VerifySpec,
 };
 use keyhog_verifier::{VerificationEngine, VerifyConfig};
+use rusty_fork::rusty_fork_test;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -130,72 +131,78 @@ fn permissive_engine(spec: DetectorSpec) -> VerificationEngine {
     .unwrap()
 }
 
-#[tokio::test]
-async fn script_auth_verify_requires_explicit_config_not_env() {
-    let saved = std::env::var("KEYHOG_ALLOW_SCRIPT_VERIFY").ok();
-    struct Restore(Option<String>);
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            unsafe {
-                match &self.0 {
-                    Some(value) => std::env::set_var("KEYHOG_ALLOW_SCRIPT_VERIFY", value),
-                    None => std::env::remove_var("KEYHOG_ALLOW_SCRIPT_VERIFY"),
+rusty_fork_test! {
+    #![rusty_fork(timeout_ms = 5000)]
+    #[test]
+    fn script_auth_verify_requires_explicit_config_not_env() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let saved = std::env::var("KEYHOG_ALLOW_SCRIPT_VERIFY").ok();
+            struct Restore(Option<String>);
+            impl Drop for Restore {
+                fn drop(&mut self) {
+                    unsafe {
+                        match &self.0 {
+                            Some(value) => std::env::set_var("KEYHOG_ALLOW_SCRIPT_VERIFY", value),
+                            None => std::env::remove_var("KEYHOG_ALLOW_SCRIPT_VERIFY"),
+                        }
+                    }
                 }
             }
-        }
-    }
-    let _restore = Restore(saved);
-    unsafe {
-        std::env::set_var("KEYHOG_ALLOW_SCRIPT_VERIFY", "1");
-    }
+            let _restore = Restore(saved);
+            unsafe {
+                std::env::set_var("KEYHOG_ALLOW_SCRIPT_VERIFY", "1");
+            }
 
-    let mut spec = spec_for(
-        "script-auth",
-        Some("http://127.0.0.1/script".into()),
-        vec![],
-    );
-    spec.verify.as_mut().unwrap().auth = Some(AuthSpec::Script {
-        engine: ScriptEngine::from("notreal"),
-        code: "print('STATUS: LIVE')".into(),
-    });
-
-    let default_engine = permissive_engine(spec.clone());
-    let findings = default_engine
-        .verify_all(vec![group_for("script-auth", "secret")])
-        .await;
-    match &findings[0].verification {
-        VerificationResult::Error(message) => {
-            assert!(
-                message.contains("AuthSpec::Script verification disabled")
-                    && message.contains("--allow-script-verify")
-                    && !message.contains("KEYHOG_ALLOW_SCRIPT_VERIFY"),
-                "script auth must ignore ambient env and name the explicit flag, got: {message}"
+            let mut spec = spec_for(
+                "script-auth",
+                Some("http://127.0.0.1/script".into()),
+                vec![],
             );
-        }
-        other => panic!("expected script auth disabled error, got {other:?}"),
-    }
+            spec.verify.as_mut().unwrap().auth = Some(AuthSpec::Script {
+                engine: ScriptEngine::from("notreal"),
+                code: "print('STATUS: LIVE')".into(),
+            });
 
-    let explicit_engine = VerificationEngine::new(
-        &[spec],
-        VerifyConfig {
-            danger_allow_private_ips: true,
-            danger_allow_http: true,
-            allow_script_verify: true,
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    let findings = explicit_engine
-        .verify_all(vec![group_for("script-auth", "secret")])
-        .await;
-    match &findings[0].verification {
-        VerificationResult::Error(message) => {
-            assert!(
-                message.contains("engine 'notreal' is not on"),
-                "explicit allow should pass the disabled gate and reach engine allowlist, got: {message}"
-            );
-        }
-        other => panic!("expected script engine allowlist error, got {other:?}"),
+            let default_engine = permissive_engine(spec.clone());
+            let findings = default_engine
+                .verify_all(vec![group_for("script-auth", "secret")])
+                .await;
+            match &findings[0].verification {
+                VerificationResult::Error(message) => {
+                    assert!(
+                        message.contains("AuthSpec::Script verification disabled")
+                            && message.contains("--allow-script-verify")
+                            && !message.contains("KEYHOG_ALLOW_SCRIPT_VERIFY"),
+                        "script auth must ignore ambient env and name the explicit flag, got: {message}"
+                    );
+                }
+                other => panic!("expected script auth disabled error, got {other:?}"),
+            }
+
+            let explicit_engine = VerificationEngine::new(
+                &[spec],
+                VerifyConfig {
+                    danger_allow_private_ips: true,
+                    danger_allow_http: true,
+                    allow_script_verify: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let findings = explicit_engine
+                .verify_all(vec![group_for("script-auth", "secret")])
+                .await;
+            match &findings[0].verification {
+                VerificationResult::Error(message) => {
+                    assert!(
+                        message.contains("engine 'notreal' is not on"),
+                        "explicit allow should pass the disabled gate and reach engine allowlist, got: {message}"
+                    );
+                }
+                other => panic!("expected script engine allowlist error, got {other:?}"),
+            }
+        });
     }
 }
 

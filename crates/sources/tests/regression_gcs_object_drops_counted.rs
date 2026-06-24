@@ -345,6 +345,7 @@ fn custom_endpoint_is_not_treated_as_google_for_token_forwarding() {
 
 #[test]
 fn gcs_token_forward_opt_in_ignores_ambient_env() {
+    let _guard = counter_guard();
     let saved = std::env::var("KEYHOG_GCS_ALLOW_TOKEN_FORWARD").ok();
     struct Restore(Option<String>);
     impl Drop for Restore {

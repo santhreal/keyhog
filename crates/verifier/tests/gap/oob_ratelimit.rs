@@ -28,6 +28,7 @@ use keyhog_verifier::oob::{
 };
 use keyhog_verifier::rate_limit::{get_rate_limiter, set_global_default_rps, RateLimiter};
 use keyhog_verifier::testing::{TestApi, VerifierTestApi};
+use rusty_fork::rusty_fork_test;
 
 // ------------------------------------------------------------------------
 // Helpers
@@ -655,23 +656,26 @@ fn set_default_rps_can_raise_after_clamp() {
     assert_eq!(limiter.default_interval(), Duration::from_millis(250));
 }
 
-#[test]
-fn global_set_default_rps_updates_shared_limiter() {
-    // The process-wide limiter is lazily created at 5 rps; the CLI setter
-    // retunes it. Use a distinctive value and read it back.
-    set_global_default_rps(8.0);
-    assert_eq!(
-        get_rate_limiter().default_interval(),
-        Duration::from_micros(125_000),
-        "8 rps -> 125ms"
-    );
-    // Re-tune again; must reflect the new value (idempotent setter).
-    set_global_default_rps(40.0);
-    assert_eq!(
-        get_rate_limiter().default_interval(),
-        Duration::from_millis(25),
-        "40 rps -> 25ms"
-    );
+rusty_fork_test! {
+    #![rusty_fork(timeout_ms = 5000)]
+    #[test]
+    fn global_set_default_rps_updates_shared_limiter() {
+        // The process-wide limiter is lazily created at 5 rps; the CLI setter
+        // retunes it. Use a distinctive value and read it back.
+        set_global_default_rps(8.0);
+        assert_eq!(
+            get_rate_limiter().default_interval(),
+            Duration::from_micros(125_000),
+            "8 rps -> 125ms"
+        );
+        // Re-tune again; must reflect the new value (idempotent setter).
+        set_global_default_rps(40.0);
+        assert_eq!(
+            get_rate_limiter().default_interval(),
+            Duration::from_millis(25),
+            "40 rps -> 25ms"
+        );
+    }
 }
 
 // ========================================================================

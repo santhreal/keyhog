@@ -1,4 +1,7 @@
 use super::*;
+use crate::hw_probe::ScanBackend;
+
+static SIMD_AUTO_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
 impl CompiledScanner {
     /// Whether a SIMD (Hyperscan/Vectorscan) prefilter is compiled in and live.
@@ -12,18 +15,79 @@ impl CompiledScanner {
     /// compiling in every feature combination without scattering
     /// `#[cfg(feature = "simd")]` across each call site.
     ///
-    /// Compiled only under `gpu`: its SOLE consumer is
-    /// `degraded_backend_after_gpu_failure` on the GPU dispatch path, so a
-    /// no-`gpu` build never asks the question. Gating it here keeps the
-    /// no-`gpu` profiles warning-clean (Law 11) without changing any answer.
-    /// `gpu` implies `simd` at the feature level (see keyhog-scanner Cargo.toml
-    /// — GPU region presence reuses the SIMD phase-2 tail), so the
-    /// `simd_prefilter` field is always present here; the runtime `is_some()` still reflects
-    /// whether the Hyperscan database actually built.
-    #[cfg(feature = "gpu")]
     #[inline]
     pub(crate) fn has_simd_prefilter(&self) -> bool {
-        self.simd_prefilter.is_some()
+        self.simd_backend_usable()
+    }
+
+    #[inline]
+    pub(crate) fn simd_backend_usable(&self) -> bool {
+        #[cfg(feature = "simd")]
+        {
+            return self.simd_prefilter.is_some();
+        }
+        #[cfg(not(feature = "simd"))]
+        {
+            false
+        }
+    }
+
+    #[inline]
+    pub(crate) fn live_cpu_backend(&self) -> ScanBackend {
+        if self.simd_backend_usable() {
+            ScanBackend::SimdCpu
+        } else {
+            ScanBackend::CpuFallback
+        }
+    }
+
+    pub(crate) fn warn_simd_auto_degrade(&self, context: &str) {
+        if SIMD_AUTO_DEGRADE_WARNED.set(()).is_ok() {
+            eprintln!(
+                "keyhog: SIMD backend unavailable ({context}); routing this automatic CPU-tier scan through cpu-fallback. \
+Forced --backend simd is rejected instead of silently running another backend."
+            );
+        }
+        tracing::warn!(
+            target: "keyhog::routing",
+            %context,
+            "SIMD backend unavailable; automatic CPU-tier route changed to cpu-fallback"
+        );
+    }
+
+    fn resolve_backend_for_scan(
+        &self,
+        requested_backend: Option<ScanBackend>,
+        chunk_bytes: u64,
+    ) -> ScanBackend {
+        let selected_backend = match requested_backend {
+            Some(backend) => backend,
+            None => self.select_backend_for_file(chunk_bytes),
+        };
+        if selected_backend == ScanBackend::SimdCpu && !self.simd_backend_usable() {
+            if requested_backend.is_some() {
+                crate::process_exit::backend_unavailable(
+                    "simd-regex selected but the SIMD/Hyperscan prefilter is unavailable; \
+silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or choose \
+`--backend cpu-fallback` explicitly.",
+                );
+            }
+            self.warn_simd_auto_degrade("autoroute selected simd-regex without a live prefilter");
+            return ScanBackend::CpuFallback;
+        }
+        selected_backend
+    }
+
+    /// Exit before a caller-selected backend can silently run a different path.
+    pub(crate) fn deny_silent_selected_backend_degrade(&self, backend: ScanBackend) {
+        if backend == ScanBackend::SimdCpu && !self.simd_backend_usable() {
+            crate::process_exit::backend_unavailable(
+                "simd-regex selected but the SIMD/Hyperscan prefilter is unavailable; \
+silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or choose \
+`--backend cpu-fallback` explicitly.",
+            );
+        }
+        gpu_forced::deny_silent_gpu_degrade(self, backend);
     }
 
     /// Number of loaded detectors.
@@ -275,9 +339,8 @@ impl CompiledScanner {
             crate::hw_probe::ScanBackend::Gpu | crate::hw_probe::ScanBackend::MegaScan => {
                 self.gpu_stack_usable()
             }
-            crate::hw_probe::ScanBackend::SimdCpu | crate::hw_probe::ScanBackend::CpuFallback => {
-                true
-            }
+            crate::hw_probe::ScanBackend::SimdCpu => self.simd_backend_usable(),
+            crate::hw_probe::ScanBackend::CpuFallback => true,
         };
         if !ready {
             gpu_forced::deny_silent_gpu_degrade(self, backend);
@@ -305,7 +368,7 @@ impl CompiledScanner {
         chunks: &[Chunk],
         backend: crate::hw_probe::ScanBackend,
     ) -> Vec<Vec<RawMatch>> {
-        gpu_forced::deny_silent_gpu_degrade(self, backend);
+        self.deny_silent_selected_backend_degrade(backend);
         profile::add_bytes(chunks.iter().map(|c| c.data.len() as u64).sum());
         profile::add_files(chunks.len() as u64);
         self.scan_chunks_with_backend_internal(chunks, backend)
@@ -354,17 +417,23 @@ impl CompiledScanner {
             #[cfg(feature = "simd")]
             if self.should_scan_no_hit_chunk(chunk) {
                 let prepared = self.prepare_chunk(chunk);
+                let live_backend = self.live_cpu_backend();
+                if live_backend == crate::hw_probe::ScanBackend::CpuFallback {
+                    self.warn_simd_auto_degrade(
+                        "decode-shaped no-hit chunk had no live SIMD prefilter",
+                    );
+                }
                 let triggered = if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {
                     Vec::new()
                 } else {
                     self.collect_triggered_patterns_for_backend(
                         &prepared.preprocessed.text,
-                        crate::hw_probe::ScanBackend::SimdCpu,
+                        live_backend,
                     )
                 };
                 let mut matches = self.scan_prepared_with_triggered(
                     prepared,
-                    crate::hw_probe::ScanBackend::SimdCpu,
+                    live_backend,
                     triggered,
                     deadline,
                     None,
@@ -395,8 +464,7 @@ impl CompiledScanner {
             return Vec::new();
         }
 
-        let selected_backend =
-            backend.unwrap_or_else(|| self.select_backend_for_file(chunk.data.len() as u64)); // LAW10: backend choice is recall-invariant (parity contract); default selection, not a degrade
+        let selected_backend = self.resolve_backend_for_scan(backend, chunk.data.len() as u64); // LAW10: automatic CPU-tier choice is relabeled to the backend that actually runs
         gpu_forced::deny_silent_gpu_degrade(self, selected_backend);
         tracing::trace!(
             target: "keyhog::routing",

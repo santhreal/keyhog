@@ -250,7 +250,10 @@ impl CompiledScanner {
         let degrade = |reason: String| -> Vec<u64> {
             self.record_gpu_degrade(reason.clone());
             super::gpu_forced::deny_silent_gpu_degrade_with_reason(self, backend, Some(&reason));
-            self.collect_triggered_patterns_simd(text)
+            self.collect_triggered_patterns_for_backend(
+                text,
+                self.degraded_backend_after_gpu_failure(),
+            )
         };
 
         let Some(matcher) = self.gpu_matcher() else {
@@ -341,6 +344,7 @@ impl CompiledScanner {
             return triggered_patterns;
         }
 
+        self.warn_simd_auto_degrade("SimdCpu trigger collection reached without a live prefilter");
         self.collect_triggered_patterns_cpu(text)
     }
 

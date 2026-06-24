@@ -94,7 +94,7 @@ impl CompiledScanner {
         {
             let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
                 .par_iter()
-                .map(|c| self.scan_with_backend(c, crate::hw_probe::ScanBackend::SimdCpu))
+                .map(|c| self.scan_with_backend(c, crate::hw_probe::ScanBackend::CpuFallback))
                 .collect();
             super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
             return results;
@@ -103,9 +103,10 @@ impl CompiledScanner {
         #[cfg(feature = "simd")]
         {
             let Some(scanner) = &self.simd_prefilter else {
+                self.warn_simd_auto_degrade("coalesced scan had no live SIMD prefilter");
                 let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
                     .par_iter()
-                    .map(|c| self.scan_with_backend(c, crate::hw_probe::ScanBackend::SimdCpu))
+                    .map(|c| self.scan_with_backend(c, crate::hw_probe::ScanBackend::CpuFallback))
                     .collect();
                 super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
                 return results;

@@ -2,7 +2,8 @@
 //! not collide.
 
 use keyhog::exit_codes::{
-    DEFINITIONS, EXIT_REQUIRE_GPU_UNMET, EXIT_SOURCE_FAILED, EXIT_USER_ERROR, HELP,
+    DEFINITIONS, EXIT_REQUIRE_GPU_UNMET, EXIT_SOURCE_FAILED, EXIT_SYSTEM_ERROR, EXIT_USER_ERROR,
+    HELP,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -78,6 +79,13 @@ fn scanner_require_gpu_hard_exit_matches_cli_exit_contract() {
             EXIT_REQUIRE_GPU_UNMET
         )),
         "scanner require-GPU hard exit must match keyhog::exit_codes::EXIT_REQUIRE_GPU_UNMET"
+    );
+    assert!(
+        helper.contains(&format!(
+            "BACKEND_UNAVAILABLE_EXIT_CODE: i32 = {}",
+            EXIT_SYSTEM_ERROR
+        )),
+        "scanner backend-unavailable hard exit must match keyhog::exit_codes::EXIT_SYSTEM_ERROR"
     );
 
     let mut offenders = Vec::new();

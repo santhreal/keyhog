@@ -63,14 +63,17 @@ fn per_chunk_gpu_has_no_silent_simd_swap() {
         .unwrap_or(src.len());
     let func = &src[start..end];
 
-    // The ONLY `collect_triggered_patterns_simd` call must be inside the `degrade`
-    // closure (after the loud helper). A second, bare call would be a silent swap.
+    // The degrade closure must route through the live degraded backend helper,
+    // not directly into SimdCpu, because SimdCpu is only honest when its
+    // prefilter actually exists.
     assert_eq!(
-        func.matches("self.collect_triggered_patterns_simd(text)")
+        func.matches(
+            "self.collect_triggered_patterns_for_backend(\n                text,\n                self.degraded_backend_after_gpu_failure(),\n            )"
+        )
             .count(),
         1,
-        "the per-chunk GPU path must call collect_triggered_patterns_simd exactly once \
-         (inside the loud degrade closure) — a bare early call is a silent fallback"
+        "the per-chunk GPU path must route through the live degraded backend exactly once \
+         inside the loud degrade closure"
     );
 
     // The old silent `tracing::debug!`-then-fall-through on a failed dispatch must be gone.

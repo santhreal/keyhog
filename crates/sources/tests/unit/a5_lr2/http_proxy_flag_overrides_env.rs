@@ -4,8 +4,31 @@
 //! not silently reroute secret-verification traffic.
 
 use keyhog_sources::testing::{SourceTestApi, TestApi};
+use std::sync::Mutex;
+
+static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+struct RestoreEnv {
+    proxy: Option<String>,
+}
+
+impl Drop for RestoreEnv {
+    fn drop(&mut self) {
+        match &self.proxy {
+            Some(value) => std::env::set_var("KEYHOG_PROXY", value),
+            None => std::env::remove_var("KEYHOG_PROXY"),
+        }
+    }
+}
+
 #[test]
 fn http_proxy_flag_overrides_env() {
+    let _guard = ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _restore = RestoreEnv {
+        proxy: std::env::var("KEYHOG_PROXY").ok(),
+    };
     std::env::set_var("KEYHOG_PROXY", "http://env:8080");
 
     // Explicit flag set: that value is used verbatim (env irrelevant).
@@ -26,6 +49,4 @@ fn http_proxy_flag_overrides_env() {
         None,
         "KEYHOG_PROXY must not set a proxy when --proxy is unset",
     );
-
-    std::env::remove_var("KEYHOG_PROXY");
 }

@@ -20,6 +20,9 @@
 //! `crates/sources/src/s3/auth.rs`.
 
 use keyhog_sources::testing::{SourceTestApi, TestApi};
+use std::sync::Mutex;
+
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 /// AWS-owned endpoints: every shape `aws s3 endpoint-url` documents.
 /// Pre-fix: trivially true (everything got creds). Post-fix: these stay
@@ -85,6 +88,9 @@ fn non_aws_endpoints_do_not_pass_aws_gate() {
 /// the default to "forward."
 #[test]
 fn credential_forward_opt_in_ignores_ambient_env() {
+    let _guard = ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let saved = std::env::var("KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD").ok();
     struct Restore(Option<String>);
     impl Drop for Restore {
