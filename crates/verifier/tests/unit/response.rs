@@ -42,6 +42,31 @@ fn success_json_path_presence_treats_false_and_zero_as_present() {
 }
 
 #[test]
+fn success_json_path_malformed_body_is_error_not_dead() {
+    let spec = json_success("/valid", Some("true"));
+
+    let error = TestApi
+        .evaluate_success_result_for_test(&spec, 200, r#"{"valid":true"#)
+        .expect_err("malformed JSON must not collapse to a false/dead success result");
+
+    assert!(
+        error.contains("response body is not valid JSON for success json_path `/valid`"),
+        "error must name the broken success contract and path, got {error:?}"
+    );
+}
+
+#[test]
+fn success_json_path_missing_key_remains_non_match() {
+    let spec = json_success("/missing", Some("true"));
+
+    assert_eq!(
+        TestApi.evaluate_success_result_for_test(&spec, 200, r#"{"valid":true}"#),
+        Ok(false),
+        "valid JSON with a missing success path is a normal non-match, not an evaluation error"
+    );
+}
+
+#[test]
 fn success_json_equals_keeps_string_exact_match_contract() {
     let spec = json_success("/status", Some("true"));
 

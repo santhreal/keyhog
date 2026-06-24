@@ -7,9 +7,9 @@ use reqwest::Client;
 use crate::interpolate::interpolate_url;
 use crate::verify::credential::verification_timeout;
 use crate::verify::{
-    RequestBuildResult, VerificationAttempt, apply_header_body_templates, body_indicates_error,
-    build_request_for_step, evaluate_success, execute_and_read_response, extract_metadata,
-    resolved_client_for_url,
+    apply_header_body_templates, body_indicates_error, build_request_for_step, evaluate_success,
+    execute_and_read_response, extract_metadata, resolved_client_for_url, RequestBuildResult,
+    VerificationAttempt,
 };
 
 pub(crate) async fn verify_multi_step(
@@ -133,7 +133,18 @@ pub(crate) async fn verify_multi_step(
             };
         }
 
-        if !evaluate_success(&step.success, status, &body) || body_indicates_error(&body) {
+        let success_matches = match evaluate_success(&step.success, status, &body) {
+            Ok(matched) => matched,
+            Err(error) => {
+                return VerificationAttempt {
+                    result: error.into_verification_error(),
+                    metadata: all_metadata,
+                    transient: false,
+                };
+            }
+        };
+
+        if !success_matches || body_indicates_error(&body) {
             return VerificationAttempt {
                 result: VerificationResult::Dead,
                 metadata: all_metadata,

@@ -17,18 +17,18 @@ pub mod ssrf;
 mod verify;
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
 use keyhog_core::{
-    DedupedMatch, DetectorSpec, SensitiveString, VerificationResult, VerifiedFinding, redact,
+    redact, DedupedMatch, DetectorSpec, SensitiveString, VerificationResult, VerifiedFinding,
 };
 
 // Re-export dedup types from core so existing consumers (`use keyhog_verifier::DedupedMatch`)
 // continue to work without source changes.
-pub use keyhog_core::{DedupScope, dedup_matches};
+pub use keyhog_core::{dedup_matches, DedupScope};
 use reqwest::{Client, Error as ReqwestError};
 use thiserror::Error;
 use tokio::sync::{Notify, Semaphore};
@@ -504,6 +504,12 @@ pub mod testing {
             status: u16,
             body: &str,
         ) -> bool;
+        fn evaluate_success_result_for_test(
+            &self,
+            spec: &keyhog_core::SuccessSpec,
+            status: u16,
+            body: &str,
+        ) -> Result<bool, String>;
         fn body_indicates_error_for_test(&self, body: &str) -> bool;
         fn ssrf_check_url_with_resolved_addrs_for_test(
             &self,
@@ -753,6 +759,16 @@ pub mod testing {
             body: &str,
         ) -> bool {
             crate::verify::evaluate_success(spec, status, body)
+                .expect("success contract should evaluate cleanly")
+        }
+
+        fn evaluate_success_result_for_test(
+            &self,
+            spec: &keyhog_core::SuccessSpec,
+            status: u16,
+            body: &str,
+        ) -> Result<bool, String> {
+            crate::verify::evaluate_success(spec, status, body).map_err(|error| error.to_string())
         }
 
         fn body_indicates_error_for_test(&self, body: &str) -> bool {

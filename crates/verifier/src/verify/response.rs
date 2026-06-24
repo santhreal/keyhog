@@ -12,6 +12,31 @@ pub(crate) struct HttpResponseBody {
     pub body: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResponseContractError {
+    message: String,
+}
+
+impl ResponseContractError {
+    fn invalid_json(json_path: &str, error: serde_json::Error) -> Self {
+        Self {
+            message: format!(
+                "response body is not valid JSON for success json_path `{json_path}`: {error}"
+            ),
+        }
+    }
+
+    pub(crate) fn into_verification_error(self) -> VerificationResult {
+        VerificationResult::Error(self.message)
+    }
+}
+
+impl std::fmt::Display for ResponseContractError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
 pub(crate) async fn execute_and_read_response(
     request: reqwest::RequestBuilder,
 ) -> std::result::Result<HttpResponseBody, RequestError> {
@@ -45,38 +70,42 @@ pub(crate) async fn read_response_body(
     })
 }
 
-pub(crate) fn evaluate_success(spec: &keyhog_core::SuccessSpec, status: u16, body: &str) -> bool {
+pub(crate) fn evaluate_success(
+    spec: &keyhog_core::SuccessSpec,
+    status: u16,
+    body: &str,
+) -> Result<bool, ResponseContractError> {
     if let Some(expected_status) = spec.status {
         if status != expected_status {
-            return false;
+            return Ok(false);
         }
     }
     if let Some(not_status) = spec.status_not {
         if status == not_status {
-            return false;
+            return Ok(false);
         }
     }
     if let Some(ref contains) = spec.body_contains {
         if !body.contains(contains) {
-            return false;
+            return Ok(false);
         }
     }
     if let Some(ref not_contains) = spec.body_not_contains {
         if body.contains(not_contains) {
-            return false;
+            return Ok(false);
         }
     }
     if let Some(ref json_path) = spec.json_path {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
-            if let Some(val) = json.pointer(json_path) {
-                return spec.equals.as_ref().map_or(!val.is_null(), |expected| {
-                    json_value_to_contract_string(val) == *expected
-                });
-            }
+        let json = serde_json::from_str::<serde_json::Value>(body)
+            .map_err(|error| ResponseContractError::invalid_json(json_path, error))?;
+        if let Some(val) = json.pointer(json_path) {
+            return Ok(spec.equals.as_ref().map_or(!val.is_null(), |expected| {
+                json_value_to_contract_string(val) == *expected
+            }));
         }
-        return false;
+        return Ok(false);
     }
-    true
+    Ok(true)
 }
 
 /// Generic "the response body announces a failure" heuristic, used as a

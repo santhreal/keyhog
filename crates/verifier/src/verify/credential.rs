@@ -475,14 +475,35 @@ pub(crate) async fn verify_credential(
     let status = response.status;
     let body = response.body;
 
-    let is_live = success.map_or(status == 200, |s| evaluate_success(s, status, &body));
+    let retryable_status = status == 429 || (500..=504).contains(&status);
+    let is_live = match success {
+        Some(s) => match evaluate_success(s, status, &body) {
+            Ok(matched) => matched,
+            Err(error) if retryable_status => {
+                tracing::warn!(
+                    %status,
+                    %error,
+                    "verifier success contract could not evaluate retryable response"
+                );
+                false
+            }
+            Err(error) => {
+                return VerificationAttempt {
+                    result: error.into_verification_error(),
+                    metadata: HashMap::new(),
+                    transient: false,
+                };
+            }
+        },
+        None => status == 200,
+    };
 
     let is_actually_live = is_live && !body_indicates_error(&body);
     let mut metadata = extract_metadata(&spec.metadata, &body);
 
     let http_only_result = if is_actually_live {
         VerificationResult::Live
-    } else if status == 429 || (500..=504).contains(&status) {
+    } else if retryable_status {
         if status == 429 {
             crate::rate_limit::get_rate_limiter()
                 .update_limit(&spec.service, 0.5)
@@ -492,7 +513,7 @@ pub(crate) async fn verify_credential(
     } else {
         VerificationResult::Dead
     };
-    let transient = status == 429 || (500..=504).contains(&status);
+    let transient = retryable_status;
 
     let verification_result = match oob_ctx {
         None => http_only_result,
