@@ -57,6 +57,38 @@ fn context_line_comment_triple_quote_does_not_close_docstring() {
 }
 
 #[test]
+fn context_assignment_inside_docstring_does_not_close_docstring() {
+    let lines = vec![
+        r#""""Module docstring."#,
+        "inside before assignment-like example",
+        r#"example = """not a closer"#,
+        "still inside the docstring api_key = sk-demo",
+        r#"""""#,
+    ];
+    let flags = documentation_line_flags(&lines);
+    assert!(
+        flags[3],
+        "assignment-prefixed triple quotes inside a docstring must not close docstring state"
+    );
+    assert!(flags[4], "real closer line stays in documentation");
+}
+
+#[test]
+fn context_apostrophe_before_docstring_closer_still_closes_docstring() {
+    let lines = vec![
+        r#""""Module docstring."#,
+        r#"the example doesn't leak """"#,
+        "ordinary_code = true",
+    ];
+    let flags = documentation_line_flags(&lines);
+    assert!(flags[1], "closer line remains documentation");
+    assert!(
+        !flags[2],
+        "apostrophe text before a real closer must not keep docstring state open"
+    );
+}
+
+#[test]
 fn context_self_contained_docstring_line_is_documentation() {
     let lines = vec!["\"\"\"api_key = sk-demo\"\"\"", "ordinary_code = true"];
     let flags = documentation_line_flags(&lines);

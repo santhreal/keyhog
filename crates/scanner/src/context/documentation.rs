@@ -27,7 +27,9 @@ pub(crate) fn documentation_line_flags(lines: &[&str]) -> Vec<bool> {
         }
         if triple_count % DOCSTRING_TOGGLE_REMAINDER == DOCSTRING_TOGGLE_MATCH {
             if in_docstring {
-                in_docstring = false;
+                if closes_docstring(docstring_segment) {
+                    in_docstring = false;
+                }
             } else {
                 in_docstring = opens_docstring(docstring_segment);
             }
@@ -107,7 +109,7 @@ fn is_triple_quote_at(bytes: &[u8], idx: usize) -> bool {
 /// false suppression: a genuine opener with unbalanced regular quotes before
 /// its delimiter would be a Python syntax error and does not occur in practice.
 fn opens_docstring(trimmed: &str) -> bool {
-    let Some(pos) = trimmed.find("\"\"\"").or_else(|| trimmed.find("'''")) else {
+    let Some(pos) = first_docstring_delimiter(trimmed) else {
         return false;
     };
     let before = &trimmed[..pos];
@@ -115,6 +117,17 @@ fn opens_docstring(trimmed: &str) -> bool {
         return false;
     }
     has_balanced_regular_quotes(before)
+}
+
+fn closes_docstring(trimmed: &str) -> bool {
+    let Some(pos) = first_docstring_delimiter(trimmed) else {
+        return false;
+    };
+    !has_assignment_operator(&trimmed[..pos])
+}
+
+fn first_docstring_delimiter(trimmed: &str) -> Option<usize> {
+    trimmed.find("\"\"\"").or_else(|| trimmed.find("'''"))
 }
 
 /// True when `segment` holds an even number of each regular quote, i.e. scanning
