@@ -247,7 +247,7 @@ pub mod confidence {
         crate::confidence::policy::ml_score_for_candidate_text(text, || score)
     }
 
-    #[cfg(all(test, feature = "ml"))]
+    #[cfg(all(test, feature = "ml", feature = "gpu"))]
     pub(crate) fn apply_empty_candidate_score_policy(texts: &[&str], scores: &mut [f64]) {
         crate::confidence::policy::apply_empty_candidate_score_policy(texts.iter().copied(), scores)
     }
@@ -1096,7 +1096,7 @@ pub(crate) mod entropy_keywords {
 
 pub mod checksum {
     pub use crate::checksum::{
-        CHECKSUM_VALID_FLOOR, ChecksumResult, checksum_adjusted_confidence, validate_checksum,
+        checksum_adjusted_confidence, validate_checksum, ChecksumResult, CHECKSUM_VALID_FLOOR,
     };
 
     pub fn standard_crc32(data: &[u8]) -> u32 {

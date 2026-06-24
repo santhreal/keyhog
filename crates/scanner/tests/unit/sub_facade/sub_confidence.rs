@@ -9,6 +9,8 @@ use keyhog_scanner::confidence::{
     known_prefix_confidence_floor, ConfidenceSignals, KNOWN_PREFIXES,
 };
 use keyhog_scanner::context::CodeContext;
+#[cfg(all(feature = "ml", feature = "gpu"))]
+use keyhog_scanner::testing::confidence::apply_empty_candidate_score_policy;
 use keyhog_scanner::testing::confidence::{
     apply_calibration_multiplier, apply_calibration_multiplier_with_store,
     apply_known_prefix_floor, apply_path_confidence_penalties, apply_post_ml_penalties,
@@ -17,8 +19,7 @@ use keyhog_scanner::testing::confidence::{
 };
 #[cfg(feature = "ml")]
 use keyhog_scanner::testing::confidence::{
-    apply_empty_candidate_score_policy, ml_pending_confidence, ml_score_for_candidate_text,
-    probabilistic_promise_confidence_override,
+    ml_pending_confidence, ml_score_for_candidate_text, probabilistic_promise_confidence_override,
 };
 
 fn all_false_signals() -> ConfidenceSignals {
@@ -391,7 +392,7 @@ fn ml_empty_candidate_score_policy_returns_zero() {
 }
 
 #[test]
-#[cfg(feature = "ml")]
+#[cfg(all(feature = "ml", feature = "gpu"))]
 fn ml_empty_candidate_batch_policy_changes_only_empty_texts() {
     let mut scores = [0.91, 0.82, 0.73];
     apply_empty_candidate_score_policy(&["alpha", "", "omega"], &mut scores);
