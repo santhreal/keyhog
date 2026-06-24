@@ -62,19 +62,21 @@ pub(crate) fn build_web_client(
         reqwest::Url::parse(url).map_err(|e| SourceError::Other(format!("invalid URL: {e}")))?;
     if is_disallowed_web_host(url) && !allow_autoroute_loopback_calibration_url {
         let safe_url = redact_url(url);
-        return Err(SourceError::Other(format!(
+        return Err(super::web_unreadable_error(format!(
             "refusing to fetch {safe_url}: host resolves to a private / \
              loopback / link-local / metadata-service address - \
              WebSource only fetches public URLs"
         )));
     }
 
-    if !proxy_in_use && !allow_autoroute_loopback_calibration_url {
+    if !allow_autoroute_loopback_calibration_url {
         if let Some(host) = parsed.host_str() {
             let port = parsed.port_or_known_default().unwrap_or(443); // LAW10: 443 is the correct https default port, not a swallowed error
             let host = host.to_string();
             let addrs = resolve_and_screen(&host, port)?;
-            builder = builder.resolve_to_addrs(&host, &addrs);
+            if !proxy_in_use {
+                builder = builder.resolve_to_addrs(&host, &addrs);
+            }
         }
     }
 
@@ -104,7 +106,7 @@ pub(crate) fn resolve_and_screen(
         )));
     }
     if addrs.iter().any(|a| is_disallowed_ip(a.ip())) {
-        return Err(SourceError::Other(format!(
+        return Err(super::web_unreadable_error(format!(
             "refusing to fetch {}: host resolves to a private / loopback / \
              link-local / metadata-service address - WebSource only fetches \
              public URLs",

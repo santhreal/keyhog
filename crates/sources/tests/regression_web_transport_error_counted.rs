@@ -132,6 +132,84 @@ fn web_unsupported_redirect_scheme_is_counted_unreadable() {
 
 #[cfg(feature = "web")]
 #[test]
+fn web_unsupported_initial_scheme_is_counted_unreadable() {
+    use keyhog_core::Source;
+    use keyhog_sources::skip_counts;
+    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::WebSource;
+
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let rows: Vec<_> = WebSource::new(vec!["file:///tmp/secret.js".to_string()])
+        .chunks()
+        .collect();
+
+    assert_eq!(
+        rows.len(),
+        1,
+        "unsupported initial scheme must produce one visible source error"
+    );
+    let error = rows[0]
+        .as_ref()
+        .expect_err("unsupported initial scheme must fail");
+    assert!(
+        error.to_string().contains("unsupported URL scheme"),
+        "error should name the unsupported initial scheme, got {error}"
+    );
+    assert!(
+        error.to_string().contains("http:// and https://"),
+        "error should tell the operator which schemes WebSource supports, got {error}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.unreadable - before.unreadable,
+        1,
+        "WebSource unsupported initial schemes must bump SKIPPED_UNREADABLE"
+    );
+}
+
+#[cfg(feature = "web")]
+#[test]
+fn web_initial_disallowed_host_is_counted_unreadable() {
+    use keyhog_core::Source;
+    use keyhog_sources::skip_counts;
+    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::WebSource;
+
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let rows: Vec<_> = WebSource::new(vec!["http://127.0.0.1/app.js".to_string()])
+        .chunks()
+        .collect();
+
+    assert_eq!(
+        rows.len(),
+        1,
+        "initial disallowed host must produce one visible source error"
+    );
+    let error = rows[0]
+        .as_ref()
+        .expect_err("initial disallowed host must fail");
+    assert!(
+        error.to_string().contains("private / loopback"),
+        "error should name the private initial host, got {error}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.unreadable - before.unreadable,
+        1,
+        "WebSource initial disallowed hosts must bump SKIPPED_UNREADABLE"
+    );
+}
+
+#[cfg(feature = "web")]
+#[test]
 fn web_private_redirect_target_is_counted_unreadable() {
     use keyhog_core::Source;
     use keyhog_sources::skip_counts;

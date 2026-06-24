@@ -124,6 +124,10 @@ impl WebSource {
         let mut results = Vec::new();
 
         for url in &self.urls {
+            if let Err(error) = validate_initial_web_url(url) {
+                results.push(Err(error));
+                continue;
+            }
             let allow_calibration_url = self.allow_autoroute_loopback_calibration
                 && is_autoroute_loopback_calibration_url(url);
             // SSRF defense (host pre-filter): the verifier already has this
@@ -133,7 +137,7 @@ impl WebSource {
             // would fetch the cloud metadata endpoint and extract IAM creds.
             if is_disallowed_web_host(url) && !allow_calibration_url {
                 let safe_url = redact_url(url);
-                results.push(Err(SourceError::Other(format!(
+                results.push(Err(web_unreadable_error(format!(
                     "refusing to fetch {safe_url}: host resolves to a private / \
                      loopback / link-local / metadata-service address - \
                      WebSource only fetches public URLs"
@@ -190,6 +194,9 @@ fn fetch_url(
     proxy_in_use: bool,
     allow_autoroute_loopback_calibration_url: bool,
 ) -> Vec<Result<Chunk, SourceError>> {
+    if let Err(error) = validate_initial_web_url(url) {
+        return vec![Err(error)];
+    }
     // SSRF defense (host pre-filter): the verifier already has this gate via
     // bogon for live verifications; WebSource was the missing surface.
     // Without it,
@@ -199,7 +206,7 @@ fn fetch_url(
     // in `build_web_client`. Kimi sources-audit web-source SSRF finding.
     if is_disallowed_web_host(url) && !allow_autoroute_loopback_calibration_url {
         let safe_url = redact_url(url);
-        return vec![Err(SourceError::Other(format!(
+        return vec![Err(web_unreadable_error(format!(
             "refusing to fetch {safe_url}: host resolves to a private / \
              loopback / link-local / metadata-service address - \
              WebSource only fetches public URLs"
@@ -232,6 +239,22 @@ fn fetch_url(
         WebResponseKind::Wasm => handle_wasm(resp, url, max_response_bytes),
         WebResponseKind::SourceMap => handle_sourcemap(resp, url, max_response_bytes),
         WebResponseKind::JavaScript => handle_js(resp, url, max_response_bytes),
+    }
+}
+
+fn validate_initial_web_url(url: &str) -> Result<(), SourceError> {
+    let parsed = reqwest::Url::parse(url).map_err(|error| {
+        let safe_url = redact_url(url);
+        web_unreadable_error(format!("failed to fetch {safe_url}: invalid URL: {error}"))
+    })?;
+    match parsed.scheme() {
+        "http" | "https" => Ok(()),
+        scheme => {
+            let safe_url = redact_url(url);
+            Err(web_unreadable_error(format!(
+                "refusing to fetch {safe_url}: unsupported URL scheme {scheme:?}; WebSource only fetches http:// and https:// URLs"
+            )))
+        }
     }
 }
 
