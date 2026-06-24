@@ -3,11 +3,9 @@
 //!
 //! Every expected value below is derived from reading the real implementation:
 //!
-//! * `decode_git_blob` (source.rs:316) — empty -> `Some("")`, valid UTF-8 ->
-//!   owned copy, non-UTF-8 non-binary -> lossy decode, true binary -> `None`.
-//! * `looks_binary_blob` (source.rs:339) — magic headers, early NUL, UTF-16 BOM
-//!   / alternating-NUL exemption, and the `suspicious * 20 > total` (>5%) C0
-//!   density rule.
+//! * `decode_git_blob` delegates to the filesystem text decoder, so git blobs
+//!   and filesystem files share the same UTF-8, UTF-16 BOM, lossy fallback, and
+//!   binary rejection contract.
 //! * `stream_git_blobs` (source.rs:97) — `git log --reflog --all`, explicit
 //!   refs/stash coverage, unreachable commit enumeration, gix tree walk,
 //!   path-aware blob dedup / `seen_commits` dedup, the filesystem-owned
@@ -211,6 +209,25 @@ fn latin1_high_bytes_decoded_lossily() {
 }
 
 #[test]
+fn utf16_bom_blob_is_scanned_like_filesystem_text() {
+    let (_t, repo) = init_repo();
+    let text = "TOKEN=ghp_utf16BomSurvives0000000000001\n";
+    let mut bytes = vec![0xFF, 0xFE];
+    for unit in text.encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    commit_file(&repo, "utf16.env", &bytes, "utf16 bom config");
+
+    let chunks = collect_chunks(&repo, 1);
+    let c = chunk_for(&chunks, "utf16.env").expect("UTF-16 BOM git blob must be decoded");
+    assert!(
+        c.data.contains("ghp_utf16BomSurvives0000000000001"),
+        "git source must mirror filesystem UTF-16 BOM decoding; got {:?}",
+        c.data.to_string()
+    );
+}
+
+#[test]
 fn empty_blob_emits_empty_chunk_with_zero_size() {
     // decode_git_blob returns Some(String::new()) for empty data, and the
     // stream does NOT filter empty chunks (unlike git-diff/git-history which
@@ -232,8 +249,8 @@ fn empty_blob_emits_empty_chunk_with_zero_size() {
 
 #[test]
 fn pure_binary_blob_is_skipped_not_emitted() {
-    // An ELF magic header makes looks_binary_blob return true, so
-    // decode_git_blob returns None and the blob produces NO chunk.
+    // An ELF magic header makes the shared filesystem decoder reject the blob,
+    // so decode_git_blob returns None and the blob produces NO chunk.
     let (_t, repo) = init_repo();
     let mut elf = Vec::new();
     elf.extend_from_slice(b"\x7fELF");
@@ -278,23 +295,20 @@ fn png_magic_blob_is_skipped() {
 }
 
 #[test]
-fn early_nul_byte_marks_blob_binary_and_skips() {
-    // A NUL within the first 1024 bytes that is not the UTF-16 alternating
-    // pattern forces the binary verdict. Put NUL at offset 3 (data[0],data[1]
-    // both nonzero -> not UTF-16) so looks_binary_blob returns true.
+fn single_nul_text_blob_is_kept_like_filesystem_text() {
+    // The shared filesystem decoder keeps a single C0 control in otherwise
+    // valid text; git must not reintroduce a stricter early-NUL drop.
     let (_t, repo) = init_repo();
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"abc");
     bytes.push(0x00);
     bytes.extend_from_slice(b"SECRET=AKIAIOSFODNN7EXAMPLE\n");
-    commit_file(&repo, "blob.dat", &bytes, "early nul");
+    commit_file(&repo, "blob.dat", &bytes, "single nul");
     commit_file(&repo, "ok.txt", b"y=2\n", "ok");
 
     let chunks = collect_chunks(&repo, 5);
-    assert!(
-        chunk_for(&chunks, "blob.dat").is_none(),
-        "early NUL (non-UTF16) -> binary -> skipped"
-    );
+    let c = chunk_for(&chunks, "blob.dat").expect("single-NUL text blob must be kept");
+    assert!(c.data.contains("AKIAIOSFODNN7EXAMPLE"));
     assert!(chunk_for(&chunks, "ok.txt").is_some());
 }
 

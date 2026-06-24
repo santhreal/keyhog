@@ -249,7 +249,7 @@ fn extract_rar15_40_solid_planned_chunks(
     if state.consumer_stopped || state.archive_truncated {
         return true;
     }
-    let cap = state.total_budget;
+    let cap = state.solid_emit_cap();
     extract_solid_planned_entries(
         state,
         emit,
@@ -290,7 +290,7 @@ fn extract_rar50_solid_planned_chunks(
     if state.consumer_stopped || state.archive_truncated {
         return true;
     }
-    let cap = state.total_budget;
+    let cap = state.solid_emit_cap();
     extract_solid_planned_entries(
         state,
         emit,
@@ -419,6 +419,23 @@ fn extract_solid_planned_entries<F>(
             }
         }
         Err(error) => {
+            let plan_errors = plan_errors.borrow();
+            if !plan_errors.is_empty() {
+                for plan_error in plan_errors.iter() {
+                    state.report_solid_plan_error(archive_kind, plan_error, emit);
+                    if state.consumer_stopped {
+                        return;
+                    }
+                }
+                return;
+            }
+            drop(plan_errors);
+            for entry in decoded.borrow_mut().drain(..) {
+                state.emit_entry(emit, RarEntrySink::from_decoded(entry));
+                if state.consumer_stopped || state.archive_truncated {
+                    return;
+                }
+            }
             state.report_archive_decode_error(archive_kind, &error, emit);
         }
     }
@@ -671,6 +688,10 @@ impl<'a> RarExtractionState<'a> {
 
     fn solid_drain_cap(&self, entry_size: u64) -> u64 {
         entry_size.min(self.total_budget)
+    }
+
+    fn solid_emit_cap(&self) -> u64 {
+        self.per_entry_cap.min(self.total_budget)
     }
 
     fn emit_entry(
