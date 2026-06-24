@@ -394,6 +394,7 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
         }
 
         let mut digits = String::new();
+        let mut preserved_malformed = false;
         while let Some(&(_, next)) = chars.peek() {
             if next == ';' {
                 chars.next();
@@ -403,19 +404,23 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
                 digits.push(next);
                 chars.next();
             } else {
-                if let Some(decoded) = decoded.as_mut() {
-                    decoded.push('&');
-                    decoded.push('#');
-                    if is_hex {
-                        decoded.push('x');
-                    }
-                    decoded.push_str(&digits);
-                    decoded.push(next);
+                let out = lazy_decoded_prefix(&mut decoded, input, idx);
+                out.push('&');
+                out.push('#');
+                if is_hex {
+                    out.push('x');
                 }
+                out.push_str(&digits);
+                out.push(next);
                 chars.next();
                 digits.clear();
+                preserved_malformed = true;
                 break;
             }
+        }
+
+        if preserved_malformed {
+            continue;
         }
 
         if digits.is_empty() {

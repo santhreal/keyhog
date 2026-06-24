@@ -71,6 +71,27 @@ fn html_numeric_entity_decimal_valid() {
 }
 
 #[test]
+fn html_numeric_entity_malformed_preserves_characters_after_valid_entity() {
+    let text = r#"<p>&#65;middle&#6a5;suffix</p>"#;
+    let chunk = Chunk {
+        data: text.into(),
+        metadata: Default::default(),
+    };
+
+    let decoded = decode_chunk(&chunk, 1, false, None, None);
+    let html = decoded
+        .iter()
+        .find(|c| c.metadata.source_type.contains("html-numeric-entity"))
+        .expect("valid numeric entity should emit a decoded chunk");
+
+    assert!(
+        html.data.contains("Amiddle&#6a5;suffix"),
+        "malformed numeric entity must preserve all original characters; got: {}",
+        html.data
+    );
+}
+
+#[test]
 fn html_numeric_entity_malformed_no_terminator() {
     // `&#65` without closing `;` may not parse (depends on implementation).
     let text = r#"<p>&#65</p>"#;
