@@ -275,6 +275,80 @@ fn rar15_40_solid_archive_scans_every_regular_member() {
 }
 
 #[test]
+fn rar15_40_solid_special_entry_drains_before_safe_sibling() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let archive_path = dir.path().join("rar29-solid-special.rar");
+    let mut features = FeatureSet::store_only();
+    features.solid = true;
+    let refused = b"SHOULD_NOT_SCAN_RAR29_SOLID_SPECIAL=hidden\n".repeat(16);
+    let safe = b"SAFE_RAR29_SOLID_AFTER_SPECIAL=visible\n".repeat(8);
+    let archive = rar15_40::write_compressed_archive(
+        &[
+            rar15_40::FileEntry {
+                name: b"link.env",
+                data: &refused,
+                file_time: 0,
+                file_attr: UNIX_SYMLINK_MODE as u32,
+                host_os: RAR15_40_UNIX_HOST_OS as u8,
+                password: None,
+                file_comment: None,
+            },
+            rar15_40::FileEntry {
+                name: b"safe.env",
+                data: &safe,
+                file_time: 0,
+                file_attr: UNIX_REGULAR_MODE as u32,
+                host_os: RAR15_40_UNIX_HOST_OS as u8,
+                password: None,
+                file_comment: None,
+            },
+        ],
+        rar15_40::WriterOptions::new(ArchiveVersion::Rar29, features),
+    )
+    .expect("write mixed solid rar29 fixture");
+    std::fs::write(&archive_path, archive).expect("write mixed solid rar29 archive");
+
+    let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
+        .chunks()
+        .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+    let rendered_errors: Vec<_> = errors.iter().map(|error| error.to_string()).collect();
+
+    assert!(
+        bodies
+            .iter()
+            .any(|body| body.contains("SAFE_RAR29_SOLID_AFTER_SPECIAL")),
+        "safe RAR29 solid sibling after refused entry must still scan; bodies={bodies:?}; errors={rendered_errors:?}"
+    );
+    assert!(
+        !bodies
+            .iter()
+            .any(|body| body.contains("SHOULD_NOT_SCAN_RAR29_SOLID_SPECIAL")),
+        "refused RAR29 solid symlink payload must not be scanned; bodies={bodies:?}"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "RAR29 solid special entry must emit exactly one visible SourceError"
+    );
+    assert!(
+        rendered_errors.iter().any(|error| {
+            error.contains("rar29-solid-special.rar//link.env")
+                && error.contains("special file type")
+        }),
+        "RAR29 solid special-entry error must name the refused entry, got {rendered_errors:?}"
+    );
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "the refused RAR29 solid special entry must count as unreadable"
+    );
+}
+
+#[test]
 fn rar50_solid_archive_scans_every_regular_member() {
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
@@ -320,5 +394,75 @@ fn rar50_solid_archive_scans_every_regular_member() {
         bodies.iter().any(|body| body.contains("RAR50_SOLID_ONE"))
             && bodies.iter().any(|body| body.contains("RAR50_SOLID_TWO")),
         "solid RAR50 must scan every regular member; bodies={bodies:?}"
+    );
+}
+
+#[test]
+fn rar50_solid_special_entry_drains_before_safe_sibling() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let archive_path = dir.path().join("rar50-solid-special.rar");
+    let mut features = FeatureSet::store_only();
+    features.solid = true;
+    let refused = b"SHOULD_NOT_SCAN_RAR50_SOLID_SPECIAL=hidden\n".repeat(16);
+    let safe = b"SAFE_RAR50_SOLID_AFTER_SPECIAL=visible\n".repeat(8);
+    let archive =
+        rar50::Rar50Writer::new(rar50::WriterOptions::new(ArchiveVersion::Rar50, features))
+            .compressed_entries(&[
+                rar50::CompressedEntry {
+                    name: b"link.env",
+                    data: &refused,
+                    mtime: Some(0),
+                    attributes: UNIX_SYMLINK_MODE,
+                    host_os: RAR50_UNIX_HOST_OS,
+                },
+                rar50::CompressedEntry {
+                    name: b"safe.env",
+                    data: &safe,
+                    mtime: Some(0),
+                    attributes: UNIX_REGULAR_MODE,
+                    host_os: RAR50_UNIX_HOST_OS,
+                },
+            ])
+            .finish()
+            .expect("write mixed solid rar50 fixture");
+    std::fs::write(&archive_path, archive).expect("write mixed solid rar50 archive");
+
+    let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
+        .chunks()
+        .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+    let rendered_errors: Vec<_> = errors.iter().map(|error| error.to_string()).collect();
+
+    assert!(
+        bodies
+            .iter()
+            .any(|body| body.contains("SAFE_RAR50_SOLID_AFTER_SPECIAL")),
+        "safe RAR50 solid sibling after refused entry must still scan; bodies={bodies:?}; errors={rendered_errors:?}"
+    );
+    assert!(
+        !bodies
+            .iter()
+            .any(|body| body.contains("SHOULD_NOT_SCAN_RAR50_SOLID_SPECIAL")),
+        "refused RAR50 solid symlink payload must not be scanned; bodies={bodies:?}"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "RAR50 solid special entry must emit exactly one visible SourceError"
+    );
+    assert!(
+        rendered_errors.iter().any(|error| {
+            error.contains("rar50-solid-special.rar//link.env")
+                && error.contains("special file type")
+        }),
+        "RAR50 solid special-entry error must name the refused entry, got {rendered_errors:?}"
+    );
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "the refused RAR50 solid special entry must count as unreadable"
     );
 }

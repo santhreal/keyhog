@@ -97,10 +97,12 @@ fn rar_entry_read_failures_emit_source_errors() {
         "RAR decoded-cap handling must use typed sink state, not formatted error string matching"
     );
     assert!(
-        rar.contains("extract_rar15_40_solid_regular_chunks")
-            && rar.contains("extract_rar50_solid_regular_chunks")
+        rar.contains("extract_rar15_40_solid_planned_chunks")
+            && rar.contains("extract_rar50_solid_planned_chunks")
+            && rar.contains("SolidRarEntryAction::Drain")
+            && rar.contains("SolidRarDrainSink")
             && rar.contains("archive.extract_to(rars::ArchiveReadOptions::default()"),
-        "solid RAR extraction must use the library shared-decoder path, not per-entry fresh decoder sessions"
+        "solid RAR extraction must use one planned shared-decoder path that drains refused entries instead of fresh per-entry decoder sessions"
     );
 }
 
