@@ -46,6 +46,13 @@ struct GitCommitBlobSet {
     commit_id: String,
     author: String,
     blob_metadata: Vec<(gix::ObjectId, Vec<u8>)>,
+    errors: Vec<SourceError>,
+}
+
+#[derive(Default)]
+struct GitBlobMetadataBatch {
+    metadata: Vec<(gix::ObjectId, Vec<u8>)>,
+    errors: Vec<SourceError>,
 }
 
 #[derive(Default)]
@@ -315,6 +322,7 @@ fn stream_git_blobs(
     // case is an unborn/empty repo, where there are no HEAD blobs to label.
     let head_blob_paths = collect_head_blob_path_set(&repo_handle)?;
     let mut current_tree_blobs: VecDeque<Chunk> = VecDeque::new();
+    let mut pending_errors: VecDeque<SourceError> = VecDeque::new();
     let mut seen_blob_paths: HashSet<GitBlobPathKey> = HashSet::new();
     let mut seen_commits: HashSet<gix::ObjectId> = HashSet::new();
     let mut unreachable_objects: Option<UnreachableGitObjects> = None;
@@ -331,6 +339,10 @@ fn stream_git_blobs(
         loop {
             if let Some(chunk) = current_tree_blobs.pop_front() {
                 return Some(Ok(chunk));
+            }
+
+            if let Some(error) = pending_errors.pop_front() {
+                return Some(Err(error));
             }
 
             if let Some(cap) = super::git_history_cap_status(total_bytes, chunk_count, limits) {
@@ -377,6 +389,7 @@ fn stream_git_blobs(
                             return Some(Err(error));
                         }
                     };
+                pending_errors.extend(commit_blobs.errors);
 
                 if !commit_blobs.blob_metadata.is_empty() {
                     let chunk_decoder = GitBlobChunkDecoder {
@@ -414,7 +427,11 @@ fn stream_git_blobs(
                     objects,
                     &mut seen_blob_paths,
                 );
-                if blob_metadata.is_empty() {
+                pending_errors.extend(blob_metadata.errors);
+                if blob_metadata.metadata.is_empty() {
+                    if !pending_errors.is_empty() {
+                        continue;
+                    }
                     done = true;
                     return None;
                 }
@@ -426,7 +443,7 @@ fn stream_git_blobs(
                     limits,
                 };
                 current_tree_blobs.extend(chunk_decoder.decode_unreachable_chunks(
-                    blob_metadata,
+                    blob_metadata.metadata,
                     &mut total_bytes,
                     &mut chunk_count,
                 ));
@@ -455,7 +472,14 @@ fn load_commit_blob_set(
         Err(error) => {
             tracing::warn!(%error, commit = %commit_id, "git commit object unreadable; its blobs were NOT scanned");
             record_git_object_unreadable();
-            return Ok(None);
+            return Ok(Some(GitCommitBlobSet {
+                commit_id: commit_id.clone(),
+                author: "unknown".to_string(),
+                blob_metadata: Vec::new(),
+                errors: vec![git_unscanned_object_error(format!(
+                    "git commit object {commit_id} unreadable ({error}); commit blobs were not scanned"
+                ))],
+            }));
         }
     };
     let commit = match obj.try_into_commit() {
@@ -463,7 +487,14 @@ fn load_commit_blob_set(
         Err(error) => {
             tracing::warn!(%error, commit = %commit_id, "git object is not a commit; its blobs were NOT scanned");
             record_git_object_unreadable();
-            return Ok(None);
+            return Ok(Some(GitCommitBlobSet {
+                commit_id: commit_id.clone(),
+                author: "unknown".to_string(),
+                blob_metadata: Vec::new(),
+                errors: vec![git_unscanned_object_error(format!(
+                    "git object {commit_id} is not a commit ({error}); commit blobs were not scanned"
+                ))],
+            }));
         }
     };
     let author = commit_author_name(&commit, &commit_id)?;
@@ -472,17 +503,34 @@ fn load_commit_blob_set(
         Err(error) => {
             tracing::warn!(%error, commit = %commit_id, "git commit tree unreadable; its blobs were NOT scanned");
             record_git_object_unreadable();
-            return Ok(None);
+            return Ok(Some(GitCommitBlobSet {
+                commit_id: commit_id.clone(),
+                author,
+                blob_metadata: Vec::new(),
+                errors: vec![git_unscanned_object_error(format!(
+                    "git commit tree for {commit_id} unreadable ({error}); commit blobs were not scanned"
+                ))],
+            }));
         }
     };
 
     let mut blob_metadata = Vec::new();
-    collect_tree_blobs_metadata(repo, &tree, seen_blob_paths, None, &mut blob_metadata, b"");
+    let mut errors = Vec::new();
+    collect_tree_blobs_metadata(
+        repo,
+        &tree,
+        seen_blob_paths,
+        None,
+        &mut blob_metadata,
+        b"",
+        &mut errors,
+    );
 
     Ok(Some(GitCommitBlobSet {
         commit_id,
         author,
         blob_metadata,
+        errors,
     }))
 }
 
@@ -925,9 +973,9 @@ fn collect_unreachable_non_commit_blob_metadata(
     repo: &gix::Repository,
     objects: &mut UnreachableGitObjects,
     seen_blob_paths: &mut HashSet<GitBlobPathKey>,
-) -> Vec<(gix::ObjectId, Vec<u8>)> {
-    let mut metadata = Vec::new();
-    while metadata.len() < GIT_PARALLEL_BLOB_BATCH_ITEMS {
+) -> GitBlobMetadataBatch {
+    let mut batch = GitBlobMetadataBatch::default();
+    while batch.metadata.len() < GIT_PARALLEL_BLOB_BATCH_ITEMS {
         let Some(id) = objects.trees.pop_front() else {
             break;
         };
@@ -936,22 +984,25 @@ fn collect_unreachable_non_commit_blob_metadata(
             id,
             seen_blob_paths,
             &mut objects.tree_blob_oids,
-            &mut metadata,
+            &mut batch.metadata,
+            &mut batch.errors,
         );
     }
     if !objects.trees.is_empty() {
-        return metadata;
+        return batch;
     }
-    while metadata.len() < GIT_PARALLEL_BLOB_BATCH_ITEMS {
+    while batch.metadata.len() < GIT_PARALLEL_BLOB_BATCH_ITEMS {
         let Some(id) = objects.blobs.pop_front() else {
             break;
         };
         if objects.tree_blob_oids.contains(&id) {
             continue;
         }
-        metadata.push((id, format!(".git/unreachable/{id}").into_bytes()));
+        batch
+            .metadata
+            .push((id, format!(".git/unreachable/{id}").into_bytes()));
     }
-    metadata
+    batch
 }
 
 fn collect_unreachable_tree_blob_metadata(
@@ -960,6 +1011,7 @@ fn collect_unreachable_tree_blob_metadata(
     seen_blob_paths: &mut HashSet<GitBlobPathKey>,
     tree_blob_oids: &mut HashSet<gix::ObjectId>,
     blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
+    errors: &mut Vec<SourceError>,
 ) {
     let obj = match repo.find_object(tree_id) {
         Ok(obj) => obj,
@@ -970,6 +1022,9 @@ fn collect_unreachable_tree_blob_metadata(
                 "unreachable git tree object unreadable; its blobs were NOT scanned"
             );
             record_git_object_unreadable();
+            errors.push(git_unscanned_object_error(format!(
+                "unreachable git tree object {tree_id} unreadable ({error}); tree blobs were not scanned"
+            )));
             return;
         }
     };
@@ -982,6 +1037,9 @@ fn collect_unreachable_tree_blob_metadata(
                 "unreachable git object is not a tree; its blobs were NOT scanned"
             );
             record_git_object_unreadable();
+            errors.push(git_unscanned_object_error(format!(
+                "unreachable git object {tree_id} is not a tree ({error}); tree blobs were not scanned"
+            )));
             return;
         }
     };
@@ -994,6 +1052,7 @@ fn collect_unreachable_tree_blob_metadata(
         Some(tree_blob_oids),
         blob_metadata,
         b"",
+        errors,
     );
     tree_blob_oids.extend(
         blob_metadata[before..]
@@ -1032,11 +1091,13 @@ fn collect_tree_blobs_metadata(
     tree_blob_oids: Option<&mut HashSet<gix::ObjectId>>,
     blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
     prefix: &[u8],
+    errors: &mut Vec<SourceError>,
 ) {
     let mut visitor = HistoricalBlobCollector {
         seen_blob_paths,
         tree_blob_oids,
         blob_metadata,
+        errors,
     };
     if let Err(error) = super::walk_tree_recursive(repo, tree, prefix, &mut visitor) {
         tracing::warn!(
@@ -1044,6 +1105,9 @@ fn collect_tree_blobs_metadata(
             "git tree walk failed; remaining blob(s) were NOT scanned"
         );
         record_git_object_unreadable();
+        visitor.errors.push(git_unscanned_object_error(format!(
+            "git tree walk failed ({error}); remaining blobs were not scanned"
+        )));
     }
 }
 
@@ -1096,6 +1160,7 @@ struct HistoricalBlobCollector<'a> {
     seen_blob_paths: &'a mut HashSet<GitBlobPathKey>,
     tree_blob_oids: Option<&'a mut HashSet<gix::ObjectId>>,
     blob_metadata: &'a mut Vec<(gix::ObjectId, Vec<u8>)>,
+    errors: &'a mut Vec<SourceError>,
 }
 
 impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
@@ -1131,6 +1196,9 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
             "git tree entry could not be read (corrupt tree object); its blob(s) were NOT scanned"
         );
         record_git_object_unreadable();
+        self.errors.push(git_unscanned_object_error(format!(
+            "git tree entry could not be read ({error}); referenced blobs were not scanned"
+        )));
         Ok(())
     }
 
@@ -1139,11 +1207,16 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
         _filepath: &[u8],
         error: String,
     ) -> Result<(), SourceError> {
+        let path = String::from_utf8_lossy(_filepath);
         tracing::warn!(
             %error,
+            %path,
             "git subtree object unreadable; its blob(s) were NOT scanned"
         );
         record_git_object_unreadable();
+        self.errors.push(git_unscanned_object_error(format!(
+            "git subtree '{path}' object unreadable ({error}); subtree blobs were not scanned"
+        )));
         Ok(())
     }
 
@@ -1152,11 +1225,16 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
         _filepath: &[u8],
         error: String,
     ) -> Result<(), SourceError> {
+        let path = String::from_utf8_lossy(_filepath);
         tracing::warn!(
             %error,
+            %path,
             "git tree entry resolved to a non-tree object; its blob(s) were NOT scanned"
         );
         record_git_object_unreadable();
+        self.errors.push(git_unscanned_object_error(format!(
+            "git subtree '{path}' resolved to a non-tree object ({error}); subtree blobs were not scanned"
+        )));
         Ok(())
     }
 
@@ -1168,8 +1246,15 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
             "git tree entry is not a blob or tree; referenced content was NOT scanned"
         );
         record_git_object_unreadable();
+        self.errors.push(git_unscanned_object_error(format!(
+            "git tree entry '{path}' has unsupported mode {mode}; referenced content was not scanned"
+        )));
         Ok(())
     }
+}
+
+fn git_unscanned_object_error(reason: impl std::fmt::Display) -> SourceError {
+    SourceError::Git(format!("failed to scan git object: {reason}"))
 }
 
 fn record_git_object_unreadable() {

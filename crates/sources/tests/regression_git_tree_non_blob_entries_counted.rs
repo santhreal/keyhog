@@ -55,9 +55,17 @@ fn gitlink_tree_entry_is_counted_as_unscanned_coverage_gap() {
     let (chunks, errors) = split_chunk_results(&rows);
     let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
 
+    assert_eq!(
+        errors.len(),
+        1,
+        "gitlink coverage accounting must emit one SourceError row without aborting safe sibling scans"
+    );
+    let error = errors[0].to_string();
     assert!(
-        errors.is_empty(),
-        "gitlink coverage accounting must not abort safe sibling scans; errors={errors:?}"
+        error.contains("deps/submodule")
+            && error.contains("unsupported mode")
+            && error.contains("referenced content was not scanned"),
+        "gitlink SourceError must name the unscanned tree entry, got {error}"
     );
     assert!(
         bodies
