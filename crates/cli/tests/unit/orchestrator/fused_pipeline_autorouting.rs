@@ -65,6 +65,11 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
     assert!(
         backend.contains("calibrate_fastest_correct_backend")
             && evidence.contains("canonical_matches")
+            && evidence.contains("Arc<str>")
+            && evidence.contains("m.detector_id.clone()")
+            && evidence.contains("m.location.file_path.clone()")
+            && !evidence.contains("m.detector_id.to_string()")
+            && !evidence.contains("ToString::to_string")
             && calibration.contains("backend rejected by autoroute parity check")
             && calibration.contains("clear_fragment_cache")
             && backend.contains("self.save_cache()?")

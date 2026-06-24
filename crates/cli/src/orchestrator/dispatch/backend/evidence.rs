@@ -3,6 +3,7 @@
 use keyhog_core::RawMatch;
 use keyhog_scanner::hw_probe::ScanBackend;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
 
 use super::{AUTOROUTE_CALIBRATION_TRIALS, AUTOROUTE_GPU_WARM_TRIALS};
@@ -355,9 +356,9 @@ impl TimingConfidenceInterval {
 
 pub(super) type CanonicalMatch = (
     usize,
-    String,
+    Arc<str>,
     keyhog_core::CredentialHash,
-    Option<String>,
+    Option<Arc<str>>,
     Option<usize>,
     usize,
 );
@@ -368,9 +369,9 @@ pub(super) fn canonical_matches(matches: &[Vec<RawMatch>]) -> Vec<CanonicalMatch
         for m in chunk_matches {
             out.push((
                 chunk_idx,
-                m.detector_id.to_string(),
+                m.detector_id.clone(),
                 m.credential_hash,
-                m.location.file_path.as_ref().map(ToString::to_string),
+                m.location.file_path.clone(),
                 m.location.line,
                 m.location.offset,
             ));
@@ -385,7 +386,7 @@ pub(super) fn canonical_match_digest(matches: &[CanonicalMatch]) -> u64 {
     h.field_usize("matches.len", matches.len());
     for (chunk_idx, detector_id, credential_hash, file_path, line, offset) in matches {
         h.field_usize("match.chunk_idx", *chunk_idx);
-        h.field_str("match.detector_id", detector_id);
+        h.field_str("match.detector_id", detector_id.as_ref());
         h.field_bytes("match.credential_hash", credential_hash.as_bytes());
         h.field_option_str("match.file_path", file_path.as_deref());
         h.field_option_usize("match.line", *line);
