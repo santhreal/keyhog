@@ -16,10 +16,14 @@ fn piped_stderr_scan_json_stdout_valid() {
 
     let output = child.wait_with_output().expect("wait");
     assert_eq!(output.status.code(), Some(0));
-    let _: serde_json::Value =
-        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("valid json stdout");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("valid json stdout");
     assert!(
-        !output.stderr.is_empty() || output.stdout.starts_with(b"["),
-        "stdout must remain machine JSON while stderr carries status"
+        output.stdout.starts_with(b"["),
+        "stdout must remain a machine JSON array"
+    );
+    assert!(
+        parsed.is_array(),
+        "stdout JSON must be the report array, not a status object: {stdout}"
     );
 }
