@@ -183,6 +183,10 @@ fn html_report_summary_surfaces_not_checked_findings() {
         "summary not-checked count must reuse the canonical verification predicate"
     );
     assert!(
+        out.contains("activeStatusTab === 'unverifiable' && !verificationIsUnattempted(status)"),
+        "not-checked filter tab must include skipped and unverifiable findings consistently"
+    );
+    assert!(
         out.contains("setStat('cnt-not-checked', notChecked, isInitial);"),
         "summary not-checked count must be wired into renderMetrics"
     );
@@ -195,7 +199,8 @@ fn html_report_service_bars_and_badges_are_contrast_guarded() {
     assert!(
         out.contains("const SERVICE_BAR_COLORS = [")
             && out.contains("function serviceBarColor(rank)")
-            && out.contains("item.style.setProperty('--service-bar-color', serviceBarColor(rank));"),
+            && out
+                .contains("item.style.setProperty('--service-bar-color', serviceBarColor(rank));"),
         "Top Services bars must use a closed palette instead of one flat accent or scan-derived CSS"
     );
     assert!(

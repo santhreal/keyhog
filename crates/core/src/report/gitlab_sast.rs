@@ -6,7 +6,7 @@ use std::io::Write;
 use crate::{Severity, VerifiedFinding};
 use serde::Serialize;
 
-use super::{ReportError, Reporter, WriterBackedReporter};
+use super::{impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
 
 const SCHEMA_VERSION: &str = "15.2.4";
 const SCHEMA_URL: &str = "https://gitlab.com/gitlab-org/security-products/security-report-schemas/-/raw/master/dist/sast-report-format.json";
@@ -71,13 +71,7 @@ impl<W: Write + Send> Reporter for GitlabSastReporter<W> {
     }
 }
 
-impl<W: Write + Send> WriterBackedReporter for GitlabSastReporter<W> {
-    type Writer = W;
-
-    fn writer_mut(&mut self) -> &mut Self::Writer {
-        &mut self.writer
-    }
-}
+impl_writer_backed!(GitlabSastReporter);
 
 #[derive(Serialize)]
 struct GitlabScan<'a> {
@@ -167,7 +161,7 @@ fn keyhog_tool() -> GitlabTool {
         vendor: GitlabVendor {
             name: "Santh Security",
         },
-        url: "https://github.com/santhsecurity/keyhog",
+        url: env!("CARGO_PKG_REPOSITORY"),
     }
 }
 

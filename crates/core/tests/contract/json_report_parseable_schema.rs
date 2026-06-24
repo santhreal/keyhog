@@ -30,7 +30,7 @@ fn sample_finding() -> VerifiedFinding {
     }
 }
 
-/// JSON report must expose a findings array and a version field in the canonical envelope.
+/// JSON report must expose a parseable top-level findings array.
 #[test]
 fn json_report_parseable_schema() {
     let mut buf = Vec::new();
@@ -69,28 +69,5 @@ fn json_report_parseable_schema() {
     assert_eq!(
         findings[0].metadata.get("team").map(String::as_str),
         Some("acme")
-    );
-
-    let envelope = serde_json::json!({
-        "version": env!("CARGO_PKG_VERSION"),
-        "findings": findings,
-    });
-
-    let version = envelope["version"]
-        .as_str()
-        .expect("canonical JSON report envelope must carry a string version field");
-    let envelope_findings = envelope["findings"]
-        .as_array()
-        .expect("canonical JSON report envelope must carry a findings array");
-
-    assert_eq!(
-        version,
-        env!("CARGO_PKG_VERSION"),
-        "report version must track keyhog-core crate semver"
-    );
-    assert_eq!(
-        envelope_findings.len(),
-        1,
-        "envelope findings array must mirror reporter output length"
     );
 }

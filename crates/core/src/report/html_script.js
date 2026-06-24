@@ -228,7 +228,7 @@ function applyFilters() {
     const status = f.verification.toLowerCase();
     if (activeStatusTab === 'live' && !status.startsWith('live')) return false;
     if (activeStatusTab === 'revoked' && !status.startsWith('revoked')) return false;
-    if (activeStatusTab === 'unverifiable' && !status.startsWith('unverifiable')) return false;
+    if (activeStatusTab === 'unverifiable' && !verificationIsUnattempted(status)) return false;
 
     // Text search check
     if (searchQuery) {

@@ -1,5 +1,5 @@
 mod json_report_parseable_schema;
-mod json_report_version_field_present;
+mod jsonl_report_emits_parseable_object;
 mod sarif_absolute_path_uri_file_scheme;
 mod sarif_cwe_owasp_taxa_present;
 mod sarif_empty_run_valid_json;

@@ -29,6 +29,11 @@ fn gitlab_sast_empty_report_has_required_scan_envelope() {
     assert_eq!(report["scan"]["end_time"], "2026-06-17T10:00:01");
     assert_eq!(report["scan"]["scanner"]["id"], "keyhog");
     assert_eq!(
+        report["scan"]["scanner"]["url"],
+        env!("CARGO_PKG_REPOSITORY"),
+        "GitLab SAST tool URL must track the crate manifest repository"
+    );
+    assert_eq!(
         report["vulnerabilities"]
             .as_array()
             .expect("vulnerabilities array")
