@@ -97,37 +97,22 @@ pub(crate) fn is_standard_base64_byte(byte: u8) -> bool {
 }
 
 pub(crate) fn standard_base64_shape(candidate: &str) -> Option<StandardBase64Shape> {
-    match classify_base64(candidate)? {
-        Base64Variant::Standard | Base64Variant::StandardNoPad => {}
-        Base64Variant::UrlSafe | Base64Variant::UrlSafeNoPad => return None,
+    let facts = scan_base64_candidate(candidate)?;
+    let has_urlsafe = facts.has_urlsafe;
+    if facts.has_standard && has_urlsafe {
+        return None;
     }
-
-    let mut has_plus = false;
-    let mut has_slash = false;
-    let mut seen = [false; 256];
-    let mut distinct_alnum = 0u32;
-
-    for byte in candidate.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => {
-                if !seen[byte as usize] {
-                    seen[byte as usize] = true;
-                    distinct_alnum += 1;
-                }
-            }
-            b'+' => has_plus = true,
-            b'/' => has_slash = true,
-            b'=' => {}
-            _ => return None,
-        }
+    let remainder = candidate.len() % 4;
+    if has_urlsafe || (facts.padded && remainder != 0) || (!facts.padded && remainder == 1) {
+        return None;
     }
 
     Some(StandardBase64Shape {
-        has_padding: candidate.ends_with('='),
+        has_padding: facts.padded,
         length_multiple_of_four: candidate.len().is_multiple_of(4),
-        has_plus,
-        has_slash,
-        distinct_alnum,
+        has_plus: facts.has_plus,
+        has_slash: facts.has_slash,
+        distinct_alnum: facts.distinct_alnum,
     })
 }
 
@@ -195,6 +180,9 @@ struct Base64CandidateFacts {
     has_standard: bool,
     has_urlsafe: bool,
     padded: bool,
+    has_plus: bool,
+    has_slash: bool,
+    distinct_alnum: u32,
 }
 
 fn scan_base64_candidate(candidate: &str) -> Option<Base64CandidateFacts> {
@@ -202,11 +190,28 @@ fn scan_base64_candidate(candidate: &str) -> Option<Base64CandidateFacts> {
         has_standard: false,
         has_urlsafe: false,
         padded: false,
+        has_plus: false,
+        has_slash: false,
+        distinct_alnum: 0,
     };
+    let mut seen_alnum = [false; 256];
     let mut padding_len = 0usize;
     for (index, byte) in candidate.bytes().enumerate() {
         match byte {
-            b'+' | b'/' if !facts.padded => facts.has_standard = true,
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' if !facts.padded => {
+                if !seen_alnum[byte as usize] {
+                    seen_alnum[byte as usize] = true;
+                    facts.distinct_alnum += 1;
+                }
+            }
+            b'+' if !facts.padded => {
+                facts.has_standard = true;
+                facts.has_plus = true;
+            }
+            b'/' if !facts.padded => {
+                facts.has_standard = true;
+                facts.has_slash = true;
+            }
             b'-' | b'_' if !facts.padded => facts.has_urlsafe = true,
             b'=' => {
                 if index == 0 {
@@ -219,7 +224,7 @@ fn scan_base64_candidate(candidate: &str) -> Option<Base64CandidateFacts> {
                 }
             }
             _ if facts.padded => return None,
-            _ => {}
+            _ => return None,
         }
     }
     Some(facts)
