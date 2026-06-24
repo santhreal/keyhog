@@ -352,7 +352,15 @@ pub(super) fn extract_compressed_chunks(
 
     let file_bytes = match read::read_file_for_compressed_input(path, max_size) {
         Some(b) => b,
-        None => return,
+        None => {
+            let path_display = display_path(path);
+            if !emit(Err(SourceError::Other(format!(
+                "failed to scan compressed file '{path_display}': cannot read compressed input; compressed file was not scanned"
+            )))) {
+                return;
+            }
+            return;
+        }
     };
     let compressed = file_bytes.as_slice();
     let budget = extraction_total_budget_usize(max_size);
