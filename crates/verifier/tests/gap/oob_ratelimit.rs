@@ -570,21 +570,22 @@ fn default_interval_subnormal_rps_falls_back_to_one_second() {
 }
 
 #[test]
-fn default_interval_huge_rps_rounds_below_one_falls_back_to_one_second() {
-    // 1e9 / 1e10 = 0.1 -> round() = 0.0 -> 0 < 1.0 -> fallback 1s.
+fn default_interval_huge_rps_rounds_below_one_clamps_to_one_nanosecond() {
+    // 1e9 / 1e10 = 0.1 -> round() = 0.0, below the fastest representable
+    // Duration interval. This must clamp to 1ns, not silently degrade to 1s.
     assert_eq!(
         RateLimiter::new(1e10).default_interval(),
-        Duration::from_secs(1)
+        Duration::from_nanos(1)
     );
-    // 1e9 / 3e9 = 0.333 -> round 0 -> fallback.
+    // 1e9 / 3e9 = 0.333 -> round 0 -> 1ns.
     assert_eq!(
         RateLimiter::new(3e9).default_interval(),
-        Duration::from_secs(1)
+        Duration::from_nanos(1)
     );
-    // 1e100 -> ~1e-91 -> round 0 -> fallback.
+    // 1e100 -> ~1e-91 -> round 0 -> 1ns.
     assert_eq!(
         RateLimiter::new(1e100).default_interval(),
-        Duration::from_secs(1)
+        Duration::from_nanos(1)
     );
 }
 
@@ -598,6 +599,11 @@ fn default_interval_one_nanosecond_boundary() {
     // 1e9 / 2e9 = 0.5 -> round() rounds half away from zero -> 1.0 -> 1 ns.
     assert_eq!(
         RateLimiter::new(2e9).default_interval(),
+        Duration::from_nanos(1)
+    );
+    // 1e9 / 2.0001e9 = 0.499975 -> round 0 -> clamp to 1 ns.
+    assert_eq!(
+        RateLimiter::new(2.0001e9).default_interval(),
         Duration::from_nanos(1)
     );
 }

@@ -42,13 +42,12 @@ fn rate_limit_negative_infinity_clamps_to_default() {
 
 #[test]
 fn rate_limit_huge_rps_stays_bounded() {
-    // Huge RPS (e.g., 1e100) should compute to nanos but stay within u64::MAX
     let limiter = RateLimiter::new(1e100);
     let interval = limiter.default_interval();
-    // Should not panic or produce invalid duration; nanos cap is u64::MAX
-    assert!(
-        interval.as_nanos() > 0 && interval.as_nanos() <= u64::MAX as u128,
-        "huge RPS must produce valid interval within u64::MAX, got {:?}",
+    assert_eq!(
+        interval,
+        Duration::from_nanos(1),
+        "huge finite RPS must clamp to the fastest representable interval, got {:?}",
         interval
     );
 }

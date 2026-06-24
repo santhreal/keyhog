@@ -32,18 +32,12 @@ fn rate_limit_negative_rps_clamps_to_default() {
 
 #[test]
 fn rate_limit_subnormal_rps_clamps_to_default() {
-    // Subnormal (very small but positive) - still clamped
     let limiter = RateLimiter::new(f64::MIN_POSITIVE);
     let interval = limiter.default_interval();
-    // Should not be zero; should be huge but bounded by u64::MAX as nanos
-    assert!(
-        interval.as_nanos() > 0,
-        "subnormal RPS must produce non-zero interval, got {:?}",
-        interval
-    );
-    assert!(
-        interval.as_secs() > 0,
-        "subnormal RPS must produce second-scale interval, got {:?}",
+    assert_eq!(
+        interval,
+        Duration::from_secs(1),
+        "subnormal/too-low RPS must clamp to 1.0 rps (1 second interval), got {:?}",
         interval
     );
 }
