@@ -149,7 +149,7 @@ jobs:
       # every historical failure first — adding a new failure mode
       # there permanently gates the suite.
       - name: Property tests
-        run: cargo test -p keyhog-scanner property::scanner_fuzz --profile release-fast
+        run: cargo test -p keyhog-scanner --lib property::scanner_fuzz --profile release-fast
 
   # Integration aggregators. Every crate ships a `tests/all_tests.rs` that
   # pulls in its `unit/ adversarial/ contract/ gap/ gate/ integration/
