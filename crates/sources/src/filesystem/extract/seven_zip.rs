@@ -193,12 +193,7 @@ pub(super) fn extract_seven_zip_chunks(
         let remaining_budget = total_budget.saturating_sub(total_uncompressed);
         let read_cap = per_entry_cap.min(remaining_budget);
         let read_limit = read_cap.saturating_add(1);
-        let capacity_hint = if max_size == 0 {
-            entry_size.min(READ_CAPACITY_HINT)
-        } else {
-            entry_size.min(read_cap)
-        };
-        let mut content = Vec::with_capacity(capacity_hint.min(usize::MAX as u64) as usize);
+        let mut content = Vec::with_capacity(entry_size.min(READ_CAPACITY_HINT) as usize);
         if let Err(error) = entry_reader.take(read_limit).read_to_end(&mut content) {
             tracing::warn!(
                 archive = %archive_display,
