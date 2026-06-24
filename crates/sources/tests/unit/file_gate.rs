@@ -386,7 +386,7 @@ fn git_diff_waits_for_diff_child_before_untracked_chunks() {
     assert!(
         source.contains("wait_after_final_chunk")
             && source.contains("UntrackedWorktreeChunks::new")
-            && source.contains("scanner.next_chunk()")
+            && source.contains("scanner.next_chunk(")
             && source.contains(
                 "super::wait_for_git_child(&mut child, \"git diff\", \"enumerating changed lines\")"
             )

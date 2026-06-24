@@ -163,6 +163,9 @@ fn stream_added_lines(
     let mut wait_after_final_chunk = false;
     let mut line_buf: Vec<u8> = Vec::new();
     let hunk_byte_cap = super::git_blob_bytes_limit_usize(limits);
+    let mut total_bytes = 0usize;
+    let mut chunk_count = 0usize;
+    let mut aggregate_cap_reported = false;
     // New-file line BEFORE the current hunk's first added line (i.e. the
     // hunk header's `+new_start - 1`). The scanner counts a match's line
     // within the chunk text from 1; adding this base yields the absolute
@@ -189,7 +192,11 @@ fn stream_added_lines(
                 done = true;
                 return None;
             };
-            match scanner.next_chunk() {
+            match scanner.next_chunk(
+                &mut total_bytes,
+                &mut chunk_count,
+                &mut aggregate_cap_reported,
+            ) {
                 Ok(Some(chunk)) => return Some(Ok(chunk)),
                 Ok(None) => {
                     done = true;
@@ -203,6 +210,16 @@ fn stream_added_lines(
         }
         if done {
             return None;
+        }
+        if let Some(cap) = super::git_history_cap_status(total_bytes, chunk_count, limits) {
+            let error = super::record_git_cap_once(
+                cap,
+                &mut aggregate_cap_reported,
+                "git diff source",
+                "remaining changed lines",
+            );
+            done = true;
+            return error.map(Err);
         }
 
         loop {
@@ -219,21 +236,16 @@ fn stream_added_lines(
                                 super::drain_trimmed_hunk(&mut current_content)
                             {
                                 wait_after_final_chunk = true;
-                                return Some(Ok(Chunk {
-                                    data: chunk_content.into(),
-                                    metadata: ChunkMetadata {
-                                        base_offset: 0,
-                                        base_line: current_base_line,
-                                        source_type: "git-diff".into(),
-                                        path: Some(path.clone()),
-                                        commit: Some(metadata_commit.clone()),
-                                        author: Some(metadata.author.clone()),
-                                        date: Some(metadata.date.clone()),
-                                        mtime_ns: None,
-                                        size_bytes: None,
-                                        decoded_span: None,
-                                    },
-                                }));
+                                return Some(Ok(make_git_diff_chunk(
+                                    chunk_content,
+                                    current_base_line,
+                                    path,
+                                    &metadata_commit,
+                                    &metadata.author,
+                                    &metadata.date,
+                                    &mut total_bytes,
+                                    &mut chunk_count,
+                                )));
                             }
                         }
                         match super::wait_for_git_child(
@@ -247,7 +259,11 @@ fn stream_added_lines(
                                     done = true;
                                     return None;
                                 };
-                                match scanner.next_chunk() {
+                                match scanner.next_chunk(
+                                    &mut total_bytes,
+                                    &mut chunk_count,
+                                    &mut aggregate_cap_reported,
+                                ) {
                                     Ok(Some(chunk)) => return Some(Ok(chunk)),
                                     Ok(None) => {
                                         done = true;
@@ -296,21 +312,16 @@ fn stream_added_lines(
 
                     if let Some(path) = prev_path {
                         if let Some(prev_content) = prev_content {
-                            return Some(Ok(Chunk {
-                                data: prev_content.into(),
-                                metadata: ChunkMetadata {
-                                    base_offset: 0,
-                                    base_line: prev_base_line,
-                                    source_type: "git-diff".into(),
-                                    path: Some(path),
-                                    commit: Some(metadata_commit.clone()),
-                                    author: Some(metadata.author.clone()),
-                                    date: Some(metadata.date.clone()),
-                                    mtime_ns: None,
-                                    size_bytes: None,
-                                    decoded_span: None,
-                                },
-                            }));
+                            return Some(Ok(make_git_diff_chunk(
+                                prev_content,
+                                prev_base_line,
+                                &path,
+                                &metadata_commit,
+                                &metadata.author,
+                                &metadata.date,
+                                &mut total_bytes,
+                                &mut chunk_count,
+                            )));
                         }
                     }
                     continue;
@@ -331,21 +342,16 @@ fn stream_added_lines(
                     current_base_line = base_line;
                     if let Some(ref path) = current_path {
                         if let Some(prev_content) = prev_content {
-                            return Some(Ok(Chunk {
-                                data: prev_content.into(),
-                                metadata: ChunkMetadata {
-                                    base_offset: 0,
-                                    base_line: prev_base_line,
-                                    source_type: "git-diff".into(),
-                                    path: Some(path.clone()),
-                                    commit: Some(metadata_commit.clone()),
-                                    author: Some(metadata.author.clone()),
-                                    date: Some(metadata.date.clone()),
-                                    mtime_ns: None,
-                                    size_bytes: None,
-                                    decoded_span: None,
-                                },
-                            }));
+                            return Some(Ok(make_git_diff_chunk(
+                                prev_content,
+                                prev_base_line,
+                                path,
+                                &metadata_commit,
+                                &metadata.author,
+                                &metadata.date,
+                                &mut total_bytes,
+                                &mut chunk_count,
+                            )));
                         }
                     }
                     continue;
@@ -371,26 +377,50 @@ fn stream_added_lines(
                         // base by the lines we are emitting now to keep their
                         // attribution correct after the buffer resets.
                         current_base_line = current_base_line.saturating_add(emitted_lines);
-                        return Some(Ok(Chunk {
-                            data: chunk_content.into(),
-                            metadata: ChunkMetadata {
-                                base_offset: 0,
-                                base_line: flush_base_line,
-                                source_type: "git-diff".into(),
-                                path: Some(path.clone()),
-                                commit: Some(metadata_commit.clone()),
-                                author: Some(metadata.author.clone()),
-                                date: Some(metadata.date.clone()),
-                                mtime_ns: None,
-                                size_bytes: None,
-                                decoded_span: None,
-                            },
-                        }));
+                        return Some(Ok(make_git_diff_chunk(
+                            chunk_content,
+                            flush_base_line,
+                            path,
+                            &metadata_commit,
+                            &metadata.author,
+                            &metadata.date,
+                            &mut total_bytes,
+                            &mut chunk_count,
+                        )));
                     }
                 }
             }
         }
     }))
+}
+
+fn make_git_diff_chunk(
+    content: String,
+    base_line: usize,
+    path: &str,
+    commit: &str,
+    author: &str,
+    date: &str,
+    total_bytes: &mut usize,
+    chunk_count: &mut usize,
+) -> Chunk {
+    *total_bytes = total_bytes.saturating_add(content.len());
+    *chunk_count = chunk_count.saturating_add(1);
+    Chunk {
+        data: content.into(),
+        metadata: ChunkMetadata {
+            base_offset: 0,
+            base_line,
+            source_type: "git-diff".into(),
+            path: Some(path.to_string()),
+            commit: Some(commit.to_string()),
+            author: Some(author.to_string()),
+            date: Some(date.to_string()),
+            mtime_ns: None,
+            size_bytes: None,
+            decoded_span: None,
+        },
+    }
 }
 
 struct UntrackedWorktreeChunks {
@@ -423,7 +453,12 @@ impl UntrackedWorktreeChunks {
         }
     }
 
-    fn next_chunk(&mut self) -> Result<Option<Chunk>, SourceError> {
+    fn next_chunk(
+        &mut self,
+        total_bytes: &mut usize,
+        chunk_count: &mut usize,
+        aggregate_cap_reported: &mut bool,
+    ) -> Result<Option<Chunk>, SourceError> {
         if self.paths.is_none() {
             self.paths =
                 Some(list_untracked_worktree_paths(&self.repo_arg, self.limits)?.into_iter());
@@ -434,6 +469,19 @@ impl UntrackedWorktreeChunks {
             ));
         };
         while let Some(rel) = paths.next() {
+            if let Some(cap) =
+                super::git_history_cap_status(*total_bytes, *chunk_count, self.limits)
+            {
+                if let Some(error) = super::record_git_cap_once(
+                    cap,
+                    aggregate_cap_reported,
+                    "git diff source",
+                    "remaining changed lines",
+                ) {
+                    return Err(error);
+                }
+                return Ok(None);
+            }
             if let Some(chunk) = read_untracked_worktree_chunk(
                 &self.repo_root,
                 &rel,
@@ -442,6 +490,8 @@ impl UntrackedWorktreeChunks {
                 &self.date,
                 self.limits,
             )? {
+                *total_bytes = total_bytes.saturating_add(chunk.data.as_ref().len());
+                *chunk_count = chunk_count.saturating_add(1);
                 return Ok(Some(chunk));
             }
         }

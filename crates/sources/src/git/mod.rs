@@ -70,6 +70,15 @@ pub(crate) fn record_git_history_cap_once(
     cap: GitHistoryCap,
     reported: &mut bool,
 ) -> Option<SourceError> {
+    record_git_cap_once(cap, reported, "git history source", "remaining blobs")
+}
+
+pub(crate) fn record_git_cap_once(
+    cap: GitHistoryCap,
+    reported: &mut bool,
+    source_name: &str,
+    remaining_description: &str,
+) -> Option<SourceError> {
     if *reported {
         return None;
     }
@@ -79,7 +88,9 @@ pub(crate) fn record_git_history_cap_once(
             tracing::warn!(
                 total_bytes = total,
                 cap,
-                "git history source reached aggregate byte cap; remaining blobs were NOT scanned"
+                %source_name,
+                %remaining_description,
+                "git source reached aggregate byte cap; remaining work was NOT scanned"
             );
             format!("aggregate byte cap reached at {total} bytes (cap {cap})")
         }
@@ -87,14 +98,16 @@ pub(crate) fn record_git_history_cap_once(
             tracing::warn!(
                 chunks = count,
                 cap,
-                "git history source reached aggregate chunk cap; remaining blobs were NOT scanned"
+                %source_name,
+                %remaining_description,
+                "git source reached aggregate chunk cap; remaining work was NOT scanned"
             );
             format!("aggregate chunk cap reached at {count} chunk(s) (cap {cap})")
         }
     };
     let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
     Some(SourceError::Other(format!(
-        "git history source was truncated: {reason}; remaining blobs were not scanned"
+        "{source_name} was truncated: {reason}; {remaining_description} were not scanned"
     )))
 }
 

@@ -182,6 +182,143 @@ fn git_diff_hunk_flush_uses_resolved_git_blob_byte_cap() {
 
 #[cfg(feature = "git")]
 #[test]
+fn git_diff_source_honors_aggregate_chunk_cap() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(&repo_path, "seed.txt", "seed = true\n", "base");
+    Command::new("git")
+        .args(["checkout", "-b", "feature"])
+        .current_dir(&repo_path)
+        .output()
+        .unwrap();
+    commit_file(&repo_path, "first.txt", "FIRST=visible\n", "add first");
+    commit_file(
+        &repo_path,
+        "second.txt",
+        "SECOND=not reached\n",
+        "add second",
+    );
+
+    let mut limits = SourceLimits::default();
+    limits.git_chunk_count = 1;
+
+    let rows: Vec<_> = GitDiffSource::new(repo_path, "main")
+        .with_head_ref("feature")
+        .with_limits(limits)
+        .chunks()
+        .collect();
+    let ok_chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+
+    assert_eq!(
+        ok_chunks.len(),
+        1,
+        "git-diff must emit the first scanned hunk before enforcing the aggregate chunk cap"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "git-diff aggregate chunk cap must surface one truncation error"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("git diff source was truncated")
+            && err.contains("aggregate chunk cap")
+            && err.contains("remaining changed lines were not scanned"),
+        "error must describe partial git-diff coverage; got {err}"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
+fn git_diff_source_honors_aggregate_byte_cap() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(&repo_path, "seed.txt", "seed = true\n", "base");
+    Command::new("git")
+        .args(["checkout", "-b", "feature"])
+        .current_dir(&repo_path)
+        .output()
+        .unwrap();
+    commit_file(&repo_path, "first.txt", "FIRST=visible\n", "add first");
+    commit_file(
+        &repo_path,
+        "second.txt",
+        "SECOND=not reached\n",
+        "add second",
+    );
+
+    let mut limits = SourceLimits::default();
+    limits.git_total_bytes = 1;
+
+    let rows: Vec<_> = GitDiffSource::new(repo_path, "main")
+        .with_head_ref("feature")
+        .with_limits(limits)
+        .chunks()
+        .collect();
+    let ok_chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+
+    assert_eq!(
+        ok_chunks.len(),
+        1,
+        "git-diff must emit the first scanned hunk before enforcing the aggregate byte cap"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "git-diff aggregate byte cap must surface one truncation error"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("git diff source was truncated")
+            && err.contains("aggregate byte cap")
+            && err.contains("remaining changed lines were not scanned"),
+        "error must describe partial git-diff coverage; got {err}"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
+fn git_diff_untracked_worktree_chunks_share_aggregate_cap() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(&repo_path, "seed.txt", "seed = true\n", "base");
+    std::fs::write(repo_path.join("first-untracked.txt"), "FIRST=visible\n").unwrap();
+    std::fs::write(
+        repo_path.join("second-untracked.txt"),
+        "SECOND=not reached\n",
+    )
+    .unwrap();
+
+    let mut limits = SourceLimits::default();
+    limits.git_chunk_count = 1;
+
+    let rows: Vec<_> = GitDiffSource::new(repo_path, "HEAD")
+        .with_limits(limits)
+        .chunks()
+        .collect();
+    let ok_chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+
+    assert_eq!(
+        ok_chunks.len(),
+        1,
+        "git-diff must emit one untracked worktree chunk before enforcing the aggregate chunk cap"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "git-diff aggregate chunk cap must stop additional untracked worktree chunks"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("git diff source was truncated")
+            && err.contains("aggregate chunk cap")
+            && err.contains("remaining changed lines were not scanned"),
+        "error must describe partial git-diff untracked coverage; got {err}"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
 fn git_diff_yields_tracked_chunks_before_untracked_file_errors() {
     let (_temp_dir, repo_path) = create_test_repo();
     commit_file(&repo_path, "tracked.txt", "base = true\n", "base");
