@@ -1,5 +1,5 @@
-use super::pipeline::{push_decoded_text_chunk, with_extracted_value_spans};
 use super::Decoder;
+use super::pipeline::{push_decoded_text_chunk, with_extracted_value_spans};
 use aho_corasick::AhoCorasick;
 use keyhog_core::Chunk;
 use std::sync::LazyLock;
@@ -157,6 +157,19 @@ pub(crate) fn line_has_credential_url(line: &str) -> bool {
     userinfo[..at_pos].contains(':')
 }
 
+fn credential_url_line_spans(text: &str) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut line_start = 0usize;
+    for line in text.split_inclusive('\n') {
+        let line_body = line.trim_end_matches(['\r', '\n']);
+        if line_has_credential_url(line_body) {
+            spans.push((line_start, line_start + line_body.len()));
+        }
+        line_start += line.len();
+    }
+    spans
+}
+
 fn private_key_material_spans(text: &str) -> Vec<(usize, usize)> {
     let mut spans = private_key_block_spans(text);
     spans.extend(encoded_private_key_payload_spans(text));
@@ -307,13 +320,13 @@ impl Decoder for CaesarDecoder {
         // exact resolution loss. Gate per-line so a chunk that mixes
         // URL traffic with Caesar-encoded creds elsewhere still gets
         // the decoder where it matters.
-        let chunk_has_credential_url = chunk.data.lines().any(line_has_credential_url);
-        if chunk_has_credential_url {
-            return Vec::new();
-        }
+        let credential_url_line_spans = credential_url_line_spans(&chunk.data);
         let private_key_spans = private_key_material_spans(&chunk.data);
         with_extracted_value_spans(&chunk.data, |candidates| {
             for candidate in candidates {
+                if candidate_inside_spans(candidate.span(), &credential_url_line_spans) {
+                    continue;
+                }
                 if candidate_inside_spans(candidate.span(), &private_key_spans) {
                     continue;
                 }
