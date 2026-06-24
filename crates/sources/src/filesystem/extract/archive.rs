@@ -96,6 +96,25 @@ pub(super) fn extract_openpack_archive(
                     if archive_entry.is_dir {
                         continue;
                     }
+                    if let Err(reason) = validate_scan_archive_entry_name(&archive_entry.name) {
+                        tracing::warn!(
+                            archive = %path.display(),
+                            entry = %archive_entry.name,
+                            reason,
+                            "skipping unsafe archive entry name"
+                        );
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                        if !emit_archive_entry_error(
+                            emit,
+                            "archive entry",
+                            &archive_display,
+                            &archive_entry.name,
+                            reason,
+                        ) {
+                            return;
+                        }
+                        continue;
+                    }
                     if super::super::filter::is_default_excluded(&archive_entry.name) {
                         record_default_excluded_archive_entry(
                             &archive_display,

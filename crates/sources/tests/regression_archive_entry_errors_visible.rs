@@ -39,6 +39,34 @@ fn zip_entry_read_failures_emit_source_errors() {
             && archive.contains("emit_archive_entry_error("),
         "OpenPack entry read failures must emit machine-visible SourceError rows"
     );
+    let openpack_entry_loop = archive
+        .split("for archive_entry in entries {")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("match pack.read_entry(&archive_entry.name)")
+                .next()
+        })
+        .expect("OpenPack entry loop must be extractable before read_entry");
+    let validation_pos = openpack_entry_loop
+        .find("validate_scan_archive_entry_name(&archive_entry.name)")
+        .expect("OpenPack entries must use the shared archive entry-name validator");
+    let default_exclude_pos = openpack_entry_loop
+        .find("filter::is_default_excluded(&archive_entry.name)")
+        .or_else(|| {
+            openpack_entry_loop
+                .find("super::super::filter::is_default_excluded(&archive_entry.name)")
+        })
+        .expect("OpenPack entry loop must still apply default exclusions");
+    assert!(
+        validation_pos < default_exclude_pos,
+        "OpenPack/CRX entry names must be path-safety validated before default-exclude skips or read_entry"
+    );
+    assert!(
+        openpack_entry_loop.contains("skipping unsafe archive entry name")
+            && openpack_entry_loop.contains("SourceSkipEvent::Unreadable")
+            && openpack_entry_loop.contains("emit_archive_entry_error("),
+        "OpenPack unsafe entry names must be counted and surfaced as SourceError rows"
+    );
     assert!(
         zip.contains("special file type")
             && zip.contains("emit_archive_entry_error(")
