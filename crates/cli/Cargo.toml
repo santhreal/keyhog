@@ -24,11 +24,13 @@ name = "keyhog"
 path = "src/main.rs"
 
 [features]
-# Default = full experience. Only gpu, simd, and binary (Ghidra) are opt-in
-# because they require heavy compile-time deps or system libraries.
-# cargo install keyhog gives you EVERYTHING else.
+# Default = full desktop experience: scanner defaults, source backends,
+# verification, and the allocator. The scanner default intentionally includes
+# GPU, Hyperscan/SIMD, simdsieve, ML, entropy, decode-through, and multiline.
+# Use `portable`, `ci-lean`, or `ci` for builds that strip accelerator/system
+# dependencies; `binary` (Ghidra) remains opt-in.
 default = [
-    "keyhog-scanner/default",  # ML, entropy, decode-through, multiline
+    "keyhog-scanner/default",  # scanner full desktop stack, including GPU + Hyperscan/SIMD
     "git",                      # Git source backends
     "web",                      # URL scanning (JS/sourcemap/WASM)
     "github",                   # GitHub org scanning
@@ -87,6 +89,8 @@ portable = [
     "verify",
     "mimalloc",
 ]
+# Full source/decompiler surface without accelerator/system-library features.
+# Add `gpu` / `simd` explicitly when this profile needs accelerator paths.
 full = [
     "keyhog-scanner/ml",
     "keyhog-scanner/entropy",

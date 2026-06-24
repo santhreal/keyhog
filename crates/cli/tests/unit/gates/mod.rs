@@ -16,6 +16,7 @@ pub mod baseline_non_empty;
 pub mod benchmark_no_inline_tests;
 pub mod benchmark_no_unwrap_expect;
 pub mod benchmark_non_empty;
+pub mod cargo_feature_comment_contract;
 pub mod config_no_inline_tests;
 pub mod config_no_unwrap_expect;
 pub mod config_non_empty;
