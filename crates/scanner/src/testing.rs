@@ -1975,6 +1975,10 @@ pub fn unicode_escape_decode(input: &str) -> Result<String, ()> {
     crate::decode::unicode_escape_decode(input)
 }
 
+pub fn extracted_value_strings_for_test(text: &str) -> Vec<String> {
+    crate::decode::extracted_value_strings_for_test(text)
+}
+
 #[cfg(test)]
 pub(crate) fn looks_reversible(candidate: &str) -> bool {
     crate::decode::reverse::looks_reversible(candidate)

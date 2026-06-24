@@ -39,6 +39,7 @@ mod json_unicode_escape_hex_digits;
 mod json_unicode_escape_rejects_invalid_hex;
 mod mime_q_decode_underscore_replacement;
 mod octal_escape_truncated_at_eol;
+mod quoted_escape_candidate_preserves_backslash;
 mod reverse_rejects_alphabetic_prose;
 mod reverse_rejects_short_candidates;
 mod take_hex_digits_empty_iterator;

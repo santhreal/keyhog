@@ -32,6 +32,12 @@ pub(crate) fn unicode_escape_decode(input: &str) -> Result<String, ()> {
     unicode_escape::unicode_escape_decode(input)
 }
 
+pub(crate) fn extracted_value_strings_for_test(text: &str) -> Vec<String> {
+    pipeline::with_extracted_value_spans(text, |values| {
+        values.iter().map(|value| value.value.clone()).collect()
+    })
+}
+
 /// Minimum contiguous encoded-alphabet run that makes a chunk worth decoding.
 /// A base64 of a ~16-byte secret is ~24 chars; shorter runs are too small to
 /// hide a credential and would only add prefilter-bypass cost.

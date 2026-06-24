@@ -227,6 +227,7 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
                 if escaping {
                     value_start.get_or_insert(current_idx.saturating_sub(1));
                     value_end = current_idx + current.len_utf8();
+                    cleaned.push('\\');
                     cleaned.push(current);
                     escaping = false;
                 } else if current == '\\' {
