@@ -1121,6 +1121,79 @@ fn secret_only_on_tag_is_found() {
 }
 
 #[test]
+fn secret_only_in_annotated_tag_message_is_found() {
+    let (_t, repo) = init_repo();
+    commit_file(&repo, "main.txt", b"base=1\n", "base on main");
+    git(
+        &repo,
+        &[
+            "tag",
+            "-a",
+            "release-with-secret",
+            "-m",
+            "K=ghp_annotatedTagMessageSecret00001",
+        ],
+    );
+
+    let chunks = collect_chunks(&repo, 50);
+    let c = chunks
+        .iter()
+        .find(|c| c.data.contains("ghp_annotatedTagMessageSecret00001"))
+        .expect("annotated tag message must be scanned");
+    assert_eq!(c.metadata.source_type, "git/tag");
+    assert_eq!(
+        c.metadata.path.as_deref(),
+        Some("refs/tags/release-with-secret")
+    );
+    assert_eq!(c.metadata.commit, None, "tag object is not a commit");
+    assert_eq!(c.metadata.author.as_deref(), Some("Gap Author"));
+}
+
+#[test]
+fn secret_only_in_unreachable_annotated_tag_message_is_found() {
+    let (_t, repo) = init_repo();
+    commit_file(&repo, "main.txt", b"base=1\n", "base on main");
+    git(
+        &repo,
+        &[
+            "tag",
+            "-a",
+            "deleted-tag-with-secret",
+            "-m",
+            "K=ghp_unreachableTagMessageSecret0001",
+        ],
+    );
+    let tag_rev = Command::new("git")
+        .args(["rev-parse", "deleted-tag-with-secret^{tag}"])
+        .current_dir(&repo)
+        .output()
+        .expect("rev-parse tag object");
+    assert!(
+        tag_rev.status.success(),
+        "rev-parse tag object failed: {}",
+        String::from_utf8_lossy(&tag_rev.stderr)
+    );
+    let tag_oid = String::from_utf8(tag_rev.stdout)
+        .expect("tag oid utf8")
+        .trim()
+        .to_string();
+    git(&repo, &["tag", "-d", "deleted-tag-with-secret"]);
+
+    let chunks = collect_chunks(&repo, 50);
+    let c = chunks
+        .iter()
+        .find(|c| c.data.contains("ghp_unreachableTagMessageSecret0001"))
+        .expect("unreachable annotated tag message must be scanned");
+    assert_eq!(c.metadata.source_type, "git/unreachable");
+    assert_eq!(
+        c.metadata.path.as_deref(),
+        Some(format!(".git/unreachable/{tag_oid}").as_str())
+    );
+    assert_eq!(c.metadata.commit, None, "tag object is not a commit");
+    assert_eq!(c.metadata.author.as_deref(), Some("Gap Author"));
+}
+
+#[test]
 fn secret_only_in_deleted_branch_reflog_is_found() {
     let (_t, repo) = init_repo();
     commit_file(&repo, "main.txt", b"base=1\n", "base on main");
@@ -1312,6 +1385,10 @@ fn git_source_commit_enumerator_names_reflog_stash_and_unreachable_coverage() {
     let source =
         std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/git/source.rs"))
             .expect("git source readable");
+    let tag_messages = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/git/tag_messages.rs"),
+    )
+    .expect("git tag message source readable");
     assert!(
         source.contains("\"--reflog\"") && source.contains("\"--all\""),
         "GitSource must enumerate reflog commits, not only named refs"
@@ -1326,8 +1403,15 @@ fn git_source_commit_enumerator_names_reflog_stash_and_unreachable_coverage() {
             && source.contains("\"--no-reflogs\"")
             && source.contains("unreachable commit ")
             && source.contains("unreachable blob ")
-            && source.contains("unreachable tree "),
-        "GitSource must enumerate commits, loose blobs, and trees that are neither refs nor reflogs"
+            && source.contains("unreachable tree ")
+            && source.contains("unreachable tag "),
+        "GitSource must enumerate commits, loose blobs, trees, and tags that are neither refs nor reflogs"
+    );
+    assert!(
+        tag_messages.contains("\"for-each-ref\"")
+            && tag_messages.contains("\"refs/tags\"")
+            && tag_messages.contains("source_type: \"git/tag\""),
+        "GitSource must scan reachable annotated tag messages as git/tag chunks"
     );
 }
 

@@ -10,6 +10,7 @@ mod diff;
 mod diff_parser;
 mod history;
 mod source;
+mod tag_messages;
 
 /// Resolve `git` to an absolute path inside a trusted system bin dir.
 /// SECURITY: kimi-wave1 audit finding 3.PATH-git. Refuses to fall back

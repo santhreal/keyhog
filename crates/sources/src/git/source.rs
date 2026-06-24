@@ -10,6 +10,11 @@ use gix::objs::Kind;
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use rayon::prelude::*;
 
+use super::tag_messages::{
+    collect_reachable_tag_messages, decode_tag_message_chunks,
+    decode_unreachable_tag_message_chunks,
+};
+
 /// Upper bound for one parallel blob decode batch.
 ///
 /// Git object bytes are decompressed into owned `String`s before the iterator
@@ -48,6 +53,7 @@ struct UnreachableGitObjects {
     commits: VecDeque<gix::ObjectId>,
     blobs: VecDeque<gix::ObjectId>,
     trees: VecDeque<gix::ObjectId>,
+    tags: VecDeque<gix::ObjectId>,
 }
 
 type GitBlobPathKey = (gix::ObjectId, Vec<u8>);
@@ -91,7 +97,8 @@ enum GitBlobSkip {
 }
 
 /// Scans git blobs reachable from refs, reflogs, stashes, dangling commits,
-/// unreachable loose blobs, and unreachable tree objects.
+/// annotated tag messages, unreachable loose blobs, and unreachable tree/tag
+/// objects.
 ///
 /// # Examples
 ///
@@ -179,6 +186,7 @@ struct GitCommitEnumerator {
     unreachable_commits: VecDeque<gix::ObjectId>,
     unreachable_blobs: VecDeque<gix::ObjectId>,
     unreachable_trees: VecDeque<gix::ObjectId>,
+    unreachable_tags: VecDeque<gix::ObjectId>,
 }
 
 impl GitCommitEnumerator {
@@ -223,6 +231,7 @@ impl GitCommitEnumerator {
             unreachable_commits: VecDeque::new(),
             unreachable_blobs: VecDeque::new(),
             unreachable_trees: VecDeque::new(),
+            unreachable_tags: VecDeque::new(),
         })
     }
 
@@ -260,6 +269,7 @@ impl GitCommitEnumerator {
                 self.unreachable_commits = unreachable.commits;
                 self.unreachable_blobs = unreachable.blobs;
                 self.unreachable_trees = unreachable.trees;
+                self.unreachable_tags = unreachable.tags;
                 continue;
             }
             return Ok(None);
@@ -271,6 +281,7 @@ impl GitCommitEnumerator {
             commits: VecDeque::new(),
             blobs: std::mem::take(&mut self.unreachable_blobs),
             trees: std::mem::take(&mut self.unreachable_trees),
+            tags: std::mem::take(&mut self.unreachable_tags),
         }
     }
 }
@@ -289,6 +300,7 @@ fn stream_git_blobs(
     let repo_owned = PathBuf::from(&repo_arg);
     let repo_handle = gix::open(&repo_owned)
         .map_err(|e| SourceError::Io(std::io::Error::other(format!("gix open: {e}"))))?;
+    let mut reachable_tags = collect_reachable_tag_messages(&repo_arg)?;
     // Snapshot every blob OID reachable from HEAD's tree. Used to label
     // emitted chunks as "git/head" (live in HEAD) vs "git/history"
     // (only present in older commits). The downstream scorer downgrades
@@ -329,6 +341,16 @@ fn stream_git_blobs(
                 let id = match commit_ids.next_id(seen_commits.len()) {
                     Ok(Some(id)) => id,
                     Ok(None) => {
+                        current_tree_blobs.extend(decode_tag_message_chunks(
+                            &repo_handle,
+                            &mut reachable_tags,
+                            limits,
+                            &mut total_bytes,
+                            &mut chunk_count,
+                        ));
+                        if let Some(chunk) = current_tree_blobs.pop_front() {
+                            return Some(Ok(chunk));
+                        }
                         unreachable_objects =
                             Some(commit_ids.take_unreachable_non_commit_objects());
                         continue;
@@ -374,6 +396,17 @@ fn stream_git_blobs(
                     }
                 }
             } else if let Some(objects) = unreachable_objects.as_mut() {
+                current_tree_blobs.extend(decode_unreachable_tag_message_chunks(
+                    &repo_handle,
+                    &mut objects.tags,
+                    limits,
+                    &mut total_bytes,
+                    &mut chunk_count,
+                ));
+                if let Some(chunk) = current_tree_blobs.pop_front() {
+                    return Some(Ok(chunk));
+                }
+
                 let blob_metadata = collect_unreachable_non_commit_blob_metadata(
                     &repo_handle,
                     objects,
@@ -843,6 +876,13 @@ fn collect_unreachable_objects(
                 continue;
             };
             out.trees.push_back(id);
+            continue;
+        }
+        if let Some(tag_id) = line.strip_prefix("unreachable tag ") {
+            let Some(id) = parse_git_object_id_line(tag_id, "tag")? else {
+                continue;
+            };
+            out.tags.push_back(id);
         }
     }
     super::wait_for_git_child(&mut child, "git fsck", "enumerating unreachable objects")?;

@@ -43,6 +43,7 @@ pub(crate) const SEED_SOURCE_TYPES: &[&str] = &[
     "git",
     "git/head",
     "git/history",
+    "git/tag",
     "git/unreachable",
     "git/diff",
     "git/staged",
