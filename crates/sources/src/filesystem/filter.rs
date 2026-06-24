@@ -280,10 +280,9 @@ pub(super) fn walker_config(
     // binary-detect read, so disabling it adds ~4 KiB of extra read
     // per over-size file - negligible at the scale where users hit
     // the cap.
-    // LAW10: unused-binding marker; no runtime effect, not a fallback.
-    let _ = max_file_size;
     // Default excludes stay out of codewalk so every skipped file reaches
     // `extract::process_entry`, where it is counted through SourceSkipEvent.
+    let _ = max_file_size; // LAW10: unused-binding marker; no runtime effect, not a fallback
     let _ = respect_default_excludes; // LAW10: walker does not own default-exclude decisions; process_entry owns visible skip accounting
 
     WalkConfig::default()

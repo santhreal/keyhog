@@ -380,12 +380,18 @@ fn reset_skip_counters_zeroes_every_category() {
 fn skip_counts_reads_live_counters() {
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
+    TestApi.bump_git_object_unreadable(5);
     TestApi.set_skip_counts(SkipCounts {
         binary: 9,
         ..SkipCounts::default()
     });
     let snap = skip_counts();
     assert_eq!(snap.binary, 9, "snapshot must read the live atomic value");
+    assert_eq!(
+        keyhog_sources::git_object_unreadable(),
+        0,
+        "set_skip_counts must clear the separate git-object unreadable counter so fixtures do not inherit stale state"
+    );
     TestApi.reset_skip_counters();
 }
 

@@ -218,6 +218,7 @@ pub(crate) fn set_skip_counts_for_test(counts: SkipCounts) {
     SKIPPED_BINARY.store(counts.binary, Relaxed);
     SKIPPED_EXCLUDED.store(counts.excluded, Relaxed);
     SKIPPED_UNREADABLE.store(counts.unreadable, Relaxed);
+    GIT_OBJECT_UNREADABLE.store(0, Relaxed);
     SKIPPED_ARCHIVE_TRUNCATED.store(counts.archive_truncated, Relaxed);
     BINARY_SECTION_NAME_UNRESOLVED.store(counts.binary_section_name_unresolved, Relaxed);
     SOURCE_TRUNCATED.store(counts.source_truncated, Relaxed);
