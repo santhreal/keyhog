@@ -12,9 +12,8 @@
 # does not read ambient process environment to change SARIF fix suggestions.
 #
 # Matching: `match` is an ASCII-case-insensitive needle tested against the
-# service string. By default it is a SUBSTRING test; set `prefix = true` to
-# require the service to START with the needle (used for the `gh-` / `ghp_`
-# GitHub token prefixes, which must not match a substring buried mid-name). The
+# service string. By default it is a SUBSTRING test; set `prefix = true` only
+# for a real detector service namespace that needs start-anchored matching. The
 # FIRST matching entry in file order wins, so order from most-specific to
 # least-specific if two needles could both match. `env` is the variable name
 # emitted verbatim (already SCREAMING_SNAKE).
@@ -29,16 +28,6 @@ env = "AWS_ACCESS_KEY_ID"
 
 [[service]]
 match = "github"
-env = "GITHUB_TOKEN"
-
-[[service]]
-match = "gh-"
-prefix = true
-env = "GITHUB_TOKEN"
-
-[[service]]
-match = "ghp_"
-prefix = true
 env = "GITHUB_TOKEN"
 
 [[service]]

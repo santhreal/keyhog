@@ -5,9 +5,11 @@
 //!   * the embedded data file stops parsing (or is deleted / emptied),
 //!   * the curated count drifts from the data file (a stale hardcoded table
 //!     re-creeps in, or someone edits one without the other),
+//!   * a data row is unreachable from shipped detector service names,
 //!   * a known curated service stops mapping to its conventional env var,
-//!   * the `prefix`-vs-substring matching semantics regress,
 //!   * the screaming-snake fallback for an unknown service regresses.
+
+use std::collections::BTreeSet;
 
 /// The exact embedded Tier-B data the binary compiles in. Parsing it here in the
 /// test is the count oracle: the data file and the runtime behavior must agree.
@@ -18,6 +20,8 @@ struct Entry {
     #[serde(rename = "match")]
     needle: String,
     env: String,
+    #[serde(default)]
+    prefix: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -35,13 +39,12 @@ fn parse_embedded() -> Vec<Entry> {
 #[test]
 fn embedded_data_parses_and_is_nonempty_with_expected_count() {
     let entries = parse_embedded();
-    // Exact count pin: 19 curated entries (17 distinct providers, with `gh-`
-    // and `ghp_` as two extra GitHub prefix rows). Bump this deliberately when
-    // adding a provider; a silent drift means the data file and the shipped
-    // map diverged.
+    // Exact count pin: 17 curated provider entries. Bump this deliberately when
+    // adding/removing a reachable provider; a silent drift means the data file
+    // and the shipped map diverged.
     assert_eq!(
         entries.len(),
-        19,
+        17,
         "service-env-vars.toml curated entry count drifted; update this pin only \
          when intentionally adding/removing a provider"
     );
@@ -56,6 +59,41 @@ fn embedded_data_parses_and_is_nonempty_with_expected_count() {
             "env name '{}' is not SCREAMING_SNAKE",
             e.env
         );
+    }
+}
+
+#[test]
+fn every_data_entry_is_reachable_from_embedded_detector_services() {
+    let detector_services = keyhog_core::load_embedded_detectors_or_fail()
+        .expect("embedded detectors parse")
+        .into_iter()
+        .map(|detector| detector.service)
+        .collect::<BTreeSet<_>>();
+    let entries = parse_embedded();
+    let unreachable = entries
+        .iter()
+        .filter(|entry| {
+            !detector_services
+                .iter()
+                .any(|service| service_entry_matches(service, entry))
+        })
+        .map(|entry| entry.needle.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        unreachable.is_empty(),
+        "service-env-vars.toml has rows unreachable from shipped detector service names: {unreachable:?}"
+    );
+}
+
+fn service_entry_matches(service: &str, entry: &Entry) -> bool {
+    if entry.prefix {
+        service
+            .get(..entry.needle.len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(&entry.needle))
+    } else {
+        service
+            .to_ascii_lowercase()
+            .contains(&entry.needle.to_ascii_lowercase())
     }
 }
 
@@ -210,21 +248,6 @@ fn curated_services_map_to_conventional_env_vars() {
         ),
         "SNOWFLAKE_PASSWORD"
     );
-    // gh-/ghp_ prefix rows map to GitHub.
-    assert_eq!(
-        keyhog_core::testing::CoreTestApi::auto_fix_env_var_name_for_service(
-            &keyhog_core::testing::TestApi,
-            "ghp_abcdef"
-        ),
-        "GITHUB_TOKEN"
-    );
-    assert_eq!(
-        keyhog_core::testing::CoreTestApi::auto_fix_env_var_name_for_service(
-            &keyhog_core::testing::TestApi,
-            "gh-actions"
-        ),
-        "GITHUB_TOKEN"
-    );
     // fix_replacement_text wraps the same name in ${...}.
     assert_eq!(
         keyhog_core::testing::CoreTestApi::auto_fix_replacement_text(
@@ -232,21 +255,6 @@ fn curated_services_map_to_conventional_env_vars() {
             "stripe"
         ),
         "${STRIPE_SECRET_KEY}"
-    );
-}
-
-#[test]
-fn prefix_needle_does_not_match_as_substring() {
-    // `ghp_` is a PREFIX row: a service that merely CONTAINS `ghp_` mid-string
-    // must NOT be matched as GitHub (the original hardcoded `starts_with`
-    // semantics). It falls back to screaming-snake.
-    assert_eq!(
-        keyhog_core::testing::CoreTestApi::auto_fix_env_var_name_for_service(
-            &keyhog_core::testing::TestApi,
-            "my-ghp_thing"
-        ),
-        "MY_GHP_THING_KEY",
-        "ghp_ must be a prefix match, not a substring match"
     );
 }
 

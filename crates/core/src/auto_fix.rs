@@ -31,8 +31,8 @@ struct ServiceEnvEntry {
     needle: String,
     /// The environment-variable name emitted verbatim when the needle matches.
     env: String,
-    /// When `true`, require the service to START with `needle` (used for the
-    /// `gh-` / `ghp_` GitHub token prefixes); otherwise it is a substring test.
+    /// When `true`, require the service to START with `needle`; otherwise it is
+    /// a substring test.
     #[serde(default)]
     prefix: bool,
 }
