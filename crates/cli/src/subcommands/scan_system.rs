@@ -53,11 +53,12 @@ struct FindingSink {
     total: u64,
     cap: usize,
     capped_warned: bool,
-    /// Chunks the source could not yield (corrupt git object, perm-denied
-    /// `.git`, non-UTF-8 / unreadable file mid-walk). Law 10: a dropped chunk is
-    /// unscanned bytes — a recall loss — so it is COUNTED and surfaced in the
-    /// final summary, never silently `continue`d past. A non-zero count means the
-    /// "complete" scan did not cover everything.
+    /// Source/discovery items that could not be yielded (corrupt git object,
+    /// perm-denied `.git`, non-UTF-8 / unreadable file mid-walk, or unreadable
+    /// git-discovery subtree). Law 10: dropped scope is unscanned bytes — a
+    /// recall loss — so it is COUNTED and surfaced in the final summary, never
+    /// silently `continue`d past. A non-zero count means the "complete" scan did
+    /// not cover everything.
     skipped_chunks: u64,
 }
 
@@ -76,14 +77,19 @@ impl FindingSink {
         }
     }
 
-    /// Record that a source chunk could not be read and was dropped from the
-    /// scan. The count is surfaced in the final summary so the recall loss is
-    /// visible (Law 10) instead of a silent `Err(_) => continue`.
+    /// Record that source/discovery scope could not be read and was dropped
+    /// from the scan. The count is surfaced in the final summary so the recall
+    /// loss is visible (Law 10) instead of a silent `Err(_) => continue`.
     fn record_skipped_chunk(&mut self) {
-        self.skipped_chunks += 1;
+        self.record_skipped_chunks(1);
     }
 
-    /// Number of source chunks dropped due to read errors (unscanned bytes).
+    fn record_skipped_chunks(&mut self, count: u64) {
+        self.skipped_chunks = self.skipped_chunks.saturating_add(count);
+    }
+
+    /// Number of source/discovery items dropped due to read errors (unscanned
+    /// bytes or subtrees).
     fn skipped_chunks(&self) -> u64 {
         self.skipped_chunks
     }
@@ -299,10 +305,11 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     // include their .git directories explicitly even when they're hidden
     // by .gitignore-style filters.
     let mut git_repos: Vec<PathBuf> = Vec::new();
+    let mut git_discovery_gaps = 0_u64;
     if !args.no_git_history {
         let skip_dirs = crate::skip_dirs::SkipDirPolicy::load()?;
         for mount in &mounts {
-            discover_git_repos(mount, &mut git_repos, &skip_dirs);
+            git_discovery_gaps += discover_git_repos(mount, &mut git_repos, &skip_dirs);
         }
         eprintln!("🌿 discovered {} git repo(s)", git_repos.len());
     }
@@ -314,6 +321,7 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     // scan_mount/scan_git_history so resident memory is bounded independent of
     // corpus secret-density (audit: memory / unbounded findings Vec).
     let mut sink = FindingSink::new();
+    sink.record_skipped_chunks(git_discovery_gaps);
 
     // Walk each mount with the existing walker but with a budget callback
     // that aborts when --space is hit.
@@ -377,10 +385,11 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     if sink.skipped_chunks() > 0 {
         let palette = style::for_stderr();
         eprintln!(
-            "{} {} source chunk(s) were UNREADABLE and went unscanned (corrupt git \
-             objects, permission-denied paths, or non-text files). This scan did \
-             NOT cover everything; rerun affected paths with elevated permissions \
-             to close the gap.",
+            "{} {} source/discovery coverage gap(s) were UNREADABLE or skipped \
+             before scanning (git discovery errors, corrupt git objects, \
+             permission-denied paths, or non-text files). This scan did NOT cover \
+             everything; rerun affected paths with elevated permissions to close \
+             the gap.",
             style::warn("WARN", &palette),
             sink.skipped_chunks()
         );
@@ -436,28 +445,18 @@ fn discover_git_repos(
     root: &Path,
     out: &mut Vec<PathBuf>,
     skip_dirs: &crate::skip_dirs::SkipDirPolicy,
-) {
+) -> u64 {
     use std::collections::HashSet;
     use std::fs;
     let mut visited: HashSet<PathBuf> = HashSet::new();
     let mut stack: Vec<PathBuf> = Vec::new();
+    let mut discovery_gaps = 0_u64;
 
     let canon = match fs::canonicalize(root) {
         Ok(canon) => canon,
         Err(error) => {
-            let palette = style::for_stderr();
-            eprintln!(
-                "{} cannot canonicalize root path while discovering git repositories; skipping discovery for {}: {}",
-                style::warn("WARN", &palette),
-                root.display(),
-                error
-            );
-            tracing::warn!(
-                root = %root.display(),
-                %error,
-                "cannot canonicalize root path while discovering git repositories; skipping discovery"
-            );
-            return;
+            record_git_discovery_gap(&mut discovery_gaps, root, error, "root canonicalization");
+            return discovery_gaps;
         }
     };
     stack.push(canon);
@@ -493,10 +492,11 @@ fn discover_git_repos(
                     let entry = match entry {
                         Ok(entry) => entry,
                         Err(error) => {
-                            tracing::warn!(
-                                dir = %dir.display(),
-                                %error,
-                                "cannot read directory entry while discovering git repositories; skipping entry"
+                            record_git_discovery_gap(
+                                &mut discovery_gaps,
+                                &dir,
+                                error,
+                                "directory entry read",
                             );
                             continue;
                         }
@@ -504,10 +504,11 @@ fn discover_git_repos(
                     let file_type = match entry.file_type() {
                         Ok(file_type) => file_type,
                         Err(error) => {
-                            tracing::warn!(
-                                path = %entry.path().display(),
-                                %error,
-                                "cannot read directory entry type while discovering git repositories; skipping entry"
+                            record_git_discovery_gap(
+                                &mut discovery_gaps,
+                                &entry.path(),
+                                error,
+                                "directory entry type read",
                             );
                             continue;
                         }
@@ -520,10 +521,11 @@ fn discover_git_repos(
                                 }
                             }
                             Err(error) => {
-                                tracing::warn!(
-                                    path = %entry.path().display(),
-                                    %error,
-                                    "cannot canonicalize directory while discovering git repositories; skipping subtree"
+                                record_git_discovery_gap(
+                                    &mut discovery_gaps,
+                                    &entry.path(),
+                                    error,
+                                    "subtree canonicalization",
                                 );
                             }
                         }
@@ -531,14 +533,34 @@ fn discover_git_repos(
                 }
             }
             Err(error) => {
-                tracing::warn!(
-                    dir = %dir.display(),
-                    %error,
-                    "cannot read directory while discovering git repositories; skipping subtree"
-                );
+                record_git_discovery_gap(&mut discovery_gaps, &dir, error, "directory read");
             }
         }
     }
+    discovery_gaps
+}
+
+fn record_git_discovery_gap(
+    discovery_gaps: &mut u64,
+    path: &Path,
+    error: impl std::fmt::Display,
+    operation: &'static str,
+) {
+    *discovery_gaps = discovery_gaps.saturating_add(1);
+    let palette = style::for_stderr();
+    eprintln!(
+        "{} git repository discovery skipped {} for {}: {}. This scan did NOT prove coverage for that subtree.",
+        style::warn("WARN", &palette),
+        operation,
+        path.display(),
+        error
+    );
+    tracing::warn!(
+        path = %path.display(),
+        %operation,
+        %error,
+        "git repository discovery skipped scope; scan coverage gap"
+    );
 }
 
 fn scan_mount(

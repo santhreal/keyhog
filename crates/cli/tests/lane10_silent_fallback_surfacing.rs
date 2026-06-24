@@ -89,6 +89,29 @@ fn scan_system_summary_warns_when_chunks_were_skipped() {
 }
 
 #[test]
+fn scan_system_git_discovery_gaps_are_counted_and_surfaced() {
+    let s = src("src/subcommands/scan_system.rs");
+    assert!(
+        s.contains("let mut git_discovery_gaps = 0_u64")
+            && s.contains("git_discovery_gaps += discover_git_repos")
+            && s.contains("record_skipped_chunks(git_discovery_gaps)"),
+        "git repository discovery failures happen before scanning, so they must \
+         be accumulated and counted in the same final partial-scan warning"
+    );
+    assert!(
+        s.contains("record_git_discovery_gap") && s.contains("eprintln!"),
+        "git discovery errors must reach operator-visible stderr, not only tracing"
+    );
+    assert!(
+        s.contains("source/discovery coverage gap(s)")
+            && s.contains("git discovery errors")
+            && s.contains("NOT prove coverage for that subtree"),
+        "the git discovery warning/summary must name the skipped discovery scope \
+         as a coverage gap"
+    );
+}
+
+#[test]
 fn verify_low_confidence_skips_are_surfaced_loudly() {
     let s = src("src/orchestrator/postprocess.rs");
     let block = s
