@@ -1,10 +1,10 @@
 //! Main scan run loop: hardening, sources, baseline, reporting, exit codes.
 
-use super::ScanOrchestrator;
 use super::allowlist::{load_allowlist, load_rule_suppressor};
 use super::reporting::{
-    TickerGuard, dump_dogfood_trace, report_completion_summary, report_skip_summary,
+    dump_dogfood_trace, report_completion_summary, report_skip_summary, TickerGuard,
 };
+use super::ScanOrchestrator;
 use crate::baseline::Baseline;
 use crate::exit_codes::{
     EXIT_FINDINGS, EXIT_LIVE_CREDENTIALS, EXIT_REQUIRE_GPU_UNMET, EXIT_SCANNER_PANIC,
@@ -426,6 +426,7 @@ fn source_coverage_incomplete() -> bool {
     let source_gaps = counts.over_max_size
         + counts.binary
         + counts.unreadable
+        + keyhog_sources::git_object_unreadable()
         + counts.archive_truncated
         + counts.binary_section_name_unresolved
         + counts.source_truncated

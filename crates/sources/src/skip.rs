@@ -27,6 +27,12 @@ static SKIPPED_EXCLUDED: AtomicUsize = AtomicUsize::new(0);
 /// (Law 10). Bumped on the walk's error path.
 static SKIPPED_UNREADABLE: AtomicUsize = AtomicUsize::new(0);
 
+/// How many Git history/diff objects were referenced by Git metadata but could
+/// not be read or decoded as the object kind the scan required. These are
+/// source objects, not filesystem files, so report them separately from
+/// `SKIPPED_UNREADABLE` while still treating them as incomplete coverage.
+static GIT_OBJECT_UNREADABLE: AtomicUsize = AtomicUsize::new(0);
+
 /// How many archives (zip/apk/jar/tar/.gz/.tgz/...) had their extraction
 /// TRUNCATED by a decompression-bomb guard — the per-archive 4x-of-`--max-file-size`
 /// uncompressed budget was exceeded, so the remaining entries were NOT scanned.
@@ -96,6 +102,7 @@ pub struct SkipCounts {
 impl SkipCounts {
     /// Total files skipped (not scanned) across all categories.
     ///
+    /// Git object unreadability is exposed through `git_object_unreadable()`;
     /// `binary_section_name_unresolved`, `source_truncated`,
     /// `structured_source_parse_failures`, and
     /// `archive_duplicate_scan_unavailable` are partial-coverage signals, not
@@ -114,6 +121,7 @@ pub(crate) enum SourceSkipEvent {
     Binary,
     Excluded,
     Unreadable,
+    GitObjectUnreadable,
     ArchiveTruncated,
     #[cfg(feature = "binary")]
     BinarySectionNameUnresolved,
@@ -129,6 +137,7 @@ impl SourceSkipEvent {
             Self::Binary => &SKIPPED_BINARY,
             Self::Excluded => &SKIPPED_EXCLUDED,
             Self::Unreadable => &SKIPPED_UNREADABLE,
+            Self::GitObjectUnreadable => &GIT_OBJECT_UNREADABLE,
             Self::ArchiveTruncated => &SKIPPED_ARCHIVE_TRUNCATED,
             #[cfg(feature = "binary")]
             Self::BinarySectionNameUnresolved => &BINARY_SECTION_NAME_UNRESOLVED,
@@ -176,6 +185,12 @@ pub fn skip_counts() -> SkipCounts {
     }
 }
 
+/// Git commit/tree/blob objects that were referenced by Git metadata but not
+/// scanned because the object was unreadable or had the wrong kind.
+pub fn git_object_unreadable() -> usize {
+    GIT_OBJECT_UNREADABLE.load(Relaxed)
+}
+
 /// Reset every skip counter. Public so test fixtures and the orchestrator can
 /// baseline between scans in one process.
 pub(crate) fn reset_skip_counters() {
@@ -183,6 +198,7 @@ pub(crate) fn reset_skip_counters() {
     SKIPPED_BINARY.store(0, Relaxed);
     SKIPPED_EXCLUDED.store(0, Relaxed);
     SKIPPED_UNREADABLE.store(0, Relaxed);
+    GIT_OBJECT_UNREADABLE.store(0, Relaxed);
     SKIPPED_ARCHIVE_TRUNCATED.store(0, Relaxed);
     BINARY_SECTION_NAME_UNRESOLVED.store(0, Relaxed);
     SOURCE_TRUNCATED.store(0, Relaxed);

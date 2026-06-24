@@ -2,8 +2,8 @@
 
 use keyhog_core::{Severity, VerifiedFinding};
 use std::io::Write;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::style::{terminal_clear_line_prefix, terminal_palette};
@@ -728,6 +728,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
     }
 
     let c = keyhog_sources::skip_counts();
+    let git_object_unreadable = keyhog_sources::git_object_unreadable();
     // Whether the binary source recorded any degradation/drop. Checked here so a
     // run whose ONLY coverage gap is a Ghidra fallback / unreadable binary (with
     // zero file-walk skips) still emits its summary line below.
@@ -746,6 +747,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
     // checked explicitly here. A run whose ONLY gap is one of these must still
     // emit its summary line below.
     if c.total() == 0
+        && git_object_unreadable == 0
         && c.binary_section_name_unresolved == 0
         && c.source_truncated == 0
         && c.structured_source_parse_failures == 0
@@ -797,6 +799,15 @@ pub(crate) fn report_skip_summary(ansi: bool) {
             format!(
                 "{} file(s) NOT scanned: unreadable (permission denied or I/O error). These were NOT checked for secrets.",
                 non_binary_unreadable
+            ),
+            true,
+        ));
+    }
+    if git_object_unreadable > 0 {
+        lines.push((
+            format!(
+                "{} Git object(s) NOT scanned: referenced commit/tree/blob data was unreadable or not the expected object kind.",
+                git_object_unreadable
             ),
             true,
         ));
@@ -909,9 +920,9 @@ pub(crate) fn dump_dogfood_trace() {
 #[cfg(test)]
 mod ticker_tests {
     use super::{
-        TickerGuard, fmt_secs, render_progress_bar, render_reporting_ticker_line,
-        render_severity_line, render_ticker_line, render_verification_line,
-        render_verification_ticker_line, verification_breakdown,
+        fmt_secs, render_progress_bar, render_reporting_ticker_line, render_severity_line,
+        render_ticker_line, render_verification_line, render_verification_ticker_line,
+        verification_breakdown, TickerGuard,
     };
     use std::sync::atomic::Ordering;
     use std::time::Duration;

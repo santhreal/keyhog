@@ -421,7 +421,7 @@ fn load_commit_blob_set(
         Ok(o) => o,
         Err(error) => {
             tracing::warn!(%error, commit = %commit_id, "git commit object unreadable; its blobs were NOT scanned");
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            record_git_object_unreadable();
             return Ok(None);
         }
     };
@@ -429,7 +429,7 @@ fn load_commit_blob_set(
         Ok(c) => c,
         Err(error) => {
             tracing::warn!(%error, commit = %commit_id, "git object is not a commit; its blobs were NOT scanned");
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            record_git_object_unreadable();
             return Ok(None);
         }
     };
@@ -438,7 +438,7 @@ fn load_commit_blob_set(
         Ok(t) => t,
         Err(error) => {
             tracing::warn!(%error, commit = %commit_id, "git commit tree unreadable; its blobs were NOT scanned");
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            record_git_object_unreadable();
             return Ok(None);
         }
     };
@@ -513,8 +513,7 @@ impl GitBlobChunkDecoder<'_> {
                                 %candidate.oid,
                                 "git blob decode batch lost an outcome; blob NOT scanned"
                             );
-                            let _event =
-                                crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                            record_git_object_unreadable();
                             continue;
                         }
                     },
@@ -669,7 +668,7 @@ fn record_git_blob_skip(skip: GitBlobSkip) {
                 %error, %oid,
                 "git blob header unreadable (corrupt/missing object); blob NOT scanned"
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            record_git_object_unreadable();
         }
         GitBlobSkip::NonBlob { oid, kind } => {
             tracing::warn!(
@@ -677,7 +676,7 @@ fn record_git_blob_skip(skip: GitBlobSkip) {
                 kind,
                 "git tree entry resolved to a non-blob object; blob NOT scanned"
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            record_git_object_unreadable();
         }
         GitBlobSkip::OverMaxSize { oid, size, cap } => {
             tracing::warn!(
@@ -693,14 +692,14 @@ fn record_git_blob_skip(skip: GitBlobSkip) {
                 %error, %oid,
                 "git repository could not be opened by a blob decode worker; blob NOT scanned"
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            record_git_object_unreadable();
         }
         GitBlobSkip::ObjectUnreadable { oid, error } => {
             tracing::warn!(
                 %error, %oid,
                 "git blob object unreadable (corrupt/missing object); blob NOT scanned"
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            record_git_object_unreadable();
         }
         GitBlobSkip::Binary => {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
@@ -847,7 +846,7 @@ fn parse_commit_id_line(line: &str) -> Result<Option<gix::ObjectId>, SourceError
                 commit = commit_id,
                 "git reported an unparsable commit id; commit NOT scanned"
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            record_git_object_unreadable();
             Ok(None)
         }
     }
@@ -933,7 +932,7 @@ fn collect_tree_blobs_metadata(
             %error,
             "git tree walk failed; remaining blob(s) were NOT scanned"
         );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        record_git_object_unreadable();
     }
 }
 
@@ -1016,7 +1015,7 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
             %error,
             "git tree entry could not be read (corrupt tree object); its blob(s) were NOT scanned"
         );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        record_git_object_unreadable();
         Ok(())
     }
 
@@ -1029,7 +1028,7 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
             %error,
             "git subtree object unreadable; its blob(s) were NOT scanned"
         );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        record_git_object_unreadable();
         Ok(())
     }
 
@@ -1042,9 +1041,13 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
             %error,
             "git tree entry resolved to a non-tree object; its blob(s) were NOT scanned"
         );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        record_git_object_unreadable();
         Ok(())
     }
+}
+
+fn record_git_object_unreadable() {
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::GitObjectUnreadable);
 }
 
 struct HeadBlobPathCollector<'a> {

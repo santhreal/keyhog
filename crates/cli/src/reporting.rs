@@ -159,6 +159,11 @@ fn coverage_gap_summary() -> Vec<(String, usize)> {
             c.unreadable,
         ),
         (
+            "Git object unreadable or wrong object kind (referenced commit/tree/blob not scanned)"
+                .to_string(),
+            keyhog_sources::git_object_unreadable(),
+        ),
+        (
             "archive extraction truncated by decompression-bomb guard (remaining entries not scanned)".to_string(),
             c.archive_truncated,
         ),

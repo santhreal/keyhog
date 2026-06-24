@@ -350,6 +350,11 @@ fn reset_skip_counters_zeroes_every_category() {
     assert_eq!(snap.excluded, 0);
     assert_eq!(snap.unreadable, 0);
     assert_eq!(
+        keyhog_sources::git_object_unreadable(),
+        0,
+        "reset_skip_counters must also zero git object coverage-gap counters"
+    );
+    assert_eq!(
         snap.binary_section_name_unresolved, 0,
         "reset_skip_counters must also zero the binary section partial-parse counter"
     );

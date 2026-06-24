@@ -99,6 +99,30 @@ fn scan_exit_precedence_keeps_system_failure_above_source_coverage_gap() {
 }
 
 #[test]
+fn git_object_coverage_gaps_are_reported_separately() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let run = std::fs::read_to_string(root.join("src/orchestrator/run.rs")).expect("read run");
+    let reporting = std::fs::read_to_string(root.join("src/orchestrator/reporting.rs"))
+        .expect("read reporting");
+    let report = std::fs::read_to_string(root.join("src/reporting.rs")).expect("read report");
+
+    assert!(
+        run.contains("keyhog_sources::git_object_unreadable()"),
+        "git object drops must make clean-looking scans exit as incomplete coverage"
+    );
+    assert!(
+        reporting.contains("Git object(s) NOT scanned")
+            && reporting.contains("keyhog_sources::git_object_unreadable()"),
+        "terminal summary must not lump unreadable Git objects under unreadable file wording"
+    );
+    assert!(
+        report.contains("Git object unreadable or wrong object kind")
+            && report.contains("keyhog_sources::git_object_unreadable()"),
+        "structured report coverage summaries must surface the Git object gap category"
+    );
+}
+
+#[test]
 fn scan_runtime_reset_clears_process_global_scan_state() {
     API.seed_scan_runtime_state_for_test();
     let seeded = API.scan_runtime_snapshot();
