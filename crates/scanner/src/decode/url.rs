@@ -316,10 +316,19 @@ fn quoted_printable_decode(input: &str) -> Result<String, ()> {
                     index += 3;
                     continue;
                 }
-                let high = hex_val(input_bytes[index + 1])?;
-                let low = hex_val(input_bytes[index + 2])?;
-                bytes.push((high << 4) | low);
-                index += 3;
+                match (
+                    hex_val(input_bytes[index + 1]),
+                    hex_val(input_bytes[index + 2]),
+                ) {
+                    (Ok(high), Ok(low)) => {
+                        bytes.push((high << 4) | low);
+                        index += 3;
+                    }
+                    _ => {
+                        bytes.push(b'=');
+                        index += 1;
+                    }
+                }
             } else {
                 bytes.push(b'=');
                 index += 1;
@@ -395,9 +404,11 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
 
         let mut digits = String::new();
         let mut preserved_malformed = false;
+        let mut consumed_terminator = false;
         while let Some(&(_, next)) = chars.peek() {
             if next == ';' {
                 chars.next();
+                consumed_terminator = true;
                 break;
             }
             if (is_hex && next.is_ascii_hexdigit()) || (!is_hex && next.is_ascii_digit()) {
@@ -430,12 +441,18 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
                 if is_hex {
                     decoded.push('x');
                 }
+                if consumed_terminator {
+                    decoded.push(';');
+                }
             } else {
                 let out = lazy_decoded_prefix(&mut decoded, input, idx);
                 out.push('&');
                 out.push('#');
                 if is_hex {
                     out.push('x');
+                }
+                if consumed_terminator {
+                    out.push(';');
                 }
             }
             continue;

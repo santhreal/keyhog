@@ -92,6 +92,27 @@ fn html_numeric_entity_malformed_preserves_characters_after_valid_entity() {
 }
 
 #[test]
+fn html_numeric_entity_empty_malformed_preserves_terminator_after_valid_entity() {
+    let text = r#"<p>&#65;middle&#;suffix&#x;tail</p>"#;
+    let chunk = Chunk {
+        data: text.into(),
+        metadata: Default::default(),
+    };
+
+    let decoded = decode_chunk(&chunk, 1, false, None, None);
+    let html = decoded
+        .iter()
+        .find(|c| c.metadata.source_type.contains("html-numeric-entity"))
+        .expect("valid numeric entity should emit a decoded chunk");
+
+    assert!(
+        html.data.contains("Amiddle&#;suffix&#x;tail"),
+        "empty malformed numeric entities must preserve consumed semicolons; got: {}",
+        html.data
+    );
+}
+
+#[test]
 fn html_numeric_entity_malformed_no_terminator() {
     // `&#65` without closing `;` may not parse (depends on implementation).
     let text = r#"<p>&#65</p>"#;

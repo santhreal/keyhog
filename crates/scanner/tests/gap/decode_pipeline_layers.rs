@@ -351,6 +351,20 @@ fn pipeline_surfaces_quoted_printable_single_layer() {
 }
 
 #[test]
+fn pipeline_quoted_printable_preserves_literal_equals_after_valid_escape() {
+    let c = chunk("X-Token: ghp=5Fabcdefghijklmnopqrstuvwxyz1234567890AB status=ok");
+    let out = decode_all(&c);
+    let hit = find_decoded(&out, "ghp_abcdefghijklmnopqrstuvwxyz1234567890AB")
+        .expect("valid quoted-printable escape must survive a later literal assignment");
+    assert!(
+        hit.data.as_ref().contains("status=ok"),
+        "literal non-hex assignment must be preserved after quoted-printable decode: {}",
+        hit.data
+    );
+    assert!(hit.metadata.source_type.ends_with("/quoted-printable"));
+}
+
+#[test]
 fn pipeline_surfaces_z85_single_layer() {
     // z85 of b"helloAKIA1234567".
     let c = chunk("blob=\"xK#0@z:v2/k}$bJg=mfI\"");
