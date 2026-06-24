@@ -189,6 +189,38 @@ fn html_report_summary_surfaces_not_checked_findings() {
 }
 
 #[test]
+fn html_report_service_bars_and_badges_are_contrast_guarded() {
+    let out = render(&sample_finding());
+
+    assert!(
+        out.contains("const SERVICE_BAR_COLORS = [")
+            && out.contains("function serviceBarColor(rank)")
+            && out.contains("item.style.setProperty('--service-bar-color', serviceBarColor(rank));"),
+        "Top Services bars must use a closed palette instead of one flat accent or scan-derived CSS"
+    );
+    assert!(
+        out.contains(".chart-bar-fill { height: 100%; background: var(--service-bar-color, var(--accent-primary)); }"),
+        "service bar fill must consume the closed palette custom property"
+    );
+    assert!(
+        !out.contains("background-color: var(--accent-primary);"),
+        "Top Services bars must not regress to one flat accent color"
+    );
+    assert!(
+        out.contains("--badge-critical-ink:")
+            && out.contains("--badge-high-ink:")
+            && out.contains("--badge-medium-ink:"),
+        "filled heat badges need explicit per-theme ink tokens"
+    );
+    assert!(
+        out.contains(".badge-critical    { color: var(--badge-critical-ink); background: var(--color-critical); border-color: var(--color-critical); }")
+            && out.contains(".badge-high        { color: var(--badge-high-ink);     background: var(--color-high);     border-color: var(--color-high); }")
+            && out.contains(".badge-medium      { color: var(--badge-medium-ink);   background: var(--color-medium);   border-color: var(--color-medium); }"),
+        "critical/high/medium badges must be filled heat badges with explicit contrast text"
+    );
+}
+
+#[test]
 fn html_report_embeds_scan_metadata_panel() {
     let out = render_with_metadata(HtmlScanMetadata {
         keyhog_version: "1.2.3".to_string(),

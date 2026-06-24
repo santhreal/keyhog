@@ -370,6 +370,17 @@ function severityBadgeClass(raw) {
   return SEVERITY_BADGE_CLASSES[(raw || '').toLowerCase()] || 'badge-info';
 }
 
+const SERVICE_BAR_COLORS = [
+  'var(--color-critical)',
+  'var(--color-high)',
+  'var(--color-medium)',
+  'var(--color-client-safe)',
+  'var(--color-live)',
+];
+function serviceBarColor(rank) {
+  return SERVICE_BAR_COLORS[rank % SERVICE_BAR_COLORS.length];
+}
+
 function verificationDotClass(raw) {
   const statusKey = (raw || '').toLowerCase();
   if (statusKey.startsWith('live')) return 'dot-live';
@@ -619,17 +630,18 @@ function renderMetrics(findings, isInitial) {
 
   const maxVal = sortedServices[0][1];
 
-  sortedServices.forEach(([name, count]) => {
+  sortedServices.forEach(([name, count], rank) => {
     const pct = (count / maxVal) * 100;
     const item = document.createElement('div');
     item.className = 'chart-bar-item';
+    item.style.setProperty('--service-bar-color', serviceBarColor(rank));
     item.innerHTML = `
       <div class="chart-bar-label">
         <span><strong>${escapeHtml(name)}</strong></span>
         <span>${count}</span>
       </div>
       <div class="chart-bar-track">
-        <div class="chart-bar-fill" style="width: ${pct}%; background-color: var(--accent-primary);"></div>
+        <div class="chart-bar-fill" style="width: ${pct}%;"></div>
       </div>
     `;
     serviceContainer.appendChild(item);
