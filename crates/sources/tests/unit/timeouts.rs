@@ -28,3 +28,12 @@ fn ghidra_analysis_timeout_is_five_minutes() {
         std::time::Duration::from_secs(300)
     );
 }
+
+#[cfg(feature = "docker")]
+#[test]
+fn docker_export_timeout_is_five_minutes() {
+    assert_eq!(
+        TestApi.docker_export_timeout(),
+        std::time::Duration::from_secs(300)
+    );
+}

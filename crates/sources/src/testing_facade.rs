@@ -212,6 +212,8 @@ pub mod testing {
         fn git_clone_timeout(&self) -> std::time::Duration;
         #[cfg(feature = "binary")]
         fn ghidra_analysis_timeout(&self) -> std::time::Duration;
+        #[cfg(feature = "docker")]
+        fn docker_export_timeout(&self) -> std::time::Duration;
         #[cfg(feature = "binary")]
         fn binary_strings_only<P>(&self, path: P) -> crate::BinarySource
         where
@@ -779,6 +781,11 @@ pub mod testing {
         #[cfg(feature = "binary")]
         fn ghidra_analysis_timeout(&self) -> std::time::Duration {
             crate::timeouts::GHIDRA_ANALYSIS
+        }
+
+        #[cfg(feature = "docker")]
+        fn docker_export_timeout(&self) -> std::time::Duration {
+            crate::timeouts::DOCKER_EXPORT
         }
 
         #[cfg(feature = "binary")]

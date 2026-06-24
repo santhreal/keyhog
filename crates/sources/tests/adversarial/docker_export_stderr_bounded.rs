@@ -51,6 +51,22 @@ exit 42
     );
 }
 
+#[cfg(feature = "docker")]
+#[test]
+fn docker_export_uses_shared_timeout_and_reaps_on_timeout() {
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/docker.rs"))
+        .expect("docker source readable");
+    assert!(src.contains("crate::timeouts::DOCKER_EXPORT"));
+    assert!(src.contains(".wait_timeout(timeout)"));
+    assert!(src.contains("fn kill_and_reap_docker_child("));
+    assert!(src.contains("child.kill()"));
+    assert!(src.contains("child.wait()"));
+    assert!(
+        !src.contains("let status = child.wait()"),
+        "docker image export must not wait forever without the shared timeout"
+    );
+}
+
 #[cfg(any(not(feature = "docker"), not(unix)))]
 #[test]
 fn docker_export_failure_stderr_is_bounded() {

@@ -20,3 +20,7 @@ pub(crate) const GIT_CLONE: std::time::Duration = std::time::Duration::from_secs
 /// Ghidra `analyzeHeadless` wall-clock budget.
 #[cfg(feature = "binary")]
 pub(crate) const GHIDRA_ANALYSIS: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// Docker `image save` wall-clock budget.
+#[cfg(feature = "docker")]
+pub(crate) const DOCKER_EXPORT: std::time::Duration = std::time::Duration::from_secs(300);

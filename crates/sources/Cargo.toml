@@ -53,8 +53,9 @@ s3 = [
     "dep:keyhog-verifier",
 ]
 # `tar` is now an unconditional dependency (used by the always-on filesystem
-# tarball-unpack path), so the docker feature only needs to pull in tempfile.
-docker = ["dep:tempfile"]
+# tarball-unpack path), so the docker feature only pulls in its workspace and
+# subprocess timeout support.
+docker = ["dep:tempfile", "dep:wait-timeout"]
 binary = ["dep:goblin", "dep:tempfile", "dep:glob", "dep:wait-timeout"]  # ELF/PE/Mach-O + Ghidra decompiler
 
 [dependencies]

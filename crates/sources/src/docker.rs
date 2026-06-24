@@ -6,10 +6,11 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::{Component, Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use regex::Regex;
+use wait_timeout::ChildExt;
 
 use crate::FilesystemSource;
 
@@ -201,8 +202,74 @@ fn export_docker_image_archive(
         .stderr
         .take()
         .map(|pipe| std::thread::spawn(move || drain_docker_stderr_excerpt(pipe)));
-    let status = child.wait().map_err(SourceError::Io)?;
-    let stderr = match stderr {
+    let timeout = crate::timeouts::DOCKER_EXPORT;
+    let status = match child.wait_timeout(timeout) {
+        Ok(Some(status)) => status,
+        Ok(None) => {
+            let cleanup = kill_and_reap_docker_child(&mut child, "docker image export timeout");
+            let cleanup_message = match cleanup {
+                Ok(()) => String::new(),
+                Err(error) => format!("; cleanup failed: {error}"),
+            };
+            let stderr = if cleanup_message.is_empty() {
+                join_docker_stderr(stderr)
+            } else {
+                String::new()
+            };
+            return Err(SourceError::Other(format!(
+                "docker image export timed out after {}s for {image}{cleanup_message}{}",
+                timeout.as_secs(),
+                docker_stderr_suffix(&stderr)
+            )));
+        }
+        Err(error) => {
+            let cleanup = kill_and_reap_docker_child(&mut child, "docker image export wait error");
+            let cleanup_message = match cleanup {
+                Ok(()) => String::new(),
+                Err(cleanup_error) => format!("; cleanup failed: {cleanup_error}"),
+            };
+            let stderr = if cleanup_message.is_empty() {
+                join_docker_stderr(stderr)
+            } else {
+                String::new()
+            };
+            return Err(SourceError::Other(format!(
+                "failed to wait for docker image export for {image}: {error}{cleanup_message}{}",
+                docker_stderr_suffix(&stderr)
+            )));
+        }
+    };
+    let stderr = join_docker_stderr(stderr);
+    if status.success() {
+        return Ok(());
+    }
+
+    Err(SourceError::Other(format!(
+        "failed to export docker image: {image}: {}",
+        stderr.trim()
+    )))
+}
+
+fn kill_and_reap_docker_child(child: &mut Child, context: &str) -> std::io::Result<()> {
+    let kill_result = child.kill();
+    let wait_result = child.wait();
+    match (kill_result, wait_result) {
+        (Ok(()), Ok(_)) => Ok(()),
+        (Err(kill_error), Ok(_)) if kill_error.kind() == std::io::ErrorKind::InvalidInput => Ok(()),
+        (Err(kill_error), Ok(status)) => Err(std::io::Error::other(format!(
+            "{context}: failed to kill child before reap: {kill_error}; reap status: {status}"
+        ))),
+        (Ok(()), Err(wait_error)) => Err(std::io::Error::other(format!(
+            "{context}: killed child but failed to reap it: {wait_error}"
+        ))),
+        (Err(kill_error), Err(wait_error)) => Err(std::io::Error::other(format!(
+            "{context}: failed to kill child: {kill_error}; failed to reap child: {wait_error}"
+        ))),
+    }
+}
+
+fn join_docker_stderr(stderr: Option<std::thread::JoinHandle<String>>) -> String {
+    match stderr {
         Some(handle) => match handle.join() {
             Ok(stderr) => stderr,
             Err(_panic_payload) => {
@@ -216,15 +283,16 @@ fn export_docker_image_archive(
             tracing::warn!("docker image export stderr pipe was unavailable");
             String::new()
         }
-    };
-    if status.success() {
-        return Ok(());
     }
+}
 
-    Err(SourceError::Other(format!(
-        "failed to export docker image: {image}: {}",
-        stderr.trim()
-    )))
+fn docker_stderr_suffix(stderr: &str) -> String {
+    let stderr = stderr.trim();
+    if stderr.is_empty() {
+        String::new()
+    } else {
+        format!(": {stderr}")
+    }
 }
 
 fn drain_docker_stderr_excerpt(mut stderr_pipe: impl Read) -> String {
