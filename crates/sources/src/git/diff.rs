@@ -143,18 +143,17 @@ fn stream_added_lines(
     let metadata_commit = head_commit.unwrap_or_else(|| base_commit.clone()); // LAW10: absent verify-spec field => documented default (GET / AuthSpec::None / first); recall-safe
     let metadata = super::get_commit_metadata(&repo_arg, &metadata_commit)?;
     let mut untracked_chunks = if head_ref.is_none() {
-        list_untracked_worktree_chunks(
-            &repo_arg,
-            &repo_root,
-            &metadata_commit,
-            &metadata.author,
-            &metadata.date,
+        Some(UntrackedWorktreeChunks::new(
+            repo_arg.clone(),
+            repo_root.clone(),
+            metadata_commit.clone(),
+            metadata.author.clone(),
+            metadata.date.clone(),
             limits,
-        )?
+        ))
     } else {
-        Vec::new()
-    }
-    .into_iter();
+        None
+    };
 
     let mut current_path: Option<String> = None;
     let mut current_content = String::new();
@@ -186,11 +185,19 @@ fn stream_added_lines(
             }
         }
         if emit_untracked {
-            match untracked_chunks.next() {
-                Some(chunk) => return Some(Ok(chunk)),
-                None => {
+            let Some(scanner) = untracked_chunks.as_mut() else {
+                done = true;
+                return None;
+            };
+            match scanner.next_chunk() {
+                Ok(Some(chunk)) => return Some(Ok(chunk)),
+                Ok(None) => {
                     done = true;
                     return None;
+                }
+                Err(error) => {
+                    done = true;
+                    return Some(Err(error));
                 }
             }
         }
@@ -236,7 +243,21 @@ fn stream_added_lines(
                         ) {
                             Ok(()) => {
                                 emit_untracked = true;
-                                return untracked_chunks.next().map(Ok);
+                                let Some(scanner) = untracked_chunks.as_mut() else {
+                                    done = true;
+                                    return None;
+                                };
+                                match scanner.next_chunk() {
+                                    Ok(Some(chunk)) => return Some(Ok(chunk)),
+                                    Ok(None) => {
+                                        done = true;
+                                        return None;
+                                    }
+                                    Err(error) => {
+                                        done = true;
+                                        return Some(Err(error));
+                                    }
+                                }
                             }
                             Err(error) => {
                                 done = true;
@@ -372,14 +393,66 @@ fn stream_added_lines(
     }))
 }
 
-fn list_untracked_worktree_chunks(
-    repo_arg: &str,
-    repo_root: &Path,
-    metadata_commit: &str,
-    author: &str,
-    date: &str,
+struct UntrackedWorktreeChunks {
+    repo_arg: String,
+    repo_root: PathBuf,
+    metadata_commit: String,
+    author: String,
+    date: String,
     limits: crate::SourceLimits,
-) -> Result<Vec<Chunk>, SourceError> {
+    paths: Option<std::vec::IntoIter<String>>,
+}
+
+impl UntrackedWorktreeChunks {
+    fn new(
+        repo_arg: String,
+        repo_root: PathBuf,
+        metadata_commit: String,
+        author: String,
+        date: String,
+        limits: crate::SourceLimits,
+    ) -> Self {
+        Self {
+            repo_arg,
+            repo_root,
+            metadata_commit,
+            author,
+            date,
+            limits,
+            paths: None,
+        }
+    }
+
+    fn next_chunk(&mut self) -> Result<Option<Chunk>, SourceError> {
+        if self.paths.is_none() {
+            self.paths =
+                Some(list_untracked_worktree_paths(&self.repo_arg, self.limits)?.into_iter());
+        }
+        let Some(paths) = self.paths.as_mut() else {
+            return Err(SourceError::Other(
+                "git-diff untracked path iterator failed to initialize".into(),
+            ));
+        };
+        while let Some(rel) = paths.next() {
+            if let Some(chunk) = read_untracked_worktree_chunk(
+                &self.repo_root,
+                &rel,
+                &self.metadata_commit,
+                &self.author,
+                &self.date,
+                self.limits,
+            )? {
+                return Ok(Some(chunk));
+            }
+        }
+        Ok(None)
+    }
+}
+
+fn list_untracked_worktree_paths(
+    repo_arg: &str,
+    limits: crate::SourceLimits,
+) -> Result<Vec<String>, SourceError> {
     let mut command = Command::new(super::git_bin()?);
     command.args([
         "-C",
@@ -459,70 +532,82 @@ fn list_untracked_worktree_chunks(
         "enumerating untracked paths",
     )?;
 
-    let mut chunks = Vec::new();
+    let mut paths = Vec::new();
     for raw in raw_paths {
         let rel = std::str::from_utf8(&raw).map_err(|error| {
             SourceError::Git(format!("git reported non-UTF-8 untracked path: {error}"))
         })?;
         validate_untracked_relative_path(rel)?;
-        let full_path = repo_root.join(rel);
-        let metadata = std::fs::symlink_metadata(&full_path).map_err(SourceError::Io)?;
-        if !metadata.file_type().is_file() {
-            return Err(SourceError::Git(format!(
-                "git-diff untracked path '{}' is not a regular file",
-                rel
-            )));
-        }
-        if metadata.len() > limits.git_blob_bytes {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            return Err(SourceError::Git(format!(
-                "git-diff untracked path '{}' exceeds git_blob_bytes limit ({} > {})",
-                rel,
-                metadata.len(),
-                limits.git_blob_bytes
-            )));
-        }
-        let mut file = std::fs::File::open(&full_path).map_err(SourceError::Io)?;
-        let mut bytes = Vec::new();
-        file.by_ref()
-            .take(limits.git_blob_bytes.saturating_add(1))
-            .read_to_end(&mut bytes)
-            .map_err(SourceError::Io)?;
-        if bytes.len() as u64 > limits.git_blob_bytes {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            return Err(SourceError::Git(format!(
-                "git-diff untracked path '{}' grew beyond git_blob_bytes limit while reading",
-                rel
-            )));
-        }
-        let Some(text) = crate::filesystem::decode_text_file(&bytes) else {
-            eprintln!(
-                "keyhog: WARNING: git-diff untracked path '{}' decoded as binary/non-text; it was NOT scanned.",
-                rel
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-            continue;
-        };
-        if text.trim().is_empty() {
-            continue;
-        }
-        chunks.push(Chunk {
-            data: text.into(),
-            metadata: ChunkMetadata {
-                base_offset: 0,
-                base_line: 0,
-                source_type: "git-diff".into(),
-                path: Some(rel.to_string()),
-                commit: Some(metadata_commit.to_string()),
-                author: Some(author.to_string()),
-                date: Some(date.to_string()),
-                mtime_ns: None,
-                size_bytes: Some(metadata.len()),
-                decoded_span: None,
-            },
-        });
+        paths.push(rel.to_string());
     }
-    Ok(chunks)
+    Ok(paths)
+}
+
+fn read_untracked_worktree_chunk(
+    repo_root: &Path,
+    rel: &str,
+    metadata_commit: &str,
+    author: &str,
+    date: &str,
+    limits: crate::SourceLimits,
+) -> Result<Option<Chunk>, SourceError> {
+    validate_untracked_relative_path(rel)?;
+    let full_path = repo_root.join(rel);
+    let metadata = std::fs::symlink_metadata(&full_path).map_err(SourceError::Io)?;
+    if !metadata.file_type().is_file() {
+        return Err(SourceError::Git(format!(
+            "git-diff untracked path '{}' is not a regular file",
+            rel
+        )));
+    }
+    if metadata.len() > limits.git_blob_bytes {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+        return Err(SourceError::Git(format!(
+            "git-diff untracked path '{}' exceeds git_blob_bytes limit ({} > {})",
+            rel,
+            metadata.len(),
+            limits.git_blob_bytes
+        )));
+    }
+    let mut file = std::fs::File::open(&full_path).map_err(SourceError::Io)?;
+    let mut bytes = Vec::new();
+    file.by_ref()
+        .take(limits.git_blob_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(SourceError::Io)?;
+    if bytes.len() as u64 > limits.git_blob_bytes {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+        return Err(SourceError::Git(format!(
+            "git-diff untracked path '{}' grew beyond git_blob_bytes limit while reading",
+            rel
+        )));
+    }
+    let Some(text) = crate::filesystem::decode_text_file(&bytes) else {
+        eprintln!(
+            "keyhog: WARNING: git-diff untracked path '{}' decoded as binary/non-text; it was NOT scanned.",
+            rel
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+        return Ok(None);
+    };
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(Chunk {
+        data: text.into(),
+        metadata: ChunkMetadata {
+            base_offset: 0,
+            base_line: 0,
+            source_type: "git-diff".into(),
+            path: Some(rel.to_string()),
+            commit: Some(metadata_commit.to_string()),
+            author: Some(author.to_string()),
+            date: Some(date.to_string()),
+            mtime_ns: None,
+            size_bytes: Some(metadata.len()),
+            decoded_span: None,
+        },
+    }))
 }
 
 fn validate_untracked_relative_path(path: &str) -> Result<(), SourceError> {

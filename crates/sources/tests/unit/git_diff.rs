@@ -182,6 +182,44 @@ fn git_diff_hunk_flush_uses_resolved_git_blob_byte_cap() {
 
 #[cfg(feature = "git")]
 #[test]
+fn git_diff_yields_tracked_chunks_before_untracked_file_errors() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(&repo_path, "tracked.txt", "base = true\n", "base");
+    std::fs::write(
+        repo_path.join("tracked.txt"),
+        "base = true\ntracked_secret = sk-live-tracked\n",
+    )
+    .unwrap();
+    std::fs::write(repo_path.join("oversized-untracked.txt"), "x".repeat(4096)).unwrap();
+
+    let mut limits = SourceLimits::default();
+    limits.git_blob_bytes = 1024;
+    let source = GitDiffSource::new(repo_path, "HEAD").with_limits(limits);
+    let mut chunks = source.chunks();
+
+    let first = chunks
+        .next()
+        .expect("tracked diff chunk should be yielded first")
+        .expect("tracked diff chunk must not be blocked by untracked-file errors");
+    assert!(
+        first.data.contains("tracked_secret = sk-live-tracked"),
+        "first git-diff chunk must come from the tracked worktree diff; got {first:?}"
+    );
+
+    let second = chunks
+        .next()
+        .expect("oversized untracked file should surface after tracked chunks");
+    let error = second.expect_err("untracked oversized file must surface as an error");
+    let message = error.to_string();
+    assert!(
+        message.contains("oversized-untracked.txt")
+            && message.contains("exceeds git_blob_bytes limit"),
+        "expected untracked size-cap error after tracked chunk, got {message}"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
 fn git_diff_source_rejects_nonexistent_ref() {
     let (_temp_dir, repo_path) = create_test_repo();
     commit_file(&repo_path, "file.txt", "content", "Initial commit");

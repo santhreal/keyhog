@@ -385,11 +385,13 @@ fn git_diff_waits_for_diff_child_before_untracked_chunks() {
     let source = std::fs::read_to_string(path).expect("git diff source readable");
     assert!(
         source.contains("wait_after_final_chunk")
+            && source.contains("UntrackedWorktreeChunks::new")
+            && source.contains("scanner.next_chunk()")
             && source.contains(
                 "super::wait_for_git_child(&mut child, \"git diff\", \"enumerating changed lines\")"
             )
             && source.find("super::wait_for_git_child(&mut child, \"git diff\"")
-                < source.find("untracked_chunks.next().map(Ok)"),
+                < source.find("emit_untracked = true;"),
         "git diff iterator must wait on git diff before worktree-only chunks so command failure cannot look like clean changed-line coverage"
     );
 }
