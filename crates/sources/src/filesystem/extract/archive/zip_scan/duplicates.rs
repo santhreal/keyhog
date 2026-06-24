@@ -1,7 +1,5 @@
-use super::{
-    chunk_from_archive_content, emit_archive_entry_error, report_archive_truncation,
-    validate_scan_archive_entry_name, zip_external_attrs_are_special,
-};
+use super::super::{emit_archive_content, emit_archive_entry_error, report_archive_truncation};
+use super::{validate_scan_archive_entry_name, zip_external_attrs_are_special};
 use crate::filesystem::filter;
 use keyhog_core::{Chunk, SourceError};
 use std::collections::{HashMap, HashSet};
@@ -265,11 +263,16 @@ pub(super) fn extract_zip_archive_from_central_entries(
             }
             break;
         }
-        if let Some(chunk) = chunk_from_archive_content(archive_display, &entry_path_name, content)
-        {
-            if !emit(chunk) {
-                return;
-            }
+        if !emit_archive_content(
+            archive_display,
+            &entry_path_name,
+            content,
+            per_entry_cap,
+            total_budget,
+            &mut total_uncompressed,
+            emit,
+        ) {
+            return;
         }
     }
 }

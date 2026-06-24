@@ -291,6 +291,80 @@ pub(super) fn chunk_from_archive_content(
     entry_name: &str,
     content: Vec<u8>,
 ) -> Option<Result<Chunk, SourceError>> {
+    chunk_from_archive_content_inner(archive_display, entry_name, content)
+}
+
+pub(super) fn emit_archive_content(
+    archive_display: &str,
+    entry_name: &str,
+    content: Vec<u8>,
+    per_entry_cap: u64,
+    total_budget: u64,
+    total_uncompressed: &mut u64,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    emit_archive_content_with_depth(
+        archive_display,
+        entry_name,
+        content,
+        per_entry_cap,
+        total_budget,
+        total_uncompressed,
+        0,
+        emit,
+    )
+}
+
+pub(super) fn emit_archive_content_with_depth(
+    archive_display: &str,
+    entry_name: &str,
+    content: Vec<u8>,
+    per_entry_cap: u64,
+    total_budget: u64,
+    total_uncompressed: &mut u64,
+    nested_depth: usize,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    const MAX_EMBEDDED_ARCHIVE_DEPTH: usize = 8;
+
+    if entry_is_embedded_openpack_archive(entry_name, &content) {
+        let nested_display = format!("{archive_display}//{entry_name}");
+        if nested_depth >= MAX_EMBEDDED_ARCHIVE_DEPTH {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return emit(Err(SourceError::Other(format!(
+                "failed to scan embedded ZIP archive '{nested_display}': maximum nested archive depth {MAX_EMBEDDED_ARCHIVE_DEPTH} exceeded; embedded archive was not scanned"
+            ))));
+        }
+        return zip_scan::extract_embedded_zip_archive(
+            content,
+            &nested_display,
+            per_entry_cap,
+            total_budget,
+            total_uncompressed,
+            nested_depth + 1,
+            emit,
+        );
+    }
+
+    match chunk_from_archive_content_inner(archive_display, entry_name, content) {
+        Some(chunk) => emit(chunk),
+        None => true,
+    }
+}
+
+fn entry_is_embedded_openpack_archive(entry_name: &str, content: &[u8]) -> bool {
+    let has_openpack_ext = Path::new(entry_name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(is_openpack_archive_ext);
+    has_openpack_ext && content.starts_with(b"PK")
+}
+
+fn chunk_from_archive_content_inner(
+    archive_display: &str,
+    entry_name: &str,
+    content: Vec<u8>,
+) -> Option<Result<Chunk, SourceError>> {
     let entry_path = || format!("{archive_display}//{entry_name}");
     match String::from_utf8(content) {
         Ok(s) if !s.is_empty() => Some(Ok(Chunk {

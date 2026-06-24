@@ -1,11 +1,11 @@
 use super::{
-    chunk_from_archive_content, emit_archive_entry_error, emit_archive_unreadable_error,
+    emit_archive_content_with_depth, emit_archive_entry_error, emit_archive_unreadable_error,
     report_archive_truncation, validate_scan_archive_entry_name,
 };
 use crate::filesystem::filter;
 use keyhog_core::{Chunk, SourceError};
 use std::fs::File;
-use std::io::Read;
+use std::io::{Cursor, Read, Seek};
 use std::path::Path;
 
 mod duplicates;
@@ -88,7 +88,7 @@ pub(super) fn extract_zip_archive(
             return;
         }
     };
-    let mut archive = match zip::ZipArchive::new(file) {
+    let archive = match zip::ZipArchive::new(file) {
         Ok(archive) => archive,
         Err(error) => {
             tracing::warn!(
@@ -111,12 +111,69 @@ pub(super) fn extract_zip_archive(
     };
 
     let mut total_uncompressed = 0u64;
+    if !extract_zip_archive_entries(
+        archive,
+        archive_display,
+        per_entry_cap,
+        total_budget,
+        &mut total_uncompressed,
+        0,
+        emit,
+    ) {
+        return;
+    }
+}
+
+pub(super) fn extract_embedded_zip_archive(
+    content: Vec<u8>,
+    archive_display: &str,
+    per_entry_cap: u64,
+    total_budget: u64,
+    total_uncompressed: &mut u64,
+    nested_depth: usize,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let archive = match zip::ZipArchive::new(Cursor::new(content)) {
+        Ok(archive) => archive,
+        Err(error) => {
+            tracing::warn!(
+                archive = archive_display,
+                %error,
+                "cannot read embedded zip archive directory; skipping"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return emit(Err(SourceError::Other(format!(
+                "failed to scan embedded ZIP archive '{archive_display}': cannot read archive directory ({error}); embedded archive was not scanned"
+            ))));
+        }
+    };
+
+    extract_zip_archive_entries(
+        archive,
+        archive_display,
+        per_entry_cap,
+        total_budget,
+        total_uncompressed,
+        nested_depth,
+        emit,
+    )
+}
+
+fn extract_zip_archive_entries<R: Read + Seek>(
+    mut archive: zip::ZipArchive<R>,
+    archive_display: &str,
+    per_entry_cap: u64,
+    total_budget: u64,
+    total_uncompressed: &mut u64,
+    nested_depth: usize,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
     for index in 0..archive.len() {
         let mut entry = match archive.by_index(index) {
             Ok(entry) => entry,
             Err(error) => {
                 tracing::warn!(
-                    archive = %path.display(),
+                    archive = archive_display,
                     index,
                     %error,
                     "cannot read archive entry metadata; skipping entry"
@@ -125,7 +182,7 @@ pub(super) fn extract_zip_archive(
                 if !emit(Err(SourceError::Other(format!(
                     "failed to scan ZIP entry #{index} in '{archive_display}': cannot read entry metadata ({error}); entry was not scanned"
                 )))) {
-                    return;
+                    return false;
                 }
                 continue;
             }
@@ -140,20 +197,20 @@ pub(super) fn extract_zip_archive(
         }
         if let Err(reason) = validate_scan_archive_entry_name(&entry_name) {
             tracing::warn!(
-                archive = %path.display(),
+                archive = archive_display,
                 entry = %entry_name,
                 reason,
                 "skipping unsafe archive entry name"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             if !emit_archive_entry_error(emit, "ZIP entry", archive_display, &entry_name, reason) {
-                return;
+                return false;
             }
             continue;
         }
         if zip_entry_is_special(&entry) {
             tracing::warn!(
-                archive = %path.display(),
+                archive = archive_display,
                 entry = %entry_name,
                 "skipping special archive entry"
             );
@@ -164,7 +221,7 @@ pub(super) fn extract_zip_archive(
         let advertised_uncompressed = entry.size();
         if advertised_uncompressed > per_entry_cap {
             tracing::warn!(
-                archive = %path.display(),
+                archive = archive_display,
                 entry = %entry_name,
                 size = advertised_uncompressed,
                 "skipping archive entry: uncompressed size exceeds per-file cap"
@@ -173,38 +230,38 @@ pub(super) fn extract_zip_archive(
             continue;
         }
         if advertised_uncompressed > 0
-            && total_uncompressed.saturating_add(advertised_uncompressed) > total_budget
+            && (*total_uncompressed).saturating_add(advertised_uncompressed) > total_budget
         {
             let error = report_archive_truncation(
                 archive_display,
-                total_uncompressed.saturating_add(advertised_uncompressed),
+                (*total_uncompressed).saturating_add(advertised_uncompressed),
                 total_budget,
             );
             if !emit(Err(error)) {
-                return;
+                return false;
             }
             break;
         }
 
         let read_limit = per_entry_cap.saturating_add(1).min(
             total_budget
-                .saturating_sub(total_uncompressed)
+                .saturating_sub(*total_uncompressed)
                 .saturating_add(1),
         );
         let mut content = Vec::new();
         if let Err(error) = (&mut entry).take(read_limit).read_to_end(&mut content) {
             tracing::warn!(
-                archive = %path.display(),
+                archive = archive_display,
                 entry = %entry_name,
                 %error,
                 "cannot read archive entry; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             if !emit(Err(SourceError::Other(format!(
-                "failed to scan ZIP entry '{archive_display}//{entry_name}': cannot read entry ({error}); entry was not scanned"
-            )))) {
-                return;
-            }
+                    "failed to scan ZIP entry '{archive_display}//{entry_name}': cannot read entry ({error}); entry was not scanned"
+                )))) {
+                    return false;
+                }
             continue;
         }
 
@@ -212,7 +269,7 @@ pub(super) fn extract_zip_archive(
             Ok(len) => len,
             Err(error) => {
                 tracing::warn!(
-                    archive = %path.display(),
+                    archive = archive_display,
                     entry = %entry_name,
                     %error,
                     "archive entry decoded length cannot be represented; skipping"
@@ -221,14 +278,14 @@ pub(super) fn extract_zip_archive(
                 if !emit(Err(SourceError::Other(format!(
                     "failed to scan ZIP entry '{archive_display}//{entry_name}': decoded length cannot be represented ({error}); entry was not scanned"
                 )))) {
-                    return;
+                    return false;
                 }
                 continue;
             }
         };
         if actual_uncompressed > per_entry_cap {
             tracing::warn!(
-                archive = %path.display(),
+                archive = archive_display,
                 entry = %entry_name,
                 size = actual_uncompressed,
                 "skipping archive entry: decoded size exceeds per-file cap"
@@ -236,22 +293,30 @@ pub(super) fn extract_zip_archive(
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             continue;
         }
-        total_uncompressed = total_uncompressed.saturating_add(actual_uncompressed);
-        if total_uncompressed > total_budget {
+        *total_uncompressed = (*total_uncompressed).saturating_add(actual_uncompressed);
+        if *total_uncompressed > total_budget {
             let error =
-                report_archive_truncation(archive_display, total_uncompressed, total_budget);
+                report_archive_truncation(archive_display, *total_uncompressed, total_budget);
             if !emit(Err(error)) {
-                return;
+                return false;
             }
             break;
         }
 
-        if let Some(chunk) = chunk_from_archive_content(archive_display, &entry_name, content) {
-            if !emit(chunk) {
-                return;
-            }
+        if !emit_archive_content_with_depth(
+            archive_display,
+            &entry_name,
+            content,
+            per_entry_cap,
+            total_budget,
+            total_uncompressed,
+            nested_depth,
+            emit,
+        ) {
+            return false;
         }
     }
+    true
 }
 
 fn zip_entry_is_special(entry: &zip::read::ZipFile<'_>) -> bool {
