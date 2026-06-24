@@ -69,6 +69,7 @@ impl CompiledScanner {
         chunk: &Chunk,
         scan_state: &mut ScanState,
         generic_keyword_positions: Option<&[u32]>,
+        deadline: Option<std::time::Instant>,
     ) {
         let Some(generic_re) = GENERIC_RE.as_ref() else {
             return;
@@ -127,11 +128,20 @@ impl CompiledScanner {
             KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
             return;
         }
+        if crate::deadline::expired(deadline) {
+            KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
+            return;
+        }
 
         let extract_start = profile_enabled.then(std::time::Instant::now);
         let mut preprocessed_code_lines_cache: Option<Vec<&str>> = None;
         let mut preprocessed_documentation_lines_cache: Option<Vec<bool>> = None;
-        for &line_idx in &lines_with_keyword {
+        for line_iter in 0..lines_with_keyword.len() {
+            if crate::deadline::expired_on_cadence(deadline, line_iter, 64) {
+                KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
+                return;
+            }
+            let line_idx = lines_with_keyword[line_iter];
             let Some(&line_offset) = line_offsets.get(line_idx) else {
                 continue;
             };
@@ -162,7 +172,11 @@ impl CompiledScanner {
             let normalized_line = crate::unicode_hardening::normalize_homoglyphs(raw_line);
             let line: &str = &normalized_line;
 
-            for caps in generic_re.captures_iter(line) {
+            for (capture_iter, caps) in generic_re.captures_iter(line).enumerate() {
+                if crate::deadline::expired_on_cadence(deadline, capture_iter, 64) {
+                    KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
+                    return;
+                }
                 if profile_enabled {
                     metrics::record_regex_capture();
                 }

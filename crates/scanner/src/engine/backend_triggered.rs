@@ -172,6 +172,7 @@ impl CompiledScanner {
                 prepared.chunk,
                 &mut scan_state,
                 generic_keyword_positions,
+                deadline,
             );
         }
         if crate::deadline::expired(deadline) {

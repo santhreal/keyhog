@@ -112,3 +112,55 @@ fn test_inner_loop_deadline_aborts_many_match_pattern() {
         elapsed
     );
 }
+
+/// Regression test: deadline enforcement must not stop at subsystem borders.
+/// The generic assignment bridge runs after triggered and phase-2 scanning; if
+/// it only inherits a caller-side before/after check, a dense `api_key = value`
+/// corpus can continue processing long after the scan deadline has expired.
+#[test]
+fn test_generic_assignment_deadline_aborts_inside_bridge() {
+    let detector = DetectorSpec {
+        tests: Vec::new(),
+        id: "prefix-pass-detector".into(),
+        name: "Prefix Pass Detector".into(),
+        service: "test".into(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            regex: "abc".into(),
+            description: None,
+            group: None,
+            client_safe: false,
+        }],
+        companions: vec![],
+        verify: None,
+        keywords: vec!["abc".into()],
+        min_confidence: None,
+    };
+
+    let scanner = CompiledScanner::compile(vec![detector]).unwrap();
+    let mut data = String::from("abc\n");
+    let value = "a1b2c3d4e5f60718293a4b5c6d7e8f901a2b3c4d5e6f7081";
+    for idx in 0..100_000 {
+        data.push_str("api_key_");
+        data.push_str(&idx.to_string());
+        data.push_str(" = \"");
+        data.push_str(value);
+        data.push_str("\"\n");
+    }
+
+    let chunk = Chunk {
+        data: data.into(),
+        metadata: ChunkMetadata::default(),
+    };
+
+    let start = Instant::now();
+    let deadline = start + Duration::from_millis(5);
+
+    let _ = keyhog_scanner::testing::scan_with_deadline(&scanner, &chunk, Some(deadline));
+
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < Duration::from_millis(250),
+        "Generic assignment bridge ignored the scan deadline: elapsed={elapsed:?}"
+    );
+}
