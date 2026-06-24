@@ -197,7 +197,44 @@ fn collect_walk_archive_symlink_errors(
     respect_default_excludes: bool,
 ) -> Vec<SourceError> {
     let mut errors = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
+    let mut stack = Vec::new();
+
+    match std::fs::symlink_metadata(root) {
+        Ok(metadata) => {
+            let file_type = metadata.file_type();
+            if file_type.is_symlink() {
+                let target = resolved_link_target_for_classification(root)
+                    .unwrap_or_else(|| root.to_path_buf()); // LAW10: target read failure keeps link-name classification and still refuses expandable link names; recall-preserving
+                if is_expandable_path(root) || is_expandable_path(&target) {
+                    tracing::warn!(
+                        path = %root.display(),
+                        target = %target.display(),
+                        "refusing archive symlink at filesystem root"
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    errors.push(archive_symlink_error(root));
+                }
+            } else if file_type.is_dir() {
+                stack.push(root.to_path_buf());
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return errors;
+        }
+        Err(error) => {
+            tracing::warn!(
+                path = %root.display(),
+                %error,
+                "failed to inspect filesystem root during archive-symlink audit"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            errors.push(SourceError::Other(format!(
+                "failed to inspect filesystem root '{}': {error}; root was not scanned",
+                display_path(root)
+            )));
+            return errors;
+        }
+    }
 
     while let Some(dir) = stack.pop() {
         let entries = match std::fs::read_dir(&dir) {
@@ -244,8 +281,21 @@ fn collect_walk_archive_symlink_errors(
                 continue;
             }
 
-            let Ok(metadata) = std::fs::symlink_metadata(&path) else {
-                continue;
+            let metadata = match std::fs::symlink_metadata(&path) {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        %error,
+                        "failed to inspect filesystem path during archive-symlink audit"
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    errors.push(SourceError::Other(format!(
+                        "failed to inspect filesystem path '{}': {error}; path was not scanned",
+                        display_path(&path)
+                    )));
+                    continue;
+                }
             };
             let file_type = metadata.file_type();
             if file_type.is_symlink() {

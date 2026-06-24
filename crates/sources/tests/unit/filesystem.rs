@@ -17,6 +17,19 @@ fn filesystem_source_yields_file_contents() {
 }
 
 #[test]
+fn filesystem_source_single_file_root_is_not_directory_audit_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("single.env");
+    std::fs::write(&file, "TOKEN=single_file_root\n").unwrap();
+
+    let source = FilesystemSource::new(file);
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+
+    assert_eq!(chunks.len(), 1);
+    assert!(chunks[0].data.contains("TOKEN=single_file_root"));
+}
+
+#[test]
 fn filesystem_source_does_not_skip_extensionless_text_with_single_nul() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("nul-bearing-config");
