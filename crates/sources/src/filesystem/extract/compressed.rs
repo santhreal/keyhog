@@ -201,18 +201,39 @@ fn emit_tar_entries_with_state(
             }
         };
 
-        // Only regular files carry content; skip dirs, symlinks, hardlinks,
-        // devices, fifos. We never follow tar symlink entries to disk.
-        if entry.header().entry_type() != tar::EntryType::Regular {
-            continue;
-        }
-
-        let entry_size = entry.header().size().unwrap_or(0); // LAW10: empty/absent => documented numeric default, recall-safe
         let entry_name = entry
             .path()
             .ok() // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_else(|| "<tar-entry>".to_string()); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+        let entry_type = entry.header().entry_type();
+
+        // Only regular files carry content. Directories are structural metadata;
+        // symlinks, hardlinks, devices, and FIFOs are refused visibly because the
+        // scanner does not follow or materialize tar link targets.
+        if entry_type.is_dir() {
+            continue;
+        }
+        if entry_type != tar::EntryType::Regular {
+            tracing::warn!(
+                archive = %container_display,
+                entry = %entry_name,
+                ?entry_type,
+                "skipping non-regular tar entry"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit_tar_entry_error(
+                emit,
+                container_display,
+                &entry_name,
+                format!("non-regular tar entry type {entry_type:?}; entry was not scanned"),
+            ) {
+                return;
+            }
+            continue;
+        }
+
+        let entry_size = entry.header().size().unwrap_or(0); // LAW10: empty/absent => documented numeric default, recall-safe
 
         if let Err(reason) = validate_scan_archive_entry_name(&entry_name) {
             tracing::warn!(

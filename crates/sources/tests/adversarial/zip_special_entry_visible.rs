@@ -2,6 +2,7 @@
 
 use crate::support::split_chunk_results;
 use keyhog_core::Source;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::FilesystemSource;
 use std::io::Cursor;
 use std::io::Write;
@@ -10,6 +11,7 @@ use zip::ZipWriter;
 
 #[test]
 fn zip_symlink_entry_emits_source_error() {
+    let _guard = TestApi.skip_counter_guard();
     let dir = tempfile::tempdir().expect("tempdir");
     let zip_path = dir.path().join("special.zip");
     let cursor = Cursor::new(Vec::new());
@@ -61,10 +63,13 @@ fn zip_symlink_entry_emits_source_error() {
 
 fn mark_central_entry_as_unix_symlink(zip_bytes: &mut [u8], name: &[u8]) {
     let mut offset = 0usize;
-    while let Some(relative) = zip_bytes[offset..]
-        .windows(4)
-        .position(|window| window == b"PK\x01\x02")
-    {
+    while offset < zip_bytes.len() {
+        let Some(relative) = zip_bytes[offset..]
+            .windows(4)
+            .position(|window| window == b"PK\x01\x02")
+        else {
+            break;
+        };
         let central = offset + relative;
         if central + 46 > zip_bytes.len() {
             break;
