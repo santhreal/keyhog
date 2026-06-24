@@ -369,7 +369,7 @@ fn validate_detector_path_for_scan(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<DetectorSpec>> {
+pub(crate) fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<DetectorSpec>> {
     // The embedded set being empty is the one runtime-actionable case (the binary
     // was built without baking in any detectors): tell the operator how to point
     // at an on-disk corpus instead. Everything past here delegates to the single

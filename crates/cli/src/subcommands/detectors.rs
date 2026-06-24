@@ -41,7 +41,7 @@ fn run_list(args: DetectorArgs) -> Result<()> {
     let detectors = if args.detectors.exists() && args.detectors.is_dir() {
         keyhog_core::load_detectors(&args.detectors)?
     } else {
-        load_embedded_or_bail(&args.detectors)?
+        crate::orchestrator_config::load_detectors_embedded_or_fail(&args.detectors)?
     };
     let source = if args.detectors.exists() {
         format!("{}", args.detectors.display())
@@ -173,25 +173,12 @@ fn print_detectors_json(detectors: &[&DetectorSpec]) -> Result<()> {
     Ok(())
 }
 
-fn load_embedded_or_bail(detectors_path: &Path) -> Result<Vec<DetectorSpec>> {
-    let dets = keyhog_core::load_embedded_detectors_or_fail()
-        .context("parsing embedded detector corpus")?;
-    if dets.is_empty() {
-        anyhow::bail!(
-            "detector directory '{}' not found and no embedded detectors available. \
-             Fix: rebuild with detectors/ directory or specify --detectors <path>",
-            detectors_path.display()
-        );
-    }
-    Ok(dets)
-}
-
 fn run_audit(args: &DetectorArgs) -> Result<ExitCode> {
     let palette = style::for_stdout();
     let detectors = if args.detectors.exists() && args.detectors.is_dir() {
         keyhog_core::load_detectors(&args.detectors)?
     } else {
-        load_embedded_or_bail(&args.detectors)?
+        crate::orchestrator_config::load_detectors_embedded_or_fail(&args.detectors)?
     };
 
     let mut total_errors = 0usize;
