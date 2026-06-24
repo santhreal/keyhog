@@ -45,12 +45,9 @@ impl CompiledScanner {
 
         if !self.config.ml_enabled {
             let pending = scan_state.ml_pending.len();
-            tracing::error!(
-                pending,
-                "internal invariant violation: ML pending queue populated while ML is disabled; dropping pending ML matches instead of silently using heuristic fallback"
+            panic!(
+                "internal invariant violation: ML pending queue populated while ML is disabled; pending={pending}"
             );
-            scan_state.ml_pending.clear();
-            return;
         }
 
         let candidates = crate::ml_scorer::pending_match_score_inputs(&scan_state.ml_pending);

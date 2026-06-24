@@ -75,10 +75,12 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
     assert!(
         ml_postprocess.contains("if !self.config.ml_enabled")
             && ml_postprocess.contains("internal invariant violation: ML pending queue populated while ML is disabled")
-            && ml_postprocess.contains("scan_state.ml_pending.clear();")
+            && ml_postprocess.contains("pending={pending}")
+            && !ml_postprocess.contains("scan_state.ml_pending.clear();")
+            && !ml_postprocess.contains("dropping pending ML matches")
             && !ml_postprocess.contains("for p in pending")
             && !ml_postprocess.contains("let heuristic_conf = p.heuristic_conf"),
-        "ML postprocess must fail loud on impossible disabled-ML pending state instead of silently using heuristic fallback"
+        "ML postprocess must fail loud on impossible disabled-ML pending state instead of clearing queued findings"
     );
     assert!(
         !ml_postprocess.contains("raw_match.confidence =")
