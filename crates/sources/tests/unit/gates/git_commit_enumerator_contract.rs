@@ -7,7 +7,7 @@ fn git_commit_enumeration_is_split_from_blob_stream() {
         "struct GitCommitEnumerator",
         "fn next_id(&mut self, seen_commit_count: usize)",
         "collect_unreachable_objects(&self.repo_arg, remaining)",
-        "fn take_unreachable_blobs(&mut self)",
+        "fn take_unreachable_non_commit_objects(&mut self)",
         "super::wait_for_git_child(",
     ] {
         assert!(

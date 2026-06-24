@@ -1238,6 +1238,76 @@ fn secret_only_in_unreachable_loose_blob_is_found() {
 }
 
 #[test]
+fn secret_in_unreachable_tree_keeps_tree_relative_path() {
+    let (_t, repo) = init_repo();
+    commit_file(&repo, "main.txt", b"base=1\n", "base on main");
+
+    let mut blob_child = Command::new("git")
+        .args(["hash-object", "-w", "--stdin"])
+        .current_dir(&repo)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn git hash-object");
+    blob_child
+        .stdin
+        .take()
+        .expect("hash-object stdin")
+        .write_all(b"K=ghp_unreachableTreeSecret0000001\n")
+        .expect("write tree blob stdin");
+    let blob_output = blob_child.wait_with_output().expect("hash-object output");
+    assert!(
+        blob_output.status.success(),
+        "git hash-object failed: {}",
+        String::from_utf8_lossy(&blob_output.stderr)
+    );
+    let blob_oid = String::from_utf8(blob_output.stdout)
+        .expect("blob oid utf8")
+        .trim()
+        .to_string();
+
+    let mut tree_child = Command::new("git")
+        .arg("mktree")
+        .current_dir(&repo)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn git mktree");
+    tree_child
+        .stdin
+        .take()
+        .expect("mktree stdin")
+        .write_all(format!("100644 blob {blob_oid}\tghost.env\n").as_bytes())
+        .expect("write mktree stdin");
+    let tree_output = tree_child.wait_with_output().expect("mktree output");
+    assert!(
+        tree_output.status.success(),
+        "git mktree failed: {}",
+        String::from_utf8_lossy(&tree_output.stderr)
+    );
+    let tree_oid = String::from_utf8(tree_output.stdout)
+        .expect("tree oid utf8")
+        .trim()
+        .to_string();
+
+    let chunks = collect_chunks(&repo, 100);
+    let c = chunks
+        .iter()
+        .find(|c| {
+            c.data.contains("ghp_unreachableTreeSecret0000001")
+                && c.metadata.path.as_deref()
+                    == Some(format!(".git/unreachable/{tree_oid}/ghost.env").as_str())
+        })
+        .expect("git fsck unreachable tree enumeration must preserve tree-relative path");
+    assert_eq!(c.metadata.source_type, "git/unreachable");
+    assert_eq!(c.metadata.commit, None, "unreachable tree is not a commit");
+    assert_eq!(
+        c.metadata.author, None,
+        "unreachable tree has no commit author"
+    );
+}
+
+#[test]
 fn git_source_commit_enumerator_names_reflog_stash_and_unreachable_coverage() {
     let source =
         std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/git/source.rs"))
@@ -1255,8 +1325,9 @@ fn git_source_commit_enumerator_names_reflog_stash_and_unreachable_coverage() {
             && source.contains("\"--unreachable\"")
             && source.contains("\"--no-reflogs\"")
             && source.contains("unreachable commit ")
-            && source.contains("unreachable blob "),
-        "GitSource must enumerate commits and loose blobs that are neither refs nor reflogs"
+            && source.contains("unreachable blob ")
+            && source.contains("unreachable tree "),
+        "GitSource must enumerate commits, loose blobs, and trees that are neither refs nor reflogs"
     );
 }
 
