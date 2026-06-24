@@ -74,12 +74,93 @@ pub(crate) fn scanner_panic_notice(panicked: bool) -> Option<String> {
     })
 }
 
+/// Per-finding verification outcome tally for the completion line. Mirrors the
+/// HTML report's verification honesty in the terminal: a "Found N secrets" line
+/// must never imply those N are confirmed-live when verification was skipped or
+/// no verifier exists. Categories are mutually exclusive and sum to the finding
+/// count.
+#[derive(Default, Debug, PartialEq, Eq)]
+pub(crate) struct VerificationBreakdown {
+    /// `Live`: the credential was confirmed active against its service.
+    pub live: usize,
+    /// `Revoked` + `Dead`: verified, but not currently active.
+    pub inactive: usize,
+    /// `Skipped`: verification was not attempted (no `--verify` / verifier off).
+    pub skipped: usize,
+    /// `Unverifiable`: no verifier exists for this credential type.
+    pub unverifiable: usize,
+    /// `RateLimited` + `Error`: a check ran but could not conclude.
+    pub incomplete: usize,
+}
+
+/// Tally findings by verification outcome. Pure (testable); the exhaustive match
+/// means a new `VerificationResult` variant fails to compile rather than being
+/// silently miscounted (Law 10).
+pub(crate) fn verification_breakdown(findings: &[VerifiedFinding]) -> VerificationBreakdown {
+    use keyhog_core::VerificationResult as V;
+    let mut b = VerificationBreakdown::default();
+    for f in findings {
+        match &f.verification {
+            V::Live => b.live += 1,
+            V::Revoked | V::Dead => b.inactive += 1,
+            V::Skipped => b.skipped += 1,
+            V::Unverifiable => b.unverifiable += 1,
+            V::RateLimited | V::Error(_) => b.incomplete += 1,
+        }
+    }
+    b
+}
+
+/// Render the honesty sub-line under "Found N secrets". `None` when there are no
+/// findings (nothing to verify). When NOTHING was actually checked (everything
+/// `Skipped`), it states plainly that verification was not run and points at
+/// `--verify`, so "N secrets" is never mistaken for "N live secrets".
+pub(crate) fn render_verification_line(
+    b: &VerificationBreakdown,
+    total: usize,
+    color: bool,
+) -> Option<String> {
+    if total == 0 {
+        return None;
+    }
+    let (muted, brand, reset) = if color {
+        (C_MUTED, C_BRAND, C_RESET)
+    } else {
+        ("", "", "")
+    };
+    // Verification was never attempted for ANY finding: say so explicitly.
+    if b.skipped == total {
+        return Some(format!(
+            "{muted}↳ not verified — liveness check did not run; pass {brand}--verify{reset}{muted} \
+             to confirm which are active{reset}"
+        ));
+    }
+    let mut parts: Vec<String> = Vec::new();
+    if b.live > 0 {
+        parts.push(format!("{} live", b.live));
+    }
+    if b.inactive > 0 {
+        parts.push(format!("{} revoked/dead", b.inactive));
+    }
+    if b.skipped > 0 {
+        parts.push(format!("{} not checked", b.skipped));
+    }
+    if b.unverifiable > 0 {
+        parts.push(format!("{} no verifier", b.unverifiable));
+    }
+    if b.incomplete > 0 {
+        parts.push(format!("{} inconclusive", b.incomplete));
+    }
+    Some(format!("{muted}↳ {}{reset}", parts.join(" · ")))
+}
+
 pub(crate) fn report_completion_summary(
-    count: usize,
+    findings: &[VerifiedFinding],
     elapsed: f64,
     ansi: bool,
     backend_override: Option<keyhog_scanner::ScanBackend>,
 ) {
+    let count = findings.len();
     let palette = terminal_palette(ansi, false);
     // Surface a mid-scan crash FIRST, before the "Scan complete!" line, so the
     // incompleteness frames everything below it (Law 10).
@@ -98,6 +179,11 @@ pub(crate) fn report_completion_summary(
             "\nScan complete. Found {}{}{} secrets in {}{:.2}s{}.",
             palette.red, count, palette.reset, palette.yellow, elapsed, palette.reset
         );
+        // Honesty sub-line: how many of those N are confirmed live vs unchecked.
+        if let Some(line) = render_verification_line(&verification_breakdown(findings), count, ansi)
+        {
+            eprintln!("{line}");
+        }
     }
     report_skip_summary(ansi);
     report_backend_summary(ansi, backend_override);
@@ -162,8 +248,179 @@ pub(crate) fn report_backend_summary(
     eprintln!("{}INFO{} {line}", palette.cyan, palette.reset);
 }
 
-/// Live progress ticker - overwrites the previous line via CR every
-/// 250 ms while the scan runs.
+/// keyhog brand yellow (#ffd60a) and a dimmed rail, as 24-bit truecolor SGR.
+/// Gated behind the ticker's `color` flag (TTY && !NO_COLOR) so piped/`NO_COLOR`
+/// output stays plain. Truecolor degrades gracefully to the nearest colour on
+/// 256/16-colour terminals; the layout is identical with or without colour.
+const C_BRAND: &str = "\x1b[38;2;255;214;10m";
+const C_AMBER: &str = "\x1b[38;2;255;159;10m";
+const C_RAIL: &str = "\x1b[38;2;74;74;82m";
+const C_MUTED: &str = "\x1b[38;2;138;138;150m";
+const C_BOLD: &str = "\x1b[1m";
+const C_RESET: &str = "\x1b[0m";
+
+/// Smooth determinate bar with 1/8-cell resolution: full `█` cells, one partial
+/// glyph for the fractional cell, then a dimmed `░` rail. The partial-block
+/// transition is what makes the fill look continuous rather than steppy.
+fn render_progress_bar(frac: f64, width: usize, color: bool) -> String {
+    const PARTIALS: [char; 8] = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
+    let frac = frac.clamp(0.0, 1.0);
+    let eighths = (frac * width as f64 * 8.0).round() as usize;
+    let full = (eighths / 8).min(width);
+    let rem = eighths % 8;
+    let mut fill = "█".repeat(full);
+    let mut used = full;
+    if full < width && rem > 0 {
+        fill.push(PARTIALS[rem]);
+        used += 1;
+    }
+    let rail = "░".repeat(width.saturating_sub(used));
+    if color {
+        // Only emit a colour escape for a segment that actually has cells, so an
+        // empty fill (0%) or full bar (100%) carries no dangling SGR codes.
+        let mut s = String::new();
+        if !fill.is_empty() {
+            s.push_str(C_BRAND);
+            s.push_str(&fill);
+        }
+        if !rail.is_empty() {
+            s.push_str(C_RAIL);
+            s.push_str(&rail);
+        }
+        s.push_str(C_RESET);
+        s
+    } else {
+        format!("{fill}{rail}")
+    }
+}
+
+/// Indeterminate "warming up" sweep — a lit band that slides across a dim rail,
+/// shown before the first chunk is dispatched (`TOTAL_CHUNKS == 0`) so the line
+/// is visibly alive during backend warm-up / file discovery instead of a frozen
+/// "scanning 0/0".
+fn render_indeterminate_bar(phase: usize, width: usize, color: bool) -> String {
+    let band = 4usize;
+    let span = width + band;
+    let head = phase % span;
+    let mut cells = String::with_capacity(width * 4);
+    for i in 0..width {
+        let lit = head >= i && head < i + band;
+        if color {
+            cells.push_str(if lit { C_AMBER } else { C_RAIL });
+        }
+        cells.push(if lit { '█' } else { '░' });
+    }
+    if color {
+        cells.push_str(C_RESET);
+    }
+    cells
+}
+
+/// Format an elapsed/eta duration compactly: `8.2s`, or `1m04s` past a minute.
+fn fmt_secs(s: f64) -> String {
+    if s < 60.0 {
+        format!("{s:.1}s")
+    } else {
+        let m = (s / 60.0).floor() as u64;
+        let r = (s - (m as f64) * 60.0).round() as u64;
+        format!("{m}m{r:02}s")
+    }
+}
+
+/// Build one progress line (without the CR/clear prefix) from a counter
+/// snapshot. Pure — so the exact layout is unit-testable and can be visually
+/// iterated with a frame-dump test, instead of needing a multi-second live scan.
+fn render_ticker_line(
+    scanned: usize,
+    total: usize,
+    findings: usize,
+    elapsed: f64,
+    frame: usize,
+    color: bool,
+) -> String {
+    const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    const BAR_WIDTH: usize = 22;
+    let (brand, amber, muted, rail, bold, reset) = if color {
+        (C_BRAND, C_AMBER, C_MUTED, C_RAIL, C_BOLD, C_RESET)
+    } else {
+        ("", "", "", "", "", "")
+    };
+    let spin = FRAMES[frame % FRAMES.len()];
+    // Findings count lights up the instant the first one lands; noun agrees in number.
+    let noun = if findings == 1 { "finding" } else { "findings" };
+    let find_seg = if findings > 0 {
+        format!("{bold}{amber}{findings}{reset} {muted}{noun}{reset}")
+    } else {
+        format!("{muted}0 {noun}{reset}")
+    };
+    if total == 0 {
+        let sweep = render_indeterminate_bar(frame, BAR_WIDTH, color);
+        format!(
+            "{brand}{spin}{reset} {bold}preparing{reset} {muted}·{reset} {sweep} {muted}·{reset} warming backend, discovering files {muted}·{reset} {find_seg} {muted}·{reset} {muted}{}{reset}",
+            fmt_secs(elapsed)
+        )
+    } else {
+        let frac = scanned as f64 / total as f64;
+        let pct = (frac * 100.0).floor() as u64;
+        let bar = render_progress_bar(frac, BAR_WIDTH, color);
+        let rate = if elapsed > 0.05 {
+            scanned as f64 / elapsed
+        } else {
+            0.0
+        };
+        let eta = if rate > 0.5 && scanned < total {
+            format!(
+                "  {muted}eta {}{reset}",
+                fmt_secs((total - scanned) as f64 / rate)
+            )
+        } else {
+            String::new()
+        };
+        let label = if scanned >= total {
+            "finalizing"
+        } else {
+            "scanning"
+        };
+        format!(
+            "{brand}{spin}{reset} {bold}{label}{reset} {rail}▕{reset}{bar}{rail}▏{reset} {bold}{pct:>3}%{reset}  {muted}{scanned}/{total}{reset}  {muted}·{reset}  {find_seg}  {muted}·{reset}  {muted}{rate:.0}/s{reset}  {muted}·{reset}  {muted}{}{reset}{eta}",
+            fmt_secs(elapsed)
+        )
+    }
+}
+
+fn render_verification_ticker_line(
+    total: usize,
+    elapsed: f64,
+    frame: usize,
+    color: bool,
+) -> String {
+    const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    const BAR_WIDTH: usize = 22;
+    let (brand, muted, bold, reset) = if color {
+        (C_BRAND, C_MUTED, C_BOLD, C_RESET)
+    } else {
+        ("", "", "", "")
+    };
+    let spin = FRAMES[frame % FRAMES.len()];
+    let sweep = render_indeterminate_bar(frame, BAR_WIDTH, color);
+    let noun = if total == 1 { "secret" } else { "secrets" };
+    format!(
+        "{brand}{spin}{reset} {bold}verifying{reset} {muted}·{reset} {sweep} {muted}·{reset} checking {bold}{total}{reset} {noun} {muted}·{reset} {muted}{}{reset}",
+        fmt_secs(elapsed)
+    )
+}
+
+/// Live progress ticker - overwrites the previous line via CR.
+///
+/// Paints IMMEDIATELY (no pre-sleep) and animates every 90 ms so the line is
+/// visibly alive from the first frame. Two phases, both kept on ONE rewritten
+/// line:
+/// - `TOTAL_CHUNKS == 0` (backend warm-up / file discovery): a brand-coloured
+///   spinner + an indeterminate sweep + the elapsed clock — never a frozen
+///   "scanning 0/0".
+/// - chunks streaming: a smooth determinate bar with percent, scanned/total,
+///   live findings (lit amber the moment the first one lands), throughput
+///   (chunks/s) and a computed ETA.
 pub(crate) fn progress_ticker(done: Arc<std::sync::atomic::AtomicBool>, started: Instant) {
     use std::io::IsTerminal;
     use std::sync::atomic::Ordering;
@@ -171,24 +428,68 @@ pub(crate) fn progress_ticker(done: Arc<std::sync::atomic::AtomicBool>, started:
     if !std::io::stderr().is_terminal() {
         return;
     }
-    let tick = Duration::from_millis(250);
-    std::thread::sleep(tick);
-    while !done.load(Ordering::Relaxed) {
+    let color = std::env::var_os("NO_COLOR").is_none();
+    let tick = Duration::from_millis(90);
+    let mut frame = 0usize;
+    loop {
         let scanned = crate::SCANNED_CHUNKS.load(Ordering::Relaxed);
         let total = crate::TOTAL_CHUNKS.load(Ordering::Relaxed);
         let findings = crate::FINDINGS_COUNT.load(Ordering::Relaxed);
         let elapsed = started.elapsed().as_secs_f64();
-        let mut err = std::io::stderr().lock();
         let clear = terminal_clear_line_prefix(true);
-        if let Err(error) = write!(
-            err,
-            "{clear}scanning {scanned}/{total} chunks · {findings} findings · {elapsed:.1}s"
-        ) {
+        let line = render_ticker_line(scanned, total, findings, elapsed, frame, color);
+        let mut err = std::io::stderr().lock();
+        if let Err(error) = write!(err, "{clear}{line}") {
             tracing::debug!(%error, "progress redraw write error");
         }
         let _ = err.flush(); // LAW10: unused-binding marker; no runtime effect, not a fallback
         drop(err);
+        // Check AFTER painting so spawn always yields one immediate frame and the
+        // terminal state at completion is the last thing rendered before clear.
+        if done.load(Ordering::Relaxed) {
+            break;
+        }
         std::thread::sleep(tick);
+        frame = frame.wrapping_add(1);
+    }
+    let mut err = std::io::stderr().lock();
+    let _ = write!(err, "{}", terminal_clear_line_prefix(true)); // LAW10: unused-binding marker; no runtime effect, not a fallback
+    let _ = err.flush(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+}
+
+/// Live verification ticker. Verification happens after scan chunks have
+/// completed, so the scan ticker is no longer alive. This keeps `--verify`
+/// operator-visible during the network phase instead of going quiet between
+/// scanning and the final report.
+pub(crate) fn verification_ticker(
+    done: Arc<std::sync::atomic::AtomicBool>,
+    started: Instant,
+    total: usize,
+) {
+    use std::io::IsTerminal;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+    if !std::io::stderr().is_terminal() {
+        return;
+    }
+    let color = std::env::var_os("NO_COLOR").is_none();
+    let tick = Duration::from_millis(90);
+    let mut frame = 0usize;
+    loop {
+        let elapsed = started.elapsed().as_secs_f64();
+        let clear = terminal_clear_line_prefix(true);
+        let line = render_verification_ticker_line(total, elapsed, frame, color);
+        let mut err = std::io::stderr().lock();
+        if let Err(error) = write!(err, "{clear}{line}") {
+            tracing::debug!(%error, "verification progress redraw write error");
+        }
+        let _ = err.flush(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+        drop(err);
+        if done.load(Ordering::Relaxed) {
+            break;
+        }
+        std::thread::sleep(tick);
+        frame = frame.wrapping_add(1);
     }
     let mut err = std::io::stderr().lock();
     let _ = write!(err, "{}", terminal_clear_line_prefix(true)); // LAW10: unused-binding marker; no runtime effect, not a fallback
@@ -440,4 +741,236 @@ pub(crate) fn dump_dogfood_trace() {
         }
     });
     eprintln!("{payload}");
+}
+
+#[cfg(test)]
+mod ticker_tests {
+    use super::{
+        fmt_secs, render_progress_bar, render_ticker_line, render_verification_line,
+        render_verification_ticker_line, verification_breakdown,
+    };
+
+    fn finding(v: keyhog_core::VerificationResult) -> keyhog_core::VerifiedFinding {
+        use std::borrow::Cow;
+        use std::sync::Arc;
+        keyhog_core::VerifiedFinding {
+            detector_id: Arc::from("aws-access-key"),
+            detector_name: Arc::from("AWS Key"),
+            service: Arc::from("aws"),
+            severity: keyhog_core::Severity::High,
+            credential_redacted: Cow::Borrowed("AKIA..."),
+            credential_hash: [0u8; 32].into(),
+            location: keyhog_core::MatchLocation {
+                source: Arc::from("filesystem"),
+                file_path: Some(Arc::from("a.txt")),
+                line: Some(1),
+                offset: 0,
+                commit: None,
+                author: None,
+                date: None,
+            },
+            verification: v,
+            metadata: std::collections::HashMap::new(),
+            additional_locations: vec![],
+            confidence: Some(0.9),
+        }
+    }
+
+    #[test]
+    fn breakdown_tallies_each_verification_state() {
+        use keyhog_core::VerificationResult as V;
+        let findings = vec![
+            finding(V::Live),
+            finding(V::Live),
+            finding(V::Revoked),
+            finding(V::Dead),
+            finding(V::Skipped),
+            finding(V::Unverifiable),
+            finding(V::RateLimited),
+            finding(V::Error("boom".to_string())),
+        ];
+        let b = verification_breakdown(&findings);
+        assert_eq!(b.live, 2);
+        assert_eq!(b.inactive, 2, "revoked + dead");
+        assert_eq!(b.skipped, 1);
+        assert_eq!(b.unverifiable, 1);
+        assert_eq!(b.incomplete, 2, "ratelimited + error");
+    }
+
+    #[test]
+    fn all_skipped_says_verification_did_not_run() {
+        use keyhog_core::VerificationResult as V;
+        let findings = vec![
+            finding(V::Skipped),
+            finding(V::Skipped),
+            finding(V::Skipped),
+        ];
+        let b = verification_breakdown(&findings);
+        let line =
+            render_verification_line(&b, findings.len(), false).expect("line for >0 findings");
+        assert!(
+            line.contains("not verified"),
+            "honest 'we did not try': {line}"
+        );
+        assert!(line.contains("--verify"), "points at the flag: {line}");
+        // The all-skipped branch emits the prose message, never a count
+        // breakdown — so it cannot read as "1 live", and carries no `·` separator.
+        assert!(
+            !line.contains('·'),
+            "all-skipped uses the prose message, not a breakdown: {line}"
+        );
+    }
+
+    #[test]
+    fn mixed_states_render_breakdown_omitting_zeros() {
+        use keyhog_core::VerificationResult as V;
+        let findings = vec![finding(V::Live), finding(V::Revoked), finding(V::Skipped)];
+        let b = verification_breakdown(&findings);
+        let line = render_verification_line(&b, findings.len(), false).unwrap();
+        assert!(line.contains("1 live"), "{line}");
+        assert!(line.contains("1 revoked/dead"), "{line}");
+        assert!(line.contains("1 not checked"), "{line}");
+        assert!(
+            !line.contains("no verifier"),
+            "zero category omitted: {line}"
+        );
+        assert!(
+            !line.contains("inconclusive"),
+            "zero category omitted: {line}"
+        );
+    }
+
+    #[test]
+    fn no_findings_yields_no_verification_line() {
+        let b = verification_breakdown(&[]);
+        assert_eq!(render_verification_line(&b, 0, false), None);
+    }
+
+    #[test]
+    fn verification_line_is_color_gated() {
+        use keyhog_core::VerificationResult as V;
+        let b = verification_breakdown(&[finding(V::Live)]);
+        assert!(
+            !render_verification_line(&b, 1, false)
+                .unwrap()
+                .contains('\x1b'),
+            "plain mode is ansi-free"
+        );
+        assert!(
+            render_verification_line(&b, 1, true)
+                .unwrap()
+                .contains('\x1b'),
+            "color mode carries SGR codes"
+        );
+    }
+
+    #[test]
+    fn progress_bar_endpoints_and_width() {
+        // Empty: all rail, no full blocks; correct cell count.
+        let empty = render_progress_bar(0.0, 22, false);
+        assert_eq!(empty.chars().count(), 22, "bar must be exactly width cells");
+        assert_eq!(empty.chars().filter(|&c| c == '█').count(), 0);
+        assert!(empty.chars().all(|c| c == '░'));
+        // Full: all full blocks.
+        let full = render_progress_bar(1.0, 22, false);
+        assert_eq!(full.chars().filter(|&c| c == '█').count(), 22);
+        assert!(!full.contains('░'));
+        // Half: ~11 full blocks (1/8-cell resolution rounds 0.5*22=11.0).
+        let half = render_progress_bar(0.5, 22, false);
+        assert_eq!(half.chars().filter(|&c| c == '█').count(), 11);
+        // Clamp: out-of-range fractions never panic or overflow the width.
+        assert_eq!(
+            render_progress_bar(2.0, 22, false)
+                .chars()
+                .filter(|&c| c == '█')
+                .count(),
+            22
+        );
+        assert_eq!(render_progress_bar(-1.0, 22, false).chars().count(), 22);
+    }
+
+    #[test]
+    fn scanning_line_carries_pct_counts_findings_and_stage() {
+        let line = render_ticker_line(50, 100, 3, 2.0, 0, false);
+        assert!(line.contains("50%"), "percent: {line}");
+        assert!(line.contains("50/100"), "scanned/total: {line}");
+        assert!(line.contains("3 findings"), "lit findings: {line}");
+        assert!(line.contains("scanning"), "stage label: {line}");
+        // At 100% scanned the stage flips to finalizing and drops the ETA.
+        let done = render_ticker_line(100, 100, 3, 2.0, 0, false);
+        assert!(done.contains("finalizing"), "finalizing at full: {done}");
+        assert!(!done.contains("eta"), "no eta once scanned==total: {done}");
+    }
+
+    #[test]
+    fn preparing_line_used_before_first_chunk() {
+        let line = render_ticker_line(0, 0, 0, 0.4, 0, false);
+        assert!(line.contains("preparing"), "pre-dispatch label: {line}");
+        assert!(line.contains("0 findings"));
+        assert!(
+            !line.contains('%'),
+            "no percent before total is known: {line}"
+        );
+    }
+
+    #[test]
+    fn verification_line_carries_stage_and_candidate_count() {
+        let line = render_verification_ticker_line(3, 1.2, 0, false);
+        assert!(line.contains("verifying"), "stage label: {line}");
+        assert!(
+            line.contains("checking 3 secrets"),
+            "candidate count: {line}"
+        );
+        assert!(
+            !line.contains('%'),
+            "verification is indeterminate until verifier results return: {line}"
+        );
+        let one = render_verification_ticker_line(1, 1.2, 0, false);
+        assert!(one.contains("checking 1 secret"), "singular noun: {one}");
+    }
+
+    #[test]
+    fn plain_mode_emits_no_ansi_color_mode_does() {
+        let plain = render_ticker_line(50, 100, 3, 2.0, 0, false);
+        assert!(
+            !plain.contains('\x1b'),
+            "NO_COLOR line must be ansi-free: {plain:?}"
+        );
+        let verify_plain = render_verification_ticker_line(3, 1.2, 0, false);
+        assert!(
+            !verify_plain.contains('\x1b'),
+            "plain verification line must be ansi-free: {verify_plain:?}"
+        );
+        let colored = render_ticker_line(50, 100, 3, 2.0, 0, true);
+        assert!(colored.contains('\x1b'), "color line must carry SGR codes");
+        let verify_colored = render_verification_ticker_line(3, 1.2, 0, true);
+        assert!(
+            verify_colored.contains('\x1b'),
+            "color verification line must carry SGR codes"
+        );
+    }
+
+    #[test]
+    fn fmt_secs_switches_to_minutes_past_a_minute() {
+        assert_eq!(fmt_secs(8.25), "8.2s");
+        assert_eq!(fmt_secs(64.0), "1m04s");
+    }
+
+    /// Visual harness: `cargo test -p keyhog dump_ticker_frames -- --ignored --nocapture`
+    /// prints a full color frame sequence so the layout can be eyeballed without
+    /// a multi-second live scan. Ignored by default (it asserts nothing).
+    #[test]
+    #[ignore]
+    fn dump_ticker_frames() {
+        println!("\n--- preparing (indeterminate sweep) ---");
+        for f in [0usize, 3, 6, 9, 12] {
+            println!("{}", render_ticker_line(0, 0, 0, f as f64 * 0.1, f, true));
+        }
+        println!("\n--- scanning (determinate bar) ---");
+        for (s, fnd) in [(0, 0), (550, 0), (1250, 1), (1980, 3), (2503, 3)] {
+            let line = render_ticker_line(s, 2503, fnd, 1.0 + s as f64 / 600.0, s / 90, true);
+            println!("{line}");
+        }
+        println!();
+    }
 }

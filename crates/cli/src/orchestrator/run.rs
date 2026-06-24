@@ -366,7 +366,7 @@ impl ScanOrchestrator {
         let elapsed = start.elapsed().as_secs_f64();
         if show_progress {
             report_completion_summary(
-                report_findings.len(),
+                &report_findings,
                 elapsed,
                 progress_ansi,
                 self.effective_config.backend_override,

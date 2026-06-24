@@ -290,6 +290,9 @@ impl ScanOrchestrator {
     #[cfg(feature = "verify")]
     async fn verify_findings(&self, groups: Vec<DedupedMatch>) -> Result<Vec<VerifiedFinding>> {
         use keyhog_verifier::{VerificationEngine, VerifyConfig};
+        use std::io::IsTerminal;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
         use std::time::Duration;
 
         const MIN_VERIFY_CONFIDENCE: f64 = 0.3;
@@ -367,7 +370,27 @@ impl ScanOrchestrator {
             }
         }
 
+        let progress_enabled =
+            (self.args.progress || std::io::stderr().is_terminal()) && !self.args.stream;
+        let progress_done = Arc::new(AtomicBool::new(false));
+        let progress_handle = if progress_enabled && !verify_candidates.is_empty() {
+            let done = Arc::clone(&progress_done);
+            let started = std::time::Instant::now();
+            let total = verify_candidates.len();
+            Some(std::thread::spawn(move || {
+                super::reporting::verification_ticker(done, started, total)
+            }))
+        } else {
+            None
+        };
+
         let mut findings = verifier.verify_all(verify_candidates).await;
+        if let Some(handle) = progress_handle {
+            progress_done.store(true, Ordering::Relaxed);
+            if handle.join().is_err() {
+                tracing::debug!("verification progress thread panicked while shutting down");
+            }
+        }
         verifier.shutdown_oob().await;
 
         for m in skip_candidates {
