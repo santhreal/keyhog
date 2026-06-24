@@ -443,6 +443,7 @@ fn config_effective_prints_source_policy_controls() {
 }
 
 #[test]
+#[cfg(feature = "simd")]
 fn config_effective_prints_hyperscan_cache_dir_and_cli_overrides_toml() {
     let (_config_root, config_cache) = home_temp_cache_dir("config-hs-cache");
     let (_cli_root, cli_cache) = home_temp_cache_dir("cli-hs-cache");
