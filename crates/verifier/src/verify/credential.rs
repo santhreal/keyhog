@@ -158,13 +158,13 @@ where
         last_attempt = Some((result.result, result.metadata));
     }
 
-    match last_attempt {
-        Some(attempt) => attempt,
-        None => (
+    last_attempt.unwrap_or_else(|| {
+        // LAW10: exhausted retry loop emits an operator-visible Error finding; fail-closed.
+        (
             VerificationResult::Error("max retries exceeded".into()),
             HashMap::new(),
-        ),
-    }
+        )
+    })
 }
 
 fn record_rate_limit_feedback(
@@ -476,8 +476,9 @@ pub(crate) async fn verify_credential(
     let body = response.body;
 
     let retryable_status = status == 429 || (500..=504).contains(&status);
-    let is_live = match success {
-        Some(s) => match evaluate_success(s, status, &body) {
+    let mut success_error = None;
+    let is_live = success.map_or(status == 200, |s| {
+        match evaluate_success(s, status, &body) {
             Ok(matched) => matched,
             Err(error) if retryable_status => {
                 tracing::warn!(
@@ -488,15 +489,18 @@ pub(crate) async fn verify_credential(
                 false
             }
             Err(error) => {
-                return VerificationAttempt {
-                    result: error.into_verification_error(),
-                    metadata: HashMap::new(),
-                    transient: false,
-                };
+                success_error = Some(error);
+                false
             }
-        },
-        None => status == 200,
-    };
+        }
+    });
+    if let Some(error) = success_error {
+        return VerificationAttempt {
+            result: error.into_verification_error(),
+            metadata: HashMap::new(),
+            transient: false,
+        };
+    }
 
     let is_actually_live = is_live && !body_indicates_error(&body);
     let mut metadata = extract_metadata(&spec.metadata, &body);

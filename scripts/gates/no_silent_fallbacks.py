@@ -18,8 +18,9 @@ that discard a failure / degrade with no operator-visible surfacing:
     / dropped / recall) — the idiom Law 10 names FIRST: a debug log "then
     continue to a weaker path" is invisible at default verbosity, i.e. silent.
 Each occurrence is a CANDIDATE. `python3 no_silent_fallbacks.py --self-test`
-proves both classes still catch real fallbacks and ignore benign code (Law 6). A candidate is EXEMPT only if its line carries an
-explicit justification marker:
+proves both classes still catch real fallbacks and ignore benign code (Law 6). A candidate is EXEMPT only if its line, or the
+immediately following rustfmt-moved comment line, carries an explicit
+justification marker:
     // LAW10: <how this failure is surfaced or why it is recall-safe>
 so every real fallback must be loud, recorded, or consciously waived IN THE DIFF.
 
@@ -96,20 +97,30 @@ def _iter_src_files():
                 yield f
 
 
+def _has_exemption_line(lines: list[str], idx: int) -> bool:
+    if EXEMPT.search(lines[idx]):
+        return True
+    if idx + 1 >= len(lines):
+        return False
+    next_line = lines[idx + 1].strip()
+    return next_line.startswith("//") and EXEMPT.search(next_line)
+
+
 def collect() -> set[str]:
     """Return the set of un-exempt silent-fallback candidate keys."""
     found: set[str] = set()
     for f in _iter_src_files():
         rel = f.relative_to(REPO).as_posix()
         in_test_mod = 0
-        for line in f.read_text(errors="replace").splitlines():
+        lines = f.read_text(errors="replace").splitlines()
+        for idx, line in enumerate(lines):
             stripped = line.strip()
             # Skip lines inside a `#[cfg(test)]` module (best-effort: track the
             # attribute; the gate is about shipped scan code, not test code).
             if stripped.startswith("#[cfg(test)]"):
                 in_test_mod = 1
                 continue
-            if EXEMPT.search(line):
+            if _has_exemption_line(lines, idx):
                 continue
             if stripped.startswith("//"):
                 continue
@@ -134,10 +145,13 @@ def load_baseline() -> set[str]:
             if ln.strip() and not ln.startswith("#")}
 
 
-def _line_is_candidate(line: str) -> bool:
+def _line_is_candidate(line: str, next_line: str = "") -> bool:
     """True if `line` would be flagged (mirrors the per-line logic in collect)."""
     stripped = line.strip()
     if stripped.startswith("//") or EXEMPT.search(line):
+        return False
+    next_stripped = next_line.strip()
+    if next_stripped.startswith("//") and EXEMPT.search(next_stripped):
         return False
     if any(rx.search(line) for rx in IDIOMS):
         return True
@@ -170,6 +184,13 @@ def self_test() -> int:
         if got != want:
             ok = False
             print(f"  FAIL want={want} got={got}: {line}", file=sys.stderr)
+    rustfmt_adjacent = _line_is_candidate(
+        "last_attempt.unwrap_or_else(|| {",
+        "// LAW10: exhausted retry loop emits an Error finding; fail-closed.",
+    )
+    if rustfmt_adjacent:
+        ok = False
+        print("  FAIL rustfmt-adjacent LAW10 comment was not exempt", file=sys.stderr)
     print("self-test PASS" if ok else "self-test FAIL", file=sys.stderr)
     return 0 if ok else 1
 

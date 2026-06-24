@@ -2,8 +2,8 @@ use hyperscan::{
     Block as BlockMode, BlockDatabase, Builder, Pattern, PatternFlags, Patterns, Scratch,
 };
 use std::path::PathBuf;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 
 mod scan;
 
@@ -649,15 +649,32 @@ impl HsScanner {
             let parent = cache_path
                 .parent()
                 .unwrap_or_else(|| std::path::Path::new(".")); // LAW10: cache_path is constructed with a parent; fallback only disables atomic cache locality, not scanning.
-            if let Ok(mut tmp) = tempfile::NamedTempFile::new_in(parent) {
-                if std::io::Write::write_all(&mut tmp, &data).is_ok() {
-                    if let Err(error) = tmp.persist(cache_path) {
-                        tracing::debug!(
+            match tempfile::NamedTempFile::new_in(parent) {
+                Ok(mut tmp) => {
+                    if let Err(error) = std::io::Write::write_all(&mut tmp, &data) {
+                        tracing::warn!(
                             cache = %cache_path.display(),
-                            error = %error,
+                            %error,
+                            "HS shard cache write failed; next run will recompile"
+                        );
+                        return;
+                    }
+                    if let Err(error) = tmp.persist(cache_path) {
+                        tracing::warn!(
+                            cache = %cache_path.display(),
+                            %error,
                             "HS shard cache persist failed; next run will recompile"
                         );
+                        return;
                     }
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        cache = %cache_path.display(),
+                        %error,
+                        "HS shard cache tempfile creation failed; next run will recompile"
+                    );
+                    return;
                 }
             }
             tracing::info!(

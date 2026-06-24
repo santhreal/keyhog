@@ -202,7 +202,19 @@ fn collect_walk_archive_symlink_errors(
     while let Some(dir) = stack.pop() {
         let entries = match std::fs::read_dir(&dir) {
             Ok(entries) => entries,
-            Err(_error) => continue,
+            Err(error) => {
+                tracing::warn!(
+                    dir = %dir.display(),
+                    %error,
+                    "failed to read directory during archive-symlink audit"
+                );
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                errors.push(SourceError::Other(format!(
+                    "failed to inspect filesystem directory '{}': {error}; directory was not scanned",
+                    display_path(&dir)
+                )));
+                continue;
+            }
         };
         let mut paths: Vec<PathBuf> = Vec::new();
         for entry in entries {
