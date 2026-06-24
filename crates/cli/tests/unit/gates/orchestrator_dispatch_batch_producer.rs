@@ -90,12 +90,12 @@ fn assert_unchanged_chunk_path_borrow_contract(block: &str, label: &str) {
         .and_then(|tail| tail.split_once(");").map(|(call, _)| call))
         .unwrap_or_else(|| panic!("{label} unchanged-chunk Merkle call extractable"));
     let first_arg = call
-        .split("c.metadata.base_offset as u64")
-        .next()
-        .unwrap_or(call);
+        .split_once("c.metadata.base_offset")
+        .map(|(arg, _)| arg)
+        .unwrap_or_else(|| panic!("{label} unchanged-chunk Merkle path argument extractable"));
     assert!(
-        first_arg.contains("Path::new("),
-        "{label} unchanged-chunk Merkle call must borrow chunk paths with Path::new(...) instead of allocating a PathBuf per chunk"
+        block.contains("Path::new("),
+        "{label} unchanged-chunk path handling must borrow chunk paths with Path::new(...) instead of allocating a PathBuf per chunk"
     );
 
     for forbidden in [
@@ -107,8 +107,15 @@ fn assert_unchanged_chunk_path_borrow_contract(block: &str, label: &str) {
         ".into()",
     ] {
         assert!(
+            !block.contains(forbidden) && !first_arg.contains(forbidden),
+            "{label} unchanged-chunk path handling must not allocate with `{forbidden}`"
+        );
+    }
+
+    for forbidden in [".as_path()", ".as_ref()"] {
+        assert!(
             !first_arg.contains(forbidden),
-            "{label} unchanged-chunk Merkle path argument must not allocate with `{forbidden}`"
+            "{label} unchanged-chunk Merkle path argument must pass a borrowed Path expression directly, not a converted owned path via `{forbidden}`"
         );
     }
 }
