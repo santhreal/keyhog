@@ -632,13 +632,8 @@ fn read_untracked_worktree_chunk(
         )));
     }
     let file = std::fs::File::open(&full_path).map_err(SourceError::Io)?;
-    let read = crate::capped_read::read_to_cap(
-        file,
-        limits.git_blob_bytes,
-        Some(metadata.len()),
-        "git-diff untracked file",
-    )
-    .map_err(SourceError::Io)?;
+    let read = crate::capped_read::read_to_cap(file, limits.git_blob_bytes, Some(metadata.len()))
+        .map_err(SourceError::Io)?;
     if read.truncated {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return Err(SourceError::Git(format!(

@@ -94,7 +94,7 @@ pub(crate) fn read_to_string_limited(
     })?;
     // Read at most `max_bytes + 1` so oversized stdin is rejected before we
     // hand a giant buffer to the scanner.
-    let read = crate::capped_read::read_to_cap(reader, cap, None, "stdin")?;
+    let read = crate::capped_read::read_to_cap(reader, cap, None)?;
 
     if read.truncated {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);

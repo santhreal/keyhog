@@ -31,7 +31,7 @@ fn read_capped_no_follow(path: &Path, cap: u64) -> std::io::Result<Vec<u8>> {
             ),
         ));
     }
-    let read = crate::capped_read::read_to_cap(file, cap, Some(metadata.len()), "compressed file")?;
+    let read = crate::capped_read::read_to_cap(file, cap, Some(metadata.len()))?;
     if read.truncated {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,

@@ -167,12 +167,7 @@ pub(in crate::filesystem) fn read_file_safe(
     if cap == 0 {
         // The caller did not know the size (size_hint == 0): fall back to the
         // grow-from-empty read, still bounded by the cap.
-        let read = crate::capped_read::read_to_cap(
-            file,
-            MAX_BUFFERED_READ_BYTES,
-            None,
-            "filesystem buffered read",
-        )?;
+        let read = crate::capped_read::read_to_cap(file, MAX_BUFFERED_READ_BYTES, None)?;
         if read.truncated {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -278,7 +273,6 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileR
                 &mut file,
                 MMAP_TOCTOU_SANITY_CAP_BYTES,
                 live_size_hint,
-                "mmap fallback read",
             ) {
                 Ok(read) => {
                     if read.truncated {

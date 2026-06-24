@@ -9,8 +9,8 @@ fn stdin_max_bytes_cap_in_source() {
         "stdin cap must be owned by SourceLimits, not a private source constant"
     );
     assert!(
-        src.contains("reader.take(max_bytes as u64 + 1)"),
-        "stdin read must use take() before read_to_end"
+        src.contains("crate::capped_read::read_to_cap(reader, cap, None)"),
+        "stdin read must route through the shared capped-read owner"
     );
     assert!(
         src.contains("SourceLimits::default().stdin_bytes") && src.contains("with_limits"),

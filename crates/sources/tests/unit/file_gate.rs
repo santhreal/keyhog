@@ -147,10 +147,10 @@ fn source_extract_pdf_and_binary_hot_paths_are_bounded() {
     assert!(
         binary.contains("crate::capped_read::read_to_cap")
             && capped_read.contains("Vec::with_capacity(capacity)")
-            && capped_read.contains("cap.checked_add(1)")
-            && capped_read.contains("truncation sentinel byte")
-            && capped_read.contains("capped read capacity exceeds"),
-        "binary capped reads must use the shared capped-read owner and fail closed on cap/capacity overflow"
+            && capped_read.contains("cap.checked_add(1).unwrap_or(u64::MAX)")
+            && capped_read.contains("usize::try_from(cap).unwrap_or(usize::MAX)")
+            && capped_read.contains(".min(max_addressable_capacity)"),
+        "binary capped reads must use the shared capped-read owner and clamp sentinel/capacity arithmetic safely"
     );
     assert!(
         !binary.contains("let mut bytes = Vec::new();\n    limited.read_to_end(&mut bytes)?;")

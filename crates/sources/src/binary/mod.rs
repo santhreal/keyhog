@@ -463,7 +463,7 @@ fn read_binary_capped(path: &Path, cap: usize) -> std::io::Result<CappedBinaryRe
             "binary read cap is too large for this platform",
         )
     })?;
-    let read = crate::capped_read::read_to_cap(file, cap, Some(capacity_hint), "binary read")?;
+    let read = crate::capped_read::read_to_cap(file, cap, Some(capacity_hint))?;
     Ok(CappedBinaryRead {
         bytes: read.bytes,
         truncated: read.truncated,

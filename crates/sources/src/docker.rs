@@ -828,7 +828,7 @@ fn read_capped_file(path: &Path, kind: &str, cap: u64) -> Result<Vec<u8>, Source
             cap
         )));
     }
-    let read = crate::capped_read::read_to_cap(file, cap, Some(metadata.len()), kind)
+    let read = crate::capped_read::read_to_cap(file, cap, Some(metadata.len()))
         .map_err(SourceError::Io)?;
     if read.truncated {
         return Err(SourceError::Other(format!(
