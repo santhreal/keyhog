@@ -5,8 +5,6 @@ use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use reqwest::blocking::Client;
 use serde::Deserialize;
 
-const DEFAULT_GCS_ENDPOINT: &str = "https://storage.googleapis.com";
-
 pub struct GcsSource {
     bucket: String,
     prefix: Option<String>,
@@ -22,7 +20,7 @@ impl GcsSource {
         Self {
             bucket: bucket.into(),
             prefix: None,
-            endpoint: DEFAULT_GCS_ENDPOINT.to_string(),
+            endpoint: crate::cloud::DEFAULT_GCS_ENDPOINT.to_string(),
             max_objects: None,
             limits: crate::SourceLimits::default(),
             http: crate::http::HttpClientConfig {

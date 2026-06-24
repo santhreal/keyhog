@@ -6,6 +6,8 @@ pub(crate) mod azure_blob;
 
 pub(crate) use crate::blocking_thread::collect_on_blocking_thread;
 
+pub(crate) const DEFAULT_GCS_ENDPOINT: &str = "https://storage.googleapis.com";
+pub(crate) const DEFAULT_S3_HOST_SUFFIX: &str = "s3.amazonaws.com";
 pub(crate) const OBJECT_FETCH_THREADS: usize = crate::parallel_fetch::CLOUD_OBJECT_FETCH_THREADS;
 
 pub(crate) fn object_fetch_pool(

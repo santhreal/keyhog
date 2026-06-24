@@ -10,8 +10,6 @@ mod listing;
 use auth::AwsSigV4Config;
 use listing::{parse_s3_listing, ListBucketResult, ListObject};
 
-const DEFAULT_S3_HOST_SUFFIX: &str = "s3.amazonaws.com";
-
 /// Scan text objects in an S3 bucket via the ListObjectsV2 REST API.
 ///
 /// # Examples
@@ -470,7 +468,10 @@ fn build_base_url(bucket: &str, endpoint: Option<&str>) -> Result<String, Source
                 urlencoding::encode(bucket)
             ))
         }
-        None => Ok(format!("https://{bucket}.{DEFAULT_S3_HOST_SUFFIX}")),
+        None => Ok(format!(
+            "https://{bucket}.{}",
+            crate::cloud::DEFAULT_S3_HOST_SUFFIX
+        )),
     }
 }
 
