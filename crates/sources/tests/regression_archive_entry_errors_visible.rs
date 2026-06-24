@@ -28,6 +28,13 @@ fn zip_entry_read_failures_emit_source_errors() {
             && duplicate_zip.contains("emit_archive_entry_over_cap_error"),
         "ZIP/OpenPack over-cap entry skips must emit machine-visible SourceError rows"
     );
+    assert!(
+        zip.contains("special file type")
+            && zip.contains("emit_archive_entry_error(")
+            && duplicate_zip.contains("special file type")
+            && duplicate_zip.contains("emit_archive_entry_error("),
+        "ZIP special-file entries must emit machine-visible SourceError rows"
+    );
 }
 
 #[test]

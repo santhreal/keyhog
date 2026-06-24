@@ -100,6 +100,15 @@ pub(super) fn extract_zip_archive_from_central_entries(
                 "skipping special archive entry"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit_archive_entry_error(
+                emit,
+                "duplicate ZIP entry",
+                archive_display,
+                &entry.name,
+                "special file type",
+            ) {
+                return;
+            }
             continue;
         }
         if entry.uncompressed_size > per_entry_cap {

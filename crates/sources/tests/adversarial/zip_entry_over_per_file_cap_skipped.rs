@@ -2,6 +2,7 @@
 
 use crate::support::split_chunk_results;
 use keyhog_core::Source;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{reset_skipped_over_max_size, skip_counts, FilesystemSource};
 use std::fs::File;
 use std::io::Write;
@@ -10,6 +11,7 @@ use zip::ZipWriter;
 
 #[test]
 fn zip_entry_over_per_file_cap_skipped() {
+    let _guard = TestApi.skip_counter_guard();
     reset_skipped_over_max_size();
     let dir = tempfile::tempdir().expect("tempdir");
 

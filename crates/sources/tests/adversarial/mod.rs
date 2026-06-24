@@ -118,5 +118,6 @@ mod zip_slip_percent_encoded_dotdot_not_extracted;
 mod zip_slip_trailing_parent_dir_not_extracted;
 mod zip_slip_triple_dotdot_prefix_not_extracted;
 mod zip_slip_windows_unc_path_not_extracted;
+mod zip_special_entry_visible;
 mod zst_oversize_window_refused;
 mod zst_truncated_header_no_panic;

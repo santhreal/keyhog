@@ -215,6 +215,15 @@ fn extract_zip_archive_entries<R: Read + Seek>(
                 "skipping special archive entry"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit_archive_entry_error(
+                emit,
+                "ZIP entry",
+                archive_display,
+                &entry_name,
+                "special file type",
+            ) {
+                return false;
+            }
             continue;
         }
 
