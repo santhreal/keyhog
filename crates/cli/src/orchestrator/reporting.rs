@@ -728,6 +728,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
     }
 
     let c = keyhog_sources::skip_counts();
+    let source_errors = crate::SOURCE_ERRORS.load(std::sync::atomic::Ordering::Relaxed);
     let git_object_unreadable = c.git_object_unreadable;
     // Whether the binary source recorded any degradation/drop. Checked here so a
     // run whose ONLY coverage gap is a Ghidra fallback / unreadable binary (with
@@ -747,6 +748,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
     // checked explicitly here. A run whose ONLY gap is one of these must still
     // emit its summary line below.
     if c.total() == 0
+        && source_errors == 0
         && git_object_unreadable == 0
         && c.binary_section_name_unresolved == 0
         && c.source_truncated == 0
@@ -764,6 +766,14 @@ pub(crate) fn report_skip_summary(ansi: bool) {
     // unreadable category is the most important: it means the tree was NOT fully
     // covered, so a "no secrets found" result is not a clean bill of health.
     let mut lines: Vec<(String, bool)> = Vec::new();
+    if source_errors > 0 {
+        lines.push((
+            format!(
+                "{source_errors} source error row(s) emitted: requested input was NOT fully scanned. Inspect the source errors above and rerun affected inputs."
+            ),
+            true,
+        ));
+    }
     if c.over_max_size > 0 {
         lines.push((
             format!(

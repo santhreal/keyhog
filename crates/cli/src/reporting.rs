@@ -144,7 +144,12 @@ fn format_gitlab_time(time: DateTime<Utc>) -> String {
 /// scan's coverage gaps (unreadable files especially — those are unknowns).
 fn coverage_gap_summary() -> Vec<(String, usize)> {
     let c = keyhog_sources::skip_counts();
+    let source_errors = crate::SOURCE_ERRORS.load(std::sync::atomic::Ordering::Relaxed);
     let summary = vec![
+        (
+            "source emitted error rows (requested input was not fully scanned)".to_string(),
+            source_errors,
+        ),
         ("exceeded --max-file-size".to_string(), c.over_max_size),
         (
             "binary (extension or content sniff)".to_string(),

@@ -111,6 +111,20 @@ fn scan_exit_precedence_keeps_system_failure_above_source_coverage_gap() {
             && run.contains("source_errors + source_gaps + binary_gaps + scanner_coverage_gaps > 0"),
         "source errors emitted by partial sources or orchestrator drops must make clean-looking scans exit as incomplete coverage"
     );
+    let reporting = std::fs::read_to_string(root.join("src/orchestrator/reporting.rs"))
+        .expect("read terminal reporting");
+    let report = std::fs::read_to_string(root.join("src/reporting.rs")).expect("read report");
+    assert!(
+        reporting.contains("let source_errors = crate::SOURCE_ERRORS.load")
+            && reporting.contains("source error row(s) emitted")
+            && reporting.contains("requested input was NOT fully scanned"),
+        "terminal coverage summary must name generic source errors, not only source skip counters"
+    );
+    assert!(
+        report.contains("source emitted error rows")
+            && report.contains("requested input was not fully scanned"),
+        "structured coverage summaries must include generic source errors"
+    );
 }
 
 #[test]
