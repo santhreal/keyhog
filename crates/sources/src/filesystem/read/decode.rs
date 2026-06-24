@@ -222,9 +222,7 @@ pub(in crate::filesystem) fn looks_binary_prefix(bytes: &[u8]) -> bool {
 }
 
 fn has_repeated_nul_run(bytes: &[u8]) -> bool {
-    bytes
-        .windows(BINARY_NUL_RUN)
-        .any(|window| window.iter().all(|&byte| byte == 0))
+    memchr::memmem::find(bytes, &[0; BINARY_NUL_RUN]).is_some()
 }
 
 fn has_binary_magic(bytes: &[u8]) -> bool {
