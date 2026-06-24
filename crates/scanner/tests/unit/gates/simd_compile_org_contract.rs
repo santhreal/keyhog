@@ -67,6 +67,7 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
     assert!(
         assemble_body.contains("let scratch_count = Self::scratch_pool_size();")
             && assemble_body.contains("Self::build_scratch_pool(&db, shard_idx, scratch_count)?")
+            && assemble_body.contains("Self::caller_pattern_indices_for_dropped(")
             && assemble_body.contains("scratch_pool: parking_lot::Mutex::new(scratch_pool)")
             && source.contains("Vec::with_capacity(scratch_count)")
             && source.contains("scratch_pool.push("),
@@ -123,6 +124,15 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
             && !cached_body.contains("return Ok((db, Vec::new()));"),
         "Hyperscan shard cache hits must preserve compile-time dropped ids so warm-cache scans reroute unsupported patterns exactly like cold compiles"
     );
+    assert!(
+        source.contains("fn caller_pattern_indices_for_dropped(")
+            && source.contains("pattern_map: &[(usize, usize, usize, bool)]")
+            && source.contains("pattern_map.get(hs_id)")
+            && source.contains("map(|(input_idx, _, _, _)| *input_idx)")
+            && source.contains("returned dropped pattern id")
+            && source.contains("outside pattern map len"),
+        "Hyperscan compile retry/cache dropped ids must be translated from compact HS ids back to caller input pattern indices before rerouting"
+    );
 
     let partition_body = source
         .split("fn partition_patterns_lpt(")
@@ -154,8 +164,10 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
         !prepare_body.contains("hs_partition_cost(")
             && !prepare_body.contains("MAX_HS_COMPILE_COST")
             && prepare_body.contains(".par_iter()")
-            && prepare_body.contains("pattern.id = Some(pattern_map.len())"),
-        "Hyperscan prepare must parallelize pattern validation but keep compile-cost estimates shard-only and assign stable ids serially"
+            && prepare_body.contains("pattern.id = Some(pattern_map.len())")
+            && prepare_body.contains("input_index: i")
+            && prepare_body.contains("pattern_map.push((input_index, det_idx, pat_idx, has_group))"),
+        "Hyperscan prepare must parallelize pattern validation, preserve caller input indices, and assign compact stable HS ids serially"
     );
 
     let validate_opts_body = source

@@ -8,6 +8,24 @@ use keyhog_scanner::testing::HsScanner;
 use keyhog_scanner::testing::REGEX_SIZE_LIMIT_BYTES;
 
 #[test]
+fn hyperscan_unsupported_patterns_return_caller_input_indices() {
+    let overlong_literal = "A".repeat(600);
+    let patterns = [
+        (10usize, 0usize, "alpha_[A-Z0-9]{8}", false),
+        (11usize, 0usize, overlong_literal.as_str(), false),
+        (12usize, 0usize, "omega_[A-Z0-9]{8}", false),
+    ];
+    let (_scanner, unsupported) =
+        HsScanner::compile(&patterns).expect("valid neighbor patterns compile");
+
+    assert_eq!(
+        unsupported,
+        vec![1],
+        "unsupported Hyperscan patterns must be returned as caller input indices, not compact HS pattern-map slots"
+    );
+}
+
+#[test]
 fn no_embedded_detector_pattern_silently_drops_at_hyperscan_compile() {
     let specs =
         keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load");

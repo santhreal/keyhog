@@ -247,9 +247,9 @@ pub(crate) struct HsScanner {
     /// produce (Hyperscan match ids are the global pattern ids, which are
     /// disjoint across shards).
     shards: Vec<Shard>,
-    /// Map from HS pattern ID to (detector_index, pattern_index, has_group).
+    /// Map from HS pattern ID to (input_index, detector_index, pattern_index, has_group).
     /// Global and shared across shards - unchanged from the single-db build.
-    pattern_map: Vec<(usize, usize, bool)>,
+    pattern_map: Vec<(usize, usize, usize, bool)>,
     /// Distinct id for this scanner instance, used to key the thread-local
     /// per-shard scratch cache so two scanners never share scratches.
     scanner_id: u64,
@@ -298,7 +298,7 @@ pub(crate) struct HsCompileOpts<'a> {
 
 struct PreparedPatterns {
     hs_pats: Vec<Pattern>,
-    pattern_map: Vec<(usize, usize, bool)>,
+    pattern_map: Vec<(usize, usize, usize, bool)>,
     unsupported: Vec<usize>,
 }
 
@@ -328,6 +328,7 @@ impl HsScanner {
 
         enum PrepResult {
             Pattern {
+                input_index: usize,
                 det_idx: usize,
                 pat_idx: usize,
                 has_group: bool,
@@ -351,6 +352,7 @@ impl HsScanner {
                 }
                 match Pattern::with_flags(regex, Self::pattern_flags(i, opts)) {
                     Ok(pattern) => PrepResult::Pattern {
+                        input_index: i,
                         det_idx,
                         pat_idx,
                         has_group,
@@ -371,6 +373,7 @@ impl HsScanner {
         for result in prepared {
             match result {
                 PrepResult::Pattern {
+                    input_index,
                     det_idx,
                     pat_idx,
                     has_group,
@@ -378,7 +381,7 @@ impl HsScanner {
                 } => {
                     pattern.id = Some(pattern_map.len());
                     hs_pats.push(pattern);
-                    pattern_map.push((det_idx, pat_idx, has_group));
+                    pattern_map.push((input_index, det_idx, pat_idx, has_group));
                 }
                 PrepResult::Unsupported { index } => unsupported.push(index),
                 PrepResult::Rejected { index, error } => {
@@ -710,12 +713,17 @@ impl HsScanner {
         shard_count: usize,
         shard_results: Vec<Result<(BlockDatabase, Vec<usize>), String>>,
         unsupported: &mut Vec<usize>,
+        pattern_map: &[(usize, usize, usize, bool)],
     ) -> Result<Vec<Shard>, String> {
         let mut shards = Vec::with_capacity(shard_count);
         let scratch_count = Self::scratch_pool_size();
         for (shard_idx, result) in shard_results.into_iter().enumerate() {
             let (db, dropped) = result?;
-            unsupported.extend(dropped);
+            unsupported.extend(Self::caller_pattern_indices_for_dropped(
+                dropped,
+                pattern_map,
+                shard_idx,
+            )?);
             let scratch_pool = Self::build_scratch_pool(&db, shard_idx, scratch_count)?;
             shards.push(Shard {
                 db,
@@ -723,6 +731,24 @@ impl HsScanner {
             });
         }
         Ok(shards)
+    }
+
+    fn caller_pattern_indices_for_dropped(
+        dropped: Vec<usize>,
+        pattern_map: &[(usize, usize, usize, bool)],
+        shard_idx: usize,
+    ) -> Result<Vec<usize>, String> {
+        dropped
+            .into_iter()
+            .map(|hs_id| {
+                pattern_map.get(hs_id).map(|(input_idx, _, _, _)| *input_idx).ok_or_else(|| {
+                    format!(
+                        "hyperscan shard {shard_idx} returned dropped pattern id {hs_id} outside pattern map len {}",
+                        pattern_map.len()
+                    )
+                })
+            })
+            .collect()
     }
 
     fn scratch_pool_size() -> usize {
@@ -778,7 +804,12 @@ impl HsScanner {
         let shard_pats = Self::partition_patterns_lpt(&hs_pats, shard_count);
         let shard_results =
             Self::compile_cached_shards(shard_pats, shard_count, &cache_key, &cache_dir);
-        let shards = Self::assemble_scanner_shards(shard_count, shard_results, &mut unsupported)?;
+        let shards = Self::assemble_scanner_shards(
+            shard_count,
+            shard_results,
+            &mut unsupported,
+            &pattern_map,
+        )?;
 
         // The caller (`build_simd_scanner`) already logs
         // `unsupported.len()` via tracing::info!, and consumers that

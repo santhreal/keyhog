@@ -139,7 +139,9 @@ impl HsScanner {
     /// assert!(scanner.pattern_info(0).is_some());
     /// ```
     pub(crate) fn pattern_info(&self, hs_id: usize) -> Option<(usize, usize, bool)> {
-        self.pattern_map.get(hs_id).copied()
+        self.pattern_map
+            .get(hs_id)
+            .map(|&(_, det_idx, pat_idx, has_group)| (det_idx, pat_idx, has_group))
     }
 
     /// Return the number of patterns compiled into the SIMD database.
