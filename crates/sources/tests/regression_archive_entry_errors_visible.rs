@@ -53,6 +53,12 @@ fn seven_zip_entry_read_failures_emit_source_errors() {
         seven_zip.contains("emit_archive_entry_over_cap_error"),
         "7z over-cap entry skips must emit machine-visible SourceError rows"
     );
+    assert!(
+        seven_zip.contains("seven_zip_entry_is_special")
+            && seven_zip.contains("special file type")
+            && seven_zip.contains("emit_archive_entry_error("),
+        "7z special-file entries must emit machine-visible SourceError rows"
+    );
 }
 
 #[test]

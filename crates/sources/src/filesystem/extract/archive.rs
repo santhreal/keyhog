@@ -326,6 +326,20 @@ pub(super) fn emit_archive_entry_over_cap_error(
     )
 }
 
+pub(super) fn archive_unix_mode_is_special(mode: u32) -> bool {
+    const S_IFMT: u32 = 0o170000;
+    const S_IFLNK: u32 = 0o120000;
+    const S_IFBLK: u32 = 0o060000;
+    const S_IFCHR: u32 = 0o020000;
+    const S_IFIFO: u32 = 0o010000;
+    const S_IFSOCK: u32 = 0o140000;
+
+    matches!(
+        mode & S_IFMT,
+        S_IFLNK | S_IFBLK | S_IFCHR | S_IFIFO | S_IFSOCK
+    )
+}
+
 pub(super) fn chunk_from_archive_content(
     archive_display: &str,
     entry_name: &str,

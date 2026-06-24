@@ -8,8 +8,40 @@ mod support;
 
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
-use keyhog_sources::{FilesystemSource, skip_counts};
+use keyhog_sources::{skip_counts, FilesystemSource};
+use sevenz_rust2::{ArchiveEntry, ArchiveWriter};
+use std::io::Cursor;
 use support::split_chunk_results;
+
+fn write_seven_zip_with_special_entries(root: &std::path::Path) -> std::path::PathBuf {
+    let archive_path = root.join("special.7z");
+    let cursor = Cursor::new(Vec::new());
+    let mut writer = ArchiveWriter::new(cursor).expect("create 7z writer");
+    writer.set_encrypt_header(false);
+
+    let mut streamed_link = ArchiveEntry::new_file("link.env");
+    streamed_link.has_windows_attributes = true;
+    streamed_link.windows_attributes = 0o120777_u32 << 16;
+    writer
+        .push_archive_entry(streamed_link, Some(Cursor::new(&b"target.env"[..])))
+        .expect("push streamed symlink entry");
+
+    let mut metadata_link = ArchiveEntry::new_file("metadata-link.env");
+    metadata_link.has_windows_attributes = true;
+    metadata_link.windows_attributes = 0o120777_u32 << 16;
+    writer
+        .push_archive_entry::<Cursor<&[u8]>>(metadata_link, None)
+        .expect("push metadata symlink entry");
+
+    let safe = ArchiveEntry::new_file("safe.env");
+    writer
+        .push_archive_entry(safe, Some(Cursor::new(&b"SAFE=AKIAVKODRH4GCR7HOKMA\n"[..])))
+        .expect("push safe entry");
+
+    let archive_bytes = writer.finish().expect("finish 7z").into_inner();
+    std::fs::write(&archive_path, archive_bytes).expect("write 7z archive");
+    archive_path
+}
 
 #[test]
 fn corrupt_seven_zip_counts_as_unreadable() {
@@ -93,6 +125,50 @@ fn seven_zip_archive_truncation_surfaces_source_error() {
 }
 
 #[test]
+fn seven_zip_special_entries_emit_source_errors_and_keep_safe_sibling() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let _archive = write_seven_zip_with_special_entries(dir.path());
+
+    let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
+        .chunks()
+        .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+
+    assert!(
+        bodies
+            .iter()
+            .any(|body| body.contains("AKIAVKODRH4GCR7HOKMA")),
+        "safe 7z sibling must still be scanned; bodies={bodies:?}"
+    );
+    assert!(
+        !bodies.iter().any(|body| body.contains("target.env")),
+        "7z symlink payload must not be scanned as file content; bodies={bodies:?}"
+    );
+    assert_eq!(
+        errors.len(),
+        2,
+        "streamed and no-stream 7z special entries must both emit SourceError rows"
+    );
+    let rendered_errors: Vec<_> = errors.iter().map(ToString::to_string).collect();
+    assert!(
+        rendered_errors.iter().any(|error| {
+            error.contains("special.7z//link.env") && error.contains("special file type")
+        }) && rendered_errors.iter().any(|error| {
+            error.contains("special.7z//metadata-link.env") && error.contains("special file type")
+        }),
+        "7z special-entry errors must name every skipped special entry, got {rendered_errors:?}"
+    );
+    assert_eq!(
+        skip_counts().unreadable,
+        2,
+        "each 7z special entry must count as an unreadable coverage gap"
+    );
+}
+
+#[test]
 fn seven_zip_entry_read_errors_are_per_entry_skips() {
     let source = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -119,5 +195,28 @@ fn seven_zip_entry_read_errors_are_per_entry_skips() {
     assert!(
         !source.contains("drain_entry(entry_reader)?"),
         "7z skipped-entry draining must not abort the whole archive through ?"
+    );
+}
+
+#[test]
+fn seven_zip_skipped_entry_draining_is_limited_to_solid_archives() {
+    let source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/filesystem/extract/seven_zip.rs"
+    ))
+    .expect("7z extractor source must be readable");
+
+    assert!(
+        source.contains("let archive_requires_skip_drain = reader.archive().is_solid;"),
+        "7z skip draining must be based on the archive solidness contract"
+    );
+    assert!(
+        source.contains("fn drain_skipped_entry_if_needed(")
+            && source.contains("if !archive_requires_skip_drain"),
+        "non-solid skipped 7z entries must not be pointlessly decompressed after they are refused"
+    );
+    assert!(
+        source.contains("drain_entry_lossy(archive_display, entry_name, entry_reader"),
+        "solid 7z skips still need an explicit drain path so later entries stay aligned"
     );
 }

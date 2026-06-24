@@ -1,6 +1,7 @@
 use super::{
-    emit_archive_content_with_depth, emit_archive_entry_error, emit_archive_entry_over_cap_error,
-    emit_archive_unreadable_error, report_archive_truncation, validate_scan_archive_entry_name,
+    archive_unix_mode_is_special, emit_archive_content_with_depth, emit_archive_entry_error,
+    emit_archive_entry_over_cap_error, emit_archive_unreadable_error, report_archive_truncation,
+    validate_scan_archive_entry_name,
 };
 use crate::filesystem::filter;
 use keyhog_core::{Chunk, SourceError};
@@ -351,24 +352,10 @@ fn extract_zip_archive_entries<R: Read + Seek>(
 }
 
 fn zip_entry_is_special(entry: &zip::read::ZipFile<'_>) -> bool {
-    entry.unix_mode().is_some_and(zip_unix_mode_is_special)
+    entry.unix_mode().is_some_and(archive_unix_mode_is_special)
 }
 
 fn zip_external_attrs_are_special(external_attrs: u32) -> bool {
     let mode = external_attrs >> 16;
-    mode != 0 && zip_unix_mode_is_special(mode)
-}
-
-fn zip_unix_mode_is_special(mode: u32) -> bool {
-    const S_IFMT: u32 = 0o170000;
-    const S_IFLNK: u32 = 0o120000;
-    const S_IFBLK: u32 = 0o060000;
-    const S_IFCHR: u32 = 0o020000;
-    const S_IFIFO: u32 = 0o010000;
-    const S_IFSOCK: u32 = 0o140000;
-
-    matches!(
-        mode & S_IFMT,
-        S_IFLNK | S_IFBLK | S_IFCHR | S_IFIFO | S_IFSOCK
-    )
+    mode != 0 && archive_unix_mode_is_special(mode)
 }

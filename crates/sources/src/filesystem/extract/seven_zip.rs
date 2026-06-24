@@ -1,7 +1,8 @@
 //! 7z archive extraction for filesystem entries.
 
 use super::archive::{
-    emit_archive_entry_error, emit_archive_entry_over_cap_error, validate_scan_archive_entry_name,
+    archive_unix_mode_is_special, emit_archive_entry_error, emit_archive_entry_over_cap_error,
+    validate_scan_archive_entry_name,
 };
 use super::{
     display_path, extraction_total_budget, is_symlink, read,
@@ -70,16 +71,49 @@ pub(super) fn extract_seven_zip_chunks(
 
     let per_entry_cap = if max_size == 0 { u64::MAX } else { max_size };
     let total_budget = extraction_total_budget(max_size);
+    let archive_requires_skip_drain = reader.archive().is_solid;
     let mut total_uncompressed: u64 = 0;
     let mut consumer_stopped = false;
     let mut archive_truncated = false;
 
     let result = reader.for_each_entries(|entry, entry_reader| {
-        if entry.is_directory() || !entry.has_stream() {
+        if entry.is_directory() {
             return Ok(true);
         }
 
         let entry_name = entry.name().to_string();
+        if seven_zip_entry_is_special(entry) {
+            tracing::warn!(
+                archive = %archive_display,
+                entry = %entry_name,
+                attributes = entry.windows_attributes(),
+                "skipping 7z special file entry"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit_archive_entry_error(
+                emit,
+                "7z entry",
+                &archive_display,
+                &entry_name,
+                "special file type",
+            ) {
+                consumer_stopped = true;
+                return Ok(false);
+            }
+            if entry.has_stream() {
+                drain_skipped_entry_if_needed(
+                    archive_requires_skip_drain,
+                    &archive_display,
+                    &entry_name,
+                    entry_reader,
+                    false,
+                );
+            }
+            return Ok(true);
+        }
+        if !entry.has_stream() {
+            return Ok(true);
+        }
         if let Err(reason) = validate_scan_archive_entry_name(&entry_name) {
             tracing::warn!(
                 archive = %archive_display,
@@ -92,12 +126,24 @@ pub(super) fn extract_seven_zip_chunks(
                 consumer_stopped = true;
                 return Ok(false);
             }
-            drain_entry_lossy(&archive_display, &entry_name, entry_reader, false);
+            drain_skipped_entry_if_needed(
+                archive_requires_skip_drain,
+                &archive_display,
+                &entry_name,
+                entry_reader,
+                false,
+            );
             return Ok(true);
         }
         if super::super::filter::is_default_excluded(&entry_name) {
             record_default_excluded_archive_entry(&archive_display, &entry_name);
-            drain_entry_lossy(&archive_display, &entry_name, entry_reader, true);
+            drain_skipped_entry_if_needed(
+                archive_requires_skip_drain,
+                &archive_display,
+                &entry_name,
+                entry_reader,
+                true,
+            );
             return Ok(true);
         }
 
@@ -122,7 +168,13 @@ pub(super) fn extract_seven_zip_chunks(
                 consumer_stopped = true;
                 return Ok(false);
             }
-            drain_entry_lossy(&archive_display, &entry_name, entry_reader, false);
+            drain_skipped_entry_if_needed(
+                archive_requires_skip_drain,
+                &archive_display,
+                &entry_name,
+                entry_reader,
+                false,
+            );
             return Ok(true);
         }
         if total_uncompressed.saturating_add(entry_size) > total_budget {
@@ -141,7 +193,12 @@ pub(super) fn extract_seven_zip_chunks(
         let remaining_budget = total_budget.saturating_sub(total_uncompressed);
         let read_cap = per_entry_cap.min(remaining_budget);
         let read_limit = read_cap.saturating_add(1);
-        let mut content = Vec::with_capacity(entry_size.min(READ_CAPACITY_HINT) as usize);
+        let capacity_hint = if max_size == 0 {
+            entry_size.min(READ_CAPACITY_HINT)
+        } else {
+            entry_size.min(read_cap)
+        };
+        let mut content = Vec::with_capacity(capacity_hint.min(usize::MAX as u64) as usize);
         if let Err(error) = entry_reader.take(read_limit).read_to_end(&mut content) {
             tracing::warn!(
                 archive = %archive_display,
@@ -222,6 +279,32 @@ fn archive_uses_unbounded_lzma(archive: &sevenz_rust2::Archive) -> bool {
             .iter()
             .any(|coder| coder.encoder_method_id() == EncoderMethod::LZMA.id())
     })
+}
+
+fn seven_zip_entry_is_special(entry: &sevenz_rust2::ArchiveEntry) -> bool {
+    if !entry.has_windows_attributes {
+        return false;
+    }
+    let mode = entry.windows_attributes() >> 16;
+    mode != 0 && archive_unix_mode_is_special(mode)
+}
+
+fn drain_skipped_entry_if_needed(
+    archive_requires_skip_drain: bool,
+    archive_display: &str,
+    entry_name: &str,
+    entry_reader: &mut dyn Read,
+    count_unreadable: bool,
+) {
+    if !archive_requires_skip_drain {
+        tracing::debug!(
+            archive = %archive_display,
+            entry = %entry_name,
+            "not draining skipped non-solid 7z entry"
+        );
+        return;
+    }
+    drain_entry_lossy(archive_display, entry_name, entry_reader, count_unreadable);
 }
 
 fn drain_entry_lossy(
