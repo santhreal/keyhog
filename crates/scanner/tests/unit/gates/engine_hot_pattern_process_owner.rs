@@ -35,12 +35,24 @@ fn canonical_hot_patterns_delegate_to_process_match() {
 
     assert!(
         hot_patterns.contains("self.hot_ac_map_index_by_index[pattern_idx]")
-            && hot_patterns.contains("hot_pattern_direct_emit_allowed(pattern_idx)")
-            && hot_patterns.contains("if ac_map_index.is_none() && !hot_pattern_direct_emit_allowed(pattern_idx)")
+            && hot_patterns.contains("let Some(ac_map_index) = ac_map_index else")
             && hot_patterns.contains("self.process_match(")
             && hot_patterns.contains("super::scan_filters::compute_pattern_signals("),
         "canonical hot-pattern hits must delegate through process_match with shared confidence/suppression signals"
     );
+    for forbidden in [
+        "hot_pattern_direct_emit_allowed",
+        "push_match_lazy",
+        "build_synthetic_raw_match",
+        "hot_metadata_by_index",
+        "hot_pattern_confidence",
+        "hot_pattern_suppression_stage",
+    ] {
+        assert!(
+            !hot_patterns.contains(forbidden),
+            "hot-pattern fast path must not own synthetic direct-emission token {forbidden:?}"
+        );
+    }
     assert!(
         !hot_patterns.contains("self.hot_ac_map_index_by_index.get(pattern_idx)")
             && !hot_patterns.contains("self.hot_pattern_validators.get(pattern_idx)"),
@@ -57,13 +69,9 @@ fn canonical_hot_patterns_delegate_to_process_match() {
     );
     let simdsieve = uncommented_code(&read(&src.join("simdsieve_prefilter.rs")));
     assert!(
-        simdsieve.contains("fn hot_pattern_direct_emit_allowed(")
-            && simdsieve.contains(
-                "pub(crate) const fn hot_pattern_direct_emit_allowed(_slot: usize) -> bool",
-            )
-            && simdsieve.contains("false")
+        !simdsieve.contains("fn hot_pattern_direct_emit_allowed(")
             && !simdsieve.contains("HOT_SQUARE_SECRET"),
-        "the prefilter table owner must forbid synthetic direct hot-pattern emission"
+        "the prefilter table owner must not expose a synthetic direct hot-pattern emission switch"
     );
     assert!(
         backend_triggered

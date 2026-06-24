@@ -13,10 +13,13 @@
 //! skips this regression too.
 #![cfg(feature = "simdsieve")]
 
-use keyhog_scanner::testing::{
-    hot_pattern_index_at, validate_hot_pattern_runtime_table_lengths, HOT_PATTERNS,
-    HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_MIN_LENGTHS,
-    HOT_PATTERN_NAMES,
+use keyhog_core::{DetectorSpec, PatternSpec, Severity};
+use keyhog_scanner::{
+    CompiledScanner,
+    testing::{
+        HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_NAMES, HOT_PATTERNS,
+        hot_pattern_index_at, validate_hot_pattern_runtime_table_lengths,
+    },
 };
 
 #[test]
@@ -29,91 +32,65 @@ fn hot_pattern_arrays_are_index_parallel() {
         n,
         "display-name array length"
     );
-    assert_eq!(HOT_PATTERN_MIN_LENGTHS.len(), n, "min-length array length");
 }
 
 #[test]
 fn hot_patterns_map_to_canonical_detector_identity() {
-    // (prefix, min_len, detector_id, display_name, service). The id/name/service must
+    // (prefix, detector_id, display_name, service). The id/name/service must
     // match the corresponding detectors/*.toml so scan output is identical
     // whether the named detector or the fast-path made the find.
-    let expected: &[(&[u8], usize, &str, &str, &str)] = &[
+    let expected: &[(&[u8], &str, &str, &str)] = &[
         (
             b"ghp_",
-            40,
             "github-classic-pat",
             "GitHub Classic PAT",
             "github",
         ),
-        (
-            b"sk-proj-",
-            20,
-            "openai-api-key",
-            "OpenAI API Key",
-            "openai",
-        ),
-        (b"AKIA", 20, "aws-access-key", "AWS Access Key", "aws"),
+        (b"sk-proj-", "openai-api-key", "OpenAI API Key", "openai"),
+        (b"AKIA", "aws-access-key", "AWS Access Key", "aws"),
         // ASIA is a temporary STS *access key ID* (same `[0-9A-Z]{16}` shape
         // as AKIA, both owned by the aws-access-key detector + the verifier's
         // AWS_VALID_ACCESS_KEY_PREFIXES). It is NOT the session token (the
         // long base64 blob aws-session-token matches), so it maps to
         // aws-access-key, not aws-session-token.
-        (b"ASIA", 20, "aws-access-key", "AWS Access Key", "aws"),
-        (
-            b"SG.",
-            26,
-            "sendgrid-api-key",
-            "SendGrid API Key",
-            "sendgrid",
-        ),
-        (b"xoxb-", 16, "slack-bot-token", "Slack Bot Token", "slack"),
-        (
-            b"xoxp-",
-            16,
-            "slack-user-token",
-            "Slack User Token",
-            "slack",
-        ),
+        (b"ASIA", "aws-access-key", "AWS Access Key", "aws"),
+        (b"SG.", "sendgrid-api-key", "SendGrid API Key", "sendgrid"),
+        (b"xoxb-", "slack-bot-token", "Slack Bot Token", "slack"),
+        (b"xoxp-", "slack-user-token", "Slack User Token", "slack"),
         (
             b"sq0csp-",
-            16,
             "square-access-token",
             "Square Access Token",
             "square",
         ),
         (
             b"sk_live_",
-            32,
             "stripe-secret-key",
             "Stripe Secret Key",
             "stripe",
         ),
         (
             b"sk_test_",
-            32,
             "stripe-secret-key",
             "Stripe Secret Key",
             "stripe",
         ),
         (
             b"rk_live_",
-            32,
             "stripe-secret-key",
             "Stripe Secret Key",
             "stripe",
         ),
         (
             b"rk_test_",
-            32,
             "stripe-secret-key",
             "Stripe Secret Key",
             "stripe",
         ),
     ];
     assert_eq!(HOT_PATTERNS.len(), expected.len());
-    for (i, (prefix, min_len, id, name, service)) in expected.iter().enumerate() {
+    for (i, (prefix, id, name, service)) in expected.iter().enumerate() {
         assert_eq!(HOT_PATTERNS[i], *prefix, "prefix at {i}");
-        assert_eq!(HOT_PATTERN_MIN_LENGTHS[i], *min_len, "min_len at {i}");
         assert_eq!(HOT_PATTERN_DETECTOR_IDS[i], *id, "detector_id at {i}");
         assert_eq!(HOT_PATTERN_DISPLAY_NAMES[i], *name, "display_name at {i}");
         assert_eq!(HOT_PATTERN_NAMES[i], *service, "service at {i}");
@@ -168,10 +145,10 @@ fn hot_pattern_index_resolves_every_prefix_from_the_shared_table() {
 #[test]
 fn hot_pattern_runtime_tables_fail_loud_on_length_drift() {
     let expected = HOT_PATTERNS.len();
-    validate_hot_pattern_runtime_table_lengths(expected, expected, expected)
+    validate_hot_pattern_runtime_table_lengths(expected, expected)
         .expect("matching runtime hot-pattern table lengths are valid");
 
-    let err = validate_hot_pattern_runtime_table_lengths(expected - 1, expected, expected)
+    let err = validate_hot_pattern_runtime_table_lengths(expected - 1, expected)
         .expect_err("validator length drift must fail scanner construction");
     let msg = err.to_string();
     assert!(
@@ -179,5 +156,37 @@ fn hot_pattern_runtime_tables_fail_loud_on_length_drift() {
             && msg.contains("HOT_PATTERNS")
             && msg.contains("fix: rebuild all hot-pattern runtime tables"),
         "error must name the drifted table and remediation; got {msg}"
+    );
+}
+
+#[test]
+fn loaded_hot_detector_without_matching_ac_prefix_fails_construction() {
+    let detector = DetectorSpec {
+        id: "github-classic-pat".to_string(),
+        name: "GitHub Classic PAT".to_string(),
+        service: "github".to_string(),
+        severity: Severity::Critical,
+        patterns: vec![PatternSpec {
+            regex: r"not_ghp_[A-Za-z0-9_]{36}".to_string(),
+            ..Default::default()
+        }],
+        keywords: vec!["ghp".to_string()],
+        min_confidence: Some(0.1),
+        ..Default::default()
+    };
+
+    let err = match CompiledScanner::compile(vec![detector]) {
+        Ok(_) => {
+            panic!("loaded hot detector with stale HOT_PATTERNS prefix must fail construction")
+        }
+        Err(err) => err,
+    };
+    let msg = err.to_string();
+    assert!(
+        msg.contains("simdsieve hot-pattern slot")
+            && msg.contains("github-classic-pat")
+            && msg.contains("ghp_")
+            && msg.contains("no compiled AC entry"),
+        "error must name stale hot-pattern prefix mapping and fix context; got {msg}"
     );
 }

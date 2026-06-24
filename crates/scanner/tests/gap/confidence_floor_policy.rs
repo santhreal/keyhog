@@ -15,13 +15,13 @@
 //! `keyhog_scanner::testing::checksum`, which calls the same CRC32/base62 owner
 //! the validators use; this is a round-trip proof, not a magic literal.
 
+use keyhog_scanner::ScannerConfig;
 use keyhog_scanner::confidence::known_prefix_confidence_floor;
 use keyhog_scanner::testing::checksum::{
-    base62_encode_u32, checksum_adjusted_confidence, crc32_base62_suffix,
-    github_classic_pat_with_checksum, npm_token_with_checksum, validate_checksum, ChecksumResult,
-    CHECKSUM_VALID_FLOOR,
+    CHECKSUM_VALID_FLOOR, ChecksumResult, base62_encode_u32, checksum_adjusted_confidence,
+    crc32_base62_suffix, github_classic_pat_with_checksum, npm_token_with_checksum,
+    validate_checksum,
 };
-use keyhog_scanner::ScannerConfig;
 
 /// 6-char base62 CRC32 trailer for a given entropy body (the format GitHub
 /// classic / npm tokens embed).
@@ -651,8 +651,8 @@ fn known_prefix_floor_suppressed_by_placeholder_word_case_insensitive() {
 
 #[test]
 fn hot_path_base_confidence_is_0_7_without_known_prefix() {
-    // confidence::policy::hot_pattern_confidence starts unknown-prefix hot
-    // literals at 0.7 before the shared report-confidence finalizer runs.
+    // The shared named-detector policy starts unknown-prefix hot literals at
+    // 0.7 before the shared report-confidence finalizer runs.
     let base = known_prefix_confidence_floor("sq0csp-nochecksumhere000000").unwrap_or(0.7);
     assert_eq!(base, 0.7);
 }

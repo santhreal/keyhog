@@ -185,8 +185,7 @@ fn report_confidence_tail_routes_through_confidence_owner() {
         );
         if path == "engine/scan_postprocess/ml.rs" {
             assert!(
-                !code.contains("raw_match.confidence =")
-                    && !code.contains("&pending.credential,"),
+                !code.contains("raw_match.confidence =") && !code.contains("&pending.credential,"),
                 "{path} must not mutate RawMatch confidence or pass a split credential into adjudicate"
             );
         }
@@ -205,13 +204,13 @@ fn report_confidence_tail_routes_through_confidence_owner() {
     }
     let hot_patterns = uncommented_code(&read(&src.join("engine/hot_patterns.rs")));
     assert!(
-        hot_patterns.contains("crate::confidence::policy::hot_pattern_confidence("),
-        "hot patterns must route final report confidence through the confidence owner"
+        hot_patterns.contains("self.process_match("),
+        "hot patterns must route final report confidence through the shared process_match path"
     );
     assert!(
-        !hot_patterns
-            .contains("let Some(confidence) = crate::confidence::policy::hot_pattern_confidence("),
-        "hot patterns must not bind confidence-owner output with a leaf-owned confidence local"
+        !hot_patterns.contains("crate::confidence::policy::hot_pattern_confidence(")
+            && !hot_patterns.contains("let Some(confidence)"),
+        "hot patterns must not own a hot-specific confidence function or local confidence fork"
     );
 
     let mut files = Vec::new();
@@ -285,13 +284,15 @@ fn engine_scoring_confidence_adjustments_use_confidence_owner() {
         );
     }
     assert!(
-        !policy.contains("fn candidate_match_score<'a>(\n    policy: CandidateMatchScorePolicy<'a>,\n) -> Option")
-            && !process.contains("from_scoring_rejected")
+        !policy.contains(
+            "fn candidate_match_score<'a>(\n    policy: CandidateMatchScorePolicy<'a>,\n) -> Option"
+        ) && !process.contains("from_scoring_rejected")
             && !process.contains("let Some(score_result)")
             && !process.contains("let score_result =")
             && !process.contains("match score_result")
             && !process.contains("MlScoreResult::Final(confidence)")
-            && !process.contains("let Some(confidence) = crate::adjudicate::finalize_report_candidate("),
+            && !process
+                .contains("let Some(confidence) = crate::adjudicate::finalize_report_candidate("),
         "candidate scoring must return a concrete result without preserving dead scoring_rejected or leaf-owned confidence/score result names"
     );
     for forbidden in [
@@ -342,7 +343,9 @@ fn ml_pending_confidence_policy_routes_through_confidence_owner() {
         ml.contains("crate::confidence::policy::ml_pending_match_confidence(")
             && !ml.contains("crate::confidence::policy::ml_pending_confidence(")
             && !ml.contains("crate::confidence::policy::MlConfidencePolicy")
-            && ml.contains("internal invariant violation: ML pending queue populated while ML is disabled")
+            && ml.contains(
+                "internal invariant violation: ML pending queue populated while ML is disabled"
+            )
             && ml.contains("scan_state.ml_pending.clear();"),
         "ML postprocess must route pending confidence through confidence owner and fail loud on impossible disabled-ML pending state"
     );

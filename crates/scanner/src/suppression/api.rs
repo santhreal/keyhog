@@ -4,8 +4,8 @@
 
 use super::decision::suppression_stage_inner;
 use super::path_filter::{
-    looks_like_hot_pattern_base64_path, looks_like_raw_base64_file_path,
-    looks_like_secret_scanner_source, looks_like_vendored_minified_path,
+    looks_like_raw_base64_file_path, looks_like_secret_scanner_source,
+    looks_like_vendored_minified_path,
 };
 use super::shape::{
     PublicShapeScope, contains_uuid_v4_substring, looks_like_credential_colliding_punctuation,
@@ -85,77 +85,6 @@ pub(crate) fn suppress_known_example_credential_stage(
         ctx.allow_base64_blob_shape,
         ctx.allow_encoded_text_secret,
     )
-}
-
-#[cfg(any(feature = "simdsieve", test))]
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct HotPatternSuppressionCtx<'a> {
-    path: Option<&'a str>,
-    source_type: &'a str,
-    min_credential_len: usize,
-}
-
-#[cfg(any(feature = "simdsieve", test))]
-impl<'a> HotPatternSuppressionCtx<'a> {
-    pub(crate) fn new(
-        path: Option<&'a str>,
-        source_type: &'a str,
-        min_credential_len: usize,
-    ) -> Self {
-        Self {
-            path,
-            source_type,
-            min_credential_len,
-        }
-    }
-}
-
-#[cfg(feature = "simdsieve")]
-pub(crate) fn hot_pattern_suppression_stage(
-    credential: &str,
-    ctx: HotPatternSuppressionCtx<'_>,
-) -> Option<crate::adjudicate::HotPatternSignal> {
-    if credential.len() < ctx.min_credential_len {
-        return Some(crate::adjudicate::HotPatternSignal::ShapeGate(
-            "hot_below_min_length",
-        ));
-    }
-    let example_ctx = KnownExampleSuppressionCtx::new(
-        ctx.path,
-        context::CodeContext::Unknown,
-        Some(ctx.source_type),
-    );
-    if let Some(stage_id) = suppress_known_example_credential_stage(credential, example_ctx) {
-        return Some(crate::adjudicate::HotPatternSignal::SuppressionStage(
-            stage_id,
-        ));
-    }
-    if looks_like_regex_literal_tail(credential) {
-        return Some(crate::adjudicate::HotPatternSignal::ShapeGate(
-            "hot_regex_literal_tail",
-        ));
-    }
-    if looks_like_vendored_minified_path(ctx.path) {
-        return Some(crate::adjudicate::HotPatternSignal::ShapeGate(
-            "hot_vendored_minified_path",
-        ));
-    }
-    if ctx.source_type.contains("binary-strings") || ctx.source_type.contains("archive-binary") {
-        return Some(crate::adjudicate::HotPatternSignal::ShapeGate(
-            "hot_binary_source",
-        ));
-    }
-    if looks_like_secret_scanner_source(ctx.path) {
-        return Some(crate::adjudicate::HotPatternSignal::ShapeGate(
-            "hot_secret_scanner_source",
-        ));
-    }
-    if looks_like_hot_pattern_base64_path(ctx.path) {
-        return Some(crate::adjudicate::HotPatternSignal::ShapeGate(
-            "hot_base64_path",
-        ));
-    }
-    None
 }
 
 #[derive(Debug, Clone, Copy)]

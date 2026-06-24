@@ -293,7 +293,6 @@ fn path_suppression_predicates_live_in_path_filter_owner() {
         "fn path_is_i18n_file(",
         "fn looks_like_raw_base64_file_path(",
         "fn looks_like_entropy_raw_base64_file_path(",
-        "fn looks_like_hot_pattern_base64_path(",
         "fn raw_base64_path_match(",
     ] {
         assert!(
@@ -326,8 +325,7 @@ fn path_suppression_predicates_live_in_path_filter_owner() {
     );
     assert!(
         suppression_api.contains("looks_like_raw_base64_file_path(path)")
-            && suppression_api.contains("looks_like_hot_pattern_base64_path(ctx.path)")
-            && !suppression_api.contains("fn looks_like_hot_pattern_base64_path(")
+            && !suppression_api.contains("looks_like_hot_pattern_base64_path(")
             && !suppression_api.contains("ends_with_ignore_ascii_case(bytes, b\".b64\")")
             && !suppression_api.contains("ci_find(basename, b\"base64_string\")"),
         "suppression API must use path_filter for base64 path policy instead of owning duplicate matching code"

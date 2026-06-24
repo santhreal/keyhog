@@ -41,3 +41,36 @@ fn partial_alternation_unprefixed_branch_still_scans() {
         "unprefixed alternation branch must not be silently dead; matches={matches:?}"
     );
 }
+
+#[cfg(feature = "simdsieve")]
+#[test]
+fn loaded_hot_detector_without_matching_ac_prefix_fails_construction() {
+    let detector = DetectorSpec {
+        id: "github-classic-pat".into(),
+        name: "GitHub Classic PAT".into(),
+        service: "github".into(),
+        severity: Severity::Critical,
+        patterns: vec![PatternSpec {
+            regex: r"not_ghp_[A-Za-z0-9_]{36}".into(),
+            ..Default::default()
+        }],
+        keywords: vec!["ghp".into()],
+        min_confidence: Some(0.1),
+        ..Default::default()
+    };
+
+    let err = match CompiledScanner::compile(vec![detector]) {
+        Ok(_) => {
+            panic!("loaded hot detector with stale HOT_PATTERNS prefix must fail construction")
+        }
+        Err(err) => err,
+    };
+    let msg = err.to_string();
+    assert!(
+        msg.contains("simdsieve hot-pattern slot")
+            && msg.contains("github-classic-pat")
+            && msg.contains("ghp_")
+            && msg.contains("no compiled AC entry"),
+        "error must name stale hot-pattern prefix mapping and fix context; got {msg}"
+    );
+}

@@ -8,17 +8,9 @@
 //! hot patterns are checked first, and if found, we can often skip AC/Regex.
 
 macro_rules! define_hot_pattern_tables {
-    ($(($prefix:expr, $min_len:expr, $service:expr, $detector_id:expr, $display_name:expr $(,)?)),+ $(,)?) => {
+    ($(($prefix:expr, $service:expr, $detector_id:expr, $display_name:expr $(,)?)),+ $(,)?) => {
         /// Common high-value secret prefixes that trigger Layer 1 SIMD.
         pub(crate) const HOT_PATTERNS: &[&[u8]] = &[$($prefix),+];
-
-        /// Per-pattern minimum credential length, in bytes.
-        ///
-        /// Each floor matches the shortest valid token for the same slot in
-        /// [`HOT_PATTERNS`]. This lives beside the prefix/identity tables so a
-        /// new hot pattern cannot silently inherit a permissive default in the
-        /// engine fast path.
-        pub(crate) const HOT_PATTERN_MIN_LENGTHS: &[usize] = &[$($min_len),+];
 
         /// `service` field per hot pattern - the CANONICAL service of the detector
         /// this fast-path stands in for, NOT an internal `*_key` label. The hot path
@@ -53,7 +45,6 @@ macro_rules! define_hot_pattern_tables {
         /// field of the corresponding `detectors/*.toml`).
         pub(crate) const HOT_PATTERN_DISPLAY_NAMES: &[&str] = &[$($display_name),+];
 
-        const _: [(); HOT_PATTERNS.len()] = [(); HOT_PATTERN_MIN_LENGTHS.len()];
         const _: [(); HOT_PATTERNS.len()] = [(); HOT_PATTERN_NAMES.len()];
         const _: [(); HOT_PATTERNS.len()] = [(); HOT_PATTERN_DETECTOR_IDS.len()];
         const _: [(); HOT_PATTERNS.len()] = [(); HOT_PATTERN_DISPLAY_NAMES.len()];
@@ -63,84 +54,72 @@ macro_rules! define_hot_pattern_tables {
 define_hot_pattern_tables![
     (
         b"ghp_",
-        40,
         "github",
         crate::detector_ids::GITHUB_CLASSIC_PAT,
         "GitHub Classic PAT",
     ),
     (
         b"sk-proj-",
-        20,
         "openai",
         crate::detector_ids::OPENAI_API_KEY,
         "OpenAI API Key",
     ),
     (
         b"AKIA",
-        20,
         "aws",
         crate::detector_ids::AWS_ACCESS_KEY,
         "AWS Access Key",
     ),
     (
         b"ASIA",
-        20,
         "aws",
         crate::detector_ids::AWS_ACCESS_KEY,
         "AWS Access Key",
     ),
     (
         b"SG.",
-        26,
         "sendgrid",
         crate::detector_ids::SENDGRID_API_KEY,
         "SendGrid API Key",
     ),
     (
         b"xoxb-",
-        16,
         "slack",
         crate::detector_ids::SLACK_BOT_TOKEN,
         "Slack Bot Token",
     ),
     (
         b"xoxp-",
-        16,
         "slack",
         crate::detector_ids::SLACK_USER_TOKEN,
         "Slack User Token",
     ),
     (
         b"sq0csp-",
-        16,
         "square",
         crate::detector_ids::SQUARE_ACCESS_TOKEN,
         "Square Access Token",
     ),
     (
         b"sk_live_",
-        32,
         "stripe",
         crate::detector_ids::STRIPE_SECRET_KEY,
         "Stripe Secret Key",
     ),
     (
         b"sk_test_",
-        32,
         "stripe",
         crate::detector_ids::STRIPE_SECRET_KEY,
         "Stripe Secret Key",
     ),
     (
         b"rk_live_",
-        32,
         "stripe",
         crate::detector_ids::STRIPE_SECRET_KEY,
         "Stripe Secret Key",
     ),
     (
         b"rk_test_",
-        32,
         "stripe",
         crate::detector_ids::STRIPE_SECRET_KEY,
         "Stripe Secret Key",
@@ -162,21 +141,14 @@ pub(crate) fn hot_pattern_index_at(text_bytes: &[u8], offset: usize) -> Option<u
         .find_map(|(idx, pattern)| rest.starts_with(pattern).then_some(idx))
 }
 
-#[inline]
-pub(crate) const fn hot_pattern_direct_emit_allowed(_slot: usize) -> bool {
-    false
-}
-
 pub(crate) fn validate_hot_pattern_runtime_table_lengths(
     validators_len: usize,
     ac_map_len: usize,
-    metadata_len: usize,
 ) -> crate::error::Result<()> {
     let expected = HOT_PATTERNS.len();
     for (table, actual) in [
         ("hot_pattern_validators", validators_len),
         ("hot_ac_map_index_by_index", ac_map_len),
-        ("hot_metadata_by_index", metadata_len),
     ] {
         if actual != expected {
             return Err(crate::error::ScanError::Config(format!(

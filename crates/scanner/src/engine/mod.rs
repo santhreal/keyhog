@@ -310,15 +310,6 @@ pub struct CompiledScanner {
     /// reserved for genuinely synthetic slots with no loaded detector.
     #[cfg(feature = "simdsieve")]
     pub(crate) hot_ac_map_index_by_index: Vec<Option<usize>>,
-    /// Pre-interned `(detector_id, detector_name, service)` triple per
-    /// hot-pattern slot, index-parallel with `simdsieve_prefilter::HOT_PATTERNS`
-    /// / `HOT_PATTERN_NAMES`. The simdsieve fast path emits directly and used to
-    /// re-hash the three `&'static str` metadata constants through the CHD
-    /// interner on every hot hit; this caches the resolved `Arc<str>` once so
-    /// each emission is three `Arc::clone`s (PERF-locality_intern-1). Byte-
-    /// identical to `static_intern.lookup(HOT_PATTERN_*[idx])`.
-    #[cfg(feature = "simdsieve")]
-    pub(crate) hot_metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)>,
     /// Pre-interned `(detector_id, detector_name, service)` triple for each of
     /// the four synthetic entropy-fallback classes, indexed by
     /// `classify_entropy_detector_index` (0 generic / 1 password / 2 token /

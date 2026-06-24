@@ -6,7 +6,9 @@ fn engine_phase2_anchor_prefix_owner() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/phase2_anchor.rs");
     let src = std::fs::read_to_string(path).expect("phase2_anchor source readable");
     assert!(
-        src.contains("use super::phase2::{gate_prefix_literals, MIN_PREFIX_BYTES};")
+        src.contains("use super::phase2::{")
+            && src.contains("gate_prefix_literals")
+            && src.contains("MIN_PREFIX_BYTES")
             && src.contains("CONFIRMED_MAX_LITERALS_PER_PATTERN")
             && src.contains("required_prefix_literals_with_cap")
             && src.contains("let literals = gate_prefix_literals(src)?;"),

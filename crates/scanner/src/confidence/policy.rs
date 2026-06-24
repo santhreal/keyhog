@@ -292,29 +292,6 @@ pub(crate) fn probabilistic_promise_confidence_override(
     (!is_named_detector || identifier_shaped).then_some(0.1)
 }
 
-#[cfg(feature = "simdsieve")]
-pub(crate) fn hot_pattern_confidence(
-    credential: &str,
-    detector_id: &str,
-    file_path: Option<&str>,
-    penalize_test_paths: bool,
-    calibration: Option<&keyhog_core::Calibration>,
-) -> Option<f64> {
-    const BASE_CONFIDENCE: f64 = 0.7;
-    finalize_report_confidence(
-        BASE_CONFIDENCE,
-        ReportConfidencePolicy {
-            credential,
-            detector_id,
-            file_path,
-            is_named_detector: true,
-            penalize_test_paths,
-            allow_encoded_text_lift: false,
-            calibration,
-        },
-    )
-}
-
 #[cfg(feature = "entropy")]
 pub(crate) fn entropy_fallback_confidence(entropy: f64, keyword: &str) -> f64 {
     // Keyword-free high-entropy candidates carry weaker evidence than

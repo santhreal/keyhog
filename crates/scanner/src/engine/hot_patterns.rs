@@ -1,9 +1,5 @@
 #[cfg(feature = "simdsieve")]
 use super::*;
-#[cfg(feature = "simdsieve")]
-use keyhog_core::Severity;
-#[cfg(feature = "simdsieve")]
-use std::sync::Arc;
 
 #[cfg(feature = "simdsieve")]
 impl CompiledScanner {
@@ -17,15 +13,7 @@ impl CompiledScanner {
         chunk: &Chunk,
         scan_state: &mut ScanState,
     ) {
-        // Metadata constants (HOT_PATTERN_DETECTOR_IDS/DISPLAY_NAMES/NAMES) are
-        // no longer read here: they were pre-interned by slot index into
-        // `self.hot_metadata_by_index` at construction and are cloned by index
-        // below (PERF-locality_intern-1). Only the literal table is still
-        // needed for the sieve + dispatch.
-        use crate::simdsieve_prefilter::{
-            hot_pattern_direct_emit_allowed, hot_pattern_index_at, HOT_PATTERNS,
-            HOT_PATTERN_MIN_LENGTHS,
-        };
+        use crate::simdsieve_prefilter::{HOT_PATTERNS, hot_pattern_index_at};
         use simdsieve::SimdSieve;
 
         let text_bytes = text.as_bytes();
@@ -33,8 +21,16 @@ impl CompiledScanner {
         // that, so pass it through. The previous flow built a fresh
         // `Vec<&[u8]>` per chunk via `.to_vec()` - wasted on every
         // file in a 100k-file scan.
-        let Ok(sieve) = SimdSieve::new(text_bytes, HOT_PATTERNS) else {
-            return;
+        let sieve = match SimdSieve::new(text_bytes, HOT_PATTERNS) {
+            Ok(sieve) => sieve,
+            Err(error) => {
+                tracing::warn!(
+                    target: "keyhog::scanner::simdsieve",
+                    %error,
+                    "simdsieve hot-pattern acceleration unavailable for this chunk; standard scanner remains active"
+                );
+                return;
+            }
         };
 
         for offset in sieve {
@@ -53,9 +49,9 @@ impl CompiledScanner {
                 }
 
                 let ac_map_index = self.hot_ac_map_index_by_index[pattern_idx];
-                if ac_map_index.is_none() && !hot_pattern_direct_emit_allowed(pattern_idx) {
+                let Some(ac_map_index) = ac_map_index else {
                     continue;
-                }
+                };
 
                 let lookahead_end = (offset + 100).min(text_bytes.len());
                 let candidate = &text_bytes[offset..lookahead_end];
@@ -80,7 +76,11 @@ impl CompiledScanner {
                     })
                     .unwrap_or(candidate.len()); // LAW10: search/boundary miss => span end (whole remainder), recall-safe boundary default
 
-                let credential = std::str::from_utf8(&candidate[..cred_end]).unwrap_or(""); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
+                let credential_end = super::floor_char_boundary(text, offset + cred_end);
+                if credential_end <= offset {
+                    continue;
+                }
+                let credential = &text[offset..credential_end];
                 let record_hot_drop =
                     |credential: &str, signal: crate::adjudicate::HotPatternSignal| {
                         let ctx = crate::adjudicate::MatchCtx::for_hot_pattern(signal);
@@ -91,8 +91,10 @@ impl CompiledScanner {
                         );
                     };
 
-                // The literal-prefix hit plus length floor is only a prefilter.
-                // The precise validator owns the emitted token span.
+                // The literal-prefix hit is only a prefilter. The precise
+                // validator owns the emitted token span; process_match owns
+                // every suppression, checksum, confidence, ML, and reporting
+                // policy after that.
                 let credential = match &self.hot_pattern_validators[pattern_idx] {
                     Some(validator) => match validator.find(credential) {
                         // `^`-anchored, so any match starts at 0; trim the
@@ -121,106 +123,34 @@ impl CompiledScanner {
                             continue;
                         }
                     },
-                    // No validator for this slot (square): keep the
-                    // length-floor-only behavior below.
-                    None => credential,
+                    None => continue,
                 };
 
-                if let Some(ac_map_index) = ac_map_index {
-                    let entry = &self.ac_map[ac_map_index];
-                    let detector = &self.detectors[entry.detector_index];
-                    let (keyword_nearby, sensitive_file) =
-                        super::scan_filters::compute_pattern_signals(
-                            entry,
-                            detector,
-                            chunk,
-                            preprocessed,
-                        );
-                    self.process_match(
-                        entry,
-                        detector,
-                        text,
-                        preprocessed,
-                        line_offsets,
-                        code_lines,
-                        documentation_lines,
-                        chunk,
-                        scan_state,
-                        credential,
-                        offset,
-                        offset + credential.len(),
-                        chunk.metadata.base_line,
-                        chunk.metadata.base_offset,
-                        keyword_nearby,
-                        sensitive_file,
-                    );
-                    continue;
-                }
-
-                let min_len = HOT_PATTERN_MIN_LENGTHS[pattern_idx];
-                let suppression_ctx = crate::suppression::HotPatternSuppressionCtx::new(
-                    chunk.metadata.path.as_deref(),
-                    chunk.metadata.source_type.as_str(),
-                    min_len,
+                let entry = &self.ac_map[ac_map_index];
+                let detector = &self.detectors[entry.detector_index];
+                let (keyword_nearby, sensitive_file) = super::scan_filters::compute_pattern_signals(
+                    entry,
+                    detector,
+                    chunk,
+                    preprocessed,
                 );
-                if let Some(signal) =
-                    crate::suppression::hot_pattern_suppression_stage(credential, suppression_ctx)
-                {
-                    record_hot_drop(credential, signal);
-                    continue;
-                }
-
-                let metadata = &self.hot_metadata_by_index[pattern_idx];
-                let Some(report_conf) = crate::confidence::policy::hot_pattern_confidence(
+                self.process_match(
+                    entry,
+                    detector,
+                    text,
+                    preprocessed,
+                    line_offsets,
+                    code_lines,
+                    documentation_lines,
+                    chunk,
+                    scan_state,
                     credential,
-                    metadata.0.as_ref(),
-                    chunk.metadata.path.as_deref(),
-                    self.config.penalize_test_paths,
-                    self.config.calibration.as_deref(),
-                ) else {
-                    record_hot_drop(
-                        credential,
-                        crate::adjudicate::HotPatternSignal::ChecksumInvalid,
-                    );
-                    continue;
-                };
-
-                let line = crate::pipeline::match_line_number(preprocessed, line_offsets, offset);
-
-                let absolute_line = line + chunk.metadata.base_line;
-                let source_offset =
-                    preprocessed.source_offset_for_match(&chunk.data, offset, credential);
-                let absolute_offset = source_offset + chunk.metadata.base_offset;
-                scan_state.push_match_lazy(
-                    crate::types::RawMatchPriority {
-                        confidence: Some(report_conf),
-                        severity: Severity::Critical,
-                        detector_id: metadata.0.as_ref(),
-                        credential,
-                        offset: absolute_offset,
-                        line: Some(absolute_line),
-                    },
-                    self.config.max_matches_per_chunk,
-                    |scan_state| {
-                        // Clone the pre-interned metadata triple only after
-                        // heap admission. Capped hot scans can fire many more
-                        // candidates than they retain; rejected candidates must
-                        // not still pay three metadata refcount bumps.
-                        let detector_id = Arc::clone(&metadata.0);
-                        let detector_name = Arc::clone(&metadata.1);
-                        let service = Arc::clone(&metadata.2);
-                        crate::pipeline::build_synthetic_raw_match(
-                            (detector_id, detector_name, service),
-                            Severity::Critical,
-                            chunk,
-                            credential,
-                            absolute_offset,
-                            Some(absolute_line),
-                            None,
-                            report_conf,
-                            scan_state,
-                        )
-                    },
+                    offset,
+                    offset + credential.len(),
+                    chunk.metadata.base_line,
+                    chunk.metadata.base_offset,
+                    keyword_nearby,
+                    sensitive_file,
                 );
                 // A single sieve offset can match at most one hot literal
                 // (the prefixes are mutually-exclusive), so there is no

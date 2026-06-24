@@ -2,12 +2,12 @@
 
 use base64::Engine;
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
-use keyhog_scanner::checksum::{validate_checksum, ChecksumResult};
-use keyhog_scanner::confidence::{compute_confidence, ConfidenceSignals};
-use keyhog_scanner::context::{infer_context, CodeContext};
+use keyhog_scanner::checksum::{ChecksumResult, validate_checksum};
+use keyhog_scanner::confidence::{ConfidenceSignals, compute_confidence};
+use keyhog_scanner::context::{CodeContext, infer_context};
 use keyhog_scanner::decode::{base64_decode, hex_decode};
 use keyhog_scanner::engine::CompiledScanner;
-use keyhog_scanner::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD};
+use keyhog_scanner::entropy::{HIGH_ENTROPY_THRESHOLD, shannon_entropy};
 use keyhog_scanner::gpu::{batch_ml_inference, gpu_available, gpu_probe};
 use keyhog_scanner::ml_scorer::{
     model_card_json, model_card_summary, model_version, score, score_with_config,
@@ -16,22 +16,22 @@ use keyhog_scanner::resolution::resolve_matches;
 use keyhog_scanner::telemetry::{
     drain_events, enable_dogfood, record_example_suppression, testing::reset,
 };
+use keyhog_scanner::testing::BigramBloom;
 use keyhog_scanner::testing::build_propagation_table;
 use keyhog_scanner::testing::confidence::apply_post_ml_penalties;
 use keyhog_scanner::testing::entropy_fast::shannon_entropy_simd;
 use keyhog_scanner::testing::extract_literal_prefix;
 use keyhog_scanner::testing::fragment_cache::FragmentCache;
 use keyhog_scanner::testing::jwt::{analyze, looks_like_jwt};
-use keyhog_scanner::testing::multiline::{preprocess_multiline, MultilineConfig};
-use keyhog_scanner::testing::segment_attribution::{map_offsets_to_segments, GlobalMatch, Segment};
+use keyhog_scanner::testing::multiline::{MultilineConfig, preprocess_multiline};
+use keyhog_scanner::testing::segment_attribution::{GlobalMatch, Segment, map_offsets_to_segments};
 use keyhog_scanner::testing::unicode_hardening::is_evasion_char;
-use keyhog_scanner::testing::BigramBloom;
 use keyhog_scanner::testing::{
-    compile_state_is_ok, compute_line_offsets, match_entropy, normalize_chunk_data, AlphabetScreen,
+    AlphabetScreen, compile_state_is_ok, compute_line_offsets, match_entropy, normalize_chunk_data,
 };
-use keyhog_scanner::testing::{compute_features_public, NUM_FEATURES};
+use keyhog_scanner::testing::{NUM_FEATURES, compute_features_public};
 use keyhog_scanner::types::ScannerConfig;
-use keyhog_scanner::{probe_hardware, select_backend, ScanError};
+use keyhog_scanner::{ScanError, probe_hardware, select_backend};
 
 fn demo_chunk(data: &str) -> Chunk {
     Chunk {
@@ -729,9 +729,11 @@ fn engine_backend_error() {
         data: String::new().into(),
         metadata: ChunkMetadata::default(),
     };
-    assert!(scanner
-        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
-        .is_empty());
+    assert!(
+        scanner
+            .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+            .is_empty()
+    );
 }
 
 // ── crates/scanner/src/engine/mod.rs ──────────────────────────────────
@@ -790,10 +792,12 @@ fn engine_phase2_happy() {
     let scanner =
         CompiledScanner::compile(vec![demo_detector(r"ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
-    assert!(scanner
-        .scan(&demo_chunk(&format!("export TOKEN={token}")))
-        .iter()
-        .any(|m| m.credential.as_ref() == token));
+    assert!(
+        scanner
+            .scan(&demo_chunk(&format!("export TOKEN={token}")))
+            .iter()
+            .any(|m| m.credential.as_ref() == token)
+    );
 }
 #[test]
 fn engine_phase2_error() {
@@ -806,19 +810,23 @@ fn engine_phase2_error() {
 #[test]
 fn engine_scan_filters_happy() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    assert!(scanner
-        .scan(&demo_chunk("username = randomuser1234567890"))
-        .is_empty());
+    assert!(
+        scanner
+            .scan(&demo_chunk("username = randomuser1234567890"))
+            .is_empty()
+    );
 }
 #[test]
 fn engine_scan_filters_error() {
     let scanner =
         CompiledScanner::compile(vec![demo_detector(r"ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
-    assert!(scanner
-        .scan(&demo_chunk(&format!("api_key = \"{token}\"")))
-        .iter()
-        .any(|m| m.credential.as_ref() == token));
+    assert!(
+        scanner
+            .scan(&demo_chunk(&format!("api_key = \"{token}\"")))
+            .iter()
+            .any(|m| m.credential.as_ref() == token)
+    );
 }
 
 // ── crates/scanner/src/engine/scan_gpu.rs + hot_patterns.rs ───────────
@@ -942,55 +950,57 @@ fn engine_hot_and_entropy_metadata_clones_are_heap_admission_gated() {
         "ScanState must own lazy capped-heap admission"
     );
 
-    for (path, src, table) in [
-        (
-            "engine/hot_patterns.rs",
-            include_str!("../../src/engine/hot_patterns.rs"),
-            "self.hot_metadata_by_index[pattern_idx]",
-        ),
-        (
-            "engine/phase2_entropy.rs",
-            include_str!("../../src/engine/phase2_entropy.rs"),
-            "self.entropy_metadata_by_index[entropy_meta_idx]",
-        ),
+    let entropy_src = include_str!("../../src/engine/phase2_entropy.rs");
+    assert!(
+        entropy_src.contains("push_match_lazy"),
+        "engine/phase2_entropy.rs must compare a borrowed priority before building capped-heap matches"
+    );
+    assert!(
+        !entropy_src.contains("(m.0.clone(), m.1.clone(), m.2.clone())"),
+        "engine/phase2_entropy.rs must not resurrect unconditional detector metadata triple clones"
+    );
+    assert!(
+        entropy_src.contains("self.entropy_metadata_by_index[entropy_meta_idx]"),
+        "engine/phase2_entropy.rs must keep using the pre-interned metadata table"
+    );
+    assert!(
+        entropy_src.contains("Arc::clone(&metadata.0)")
+            && entropy_src.contains("Arc::clone(&metadata.1)")
+            && entropy_src.contains("Arc::clone(&metadata.2)"),
+        "engine/phase2_entropy.rs must build owned metadata only inside the admitted RawMatch builder"
+    );
+
+    let hot_src = include_str!("../../src/engine/hot_patterns.rs");
+    for forbidden in [
+        "push_match_lazy",
+        "build_synthetic_raw_match",
+        "self.hot_metadata_by_index[pattern_idx]",
+        "hot_pattern_direct_emit_allowed",
     ] {
         assert!(
-            src.contains("push_match_lazy"),
-            "{path} must compare a borrowed priority before building capped-heap matches"
-        );
-        assert!(
-            !src.contains("(m.0.clone(), m.1.clone(), m.2.clone())"),
-            "{path} must not resurrect unconditional detector metadata triple clones"
-        );
-        assert!(
-            src.contains(table),
-            "{path} must keep using the pre-interned metadata table"
-        );
-        assert!(
-            src.contains("Arc::clone(&metadata.0)")
-                && src.contains("Arc::clone(&metadata.1)")
-                && src.contains("Arc::clone(&metadata.2)"),
-            "{path} must build owned metadata only inside the admitted RawMatch builder"
+            !hot_src.contains(forbidden),
+            "hot-pattern fast path must not own synthetic emission token {forbidden:?}"
         );
     }
 
-    let hot_src = include_str!("../../src/engine/hot_patterns.rs");
     let simdsieve_src = include_str!("../../src/simdsieve_prefilter.rs");
     assert!(
         !hot_src.contains("scan_state.matches.len() >= self.config.max_matches_per_chunk"),
         "hot-pattern scanning must not stop at first-N and bypass best-N heap admission"
     );
     assert!(
-        hot_src.contains("HOT_PATTERN_MIN_LENGTHS[pattern_idx]")
+        hot_src.contains("let Some(ac_map_index) = ac_map_index else")
             && hot_src.contains("hot_pattern_index_at")
+            && hot_src.contains("self.process_match(")
             && !hot_src.contains("fn hot_pattern_index_at")
             && !hot_src.contains("=> Some(")
             && !hot_src.contains("PER_PATTERN_MIN_LEN")
+            && !hot_src.contains("HOT_PATTERN_MIN_LENGTHS")
             && !hot_src.contains("unwrap_or(8)")
             && simdsieve_src.contains("define_hot_pattern_tables!")
-            && simdsieve_src.contains("HOT_PATTERN_MIN_LENGTHS")
+            && !simdsieve_src.contains("HOT_PATTERN_MIN_LENGTHS")
             && simdsieve_src.contains("pub(crate) fn hot_pattern_index_at"),
-        "hot-pattern slot dispatch and min lengths must be owned by the simdsieve hot-pattern table and must not silently default on slot drift"
+        "hot-pattern slot dispatch must be owned by the simdsieve hot-pattern table and route through process_match without silent slot defaults"
     );
 }
 

@@ -102,10 +102,12 @@ fn metadata_intern_is_indexed_not_rehashed_per_match() {
 
     let hot = src("src/engine/hot_patterns.rs");
     assert!(
-        hot.contains("self.hot_metadata_by_index[pattern_idx]")
-            && hot.contains("Arc::clone(&metadata.0)")
+        hot.contains("self.process_match(")
+            && hot.contains("self.hot_ac_map_index_by_index[pattern_idx]")
+            && !hot.contains("self.hot_metadata_by_index[pattern_idx]")
+            && !hot.contains("build_synthetic_raw_match")
             && !hot.contains("intern_metadata(HOT_PATTERN_DETECTOR_IDS"),
-        "hot-pattern emission must use pre-indexed metadata"
+        "hot-pattern emission must route through canonical process_match metadata instead of synthetic hot metadata"
     );
 
     let entropy = src("src/engine/phase2_entropy.rs");

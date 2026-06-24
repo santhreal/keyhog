@@ -393,44 +393,12 @@ impl CompiledScanner {
         let hot_pattern_validators =
             crate::simdsieve_prefilter::build_hot_pattern_validators(&detectors)?;
         #[cfg(feature = "simdsieve")]
-        let hot_ac_map_index_by_index = build_hot_ac_map_index_by_index(&detectors, &state.ac_map);
+        let hot_ac_map_index_by_index = build_hot_ac_map_index_by_index(&detectors, &state.ac_map)?;
 
-        // Pre-intern the hot-pattern metadata constants ONCE, index-parallel
-        // with HOT_PATTERNS, so the simdsieve fast path clones by slot index
-        // instead of re-hashing the same three `&'static str`s through the CHD
-        // interner on every hot hit (PERF-locality_intern-1). These constants
-        // name real detectors whose id/name/service are already in the interner
-        // universe; the `unwrap_or_else` only fires for the one synthetic slot
-        // (square) with no canonical detector, where it interns the static
-        // string directly — still byte-identical to what the per-match
-        // `intern_metadata` call would have produced.
-        #[cfg(feature = "simdsieve")]
-        let hot_metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)> = {
-            use crate::simdsieve_prefilter::{
-                HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_NAMES,
-            };
-            (0..HOT_PATTERN_NAMES.len())
-                .map(|i| {
-                    let id = HOT_PATTERN_DETECTOR_IDS[i];
-                    let name = HOT_PATTERN_DISPLAY_NAMES[i];
-                    let service = HOT_PATTERN_NAMES[i];
-                    (
-                        static_intern.lookup(id).unwrap_or_else(|| Arc::from(id)), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
-                        static_intern
-                            .lookup(name)
-                            .unwrap_or_else(|| Arc::from(name)), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
-                        static_intern
-                            .lookup(service)
-                            .unwrap_or_else(|| Arc::from(service)), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
-                    )
-                })
-                .collect()
-        };
         #[cfg(feature = "simdsieve")]
         crate::simdsieve_prefilter::validate_hot_pattern_runtime_table_lengths(
             hot_pattern_validators.len(),
             hot_ac_map_index_by_index.len(),
-            hot_metadata_by_index.len(),
         )?;
 
         let scanner = Self {
@@ -484,8 +452,6 @@ impl CompiledScanner {
             hot_pattern_validators,
             #[cfg(feature = "simdsieve")]
             hot_ac_map_index_by_index,
-            #[cfg(feature = "simdsieve")]
-            hot_metadata_by_index,
             #[cfg(feature = "entropy")]
             entropy_metadata_by_index,
             config: ScannerConfig::default(),
@@ -553,16 +519,17 @@ fn validate_compiled_pattern_detector_index(
 fn build_hot_ac_map_index_by_index(
     detectors: &[DetectorSpec],
     ac_map: &[CompiledPattern],
-) -> Vec<Option<usize>> {
+) -> Result<Vec<Option<usize>>> {
     use crate::simdsieve_prefilter::{HOT_PATTERN_DETECTOR_IDS, HOT_PATTERNS};
 
     HOT_PATTERN_DETECTOR_IDS
         .iter()
         .enumerate()
         .map(|(slot, detector_id)| {
+            let detector_loaded = detectors.iter().any(|detector| detector.id == *detector_id);
             let hot_literal = std::str::from_utf8(HOT_PATTERNS[slot])
                 .expect("static simdsieve hot-pattern literal must be valid UTF-8");
-            ac_map.iter().position(|entry| {
+            let ac_map_index = ac_map.iter().position(|entry| {
                 detectors
                     .get(entry.detector_index)
                     .is_some_and(|detector| detector.id == *detector_id)
@@ -571,7 +538,16 @@ fn build_hot_ac_map_index_by_index(
                     )
                     .iter()
                     .any(|prefix| prefix.as_str() == hot_literal)
-            })
+            });
+            if detector_loaded && ac_map_index.is_none() {
+                return Err(crate::error::ScanError::Config(format!(
+                    "simdsieve hot-pattern slot {slot} for detector {detector_id:?} uses prefix \
+                     {hot_literal:?}, but no compiled AC entry for that loaded detector exposes \
+                     the same literal prefix; fix: update HOT_PATTERNS/HOT_PATTERN_DETECTOR_IDS \
+                     with the detector regex or remove the stale hot slot"
+                )));
+            }
+            Ok(ac_map_index)
         })
         .collect()
 }

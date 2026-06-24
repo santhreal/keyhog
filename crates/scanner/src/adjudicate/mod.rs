@@ -144,17 +144,13 @@ impl ProcessCandidateSignals {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HotPatternSignal {
-    SuppressionStage(StageId),
     ShapeGate(&'static str),
-    ChecksumInvalid,
 }
 
 impl HotPatternSignal {
     const fn stage_id(self) -> StageId {
         match self {
-            Self::SuppressionStage(stage_id) => stage_id,
             Self::ShapeGate(reason) => StageId::ShapeGate(reason),
-            Self::ChecksumInvalid => StageId::ChecksumInvalid,
         }
     }
 }

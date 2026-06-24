@@ -191,22 +191,14 @@ pub(crate) fn path_is_i18n_file(path: Option<&str>) -> bool {
 }
 
 pub(crate) fn looks_like_raw_base64_file_path(path: Option<&str>) -> bool {
-    raw_base64_path_match(path, true, false)
+    raw_base64_path_match(path, true)
 }
 
 pub(crate) fn looks_like_entropy_raw_base64_file_path(path: Option<&str>) -> bool {
-    raw_base64_path_match(path, false, false)
+    raw_base64_path_match(path, false)
 }
 
-pub(crate) fn looks_like_hot_pattern_base64_path(path: Option<&str>) -> bool {
-    raw_base64_path_match(path, false, true)
-}
-
-fn raw_base64_path_match(
-    path: Option<&str>,
-    include_plain_base64_txt: bool,
-    exclude_structured_config: bool,
-) -> bool {
+fn raw_base64_path_match(path: Option<&str>, include_plain_base64_txt: bool) -> bool {
     let Some(p) = path else {
         return false;
     };
@@ -217,13 +209,6 @@ fn raw_base64_path_match(
         return true;
     }
     let basename = crate::platform_compat::path_basename_bytes(bytes);
-    if exclude_structured_config
-        && (crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".json")
-            || crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".yml")
-            || crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".yaml"))
-    {
-        return false;
-    }
     crate::ascii_ci::starts_with_ignore_ascii_case(basename, b"base64_")
         || crate::ascii_ci::ci_find(basename, b"base64_string")
         || (include_plain_base64_txt && basename.eq_ignore_ascii_case(b"base64.txt"))
@@ -267,12 +252,6 @@ mod tests {
         )));
         assert!(looks_like_entropy_raw_base64_file_path(Some(
             "/repo/base64_string.txt"
-        )));
-        assert!(looks_like_hot_pattern_base64_path(Some(
-            r"C:\repo\assets\base64_string.txt"
-        )));
-        assert!(!looks_like_hot_pattern_base64_path(Some(
-            "/repo/base64_string.json"
         )));
     }
 }
