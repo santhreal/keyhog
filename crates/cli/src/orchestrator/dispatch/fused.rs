@@ -1,7 +1,7 @@
 //! Fused filesystem read+scan dispatch path.
 
 use super::backend::{
-    CachedBackendRouter, MeasuredBackendRouter, backend_requires_coalesced_batch_pipeline,
+    backend_requires_coalesced_batch_pipeline, CachedBackendRouter, MeasuredBackendRouter,
 };
 use crate::orchestrator::ScanOrchestrator;
 use crate::orchestrator_config::{autoroute_config_digest, fused_depth_default};
@@ -334,6 +334,12 @@ impl ScanOrchestrator {
                     _ => scanner_ref.scan_coalesced(&batch),
                 };
                 crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+
+                let mut per_chunk = per_chunk;
+                crate::inline_suppression::attach_inline_suppression_context(
+                    &batch,
+                    &mut per_chunk,
+                );
 
                 let mut out: Vec<RawMatch> = Vec::new();
                 let mut batch_findings = 0usize;

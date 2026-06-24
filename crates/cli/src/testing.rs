@@ -110,6 +110,11 @@ pub trait CliTestApi {
         args: &ScanArgs,
         _guard: &ScanRuntimeGuard,
     ) -> Result<()>;
+    fn attach_inline_suppression_context_for_test(
+        &self,
+        chunk: &keyhog_core::Chunk,
+        matches: &mut [RawMatch],
+    );
     fn filter_inline_suppressions(&self, matches: Vec<RawMatch>) -> Vec<RawMatch>;
     fn format_bytes(&self, n: u64) -> String;
     fn ensure_private_socket_dir(&self, parent: &Path) -> Result<()>;
@@ -396,6 +401,13 @@ impl CliTestApi for TestApi {
         _guard: &ScanRuntimeGuard,
     ) -> Result<()> {
         crate::reporting::report_findings(findings, args)
+    }
+    fn attach_inline_suppression_context_for_test(
+        &self,
+        chunk: &keyhog_core::Chunk,
+        matches: &mut [RawMatch],
+    ) {
+        crate::inline_suppression::attach_inline_suppression_context_to_matches(chunk, matches)
     }
     fn filter_inline_suppressions(&self, matches: Vec<RawMatch>) -> Vec<RawMatch> {
         crate::inline_suppression::filter_inline_suppressions(matches)

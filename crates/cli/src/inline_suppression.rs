@@ -1,8 +1,10 @@
 //! Inline suppression handling for CLI findings.
 
-use keyhog_core::RawMatch;
+use keyhog_core::{Chunk, RawMatch};
 use std::collections::HashMap;
 
+const INLINE_CONTEXT_PREV_LINE: &str = "__keyhog_internal_inline_prev_line_v1";
+const INLINE_CONTEXT_CURRENT_LINE: &str = "__keyhog_internal_inline_current_line_v1";
 const INLINE_SUPPRESSION_DIRECTIVES: &[&str] = &[
     "keyhog:ignore",
     "keyhog:allow",
@@ -15,10 +17,17 @@ const INLINE_COMMENT_MARKERS: &[&str] = &["//", "#", "--", "/*", "<!--"];
 pub(crate) fn filter_inline_suppressions(matches: Vec<RawMatch>) -> Vec<RawMatch> {
     use std::io::BufRead;
 
+    let mut filtered_matches = Vec::new();
     let mut files_to_matches: HashMap<String, Vec<RawMatch>> = HashMap::new();
     let mut non_file_matches = Vec::new();
 
-    for m in matches {
+    for mut m in matches {
+        if let Some((prev_line, current_line)) = take_inline_context(&mut m) {
+            if !is_inline_suppressed_buffered(&prev_line, &current_line, &m.detector_id) {
+                filtered_matches.push(m);
+            }
+            continue;
+        }
         if m.location.source.as_ref() == "filesystem" {
             if let Some(path) = m.location.file_path.clone() {
                 files_to_matches
@@ -31,7 +40,7 @@ pub(crate) fn filter_inline_suppressions(matches: Vec<RawMatch>) -> Vec<RawMatch
         non_file_matches.push(m);
     }
 
-    let mut filtered_matches = non_file_matches;
+    filtered_matches.extend(non_file_matches);
     for (path, mut file_matches) in files_to_matches {
         file_matches.sort_by_key(|m| m.location.line.unwrap_or(0)); // LAW10: empty/absent => documented numeric default, recall-safe
 
@@ -92,6 +101,85 @@ pub(crate) fn filter_inline_suppressions(matches: Vec<RawMatch>) -> Vec<RawMatch
     }
 
     filtered_matches
+}
+
+pub(crate) fn attach_inline_suppression_context(chunks: &[Chunk], per_chunk: &mut [Vec<RawMatch>]) {
+    for (chunk, matches) in chunks.iter().zip(per_chunk.iter_mut()) {
+        attach_inline_suppression_context_to_matches(chunk, matches);
+    }
+}
+
+pub(crate) fn attach_inline_suppression_context_to_matches(
+    chunk: &Chunk,
+    matches: &mut [RawMatch],
+) {
+    if chunk.metadata.source_type != "filesystem" || chunk.metadata.path.is_none() {
+        return;
+    }
+    let text = chunk.data.as_ref();
+    for m in matches {
+        let Some(relative_offset) = m.location.offset.checked_sub(chunk.metadata.base_offset)
+        else {
+            continue;
+        };
+        let Some((prev_line, current_line)) = line_context_at_offset(text, relative_offset) else {
+            continue;
+        };
+        m.companions
+            .insert(INLINE_CONTEXT_PREV_LINE.to_string(), prev_line);
+        m.companions
+            .insert(INLINE_CONTEXT_CURRENT_LINE.to_string(), current_line);
+    }
+}
+
+fn take_inline_context(m: &mut RawMatch) -> Option<(String, String)> {
+    let prev_line = m.companions.remove(INLINE_CONTEXT_PREV_LINE);
+    let current_line = m.companions.remove(INLINE_CONTEXT_CURRENT_LINE);
+    if prev_line.is_some() || current_line.is_some() {
+        let prev_line = match prev_line {
+            Some(line) => line,
+            None => String::new(),
+        };
+        let current_line = match current_line {
+            Some(line) => line,
+            None => String::new(),
+        };
+        Some((prev_line, current_line))
+    } else {
+        None
+    }
+}
+
+fn line_context_at_offset(text: &str, offset: usize) -> Option<(String, String)> {
+    if offset > text.len() || !text.is_char_boundary(offset) {
+        return None;
+    }
+
+    let current_start = text[..offset].rfind('\n').map_or(0, |idx| idx + 1);
+    let current_end = text[offset..]
+        .find('\n')
+        .map_or(text.len(), |idx| offset + idx);
+    let current_line = trim_cr(&text[current_start..current_end]).to_string();
+
+    let prev_line = if current_start == 0 {
+        String::new()
+    } else {
+        let mut prev_end = current_start - 1;
+        if prev_end > 0 && text.as_bytes()[prev_end - 1] == b'\r' {
+            prev_end -= 1;
+        }
+        let prev_start = text[..prev_end].rfind('\n').map_or(0, |idx| idx + 1);
+        text[prev_start..prev_end].to_string()
+    };
+
+    Some((prev_line, current_line))
+}
+
+fn trim_cr(line: &str) -> &str {
+    match line.strip_suffix('\r') {
+        Some(trimmed) => trimmed,
+        None => line,
+    }
 }
 
 fn is_inline_suppressed_buffered(prev_line: &str, current_line: &str, detector_id: &str) -> bool {

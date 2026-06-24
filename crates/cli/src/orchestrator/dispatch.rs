@@ -146,7 +146,7 @@ impl CoalescedScannerWorker {
             ScanBackend::SimdCpu => self.scanner.scan_coalesced(batch),
             backend => return Err(AutorouteRoutingError::unsupported_backend(backend)),
         };
-        append_scanned_batch_findings(findings, per_chunk, scanned_count, ran_on_gpu);
+        append_scanned_batch_findings(findings, batch, per_chunk, scanned_count, ran_on_gpu);
         Ok(scan_start.elapsed())
     }
 
@@ -173,7 +173,8 @@ impl CoalescedScannerWorker {
 
 fn append_scanned_batch_findings(
     findings: &mut Vec<RawMatch>,
-    per_chunk: Vec<Vec<RawMatch>>,
+    batch: &[Chunk],
+    mut per_chunk: Vec<Vec<RawMatch>>,
     scanned_count: usize,
     ran_on_gpu: bool,
 ) {
@@ -186,6 +187,7 @@ fn append_scanned_batch_findings(
         crate::GPU_SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
     }
     let mut batch_findings = 0usize;
+    crate::inline_suppression::attach_inline_suppression_context(batch, &mut per_chunk);
     for chunk_findings in per_chunk {
         batch_findings += chunk_findings.len();
         findings.extend(chunk_findings);

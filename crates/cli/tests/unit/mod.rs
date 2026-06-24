@@ -11,6 +11,7 @@ pub mod detectors_brace_fix;
 pub mod file_gate;
 pub mod format;
 pub mod gates;
+pub mod inline_suppression_context;
 pub mod installer;
 pub mod orchestrator;
 pub mod orchestrator_config;

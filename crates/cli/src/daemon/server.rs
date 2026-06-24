@@ -456,11 +456,12 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
             &telemetry,
             || -> Result<Vec<RawMatch>> {
                 let backend = router.choose(backend_override, &chunks)?;
-                Ok(scanner
-                    .scan_chunks_with_backend(&chunks, backend)
-                    .into_iter()
-                    .flatten()
-                    .collect())
+                let mut per_chunk = scanner.scan_chunks_with_backend(&chunks, backend);
+                crate::inline_suppression::attach_inline_suppression_context(
+                    &chunks,
+                    &mut per_chunk,
+                );
+                Ok(per_chunk.into_iter().flatten().collect())
             },
         )?;
         let (engine_example_suppressions, dogfood_events) = drain_daemon_scan_telemetry(&telemetry);
