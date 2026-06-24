@@ -66,7 +66,18 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
     mut emit: impl FnMut(FileWindow) -> bool,
 ) -> Option<()> {
     debug_assert!(window_size > overlap, "window must exceed overlap");
-    let file = open_file_safe(path).ok()?; // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
+    let file = match open_file_safe(path) {
+        Ok(file) => file,
+        Err(error) => {
+            tracing::warn!(
+                path = %path.display(),
+                %error,
+                "cannot open large file for windowed mmap; skipping"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return Some(());
+        }
+    };
 
     // Post-open re-stat: defeat the walker-stat-then-grow race. See
     // read_file_mmap for the full rationale + MMAP_TOCTOU_SANITY_CAP_BYTES

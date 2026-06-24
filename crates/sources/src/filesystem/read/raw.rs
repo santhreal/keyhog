@@ -93,7 +93,23 @@ pub(in crate::filesystem) fn open_file_safe(path: &Path) -> std::io::Result<File
             }
         }
     }
-    options.open(path)
+    let file = options.open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        let fd = file.as_raw_fd();
+        // SAFETY: advisory shared lock on a read-only descriptor. The lock is
+        // held by the returned File until the read path drops it, preventing
+        // locked/torn-write inputs from being reopened through a different
+        // unlocked fallback path.
+        if unsafe { libc::flock(fd, libc::LOCK_SH | libc::LOCK_NB) } != 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "file is locked by another process",
+            ));
+        }
+    }
+    Ok(file)
 }
 
 pub(in crate::filesystem) fn read_file_prefix_safe(

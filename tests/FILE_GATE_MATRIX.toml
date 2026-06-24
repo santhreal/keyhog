@@ -881,6 +881,9 @@ path = "crates/sources/src/git/mod.rs"
 path = "crates/sources/src/git/source.rs"
 
 [[module]]
+path = "crates/sources/src/git/tag_messages.rs"
+
+[[module]]
 path = "crates/sources/src/github_org.rs"
 
 [[module]]

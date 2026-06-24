@@ -555,33 +555,13 @@ pub(super) fn process_entry(
             )
         }
         _ => {
-            match read::read_file_safe(&path, file_size) {
-                Ok(bytes) => {
-                    let strings = crate::strings::extract_printable_strings(&bytes, 8);
-                    if strings.is_empty() {
-                        record_binary_without_printable_strings(&display_path(&path));
-                        return;
-                    }
-                    tracing::info!(
-                        path = %path.display(),
-                        "file is not valid text; scanning printable strings only"
-                    );
-                    (
-                        crate::strings::join_sensitive_strings(&strings, "\n"),
-                        "filesystem:binary-strings",
-                    )
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        path = %path.display(),
-                        %error,
-                        "cannot read file; skipping"
-                    );
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                    let _ = emit(Err(keyhog_core::SourceError::Io(error))); // LAW10: unused-binding marker; no runtime effect, not a fallback
-                    return;
-                }
+            if !emit(Err(keyhog_core::SourceError::Other(format!(
+                "failed to scan filesystem file '{}': primary read path refused the file; file was not scanned",
+                display_path(&path)
+            )))) {
+                return;
             }
+            return;
         }
     };
 
