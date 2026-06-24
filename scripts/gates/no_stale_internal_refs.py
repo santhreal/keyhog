@@ -24,6 +24,7 @@ PATTERNS = [
     "audits/",
     "GAP_FINDINGS",
     "coordination/rounds",
+    "adjudication_decision_inventory",
 ]
 
 ALLOWED = {
