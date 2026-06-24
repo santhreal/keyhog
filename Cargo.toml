@@ -111,6 +111,7 @@ parking_lot = "=0.12.5"
 dashmap = "=6.2.1"
 indexmap = "=2.14.0"
 notify = "=8.0.0"
+ahash = "=0.8.12"
 
 # Performance libraries
 simdsieve = "=0.1.1"

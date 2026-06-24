@@ -111,7 +111,7 @@ parking_lot = { workspace = true }
 # function call per byte, collapsing the per-lookup cost to ~one cheap hash +
 # one compare while returning the identical pre-allocated `Arc<str>`
 # (PERF-locality_intern-1).
-ahash = "=0.8.12"
+ahash = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

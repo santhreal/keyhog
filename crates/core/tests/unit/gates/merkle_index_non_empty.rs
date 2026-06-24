@@ -23,12 +23,12 @@ fn merkle_index_non_empty() {
         "merkle_index: shard routing is a hot path and must not use SipHasher DefaultHasher"
     );
     assert!(
-        prod.contains("type MerkleShardMap = HashMap<CacheKey, CacheEntry, MerkleShardBuildHasher>")
-            && prod.contains("type MerkleShardBuildHasher = BuildHasherDefault<MerkleShardHasher>")
-            && prod.contains("impl Hasher for MerkleShardHasher")
-            && prod.contains("MERKLE_FNV_OFFSET_BASIS")
-            && prod.contains("MERKLE_FNV_PRIME"),
-        "merkle_index: per-shard HashMap lookups must use the dedicated fast hasher, not std RandomState"
+        prod.contains("type MerkleShardBuildHasher = ahash::RandomState")
+            && prod
+                .contains("type MerkleShardMap = HashMap<CacheKey, CacheEntry, MerkleShardBuildHasher>")
+            && !prod.contains("MERKLE_FNV")
+            && !prod.contains("impl Hasher for MerkleShardHasher"),
+        "merkle_index: per-shard HashMap lookups must use a keyed fast hasher, not std RandomState or unkeyed FNV"
     );
     assert!(
         prod.contains("fn shard_index_bytes(bytes: &[u8]) -> usize")

@@ -42,6 +42,7 @@ serde_with = { workspace = true }
 parking_lot = { workspace = true }
 indexmap = { workspace = true }
 fs2 = { workspace = true }
+ahash = { workspace = true }
 # `pure` forces the portable Rust implementation and drops blake3's C/assembly
 # build script, which fails on the macos-latest (arm64) CI runner and on any
 # cross/portable build without a target C toolchain. blake3 here only hashes

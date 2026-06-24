@@ -18,9 +18,17 @@ fn web_max_response_bytes_in_source() {
     );
     assert!(
         src.contains("fn decode_content_encoding")
-            && src.contains("decoded {encoding} response")
+            && src.contains("decoded {label} response")
             && src.contains("Content-Encoding"),
         "web response handling must explicitly decode gzip/br/deflate behind the same cap"
+    );
+    assert!(
+        src.contains("enum WebContentEncoding")
+            && src.contains("fn parse(raw: &str) -> Option<Self>")
+            && src.contains("encoding.eq_ignore_ascii_case(\"identity\")")
+            && src.contains("filter_map(WebContentEncoding::parse)")
+            && !src.contains(".map(str::to_ascii_lowercase)"),
+        "Content-Encoding parsing must classify known encodings allocation-free and only allocate for unsupported labels"
     );
     let limits = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/limits.rs"))
         .expect("limits.rs");

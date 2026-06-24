@@ -637,10 +637,49 @@ fn read_bytes_response(
     decode_content_encoding(read.bytes, &encodings, &safe_url, max_response_bytes)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum WebContentEncoding {
+    Gzip,
+    XGzip,
+    Deflate,
+    Brotli,
+    Unsupported(String),
+}
+
+impl WebContentEncoding {
+    fn parse(raw: &str) -> Option<Self> {
+        let encoding = raw.trim();
+        if encoding.is_empty() || encoding.eq_ignore_ascii_case("identity") {
+            return None;
+        }
+        if encoding.eq_ignore_ascii_case("gzip") {
+            Some(Self::Gzip)
+        } else if encoding.eq_ignore_ascii_case("x-gzip") {
+            Some(Self::XGzip)
+        } else if encoding.eq_ignore_ascii_case("deflate") {
+            Some(Self::Deflate)
+        } else if encoding.eq_ignore_ascii_case("br") {
+            Some(Self::Brotli)
+        } else {
+            Some(Self::Unsupported(encoding.to_owned()))
+        }
+    }
+
+    fn label(&self) -> &str {
+        match self {
+            Self::Gzip => "gzip",
+            Self::XGzip => "x-gzip",
+            Self::Deflate => "deflate",
+            Self::Brotli => "br",
+            Self::Unsupported(encoding) => encoding.as_str(),
+        }
+    }
+}
+
 fn response_content_encodings(
     headers: &reqwest::header::HeaderMap,
     safe_url: &str,
-) -> Result<Vec<String>, SourceError> {
+) -> Result<Vec<WebContentEncoding>, SourceError> {
     let Some(raw) = headers.get(reqwest::header::CONTENT_ENCODING) else {
         return Ok(Vec::new());
     };
@@ -652,16 +691,13 @@ fn response_content_encodings(
     })?;
     Ok(raw
         .split(',')
-        .map(str::trim)
-        .filter(|encoding| !encoding.is_empty())
-        .map(str::to_ascii_lowercase)
-        .filter(|encoding| encoding != "identity")
+        .filter_map(WebContentEncoding::parse)
         .collect())
 }
 
 fn decode_content_encoding(
     mut bytes: Vec<u8>,
-    encodings: &[String],
+    encodings: &[WebContentEncoding],
     safe_url: &str,
     max_response_bytes: usize,
 ) -> Result<Vec<u8>, SourceError> {
@@ -673,25 +709,28 @@ fn decode_content_encoding(
 
 fn decode_one_content_encoding(
     bytes: &[u8],
-    encoding: &str,
+    encoding: &WebContentEncoding,
     safe_url: &str,
     max_response_bytes: usize,
 ) -> Result<Vec<u8>, SourceError> {
+    let label = encoding.label();
     let cap = u64::try_from(max_response_bytes).map_err(|_| {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         SourceError::Other(format!(
-            "decoded {encoding} response byte limit for {safe_url} exceeds this platform's supported range"
+            "decoded {label} response byte limit for {safe_url} exceeds this platform's supported range"
         ))
     })?;
     let read = match encoding {
-        "gzip" | "x-gzip" => {
+        WebContentEncoding::Gzip | WebContentEncoding::XGzip => {
             crate::capped_read::read_to_cap(flate2::read::MultiGzDecoder::new(bytes), cap, None)
         }
-        "deflate" => {
+        WebContentEncoding::Deflate => {
             crate::capped_read::read_to_cap(flate2::read::ZlibDecoder::new(bytes), cap, None)
         }
-        "br" => crate::capped_read::read_to_cap(brotli::Decompressor::new(bytes, 4096), cap, None),
-        other => {
+        WebContentEncoding::Brotli => {
+            crate::capped_read::read_to_cap(brotli::Decompressor::new(bytes, 4096), cap, None)
+        }
+        WebContentEncoding::Unsupported(other) => {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             return Err(SourceError::Other(format!(
                 "response from {safe_url} uses unsupported Content-Encoding {other:?}; body was not scanned"
@@ -702,13 +741,13 @@ fn decode_one_content_encoding(
     let read = read.map_err(|error| {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
         SourceError::Other(format!(
-            "failed to decode {encoding} response from {safe_url}: {error}"
+            "failed to decode {label} response from {safe_url}: {error}"
         ))
     })?;
     if read.truncated {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return Err(SourceError::Other(format!(
-            "decoded {encoding} response from {safe_url} exceeds {max_response_bytes} byte limit"
+            "decoded {label} response from {safe_url} exceeds {max_response_bytes} byte limit"
         )));
     }
 
