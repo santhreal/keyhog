@@ -12,4 +12,5 @@ pub mod gate;
 pub mod integration;
 pub mod regression;
 pub mod reliability;
+pub mod stress;
 pub mod unit;

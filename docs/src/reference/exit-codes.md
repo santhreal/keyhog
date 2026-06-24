@@ -13,7 +13,7 @@ consumers (CI gates, pre-commit hooks, IDE plugins) can rely on them.
 | `10` | **LIVE credentials confirmed** (a `--verify` scan where the vendor API accepted a found secret) - the highest-severity gate. Also returned by `keyhog update --check` when a newer release exists. |
 | `11` | Scanner thread panicked. The finding count is NOT trustworthy - investigate, don't ship. Distinct from `2`/`3` so CI can tell a code bug from a config error. |
 | `12` | Required GPU unavailable: `--require-gpu` was set but no usable GPU path was available. |
-| `13` | A requested source failed before producing scan data, so the scan did not actually run for that source. |
+| `13` | A requested source failed before producing scan data, or input coverage was incomplete, so the scan did not prove the target clean. |
 | `130`| Interrupted (SIGINT / Ctrl-C).                                     |
 
 ## `0` (clean)
@@ -120,13 +120,15 @@ Returned before scanning when the operator explicitly required GPU execution
 usable GPU path. This is distinct from `2` so CI can tell "bad input" from "GPU
 runner regressed or was scheduled on the wrong host" without scraping stderr.
 
-## `13` (requested source failed)
+## `13` (requested source failed or coverage incomplete)
 
-Returned when a source the operator explicitly requested produced no scan data:
-for example `--git-history` on a non-git directory, a bad git ref, or a remote
-source that could not be read. This is distinct from clean `0` and generic
-user-error `2`; the scan did not prove the target clean because the source did
-not run.
+Returned when a source the operator explicitly requested produced no scan data,
+or when the scan completed with zero findings but input coverage was incomplete:
+for example `--git-history` on a non-git directory, a bad git ref, a remote
+source that could not be read, an unreadable file, an oversized file skipped by
+`--max-file-size`, a truncated archive, or a decode/source expansion cap. This
+is distinct from clean `0` and generic user-error `2`; the scan did not prove
+the target clean because requested bytes were not scanned.
 
 ## Composing in shell
 
@@ -147,7 +149,7 @@ case "$rc" in
   3)     echo "system error -> retry / investigate" ;;
   11)    echo "scanner panic -> paging on-call" ;;
   12)    echo "required GPU unavailable -> reroute to GPU runner" ;;
-  13)    echo "requested source failed -> fix source/ref/token" ;;
+  13)    echo "source failed or coverage incomplete -> fix source/ref/token or rescan uncovered input" ;;
   130)   echo "interrupted" ;;
   *)     echo "unknown exit $rc" ;;
 esac

@@ -5,7 +5,7 @@
 The main subcommand. Scans `PATH` (default: current directory) and
 emits findings. Exit code: `0` clean, `1` findings present, `2`
 user error, `3` system error, `10` live credential, `11` scanner panic,
-`12` required GPU unavailable, `13` requested source failed.
+`12` required GPU unavailable, `13` requested source failed or coverage incomplete.
 
 ### Input selection
 

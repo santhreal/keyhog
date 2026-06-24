@@ -34,8 +34,8 @@ fn scan_max_file_size_skips_oversized_file() {
 
     assert_eq!(
         output.status.code(),
-        Some(0),
-        "oversized file must be skipped (exit 0); stderr={}",
+        Some(13),
+        "oversized file must make input coverage incomplete (exit 13); stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -50,5 +50,10 @@ fn scan_max_file_size_skips_oversized_file() {
         findings.is_empty(),
         "skipped file must not produce findings; got: {}",
         stdout
+    );
+    assert!(
+        stderr.contains("input coverage was incomplete")
+            && stderr.contains("exceeded --max-file-size"),
+        "oversized clean-looking scan must explain the incomplete coverage; stderr={stderr}"
     );
 }

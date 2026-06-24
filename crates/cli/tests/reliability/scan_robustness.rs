@@ -268,8 +268,9 @@ fn unreadable_directory_is_skipped_not_fatal() {
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     assert!(!timed_out, "scan hung on an unreadable subdir");
-    assert!(
-        code.is_some() && documented_scan_exit(code.unwrap()),
-        "an unreadable subdir should warn-and-continue, got {code:?}"
+    assert_eq!(
+        code,
+        Some(i32::from(keyhog::exit_codes::EXIT_SOURCE_FAILED)),
+        "an unreadable clean-looking scan must fail closed instead of reporting clean"
     );
 }

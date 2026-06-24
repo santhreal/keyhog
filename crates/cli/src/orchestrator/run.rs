@@ -1,8 +1,8 @@
 //! Main scan run loop: hardening, sources, baseline, reporting, exit codes.
 
-use super::ScanOrchestrator;
 use super::allowlist::{load_allowlist, load_rule_suppressor};
 use super::reporting::{dump_dogfood_trace, report_completion_summary, report_skip_summary};
+use super::ScanOrchestrator;
 use crate::baseline::Baseline;
 use crate::exit_codes::{
     EXIT_FINDINGS, EXIT_LIVE_CREDENTIALS, EXIT_REQUIRE_GPU_UNMET, EXIT_SCANNER_PANIC,
@@ -385,16 +385,48 @@ impl ScanOrchestrator {
         let scanner_panicked = crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed);
         let incremental_cache_failed =
             crate::INCREMENTAL_CACHE_ERRORS.load(std::sync::atomic::Ordering::Relaxed) > 0;
+        let source_coverage_incomplete = source_coverage_incomplete();
         Ok(if has_live_credentials {
             std::process::ExitCode::from(EXIT_LIVE_CREDENTIALS)
         } else if scanner_panicked {
             std::process::ExitCode::from(EXIT_SCANNER_PANIC)
         } else if has_new_entries {
             std::process::ExitCode::from(EXIT_FINDINGS)
+        } else if source_coverage_incomplete {
+            eprintln!(
+                "error: input coverage was incomplete (see coverage warnings above). Not \
+                 reporting \"clean\": some requested bytes were not scanned."
+            );
+            std::process::ExitCode::from(EXIT_SOURCE_FAILED)
         } else if incremental_cache_failed {
             std::process::ExitCode::from(EXIT_SYSTEM_ERROR)
         } else {
             std::process::ExitCode::SUCCESS
         })
     }
+}
+
+fn source_coverage_incomplete() -> bool {
+    let counts = keyhog_sources::skip_counts();
+    let source_gaps = counts.over_max_size
+        + counts.binary
+        + counts.unreadable
+        + counts.archive_truncated
+        + counts.binary_section_name_unresolved
+        + counts.source_truncated
+        + counts.structured_source_parse_failures
+        + counts.archive_duplicate_scan_unavailable;
+
+    #[cfg(feature = "binary")]
+    let binary_gaps =
+        keyhog_sources::binary_degraded_to_strings() + keyhog_sources::binary_unreadable();
+    #[cfg(not(feature = "binary"))]
+    let binary_gaps = 0;
+
+    let scanner_coverage_gaps = keyhog_scanner::telemetry::structured_parse_failure_count()
+        + keyhog_scanner::telemetry::decode_truncation_count()
+        + keyhog_scanner::telemetry::invalid_pattern_index_skip_count()
+        + keyhog_scanner::telemetry::boundary_result_cardinality_mismatch_count();
+
+    source_gaps + binary_gaps + scanner_coverage_gaps > 0
 }

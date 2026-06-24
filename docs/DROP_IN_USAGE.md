@@ -546,7 +546,7 @@ See [keyhogignore-toml.md](keyhogignore-toml.md) for the full schema.
 - `10` - live credentials confirmed (only under `--verify`)
 - `11` - scanner thread panicked mid-scan (state unreliable)
 - `12` - required GPU unavailable
-- `13` - requested source failed before producing scan data
+- `13` - requested source failed or input coverage was incomplete
 
 CI gates should treat `exit 1` and `exit 10` as build-blocking scan
 outcomes. `exit 2`, `exit 12`, and `exit 13` are operator/configuration

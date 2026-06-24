@@ -72,7 +72,7 @@ pub const DEFINITIONS: &[ExitCodeDefinition] = &[
     },
     ExitCodeDefinition {
         code: EXIT_SOURCE_FAILED,
-        label: "Requested source produced no data",
+        label: "Requested source failed or coverage incomplete",
         scan_reachable: true,
     },
     ExitCodeDefinition {
@@ -91,5 +91,5 @@ pub const HELP: &str = "EXIT CODES:\n  \
 10  Live credentials found (requires --verify)\n  \
 11  Scanner thread panicked mid-scan (state is unreliable)\n  \
 12  Required GPU unavailable (--require-gpu)\n  \
-13  Requested source failed before producing scan data\n  \
+13  Requested source failed or input coverage was incomplete\n  \
 130 Interrupted (SIGINT / Ctrl-C)";

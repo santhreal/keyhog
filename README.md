@@ -262,7 +262,7 @@ Exit codes: `0` clean, `1` findings above the severity floor, `2` user error
 (bad path, bad config, unsupported flag), `3` system error or detector-corpus
 audit failure, `4` `backend --self-test` failed, `10` live credentials found
 (requires `--verify`), `11` scanner panic (thread panicked mid-scan), `12` required GPU
-unavailable, `13` requested source failed before producing scan data. Matches
+unavailable, `13` requested source failed or input coverage was incomplete. Matches
 `keyhog --help`.
 
 ## What it catches
