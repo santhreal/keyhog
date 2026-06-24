@@ -344,6 +344,12 @@ pub(super) fn extract_compressed_chunks(
             "refusing to open compressed file at a symlink path (link-swap guard)"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        if !emit(Err(SourceError::Other(format!(
+            "failed to scan compressed file '{}': refusing to open compressed file at a symlink path; compressed file was not scanned",
+            display_path(path)
+        )))) {
+            return;
+        }
         return;
     }
 

@@ -1,5 +1,6 @@
 //! Shared hostile oracles for adversarial source tests (Unix + Windows).
 
+use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 
 #[cfg(feature = "binary")]
@@ -91,6 +92,7 @@ pub fn oracle_permission_denied_subtree_scan_continues() {
 }
 
 pub fn oracle_archive_symlink_target_swap_attempt() {
+    use crate::support::split_chunk_results;
     use std::fs::File;
     use std::io::Write;
     use zip::write::SimpleFileOptions;
@@ -119,8 +121,22 @@ pub fn oracle_archive_symlink_target_swap_attempt() {
     symlink_file(&evil, &link).expect("link evil");
 
     let source = FilesystemSource::new(scan_root.path().to_path_buf());
-    let count = count_chunks(&source);
-    assert_eq!(count, 0, "symlinked archive open must be refused entirely");
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        chunks.is_empty(),
+        "symlinked archive open must be refused entirely"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "symlinked archive refusal must be machine-visible"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("linked.jar") && error.contains("archive symlink"),
+        "archive symlink refusal must name the blocked path, got {error:?}"
+    );
 }
 
 #[cfg(unix)]

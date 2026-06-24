@@ -869,6 +869,9 @@ path = "crates/sources/src/gcs.rs"
 path = "crates/sources/src/git/diff.rs"
 
 [[module]]
+path = "crates/sources/src/git/diff_parser.rs"
+
+[[module]]
 path = "crates/sources/src/git/history.rs"
 
 [[module]]
@@ -891,6 +894,9 @@ path = "crates/sources/src/gitlab_group.rs"
 
 [[module]]
 path = "crates/sources/src/bitbucket_workspace.rs"
+
+[[module]]
+path = "crates/sources/src/blocking_thread.rs"
 
 [[module]]
 path = "crates/sources/src/har.rs"

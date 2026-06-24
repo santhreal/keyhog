@@ -3,9 +3,11 @@
 //! Archive extraction must surface inner text while preserving the path of the
 //! archive entry that carried the secret.
 
-use super::support::{collect_chunks, count_chunks};
+use super::support::collect_chunks;
+use crate::support::split_chunk_results;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use std::io::Write;
@@ -142,10 +144,21 @@ fn archive_at_symlink_path_is_not_opened() {
     {
         std::os::unix::fs::symlink(&real, dir.path().join("linked.jar")).unwrap();
         let source = FilesystemSource::new(dir.path().to_path_buf());
-        let count = count_chunks(&source);
+        let rows: Vec<_> = source.chunks().collect();
+        let (chunks, errors) = split_chunk_results(&rows);
+        assert!(
+            chunks.is_empty(),
+            "symlinked archive paths must not emit clean target chunks"
+        );
         assert_eq!(
-            count, 0,
-            "symlinked archive paths must be skipped (link-swap defense)"
+            errors.len(),
+            1,
+            "symlinked archive paths must emit one visible source error"
+        );
+        let error = errors[0].to_string();
+        assert!(
+            error.contains("linked.jar") && error.contains("archive symlink"),
+            "symlinked archive error must name the refused path, got {error:?}"
         );
     }
 }

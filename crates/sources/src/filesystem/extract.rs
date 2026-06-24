@@ -233,6 +233,12 @@ pub(super) fn process_entry(
                  prevents the link-swap attack class"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit(Err(SourceError::Other(format!(
+                "failed to scan tar file '{}': refusing to open archive at a symlink path; tar file was not scanned",
+                display_path(&path)
+            )))) {
+                return;
+            }
             return;
         }
         // `read_file_safe` opens with `O_NOFOLLOW` on Unix / `symlink_metadata`
@@ -259,6 +265,12 @@ pub(super) fn process_entry(
                     "cannot read tar file; skipping"
                 );
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit(Err(SourceError::Other(format!(
+                    "failed to scan tar file '{}': cannot read tar file ({error}); tar file was not scanned",
+                    display_path(&path)
+                )))) {
+                    return;
+                }
                 return;
             }
         }
@@ -306,6 +318,12 @@ pub(super) fn process_entry(
                     "cannot read HAR file; skipping"
                 );
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit(Err(SourceError::Other(format!(
+                    "failed to scan HAR file '{}': cannot read HAR file ({error}); HAR file was not scanned",
+                    display_path(&path)
+                )))) {
+                    return;
+                }
                 return;
             }
         }

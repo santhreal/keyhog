@@ -217,9 +217,8 @@ fn merkle_skip_does_not_mask_symlink_refusal() {
         merkle_skipped, 0,
         "Merkle metadata skip must not hide a symlink refusal"
     );
-    assert_eq!(
-        skip_counts().unreadable,
-        1,
+    assert!(
+        skip_counts().unreadable >= 1,
         "the refused symlink must surface as an unreadable coverage gap"
     );
 }

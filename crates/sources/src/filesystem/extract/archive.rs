@@ -56,6 +56,12 @@ pub(super) fn extract_openpack_archive(
             "refusing to open archive at a symlink path - prevents the link-swap attack class"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        if !emit(Err(SourceError::Other(format!(
+            "failed to scan archive '{}': refusing to open archive at a symlink path; archive was not scanned",
+            display_path(path)
+        )))) {
+            return;
+        }
         return;
     }
 

@@ -5,7 +5,7 @@ use codewalk::CodeWalker;
 use keyhog_core::MerkleIndex;
 use keyhog_core::{Chunk, Source, SourceError};
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
@@ -138,6 +138,123 @@ pub(crate) fn max_buffered_read_bytes_for_test() -> u64 {
 
 pub(crate) fn mmap_toctou_sanity_cap_bytes_for_test() -> u64 {
     read::mmap_toctou_sanity_cap_bytes_for_test()
+}
+
+const EXPANDABLE_SYMLINK_EXTS: &[&str] = &[
+    "har", "zip", "apk", "ipa", "crx", "jar", "tar", "gz", "tgz", "zst", "lz4", "sz", "bz2", "xz",
+    "7z", "rar", "pdf",
+];
+
+fn is_expandable_path(path: &Path) -> bool {
+    path.extension()
+        // LAW10: missing extension means a plain path; target-extension classification still runs separately
+        .and_then(|e| e.to_str())
+        // LAW10: non-UTF8 extension cannot match the curated ASCII archive-extension set
+        .is_some_and(|ext| {
+            EXPANDABLE_SYMLINK_EXTS
+                .iter()
+                .any(|candidate| ext.eq_ignore_ascii_case(candidate))
+        })
+}
+
+fn resolved_link_target_for_classification(path: &Path) -> Option<PathBuf> {
+    let target = match std::fs::read_link(path) {
+        Ok(target) => target,
+        Err(_error) => return None, // LAW10: unreadable link target falls back to link-name classification; expandable link names are still refused
+    };
+    if target.is_absolute() {
+        Some(target)
+    } else {
+        Some(
+            path.parent()
+                .unwrap_or_else(|| Path::new("")) // LAW10: parentless relative target classification never opens or follows the link target
+                .join(target),
+        )
+    }
+}
+
+fn archive_symlink_error(path: &Path) -> SourceError {
+    let path_display = display_path(path);
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or(""); // LAW10: missing/non-UTF8 extension falls back to generic archive-symlink wording; the symlink remains refused
+    let message = if ext.eq_ignore_ascii_case("tar") {
+        format!(
+            "failed to scan tar file '{path_display}': refusing to open archive at a symlink path; tar file was not scanned"
+        )
+    } else if ext.eq_ignore_ascii_case("har") {
+        format!(
+            "failed to scan HAR file '{path_display}': refusing to open archive at a symlink path; HAR file was not scanned"
+        )
+    } else {
+        format!(
+            "refusing to scan archive symlink '{path_display}': archive symlink expansion is blocked to prevent link-swap exfiltration"
+        )
+    };
+    SourceError::Other(message)
+}
+
+fn collect_walk_archive_symlink_errors(
+    root: &Path,
+    respect_default_excludes: bool,
+) -> Vec<SourceError> {
+    let mut errors = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+
+    while let Some(dir) = stack.pop() {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_error) => continue,
+        };
+        let mut paths: Vec<PathBuf> = Vec::new();
+        for entry in entries {
+            match entry {
+                Ok(entry) => paths.push(entry.path()),
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        "failed to read filesystem directory entry during archive-symlink audit"
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    errors.push(SourceError::Other(format!(
+                        "failed to inspect filesystem directory entry under '{}': {error}; entry was not scanned",
+                        display_path(&dir)
+                    )));
+                }
+            }
+        }
+        paths.sort();
+
+        for path in paths {
+            let relative_path = match path.strip_prefix(root) {
+                Ok(relative) => relative.to_string_lossy(),
+                Err(_) => path.to_string_lossy(), // LAW10: prefix mismatch only affects default-exclude classification; target bytes are never opened
+            };
+            if respect_default_excludes && filter::is_default_excluded(&relative_path) {
+                continue;
+            }
+
+            let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+                continue;
+            };
+            let file_type = metadata.file_type();
+            if file_type.is_symlink() {
+                let target =
+                    resolved_link_target_for_classification(&path).unwrap_or_else(|| path.clone()); // LAW10: target read failure keeps link-name classification and still refuses expandable link names
+                if is_expandable_path(&path) || is_expandable_path(&target) {
+                    tracing::warn!(
+                        path = %path.display(),
+                        target = %target.display(),
+                        "refusing archive symlink discovered during filesystem walk"
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    errors.push(archive_symlink_error(&path));
+                }
+            } else if file_type.is_dir() {
+                stack.push(path);
+            }
+        }
+    }
+
+    errors
 }
 
 pub(crate) fn read_file_safe_capped_for_test(
@@ -388,31 +505,32 @@ impl Source for FilesystemSource {
         // batch and makes a freshly calibrated cache miss on replay. Collecting
         // and sorting FileEntry metadata by path keeps batch identity stable;
         // the heavier file reads still flow through the existing reader pool
-        // below. Per-entry errors are counted and skipped, never propagated,
-        // so one unreadable sibling cannot turn a partial scan into zero
-        // findings.
-        fn sorted_entries(walker: CodeWalker) -> Vec<codewalk::FileEntry> {
+        // below. Per-entry errors are counted and emitted as SourceError rows,
+        // so one unreadable sibling cannot turn a partial scan into a clean
+        // result.
+        fn sorted_entries(walker: CodeWalker) -> (Vec<codewalk::FileEntry>, Vec<SourceError>) {
+            let mut source_errors = Vec::new();
             let mut entries: Vec<_> = walker
                 .walk_iter()
                 .filter_map(|result| match result {
                     Ok(entry) => Some(entry),
                     Err(error) => {
-                        // An unreadable entry is an UNKNOWN, not a clean file: count it
-                        // so end-of-scan surfacing can tell the operator the tree was
-                        // not fully covered (Law 10 — a permission-denied subtree must
-                        // not read as "clean"). The warn! line is debug-level noise at
-                        // the default log level; the counter is the durable signal.
+                        // An unreadable entry is an UNKNOWN, not a clean file. Count
+                        // and emit it so a partial tree cannot read as clean.
                         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                         tracing::warn!(
                             %error,
                             "skipping unreadable filesystem entry; scan continues"
                         );
+                        source_errors.push(SourceError::Other(format!(
+                            "failed to inspect filesystem entry: {error}; entry was not scanned"
+                        )));
                         None
                     }
                 })
                 .collect();
             entries.sort_by(|left, right| left.path.cmp(&right.path));
-            entries
+            (entries, source_errors)
         }
 
         let mut source_errors: Vec<SourceError> = Vec::new();
@@ -453,19 +571,6 @@ impl Source for FilesystemSource {
                     allowed.push(p.canonicalize().unwrap_or_else(|_| p.clone())); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
                     continue;
                 }
-                const EXPANDABLE_SYMLINK_EXTS: &[&str] = &[
-                    "har", "zip", "apk", "ipa", "crx", "jar", "tar", "gz", "tgz", "zst", "lz4",
-                    "sz", "bz2", "xz", "7z", "rar", "pdf",
-                ];
-                let is_expandable_path = |path: &std::path::Path| {
-                    path.extension()
-                        .and_then(|e| e.to_str())
-                        .is_some_and(|ext| {
-                            EXPANDABLE_SYMLINK_EXTS
-                                .iter()
-                                .any(|candidate| ext.eq_ignore_ascii_case(candidate))
-                        })
-                };
                 let target = p.canonicalize().unwrap_or_else(|_| p.clone()); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
                 if is_expandable_path(p) || is_expandable_path(&target) {
                     tracing::warn!(
@@ -488,7 +593,9 @@ impl Source for FilesystemSource {
             for path in allowed {
                 if path.is_dir() {
                     let sub_walker = CodeWalker::new(&path, config.clone());
-                    include_entries.extend(sorted_entries(sub_walker));
+                    let (sub_entries, sub_errors) = sorted_entries(sub_walker);
+                    include_entries.extend(sub_entries);
+                    source_errors.extend(sub_errors);
                 } else if path.is_file() {
                     match std::fs::metadata(&path) {
                         Ok(meta) => include_entries.push(codewalk::FileEntry {
@@ -547,7 +654,13 @@ impl Source for FilesystemSource {
             Box::new(include_entries.into_iter())
         } else {
             let walker = CodeWalker::new(&self.root, config);
-            Box::new(sorted_entries(walker).into_iter())
+            source_errors.extend(collect_walk_archive_symlink_errors(
+                &self.root,
+                self.respect_default_excludes,
+            ));
+            let (walk_entries, walk_errors) = sorted_entries(walker);
+            source_errors.extend(walk_errors);
+            Box::new(walk_entries.into_iter())
         };
 
         let merkle = self.merkle.clone();

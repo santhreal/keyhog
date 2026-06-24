@@ -31,6 +31,12 @@ pub(super) fn extract_pdf_chunks(
             "refusing to open PDF at a symlink path - prevents the link-swap attack class"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        if !emit(Err(SourceError::Other(format!(
+            "failed to scan PDF file '{}': refusing to open PDF at a symlink path; PDF file was not scanned",
+            display_path(path)
+        )))) {
+            return;
+        }
         return;
     }
 
