@@ -273,8 +273,11 @@ fn gpu_region_dispatch_keeps_cpu_floor_explicit() {
     assert!(
         dispatch_src.contains("self.tuning.gpu_recall_floor_enabled()")
             && dispatch_src.contains("if full_recall_floor")
+            && dispatch_src.contains("gpu_underfire_recovered > 0")
+            && dispatch_src.contains("self.record_gpu_degrade(format!(")
+            && dispatch_src.contains("GPU region-presence under-fire recovered")
             && !dispatch_src.contains("KEYHOG_GPU_RECALL_FLOOR")
             && !dispatch_src.contains("KEYHOG_GPU_PARITY"),
-        "region dispatch may only pay for CPU trigger production through explicit scanner tuning"
+        "region dispatch may only pay for CPU trigger production through explicit scanner tuning, and recovered GPU underfire must poison autoroute GPU evidence"
     );
 }

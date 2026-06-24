@@ -276,6 +276,10 @@ impl CompiledScanner {
             // floor papered over — record it so it is fixed at the source, never
             // hidden (Law 10). One-shot per process to avoid log spam.
             if gpu_underfire_recovered > 0 {
+                self.record_gpu_degrade(format!(
+                    "GPU region-presence under-fire recovered {gpu_underfire_recovered} \
+                     (chunk, detector) pair(s) via CPU recall floor"
+                ));
                 static UNDERFIRE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
                 if UNDERFIRE_WARNED.set(()).is_ok() {
                     eprintln!(
