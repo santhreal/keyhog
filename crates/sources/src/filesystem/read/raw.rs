@@ -17,6 +17,8 @@ pub(in crate::filesystem) enum BufferedFileRead {
     Mmap(memmap2::Mmap),
 }
 
+const MAX_EXACT_SIZED_READ_PREALLOC_BYTES: u64 = 16 * 1024 * 1024;
+
 /// Hard ceiling on a single buffered (non-mmap) whole-file read. Set to the
 /// same 2 GiB sanity cap the mmap path enforces post-open: `--max-file-size`
 /// is validated against a pre-read stat, so a file grown after that stat (a
@@ -180,17 +182,66 @@ pub(in crate::filesystem) fn read_file_safe(
         return Ok(read.bytes);
     }
 
+    if cap <= MAX_EXACT_SIZED_READ_PREALLOC_BYTES {
+        return read_exact_stat_sized_with_growth_probe(file, cap);
+    }
+
     let read = crate::capped_read::read_to_cap(file, cap, Some(cap))?;
     if read.truncated {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!(
-                "filesystem buffered read exceeded stat-time {} byte cap",
-                cap
-            ),
+            buffered_read_exceeded_cap_message(size_hint, cap),
         ));
     }
     Ok(read.bytes)
+}
+
+fn read_exact_stat_sized_with_growth_probe(mut file: File, cap: u64) -> std::io::Result<Vec<u8>> {
+    let cap_usize = usize::try_from(cap).map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("filesystem buffered read cap is not addressable on this platform: {error}"),
+        )
+    })?;
+    let mut bytes = vec![0u8; cap_usize];
+    let mut filled = 0;
+    while filled < cap_usize {
+        match file.read(&mut bytes[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    bytes.truncate(filled);
+    if filled == cap_usize {
+        let mut sentinel = [0u8; 1];
+        loop {
+            match file.read(&mut sentinel) {
+                Ok(0) => break,
+                Ok(_) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        buffered_read_exceeded_cap_message(cap, cap),
+                    ));
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e),
+            }
+        }
+    }
+    Ok(bytes)
+}
+
+fn buffered_read_exceeded_cap_message(size_hint: u64, cap: u64) -> String {
+    if size_hint <= MAX_BUFFERED_READ_BYTES {
+        format!("filesystem buffered read exceeded stat-time {size_hint} byte cap")
+    } else {
+        format!(
+            "filesystem buffered read exceeded {} byte sanity cap after stat-time size {size_hint}",
+            cap
+        )
+    }
 }
 
 pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileRead> {

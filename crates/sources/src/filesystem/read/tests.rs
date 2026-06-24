@@ -4,7 +4,10 @@
 //! through `pub(in crate::filesystem::read)`.
 
 use super::bytes::read_file_for_compressed_input;
-use super::decode::{decode_text_file, decode_utf16, looks_binary, looks_binary_prefix};
+use super::decode::{
+    decode_text_file, decode_text_file_owned_or_bytes, decode_utf16, looks_binary,
+    looks_binary_prefix,
+};
 use super::window::{for_each_file_windowed_mmap, read_file_windowed_mmap, slice_into_windows};
 
 #[test]
@@ -228,6 +231,26 @@ fn decode_text_file_with_bom_strips_bom() {
     let mut bytes = vec![0xEF, 0xBB, 0xBF];
     bytes.extend_from_slice(b"hello world");
     assert_eq!(decode_text_file(&bytes).as_deref(), Some("hello world"));
+}
+
+#[test]
+fn decode_text_file_owned_with_bom_strips_bom() {
+    let mut bytes = vec![0xEF, 0xBB, 0xBF];
+    bytes.extend_from_slice(b"hello world");
+
+    let decoded = decode_text_file_owned_or_bytes(bytes).expect("decode");
+
+    assert_eq!(decoded, "hello world");
+}
+
+#[test]
+fn decode_text_file_owned_with_bom_preserves_original_bytes_on_binary_reject() {
+    let mut bytes = vec![0xEF, 0xBB, 0xBF];
+    bytes.extend_from_slice(b"\0\0\0\0binary");
+
+    let rejected = decode_text_file_owned_or_bytes(bytes.clone()).expect_err("binary reject");
+
+    assert_eq!(rejected, bytes);
 }
 
 #[test]

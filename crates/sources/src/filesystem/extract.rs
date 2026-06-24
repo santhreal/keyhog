@@ -178,23 +178,6 @@ pub(super) fn process_entry(
         return;
     }
 
-    if ext.is_empty() {
-        // Sniff a small structural prefix of files without extensions to quickly
-        // skip binary structures without full content reads (KH-50). Use the same
-        // no-follow safe open as the real file reader: an extensionless symlink
-        // must not get a pre-guard `File::open` of its target just because this
-        // is only a header sniff.
-        let mut buf = [0u8; 256];
-        if let Ok(n) = read::read_file_prefix_safe(&path, &mut buf) {
-            // LAW10: failed prefix probe leaves binary hint false; full safe read path below still surfaces unreadable files.
-            let head = &buf[..n];
-            if read::looks_binary_prefix(head) {
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                return;
-            }
-        }
-    }
-
     if max_size > 0 && file_size > max_size {
         tracing::warn!(
             path = %path.display(),
@@ -218,6 +201,23 @@ pub(super) fn process_entry(
                     skipped.fetch_add(1, Ordering::Relaxed);
                     return;
                 }
+            }
+        }
+    }
+
+    if ext.is_empty() {
+        // Sniff a small structural prefix of files without extensions to quickly
+        // skip binary structures without full content reads (KH-50). Use the same
+        // no-follow safe open as the real file reader: an extensionless symlink
+        // must not get a pre-guard `File::open` of its target just because this
+        // is only a header sniff.
+        let mut buf = [0u8; 256];
+        if let Ok(n) = read::read_file_prefix_safe(&path, &mut buf) {
+            // LAW10: failed prefix probe leaves binary hint false; full safe read path below still surfaces unreadable files.
+            let head = &buf[..n];
+            if read::looks_binary_prefix(head) {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                return;
             }
         }
     }

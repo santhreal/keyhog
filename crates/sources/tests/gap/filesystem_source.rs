@@ -14,10 +14,10 @@
 //!       1. `is_default_excluded(filename)`  (filename component only)
 //!       2. `.min.` / `.bundle.` / `.chunk.js` / `.min.js` / `.bundle.js`
 //!       3. `is_skip_extension(ext)` ASCII-case-insensitive extension gate
-//!       4. empty-ext: sniff a bounded structural prefix for binary magic /
+//!       4. `max_size > 0 && file_size > max_size` -> warn + counter + SourceError
+//!       5. merkle skip
+//!       6. empty-ext: sniff a bounded structural prefix for binary magic /
 //!          repeated NUL run
-//!       5. `max_size > 0 && file_size > max_size` -> warn + counter + SourceError
-//!       6. merkle skip
 //!       7. pdf structured extraction
 //!       8. archive (zip/apk/ipa/crx/jar) with symlink refusal
 //!       9. compressed (gz/zst/lz4/sz)

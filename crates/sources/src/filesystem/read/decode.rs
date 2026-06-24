@@ -100,12 +100,10 @@ pub(in crate::filesystem) fn decode_text_file_owned_or_bytes(
     if let Some(text) = decode_utf16(&bytes) {
         return Ok(text);
     }
-    // The UTF-8-BOM case still needs the borrowed slow path: stripping the
-    // 3-byte BOM means the owned buffer no longer starts at the text, so
-    // `String::from_utf8(bytes)` would keep the BOM. It's rare; let the
-    // borrowing decoder handle it (with its single owned copy).
+    let mut bytes = bytes;
+    let had_utf8_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        return decode_text_file(&bytes).ok_or(bytes);
+        bytes.drain(..3);
     }
     // Valid-UTF-8 fast path - identical gate to `decode_text_file`, but the
     // verified buffer is moved into the `String` (zero re-alloc) rather than
@@ -113,7 +111,11 @@ pub(in crate::filesystem) fn decode_text_file_owned_or_bytes(
     match String::from_utf8(bytes) {
         Ok(s) => {
             if looks_binary_header_check(s.as_bytes()) {
-                return Err(s.into_bytes());
+                let mut bytes = s.into_bytes();
+                if had_utf8_bom {
+                    bytes.splice(0..0, [0xEF, 0xBB, 0xBF]);
+                }
+                return Err(bytes);
             }
             Ok(s)
         }
@@ -123,6 +125,10 @@ pub(in crate::filesystem) fn decode_text_file_owned_or_bytes(
         Err(e) => {
             let bytes = e.into_bytes();
             if looks_binary(&bytes) {
+                let mut bytes = bytes;
+                if had_utf8_bom {
+                    bytes.splice(0..0, [0xEF, 0xBB, 0xBF]);
+                }
                 return Err(bytes);
             }
             Ok(String::from_utf8_lossy(&bytes).into_owned())
@@ -222,7 +228,12 @@ pub(in crate::filesystem) fn looks_binary_prefix(bytes: &[u8]) -> bool {
 }
 
 fn has_repeated_nul_run(bytes: &[u8]) -> bool {
-    memchr::memmem::find(bytes, &[0; BINARY_NUL_RUN]).is_some()
+    memchr::memchr_iter(0, bytes).any(|index| {
+        index + BINARY_NUL_RUN <= bytes.len()
+            && bytes[index..index + BINARY_NUL_RUN]
+                .iter()
+                .all(|&byte| byte == 0)
+    })
 }
 
 fn has_binary_magic(bytes: &[u8]) -> bool {
