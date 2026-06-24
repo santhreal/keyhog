@@ -83,6 +83,7 @@ enum GitBlobDecodeOutcome {
 enum GitBlobSkip {
     HeaderUnreadable {
         oid: gix::ObjectId,
+        filepath: Vec<u8>,
         error: String,
     },
     NonBlob {
@@ -96,10 +97,12 @@ enum GitBlobSkip {
     },
     RepositoryOpen {
         oid: gix::ObjectId,
+        filepath: Vec<u8>,
         error: String,
     },
     ObjectUnreadable {
         oid: gix::ObjectId,
+        filepath: Vec<u8>,
         error: String,
     },
     Binary,
@@ -406,6 +409,7 @@ fn stream_git_blobs(
                         &commit_blobs.author,
                         &mut total_bytes,
                         &mut chunk_count,
+                        &mut pending_errors,
                     ));
 
                     if let Some(chunk) = current_tree_blobs.pop_front() {
@@ -449,6 +453,7 @@ fn stream_git_blobs(
                     blob_metadata.metadata,
                     &mut total_bytes,
                     &mut chunk_count,
+                    &mut pending_errors,
                 ));
 
                 if let Some(chunk) = current_tree_blobs.pop_front() {
@@ -552,12 +557,14 @@ impl GitBlobChunkDecoder<'_> {
         author: &str,
         total_bytes: &mut usize,
         chunk_count: &mut usize,
+        pending_errors: &mut VecDeque<SourceError>,
     ) -> VecDeque<Chunk> {
         self.decode_chunks(
             blob_metadata,
             GitBlobProvenance::Commit { commit_id, author },
             total_bytes,
             chunk_count,
+            pending_errors,
         )
     }
 
@@ -566,12 +573,14 @@ impl GitBlobChunkDecoder<'_> {
         blob_metadata: Vec<(gix::ObjectId, Vec<u8>)>,
         total_bytes: &mut usize,
         chunk_count: &mut usize,
+        pending_errors: &mut VecDeque<SourceError>,
     ) -> VecDeque<Chunk> {
         self.decode_chunks(
             blob_metadata,
             GitBlobProvenance::Unreachable,
             total_bytes,
             chunk_count,
+            pending_errors,
         )
     }
 
@@ -581,6 +590,7 @@ impl GitBlobChunkDecoder<'_> {
         provenance: GitBlobProvenance<'_>,
         total_bytes: &mut usize,
         chunk_count: &mut usize,
+        pending_errors: &mut VecDeque<SourceError>,
     ) -> VecDeque<Chunk> {
         let mut chunks = VecDeque::new();
         let mut blob_metadata = blob_metadata.into_iter();
@@ -613,13 +623,13 @@ impl GitBlobChunkDecoder<'_> {
 
                 let decoded_blob = match item {
                     GitBlobBatchItem::Skip(skip) => {
-                        record_git_blob_skip(skip);
+                        record_git_blob_skip(skip, pending_errors);
                         continue;
                     }
                     GitBlobBatchItem::Candidate(candidate) => match decoded.next() {
                         Some(GitBlobDecodeOutcome::Decoded(decoded_blob)) => decoded_blob,
                         Some(GitBlobDecodeOutcome::Skip(skip)) => {
-                            record_git_blob_skip(skip);
+                            record_git_blob_skip(skip, pending_errors);
                             continue;
                         }
                         None => {
@@ -628,6 +638,11 @@ impl GitBlobChunkDecoder<'_> {
                                 "git blob decode batch lost an outcome; blob NOT scanned"
                             );
                             record_git_object_unreadable();
+                            pending_errors.push_back(git_unscanned_object_error(format!(
+                                "git blob {} at {} lost its decode outcome; blob was not scanned",
+                                candidate.oid,
+                                git_blob_path_display(&candidate.filepath)
+                            )));
                             continue;
                         }
                     },
@@ -705,6 +720,7 @@ fn next_git_blob_batch(
             Err(error) => {
                 batch.push(GitBlobBatchItem::Skip(GitBlobSkip::HeaderUnreadable {
                     oid,
+                    filepath,
                     error: error.to_string(),
                 }));
                 continue;
@@ -753,6 +769,7 @@ fn decode_git_blob_candidates_parallel(
                 Ok(repo) => decode_git_blob_candidate(repo, candidate),
                 Err(error) => GitBlobDecodeOutcome::Skip(GitBlobSkip::RepositoryOpen {
                     oid: candidate.oid,
+                    filepath: candidate.filepath,
                     error: error.clone(),
                 }),
             },
@@ -769,6 +786,7 @@ fn decode_git_blob_candidate(
         Err(error) => {
             return GitBlobDecodeOutcome::Skip(GitBlobSkip::ObjectUnreadable {
                 oid: candidate.oid,
+                filepath: candidate.filepath,
                 error: error.to_string(),
             });
         }
@@ -786,9 +804,13 @@ fn decode_git_blob_candidate(
     })
 }
 
-fn record_git_blob_skip(skip: GitBlobSkip) {
+fn record_git_blob_skip(skip: GitBlobSkip, pending_errors: &mut VecDeque<SourceError>) {
     match skip {
-        GitBlobSkip::HeaderUnreadable { oid, error } => {
+        GitBlobSkip::HeaderUnreadable {
+            oid,
+            filepath,
+            error,
+        } => {
             // Law 10: the blob is referenced by the tree but its object header
             // could not be read. It is not scanned, so count it as unreadable.
             tracing::warn!(
@@ -796,6 +818,10 @@ fn record_git_blob_skip(skip: GitBlobSkip) {
                 "git blob header unreadable (corrupt/missing object); blob NOT scanned"
             );
             record_git_object_unreadable();
+            pending_errors.push_back(git_unscanned_object_error(format!(
+                "git blob {oid} at {} header unreadable ({error}); blob was not scanned",
+                git_blob_path_display(&filepath)
+            )));
         }
         GitBlobSkip::NonBlob { oid, kind } => {
             tracing::warn!(
@@ -814,24 +840,44 @@ fn record_git_blob_skip(skip: GitBlobSkip) {
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         }
-        GitBlobSkip::RepositoryOpen { oid, error } => {
+        GitBlobSkip::RepositoryOpen {
+            oid,
+            filepath,
+            error,
+        } => {
             tracing::warn!(
                 %error, %oid,
                 "git repository could not be opened by a blob decode worker; blob NOT scanned"
             );
             record_git_object_unreadable();
+            pending_errors.push_back(git_unscanned_object_error(format!(
+                "git repository could not be opened while decoding blob {oid} at {} ({error}); blob was not scanned",
+                git_blob_path_display(&filepath)
+            )));
         }
-        GitBlobSkip::ObjectUnreadable { oid, error } => {
+        GitBlobSkip::ObjectUnreadable {
+            oid,
+            filepath,
+            error,
+        } => {
             tracing::warn!(
                 %error, %oid,
                 "git blob object unreadable (corrupt/missing object); blob NOT scanned"
             );
             record_git_object_unreadable();
+            pending_errors.push_back(git_unscanned_object_error(format!(
+                "git blob {oid} at {} object unreadable ({error}); blob was not scanned",
+                git_blob_path_display(&filepath)
+            )));
         }
         GitBlobSkip::Binary => {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
         }
     }
+}
+
+fn git_blob_path_display(filepath: &[u8]) -> String {
+    String::from_utf8_lossy(filepath).into_owned()
 }
 
 /// Decode a git blob into scannable text with the same recall-preserving

@@ -9,6 +9,9 @@ fn git_blob_chunk_decoding_is_split_from_blob_stream() {
         "struct GitBlobChunkDecoder",
         "fn decode_commit_chunks(",
         "fn chunk_from_decoded_blob(",
+        "pending_errors: &mut VecDeque<SourceError>",
+        "record_git_blob_skip(skip, pending_errors)",
+        "blob was not scanned",
     ] {
         assert!(
             source.contains(required),

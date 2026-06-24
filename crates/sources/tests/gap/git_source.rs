@@ -28,7 +28,9 @@ use std::process::{Command, Stdio};
 
 use keyhog_core::{Chunk, Source, SourceError};
 use keyhog_sources::testing::{SourceTestApi, TestApi};
-use keyhog_sources::{skip_counts, FilesystemSource, GitSource, SourceLimits};
+use keyhog_sources::{
+    git_object_unreadable, skip_counts, FilesystemSource, GitSource, SourceLimits,
+};
 
 // ----------------------------------------------------------------------------
 // fixture helpers
@@ -117,6 +119,32 @@ fn write_loose_blob(repo: &Path, content: &[u8]) -> String {
         .expect("hash-object oid utf8")
         .trim()
         .to_string()
+}
+
+fn blob_oid_at_head(repo: &Path, relpath: &str) -> String {
+    let output = Command::new("git")
+        .args(["rev-parse", &format!("HEAD:{relpath}")])
+        .current_dir(repo)
+        .output()
+        .expect("rev-parse blob oid");
+    assert!(
+        output.status.success(),
+        "git rev-parse HEAD:{relpath} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout)
+        .expect("blob oid utf8")
+        .trim()
+        .to_string()
+}
+
+fn loose_object_path(repo: &Path, oid: &str) -> PathBuf {
+    assert!(
+        oid.len() > 2,
+        "test fixture expects a git object id with a fanout prefix"
+    );
+    let (fanout, rest) = oid.split_at(2);
+    repo.join(".git").join("objects").join(fanout).join(rest)
 }
 
 /// Drain `GitSource` over `repo` into a Vec of successful chunks (panicking on
@@ -1281,6 +1309,90 @@ fn over_cap_annotated_tag_message_emits_source_error_without_dropping_siblings()
         skip_counts().over_max_size,
         1,
         "over-cap tag message must increment over-max-size coverage telemetry"
+    );
+
+    TestApi.reset_skip_counters();
+}
+
+#[test]
+fn corrupt_reachable_git_blob_emits_source_error_without_dropping_siblings() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+
+    let (_t, repo) = init_repo();
+    std::fs::write(repo.join("safe.txt"), b"base=1\n").expect("write safe sibling");
+    std::fs::write(
+        repo.join("corrupt.txt"),
+        b"K=ghp_corruptReachableBlobSecret0001\n",
+    )
+    .expect("write corrupt target");
+    git(&repo, &["add", "."]);
+    commit_only(&repo, "safe sibling plus corrupt target");
+
+    let corrupt_oid = blob_oid_at_head(&repo, "corrupt.txt");
+    let object_path = loose_object_path(&repo, &corrupt_oid);
+    assert!(
+        object_path.is_file(),
+        "fresh test repo should keep the blob as a loose object at {}",
+        object_path.display()
+    );
+    let mut permissions = std::fs::metadata(&object_path)
+        .expect("stat corrupt target object")
+        .permissions();
+    permissions.set_readonly(false);
+    std::fs::set_permissions(&object_path, permissions).expect("make test object writable");
+    std::fs::write(&object_path, b"not a valid zlib git object")
+        .expect("corrupt reachable blob object");
+
+    let rows: Vec<Result<Chunk, SourceError>> = GitSource::new(repo.clone()).chunks().collect();
+    let mut chunks = Vec::new();
+    let mut errors = Vec::new();
+    for row in rows {
+        match row {
+            Ok(chunk) => chunks.push(chunk),
+            Err(error) => errors.push(error),
+        }
+    }
+
+    assert!(
+        chunks.iter().any(|chunk| {
+            chunk.metadata.source_type == "git/head"
+                && chunk.metadata.path.as_deref() == Some("safe.txt")
+                && chunk.data.contains("base=1")
+        }),
+        "safe sibling git/head chunk must be preserved when another blob is corrupt; chunks={chunks:?}"
+    );
+    assert!(
+        !chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("ghp_corruptReachableBlobSecret0001")),
+        "corrupt blob bytes must not be reported as scanned content"
+    );
+    let blob_errors = errors
+        .iter()
+        .map(ToString::to_string)
+        .filter(|error| {
+            error.contains("corrupt.txt")
+                && error.contains(&corrupt_oid)
+                && error.contains("blob was not scanned")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        blob_errors.len(),
+        1,
+        "corrupt reachable blob must emit exactly one blob-specific SourceError row; errors={errors:?}"
+    );
+    let error = &blob_errors[0];
+    assert!(
+        error.contains("corrupt.txt")
+            && error.contains(&corrupt_oid)
+            && error.contains("blob was not scanned"),
+        "corrupt blob SourceError must name the path, oid, and coverage loss, got {error}"
+    );
+    assert_eq!(
+        git_object_unreadable(),
+        1,
+        "corrupt reachable blob must increment git-object unreadable telemetry"
     );
 
     TestApi.reset_skip_counters();
