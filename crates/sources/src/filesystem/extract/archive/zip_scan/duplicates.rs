@@ -232,31 +232,32 @@ pub(super) fn extract_zip_archive_from_central_entries(
                 continue;
             }
         };
-        let read_limit = per_entry_cap.saturating_add(1).min(
-            total_budget
-                .saturating_sub(total_uncompressed)
-                .saturating_add(1),
-        );
-        let mut content = Vec::new();
-        if let Err(error) = (&mut single_entry)
-            .take(read_limit)
-            .read_to_end(&mut content)
-        {
-            tracing::warn!(
-                archive = %path.display(),
-                entry = %entry.name,
-                %error,
-                "cannot read duplicate archive entry; skipping"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            if !emit(Err(SourceError::Other(format!(
-                "failed to scan duplicate ZIP entry '{}//{}': cannot read entry ({error}); entry was not scanned",
-                archive_display, entry.name
-            )))) {
-                return;
+        let remaining_budget = total_budget.saturating_sub(total_uncompressed);
+        let read_cap = per_entry_cap.min(remaining_budget);
+        let read = match crate::capped_read::read_to_cap(
+            &mut single_entry,
+            read_cap,
+            Some(entry.uncompressed_size),
+        ) {
+            Ok(read) => read,
+            Err(error) => {
+                tracing::warn!(
+                    archive = %path.display(),
+                    entry = %entry.name,
+                    %error,
+                    "cannot read duplicate archive entry; skipping"
+                );
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit(Err(SourceError::Other(format!(
+                    "failed to scan duplicate ZIP entry '{}//{}': cannot read entry ({error}); entry was not scanned",
+                    archive_display, entry.name
+                )))) {
+                    return;
+                }
+                continue;
             }
-            continue;
-        }
+        };
+        let content = read.bytes;
         let actual_uncompressed = match u64::try_from(content.len()) {
             Ok(len) => len,
             Err(error) => {
@@ -276,11 +277,12 @@ pub(super) fn extract_zip_archive_from_central_entries(
                 continue;
             }
         };
-        if actual_uncompressed > per_entry_cap {
+        if read.truncated && read_cap == per_entry_cap {
+            let observed_uncompressed = read_cap.saturating_add(1);
             tracing::warn!(
                 archive = %path.display(),
                 entry = %entry.name,
-                size = actual_uncompressed,
+                size = observed_uncompressed,
                 "skipping archive entry: decoded size exceeds per-file cap"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
@@ -289,13 +291,21 @@ pub(super) fn extract_zip_archive_from_central_entries(
                 "duplicate ZIP entry",
                 archive_display,
                 &entry.name,
-                actual_uncompressed,
+                observed_uncompressed,
                 per_entry_cap,
                 "decoded",
             ) {
                 return;
             }
             continue;
+        }
+        if read.truncated {
+            let attempted_total = total_uncompressed.saturating_add(read_cap.saturating_add(1));
+            let error = report_archive_truncation(archive_display, attempted_total, total_budget);
+            if !emit(Err(error)) {
+                return;
+            }
+            break;
         }
         total_uncompressed = total_uncompressed.saturating_add(actual_uncompressed);
         if total_uncompressed > total_budget {

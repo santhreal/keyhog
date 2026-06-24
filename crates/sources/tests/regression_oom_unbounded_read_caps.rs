@@ -110,14 +110,16 @@ fn seven_zip_entry_reads_are_capped() {
     );
     assert!(
         seven_zip.contains("let read_cap = per_entry_cap.min(remaining_budget)")
-            && seven_zip.contains("entry_reader.take(read_limit).read_to_end(&mut content)"),
-        "7z entry reads must cap decompressed output to the smaller of per-entry cap and remaining archive budget, with a one-byte overflow probe"
+            && seven_zip.contains("crate::capped_read::read_to_cap(")
+            && seven_zip.contains("read.truncated && read_cap == per_entry_cap"),
+        "7z entry reads must use the shared capped-read owner with the smaller of per-entry cap and remaining archive budget"
     );
     let per_entry_branch = seven_zip
-        .find("if content_len > per_entry_cap")
+        .find("if read.truncated && read_cap == per_entry_cap")
         .expect("7z per-entry overflow branch");
-    let aggregate_branch = seven_zip
-        .find("if content_len > read_cap")
+    let aggregate_branch = seven_zip[per_entry_branch + 1..]
+        .find("if read.truncated")
+        .map(|offset| per_entry_branch + 1 + offset)
         .expect("7z aggregate-budget overflow branch");
     assert!(
         per_entry_branch < aggregate_branch

@@ -198,30 +198,36 @@ pub(super) fn extract_seven_zip_chunks(
 
         let remaining_budget = total_budget.saturating_sub(total_uncompressed);
         let read_cap = per_entry_cap.min(remaining_budget);
-        let read_limit = read_cap.saturating_add(1);
-        let mut content = Vec::with_capacity(entry_size.min(READ_CAPACITY_HINT) as usize);
-        if let Err(error) = entry_reader.take(read_limit).read_to_end(&mut content) {
-            tracing::warn!(
-                archive = %archive_display,
-                entry = %entry_name,
-                %error,
-                "cannot read 7z entry; skipping"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            if !emit(Err(SourceError::Other(format!(
-                "failed to scan 7z entry '{archive_display}//{entry_name}': cannot read entry ({error}); entry was not scanned"
-            )))) {
-                consumer_stopped = true;
-                return Ok(false);
+        let read = match crate::capped_read::read_to_cap(
+            &mut *entry_reader,
+            read_cap,
+            Some(entry_size.min(READ_CAPACITY_HINT)),
+        ) {
+            Ok(read) => read,
+            Err(error) => {
+                tracing::warn!(
+                    archive = %archive_display,
+                    entry = %entry_name,
+                    %error,
+                    "cannot read 7z entry; skipping"
+                );
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit(Err(SourceError::Other(format!(
+                    "failed to scan 7z entry '{archive_display}//{entry_name}': cannot read entry ({error}); entry was not scanned"
+                )))) {
+                    consumer_stopped = true;
+                    return Ok(false);
+                }
+                return Ok(true);
             }
-            return Ok(true);
-        }
-        let content_len = content.len() as u64;
-        if content_len > per_entry_cap {
+        };
+        let content = read.bytes;
+        if read.truncated && read_cap == per_entry_cap {
+            let observed_len = read_cap.saturating_add(1);
             tracing::warn!(
                 archive = %archive_display,
                 entry = %entry_name,
-                size = content_len,
+                size = observed_len,
                 cap = per_entry_cap,
                 "skipping 7z entry: decoded size exceeds per-file cap"
             );
@@ -231,7 +237,7 @@ pub(super) fn extract_seven_zip_chunks(
                 "7z entry",
                 &archive_display,
                 &entry_name,
-                content_len,
+                observed_len,
                 per_entry_cap,
                 "decoded",
             ) {
@@ -247,8 +253,8 @@ pub(super) fn extract_seven_zip_chunks(
             );
             return Ok(true);
         }
-        if content_len > read_cap {
-            let attempted_total = total_uncompressed.saturating_add(content.len() as u64);
+        if read.truncated {
+            let attempted_total = total_uncompressed.saturating_add(read_cap.saturating_add(1));
             let error =
                 super::report_archive_truncation(&archive_display, attempted_total, total_budget);
             archive_truncated = true;
