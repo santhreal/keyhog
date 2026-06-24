@@ -219,15 +219,15 @@ fn list_repos(
         let response = send_github_request_with_backoff(client, org, page)?;
 
         if !response.status().is_success() {
-            return Err(SourceError::Other(format!(
+            return Err(hosted_git::api_unreadable_error(format!(
                 "GitHub API returned {} while listing repositories for org {org}",
                 response.status()
             )));
         }
 
-        let page_repos: Vec<GitHubRepo> = response
-            .json()
-            .map_err(|e| SourceError::Other(format!("failed to parse GitHub API response: {e}")))?;
+        let page_repos: Vec<GitHubRepo> = response.json().map_err(|e| {
+            hosted_git::api_unreadable_error(format!("failed to parse GitHub API response: {e}"))
+        })?;
 
         let count = page_repos.len();
         repos.extend(page_repos.into_iter().map(|repo| HostedRepo {
@@ -263,7 +263,9 @@ fn send_github_request_with_backoff(
                 "https://api.github.com/orgs/{org}/repos?per_page=100&page={page}"
             ))
             .send()
-            .map_err(|e| SourceError::Other(format!("GitHub API request failed: {e}")))?;
+            .map_err(|e| {
+                hosted_git::api_unreadable_error(format!("GitHub API request failed: {e}"))
+            })?;
 
         let status = response.status();
         let retry_after = response
@@ -282,7 +284,7 @@ fn send_github_request_with_backoff(
         }
 
         if attempt + 1 == MAX_ATTEMPTS {
-            return Err(SourceError::Other(format!(
+            return Err(hosted_git::api_unreadable_error(format!(
                 "GitHub API rate limited while listing repositories for org {org}"
             )));
         }
@@ -292,7 +294,9 @@ fn send_github_request_with_backoff(
         ));
     }
 
-    Err(SourceError::Other("GitHub API retry limit exceeded".into()))
+    Err(hosted_git::api_unreadable_error(
+        "GitHub API retry limit exceeded",
+    ))
 }
 
 pub(crate) fn rewrite_chunk_path_for_test(

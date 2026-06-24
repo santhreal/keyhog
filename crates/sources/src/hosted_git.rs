@@ -184,6 +184,12 @@ pub(crate) fn listing_truncated_error(
     ))
 }
 
+#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
+pub(crate) fn api_unreadable_error(message: impl Into<String>) -> SourceError {
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+    SourceError::Other(message.into())
+}
+
 #[cfg(any(feature = "gitlab", feature = "bitbucket"))]
 pub(crate) fn validated_api_endpoint(
     platform: &str,
@@ -220,7 +226,7 @@ pub(crate) fn require_same_api_origin(
     {
         return Ok(());
     }
-    Err(SourceError::Other(format!(
+    Err(api_unreadable_error(format!(
         "{platform}: refusing pagination URL outside configured API origin: {candidate}"
     )))
 }

@@ -174,19 +174,18 @@ fn list_repositories(
     url.set_query(Some("pagelen=100"));
 
     for _page in 1..=max_pages {
-        let response = client
-            .get(url.clone())
-            .send()
-            .map_err(|e| SourceError::Other(format!("Bitbucket API request failed: {e}")))?;
+        let response = client.get(url.clone()).send().map_err(|e| {
+            hosted_git::api_unreadable_error(format!("Bitbucket API request failed: {e}"))
+        })?;
         if !response.status().is_success() {
-            return Err(SourceError::Other(format!(
+            return Err(hosted_git::api_unreadable_error(format!(
                 "Bitbucket API returned {} while listing repositories for workspace {workspace}",
                 response.status()
             )));
         }
 
         let page: BitbucketPage = response.json().map_err(|e| {
-            SourceError::Other(format!("failed to parse Bitbucket API response: {e}"))
+            hosted_git::api_unreadable_error(format!("failed to parse Bitbucket API response: {e}"))
         })?;
         for repo in page.values {
             hosted_git::validate_repo_name("bitbucket", &repo.slug)?;
@@ -202,8 +201,9 @@ fn list_repositories(
         let Some(next) = page.next else {
             return Ok(repos);
         };
-        let next_url = reqwest::Url::parse(&next)
-            .map_err(|e| SourceError::Other(format!("bitbucket: invalid next page URL: {e}")))?;
+        let next_url = reqwest::Url::parse(&next).map_err(|e| {
+            hosted_git::api_unreadable_error(format!("bitbucket: invalid next page URL: {e}"))
+        })?;
         hosted_git::require_same_api_origin("bitbucket", api_root, &next_url)?;
         url = next_url;
     }

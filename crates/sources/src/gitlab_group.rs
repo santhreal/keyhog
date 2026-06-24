@@ -144,20 +144,19 @@ fn list_projects(
             "include_subgroups=true&simple=true&per_page=100&page={page}"
         )));
 
-        let response = client
-            .get(url)
-            .send()
-            .map_err(|e| SourceError::Other(format!("GitLab API request failed: {e}")))?;
+        let response = client.get(url).send().map_err(|e| {
+            hosted_git::api_unreadable_error(format!("GitLab API request failed: {e}"))
+        })?;
         if !response.status().is_success() {
-            return Err(SourceError::Other(format!(
+            return Err(hosted_git::api_unreadable_error(format!(
                 "GitLab API returned {} while listing projects for group {group}",
                 response.status()
             )));
         }
 
-        let projects: Vec<GitLabProject> = response
-            .json()
-            .map_err(|e| SourceError::Other(format!("failed to parse GitLab API response: {e}")))?;
+        let projects: Vec<GitLabProject> = response.json().map_err(|e| {
+            hosted_git::api_unreadable_error(format!("failed to parse GitLab API response: {e}"))
+        })?;
         let count = projects.len();
         for project in projects {
             hosted_git::validate_display_path("gitlab", &project.path_with_namespace)?;
