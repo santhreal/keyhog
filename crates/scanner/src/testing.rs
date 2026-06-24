@@ -52,11 +52,19 @@ pub(crate) fn scan_with_deadline(
 }
 
 #[cfg(test)]
+#[must_use = "hold the telemetry serial lock across scanner tests that touch process-global telemetry"]
 pub(crate) fn telemetry_serial_lock() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner()) // LAW10: testing-only mutex poisoning recovery; no runtime effect on shipped scanner behavior
+    let lock = LOCK.get_or_init(|| Mutex::new(()));
+    match lock.lock() {
+        Ok(guard) => guard,
+        // LAW10: testing-only mutex poisoning would cascade unrelated failures;
+        // keep the guard held so process-global telemetry state stays serialized.
+        Err(poisoned) => {
+            lock.clear_poison();
+            poisoned.into_inner()
+        }
+    }
 }
 
 #[cfg(test)]
