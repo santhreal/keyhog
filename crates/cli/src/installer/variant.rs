@@ -6,7 +6,7 @@
 //! use the platform's default non-CUDA release asset. Explicit variants are
 //! strict.
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use std::ffi::OsStr;
 use std::path::Path;
 
@@ -23,9 +23,14 @@ pub(crate) fn wants_cuda_variant(explicit: Option<&str>) -> Result<bool> {
 }
 
 pub(crate) fn default_wants_cuda_variant() -> bool {
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+    if !cuda_variant_supported_host(os, arch) {
+        return false;
+    }
     default_wants_cuda_variant_for_host(
-        std::env::consts::OS,
-        std::env::consts::ARCH,
+        os,
+        arch,
         nvidia_gpu_present(),
         libcuda_present(),
         cuda_toolkit_present(),
@@ -39,7 +44,11 @@ pub(crate) fn default_wants_cuda_variant_for_host(
     libcuda: bool,
     cuda_toolkit: bool,
 ) -> bool {
-    os == "linux" && arch == "x86_64" && nvidia_gpu && libcuda && cuda_toolkit
+    cuda_variant_supported_host(os, arch) && nvidia_gpu && libcuda && cuda_toolkit
+}
+
+fn cuda_variant_supported_host(os: &str, arch: &str) -> bool {
+    os == "linux" && arch == "x86_64"
 }
 
 fn nvidia_gpu_present() -> bool {

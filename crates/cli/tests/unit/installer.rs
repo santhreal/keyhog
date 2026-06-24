@@ -107,6 +107,39 @@ fn omitted_variant_uses_install_script_cuda_default_contract() {
 }
 
 #[test]
+fn omitted_variant_rejects_unsupported_host_before_cuda_probes() {
+    let variant_rs = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/installer/variant.rs"
+    ))
+    .expect("variant.rs readable");
+    let body = variant_rs
+        .split("pub(crate) fn default_wants_cuda_variant() -> bool")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("pub(crate) fn default_wants_cuda_variant_for_host")
+                .next()
+        })
+        .expect("default_wants_cuda_variant body extractable");
+    let unsupported_host_gate = body
+        .find("if !cuda_variant_supported_host(os, arch)")
+        .expect("default variant selection must gate unsupported OS/arch before CUDA probes");
+    for probe in [
+        "nvidia_gpu_present()",
+        "libcuda_present()",
+        "cuda_toolkit_present()",
+    ] {
+        let probe_pos = body
+            .find(probe)
+            .unwrap_or_else(|| panic!("default variant selection must call {probe}"));
+        assert!(
+            unsupported_host_gate < probe_pos,
+            "unsupported OS/arch must return the non-CUDA asset before running {probe}"
+        );
+    }
+}
+
+#[test]
 fn explicit_variant_resolution_is_strict() {
     assert!(API.wants_cuda_variant(Some("cuda")).unwrap());
     assert!(!API.wants_cuda_variant(Some("cpu")).unwrap());
