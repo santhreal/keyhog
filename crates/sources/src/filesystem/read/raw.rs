@@ -71,7 +71,7 @@ pub(in crate::filesystem) fn read_file_buffered(
 /// acceptable for a defensive scanner - the attacker would have to
 /// win a race they don't see initiated). The shipped Windows contract is
 /// explicit refusal of symlink paths before the standard-library open.
-pub(in crate::filesystem) fn open_file_safe(path: &Path) -> std::io::Result<File> {
+pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
     #[cfg(unix)]

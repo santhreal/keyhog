@@ -80,6 +80,40 @@ fn git_diff_source_finds_added_lines_without_deleted_content() {
     assert!(!chunks[0].data.contains("sk-old"));
 }
 
+#[cfg(feature = "git")]
+#[test]
+fn git_diff_source_scans_added_lines_that_look_like_file_headers() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(&repo_path, "config.txt", "clean = true\n", "Initial");
+    Command::new("git")
+        .args(["checkout", "-b", "feature"])
+        .current_dir(&repo_path)
+        .output()
+        .unwrap();
+    commit_file(
+        &repo_path,
+        "config.txt",
+        "clean = true\n++ b/not-a-header SECRET=ghp_headerShapedAddedLine0000000001\n",
+        "Add header-shaped content",
+    );
+
+    let chunks: Vec<_> = GitDiffSource::new(repo_path, "main")
+        .with_head_ref("feature")
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let chunk = chunks
+        .iter()
+        .find(|chunk| chunk.data.contains("ghp_headerShapedAddedLine0000000001"))
+        .expect("git-diff must scan added content even when the diff line begins with +++");
+
+    assert_eq!(chunk.metadata.path.as_deref(), Some("config.txt"));
+    assert!(
+        chunk.data.contains("++ b/not-a-header"),
+        "the scanned chunk must preserve the header-shaped added line; got {chunk:?}"
+    );
+}
+
 /// Regression: each diff hunk's chunk must carry `base_line = new_start - 1`
 /// so a scanner counting a match's line within the chunk reports the absolute
 /// new-file line, not the chunk-local line. Before the fix every diff finding

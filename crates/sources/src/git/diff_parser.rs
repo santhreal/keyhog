@@ -42,11 +42,28 @@ impl UnifiedDiffParser {
             return Ok(UnifiedDiffEvent::DeletedFile);
         }
 
-        if line.starts_with(b"new file mode")
-            || line.starts_with(b"index ")
-            || line.starts_with(b"--- ")
-        {
+        if line.starts_with(b"new file mode") || line.starts_with(b"index ") {
             return Ok(UnifiedDiffEvent::Metadata);
+        }
+
+        if line.starts_with(b"--- ") {
+            self.in_hunk = false;
+            return Ok(UnifiedDiffEvent::Metadata);
+        }
+
+        if line.starts_with(b"@@") {
+            if memchr::memmem::find(&line[2..], b"@@").is_none() {
+                return Err(malformed_diff_line_error(source_type, line, "hunk header"));
+            }
+            let new_start = super::parse_hunk_new_start_bytes_or_error(line, source_type)?;
+            self.in_hunk = true;
+            return Ok(UnifiedDiffEvent::HunkStart {
+                base_line: new_start.saturating_sub(1),
+            });
+        }
+
+        if self.in_hunk && line.starts_with(b"+") {
+            return Ok(UnifiedDiffEvent::AddedLine(&line[1..]));
         }
 
         if let Some((new_path, invalid_path)) = extract_new_path_from_plus_header(line) {
@@ -57,20 +74,25 @@ impl UnifiedDiffParser {
             });
         }
 
-        if line.starts_with(b"@@") && memchr::memmem::find(&line[2..], b"@@").is_some() {
-            let new_start = super::parse_hunk_new_start_bytes_or_error(line, source_type)?;
-            self.in_hunk = true;
-            return Ok(UnifiedDiffEvent::HunkStart {
-                base_line: new_start.saturating_sub(1),
-            });
-        }
-
-        if self.in_hunk && line.starts_with(b"+") && !line.starts_with(b"+++") {
-            return Ok(UnifiedDiffEvent::AddedLine(&line[1..]));
+        if line.starts_with(b"+++") {
+            self.in_hunk = false;
+            return Err(malformed_diff_line_error(
+                source_type,
+                line,
+                "new-file header",
+            ));
         }
 
         Ok(UnifiedDiffEvent::Other)
     }
+}
+
+fn malformed_diff_line_error(source_type: &str, line: &[u8], label: &str) -> SourceError {
+    let line = String::from_utf8_lossy(line);
+    SourceError::Other(format!(
+        "{source_type} output contains malformed unified-diff {label} {line:?}; \
+         refusing to treat it as ordinary diff content because that would hide changed lines"
+    ))
 }
 
 pub(crate) fn trim_diff_line_bytes(mut line: &[u8]) -> &[u8] {
@@ -250,7 +272,7 @@ fn trim_ascii_whitespace(mut bytes: &[u8]) -> &[u8] {
 
 #[cfg(test)]
 mod tests {
-    use super::{UnifiedDiffEvent, UnifiedDiffParser, sanitize_path_bytes, trim_diff_line_bytes};
+    use super::{sanitize_path_bytes, trim_diff_line_bytes, UnifiedDiffEvent, UnifiedDiffParser};
 
     #[test]
     fn parser_emits_added_lines_only_inside_hunks() {
@@ -267,6 +289,15 @@ mod tests {
             UnifiedDiffEvent::AddedLine(line) => assert_eq!(line, b"secret"),
             _ => panic!("expected added line"),
         }
+        assert!(matches!(
+            parser
+                .parse_line(b"diff --git a/file.txt b/file.txt", "git diff")
+                .unwrap(),
+            UnifiedDiffEvent::FileHeader {
+                new_path: None,
+                invalid_path: false
+            }
+        ));
         assert!(matches!(
             parser.parse_line(b"+++ b/file.txt", "git diff").unwrap(),
             UnifiedDiffEvent::FileHeader {
@@ -337,6 +368,39 @@ mod tests {
             error.to_string().contains("refusing to guess line 1"),
             "{error}"
         );
+
+        let error = parser
+            .parse_line(b"@@ -1,0 +1,1", "git diff")
+            .expect_err("unterminated hunk header must fail");
+        assert!(
+            error
+                .to_string()
+                .contains("malformed unified-diff hunk header"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn parser_keeps_header_shaped_added_lines_inside_hunks() {
+        let mut parser = UnifiedDiffParser::new();
+        assert!(matches!(
+            parser.parse_line(b"+++ b/file.txt", "git diff").unwrap(),
+            UnifiedDiffEvent::FileHeader {
+                new_path: Some(path),
+                invalid_path: false
+            } if path == "file.txt"
+        ));
+        assert!(matches!(
+            parser.parse_line(b"@@ -0,0 +1,1 @@", "git diff").unwrap(),
+            UnifiedDiffEvent::HunkStart { base_line: 0 }
+        ));
+        match parser
+            .parse_line(b"+++ b/not-a-header", "git diff")
+            .unwrap()
+        {
+            UnifiedDiffEvent::AddedLine(line) => assert_eq!(line, b"++ b/not-a-header"),
+            other => panic!("expected header-shaped added content, got {other:?}"),
+        }
     }
 
     #[test]

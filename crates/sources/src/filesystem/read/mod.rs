@@ -24,9 +24,9 @@ pub(super) use bytes::read_file_for_compressed_input;
 /// parity + no-duplication).
 pub(crate) use decode::decode_text_file;
 pub(in crate::filesystem) use decode::looks_binary_prefix;
+pub(crate) use raw::open_file_safe;
 pub(super) use raw::{
-    open_file_safe, read_file_buffered, read_file_mmap, read_file_prefix_safe, read_file_safe,
-    BufferedFileRead,
+    read_file_buffered, read_file_mmap, read_file_prefix_safe, read_file_safe, BufferedFileRead,
 };
 pub(super) use window::for_each_file_windowed_mmap;
 

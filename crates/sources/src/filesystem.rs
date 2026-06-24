@@ -19,6 +19,7 @@ pub(crate) use extract::extraction_total_budget;
 use filter::walker_config;
 pub(crate) use path::display_path;
 pub(crate) use read::decode_text_file;
+pub(crate) use read::open_file_safe;
 
 pub(crate) fn default_exclude_dirs() -> &'static [String] {
     filter::default_exclude_dirs()
