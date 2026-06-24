@@ -157,6 +157,25 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
             && prepare_body.contains("pattern.id = Some(pattern_map.len())"),
         "Hyperscan prepare must parallelize pattern validation but keep compile-cost estimates shard-only and assign stable ids serially"
     );
+
+    let validate_opts_body = source
+        .split("fn validate_compile_opts(")
+        .nth(1)
+        .expect("validate_compile_opts present")
+        .split("fn compile_cache_key(")
+        .next()
+        .expect("validate_compile_opts boundary present");
+    assert!(
+        validate_opts_body.contains("caseless.len() != pattern_count")
+            && validate_opts_body.contains("refusing silent CASELESS default"),
+        "per-pattern Hyperscan flags must fail closed when their length drifts from the input pattern set"
+    );
+    assert!(
+        source.contains("Self::validate_compile_opts(patterns.len(), opts)?;")
+            && source.contains("Some(flags) => flags[index]")
+            && !source.contains("flags.get(index).copied().unwrap_or(true)"),
+        "compile_with_opts must validate per-pattern flags before indexing; missing entries must not default to CASELESS"
+    );
 }
 
 #[test]

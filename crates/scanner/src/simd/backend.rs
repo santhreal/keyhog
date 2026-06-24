@@ -2,8 +2,8 @@ use hyperscan::{
     Block as BlockMode, BlockDatabase, Builder, Pattern, PatternFlags, Patterns, Scratch,
 };
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 mod scan;
 
@@ -276,8 +276,9 @@ pub(crate) struct HsCompileOpts<'a> {
     /// Set `HS_FLAG_SINGLEMATCH` on every pattern (fire once, then retire).
     pub(crate) singlematch: bool,
     /// Per-input-pattern caseless flags, parallel to `patterns`. `None` =
-    /// every pattern `CASELESS` (legacy behavior). A missing/short entry
-    /// defaults to caseless.
+    /// every pattern `CASELESS` (legacy behavior). `Some` must have exactly
+    /// one flag per input pattern; length drift is a compile-configuration
+    /// error, not permission to silently broaden missing entries to caseless.
     pub(crate) caseless: Option<&'a [bool]>,
     /// Override the patterns-per-shard target (else the compiled default). The
     /// sharded scan must hit EVERY shard per call, so the per-shard fixed
@@ -406,7 +407,7 @@ impl HsScanner {
         // for the set-membership prefilter.
         let mut flags = PatternFlags::empty();
         let caseless = match opts.caseless {
-            Some(flags) => flags.get(index).copied().unwrap_or(true), // LAW10: missing per-pattern flag uses legacy CASELESS default; recall-conservative overmatch, not a silent drop.
+            Some(flags) => flags[index],
             None => true,
         };
         if caseless {
@@ -419,6 +420,19 @@ impl HsScanner {
             flags |= PatternFlags::UTF8;
         }
         flags
+    }
+
+    fn validate_compile_opts(pattern_count: usize, opts: HsCompileOpts<'_>) -> Result<(), String> {
+        if let Some(caseless) = opts.caseless {
+            if caseless.len() != pattern_count {
+                return Err(format!(
+                    "hyperscan compile option mismatch: caseless flags length {} does not match pattern count {}; refusing silent CASELESS default",
+                    caseless.len(),
+                    pattern_count
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn compile_cache_key(hs_pats: &[Pattern], opts: HsCompileOpts<'_>) -> String {
@@ -709,6 +723,7 @@ impl HsScanner {
         patterns: &[(usize, usize, &str, bool)],
         opts: HsCompileOpts<'_>,
     ) -> Result<(Self, Vec<usize>), String> {
+        Self::validate_compile_opts(patterns.len(), opts)?;
         let PreparedPatterns {
             hs_pats,
             pattern_map,
