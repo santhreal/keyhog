@@ -50,18 +50,21 @@ pub(crate) fn try_expand_har(
     path_str: &str,
     max_size: u64,
 ) -> Option<Vec<Result<Chunk, SourceError>>> {
-    // Cheap sniff: every HAR file starts with `{"log"` (possibly
-    // preceded by whitespace / BOM). Bail before invoking the JSON
-    // parser on a 200 MiB binary blob that obviously isn't HAR.
-    let trimmed = trim_bom_and_whitespace(bytes);
-    if !trimmed.starts_with(b"{") {
+    let text = har_text(bytes)?;
+
+    // Cheap sniff: every HAR file is a JSON object with `log.entries`.
+    // Decode first so UTF-16 HAR exports take the same structured path as
+    // UTF-8 exports, then scan the whole text because valid HAR metadata can
+    // push `entries` beyond a tiny fixed prefix.
+    let trimmed = trim_bom_and_whitespace(&text);
+    if !trimmed.starts_with('{') {
         return None;
     }
     if !contains_har_marker(trimmed) {
         return None;
     }
 
-    let doc: HarDocument = match serde_json::from_slice(bytes) {
+    let doc: HarDocument = match serde_json::from_str(trimmed) {
         Ok(d) => d,
         Err(error) => {
             let _event =
@@ -132,6 +135,22 @@ pub(crate) fn try_expand_har(
     Some(chunks)
 }
 
+fn har_text(bytes: &[u8]) -> Option<Cow<'_, str>> {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => Some(Cow::Borrowed(text)),
+        Err(utf8_error) => match crate::decode_file_bytes(bytes) {
+            Some(text) => Some(Cow::Owned(text)),
+            None => {
+                tracing::debug!(
+                    %utf8_error,
+                    "HAR candidate is not UTF-8 and shared text decoding rejected it"
+                );
+                None
+            }
+        },
+    }
+}
+
 fn har_source_truncated_error(path_str: &str, budget: u64) -> SourceError {
     let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
     SourceError::Other(format!(
@@ -139,13 +158,14 @@ fn har_source_truncated_error(path_str: &str, budget: u64) -> SourceError {
     ))
 }
 
-fn trim_bom_and_whitespace(bytes: &[u8]) -> &[u8] {
-    let mut s = bytes;
-    if let Some(rest) = s.strip_prefix(b"\xEF\xBB\xBF") {
+fn trim_bom_and_whitespace(text: &str) -> &str {
+    let mut s = text;
+    if let Some(rest) = s.strip_prefix('\u{FEFF}') {
         s = rest;
     }
-    while let Some((b, rest)) = s.split_first() {
-        if b.is_ascii_whitespace() {
+    while let Some(ch) = s.chars().next() {
+        if ch.is_whitespace() {
+            let rest = &s[ch.len_utf8()..];
             s = rest;
         } else {
             break;
@@ -154,13 +174,11 @@ fn trim_bom_and_whitespace(bytes: &[u8]) -> &[u8] {
     s
 }
 
-fn contains_har_marker(bytes: &[u8]) -> bool {
-    // Look for both `"log"` and `"entries"` within the first 1 KiB -
-    // every HAR has them near the top. False positives are fine; the
-    // JSON parser will reject and we fall through.
-    let head = &bytes[..bytes.len().min(2048)];
-    memchr::memmem::find(head, b"\"log\"").is_some()
-        && memchr::memmem::find(head, b"\"entries\"").is_some()
+fn contains_har_marker(text: &str) -> bool {
+    // False positives are fine; serde_json will reject and we fall through
+    // with structured parse-failure telemetry.
+    memchr::memmem::find(text.as_bytes(), b"\"log\"").is_some()
+        && memchr::memmem::find(text.as_bytes(), b"\"entries\"").is_some()
 }
 
 fn render_request(req: &HarRequest) -> String {
@@ -189,6 +207,17 @@ fn render_request(req: &HarRequest) -> String {
             out.push('\n');
             out.push_str(text);
         }
+        if !post.params.is_empty() {
+            out.push_str("\n# postData params\n");
+            for param in &post.params {
+                out.push_str(&param.name);
+                out.push('=');
+                if let Some(value) = &param.value {
+                    out.push_str(value);
+                }
+                out.push('\n');
+            }
+        }
     }
     out
 }
@@ -216,8 +245,8 @@ fn render_response(resp: &HarResponse) -> String {
 }
 
 fn request_render_capacity(req: &HarRequest) -> usize {
-    let post_capacity = match req.post_data.as_ref().and_then(|post| post.text.as_ref()) {
-        Some(text) => 1usize.saturating_add(text.len()),
+    let post_capacity = match req.post_data.as_ref() {
+        Some(post) => post_data_capacity(post),
         None => 0,
     };
     req.method
@@ -234,6 +263,22 @@ fn request_render_capacity(req: &HarRequest) -> usize {
                 .saturating_add(query_lines_capacity(&req.query_string))
         })
         .saturating_add(post_capacity)
+}
+
+fn post_data_capacity(post: &HarPostData) -> usize {
+    let text_capacity = match post.text.as_ref() {
+        Some(text) => 1usize.saturating_add(text.len()),
+        None => 0,
+    };
+    let params_capacity = if post.params.is_empty() {
+        0
+    } else {
+        "# postData params\n"
+            .len()
+            .saturating_add(1)
+            .saturating_add(post_param_lines_capacity(&post.params))
+    };
+    text_capacity.saturating_add(params_capacity)
 }
 
 fn response_render_capacity(resp: &HarResponse, decoded_text: Option<&str>) -> usize {
@@ -307,6 +352,20 @@ fn query_lines_capacity(items: &[HarKv]) -> usize {
     })
 }
 
+fn post_param_lines_capacity(items: &[HarPostParam]) -> usize {
+    items.iter().fold(0usize, |capacity, item| {
+        let value_len = match item.value.as_ref() {
+            Some(value) => value.len(),
+            None => 0,
+        };
+        capacity
+            .saturating_add(item.name.len())
+            .saturating_add(1)
+            .saturating_add(value_len)
+            .saturating_add(1)
+    })
+}
+
 /// HAR `content.text` is base64-encoded when `content.encoding == "base64"`
 /// (HAR 1.2 spec). Decode it so credentials inside encoded response bodies
 /// are scanned instead of the opaque base64 blob. Malformed base64 (a
@@ -315,18 +374,42 @@ fn query_lines_capacity(items: &[HarKv]) -> usize {
 fn decoded_content_text(content: &HarContent) -> Option<Cow<'_, str>> {
     use base64::Engine as _;
     let text = content.text.as_ref()?;
-    if content.encoding.as_deref() == Some("base64") {
-        match base64::engine::general_purpose::STANDARD.decode(text.trim()) {
+    if content
+        .encoding
+        .as_deref()
+        .is_some_and(|encoding| encoding.eq_ignore_ascii_case("base64"))
+    {
+        let encoded = compact_base64_text(text);
+        match base64::engine::general_purpose::STANDARD.decode(encoded.as_bytes()) {
             Ok(bytes) => Some(Cow::Owned(String::from_utf8_lossy(&bytes).into_owned())),
-            // Law 10: recall-safe — a malformed `encoding: base64` body is scanned
-            // RAW instead of being dropped, so a credential in the un-decodable
-            // body still reaches the scanner. Proven by the
-            // `malformed_base64_encoding_falls_back_to_raw_text` regression test.
-            Err(_) => Some(Cow::Borrowed(text)), // LAW10: unrecognized/partial => caller scans whole-file/recovered prefix; recall-preserving
+            // Recall-safe: malformed base64 is scanned raw, but the failed
+            // structured decode is still a visible partial-coverage signal.
+            Err(error) => {
+                let _event =
+                    crate::record_skip_event(crate::SourceSkipEvent::StructuredSourceParseFailure);
+                tracing::debug!(
+                    %error,
+                    "HAR response content declared base64 but failed to decode; scanning raw content text"
+                );
+                Some(Cow::Borrowed(text))
+            }
         }
     } else {
         Some(Cow::Borrowed(text))
     }
+}
+
+fn compact_base64_text(text: &str) -> Cow<'_, str> {
+    if !text.as_bytes().iter().any(u8::is_ascii_whitespace) {
+        return Cow::Borrowed(text);
+    }
+    let mut compact = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        if !byte.is_ascii_whitespace() {
+            compact.push(byte as char);
+        }
+    }
+    Cow::Owned(compact)
 }
 
 #[derive(serde::Deserialize)]
@@ -379,6 +462,15 @@ struct HarKv {
 struct HarPostData {
     #[serde(default)]
     text: Option<String>,
+    #[serde(default)]
+    params: Vec<HarPostParam>,
+}
+
+#[derive(serde::Deserialize)]
+struct HarPostParam {
+    name: String,
+    #[serde(default)]
+    value: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -604,6 +696,40 @@ mod tests {
     }
 
     #[test]
+    fn base64_encoding_label_is_case_insensitive() {
+        let b64 = "eyJhd3Nfa2V5IjoiQUtJQVFZTFBNTjVIRklRUjdYWUEifQ==";
+        let har = har_with_response_body(Some("BASE64"), b64);
+        let chunks =
+            try_expand_har(har.as_bytes(), "cap.har", 10 * 1024 * 1024).expect("HAR should parse");
+        let response = chunks
+            .into_iter()
+            .map(|c| c.unwrap())
+            .find(|c| c.metadata.source_type == "wire:har:response")
+            .expect("a response chunk");
+        assert!(
+            response.data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"), // keyhog:ignore detector=aws-access-key (synthetic test fixture)
+            "case-varied base64 encoding labels must still decode before scanning"
+        );
+    }
+
+    #[test]
+    fn wrapped_base64_response_body_is_decoded_before_scanning() {
+        let wrapped_b64 = "eyJhd3Nfa2V5Ijoi\\nQUtJQVFZTFBNTjVIRklRUjdYWUEi\\nfQ==";
+        let har = har_with_response_body(Some("base64"), wrapped_b64);
+        let chunks =
+            try_expand_har(har.as_bytes(), "cap.har", 10 * 1024 * 1024).expect("HAR should parse");
+        let response = chunks
+            .into_iter()
+            .map(|c| c.unwrap())
+            .find(|c| c.metadata.source_type == "wire:har:response")
+            .expect("a response chunk");
+        assert!(
+            response.data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"), // keyhog:ignore detector=aws-access-key (synthetic test fixture)
+            "base64 line wrapping must not force a raw-base64 fallback"
+        );
+    }
+
+    #[test]
     fn malformed_base64_encoding_falls_back_to_raw_text() {
         // `encoding: base64` but the text is not valid base64. The body must
         // still be scanned (raw), never panic or get dropped.
@@ -635,5 +761,88 @@ mod tests {
             .find(|c| c.metadata.source_type == "wire:har:response")
             .expect("a response chunk");
         assert!(response.data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA")); // keyhog:ignore detector=aws-access-key (synthetic test fixture)
+    }
+
+    #[test]
+    fn har_with_large_leading_metadata_is_parsed() {
+        let large_comment = "A".repeat(3_000);
+        let har = format!(
+            r#"{{"log":{{"version":"1.2","creator":{{"name":"t","version":"1","comment":"{large_comment}"}},
+            "entries":[{{"request":{{"method":"GET","url":"https://api.example.com/x",
+            "headers":[{{"name":"X-Token","value":"large_metadata_marker_123456"}}],"queryString":[]}},
+            "response":{{"status":200,"statusText":"OK","headers":[]}}}}]}}}}"#
+        );
+
+        let chunks = try_expand_har(har.as_bytes(), "large.har", 10 * 1024 * 1024)
+            .expect("valid HAR with large metadata should parse");
+        let chunks: Vec<_> = chunks.into_iter().map(|c| c.unwrap()).collect();
+        assert!(
+            chunks
+                .iter()
+                .any(|chunk| chunk.data.contains("large_metadata_marker_123456")),
+            "large leading metadata must not make HAR sniffing fall back to raw text"
+        );
+    }
+
+    #[test]
+    fn utf16_har_is_decoded_and_expanded() {
+        let fixture = fixture();
+        let mut utf16_le = vec![0xFF, 0xFE];
+        for unit in fixture.encode_utf16() {
+            utf16_le.extend_from_slice(&unit.to_le_bytes());
+        }
+
+        let chunks = try_expand_har(&utf16_le, "utf16.har", 10 * 1024 * 1024)
+            .expect("UTF-16 HAR should decode through the shared text path");
+        let chunks: Vec<_> = chunks.into_iter().map(|c| c.unwrap()).collect();
+        assert!(
+            chunks
+                .iter()
+                .any(|chunk| chunk.data.as_ref().contains("Authorization: Bearer ghp_")),
+            "UTF-16 HAR must expand into request chunks, not raw fallback text"
+        );
+    }
+
+    #[test]
+    fn utf8_bom_har_is_parsed() {
+        let fixture = fixture();
+        let mut bytes = b"\xEF\xBB\xBF".to_vec();
+        bytes.extend_from_slice(fixture.as_bytes());
+
+        let chunks = try_expand_har(&bytes, "bom.har", 10 * 1024 * 1024)
+            .expect("UTF-8 BOM HAR should parse after BOM trimming");
+        let chunks: Vec<_> = chunks.into_iter().map(|c| c.unwrap()).collect();
+        assert!(
+            chunks
+                .iter()
+                .any(|chunk| chunk.data.as_ref().contains("Authorization: Bearer ghp_")),
+            "UTF-8 BOM HAR must expand into request chunks, not raw fallback text"
+        );
+    }
+
+    #[test]
+    fn har_post_data_params_are_rendered() {
+        let har = r#"{"log":{"version":"1.2","creator":{"name":"t","version":"1"},
+            "entries":[{"request":{"method":"POST","url":"https://api.example.com/login",
+            "headers":[],"queryString":[],
+            "postData":{"mimeType":"application/x-www-form-urlencoded","params":[
+            {"name":"client_secret","value":"ghp_PostParams00000000000000000000"}]}},
+            "response":{"status":200,"statusText":"OK","headers":[]}}]}}"#;
+
+        let chunks = try_expand_har(har.as_bytes(), "params.har", 10 * 1024 * 1024)
+            .expect("HAR with postData params should parse");
+        let request = chunks
+            .into_iter()
+            .map(|c| c.unwrap())
+            .find(|c| c.metadata.source_type == "wire:har:request")
+            .expect("a request chunk");
+        assert!(
+            request
+                .data
+                .as_ref()
+                .contains("client_secret=ghp_PostParams00000000000000000000"),
+            "postData.params must be rendered into request chunks; got {}",
+            request.data
+        );
     }
 }
