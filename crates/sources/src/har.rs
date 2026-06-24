@@ -485,6 +485,7 @@ struct HarContent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{SourceTestApi, TestApi};
 
     // The fixture carries a real-SHAPE GitHub classic PAT so the request
     // chunk exercises the Authorization-header path. The 36-char token body
@@ -571,6 +572,7 @@ mod tests {
 
     #[test]
     fn expansion_budget_truncation_is_counted_source_truncated() {
+        let _guard = TestApi.skip_counter_guard();
         crate::reset_skip_counters();
 
         let chunks = try_expand_har(fixture().as_bytes(), "cap.har", 1)
@@ -607,6 +609,7 @@ mod tests {
 
     #[test]
     fn response_side_expansion_budget_truncation_surfaces_source_error() {
+        let _guard = TestApi.skip_counter_guard();
         crate::reset_skip_counters();
 
         let har = har_with_response_body(None, &"A".repeat(256));

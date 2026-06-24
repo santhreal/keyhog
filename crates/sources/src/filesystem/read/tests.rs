@@ -431,13 +431,24 @@ fn for_each_file_windowed_mmap_stops_on_consumer_backpressure() {
     std::fs::write(&path, &bytes).unwrap();
 
     let mut seen = Vec::new();
-    let mapped = for_each_file_windowed_mmap(&path, 1024, 32, |window| {
-        seen.push((window.offset, window.text.len()));
-        false
+    let mut errors = Vec::new();
+    let mapped = for_each_file_windowed_mmap(&path, 1024, 32, |row| match row {
+        Ok(window) => {
+            seen.push((window.offset, window.text.len()));
+            false
+        }
+        Err(error) => {
+            errors.push(error);
+            false
+        }
     });
 
     assert!(mapped.is_some(), "mmap path should own this file");
     assert_eq!(seen.len(), 1, "consumer stop must halt window emission");
+    assert!(
+        errors.is_empty(),
+        "normal consumer backpressure must not emit error rows: {errors:?}"
+    );
     assert_eq!(seen[0].0, 0, "first streamed window starts at byte zero");
     assert!(seen[0].1 >= 1024, "lossy first window should be non-empty");
 }

@@ -108,3 +108,52 @@ fn filesystem_source_does_not_reopen_locked_small_file_unlocked() {
         "locked small file must count exactly one unreadable skip"
     );
 }
+
+#[test]
+fn filesystem_source_locked_large_file_emits_source_error_row() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let locked = dir.path().join("locked-large.txt");
+    let secret = "SECRET=ghp_lockedLargeShouldNotRead1234567890\n";
+    std::fs::write(&locked, secret.repeat(128)).expect("write locked large fixture");
+    let _lock = lock_exclusive(&locked);
+
+    let rows: Vec<_> = TestApi
+        .filesystem_with_window_config(dir.path().to_path_buf(), 1024, 32)
+        .chunks()
+        .collect();
+    let mut chunks = Vec::new();
+    let mut errors = Vec::new();
+    for row in rows {
+        match row {
+            Ok(chunk) => chunks.push(chunk),
+            Err(error) => errors.push(error),
+        }
+    }
+
+    assert!(
+        chunks
+            .iter()
+            .all(|chunk| !chunk.data.as_ref().contains("ghp_lockedLarge")),
+        "locked large file bytes must not be scanned through windowed or buffered fallback"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "locked large file must emit one visible SourceError row"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("locked-large.txt")
+            && error.contains("locked by another process")
+            && error.contains("file was not scanned"),
+        "locked large SourceError must name the file and unscanned reason, got {error}"
+    );
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "locked large file must count exactly one unreadable skip"
+    );
+}

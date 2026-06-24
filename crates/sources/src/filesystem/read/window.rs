@@ -3,6 +3,7 @@
 //! filesystem source; the pure helper ([`slice_into_windows`]) is the
 //! unit-testable boundary arithmetic the mmap path delegates to.
 
+use keyhog_core::SourceError;
 use memmap2::MmapOptions;
 use std::path::Path;
 
@@ -46,10 +47,20 @@ pub(in crate::filesystem) fn read_file_windowed_mmap(
     overlap: usize,
 ) -> Option<Vec<FileWindow>> {
     let mut windows = Vec::new();
-    for_each_file_windowed_mmap(path, window_size, overlap, |window| {
-        windows.push(window);
-        true
+    let mut terminal_error = false;
+    for_each_file_windowed_mmap(path, window_size, overlap, |row| match row {
+        Ok(window) => {
+            windows.push(window);
+            true
+        }
+        Err(_error) => {
+            terminal_error = true;
+            true
+        }
     })?;
+    if terminal_error {
+        return Some(Vec::new());
+    }
     Some(windows)
 }
 
@@ -63,7 +74,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
     path: &Path,
     window_size: usize,
     overlap: usize,
-    mut emit: impl FnMut(FileWindow) -> bool,
+    mut emit: impl FnMut(Result<FileWindow, SourceError>) -> bool,
 ) -> Option<()> {
     debug_assert!(window_size > overlap, "window must exceed overlap");
     let file = match open_file_safe(path) {
@@ -75,6 +86,10 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
                 "cannot open large file for windowed mmap; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            let _continue_scan = emit(Err(windowed_mmap_error(
+                path,
+                format!("cannot open large file for windowed mmap ({error})"),
+            )));
             return Some(());
         }
     };
@@ -95,6 +110,14 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
                 "refusing to windowed-mmap file: live size exceeds sanity cap (likely TOCTOU growth)"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            let _continue_scan = emit(Err(windowed_mmap_error(
+                path,
+                format!(
+                    "live size {} exceeded the {}-byte windowed mmap sanity cap",
+                    meta.len(),
+                    MMAP_TOCTOU_SANITY_CAP_BYTES
+                ),
+            )));
             return Some(());
         }
     }
@@ -112,6 +135,10 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
                 "large file is locked by another process; skipping to avoid scanning a torn write"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            let _continue_scan = emit(Err(windowed_mmap_error(
+                path,
+                "large file is locked by another process",
+            )));
             return Some(());
         }
     }
@@ -154,7 +181,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
         }
     }
 
-    for_each_window(&mmap, window_size, overlap, |window| emit(window));
+    for_each_window(&mmap, window_size, overlap, |window| emit(Ok(window)));
 
     #[cfg(unix)]
     {
@@ -163,6 +190,13 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
         unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
     }
     Some(())
+}
+
+fn windowed_mmap_error(path: &Path, reason: impl std::fmt::Display) -> SourceError {
+    SourceError::Other(format!(
+        "failed to scan large file '{}': {reason}; file was not scanned",
+        path.display()
+    ))
 }
 
 /// Count newlines in `slice` via `memchr` (SIMD-accelerated). Used to

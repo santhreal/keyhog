@@ -363,25 +363,34 @@ pub(super) fn process_entry(
     if file_size > window_size as u64 {
         let display = display_path(&path);
         let mut consumer_stopped = false;
-        if read::for_each_file_windowed_mmap(&path, window_size, window_overlap, |w| {
-            let chunk = Ok(Chunk {
-                data: w.text.into(),
-                metadata: ChunkMetadata {
-                    source_type: "filesystem/windowed".to_string(),
-                    path: Some(display.clone()),
-                    base_offset: w.offset,
-                    base_line: w.base_line,
-                    mtime_ns: live_mtime_ns,
-                    size_bytes: Some(file_size),
-                    decoded_span: None,
-                    ..Default::default()
-                },
-            });
-            if !emit(chunk) {
-                consumer_stopped = true;
-                return false;
+        if read::for_each_file_windowed_mmap(&path, window_size, window_overlap, |row| match row {
+            Ok(w) => {
+                let chunk = Ok(Chunk {
+                    data: w.text.into(),
+                    metadata: ChunkMetadata {
+                        source_type: "filesystem/windowed".to_string(),
+                        path: Some(display.clone()),
+                        base_offset: w.offset,
+                        base_line: w.base_line,
+                        mtime_ns: live_mtime_ns,
+                        size_bytes: Some(file_size),
+                        decoded_span: None,
+                        ..Default::default()
+                    },
+                });
+                if !emit(chunk) {
+                    consumer_stopped = true;
+                    return false;
+                }
+                true
             }
-            true
+            Err(error) => {
+                if !emit(Err(error)) {
+                    consumer_stopped = true;
+                    return false;
+                }
+                true
+            }
         })
         .is_some()
         {
