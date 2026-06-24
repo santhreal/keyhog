@@ -478,11 +478,18 @@ fn find_layer_archives(
             .skip_hidden(false)
             .skip_binary(false)
             .max_file_size(0),
-    )
-    .walk()
-    .map_err(|error| SourceError::Other(error.to_string()))?;
+    );
 
-    for entry in walker {
+    for entry in walker.walk_iter() {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                return Err(SourceError::Other(format!(
+                    "failed to inspect docker image archive while discovering layer archives: {error}; docker image archive was not fully scanned"
+                )));
+            }
+        };
         if entry.path.file_name().and_then(|name| name.to_str()) == Some("layer.tar") {
             layers.push(entry.path);
         }

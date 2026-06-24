@@ -326,6 +326,50 @@ fn docker_manifest_deduplicates_repeated_layer_content() {
     );
 }
 
+#[cfg(all(feature = "docker", unix))]
+#[test]
+fn docker_fallback_layer_discovery_unreadable_entry_fails_loud() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    let unreadable = root.join("blocked");
+    std::fs::create_dir(&unreadable).expect("mkdir blocked");
+    let original_permissions = std::fs::metadata(&unreadable)
+        .expect("blocked metadata")
+        .permissions();
+    let mut blocked_permissions = original_permissions.clone();
+    blocked_permissions.set_mode(0);
+    std::fs::set_permissions(&unreadable, blocked_permissions).expect("chmod blocked");
+    struct Restore {
+        path: std::path::PathBuf,
+        permissions: std::fs::Permissions,
+    }
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let _ = std::fs::set_permissions(&self.path, self.permissions.clone());
+        }
+    }
+    let _restore = Restore {
+        path: unreadable,
+        permissions: original_permissions,
+    };
+
+    let err = TestApi.docker_manifest_layer_archives(root).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("failed to inspect docker image archive")
+            && msg.contains("docker image archive was not fully scanned"),
+        "unreadable fallback layer-discovery entry must fail loud, got {msg}"
+    );
+}
+
+#[cfg(any(not(feature = "docker"), not(unix)))]
+#[test]
+fn docker_fallback_layer_discovery_unreadable_entry_fails_loud() {
+    assert!(cfg!(any(not(feature = "docker"), not(unix))));
+}
+
 #[cfg(feature = "docker")]
 #[test]
 fn docker_manifest_config_yields_metadata_chunks() {
@@ -445,7 +489,8 @@ fn oci_image_layout_yields_config_and_layer_chunks() {
     fn sha256_hex(bytes: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(bytes);
-        keyhog_core::hex_encode(&hasher.finalize().into())
+        let digest: [u8; 32] = hasher.finalize().into();
+        keyhog_core::hex_encode(&digest)
     }
 
     fn write_blob(root: &std::path::Path, bytes: &[u8]) -> (String, std::path::PathBuf) {
@@ -580,7 +625,8 @@ fn oci_image_manifest_missing_config_fails_loud() {
     let manifest = br#"{"schemaVersion":2,"layers":[]}"#;
     let mut hasher = Sha256::new();
     hasher.update(manifest);
-    let manifest_hex = keyhog_core::hex_encode(&hasher.finalize().into());
+    let manifest_digest: [u8; 32] = hasher.finalize().into();
+    let manifest_hex = keyhog_core::hex_encode(&manifest_digest);
     std::fs::write(
         root.join("blobs").join("sha256").join(&manifest_hex),
         manifest,
