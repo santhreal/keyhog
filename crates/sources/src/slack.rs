@@ -128,7 +128,7 @@ where
 {
     let status = response.status();
     let body = response.text().map_err(|error| {
-        SourceError::Other(format!(
+        slack_unreadable_error(format!(
             "failed to read Slack {endpoint} response body: {error}"
         ))
     })?;
@@ -141,11 +141,16 @@ where
             }
             Ok(resp)
         }
-        Err(error) if !status.is_success() => Err(SourceError::Other(format!(
+        Err(error) if !status.is_success() => Err(slack_unreadable_error(format!(
             "Slack API {endpoint} returned HTTP {status} and an unreadable JSON body: {error}"
         ))),
-        Err(error) => Err(error),
+        Err(error) => Err(slack_unreadable_error(error.to_string())),
     }
+}
+
+fn slack_unreadable_error(message: String) -> SourceError {
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+    SourceError::Other(message)
 }
 
 fn channels_from_response(
@@ -275,7 +280,7 @@ impl SlackSource {
             .query(&[("types", "public_channel,private_channel")])
             .send()
             .map_err(|error| {
-                SourceError::Other(format!(
+                slack_unreadable_error(format!(
                     "Slack API {CONVERSATIONS_LIST} request failed: {error}"
                 ))
             })?;
@@ -297,7 +302,7 @@ impl SlackSource {
             ])
             .send()
             .map_err(|error| {
-                SourceError::Other(format!(
+                slack_unreadable_error(format!(
                     "Slack API {CONVERSATIONS_HISTORY} request failed for channel {channel_id}: {error}"
                 ))
             })?;
