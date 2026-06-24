@@ -510,11 +510,36 @@ fn sarif_result_artifact_location_relative_uri() {
 
 #[test]
 fn sarif_result_properties_verification_lowercased() {
-    // properties.verification = format!("{:?}", verification).to_lowercase().
+    // properties.verification comes from the canonical `style::verification_token`
+    // (snake_case, matching the JSON serde representation) — NOT the old
+    // `format!("{:?}", v).to_lowercase()`, which emitted `ratelimited`/`error("..")`.
     let json = sarif_of(&[finding()]);
     assert_eq!(
         json["runs"][0]["results"][0]["properties"]["verification"],
         "unverifiable"
+    );
+}
+
+#[test]
+fn sarif_verification_token_is_snake_case_consistent_with_json() {
+    // Regression: SARIF previously derived `verification` from Debug formatting,
+    // so RateLimited became "ratelimited" (no underscore) and Error became
+    // `error("msg")` — diverging from JSON's serde snake_case and from the
+    // junit/csv/github mappings. The canonical token fixes both.
+    let mut rl = finding();
+    rl.verification = VerificationResult::RateLimited;
+    let json = sarif_of(&[rl]);
+    assert_eq!(
+        json["runs"][0]["results"][0]["properties"]["verification"], "rate_limited",
+        "RateLimited must be snake_case `rate_limited`, never Debug `ratelimited`"
+    );
+
+    let mut err = finding();
+    err.verification = VerificationResult::Error("timeout".to_string());
+    let json = sarif_of(&[err]);
+    assert_eq!(
+        json["runs"][0]["results"][0]["properties"]["verification"], "error: timeout",
+        "Error must render as `error: <msg>`, never the Debug form `error(\"..\")`"
     );
 }
 
@@ -635,8 +660,22 @@ fn sarif_rule_properties_service_and_severity() {
     let json = sarif_of(&[finding()]);
     let props = &json["runs"][0]["tool"]["driver"]["rules"][0]["properties"];
     assert_eq!(props["service"], "test");
-    // build_rule: format!("{:?}", severity).to_lowercase() -> "high".
+    // build_rule uses the canonical structured severity token, not Debug casing.
     assert_eq!(props["severity"], "high");
+}
+
+#[test]
+fn sarif_rule_properties_severity_uses_kebab_case_token() {
+    let mut f = finding();
+    f.severity = Severity::ClientSafe;
+    f.detector_id = Arc::from("client-safe-detector");
+    f.detector_name = Arc::from("Client Safe Detector");
+    let json = sarif_of(&[f]);
+    let props = &json["runs"][0]["tool"]["driver"]["rules"][0]["properties"];
+    assert_eq!(
+        props["severity"], "client-safe",
+        "SARIF severity must match JSON's kebab-case token, never Debug `clientsafe`"
+    );
 }
 
 #[test]
@@ -912,9 +951,9 @@ fn sarif_fix_deleted_region_uses_finding_line() {
 #[test]
 fn sarif_fix_artifact_uri_matches_finding_path() {
     let json = sarif_of(&[finding()]);
-    let uri =
-        json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]["artifactLocation"]["uri"]
-            .as_str();
+    let uri = json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]["artifactLocation"]
+        ["uri"]
+        .as_str();
     assert_eq!(uri, Some("config.env"));
 }
 

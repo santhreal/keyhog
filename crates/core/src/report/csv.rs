@@ -62,15 +62,7 @@ impl<W: Write + Send> Reporter for CsvReporter<W> {
             .map(|c| c.to_string())
             .unwrap_or_default(); // LAW10: empty CSV cell for an optional field
 
-        let verification_str = match &finding.verification {
-            crate::VerificationResult::Live => "live".to_string(),
-            crate::VerificationResult::Revoked => "revoked".to_string(),
-            crate::VerificationResult::Dead => "dead".to_string(),
-            crate::VerificationResult::RateLimited => "rate_limited".to_string(),
-            crate::VerificationResult::Error(err) => format!("error: {err}"),
-            crate::VerificationResult::Unverifiable => "unverifiable".to_string(),
-            crate::VerificationResult::Skipped => "skipped".to_string(),
-        };
+        let verification_str = super::style::verification_token(&finding.verification).into_owned();
 
         writeln!(
             self.writer,

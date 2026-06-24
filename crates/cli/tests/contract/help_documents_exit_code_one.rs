@@ -22,4 +22,9 @@ fn help_documents_exit_code_one() {
         combined.contains("1   Secrets found") || combined.contains("1  Secrets found"),
         "help must document exit 1; got: {combined}"
     );
+    assert!(
+        combined.contains("none confirmed live")
+            && combined.contains("verified-inactive: dead/revoked"),
+        "exit 1 help must explain that verified-inactive findings also exit 1; got: {combined}"
+    );
 }

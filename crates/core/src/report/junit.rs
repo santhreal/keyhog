@@ -81,15 +81,7 @@ fn write_testcase<W: Write>(writer: &mut W, finding: &VerifiedFinding) -> Result
         .confidence
         .map(|c| c.to_string())
         .unwrap_or_default(); // LAW10: optional confidence -> empty cell; finding still emitted
-    let verification_str = match &finding.verification {
-        crate::VerificationResult::Live => "live".to_string(),
-        crate::VerificationResult::Revoked => "revoked".to_string(),
-        crate::VerificationResult::Dead => "dead".to_string(),
-        crate::VerificationResult::RateLimited => "rate_limited".to_string(),
-        crate::VerificationResult::Error(err) => format!("error: {err}"),
-        crate::VerificationResult::Unverifiable => "unverifiable".to_string(),
-        crate::VerificationResult::Skipped => "skipped".to_string(),
-    };
+    let verification_str = super::style::verification_token(&finding.verification).into_owned();
 
     writeln!(
         writer,

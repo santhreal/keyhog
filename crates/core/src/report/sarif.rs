@@ -156,7 +156,7 @@ impl<W: Write + Send> SarifReporter<W> {
             finding.severity,
         );
         SarifResultProperties {
-            verification: format!("{:?}", finding.verification).to_lowercase(),
+            verification: super::style::verification_token(&finding.verification).into_owned(),
             confidence: finding.confidence.map(|confidence| {
                 if confidence.is_finite() {
                     confidence
@@ -264,7 +264,7 @@ impl<W: Write + Send> SarifReporter<W> {
             help_uri,
             properties: Some(SarifRuleProperties {
                 service: finding.service.to_string(),
-                severity: format!("{:?}", finding.severity).to_lowercase(),
+                severity: super::style::severity_token(finding.severity).to_string(),
                 security_severity: super::sarif_uri::code_scanning_security_severity(
                     finding.severity,
                 ),

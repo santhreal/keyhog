@@ -2,7 +2,7 @@
 
 use std::io::Write;
 
-use crate::{Severity, VerificationResult, VerifiedFinding};
+use crate::{Severity, VerifiedFinding};
 
 use super::{ReportError, Reporter, WriterBackedReporter};
 
@@ -80,7 +80,7 @@ fn write_property<W: Write>(
 }
 
 fn message(finding: &VerifiedFinding) -> String {
-    let verification = verification_label(&finding.verification);
+    let verification = super::style::verification_token(&finding.verification);
     let mut text = format!(
         "{} detector={} service={} redacted={} verification={}",
         finding.detector_name,
@@ -93,18 +93,6 @@ fn message(finding: &VerifiedFinding) -> String {
         text.push_str(&format!(" confidence={confidence:.3}"));
     }
     text
-}
-
-fn verification_label(verification: &VerificationResult) -> String {
-    match verification {
-        VerificationResult::Live => "live".to_string(),
-        VerificationResult::Revoked => "revoked".to_string(),
-        VerificationResult::Dead => "dead".to_string(),
-        VerificationResult::RateLimited => "rate_limited".to_string(),
-        VerificationResult::Error(err) => format!("error: {err}"),
-        VerificationResult::Unverifiable => "unverifiable".to_string(),
-        VerificationResult::Skipped => "skipped".to_string(),
-    }
 }
 
 fn escape_property(value: &str) -> String {

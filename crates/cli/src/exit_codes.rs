@@ -84,7 +84,7 @@ pub const DEFINITIONS: &[ExitCodeDefinition] = &[
 
 pub const HELP: &str = "EXIT CODES:\n  \
 0   Success (no secrets found)\n  \
-1   Secrets found (unverified or verification skipped)\n  \
+1   Secrets found, none confirmed live (unverified, skipped, or verified-inactive: dead/revoked)\n  \
 2   User error (bad flag/config, missing path/baseline, detector-load failure, not-found/permission-denied path)\n  \
 3   System error (local environment failure: low-level I/O that is not not-found/permission-denied, or GPU/hardware init)\n  \
 4   Health/self-test failure (doctor unhealthy / repair could not restore a working binary / backend --self-test failed)\n  \

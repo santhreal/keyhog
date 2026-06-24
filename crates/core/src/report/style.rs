@@ -109,3 +109,98 @@ pub(crate) fn verification_label(result: &VerificationResult, color: bool) -> St
         VerificationResult::Unverifiable | VerificationResult::Skipped => String::new(),
     }
 }
+
+/// Stable, machine-readable verification token for the STRUCTURED report formats
+/// (SARIF, JUnit, CSV, GitHub annotations). Lowercase, with `snake_case` for the
+/// multi-word states so it matches the JSON representation produced by
+/// `#[serde(rename_all = "snake_case")]` on [`VerificationResult`]. This is the
+/// single source of truth: the per-format copies had diverged — SARIF derived
+/// its value from `format!("{:?}", v).to_lowercase()`, emitting `ratelimited`
+/// (no underscore) and `error("..")` (Debug-quoted) where every other format and
+/// the JSON serialization emit `rate_limited` and `error: ..`. Distinct from
+/// [`verification_label`], which is the colored, human-facing display label.
+pub(crate) fn verification_token(result: &VerificationResult) -> std::borrow::Cow<'static, str> {
+    use std::borrow::Cow;
+    match result {
+        VerificationResult::Live => Cow::Borrowed("live"),
+        VerificationResult::Revoked => Cow::Borrowed("revoked"),
+        VerificationResult::Dead => Cow::Borrowed("dead"),
+        VerificationResult::RateLimited => Cow::Borrowed("rate_limited"),
+        VerificationResult::Error(e) => Cow::Owned(format!("error: {e}")),
+        VerificationResult::Unverifiable => Cow::Borrowed("unverifiable"),
+        VerificationResult::Skipped => Cow::Borrowed("skipped"),
+    }
+}
+
+/// Stable, machine-readable severity token for STRUCTURED report formats.
+/// Returns the SAME string as the `#[serde(rename_all = "kebab-case")]` JSON
+/// serialization of [`Severity`] — notably `client-safe`, not the Debug-derived
+/// `clientsafe`. SARIF derived its `properties.severity` from
+/// `format!("{:?}", s).to_lowercase()`, which diverged from JSON for the only
+/// multi-word variant (`ClientSafe`). The drift-guard test below asserts this
+/// stays byte-identical to serde so the two can never separate again.
+pub(crate) fn severity_token(severity: Severity) -> &'static str {
+    match severity {
+        Severity::Critical => "critical",
+        Severity::High => "high",
+        Severity::Medium => "medium",
+        Severity::Low => "low",
+        Severity::ClientSafe => "client-safe",
+        Severity::Info => "info",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{severity_token, verification_token};
+    use crate::{Severity, VerificationResult};
+
+    #[test]
+    fn verification_token_is_snake_case_and_stable() {
+        // The canonical structured token: lowercase, snake_case for multi-word
+        // states (matching `#[serde(rename_all = "snake_case")]`), so SARIF /
+        // JUnit / CSV / GitHub all agree with the JSON representation.
+        assert_eq!(verification_token(&VerificationResult::Live), "live");
+        assert_eq!(verification_token(&VerificationResult::Revoked), "revoked");
+        assert_eq!(verification_token(&VerificationResult::Dead), "dead");
+        assert_eq!(
+            verification_token(&VerificationResult::RateLimited),
+            "rate_limited",
+            "must be snake_case, never the Debug-derived `ratelimited`"
+        );
+        assert_eq!(
+            verification_token(&VerificationResult::Error("boom".to_string())),
+            "error: boom",
+            "must be `error: <msg>`, never the Debug-derived `error(\"..\")`"
+        );
+        assert_eq!(
+            verification_token(&VerificationResult::Unverifiable),
+            "unverifiable"
+        );
+        assert_eq!(verification_token(&VerificationResult::Skipped), "skipped");
+    }
+
+    #[test]
+    fn severity_token_matches_serde_kebab_case() {
+        // Drift guard: the structured severity token MUST equal the serde
+        // (kebab-case) JSON serialization for every variant, so SARIF's
+        // properties.severity can never re-diverge from the JSON report.
+        for s in [
+            Severity::Critical,
+            Severity::High,
+            Severity::Medium,
+            Severity::Low,
+            Severity::ClientSafe,
+            Severity::Info,
+        ] {
+            let serde_str = serde_json::to_value(s).unwrap();
+            assert_eq!(
+                serde_str.as_str().unwrap(),
+                severity_token(s),
+                "severity_token must match serde for {s:?}"
+            );
+        }
+        // Pin the multi-word variant that previously diverged (Debug -> "clientsafe").
+        assert_eq!(severity_token(Severity::ClientSafe), "client-safe");
+    }
+}
