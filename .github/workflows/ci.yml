@@ -188,6 +188,8 @@ jobs:
         run: cargo test -p keyhog-core --test all_tests --profile release-fast
       - name: scanner all_tests
         run: cargo test -p keyhog-scanner --test all_tests --no-default-features --features ci-lean --profile release-fast
+      - name: scanner CI target wiring gates
+        run: cargo test -p keyhog-scanner --test unit_gates_live ci_scanner --no-default-features --features ci-lean --profile release-fast -- --nocapture
       - name: scanner GPU literal artifact writer
         run: cargo test -p keyhog-scanner --test gpu_literal_artifact_writer --no-default-features --features ci-lean --profile release-fast
       # Dead-corpus adversarial scanner fixtures are a standalone target because

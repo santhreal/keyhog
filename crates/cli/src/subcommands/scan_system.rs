@@ -428,14 +428,20 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         );
     } else {
         for m in &sink.redacted {
-            println!(
-                "FINDING {} {}{} {:?}  {}",
-                m.detector_id,
-                m.location.file_path.as_deref().unwrap_or("<no-path>"), // LAW10: absent path/field => display placeholder for REPORTING only; finding still emitted, recall-safe
-                m.location.line.map(|l| format!(":{l}")).unwrap_or_default(), // LAW10: missing/non-string field => empty/placeholder; recall-safe
+            let file_path = match m.location.file_path.as_deref() {
+                Some(file_path) => file_path,
+                None => "<no-path>",
+            };
+            crate::style::print_diagnostic_finding(
+                "FINDING",
+                &m.detector_id,
+                file_path,
+                m.location.line,
                 m.severity,
-                m.credential_redacted
-            );
+                m.confidence,
+                &m.credential_redacted,
+            )
+            .with_context(|| format!("write scan-system finding for {file_path}"))?;
         }
     }
 

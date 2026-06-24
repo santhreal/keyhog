@@ -57,18 +57,61 @@ fn ci_scanner_property_fuzz_runs_as_library_target() {
 }
 
 fn scanner_ci_test_targets(workflow: &str) -> BTreeSet<String> {
-    workflow
-        .lines()
-        .filter(|line| line.contains("cargo test") && line.contains("-p keyhog-scanner"))
-        .flat_map(test_targets_from_line)
+    logical_workflow_commands(workflow)
+        .into_iter()
+        .filter(|command| is_scanner_cargo_test_command(command))
+        .flat_map(|command| test_targets_from_command(&command))
         .collect()
 }
 
-fn test_targets_from_line(line: &str) -> Vec<String> {
+fn logical_workflow_commands(workflow: &str) -> Vec<String> {
+    let mut commands = Vec::new();
+    let mut current = String::new();
+
+    for raw_line in workflow.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let continued = line.ends_with('\\');
+        let command_part = if continued {
+            line.trim_end_matches('\\').trim_end()
+        } else {
+            line
+        };
+
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(command_part);
+
+        if !continued {
+            commands.push(std::mem::take(&mut current));
+        }
+    }
+
+    if !current.is_empty() {
+        commands.push(current);
+    }
+
+    commands
+}
+
+fn is_scanner_cargo_test_command(command: &str) -> bool {
+    command.contains("cargo test")
+        && (command.contains("-p keyhog-scanner")
+            || command.contains("--package keyhog-scanner")
+            || command.contains("--package=keyhog-scanner"))
+}
+
+fn test_targets_from_command(command: &str) -> Vec<String> {
     let mut targets = Vec::new();
-    let mut words = line.split_whitespace();
+    let mut words = command.split_whitespace();
     while let Some(word) = words.next() {
-        if word == "--test" {
+        if let Some(target) = word.strip_prefix("--test=") {
+            targets.push(target.to_string());
+        } else if word == "--test" {
             if let Some(target) = words.next() {
                 targets.push(target.to_string());
             }
@@ -125,4 +168,32 @@ fn explicit_cargo_test_targets(cargo_toml: &Path) -> BTreeSet<String> {
 
 fn file_stem(path: PathBuf) -> Option<String> {
     path.file_stem()?.to_str().map(ToOwned::to_owned)
+}
+
+#[test]
+fn scanner_ci_test_targets_parses_multiline_and_equals_forms() {
+    let workflow = r#"
+      - name: scanner shard
+        run: |
+          cargo test -p keyhog-scanner \
+            --test all_tests \
+            --test=unit_gates_live
+    "#;
+
+    let targets = scanner_ci_test_targets(workflow);
+    assert!(targets.contains("all_tests"));
+    assert!(targets.contains("unit_gates_live"));
+}
+
+#[test]
+fn scanner_ci_test_targets_ignores_comments_and_accepts_package_form() {
+    let workflow = r#"
+      # cargo test -p keyhog-scanner --test commented_out
+      - name: scanner package shard
+        run: cargo test --package=keyhog-scanner --test gpu_literal_artifact_writer
+    "#;
+
+    let targets = scanner_ci_test_targets(workflow);
+    assert!(targets.contains("gpu_literal_artifact_writer"));
+    assert!(!targets.contains("commented_out"));
 }

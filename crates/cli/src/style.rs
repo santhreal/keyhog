@@ -78,3 +78,97 @@ pub(crate) fn warn(label: &str, palette: &Palette) -> String {
 pub(crate) fn info(label: &str, palette: &Palette) -> String {
     format!("{}{}{}", palette.cyan, label, palette.reset)
 }
+
+/// Unified console finding output formatting for diagnostic/interactive CLI subcommands.
+pub(crate) fn print_diagnostic_finding(
+    prefix: &str,
+    detector_id: &str,
+    file_path: &str,
+    line: Option<usize>,
+    severity: keyhog_core::Severity,
+    confidence: Option<f64>,
+    credential_redacted: &str,
+) -> std::io::Result<()> {
+    let mut stdout = std::io::stdout();
+    write_diagnostic_finding(
+        &mut stdout,
+        prefix,
+        detector_id,
+        file_path,
+        line,
+        severity,
+        confidence,
+        credential_redacted,
+    )
+}
+
+/// Formats and writes a diagnostic finding to any generic writer (useful for unit testing).
+pub(crate) fn write_diagnostic_finding<W: std::io::Write>(
+    w: &mut W,
+    prefix: &str,
+    detector_id: &str,
+    file_path: &str,
+    line: Option<usize>,
+    severity: keyhog_core::Severity,
+    confidence: Option<f64>,
+    credential_redacted: &str,
+) -> std::io::Result<()> {
+    let line_str = match line {
+        Some(line) => format!(":{line}"),
+        None => String::new(),
+    };
+    let conf_str = match confidence {
+        Some(confidence) => format!(" ({confidence:.2})"),
+        None => String::new(),
+    };
+    writeln!(
+        w,
+        "{} {} {}{} {:?}{}  {}",
+        prefix, detector_id, file_path, line_str, severity, conf_str, credential_redacted
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use keyhog_core::Severity;
+
+    #[test]
+    fn test_write_diagnostic_finding_with_confidence_and_line() {
+        let mut buf = Vec::new();
+        write_diagnostic_finding(
+            &mut buf,
+            "FINDING",
+            "detector_1",
+            "src/main.rs",
+            Some(42),
+            Severity::Critical,
+            Some(0.95),
+            "redacted_secret",
+        )
+        .expect("diagnostic finding should write to in-memory buffer");
+        let s = String::from_utf8(buf).expect("diagnostic output must be utf-8");
+        assert_eq!(
+            s,
+            "FINDING detector_1 src/main.rs:42 Critical (0.95)  redacted_secret\n"
+        );
+    }
+
+    #[test]
+    fn test_write_diagnostic_finding_no_confidence_no_line() {
+        let mut buf = Vec::new();
+        write_diagnostic_finding(
+            &mut buf,
+            "WATCH",
+            "detector_2",
+            "src/lib.rs",
+            None,
+            Severity::Medium,
+            None,
+            "redacted_other",
+        )
+        .expect("diagnostic finding should write to in-memory buffer");
+        let s = String::from_utf8(buf).expect("diagnostic output must be utf-8");
+        assert_eq!(s, "WATCH detector_2 src/lib.rs Medium  redacted_other\n");
+    }
+}

@@ -18,7 +18,7 @@
 //! they can always invoke `keyhog scan` separately.
 
 use crate::args::WatchArgs;
-use crate::orchestrator::{DefaultScanRuntime, compile_default_scan_runtime};
+use crate::orchestrator::{compile_default_scan_runtime, DefaultScanRuntime};
 use crate::skip_dirs::SkipDirPolicy;
 use crate::style;
 use anyhow::{Context, Result};
@@ -138,7 +138,8 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
             if path.is_dir() || should_skip(&path, &skip_dirs) {
                 continue;
             }
-            scan_file(&scan_runtime, &path, &mut recently_scanned);
+            scan_file(&scan_runtime, &path, &mut recently_scanned)
+                .with_context(|| format!("scan changed path {}", path.display()))?;
         }
     }
     Ok(())
@@ -161,7 +162,7 @@ fn scan_file(
     scan_runtime: &DefaultScanRuntime,
     path: &std::path::Path,
     recently_scanned: &mut HashMap<PathBuf, (Instant, u64)>,
-) {
+) -> Result<()> {
     // Read BYTES (not `read_to_string`) and decode through the SAME path the
     // `keyhog scan` walker uses. `read_to_string` failed on the first non-UTF-8
     // byte and silently dropped the whole file, so a config with one stray
@@ -184,17 +185,17 @@ fn scan_file(
                     error.kind()
                 );
             }
-            return;
+            return Ok(());
         }
     };
     // `None` => the bytes are binary (no text to scan): an intentional,
     // documented skip that matches the scan walker's binary policy, not a
     // failure — so no warning, consistent with `keyhog scan`.
     let Some(data) = keyhog_sources::decode_file_bytes(&bytes) else {
-        return;
+        return Ok(());
     };
     if data.is_empty() {
-        return;
+        return Ok(());
     }
 
     // Dedupe the Create+Modify burst: if we scanned this exact content for
@@ -204,7 +205,7 @@ fn scan_file(
     let hash = content_hash(&data);
     if let Some((last, last_hash)) = recently_scanned.get(path) {
         if *last_hash == hash && now.duration_since(*last) < DEDUP_WINDOW {
-            return;
+            return Ok(());
         }
     }
     recently_scanned.insert(path.to_path_buf(), (now, hash));
@@ -232,25 +233,22 @@ fn scan_file(
         Err(error) => {
             let palette = style::for_stderr();
             eprintln!("{} keyhog watch: {error}", style::fail("FAIL", &palette));
-            return;
+            return Ok(());
         }
     };
     for m in matches {
-        let line = m.location.line.map(|l| format!(":{l}")).unwrap_or_default(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
-        let conf = m
-            .confidence
-            .map(|c| format!(" ({:.2})", c))
-            .unwrap_or_default(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
-        println!(
-            "\u{1F50D} {} {}{} {:?}{}  {}",
-            m.detector_id,
-            path.display(),
-            line,
+        crate::style::print_diagnostic_finding(
+            "\u{1F50D}",
+            &m.detector_id,
+            &path.display().to_string(),
+            m.location.line,
             m.severity,
-            conf,
-            keyhog_core::redact(&m.credential)
-        );
+            m.confidence,
+            &keyhog_core::redact(&m.credential),
+        )
+        .with_context(|| format!("write watch finding for {}", path.display()))?;
     }
+    Ok(())
 }
 
 fn should_skip(path: &std::path::Path, skip_dirs: &SkipDirPolicy) -> bool {
