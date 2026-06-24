@@ -1,6 +1,6 @@
 //! R5-T archive adversarial: zip entry name with embedded null rejected.
 
-use super::support::collect_chunks;
+use super::support::collect_zip_slip_bodies;
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use std::io::Write;
@@ -18,10 +18,7 @@ fn r5t_zip_slip_null_byte_in_name_not_extracted() {
         .expect("start");
     zip.write_all(b"ROOT=1\n").expect("write");
     zip.finish().expect("finish");
-    let bodies: Vec<String> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
-        .into_iter()
-        .map(|c| c.data.to_string())
-        .collect();
+    let bodies = collect_zip_slip_bodies(&FilesystemSource::new(dir.path().to_path_buf()), "safe");
     assert!(
         !bodies.iter().any(|b| b.contains("ROOT=1")),
         "null-byte path must not extract; got {bodies:?}"

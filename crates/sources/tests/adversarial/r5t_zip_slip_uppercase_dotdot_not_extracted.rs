@@ -1,6 +1,6 @@
 //! R5-T archive adversarial: ZIP slip with uppercase DOTDOT blocked.
 
-use super::support::collect_chunks;
+use super::support::collect_zip_slip_bodies;
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use std::io::Write;
@@ -17,10 +17,10 @@ fn r5t_zip_slip_uppercase_dotdot_not_extracted() {
     zip.start_file("..\\..\\secret.env", opts).expect("start");
     zip.write_all(b"LEAK=1\n").expect("write");
     zip.finish().expect("finish");
-    let bodies: Vec<String> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
-        .into_iter()
-        .map(|c| c.data.to_string())
-        .collect();
+    let bodies = collect_zip_slip_bodies(
+        &FilesystemSource::new(dir.path().to_path_buf()),
+        "..\\..\\secret.env",
+    );
     assert!(
         !bodies.iter().any(|b| b.contains("LEAK=1")),
         "uppercase dotdot must not extract; got {bodies:?}"

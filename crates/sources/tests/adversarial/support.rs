@@ -1,6 +1,6 @@
 //! Shared hostile oracles for adversarial source tests (Unix + Windows).
 
-use keyhog_core::Source;
+use keyhog_core::{Chunk, Source};
 use keyhog_sources::FilesystemSource;
 
 #[cfg(feature = "binary")]
@@ -137,6 +137,39 @@ pub fn oracle_archive_symlink_target_swap_attempt() {
         error.contains("linked.jar") && error.contains("archive symlink"),
         "archive symlink refusal must name the blocked path, got {error:?}"
     );
+}
+
+pub fn collect_zip_slip_chunks<S: Source + ?Sized>(
+    source: &S,
+    blocked_entry_hint: &str,
+) -> Vec<Chunk> {
+    let mut chunks = Vec::new();
+    let mut errors = Vec::new();
+    for row in source.chunks() {
+        match row {
+            Ok(chunk) => chunks.push(chunk),
+            Err(error) => errors.push(error.to_string()),
+        }
+    }
+    assert!(
+        errors.iter().any(|error| {
+            error.contains("failed to scan ZIP entry")
+                && error.contains(blocked_entry_hint)
+                && error.contains("entry was not scanned")
+        }),
+        "unsafe ZIP entry must emit a visible SourceError for {blocked_entry_hint:?}; errors={errors:?}"
+    );
+    chunks
+}
+
+pub fn collect_zip_slip_bodies<S: Source + ?Sized>(
+    source: &S,
+    blocked_entry_hint: &str,
+) -> Vec<String> {
+    collect_zip_slip_chunks(source, blocked_entry_hint)
+        .into_iter()
+        .map(|chunk| chunk.data.to_string())
+        .collect()
 }
 
 #[cfg(unix)]

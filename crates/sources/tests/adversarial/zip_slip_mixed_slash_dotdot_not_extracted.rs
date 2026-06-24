@@ -1,6 +1,6 @@
 //! Zip slip variant `foo/..\..\secret.env` must not surface extracted secrets.
 
-use super::support::collect_chunks;
+use super::support::collect_zip_slip_bodies;
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use std::io::Write;
@@ -23,10 +23,10 @@ fn zip_slip_mixed_slash_dotdot_not_extracted() {
     zip.write_all(b"SAFE=1\n").expect("write safe");
     zip.finish().expect("finish");
 
-    let bodies: Vec<String> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
-        .into_iter()
-        .map(|c| c.data.to_string())
-        .collect();
+    let bodies = collect_zip_slip_bodies(
+        &FilesystemSource::new(dir.path().to_path_buf()),
+        "foo/..\\..\\secret.env",
+    );
 
     assert!(bodies.iter().any(|b| b.contains("OUTSIDE=ok")));
     assert!(

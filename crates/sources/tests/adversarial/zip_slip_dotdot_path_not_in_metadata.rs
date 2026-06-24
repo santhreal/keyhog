@@ -11,7 +11,7 @@
 //! 2. A `../` traversal entry is either skipped OR its path in the chunk
 //!    metadata does NOT contain the raw `../` component.
 
-use super::support::collect_chunks;
+use super::support::collect_zip_slip_chunks;
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use std::io::Write;
@@ -38,9 +38,10 @@ fn zip_slip_dotdot_reported_path_is_sanitized() {
 
     zip.finish().expect("finish");
 
-    let chunks: Vec<_> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
-        .into_iter()
-        .collect();
+    let chunks = collect_zip_slip_chunks(
+        &FilesystemSource::new(dir.path().to_path_buf()),
+        "../traversal.env",
+    );
 
     // No chunk's path metadata must contain a raw `../` component — the
     // sanitizer must either drop the entry or clean the path.
@@ -86,9 +87,7 @@ fn zip_slip_nul_byte_in_name_path_is_sanitized() {
     zip.write_all(b"LEGIT=yes\n").expect("write legit");
     zip.finish().expect("finish");
 
-    let chunks: Vec<_> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
-        .into_iter()
-        .collect();
+    let chunks = collect_zip_slip_chunks(&FilesystemSource::new(dir.path().to_path_buf()), "safe");
 
     for chunk in &chunks {
         if let Some(path) = &chunk.metadata.path {
