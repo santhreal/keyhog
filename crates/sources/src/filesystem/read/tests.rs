@@ -443,6 +443,27 @@ fn for_each_file_windowed_mmap_stops_on_consumer_backpressure() {
 }
 
 #[test]
+fn windowed_mmap_failure_fallback_is_operator_visible() {
+    let window = include_str!("window.rs");
+    assert!(
+        window.contains("\"cannot windowed-mmap file; falling back to buffered read\""),
+        "windowed mmap failure must be operator-visible before buffered fallback"
+    );
+    assert!(
+        window.contains("%error") && window.contains("path = %path.display()"),
+        "windowed mmap fallback warning must include the path and mmap error"
+    );
+    let fallback = window
+        .split("\"cannot windowed-mmap file; falling back to buffered read\"")
+        .nth(1)
+        .expect("windowed mmap fallback warning must be present");
+    assert!(
+        fallback.contains("return None;"),
+        "windowed mmap failure should still hand off to the buffered window path after warning"
+    );
+}
+
+#[test]
 fn read_file_for_compressed_input_returns_full_contents_via_mmap() {
     // The mmap-or-bytes wrapper must round-trip an arbitrary
     // non-empty byte sequence - covers the common case where
