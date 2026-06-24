@@ -6,6 +6,48 @@ use anyhow::Context;
 use anyhow::Result;
 use keyhog_core::{DedupScope, DedupedMatch, RawMatch, VerificationResult, VerifiedFinding};
 
+#[cfg(feature = "verify")]
+struct VerificationTickerGuard {
+    done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    handle: Option<std::thread::JoinHandle<()>>,
+}
+
+#[cfg(feature = "verify")]
+impl VerificationTickerGuard {
+    fn spawn(total: usize) -> Self {
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let ticker_done = std::sync::Arc::clone(&done);
+        let started = std::time::Instant::now();
+        let handle = std::thread::spawn(move || {
+            super::reporting::verification_ticker(ticker_done, started, total)
+        });
+        Self {
+            done,
+            handle: Some(handle),
+        }
+    }
+
+    fn stop(mut self) {
+        self.stop_inner();
+    }
+
+    fn stop_inner(&mut self) {
+        self.done.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(handle) = self.handle.take() {
+            if handle.join().is_err() {
+                tracing::debug!("verification progress thread panicked while shutting down");
+            }
+        }
+    }
+}
+
+#[cfg(feature = "verify")]
+impl Drop for VerificationTickerGuard {
+    fn drop(&mut self) {
+        self.stop_inner();
+    }
+}
+
 /// Offline (no-verify, no-network) structural metadata for a finding's
 /// credential, surfaced on every scan-output route.
 ///
@@ -291,8 +333,6 @@ impl ScanOrchestrator {
     async fn verify_findings(&self, groups: Vec<DedupedMatch>) -> Result<Vec<VerifiedFinding>> {
         use keyhog_verifier::{VerificationEngine, VerifyConfig};
         use std::io::IsTerminal;
-        use std::sync::Arc;
-        use std::sync::atomic::{AtomicBool, Ordering};
         use std::time::Duration;
 
         const MIN_VERIFY_CONFIDENCE: f64 = 0.3;
@@ -372,24 +412,15 @@ impl ScanOrchestrator {
 
         let progress_enabled =
             (self.args.progress || std::io::stderr().is_terminal()) && !self.args.stream;
-        let progress_done = Arc::new(AtomicBool::new(false));
-        let progress_handle = if progress_enabled && !verify_candidates.is_empty() {
-            let done = Arc::clone(&progress_done);
-            let started = std::time::Instant::now();
-            let total = verify_candidates.len();
-            Some(std::thread::spawn(move || {
-                super::reporting::verification_ticker(done, started, total)
-            }))
+        let progress_guard = if progress_enabled && !verify_candidates.is_empty() {
+            Some(VerificationTickerGuard::spawn(verify_candidates.len()))
         } else {
             None
         };
 
         let mut findings = verifier.verify_all(verify_candidates).await;
-        if let Some(handle) = progress_handle {
-            progress_done.store(true, Ordering::Relaxed);
-            if handle.join().is_err() {
-                tracing::debug!("verification progress thread panicked while shutting down");
-            }
+        if let Some(guard) = progress_guard {
+            guard.stop();
         }
         verifier.shutdown_oob().await;
 

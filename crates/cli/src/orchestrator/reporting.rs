@@ -1,6 +1,6 @@
 //! Scan completion reporting hooks (progress ticker, summaries, dogfood trace).
 
-use keyhog_core::VerifiedFinding;
+use keyhog_core::{Severity, VerifiedFinding};
 use std::io::Write;
 use std::sync::Arc;
 use std::time::Instant;
@@ -111,6 +111,88 @@ pub(crate) fn verification_breakdown(findings: &[VerifiedFinding]) -> Verificati
     b
 }
 
+fn colorize(text: String, color_code: &str, color: bool) -> String {
+    if color {
+        format!("{color_code}{text}{C_RESET}")
+    } else {
+        text
+    }
+}
+
+fn count_token(count: usize, label: &str, color_code: &str, color: bool) -> String {
+    colorize(format!("{count} {label}"), color_code, color)
+}
+
+fn dot_join(parts: &[String], color: bool) -> String {
+    let sep = if color {
+        format!("{C_MUTED} · {C_RESET}")
+    } else {
+        " · ".to_string()
+    };
+    parts.join(&sep)
+}
+
+fn severity_label(severity: Severity) -> &'static str {
+    match severity {
+        Severity::Critical => "critical",
+        Severity::High => "high",
+        Severity::Medium => "medium",
+        Severity::Low => "low",
+        Severity::ClientSafe => "client-safe",
+        Severity::Info => "info",
+    }
+}
+
+fn severity_color(severity: Severity) -> &'static str {
+    match severity {
+        Severity::Critical => C_CRITICAL,
+        Severity::High => C_HIGH,
+        Severity::Medium => C_MEDIUM,
+        Severity::Low => C_LOW,
+        Severity::ClientSafe => C_SAFE,
+        Severity::Info => C_MUTED,
+    }
+}
+
+pub(crate) fn render_severity_line(findings: &[VerifiedFinding], color: bool) -> Option<String> {
+    if findings.is_empty() {
+        return None;
+    }
+    let mut counts = [
+        (Severity::Critical, 0usize),
+        (Severity::High, 0usize),
+        (Severity::Medium, 0usize),
+        (Severity::Low, 0usize),
+        (Severity::ClientSafe, 0usize),
+        (Severity::Info, 0usize),
+    ];
+    for finding in findings {
+        for (severity, count) in &mut counts {
+            if *severity == finding.severity {
+                *count += 1;
+                break;
+            }
+        }
+    }
+    let parts: Vec<String> = counts
+        .into_iter()
+        .filter(|(_, count)| *count > 0)
+        .map(|(severity, count)| {
+            count_token(
+                count,
+                severity_label(severity),
+                severity_color(severity),
+                color,
+            )
+        })
+        .collect();
+    let (muted, reset) = if color { (C_MUTED, C_RESET) } else { ("", "") };
+    Some(format!(
+        "{muted}↳ severity: {reset}{}",
+        dot_join(&parts, color)
+    ))
+}
+
 /// Render the honesty sub-line under "Found N secrets". `None` when there are no
 /// findings (nothing to verify). When NOTHING was actually checked (everything
 /// `Skipped`), it states plainly that verification was not run and points at
@@ -123,35 +205,38 @@ pub(crate) fn render_verification_line(
     if total == 0 {
         return None;
     }
-    let (muted, brand, reset) = if color {
-        (C_MUTED, C_BRAND, C_RESET)
+    let (muted, brand, amber, reset) = if color {
+        (C_MUTED, C_BRAND, C_AMBER, C_RESET)
     } else {
-        ("", "", "")
+        ("", "", "", "")
     };
     // Verification was never attempted for ANY finding: say so explicitly.
     if b.skipped == total {
         return Some(format!(
-            "{muted}↳ not verified — liveness check did not run; pass {brand}--verify{reset}{muted} \
+            "{muted}↳ verification: {amber}not checked{reset}{muted} — liveness check did not run; pass {brand}--verify{reset}{muted} \
              to confirm which are active{reset}"
         ));
     }
     let mut parts: Vec<String> = Vec::new();
     if b.live > 0 {
-        parts.push(format!("{} live", b.live));
+        parts.push(count_token(b.live, "live", C_CRITICAL, color));
     }
     if b.inactive > 0 {
-        parts.push(format!("{} revoked/dead", b.inactive));
+        parts.push(count_token(b.inactive, "revoked/dead", C_SAFE, color));
     }
     if b.skipped > 0 {
-        parts.push(format!("{} not checked", b.skipped));
+        parts.push(count_token(b.skipped, "not checked", C_AMBER, color));
     }
     if b.unverifiable > 0 {
-        parts.push(format!("{} no verifier", b.unverifiable));
+        parts.push(count_token(b.unverifiable, "no verifier", C_AMBER, color));
     }
     if b.incomplete > 0 {
-        parts.push(format!("{} inconclusive", b.incomplete));
+        parts.push(count_token(b.incomplete, "inconclusive", C_AMBER, color));
     }
-    Some(format!("{muted}↳ {}{reset}", parts.join(" · ")))
+    Some(format!(
+        "{muted}↳ verification: {reset}{}",
+        dot_join(&parts, color)
+    ))
 }
 
 pub(crate) fn report_completion_summary(
@@ -179,6 +264,9 @@ pub(crate) fn report_completion_summary(
             "\nScan complete. Found {}{}{} secrets in {}{:.2}s{}.",
             palette.red, count, palette.reset, palette.yellow, elapsed, palette.reset
         );
+        if let Some(line) = render_severity_line(findings, ansi) {
+            eprintln!("{line}");
+        }
         // Honesty sub-line: how many of those N are confirmed live vs unchecked.
         if let Some(line) = render_verification_line(&verification_breakdown(findings), count, ansi)
         {
@@ -253,6 +341,11 @@ pub(crate) fn report_backend_summary(
 /// output stays plain. Truecolor degrades gracefully to the nearest colour on
 /// 256/16-colour terminals; the layout is identical with or without colour.
 const C_BRAND: &str = "\x1b[38;2;255;214;10m";
+const C_CRITICAL: &str = "\x1b[38;2;255;69;58m";
+const C_HIGH: &str = "\x1b[38;2;255;159;10m";
+const C_MEDIUM: &str = "\x1b[38;2;255;214;10m";
+const C_LOW: &str = "\x1b[38;2;100;210;255m";
+const C_SAFE: &str = "\x1b[38;2;48;209;88m";
 const C_AMBER: &str = "\x1b[38;2;255;159;10m";
 const C_RAIL: &str = "\x1b[38;2;74;74;82m";
 const C_MUTED: &str = "\x1b[38;2;138;138;150m";
@@ -515,7 +608,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
              encoded contents."
         );
         let palette = terminal_palette(ansi, false);
-        eprintln!("{}WARN{} {msg}", palette.yellow, palette.reset);
+        eprintln!("{}WARN {msg}{}", palette.yellow, palette.reset);
     }
 
     let decode_truncations = keyhog_scanner::telemetry::decode_truncation_count();
@@ -527,7 +620,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
              decode limits to prove encoded coverage."
         );
         let palette = terminal_palette(ansi, false);
-        eprintln!("{}WARN{} {msg}", palette.yellow, palette.reset);
+        eprintln!("{}WARN {msg}{}", palette.yellow, palette.reset);
     }
 
     let invalid_pattern_index_skips = keyhog_scanner::telemetry::invalid_pattern_index_skip_count();
@@ -538,7 +631,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
              This is a scanner invariant violation; treat the scan as partial."
         );
         let palette = terminal_palette(ansi, false);
-        eprintln!("{}WARN{} {msg}", palette.yellow, palette.reset);
+        eprintln!("{}WARN {msg}{}", palette.yellow, palette.reset);
     }
 
     let boundary_cardinality_mismatches =
@@ -550,7 +643,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
              This is a scanner invariant violation; treat the scan as partial."
         );
         let palette = terminal_palette(ansi, false);
-        eprintln!("{}WARN{} {msg}", palette.yellow, palette.reset);
+        eprintln!("{}WARN {msg}{}", palette.yellow, palette.reset);
     }
 
     let line_offset_mapping_mismatches =
@@ -562,7 +655,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
              emitted, but reported locations may be approximate; treat the scan as partial."
         );
         let palette = terminal_palette(ansi, false);
-        eprintln!("{}WARN{} {msg}", palette.yellow, palette.reset);
+        eprintln!("{}WARN {msg}{}", palette.yellow, palette.reset);
     }
 
     let c = keyhog_sources::skip_counts();
@@ -724,7 +817,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
         } else {
             ("WARN", palette.yellow)
         };
-        eprintln!("{color}{label}{} {msg}", palette.reset);
+        eprintln!("{color}{label} {msg}{}", palette.reset);
     }
 }
 
@@ -747,8 +840,8 @@ pub(crate) fn dump_dogfood_trace() {
 #[cfg(test)]
 mod ticker_tests {
     use super::{
-        fmt_secs, render_progress_bar, render_ticker_line, render_verification_line,
-        render_verification_ticker_line, verification_breakdown,
+        fmt_secs, render_progress_bar, render_severity_line, render_ticker_line,
+        render_verification_line, render_verification_ticker_line, verification_breakdown,
     };
 
     fn finding(v: keyhog_core::VerificationResult) -> keyhog_core::VerifiedFinding {
@@ -775,6 +868,15 @@ mod ticker_tests {
             additional_locations: vec![],
             confidence: Some(0.9),
         }
+    }
+
+    fn finding_with(
+        severity: keyhog_core::Severity,
+        v: keyhog_core::VerificationResult,
+    ) -> keyhog_core::VerifiedFinding {
+        let mut finding = finding(v);
+        finding.severity = severity;
+        finding
     }
 
     #[test]
@@ -810,8 +912,12 @@ mod ticker_tests {
         let line =
             render_verification_line(&b, findings.len(), false).expect("line for >0 findings");
         assert!(
-            line.contains("not verified"),
+            line.contains("liveness check did not run"),
             "honest 'we did not try': {line}"
+        );
+        assert!(
+            line.contains("not checked"),
+            "posture should be explicit: {line}"
         );
         assert!(line.contains("--verify"), "points at the flag: {line}");
         // The all-skipped branch emits the prose message, never a count
@@ -831,6 +937,7 @@ mod ticker_tests {
         assert!(line.contains("1 live"), "{line}");
         assert!(line.contains("1 revoked/dead"), "{line}");
         assert!(line.contains("1 not checked"), "{line}");
+        assert!(line.contains("verification:"), "{line}");
         assert!(
             !line.contains("no verifier"),
             "zero category omitted: {line}"
@@ -845,6 +952,60 @@ mod ticker_tests {
     fn no_findings_yields_no_verification_line() {
         let b = verification_breakdown(&[]);
         assert_eq!(render_verification_line(&b, 0, false), None);
+    }
+
+    #[test]
+    fn severity_summary_is_heat_ordered_and_color_gated() {
+        use keyhog_core::Severity as S;
+        use keyhog_core::VerificationResult as V;
+        let findings = vec![
+            finding_with(S::Low, V::Skipped),
+            finding_with(S::Critical, V::Skipped),
+            finding_with(S::High, V::Skipped),
+            finding_with(S::ClientSafe, V::Skipped),
+            finding_with(S::High, V::Skipped),
+        ];
+        let plain = render_severity_line(&findings, false).unwrap();
+        assert_eq!(
+            plain,
+            "↳ severity: 1 critical · 2 high · 1 low · 1 client-safe"
+        );
+        assert!(!plain.contains('\x1b'), "plain severity line: {plain:?}");
+        let colored = render_severity_line(&findings, true).unwrap();
+        assert!(
+            colored.contains('\x1b'),
+            "colored severity line should use heat SGR codes: {colored:?}"
+        );
+        assert!(colored.contains("1 critical"), "{colored}");
+        assert!(colored.contains("2 high"), "{colored}");
+        assert_eq!(render_severity_line(&[], true), None);
+    }
+
+    #[test]
+    fn verification_summary_colours_posture_without_plain_ansi() {
+        use keyhog_core::VerificationResult as V;
+        let findings = vec![
+            finding(V::Live),
+            finding(V::Skipped),
+            finding(V::Error("e".into())),
+        ];
+        let b = verification_breakdown(&findings);
+        let plain = render_verification_line(&b, findings.len(), false).unwrap();
+        assert_eq!(
+            plain,
+            "↳ verification: 1 live · 1 not checked · 1 inconclusive"
+        );
+        assert!(
+            !plain.contains('\x1b'),
+            "plain verification line: {plain:?}"
+        );
+        let colored = render_verification_line(&b, findings.len(), true).unwrap();
+        assert!(
+            colored.contains('\x1b'),
+            "colored verification line should use posture SGR codes: {colored:?}"
+        );
+        assert!(colored.contains("1 live"), "{colored}");
+        assert!(colored.contains("1 not checked"), "{colored}");
     }
 
     #[test]

@@ -57,3 +57,38 @@ fn daemon_finalize_uses_shared_postprocess_helpers() {
         );
     }
 }
+
+#[test]
+fn verification_progress_ticker_is_drop_guarded() {
+    let postprocess = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/postprocess.rs"
+    ))
+    .expect("postprocess source readable");
+
+    for required in [
+        "struct VerificationTickerGuard",
+        "impl Drop for VerificationTickerGuard",
+        "fn stop_inner(&mut self)",
+        "self.done.store(true",
+        "handle.join()",
+        "VerificationTickerGuard::spawn(verify_candidates.len())",
+        "guard.stop();",
+    ] {
+        assert!(
+            postprocess.contains(required),
+            "verification progress ticker must keep guarded cleanup boundary `{required}`"
+        );
+    }
+
+    let verify_findings = postprocess
+        .split("async fn verify_findings(")
+        .nth(1)
+        .expect("verify_findings body extractable");
+    for forbidden in ["progress_done", "progress_handle"] {
+        assert!(
+            !verify_findings.contains(forbidden),
+            "verify_findings must not reintroduce detached progress primitive `{forbidden}`"
+        );
+    }
+}
