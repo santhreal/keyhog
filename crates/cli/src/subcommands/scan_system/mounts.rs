@@ -43,9 +43,8 @@ pub(super) fn enumerate_mounts(_include_network: bool) -> Result<Vec<PathBuf>> {
     }
 }
 
-/// Scan-system mount filters loaded from Tier-B data. Linux-only: the
-/// filesystem-type names are Linux `/proc/mounts` types.
-#[cfg(target_os = "linux")]
+/// Scan-system mount filters loaded from Tier-B data.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[derive(Debug, Default, serde::Deserialize)]
 struct MountFilters {
     #[serde(default)]
@@ -57,7 +56,7 @@ struct MountFilters {
 }
 
 /// Compiled-in Tier-B baseline. Always applied.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const BUNDLED_MOUNT_FILTERS: &str = include_str!("../../../data/scan_system/mount_filters.toml");
 
 /// Load scan-system mount filters: the embedded baseline UNIONED with an
@@ -69,7 +68,7 @@ const BUNDLED_MOUNT_FILTERS: &str = include_str!("../../../data/scan_system/moun
 /// test), and a user file that EXISTS but is unreadable or unparseable is a hard
 /// error. Only the ordinary "no user file present" case uses the baseline alone,
 /// which is the intended default — not a degraded fallback.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn load_mount_filters() -> Result<MountFilters> {
     let mut filters: MountFilters = toml::from_str(BUNDLED_MOUNT_FILTERS)
         .context("parse bundled scan_system/mount_filters.toml (build bug)")?;
@@ -217,6 +216,14 @@ mod tests {
 
 #[cfg(target_os = "macos")]
 fn macos_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
+    let filters = load_mount_filters()?;
+    let skip_fs_types: std::collections::HashSet<&str> =
+        filters.skip_fs_types.iter().map(String::as_str).collect();
+    let network_fs_types: std::collections::HashSet<&str> = filters
+        .network_fs_types
+        .iter()
+        .map(String::as_str)
+        .collect();
     // SECURITY (kimi-wave1 audit 3.PATH-mount): use a trusted absolute path.
     // `scan-system` is an operator-visible audit surface; do not execute an
     // arbitrary PATH `mount` binary if the safe resolver misses.
@@ -238,10 +245,17 @@ fn macos_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
                 let path = &rest[..paren_idx];
                 let fs_info = &rest[paren_idx + 2..];
                 let fstype = fs_info.split(',').next().unwrap_or("").trim(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
-                if matches!(fstype, "devfs" | "autofs" | "tmpfs") {
+                if skip_fs_types.contains(fstype) {
                     continue;
                 }
-                if !include_network && matches!(fstype, "nfs" | "smbfs" | "afpfs") {
+                if !include_network && network_fs_types.contains(fstype) {
+                    continue;
+                }
+                if filters
+                    .skip_path_prefixes
+                    .iter()
+                    .any(|prefix| path.starts_with(prefix))
+                {
                     continue;
                 }
                 roots.push(PathBuf::from(path));

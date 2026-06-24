@@ -197,9 +197,20 @@ fn linux_mount_filters_are_tier_b_and_match_decoded_targets() {
             && data.contains("skip_path_prefixes")
             && data.contains("network_fs_types")
             && data.contains("\"proc\"")
+            && data.contains("\"devfs\"")
             && data.contains("\"/snap/\"")
-            && data.contains("\"nfs\""),
-        "mount_filters.toml must carry the linux skip and network filter sets"
+            && data.contains("\"nfs\"")
+            && data.contains("\"afpfs\""),
+        "mount_filters.toml must carry the linux and macOS skip/network filter sets"
+    );
+    assert!(
+        src.contains("fn macos_mounts(")
+            && src.contains("let filters = load_mount_filters()?;")
+            && src.contains("skip_fs_types.contains(fstype)")
+            && src.contains("network_fs_types.contains(fstype)")
+            && !src.contains(r#"matches!(fstype, "devfs" | "autofs" | "tmpfs")"#)
+            && !src.contains(r#"matches!(fstype, "nfs" | "smbfs" | "afpfs")"#),
+        "macOS scan-system mount filtering must use the shared Tier-B policy instead of local hardcoded lists"
     );
 
     let decode_pos = src

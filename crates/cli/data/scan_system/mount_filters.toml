@@ -16,6 +16,7 @@ skip_fs_types = [
   "binfmt_misc", "rpc_pipefs", "ramfs", "autofs", "mqueue", "hugetlbfs",
   "fuse.gvfsd-fuse", "overlay", "squashfs", "nsfs", "fuse.portal",
   "fuse.snapfuse", "fuse.gvfs-fuse-daemon", "fuse.fusectl", "rootfs",
+  "devfs",
 ]
 
 # Volatile / synthetic path prefixes skipped regardless of filesystem type.
@@ -25,5 +26,5 @@ skip_path_prefixes = ["/run/", "/proc/", "/sys/", "/dev/", "/snap/"]
 # (scanning a mounted NFS/CIFS export can be enormous and is rarely intended).
 network_fs_types = [
   "nfs", "nfs4", "cifs", "smb", "smbfs", "fuse.sshfs", "fuse.rclone",
-  "9p", "afs", "ceph",
+  "9p", "afs", "ceph", "afpfs",
 ]
