@@ -131,12 +131,14 @@ fn measure_reference_simd(
     sample: &[Chunk],
 ) -> Result<(Vec<Vec<keyhog_core::RawMatch>>, BackendTimingEvidence), AutorouteRoutingError> {
     scanner.clear_fragment_cache();
-    let (reference, first_dur) = timed(|| scanner.scan_coalesced(sample));
+    let (reference, first_dur) =
+        timed(|| scanner.scan_coalesced_with_backend(sample, ScanBackend::SimdCpu));
     let reference_key = canonical_matches(&reference);
     let mut durations = vec![first_dur];
     for trial_idx in 1..AUTOROUTE_CALIBRATION_TRIALS {
         scanner.clear_fragment_cache();
-        let (matches, dur) = timed(|| scanner.scan_coalesced(sample));
+        let (matches, dur) =
+            timed(|| scanner.scan_coalesced_with_backend(sample, ScanBackend::SimdCpu));
         if canonical_matches(&matches) != reference_key {
             let reference_set = calibration_match_identity_set(&reference);
             let trial_set = calibration_match_identity_set(&matches);

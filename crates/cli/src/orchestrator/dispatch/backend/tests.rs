@@ -1638,9 +1638,17 @@ fn autoroute_reference_inconsistency_aborts_calibration_contract() {
             && calibration.contains(
                 "Result<(Vec<Vec<keyhog_core::RawMatch>>, BackendTimingEvidence), AutorouteRoutingError>"
             )
+            && calibration.contains(
+                "scanner.scan_coalesced_with_backend(sample, ScanBackend::SimdCpu)"
+            )
             && calibration
                 .contains("return Err(AutorouteRoutingError::inconsistent_reference_backend("),
-        "measure_reference_simd must abort on reference mismatch, not continue with partial proof"
+        "measure_reference_simd must explicitly force the SIMD route and abort on reference \
+         mismatch, not continue with partial proof"
+    );
+    assert!(
+        !calibration.contains("timed(|| scanner.scan_coalesced(sample))"),
+        "autoroute calibration must not label the default coalesced route as explicit SIMD"
     );
     assert!(
         !calibration.contains("reference backend produced inconsistent calibration results\"\\n            );\\n            continue;"),
