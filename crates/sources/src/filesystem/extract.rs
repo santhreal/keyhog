@@ -357,6 +357,12 @@ pub(super) fn process_entry(
             "refusing to read content at a symlink path - prevents the link-swap attack class"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        if !emit(Err(SourceError::Other(format!(
+            "failed to scan filesystem file '{}': refusing to read content at a symlink path; file was not scanned",
+            display_path(&path)
+        )))) {
+            return;
+        }
         return;
     }
 

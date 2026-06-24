@@ -31,7 +31,7 @@
 //! `exclude_dirs` empty so source-owned default excludes reach `process_entry`
 //! and increment visible skip counters instead of disappearing inside codewalk.
 
-use crate::support::collect_chunks;
+use crate::support::{collect_chunks, split_chunk_results};
 use keyhog_core::testing as core_testing;
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
@@ -202,14 +202,21 @@ fn merkle_skip_does_not_mask_symlink_refusal() {
     );
 
     let (rows, merkle_skipped) = TestApi.process_entry_with_merkle(link, link_size, 0, idx);
-    let chunks = rows
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()
-        .expect("symlink refusal should not emit a source error row");
+    let (chunks, errors) = split_chunk_results(&rows);
 
     assert!(
         chunks.is_empty(),
         "refused symlink must not scan target bytes or emit a clean chunk"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "symlink refusal must emit one visible SourceError row"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("cached-link.txt") && error.contains("file was not scanned"),
+        "symlink SourceError must name the refused path, got {error}"
     );
     assert_eq!(
         merkle_skipped, 0,
