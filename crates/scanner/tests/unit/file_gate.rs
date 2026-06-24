@@ -1789,6 +1789,13 @@ fn telemetry_coverage_gap_counters_have_typed_owner() {
         0,
         "boundary cardinality mismatches must route through record_scanner_coverage_gap"
     );
+    assert_eq!(
+        source
+            .matches("LINE_OFFSET_MAPPING_MISMATCHES.fetch_add")
+            .count(),
+        0,
+        "line-offset mapping mismatches must route through record_scanner_coverage_gap"
+    );
     assert!(
         source.contains(
             "record_scanner_coverage_gap(ScannerCoverageGapEvent::StructuredParseFailure"
@@ -1799,9 +1806,27 @@ fn telemetry_coverage_gap_counters_have_typed_owner() {
             )
             && source.contains(
                 "record_scanner_coverage_gap(ScannerCoverageGapEvent::BoundaryResultCardinalityMismatch"
+            )
+            && source.contains(
+                "record_scanner_coverage_gap(ScannerCoverageGapEvent::LineOffsetMappingMismatch"
             ),
         "public recorder wrappers must delegate to the typed scanner coverage-gap owner"
     );
+}
+
+#[test]
+fn multiline_source_line_offsets_do_not_silently_default_to_zero() {
+    for path in [
+        concat!(env!("CARGO_MANIFEST_DIR"), "/src/multiline/preprocessor.rs"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/src/multiline/structural.rs"),
+    ] {
+        let source = std::fs::read_to_string(path).expect("read multiline source");
+        assert!(
+            !source.contains("source_line_offsets.get")
+                || !source.contains(".copied().unwrap_or(0)"),
+            "{path} must use source_line_offset_or_record_gap instead of silently reporting byte 0"
+        );
+    }
 }
 
 #[test]

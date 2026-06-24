@@ -475,6 +475,32 @@ pub mod multiline {
         ))
     }
 
+    pub fn collect_structural_fragments_for_test(
+        lines: &[&str],
+        source_line_offsets: &[usize],
+        initial_offset: usize,
+        fragment_cache: &super::fragment_cache::FragmentCache,
+    ) -> (Vec<String>, Vec<LineMapping>) {
+        let (joined, mappings) = crate::multiline::collect_structural_fragments_for_test(
+            lines,
+            source_line_offsets,
+            initial_offset,
+            fragment_cache.inner(),
+        );
+        (
+            joined,
+            mappings
+                .into_iter()
+                .map(|mapping| LineMapping {
+                    start_offset: mapping.start_offset,
+                    end_offset: mapping.end_offset,
+                    line_number: mapping.line_number,
+                    original_start_offset: mapping.original_start_offset,
+                })
+                .collect(),
+        )
+    }
+
     fn public_preprocessed<'a>(
         preprocessed: crate::multiline::PreprocessedText<'a>,
     ) -> PreprocessedText<'a> {

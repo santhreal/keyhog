@@ -197,6 +197,9 @@ static INVALID_PATTERN_INDEX_SKIPS: AtomicUsize = AtomicUsize::new(0);
 /// Cross-chunk boundary reassembly could not run because the caller supplied a
 /// result vector with different cardinality than the chunk vector.
 static BOUNDARY_RESULT_CARDINALITY_MISMATCHES: AtomicUsize = AtomicUsize::new(0);
+/// Multiline/structured reassembly produced a synthetic finding mapping whose
+/// source line was not present in the caller-provided line-offset table.
+static LINE_OFFSET_MAPPING_MISMATCHES: AtomicUsize = AtomicUsize::new(0);
 
 /// Scanner coverage gap recorded when a scanner-owned transform did not run to
 /// full coverage. These are not source skips: raw bytes still flow through the
@@ -207,6 +210,7 @@ pub(crate) enum ScannerCoverageGapEvent {
     DecodeTruncation,
     InvalidPatternIndexSkip,
     BoundaryResultCardinalityMismatch,
+    LineOffsetMappingMismatch,
 }
 
 impl ScannerCoverageGapEvent {
@@ -216,6 +220,7 @@ impl ScannerCoverageGapEvent {
             Self::DecodeTruncation => &DECODE_TRUNCATIONS,
             Self::InvalidPatternIndexSkip => &INVALID_PATTERN_INDEX_SKIPS,
             Self::BoundaryResultCardinalityMismatch => &BOUNDARY_RESULT_CARDINALITY_MISMATCHES,
+            Self::LineOffsetMappingMismatch => &LINE_OFFSET_MAPPING_MISMATCHES,
         }
     }
 }
@@ -495,6 +500,18 @@ pub fn boundary_result_cardinality_mismatch_count() -> usize {
     BOUNDARY_RESULT_CARDINALITY_MISMATCHES.load(Ordering::Relaxed)
 }
 
+/// Record that source line attribution fell back because a synthetic multiline
+/// mapping could not find its line in the original line-offset table.
+pub(crate) fn record_line_offset_mapping_mismatch() {
+    let _receipt = record_scanner_coverage_gap(ScannerCoverageGapEvent::LineOffsetMappingMismatch);
+}
+
+/// Count of synthetic multiline/structured mapping attribution mismatches this
+/// scan.
+pub fn line_offset_mapping_mismatch_count() -> usize {
+    LINE_OFFSET_MAPPING_MISMATCHES.load(Ordering::Relaxed)
+}
+
 /// Append events into the per-process buffer without going through the
 /// `record_example_suppression` path (no counter bump, no dogfood
 /// enable-check). Used by the daemon client to replay events captured
@@ -570,6 +587,7 @@ pub fn reset_for_scan() {
     THREAD_DECODE_TRUNCATIONS.with(|count| count.set(0));
     INVALID_PATTERN_INDEX_SKIPS.store(0, Ordering::Relaxed);
     BOUNDARY_RESULT_CARDINALITY_MISMATCHES.store(0, Ordering::Relaxed);
+    LINE_OFFSET_MAPPING_MISMATCHES.store(0, Ordering::Relaxed);
     if let Ok(mut events) = t.events.lock() {
         events.clear();
     }

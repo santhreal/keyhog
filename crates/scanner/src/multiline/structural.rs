@@ -1,4 +1,6 @@
-use super::config::{starts_parenthesized_implicit_block, LineMapping};
+use super::config::{
+    source_line_offset_or_record_gap, starts_parenthesized_implicit_block, LineMapping,
+};
 use super::string_extract::{
     extract_prefix, extract_quoted_content, fragment_assignment_name_is_credential_like,
 };
@@ -77,7 +79,10 @@ pub(super) fn collect_structural_fragments(
                     start_offset: current_struct_offset,
                     end_offset: current_struct_offset + array_joined.len(),
                     line_number: index + 1,
-                    original_start_offset: source_line_offsets.get(index).copied().unwrap_or(0), // LAW10: reporting-only fallback for malformed synthetic line index
+                    original_start_offset: source_line_offset_or_record_gap(
+                        source_line_offsets,
+                        index,
+                    ),
                 });
                 current_struct_offset += array_joined.len() + 1;
             }
@@ -138,10 +143,10 @@ pub(super) fn collect_structural_fragments(
             start_offset: current_struct_offset,
             end_offset: current_struct_offset + joined.len(),
             line_number: start_line,
-            original_start_offset: source_line_offsets
-                .get(start_line.saturating_sub(1))
-                .copied()
-                .unwrap_or(0), // LAW10: reporting-only fallback for malformed synthetic line index
+            original_start_offset: source_line_offset_or_record_gap(
+                source_line_offsets,
+                start_line.saturating_sub(1),
+            ),
         });
         current_struct_offset += joined.len() + 1;
     }
@@ -172,7 +177,7 @@ pub(super) fn collect_structural_fragments(
             start_offset: current_struct_offset,
             end_offset: current_struct_offset + joined.len(),
             line_number: SYNTHETIC_BASE_LINE + offset_idx,
-            original_start_offset: source_line_offsets.get(index).copied().unwrap_or(0), // LAW10: reporting-only fallback for malformed synthetic line index
+            original_start_offset: source_line_offset_or_record_gap(source_line_offsets, index),
         });
         current_struct_offset += joined.len() + 1;
     }
@@ -200,7 +205,7 @@ pub(super) fn collect_structural_fragments(
                 start_offset: current_struct_offset,
                 end_offset: current_struct_offset + joined.len(),
                 line_number: SYNTHETIC_BASE_LINE,
-                original_start_offset: source_line_offsets.get(index).copied().unwrap_or(0), // LAW10: reporting-only fallback for malformed synthetic line index
+                original_start_offset: source_line_offset_or_record_gap(source_line_offsets, index),
             });
             current_struct_offset += joined.len() + 1;
         }
@@ -216,10 +221,10 @@ pub(super) fn collect_structural_fragments(
                     start_offset: current_struct_offset,
                     end_offset: current_struct_offset + joined.len(),
                     line_number: start_line,
-                    original_start_offset: source_line_offsets
-                        .get(start_line.saturating_sub(1))
-                        .copied()
-                        .unwrap_or(0), // LAW10: reporting-only fallback for malformed synthetic line index
+                    original_start_offset: source_line_offset_or_record_gap(
+                        source_line_offsets,
+                        start_line.saturating_sub(1),
+                    ),
                 });
                 current_struct_offset += joined.len() + 1;
             }

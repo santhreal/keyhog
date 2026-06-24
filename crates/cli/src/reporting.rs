@@ -194,6 +194,10 @@ fn coverage_gap_summary() -> Vec<(String, usize)> {
             "scanner boundary reassembly skipped by chunk/result cardinality mismatch (scanner invariant violation; scan partial)".to_string(),
             keyhog_scanner::telemetry::boundary_result_cardinality_mismatch_count(),
         ),
+        (
+            "scanner multiline attribution used fallback source offsets (line-offset metadata mismatch; scan partial)".to_string(),
+            keyhog_scanner::telemetry::line_offset_mapping_mismatch_count(),
+        ),
     ];
 
     #[cfg(feature = "binary")]

@@ -1,4 +1,7 @@
-use super::config::{should_passthrough, LineMapping, MultilineConfig, PreprocessedText};
+use super::config::{
+    should_passthrough, source_line_offset_or_record_gap, LineMapping, MultilineConfig,
+    PreprocessedText,
+};
 use super::string_extract::{extract_string_part, ContinuationType};
 use super::structural::collect_structural_fragments;
 use crate::fragment_cache::FragmentCache;
@@ -240,7 +243,7 @@ fn process_line_chain(
             start_offset: base_offset,
             end_offset: base_offset + joined.len(),
             line_number: original_start_line,
-            original_start_offset: source_line_offsets.get(start_idx).copied().unwrap_or(0), // LAW10: reporting-only fallback for malformed synthetic line index
+            original_start_offset: source_line_offset_or_record_gap(source_line_offsets, start_idx),
         }]
     };
 

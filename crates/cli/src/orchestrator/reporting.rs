@@ -251,6 +251,18 @@ pub(crate) fn report_skip_summary(ansi: bool) {
         eprintln!("{}WARN{} {msg}", palette.yellow, palette.reset);
     }
 
+    let line_offset_mapping_mismatches =
+        keyhog_scanner::telemetry::line_offset_mapping_mismatch_count();
+    if line_offset_mapping_mismatches > 0 {
+        let msg = format!(
+            "{line_offset_mapping_mismatches} multiline attribution mapping(s) used a fallback \
+             source offset because line-offset metadata was inconsistent. Findings were still \
+             emitted, but reported locations may be approximate; treat the scan as partial."
+        );
+        let palette = terminal_palette(ansi, false);
+        eprintln!("{}WARN{} {msg}", palette.yellow, palette.reset);
+    }
+
     let c = keyhog_sources::skip_counts();
     // Whether the binary source recorded any degradation/drop. Checked here so a
     // run whose ONLY coverage gap is a Ghidra fallback / unreadable binary (with

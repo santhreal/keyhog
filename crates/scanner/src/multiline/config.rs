@@ -44,6 +44,20 @@ pub(crate) struct LineMapping {
     pub(crate) original_start_offset: usize,
 }
 
+pub(super) fn source_line_offset_or_record_gap(
+    source_line_offsets: &[usize],
+    zero_based_line_index: usize,
+) -> usize {
+    if let Some(offset) = source_line_offsets.get(zero_based_line_index).copied() {
+        return offset;
+    }
+    crate::telemetry::record_line_offset_mapping_mismatch();
+    match source_line_offsets.last().copied() {
+        Some(offset) => offset,
+        None => 0, // LAW10: mismatch was counted above; empty table has no better attribution anchor, finding still emits
+    }
+}
+
 /// Result of preprocessing text for multi-line concatenation.
 ///
 /// `text` is a [`Cow`] so the overwhelmingly common passthrough/identity case
