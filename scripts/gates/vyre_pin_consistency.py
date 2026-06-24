@@ -96,8 +96,7 @@ def _is_generated_path(path: pathlib.Path) -> bool:
     except ValueError:
         return True
     return (
-        ".git" in parts
-        or "target" in parts
+        parts[:1] in {(".git",), ("target",)}
         or parts[:2] == ("docs", "book")
         or (
             len(parts) >= 2
@@ -121,7 +120,15 @@ def _path_has_component(value: str, component: str) -> bool:
 
 
 def _manifest_path_values(text: str) -> list[str]:
-    return re.findall(r"""path\s*=\s*["']([^"']+)["']""", text)
+    values: list[str] = []
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            continue
+        match = re.match(r"""^\s*path\s*=\s*["']([^"']+)["']""", line)
+        if match:
+            values.append(match.group(1))
+    return values
 
 
 def check() -> list[str]:

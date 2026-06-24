@@ -24,9 +24,7 @@ fn is_generated_path(root: &Path, path: &Path) -> bool {
     let rel = path.strip_prefix(root).unwrap_or(path);
     let text = rel.to_string_lossy().replace('\\', "/");
     let parts: Vec<&str> = text.split('/').collect();
-    parts
-        .iter()
-        .any(|part| *part == ".git" || *part == "target")
+    matches!(parts.first(), Some(&".git" | &"target"))
         || parts.starts_with(&["docs", "book"])
         || (parts.first() == Some(&"benchmarks")
             && parts
@@ -37,6 +35,24 @@ fn is_generated_path(root: &Path, path: &Path) -> bool {
 fn contains_path_component(text: &str, component: &str) -> bool {
     text.split(|ch: char| ch == '/' || ch == '"' || ch == '\'' || ch.is_whitespace() || ch == '=')
         .any(|part| part == component)
+}
+
+fn manifest_path_values(line: &str) -> Vec<&str> {
+    let Some((key, rest)) = line.split_once('=') else {
+        return Vec::new();
+    };
+    if key.trim() != "path" {
+        return Vec::new();
+    }
+    let rest = rest.trim_start();
+    let Some(quote) = rest.chars().next().filter(|ch| *ch == '"' || *ch == '\'') else {
+        return Vec::new();
+    };
+    let value_start = quote.len_utf8();
+    rest[value_start..]
+        .find(quote)
+        .map(|end| vec![&rest[value_start..value_start + end]])
+        .unwrap_or_default()
 }
 
 fn collect_cargo_manifests(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
@@ -168,15 +184,14 @@ fn repository_vendor_tree_is_removed_and_not_a_cargo_resolution_path() {
     for path in cargo_files {
         let text = std::fs::read_to_string(&path).expect("read Cargo.toml");
         for line in text.lines() {
-            let normalized = line.replace('\\', "/");
-            if normalized.contains("path")
-                && normalized.contains('=')
-                && contains_path_component(&normalized, "vendor")
-            {
-                offenders.push(format!(
-                    "{}: {line}",
-                    path.strip_prefix(&root).unwrap_or(&path).display()
-                ));
+            for value in manifest_path_values(line) {
+                let normalized = value.replace('\\', "/");
+                if contains_path_component(&normalized, "vendor") {
+                    offenders.push(format!(
+                        "{}: {line}",
+                        path.strip_prefix(&root).unwrap_or(&path).display()
+                    ));
+                }
             }
         }
     }
