@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use keyhog_core::{
-    MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding, write_report,
+    MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding,
+    testing::{CoreTestApi, TestApi},
+    write_report,
 };
 
 const REMEDIATION_DATA: &str = include_str!("../../data/remediation.toml");
@@ -16,6 +18,36 @@ struct RemediationData {
     service: Vec<toml::Value>,
     #[serde(default)]
     severity: Vec<toml::Value>,
+}
+
+const ALL_SEVERITY_ROWS: &str = r#"
+[[severity]]
+severity = "critical"
+action = "critical action"
+
+[[severity]]
+severity = "high"
+action = "high action"
+
+[[severity]]
+severity = "medium"
+action = "medium action"
+
+[[severity]]
+severity = "low"
+action = "low action"
+
+[[severity]]
+severity = "client-safe"
+action = "client-safe action"
+
+[[severity]]
+severity = "info"
+action = "info action"
+"#;
+
+fn parse_remediation_for_test(raw: &str) -> Result<(), String> {
+    TestApi.parse_remediation_file_for_test(raw)
 }
 
 fn finding(detector_id: &str, name: &str, service: &str, severity: Severity) -> VerifiedFinding {
@@ -82,6 +114,7 @@ fn report_sarif(finding: &VerifiedFinding) -> serde_json::Value {
 fn remediation_tier_b_data_parses_and_has_live_rows() {
     let parsed: RemediationData =
         toml::from_str(REMEDIATION_DATA).expect("remediation.toml parses");
+    parse_remediation_for_test(REMEDIATION_DATA).expect("strict remediation.toml validates");
     assert!(
         parsed.detector.len() >= 8,
         "expected exact detector remediation rows"
@@ -96,18 +129,8 @@ fn remediation_tier_b_data_parses_and_has_live_rows() {
         "every Severity variant needs a data-backed fallback"
     );
 
-    let aws = keyhog_core::testing::CoreTestApi::remediation_action_for(
-        &keyhog_core::testing::TestApi,
-        "aws-access-key",
-        "aws",
-        Severity::Critical,
-    );
-    let slack = keyhog_core::testing::CoreTestApi::remediation_action_for(
-        &keyhog_core::testing::TestApi,
-        "slack-bot-token",
-        "slack",
-        Severity::Critical,
-    );
+    let aws = TestApi.remediation_action_for("aws-access-key", "aws", Severity::Critical);
+    let slack = TestApi.remediation_action_for("slack-bot-token", "slack", Severity::Critical);
     assert_ne!(
         aws, slack,
         "AWS and Slack must not share generic action text"
@@ -115,15 +138,86 @@ fn remediation_tier_b_data_parses_and_has_live_rows() {
     assert!(aws.contains("IAM access key"), "aws action: {aws}");
     assert!(slack.contains("Slack bot token"), "slack action: {slack}");
     assert!(
-        keyhog_core::testing::CoreTestApi::remediation_docs_for(
-            &keyhog_core::testing::TestApi,
-            "aws-access-key",
-            "aws",
-            Severity::Critical
-        )
-        .as_deref()
-        .is_some_and(|url| url.contains("docs.aws.amazon.com")),
+        TestApi
+            .remediation_docs_for("aws-access-key", "aws", Severity::Critical)
+            .as_deref()
+            .is_some_and(|url| url.contains("docs.aws.amazon.com")),
         "AWS remediation must carry provider docs"
+    );
+}
+
+#[test]
+fn remediation_parser_rejects_unknown_fields() {
+    let raw = format!(
+        r#"
+[[service]]
+match = "aws"
+action = "rotate it"
+revokee_url = "https://example.com/typo"
+
+{ALL_SEVERITY_ROWS}
+"#
+    );
+    let error = parse_remediation_for_test(&raw).expect_err("unknown field must fail closed");
+    assert!(
+        error.contains("unknown field")
+            && error.contains("revokee_url")
+            && error.contains("[[service]]"),
+        "unexpected remediation unknown-field error: {error}"
+    );
+}
+
+#[test]
+fn remediation_parser_rejects_unknown_detector_ids() {
+    let raw = format!(
+        r#"
+[[detector]]
+id = "not-a-real-detector"
+action = "rotate it"
+
+{ALL_SEVERITY_ROWS}
+"#
+    );
+    let error = parse_remediation_for_test(&raw).expect_err("unknown detector must fail closed");
+    assert!(
+        error.contains("unknown detector id") && error.contains("not-a-real-detector"),
+        "unexpected remediation detector-id error: {error}"
+    );
+}
+
+#[test]
+fn remediation_parser_requires_every_severity_fallback() {
+    let raw = r#"
+[[severity]]
+severity = "critical"
+action = "critical action"
+"#;
+    let error = parse_remediation_for_test(raw).expect_err("missing severities must fail closed");
+    assert!(
+        error.contains("missing [[severity]] fallback") && error.contains("info"),
+        "unexpected remediation severity-coverage error: {error}"
+    );
+}
+
+#[test]
+fn remediation_parser_rejects_duplicate_rows() {
+    let raw = format!(
+        r#"
+[[service]]
+match = "aws"
+action = "rotate it"
+
+[[service]]
+match = "aws"
+action = "rotate it again"
+
+{ALL_SEVERITY_ROWS}
+"#
+    );
+    let error = parse_remediation_for_test(&raw).expect_err("duplicate service must fail closed");
+    assert!(
+        error.contains("duplicate match") && error.contains("aws"),
+        "unexpected remediation duplicate-row error: {error}"
     );
 }
 

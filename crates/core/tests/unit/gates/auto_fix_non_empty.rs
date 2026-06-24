@@ -26,4 +26,15 @@ fn auto_fix_non_empty() {
             && !prod.contains("format!(\"{severity:?}\")"),
         "auto_fix: service/remediation matching must stay allocation-free and use canonical severity labels"
     );
+    assert!(
+        prod.contains("fn parse_remediation_file(")
+            && prod.contains("-> Result<RemediationFile, String>")
+            && prod.contains("validate_remediation_keys(")
+            && prod.contains("validate_detector_remediation(")
+            && prod.contains("validate_severity_remediation(")
+            && prod.contains("crate::load_embedded_detectors_or_fail()")
+            && !prod.contains("RemediationFile::default()")
+            && !prod.contains("falling back to generic rotate/remove advice"),
+        "auto_fix: remediation Tier-B data must fail closed instead of degrading to generic advice"
+    );
 }

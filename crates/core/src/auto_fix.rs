@@ -16,6 +16,7 @@
 //! are not extended by ambient process environment; changing the shipped map is
 //! a data-file edit, reviewable in the same diff as the detector corpus.
 
+use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
 use crate::Severity;
@@ -23,6 +24,7 @@ use crate::Severity;
 /// One curated `service -> env var` mapping, deserialized from the Tier-B
 /// `[[service]]` tables in `data/service-env-vars.toml`.
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ServiceEnvEntry {
     /// ASCII-case-insensitive needle tested against the service string.
     #[serde(rename = "match")]
@@ -36,6 +38,7 @@ struct ServiceEnvEntry {
 }
 
 #[derive(serde::Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct ServiceEnvFile {
     #[serde(default)]
     service: Vec<ServiceEnvEntry>,
@@ -132,6 +135,7 @@ struct SeverityRemediationEntry {
 }
 
 #[derive(Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RemediationFile {
     #[serde(default)]
     detector: Vec<DetectorRemediationEntry>,
@@ -141,11 +145,17 @@ struct RemediationFile {
     severity: Vec<SeverityRemediationEntry>,
 }
 
-static REMEDIATION_MAP: LazyLock<RemediationFile> = LazyLock::new(|| {
-    parse_remediation_file(
-        include_str!("../data/remediation.toml"),
-        "<embedded data/remediation.toml>",
-    )
+static REMEDIATION_MAP: LazyLock<RemediationFile> = LazyLock::new(|| match parse_remediation_file(
+    include_str!("../data/remediation.toml"),
+    "<embedded data/remediation.toml>",
+) {
+    Ok(parsed) => parsed,
+    Err(error) => {
+        panic!(
+            "keyhog: remediation map '<embedded data/remediation.toml>' is invalid: {error}. \
+                 Fix: correct crates/core/data/remediation.toml and rebuild"
+        );
+    }
 });
 
 /// Parse one `service-env-vars.toml` document into its entries. On a parse
@@ -165,17 +175,211 @@ fn parse_service_env_file(raw: &str, origin: &str) -> Vec<ServiceEnvEntry> {
     }
 }
 
-fn parse_remediation_file(raw: &str, origin: &str) -> RemediationFile {
-    match toml::from_str::<RemediationFile>(raw) {
-        Ok(parsed) => parsed,
-        Err(e) => {
-            eprintln!(
-                "keyhog: remediation map '{origin}' failed to parse: {e}; \
-                 falling back to generic rotate/remove advice"
-            );
-            RemediationFile::default()
+pub(crate) fn validate_remediation_file_for_test(raw: &str) -> Result<(), String> {
+    parse_remediation_file(raw, "<test remediation.toml>").map(|_| ())
+}
+
+fn parse_remediation_file(raw: &str, origin: &str) -> Result<RemediationFile, String> {
+    validate_remediation_keys(raw, origin)?;
+    let parsed = toml::from_str::<RemediationFile>(raw)
+        .map_err(|error| format!("failed to parse {origin}: {error}"))?;
+    validate_remediation_file(&parsed, origin)?;
+    Ok(parsed)
+}
+
+fn validate_remediation_keys(raw: &str, origin: &str) -> Result<(), String> {
+    let value = toml::from_str::<toml::Value>(raw)
+        .map_err(|error| format!("failed to parse {origin}: {error}"))?;
+    let table = value
+        .as_table()
+        .ok_or_else(|| format!("{origin} must be a TOML table"))?;
+
+    for key in table.keys() {
+        if !matches!(key.as_str(), "detector" | "service" | "severity") {
+            return Err(format!("{origin} contains unknown top-level table {key:?}"));
         }
     }
+
+    validate_array_table_keys(
+        table,
+        "detector",
+        &["id", "action", "revoke_url", "docs_url", "revoke_command"],
+        origin,
+    )?;
+    validate_array_table_keys(
+        table,
+        "service",
+        &[
+            "match",
+            "prefix",
+            "action",
+            "revoke_url",
+            "docs_url",
+            "revoke_command",
+        ],
+        origin,
+    )?;
+    validate_array_table_keys(
+        table,
+        "severity",
+        &[
+            "severity",
+            "action",
+            "revoke_url",
+            "docs_url",
+            "revoke_command",
+        ],
+        origin,
+    )?;
+    Ok(())
+}
+
+fn validate_array_table_keys(
+    table: &toml::map::Map<String, toml::Value>,
+    section: &str,
+    allowed: &[&str],
+    origin: &str,
+) -> Result<(), String> {
+    let Some(value) = table.get(section) else {
+        return Ok(());
+    };
+    let rows = value
+        .as_array()
+        .ok_or_else(|| format!("{origin} [{section}] must be an array of tables"))?;
+    for (index, row) in rows.iter().enumerate() {
+        let row = row
+            .as_table()
+            .ok_or_else(|| format!("{origin} [[{section}]] row {index} must be a table"))?;
+        for key in row.keys() {
+            if !allowed.contains(&key.as_str()) {
+                return Err(format!(
+                    "{origin} [[{section}]] row {index} contains unknown field {key:?}"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_remediation_file(file: &RemediationFile, origin: &str) -> Result<(), String> {
+    validate_detector_remediation(file, origin)?;
+    validate_service_remediation(file, origin)?;
+    validate_severity_remediation(file, origin)?;
+    Ok(())
+}
+
+fn validate_detector_remediation(file: &RemediationFile, origin: &str) -> Result<(), String> {
+    let detectors = crate::load_embedded_detectors_or_fail()
+        .map_err(|error| format!("{origin} could not validate detector ids: {error}"))?;
+    let detector_ids = detectors
+        .iter()
+        .map(|detector| detector.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut seen = BTreeSet::new();
+    for (index, entry) in file.detector.iter().enumerate() {
+        validate_non_empty("detector", index, "id", &entry.id, origin)?;
+        validate_fields("detector", index, &entry.fields, origin)?;
+        if !detector_ids.contains(entry.id.as_str()) {
+            return Err(format!(
+                "{origin} [[detector]] row {index} references unknown detector id {:?}",
+                entry.id
+            ));
+        }
+        if !seen.insert(entry.id.as_str()) {
+            return Err(format!(
+                "{origin} [[detector]] contains duplicate detector id {:?}",
+                entry.id
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_service_remediation(file: &RemediationFile, origin: &str) -> Result<(), String> {
+    let mut seen = BTreeSet::new();
+    for (index, entry) in file.service.iter().enumerate() {
+        validate_non_empty("service", index, "match", &entry.needle, origin)?;
+        validate_fields("service", index, &entry.fields, origin)?;
+        let key = (entry.needle.as_str(), entry.prefix);
+        if !seen.insert(key) {
+            return Err(format!(
+                "{origin} [[service]] contains duplicate match {:?} with prefix={}",
+                entry.needle, entry.prefix
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_severity_remediation(file: &RemediationFile, origin: &str) -> Result<(), String> {
+    let mut seen = BTreeSet::new();
+    for (index, entry) in file.severity.iter().enumerate() {
+        validate_non_empty("severity", index, "severity", &entry.severity, origin)?;
+        validate_fields("severity", index, &entry.fields, origin)?;
+        let severity = Severity::from_filter_label(&entry.severity).ok_or_else(|| {
+            format!(
+                "{origin} [[severity]] row {index} uses unknown severity {:?}; expected {}",
+                entry.severity,
+                Severity::FILTER_EXPECTED_LABELS
+            )
+        })?;
+        if entry.severity.as_str() != severity.as_str() {
+            return Err(format!(
+                "{origin} [[severity]] row {index} must use canonical severity {:?}, got {:?}",
+                severity.as_str(),
+                entry.severity
+            ));
+        }
+        if !seen.insert(severity) {
+            return Err(format!(
+                "{origin} [[severity]] contains duplicate severity {:?}",
+                severity.as_str()
+            ));
+        }
+    }
+    for severity in Severity::ORDERED {
+        if !seen.contains(&severity) {
+            return Err(format!(
+                "{origin} is missing [[severity]] fallback for {:?}",
+                severity.as_str()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_fields(
+    section: &str,
+    index: usize,
+    fields: &RemediationFields,
+    origin: &str,
+) -> Result<(), String> {
+    validate_non_empty(section, index, "action", &fields.action, origin)?;
+    if let Some(url) = &fields.revoke_url {
+        validate_non_empty(section, index, "revoke_url", url, origin)?;
+    }
+    if let Some(url) = &fields.docs_url {
+        validate_non_empty(section, index, "docs_url", url, origin)?;
+    }
+    if let Some(command) = &fields.revoke_command {
+        validate_non_empty(section, index, "revoke_command", command, origin)?;
+    }
+    Ok(())
+}
+
+fn validate_non_empty(
+    section: &str,
+    index: usize,
+    field: &str,
+    value: &str,
+    origin: &str,
+) -> Result<(), String> {
+    if value.trim().is_empty() {
+        return Err(format!(
+            "{origin} [[{section}]] row {index} has empty {field}"
+        ));
+    }
+    Ok(())
 }
 
 /// Map a detector's `service` string to a conventional environment-variable

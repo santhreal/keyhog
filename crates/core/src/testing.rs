@@ -123,6 +123,7 @@ pub trait CoreTestApi {
         service: &str,
         severity: Severity,
     ) -> Option<String>;
+    fn parse_remediation_file_for_test(&self, raw: &str) -> Result<(), String>;
     fn report_banner<W: Write>(
         &self,
         writer: &mut W,
@@ -448,6 +449,10 @@ impl CoreTestApi for TestApi {
     ) -> Option<String> {
         let remediation = crate::auto_fix::remediation_for(detector_id, service, severity);
         remediation.revoke_url.or(remediation.docs_url)
+    }
+
+    fn parse_remediation_file_for_test(&self, raw: &str) -> Result<(), String> {
+        crate::auto_fix::validate_remediation_file_for_test(raw)
     }
 
     fn report_banner<W: Write>(
