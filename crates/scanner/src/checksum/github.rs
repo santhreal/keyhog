@@ -60,6 +60,9 @@ impl ChecksumValidator for GithubClassicPatValidator {
             Some(p) => p,
             None => return ChecksumResult::NotApplicable,
         };
+        if payload.len() > 36 {
+            return ChecksumResult::Invalid;
+        }
         if payload.len() != 36 {
             return ChecksumResult::NotApplicable;
         }

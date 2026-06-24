@@ -7,9 +7,9 @@
 //! `Valid` here is real cryptographic agreement, not a fabricated shape.
 
 use keyhog_scanner::testing::checksum::{
-    checksum_adjusted_confidence, validate_checksum, ChecksumResult, GithubClassicPatValidator,
-    GithubFineGrainedPatValidator, GitlabTokenValidator, NpmTokenValidator, PypiTokenValidator,
-    SlackTokenValidator, StripeTokenValidator, CHECKSUM_VALID_FLOOR,
+    CHECKSUM_VALID_FLOOR, ChecksumResult, GithubClassicPatValidator, GithubFineGrainedPatValidator,
+    GitlabTokenValidator, NpmTokenValidator, PypiTokenValidator, SlackTokenValidator,
+    StripeTokenValidator, checksum_adjusted_confidence, validate_checksum,
 };
 
 // ghp_ + 30-char entropy + 6-char base62 CRC32 of the 30-char body.
@@ -39,6 +39,14 @@ fn github_classic_valid_crc_is_valid() {
 fn github_classic_bad_crc_is_invalid() {
     let v = GithubClassicPatValidator;
     assert_eq!(v.validate(GHP_BAD_CRC), ChecksumResult::Invalid);
+}
+
+#[test]
+fn github_classic_overlong_payload_is_invalid() {
+    let v = GithubClassicPatValidator;
+    let overlong = format!("{GHP_VALID}X");
+    assert_eq!(v.validate(&overlong), ChecksumResult::Invalid);
+    assert_eq!(validate_checksum(&overlong), ChecksumResult::Invalid);
 }
 
 #[test]
