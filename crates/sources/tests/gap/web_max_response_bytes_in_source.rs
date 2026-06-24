@@ -10,8 +10,11 @@ fn web_max_response_bytes_in_source() {
         "web response cap must be owned by SourceLimits, not a private source constant"
     );
     assert!(
-        src.contains("max_response_bytes") && src.contains(".take(max_response_bytes as u64 + 1)"),
-        "response body read must use take() before buffering"
+        src.contains("max_response_bytes")
+            && src.contains("crate::capped_read::read_to_cap(resp, cap")
+            && src.contains("crate::capped_read::read_to_cap(")
+            && src.contains("read.truncated"),
+        "response body and Content-Encoding decode reads must route through the shared capped-read owner"
     );
     assert!(
         src.contains("fn decode_content_encoding")

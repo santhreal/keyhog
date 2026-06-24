@@ -604,13 +604,18 @@ fn read_bytes_response(
     resp: reqwest::blocking::Response,
     max_response_bytes: usize,
 ) -> Result<Vec<u8>, SourceError> {
-    use std::io::Read;
     let url = resp.url().to_string();
     let safe_url = redact_url(&url);
     let encodings = response_content_encodings(resp.headers(), &safe_url)?;
+    let cap = u64::try_from(max_response_bytes).map_err(|_| {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+        SourceError::Other(format!(
+            "response byte limit for {safe_url} exceeds this platform's supported range"
+        ))
+    })?;
 
     if let Some(len) = resp.content_length() {
-        if len > max_response_bytes as u64 {
+        if len > cap {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             return Err(SourceError::Other(format!(
                 "response from {safe_url} declares {len} bytes (> {max_response_bytes} byte limit)"
@@ -619,20 +624,20 @@ fn read_bytes_response(
     }
 
     // Stream into a bounded buffer; abort the moment we exceed the cap.
-    let mut buf = Vec::with_capacity(max_response_bytes.min(64 * 1024));
-    let mut taken = resp.take(max_response_bytes as u64 + 1);
-    taken.read_to_end(&mut buf).map_err(|e| {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        SourceError::Other(format!("failed to read bytes from {safe_url}: {e}"))
-    })?;
-    if buf.len() > max_response_bytes {
+    let capacity_hint = max_response_bytes.min(64 * 1024);
+    let read =
+        crate::capped_read::read_to_cap(resp, cap, Some(capacity_hint as u64)).map_err(|e| {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            SourceError::Other(format!("failed to read bytes from {safe_url}: {e}"))
+        })?;
+    if read.truncated {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return Err(SourceError::Other(format!(
             "response from {safe_url} exceeds {max_response_bytes} byte limit"
         )));
     }
 
-    decode_content_encoding(buf, &encodings, &safe_url, max_response_bytes)
+    decode_content_encoding(read.bytes, &encodings, &safe_url, max_response_bytes)
 }
 
 fn response_content_encodings(
@@ -675,23 +680,20 @@ fn decode_one_content_encoding(
     safe_url: &str,
     max_response_bytes: usize,
 ) -> Result<Vec<u8>, SourceError> {
-    use std::io::Read as _;
-
-    let limit = (max_response_bytes as u64).saturating_add(1);
-    let mut out = Vec::new();
-    let result = match encoding {
+    let cap = u64::try_from(max_response_bytes).map_err(|_| {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+        SourceError::Other(format!(
+            "decoded {encoding} response byte limit for {safe_url} exceeds this platform's supported range"
+        ))
+    })?;
+    let read = match encoding {
         "gzip" | "x-gzip" => {
-            let mut decoder = flate2::read::MultiGzDecoder::new(bytes).take(limit);
-            decoder.read_to_end(&mut out)
+            crate::capped_read::read_to_cap(flate2::read::MultiGzDecoder::new(bytes), cap, None)
         }
         "deflate" => {
-            let mut decoder = flate2::read::ZlibDecoder::new(bytes).take(limit);
-            decoder.read_to_end(&mut out)
+            crate::capped_read::read_to_cap(flate2::read::ZlibDecoder::new(bytes), cap, None)
         }
-        "br" => {
-            let mut decoder = brotli::Decompressor::new(bytes, 4096).take(limit);
-            decoder.read_to_end(&mut out)
-        }
+        "br" => crate::capped_read::read_to_cap(brotli::Decompressor::new(bytes, 4096), cap, None),
         other => {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             return Err(SourceError::Other(format!(
@@ -700,18 +702,18 @@ fn decode_one_content_encoding(
         }
     };
 
-    result.map_err(|error| {
+    let read = read.map_err(|error| {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
         SourceError::Other(format!(
             "failed to decode {encoding} response from {safe_url}: {error}"
         ))
     })?;
-    if out.len() > max_response_bytes {
+    if read.truncated {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return Err(SourceError::Other(format!(
             "decoded {encoding} response from {safe_url} exceeds {max_response_bytes} byte limit"
         )));
     }
 
-    Ok(out)
+    Ok(read.bytes)
 }

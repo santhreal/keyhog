@@ -1,6 +1,5 @@
 use keyhog_core::{Chunk, SourceError};
 use reqwest::blocking::{Client, Response};
-use std::io::Read;
 
 #[cfg(feature = "azure")]
 pub(crate) mod azure_blob;
@@ -272,25 +271,25 @@ pub(crate) fn read_text_object_body(
     }
     let content_type_is_unknown_binary = content_type.is_some_and(is_unknown_binary_content_type);
 
-    let initial_capacity = match response.content_length() {
+    let capacity_hint = match response.content_length() {
         Some(len) => len.min(ctx.max_bytes).min(64 * 1024) as usize,
         None => 0,
     };
-    let mut body = Vec::with_capacity(initial_capacity);
-    let mut reader = response.take(ctx.max_bytes + 1);
-    Read::read_to_end(&mut reader, &mut body).map_err(|error| {
-        record_unreadable_object_skip(
-            ctx.source,
-            ctx.item_kind,
-            &ctx.display_path,
-            format!("failed to read body for {}: {error}", ctx.item_name),
-        )
-    })?;
-    if body.len() as u64 > ctx.max_bytes {
+    let read = crate::capped_read::read_to_cap(response, ctx.max_bytes, Some(capacity_hint as u64))
+        .map_err(|error| {
+            record_unreadable_object_skip(
+                ctx.source,
+                ctx.item_kind,
+                &ctx.display_path,
+                format!("failed to read body for {}: {error}", ctx.item_name),
+            )
+        })?;
+    if read.truncated {
+        let downloaded = ctx.max_bytes.saturating_add(1);
         tracing::warn!(
             source = ctx.source,
             key = ctx.item_name,
-            downloaded = body.len(),
+            downloaded,
             cap = ctx.max_bytes,
             "skipping cloud object: streamed body exceeds the per-object byte cap; NOT scanned",
         );
@@ -301,11 +300,11 @@ pub(crate) fn read_text_object_body(
             &ctx.display_path,
             format!(
                 "streamed body exceeded the per-object byte cap {} after reading {} bytes",
-                ctx.max_bytes,
-                body.len()
+                ctx.max_bytes, downloaded
             ),
         ));
     }
+    let body = read.bytes;
 
     if content_type_is_unknown_binary {
         return match crate::filesystem::decode_text_file(&body) {
