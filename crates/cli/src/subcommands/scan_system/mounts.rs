@@ -121,7 +121,7 @@ fn linux_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
         if !include_network && network_fs_types.contains(fstype) {
             continue;
         }
-        let Some(decoded) = decoded_mount_target_if_included(target, &filters) else {
+        let Some(decoded) = decoded_mount_target_if_included(target, &filters)? else {
             continue;
         };
         if seen.insert(decoded.clone()) {
@@ -145,16 +145,20 @@ fn linux_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
 }
 
 #[cfg(target_os = "linux")]
-fn decoded_mount_target_if_included(target: &str, filters: &MountFilters) -> Option<String> {
-    let decoded = decode_octal_escapes(target);
+fn decoded_mount_target_if_included(
+    target: &str,
+    filters: &MountFilters,
+) -> Result<Option<String>> {
+    let decoded = decode_octal_escapes(target)
+        .with_context(|| format!("decode /proc/mounts target {target:?}"))?;
     if filters
         .skip_path_prefixes
         .iter()
         .any(|prefix| decoded.starts_with(prefix))
     {
-        return None;
+        return Ok(None);
     }
-    Some(decoded)
+    Ok(Some(decoded))
 }
 
 /// Linux `/proc/mounts` emits spaces and special characters as `\040`,
@@ -162,7 +166,7 @@ fn decoded_mount_target_if_included(target: &str, filters: &MountFilters) -> Opt
 /// this, so the helper is gated to `target_os = "linux"` to avoid a
 /// dead-code warning on Windows / macOS.
 #[cfg(target_os = "linux")]
-fn decode_octal_escapes(s: &str) -> String {
+fn decode_octal_escapes(s: &str) -> Result<String> {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
@@ -177,19 +181,17 @@ fn decode_octal_escapes(s: &str) -> String {
                 }
             }
             if octal.len() == 3 {
-                if let Ok(byte) = u8::from_str_radix(&octal, 8) {
-                    // LAW10: malformed mount escape stays escaped text; mount filtering only gets stricter, never skips a real scan root.
-                    out.push(byte as char);
-                    continue;
-                }
+                let byte = u8::from_str_radix(&octal, 8)
+                    .with_context(|| format!("invalid octal mount escape \\{octal}"))?;
+                out.push(byte as char);
+                continue;
             }
-            out.push('\\');
-            out.push_str(&octal);
+            anyhow::bail!("incomplete mount escape \\{octal}");
         } else {
             out.push(c);
         }
     }
-    out
+    Ok(out)
 }
 
 #[cfg(all(test, target_os = "linux"))]
@@ -203,14 +205,27 @@ mod tests {
             ..MountFilters::default()
         };
 
+        let skipped = decoded_mount_target_if_included("/mnt/my\\040disk/secrets", &filters)
+            .expect("valid octal mount target");
         assert_eq!(
-            decoded_mount_target_if_included("/mnt/my\\040disk/secrets", &filters),
-            None,
+            skipped, None,
             "Tier-B skip prefixes must match decoded /proc/mounts targets"
         );
-        assert_eq!(
-            decoded_mount_target_if_included("/mnt/other\\040disk/secrets", &filters).as_deref(),
-            Some("/mnt/other disk/secrets")
+        let included = decoded_mount_target_if_included("/mnt/other\\040disk/secrets", &filters)
+            .expect("valid octal mount target");
+        assert_eq!(included.as_deref(), Some("/mnt/other disk/secrets"));
+    }
+
+    #[test]
+    fn malformed_mount_escape_is_loud() {
+        let filters = MountFilters::default();
+
+        let err = decoded_mount_target_if_included("/mnt/bad\\999disk", &filters)
+            .expect_err("invalid octal mount escape must be an error");
+        assert!(
+            err.to_string().contains("decode /proc/mounts target")
+                && format!("{err:#}").contains("invalid octal mount escape"),
+            "malformed mount escape must include path context and parse cause; got {err:#}"
         );
     }
 }

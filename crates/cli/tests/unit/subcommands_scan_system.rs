@@ -214,7 +214,7 @@ fn linux_mount_filters_are_tier_b_and_match_decoded_targets() {
     );
 
     let decode_pos = src
-        .find("let decoded = decode_octal_escapes(target);")
+        .find("let decoded = decode_octal_escapes(target)")
         .expect("linux mount enumeration must decode /proc/mounts targets");
     let skip_pos = src
         .find("decoded.starts_with(prefix)")
