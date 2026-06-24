@@ -127,6 +127,7 @@ const GIT_STDERR_EXCERPT_BYTES: usize = 64 * 1024;
 pub(crate) struct GitChild {
     child: Child,
     stderr: Option<JoinHandle<String>>,
+    waited: bool,
 }
 
 pub(crate) fn spawn_git_child(mut command: Command) -> Result<GitChild, SourceError> {
@@ -135,7 +136,11 @@ pub(crate) fn spawn_git_child(mut command: Command) -> Result<GitChild, SourceEr
         .stderr
         .take()
         .map(|pipe| std::thread::spawn(move || drain_stderr_excerpt(pipe)));
-    Ok(GitChild { child, stderr })
+    Ok(GitChild {
+        child,
+        stderr,
+        waited: false,
+    })
 }
 
 impl GitChild {
@@ -144,7 +149,9 @@ impl GitChild {
     }
 
     fn wait(&mut self) -> Result<std::process::ExitStatus, SourceError> {
-        self.child.wait().map_err(SourceError::Io)
+        let status = self.child.wait().map_err(SourceError::Io)?;
+        self.waited = true;
+        Ok(status)
     }
 
     fn stderr_excerpt(&mut self) -> String {
@@ -163,6 +170,47 @@ impl GitChild {
                 }
             },
             None => String::new(),
+        }
+    }
+}
+
+impl Drop for GitChild {
+    fn drop(&mut self) {
+        if !self.waited {
+            match self.child.try_wait() {
+                Ok(Some(_status)) => {
+                    self.waited = true;
+                }
+                Ok(None) => {
+                    if let Err(error) = self.child.kill() {
+                        tracing::warn!(%error, "failed to kill dropped git child");
+                    }
+                    match self.child.wait() {
+                        Ok(_status) => {
+                            self.waited = true;
+                        }
+                        Err(error) => {
+                            tracing::warn!(%error, "failed to wait on dropped git child");
+                        }
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "failed to inspect dropped git child");
+                    if let Err(kill_error) = self.child.kill() {
+                        tracing::warn!(%kill_error, "failed to kill dropped git child after status error");
+                    }
+                    if let Err(wait_error) = self.child.wait() {
+                        tracing::warn!(%wait_error, "failed to wait on dropped git child after status error");
+                    } else {
+                        self.waited = true;
+                    }
+                }
+            }
+        }
+        if let Some(handle) = self.stderr.take() {
+            if handle.join().is_err() {
+                tracing::warn!("git stderr reader panicked while dropped child was being reaped");
+            }
         }
     }
 }
@@ -376,8 +424,10 @@ mod git_child_tests {
     use super::{spawn_git_child, wait_for_git_child, GIT_STDERR_EXCERPT_BYTES};
     use std::io::{Read, Write};
     use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
 
     const SPAM_STDERR_ENV: &str = "KEYHOG_TEST_SPAM_GIT_STDERR";
+    const SLEEP_CHILD_ENV: &str = "KEYHOG_TEST_SLEEP_GIT_CHILD";
 
     #[test]
     fn streamed_git_child_drains_large_stderr_before_wait() {
@@ -415,6 +465,41 @@ mod git_child_tests {
         assert!(
             message.contains("[stderr truncated after 65536 bytes]"),
             "large stderr must be drained but stored as a bounded excerpt"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn dropped_git_child_is_reaped_without_explicit_wait() {
+        if std::env::var_os(SLEEP_CHILD_ENV).is_some() {
+            std::thread::sleep(Duration::from_secs(120));
+            std::process::exit(0);
+        }
+
+        let mut command = Command::new(std::env::current_exe().expect("current test binary"));
+        command
+            .env(SLEEP_CHILD_ENV, "1")
+            .arg("--exact")
+            .arg("git::git_child_tests::dropped_git_child_is_reaped_without_explicit_wait")
+            .arg("--nocapture")
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+
+        let child = spawn_git_child(command).expect("spawn sleeping git-child surrogate");
+        let proc_entry = std::path::PathBuf::from(format!("/proc/{}", child.child.id()));
+        assert!(
+            proc_entry.exists(),
+            "test child must be alive before drop so the regression is meaningful"
+        );
+        drop(child);
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while proc_entry.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            !proc_entry.exists(),
+            "dropping GitChild must kill and wait on the subprocess so no zombie remains"
         );
     }
 }
