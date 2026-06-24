@@ -701,6 +701,23 @@ fn config_effective_no_decode_sets_depth_zero() {
 }
 
 #[test]
+fn config_effective_toml_no_entropy_overrides_deep_preset() {
+    let (stdout, stderr, code) = effective_config_with_toml(
+        "deep = true\n\
+         no_entropy = true\n",
+    );
+
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    for required in ["max_decode_depth = 10", "entropy_enabled = false"] {
+        assert!(
+            stdout.contains(required),
+            "TOML deep + no_entropy must resolve to deep decode with entropy disabled; \
+             missing `{required}`; stdout={stdout}"
+        );
+    }
+}
+
+#[test]
 fn config_effective_fast_disables_decode_entropy_and_ml() {
     let (stdout, stderr, code) = effective_config(&["--fast"]);
 

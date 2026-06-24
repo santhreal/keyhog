@@ -131,12 +131,12 @@ pub(super) fn build_scanner_config_from_input(input: &ScannerConfigInput) -> Sca
     // test/example path confidence penalty.
     config.penalize_test_paths = !input.no_suppress_test_fixtures;
 
-    // `--no-entropy` conflicts with the presets at the clap layer, so under a
-    // preset this is always `true` (entropy stays whatever the preset set). For
-    // the no-preset path it honours the flag. Likewise `--no-decode` is preset-
-    // conflicting; decode-depth above still applies for the no-preset path.
-    if !(input.fast || input.deep || input.precision) {
-        config.entropy_enabled = !input.no_entropy;
+    // `--no-entropy` is a one-way override. Clap rejects it with presets when
+    // both are typed on the CLI, but TOML defaults are merged after clap and can
+    // produce a preset + no_entropy combination. Honor the post-merge state
+    // instead of letting a config-file opt-out disappear under `fast`/`deep`.
+    if input.no_entropy {
+        config.entropy_enabled = false;
     }
     if let Some(threshold) = input.entropy_threshold {
         config.entropy_threshold = threshold;
