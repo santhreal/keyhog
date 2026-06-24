@@ -1,3 +1,4 @@
+use keyhog_sources::skip_counts;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 
 #[test]
@@ -23,4 +24,32 @@ fn cloud_binary_content_type_ignores_case_and_media_parameters() {
     assert!(!TestApi.cloud_is_binary_content_type("application/octet-stream"));
     assert!(!TestApi.cloud_is_binary_content_type("text/plain"));
     assert!(!TestApi.cloud_is_binary_content_type("application/json; charset=utf-8"));
+}
+
+#[test]
+fn cloud_text_object_content_length_over_cap_yields_source_error() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+
+    let server = httpmock::MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/huge.txt");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body("abcdef");
+    });
+
+    let err = TestApi
+        .cloud_read_text_object_body_from_url(&server.url("/huge.txt"), 3)
+        .expect_err("over-cap cloud object must emit SourceError");
+
+    mock.assert();
+    let message = err.to_string();
+    assert!(
+        message.contains("Content-Length 6 exceeds the per-object byte cap 3")
+            && message.contains("huge.txt")
+            && message.contains("object was not scanned"),
+        "unexpected cloud cap error: {message}"
+    );
+    assert_eq!(skip_counts().over_max_size, 1);
 }

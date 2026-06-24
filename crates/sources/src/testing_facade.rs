@@ -92,6 +92,12 @@ pub mod testing {
         fn cloud_is_probably_text_object_key(&self, key: &str) -> bool;
         #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
         fn cloud_is_binary_content_type(&self, content_type: &str) -> bool;
+        #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
+        fn cloud_read_text_object_body_from_url(
+            &self,
+            url: &str,
+            max_bytes: u64,
+        ) -> Result<Option<String>, keyhog_core::SourceError>;
 
         #[cfg(any(
             feature = "azure",
@@ -551,6 +557,32 @@ pub mod testing {
         #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
         fn cloud_is_binary_content_type(&self, content_type: &str) -> bool {
             crate::cloud::is_binary_content_type(content_type)
+        }
+
+        #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
+        fn cloud_read_text_object_body_from_url(
+            &self,
+            url: &str,
+            max_bytes: u64,
+        ) -> Result<Option<String>, keyhog_core::SourceError> {
+            let response = reqwest::blocking::Client::new()
+                .get(url)
+                .send()
+                .map_err(|error| {
+                    keyhog_core::SourceError::Other(format!(
+                        "failed to fetch cloud test object {url}: {error}"
+                    ))
+                })?;
+            crate::cloud::read_text_object_body(
+                response,
+                crate::cloud::TextObjectBodyContext {
+                    source: "unit-cloud",
+                    item_kind: "object",
+                    item_name: url,
+                    display_path: url.to_string(),
+                    max_bytes,
+                },
+            )
         }
 
         #[cfg(any(
