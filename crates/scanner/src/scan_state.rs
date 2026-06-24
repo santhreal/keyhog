@@ -185,6 +185,12 @@ pub(crate) struct ScanState {
     /// `(detector_id, detector_name, service, source_type)` lookup
     /// without per-scan allocation.
     pub(crate) metadata_interner: HashSet<Arc<str>>,
+    /// Absolute file offsets already claimed by the Stripe secret-key detector
+    /// in this scan state. The simdsieve hot-prefix lane and confirmed regex
+    /// lane can both prove the same `sk_live_` start; the first accepted
+    /// canonical detector candidate owns that start so fallback verifier walks
+    /// cannot re-emit an overlapping Stripe finding at the same byte.
+    pub(crate) stripe_secret_key_offsets: HashSet<usize>,
     /// Optional reference to the scanner's frozen static-string
     /// interner. When `Some`, `intern_metadata` checks here first
     /// before falling through to the per-scan `metadata_interner`.
@@ -228,6 +234,17 @@ impl ScanState {
         let shared: Arc<str> = Arc::from(s);
         self.metadata_interner.insert(shared.clone());
         shared
+    }
+
+    pub(crate) fn claim_stripe_secret_key_offset(
+        &mut self,
+        detector_id: &str,
+        absolute_offset: usize,
+    ) -> bool {
+        if detector_id != crate::detector_ids::STRIPE_SECRET_KEY {
+            return true;
+        }
+        self.stripe_secret_key_offsets.insert(absolute_offset)
     }
 
     /// Construct a `ScanState` that consults the scanner-wide static

@@ -147,8 +147,8 @@ impl CompiledScanner {
                     credential,
                     offset,
                     offset + credential.len(),
-                    chunk.metadata.base_line,
-                    chunk.metadata.base_offset,
+                    0,
+                    0,
                     keyword_nearby,
                     sensitive_file,
                 );
