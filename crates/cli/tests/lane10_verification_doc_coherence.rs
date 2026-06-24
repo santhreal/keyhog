@@ -57,6 +57,10 @@ const CLI_REF_DOC: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../docs/src/reference/cli.md"
 ));
+const EXIT_CODES_DOC: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../docs/src/reference/exit-codes.md"
+));
 
 fn run(args: &[&str]) -> (Option<i32>, String, String) {
     let out = Command::new(binary())
@@ -227,6 +231,20 @@ fn verification_doc_discloses_low_confidence_verify_skips() {
             && VERIFICATION_DOC.contains("verification` field stays `skipped`"),
         "verification.md must disclose the stderr warning and JSON result for \
          low-confidence verify skips"
+    );
+}
+
+#[test]
+fn exit_codes_doc_explains_exit_one_inactive_and_skipped_findings() {
+    assert!(
+        EXIT_CODES_DOC.contains("none confirmed live")
+            && EXIT_CODES_DOC.contains("unverified, skipped, or verified-inactive: dead/revoked"),
+        "exit-codes.md must match --help: exit 1 includes skipped and verified-inactive findings"
+    );
+    assert!(
+        EXIT_CODES_DOC.contains("verified inactive (`dead` or `revoked`)")
+            && EXIT_CODES_DOC.contains("findings, none live"),
+        "exit-codes.md must explain exit 1 without implying only dead findings qualify"
     );
 }
 

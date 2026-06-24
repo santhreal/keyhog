@@ -6,7 +6,7 @@ consumers (CI gates, pre-commit hooks, IDE plugins) can rely on them.
 | Exit | Meaning                                                            |
 |------|--------------------------------------------------------------------|
 | `0`  | Scan completed, zero findings.                                     |
-| `1`  | Findings present, NONE confirmed live (unverified, or verified-dead). |
+| `1`  | Findings present, none confirmed live (unverified, skipped, or verified-inactive: dead/revoked). |
 | `2`  | User error (bad input/config): unknown CLI flag, `.keyhog.toml` parse failure, a missing path or invalid `--baseline` file, a detector TOML that failed to load, or missing/stale/incomplete autoroute calibration for `--backend auto`. Also any not-found / permission-denied I/O error. |
 | `3`  | System error: the local environment failed in a way no flag change fixes — a low-level I/O failure that is *not* not-found / permission-denied, or a hardware / GPU **init** failure. Retry or route differently from `2`. |
 | `4`  | Health/self-test failure: `keyhog doctor` unhealthy, `keyhog repair` could not restore a working binary, `keyhog backend` self-test failed. |
@@ -22,9 +22,10 @@ Use case: a CI step like `keyhog scan .` exits 0 when the working tree
 is clean. The job stays green.
 
 With `--verify`, the exit code escalates when a credential is confirmed
-live: a found secret the vendor API accepts exits `10`, while a found
-secret that verifies dead (or wasn't verified) exits `1`. So gating ONLY
-on live credentials needs no JSON parsing - branch on the exit code:
+live: a found secret the vendor API accepts exits `10`, while a finding
+that is unverified, skipped, or verified inactive (`dead` or `revoked`)
+exits `1`. So gating ONLY on live credentials needs no JSON parsing -
+branch on the exit code:
 
 ```sh
 keyhog scan . --verify
@@ -41,10 +42,11 @@ The most common non-zero. CI fails, pre-commit hook blocks the commit,
 PR check turns red. Findings get printed to stdout in whatever format
 `--format` selected.
 
-Exit `1` means findings exist but, under `--verify`, none were confirmed
-live. A scan that confirms a live credential exits `10` instead (see
-below) - so "findings but all dead" vs "some live" is just `1` vs `10`,
-no JSON parsing required.
+Exit `1` means findings exist but none were confirmed live. That covers
+findings that were not verified, findings whose verification was skipped,
+and findings verified inactive (`dead` or `revoked`). A scan that confirms
+a live credential exits `10` instead (see below), so "findings, none live"
+vs "some live" is just `1` vs `10`, no JSON parsing required.
 
 ## `2` (user error)
 
