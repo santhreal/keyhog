@@ -294,6 +294,9 @@ static MOE_RUNTIME_DEGRADE_WARNED: AtomicBool = AtomicBool::new(false);
 /// not a dispatch failure); surfaced once per process by [`moe_nonfinite_degrade`].
 static MOE_NONFINITE_WARNED: AtomicBool = AtomicBool::new(false);
 
+static MOE_NUMERIC_TRUST: OnceLock<bool> = OnceLock::new();
+static MOE_NUMERIC_DIVERGENCE_WARNED: AtomicBool = AtomicBool::new(false);
+
 /// Surface a runtime GPU-MoE dispatch failure that is about to degrade the
 /// affected batch(es) to the CPU MoE. This mirrors `engine::gpu_forced`'s
 /// posture exactly so the MoE path is coherent with the literal-set/MegaScan
@@ -374,6 +377,30 @@ Use --no-gpu to score on the CPU MoE, or --require-gpu to hard-fail next time."
     }
 }
 
+fn moe_numeric_divergence_degrade(reason: &str) {
+    let no_gpu = super::gpu_disabled_by_policy();
+    let require_gpu = super::gpu_required_by_policy();
+    if require_gpu {
+        crate::process_exit::require_gpu_unmet(format!(
+            "--require-gpu requested but the GPU MoE failed the CPU parity probe ({reason}). \
+Refusing to silently score confidence on the CPU MoE.",
+        ));
+    }
+    if no_gpu {
+        return;
+    }
+    tracing::error!(
+        reason,
+        "GPU MoE parity probe diverged from CPU MoE; scoring batches on CPU"
+    );
+    if !MOE_NUMERIC_DIVERGENCE_WARNED.swap(true, Ordering::Relaxed) {
+        eprintln!(
+            "keyhog: GPU MoE parity probe failed ({reason}); confidence batches are scored on \
+the CPU MoE instead. Use --require-gpu to hard-fail until the GPU shader/driver/weights are fixed.",
+        );
+    }
+}
+
 /// Score a batch of feature vectors on GPU. Returns one score per input.
 ///
 /// # Examples
@@ -402,6 +429,32 @@ pub(crate) fn batch_score_features(
         return None;
     }
 
+    // The GPU compute shader MUST reproduce the CPU MoE (`ml_scorer::score_features`
+    // — the reference every confidence floor is tuned and benched against) within
+    // tolerance. A shader miscompile, weights-packing mismatch, or driver bug that
+    // makes the GPU score DIVERGE from CPU would silently change findings vs the
+    // CPU/SIMD path (a Law-10 recall bug: a real secret the CPU scores ~1.0 gets a
+    // GPU ~0.0 and is dropped) AND make autoroute calibration nondeterministic (the
+    // readback-timeout degrade swaps the broken GPU score for the correct CPU one
+    // between trials, flipping a floor-straddling finding). Probe ONCE per process;
+    // on divergence FAIL CLOSED — return None so every batch scores on the correct,
+    // deterministic CPU path, loudly, instead of trusting a broken accelerator.
+    if !gpu_moe_numerically_trustworthy(readback_timeout) {
+        return None;
+    }
+
+    dispatch_moe_batch(features, readback_timeout)
+}
+
+/// Raw GPU MoE dispatch: upload features, run the compute shader, read back and
+/// sanitize the per-candidate scores. Split out of [`batch_score_features`] so
+/// the parity self-test ([`gpu_moe_parity_max_divergence`]) can exercise the
+/// exact production dispatch without re-entering the trustworthiness gate (which
+/// would recurse). Callers own the size/policy/trust guards.
+fn dispatch_moe_batch(
+    features: &[[f32; INPUT_DIM]],
+    readback_timeout: Duration,
+) -> Option<Vec<f64>> {
     let gpu = get_gpu()?;
     let batch_size = features.len();
     let device = gpu.device();
@@ -586,4 +639,140 @@ pub(crate) fn batch_score_features(
     }
 
     Some(result)
+}
+
+/// Maximum tolerated GPU-vs-CPU MoE score divergence on the parity probe. The
+/// GPU shader is a re-implementation of `ml_scorer::score_features`; both compute
+/// the same f32 MoE, so a faithful shader matches the CPU reference to well within
+/// this bound (the only legitimate gap is `exp()`/rounding differences in the
+/// softmax). A divergence above this is a shader/weights/driver fault — NOT
+/// acceptable precision noise — because the GPU score then gates findings
+/// differently from the CPU/SIMD path.
+pub(crate) const GPU_MOE_PARITY_TOLERANCE: f64 = 0.01;
+
+/// Probe inputs for the GPU-vs-CPU MoE parity self-test. A deterministic spread
+/// that MUST include high-confidence real secrets (so a GPU that collapses every
+/// score toward 0 — the observed failure mode — diverges visibly from the CPU
+/// reference) alongside obvious non-secrets (so a GPU stuck near 1.0 is caught
+/// too). Cycled to `GPU_BATCH_THRESHOLD` so the probe drives the exact production
+/// dispatch path; sub-threshold batches never reach the GPU.
+fn gpu_moe_parity_probe_features() -> Vec<[f32; INPUT_DIM]> {
+    const PROBES: &[(&str, &str)] = &[
+        (
+            "sk_live_4eC39HqLyjWDarjtT1zdp7dc",
+            "stripe_secret_key = \"sk_live_4eC39HqLyjWDarjtT1zdp7dc\"",
+        ),
+        (
+            "AKIAQYLPMN5HFIQR7XYA",
+            "aws_access_key_id = \"AKIAQYLPMN5HFIQR7XYA\"",
+        ),
+        (
+            "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",
+            "github_token = \"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\"",
+        ),
+        (
+            "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY",
+            "aws_secret_access_key = \"wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY\"",
+        ),
+        (
+            "xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx",
+            "slack_bot_token = \"xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx\"",
+        ),
+        ("example", "display_name = \"example\""),
+        ("localhost", "db_host = \"localhost\""),
+        ("true", "feature_enabled = true"),
+    ];
+    (0..GPU_BATCH_THRESHOLD)
+        .map(|i| {
+            let (text, ctx) = PROBES[i % PROBES.len()];
+            crate::ml_scorer::compute_features_with_config(text, ctx, &[], &[], &[], &[])
+        })
+        .collect()
+}
+
+/// Run the production GPU MoE dispatch on the parity probe and return the maximum
+/// absolute divergence from the CPU MoE reference across all probe inputs, or an
+/// error if the GPU could not be dispatched at all. Single source of truth for
+/// "does the GPU MoE reproduce the CPU MoE on this device?" — shared by the
+/// runtime trust gate and `gpu_self_test` (so doctor reports the same verdict the
+/// scan path enforces).
+pub(crate) fn gpu_moe_parity_max_divergence(readback_timeout: Duration) -> Result<f64, String> {
+    let probe = gpu_moe_parity_probe_features();
+    let gpu_scores = dispatch_moe_batch(&probe, readback_timeout)
+        .ok_or_else(|| "GPU MoE dispatch produced no result for the parity probe".to_string())?;
+    if gpu_scores.len() != probe.len() {
+        return Err(format!(
+            "GPU MoE parity probe returned {} scores for {} inputs",
+            gpu_scores.len(),
+            probe.len()
+        ));
+    }
+    let mut max_abs = 0.0f64;
+    for (gpu, feat) in gpu_scores.iter().zip(probe.iter()) {
+        let cpu = crate::ml_scorer::score_features(feat);
+        max_abs = max_abs.max((gpu - cpu).abs());
+    }
+    Ok(max_abs)
+}
+
+/// One-time, process-wide GPU MoE trust gate. The GPU MoE is trusted for scoring
+/// ONLY if it reproduces the CPU MoE within [`GPU_MOE_PARITY_TOLERANCE`] on the
+/// parity probe. On divergence (or dispatch failure) it is permanently distrusted
+/// for the process and every batch falls to the correct, deterministic CPU path,
+/// with one loud line. Cached so the probe runs at most once.
+fn gpu_moe_numerically_trustworthy(readback_timeout: Duration) -> bool {
+    *MOE_NUMERIC_TRUST.get_or_init(|| match gpu_moe_parity_max_divergence(readback_timeout) {
+        Ok(max_abs) if max_abs <= GPU_MOE_PARITY_TOLERANCE => {
+            tracing::info!(
+                target: "keyhog::gpu",
+                max_abs_diff = max_abs,
+                tolerance = GPU_MOE_PARITY_TOLERANCE,
+                "GPU MoE parity probe matched CPU MoE"
+            );
+            true
+        }
+        Ok(max_abs) => {
+            moe_numeric_divergence_degrade(&format!(
+                "max_abs_diff={max_abs:.6}, tolerance={GPU_MOE_PARITY_TOLERANCE:.6}"
+            ));
+            false
+        }
+        Err(reason) => {
+            moe_numeric_divergence_degrade(&reason);
+            false
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gpu_moe_parity_probe_covers_dispatch_threshold_with_varied_features() {
+        let features = gpu_moe_parity_probe_features();
+
+        assert_eq!(
+            features.len(),
+            GPU_BATCH_THRESHOLD,
+            "GPU MoE parity probe must exercise the production dispatch threshold"
+        );
+        assert!(
+            features.iter().flatten().any(|value| *value > 0.0)
+                && features.windows(2).any(|pair| pair[0] != pair[1]),
+            "GPU MoE parity probe must include varied real feature vectors, not all-zero repeats"
+        );
+        let cpu_scores: Vec<f64> = features
+            .iter()
+            .map(crate::ml_scorer::score_features)
+            .collect();
+        assert!(
+            cpu_scores.iter().copied().all(f64::is_finite),
+            "CPU MoE scores for the GPU parity probe must be finite"
+        );
+        assert!(
+            cpu_scores.windows(2).any(|pair| pair[0] != pair[1]),
+            "GPU MoE parity probe must exercise distinct CPU MoE outputs"
+        );
+    }
 }
