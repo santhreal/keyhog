@@ -321,8 +321,9 @@ fn fmt_secs(s: f64) -> String {
     if s < 60.0 {
         format!("{s:.1}s")
     } else {
-        let m = (s / 60.0).floor() as u64;
-        let r = (s - (m as f64) * 60.0).round() as u64;
+        let total = s.round() as u64;
+        let m = total / 60;
+        let r = total % 60;
         format!("{m}m{r:02}s")
     }
 }
@@ -954,6 +955,7 @@ mod ticker_tests {
     fn fmt_secs_switches_to_minutes_past_a_minute() {
         assert_eq!(fmt_secs(8.25), "8.2s");
         assert_eq!(fmt_secs(64.0), "1m04s");
+        assert_eq!(fmt_secs(119.6), "2m00s");
     }
 
     /// Visual harness: `cargo test -p keyhog dump_ticker_frames -- --ignored --nocapture`
