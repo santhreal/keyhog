@@ -226,8 +226,7 @@ fn fetch_url(
     if status != 200 {
         let safe_url = redact_url(url);
         tracing::warn!(url = %safe_url, status, "non-200 response; URL body was NOT scanned");
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        return vec![Err(SourceError::Other(format!(
+        return vec![Err(web_unreadable_error(format!(
             "failed to fetch {safe_url}: HTTP status {status}; response body was not scanned"
         )))];
     }
@@ -354,7 +353,15 @@ fn send_with_pinned_redirects(
 }
 
 fn web_unreadable_error(message: String) -> SourceError {
-    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+    web_skip_error(crate::SourceSkipEvent::Unreadable, message)
+}
+
+fn web_over_max_error(message: String) -> SourceError {
+    web_skip_error(crate::SourceSkipEvent::OverMaxSize, message)
+}
+
+fn web_skip_error(event: crate::SourceSkipEvent, message: String) -> SourceError {
+    let _event = crate::record_skip_event(event);
     SourceError::Other(message)
 }
 
@@ -542,8 +549,7 @@ fn handle_wasm(
     if !crate::magic::starts_with_wasm_module(&bytes) {
         let safe_url = redact_url(url);
         tracing::warn!(url = %safe_url, "not a valid WASM file; body was NOT scanned as WebAssembly strings");
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        return vec![Err(SourceError::Other(format!(
+        return vec![Err(web_unreadable_error(format!(
             "failed to scan {safe_url}: URL ended with .wasm but response did not start with WASM magic bytes"
         )))];
     }
@@ -585,10 +591,7 @@ fn read_text_response(
     max_response_bytes: usize,
 ) -> Result<String, SourceError> {
     let bytes = read_bytes_response(resp, max_response_bytes)?;
-    String::from_utf8(bytes).map_err(|e| {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        SourceError::Other(format!("non-UTF-8 response: {e}"))
-    })
+    String::from_utf8(bytes).map_err(|e| web_unreadable_error(format!("non-UTF-8 response: {e}")))
 }
 
 /// Read an HTTP response body as bytes.
@@ -605,16 +608,14 @@ fn read_bytes_response(
     let safe_url = redact_url(&url);
     let encodings = response_content_encodings(resp.headers(), &safe_url)?;
     let cap = u64::try_from(max_response_bytes).map_err(|_| {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-        SourceError::Other(format!(
+        web_over_max_error(format!(
             "response byte limit for {safe_url} exceeds this platform's supported range"
         ))
     })?;
 
     if let Some(len) = resp.content_length() {
         if len > cap {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            return Err(SourceError::Other(format!(
+            return Err(web_over_max_error(format!(
                 "response from {safe_url} declares {len} bytes (> {max_response_bytes} byte limit)"
             )));
         }
@@ -622,14 +623,10 @@ fn read_bytes_response(
 
     // Stream into a bounded buffer; abort the moment we exceed the cap.
     let capacity_hint = max_response_bytes.min(64 * 1024);
-    let read =
-        crate::capped_read::read_to_cap(resp, cap, Some(capacity_hint as u64)).map_err(|e| {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            SourceError::Other(format!("failed to read bytes from {safe_url}: {e}"))
-        })?;
+    let read = crate::capped_read::read_to_cap(resp, cap, Some(capacity_hint as u64))
+        .map_err(|e| web_unreadable_error(format!("failed to read bytes from {safe_url}: {e}")))?;
     if read.truncated {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-        return Err(SourceError::Other(format!(
+        return Err(web_over_max_error(format!(
             "response from {safe_url} exceeds {max_response_bytes} byte limit"
         )));
     }
@@ -684,8 +681,7 @@ fn response_content_encodings(
         return Ok(Vec::new());
     };
     let raw = raw.to_str().map_err(|error| {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        SourceError::Other(format!(
+        web_unreadable_error(format!(
             "response from {safe_url} has invalid Content-Encoding header: {error}"
         ))
     })?;
@@ -715,8 +711,7 @@ fn decode_one_content_encoding(
 ) -> Result<Vec<u8>, SourceError> {
     let label = encoding.label();
     let cap = u64::try_from(max_response_bytes).map_err(|_| {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-        SourceError::Other(format!(
+        web_over_max_error(format!(
             "decoded {label} response byte limit for {safe_url} exceeds this platform's supported range"
         ))
     })?;
@@ -731,22 +726,19 @@ fn decode_one_content_encoding(
             crate::capped_read::read_to_cap(brotli::Decompressor::new(bytes, 4096), cap, None)
         }
         WebContentEncoding::Unsupported(other) => {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return Err(SourceError::Other(format!(
+            return Err(web_unreadable_error(format!(
                 "response from {safe_url} uses unsupported Content-Encoding {other:?}; body was not scanned"
             )));
         }
     };
 
     let read = read.map_err(|error| {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        SourceError::Other(format!(
+        web_unreadable_error(format!(
             "failed to decode {label} response from {safe_url}: {error}"
         ))
     })?;
     if read.truncated {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-        return Err(SourceError::Other(format!(
+        return Err(web_over_max_error(format!(
             "decoded {label} response from {safe_url} exceeds {max_response_bytes} byte limit"
         )));
     }
