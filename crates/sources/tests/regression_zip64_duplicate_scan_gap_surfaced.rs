@@ -10,6 +10,8 @@
 use keyhog_core::Source;
 use keyhog_sources::{reset_skipped_over_max_size, skip_counts, FilesystemSource};
 
+mod support;
+
 #[test]
 fn zip64_eocd_sentinel_records_duplicate_scan_unavailable_gap() {
     // Process-global counters; this standalone test binary runs only this test,
@@ -29,12 +31,23 @@ fn zip64_eocd_sentinel_records_duplicate_scan_unavailable_gap() {
     )
     .expect("write zip64-sentinel archive");
 
-    // Drive the real filesystem extraction path; we only care that the degrade
-    // is recorded, not whether the standard parser then succeeds.
-    let _ = FilesystemSource::new(dir.path().to_path_buf())
+    // Drive the real filesystem extraction path. The duplicate detector degrade
+    // must be both counted and emitted as a SourceError row; the standard parser
+    // may recover ordinary chunks or emit its own parse error after that.
+    let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
         .chunks()
-        .filter_map(Result::ok)
-        .count();
+        .collect();
+    let (chunks, errors) = support::split_chunk_results(&rows);
+    let error_strings: Vec<String> = errors.iter().map(|error| error.to_string()).collect();
+    assert!(
+        error_strings.iter().any(|error| {
+            error.contains("ZIP duplicate-entry detection unavailable")
+                && error.contains("z64.zip")
+                && error.contains("standard parser")
+                && error.contains("may miss duplicated or shadowed entries")
+        }),
+        "duplicate-scan-unavailable SourceError must explain the partial coverage gap, got errors={error_strings:?} chunks={chunks:?}"
+    );
 
     let after = skip_counts().archive_duplicate_scan_unavailable;
     assert!(

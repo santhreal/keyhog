@@ -59,6 +59,11 @@ pub(super) fn extract_zip_archive(
             );
             let _event =
                 crate::record_skip_event(crate::SourceSkipEvent::ArchiveDuplicateScanUnavailable);
+            if !emit(Err(SourceError::Other(format!(
+                "ZIP duplicate-entry detection unavailable for '{archive_display}': {error}; scanning continued with the standard parser, which may miss duplicated or shadowed entries"
+            )))) {
+                return;
+            }
         }
     }
 
