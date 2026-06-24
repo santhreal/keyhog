@@ -176,9 +176,24 @@ where
     }
 
     if let Err(e) = write_executable(exe, bytes) {
-        // Nothing new committed; put the original name back and bail.
+        // Nothing new was committed. Put the original binary back under its real
+        // name and bail with the write error. If the restore ALSO fails the
+        // operator's working binary is stranded at `stash` with nothing at
+        // `exe` - surface that loudly (mirroring the verify-fail rollback below)
+        // instead of swallowing the rename error.
         if had_prior {
-            let _ = std::fs::rename(&stash, exe); // LAW10: unused-binding marker; no runtime effect, not a fallback
+            if let Err(restore_err) = std::fs::rename(&stash, exe) {
+                return Err(e).with_context(|| {
+                    format!(
+                        "ROLLBACK FAILED after a failed binary write: the original working binary \
+                         could not be restored from {} to {} ({restore_err}). It is stranded at \
+                         {}; restore it manually.",
+                        stash.display(),
+                        exe.display(),
+                        stash.display()
+                    )
+                });
+            }
         }
         return Err(e);
     }
@@ -190,8 +205,10 @@ where
 
     // The new binary doesn't work on this host. It is NOT the running image
     // (the prior one, now at `stash`, is), so remove it and restore the stash.
-    let _ = std::fs::remove_file(exe); // LAW10: unused-binding marker; no runtime effect, not a fallback
+    let removed = std::fs::remove_file(exe);
     if had_prior {
+        // Renaming the stash back over `exe` replaces the broken binary whether
+        // or not the remove above succeeded, so its result is not surfaced here.
         std::fs::rename(&stash, exe).with_context(|| {
             format!(
                 "ROLLBACK FAILED: the new binary failed its health check ({verify_error}) and the \
@@ -206,10 +223,21 @@ where
              try `keyhog update --version <older-tag>` or report the release."
         ));
     }
-    Err(anyhow!(
-        "installed binary failed its post-install health check: {verify_error}; removed it because no prior \
-         binary to roll back to). The release may be broken for this host."
-    ))
+    // No prior binary to fall back to: removing the broken one is the only
+    // cleanup, so report honestly whether it actually went away rather than
+    // asserting "removed it" when `remove_file` may have failed.
+    match removed {
+        Ok(()) => Err(anyhow!(
+            "installed binary failed its post-install health check: {verify_error}; removed it because no prior \
+             binary to roll back to. The release may be broken for this host."
+        )),
+        Err(remove_err) => Err(anyhow!(
+            "installed binary failed its post-install health check: {verify_error}; it could NOT be removed from \
+             {} ({remove_err}) and there is no prior binary to roll back to - delete it manually. The release \
+             may be broken for this host.",
+            exe.display()
+        )),
+    }
 }
 
 /// Best-effort reap of the temp artifacts a prior `update`/`repair` may have
@@ -573,12 +601,21 @@ where
              try `keyhog update --version <older-tag>` or report the release."
         ))
     } else {
-        // Fresh install with no prior binary: don't leave a broken executable.
-        let _ = std::fs::remove_file(exe); // LAW10: unused-binding marker; no runtime effect, not a fallback
-        Err(anyhow!(
-            "installed binary failed its post-install health check: {verify_error}; removed it because no prior \
-             binary to roll back to). The release may be broken for this host."
-        ))
+        // Fresh install with no prior binary: removing the broken one is the
+        // only cleanup, so report honestly whether it actually went away rather
+        // than asserting "removed it" when `remove_file` may have failed.
+        match std::fs::remove_file(exe) {
+            Ok(()) => Err(anyhow!(
+                "installed binary failed its post-install health check: {verify_error}; removed it because no prior \
+                 binary to roll back to. The release may be broken for this host."
+            )),
+            Err(remove_err) => Err(anyhow!(
+                "installed binary failed its post-install health check: {verify_error}; it could NOT be removed \
+                 from {} ({remove_err}) and there is no prior binary to roll back to - delete it manually. The \
+                 release may be broken for this host.",
+                exe.display()
+            )),
+        }
     }
 }
 

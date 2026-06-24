@@ -1,4 +1,4 @@
-use keyhog::testing::{API, CliTestApi as _};
+use keyhog::testing::{CliTestApi as _, API};
 
 fn normalize_ws(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -268,12 +268,8 @@ fn rejects_non_executable_download() {
     #[cfg(target_os = "linux")]
     assert!(API.looks_like_native_executable(&[0x7F, b'E', b'L', b'F', 2, 1, 1, 0]));
 
-    assert!(
-        API.looks_like_native_executable_for_os(&[0x7F, b'E', b'L', b'F', 2, 1, 1, 0], "linux")
-    );
-    assert!(
-        API.looks_like_native_executable_for_os(&[0xFE, 0xED, 0xFA, 0xCF, 0, 0, 0, 0], "macos")
-    );
+    assert!(API.looks_like_native_executable_for_os(&[0x7F, b'E', b'L', b'F', 2, 1, 1, 0], "linux"));
+    assert!(API.looks_like_native_executable_for_os(&[0xFE, 0xED, 0xFA, 0xCF, 0, 0, 0, 0], "macos"));
     assert!(API.looks_like_native_executable_for_os(&[b'M', b'Z', 0x90, 0x00], "windows"));
     assert!(!API.looks_like_native_executable_for_os(b"<!DOCTYPE html><html>Not Found", "windows"));
     assert!(!API.looks_like_native_executable_for_os(b"<!DOCTYPE html><html>Not Found", "freebsd"));
@@ -313,10 +309,9 @@ fn release_signature_rejects_tampered_payload() {
 
 #[test]
 fn release_signature_rejects_malformed_signature() {
-    assert!(
-        API.verify_release_signature(FIXTURE_DATA, "not a minisig file")
-            .is_err()
-    );
+    assert!(API
+        .verify_release_signature(FIXTURE_DATA, "not a minisig file")
+        .is_err());
     assert!(API.verify_release_signature(FIXTURE_DATA, "").is_err());
 }
 
@@ -499,18 +494,15 @@ fn reap_stale_binaries_does_not_flatten_read_dir_errors() {
         "installer stale-artifact reap must match read_dir entry errors explicitly"
     );
     assert!(
+        src.contains("cannot read installer artifact directory entry"),
+        "installer stale-artifact reap must log unreadable directory entries"
+    );
+    assert!(
         src.contains("fn remove_installer_artifact_best_effort(")
             && src.contains("failed to remove installer artifact; it may need manual cleanup")
             && src.contains("remove_installer_artifact_best_effort(")
-            && !src.contains("let _ = std::fs::remove_file(&tmp)")
-            && !src.contains("let _ = std::fs::remove_file(entry.path())")
-            && !src.contains("let _ = std::fs::remove_file(&backup)")
-            && !src.contains("let _ = std::fs::remove_file(&stash)"),
+            && !src.contains("let _ = std::fs::remove_file"),
         "installer artifact cleanup must be best-effort but visible, not anonymous let-_ remove_file"
-    );
-    assert!(
-        src.contains("cannot read installer artifact directory entry"),
-        "installer stale-artifact reap must log unreadable directory entries"
     );
     assert!(
         src.contains("fn installer_artifact_pid(")
@@ -518,6 +510,27 @@ fn reap_stale_binaries_does_not_flatten_read_dir_errors() {
             && src.contains("!process_is_running(pid)")
             && !src.contains("fname.starts_with(stash_prefix.as_str())\n            || fname.starts_with(backup_prefix.as_str())"),
         "installer stale-artifact reap must parse PID suffixes and skip live owners"
+    );
+}
+
+#[test]
+fn rollback_cleanup_failures_are_operator_visible() {
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/installer.rs"))
+        .expect("installer source readable");
+    for required in [
+        "ROLLBACK FAILED after a failed binary write",
+        "It is stranded at",
+        "it could NOT be removed from",
+        "delete it manually",
+    ] {
+        assert!(
+            src.contains(required),
+            "installer rollback/cleanup failure must surface `{required}`"
+        );
+    }
+    assert!(
+        !src.contains("installed binary failed its post-install health check: {verify_error}; removed it because no prior \\\n         binary to roll back to)."),
+        "installer fresh-install verify failure must not claim a broken binary was removed without checking remove_file"
     );
 }
 
