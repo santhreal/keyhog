@@ -518,6 +518,7 @@ impl CompiledScanner {
             }
             let local_start = start - region_start;
             if let Ok(local_start) = u32::try_from(local_start) {
+                // LAW10: impossible local offsets outside GPU u32 space are not emitted to GPU row buffers; CPU/SIMD paths retain recall.
                 if is_confirmed {
                     if let Some(rows) = confirmed_rows.as_mut() {
                         rows[region].push(((pattern_id - confirmed_base) as u32, local_start));

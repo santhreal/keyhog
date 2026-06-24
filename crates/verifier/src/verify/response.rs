@@ -129,6 +129,7 @@ pub(crate) fn evaluate_success(
 /// `error_rate` or `myinvalidatedname` no longer trigger it.
 pub(crate) fn body_indicates_error(body: &str) -> bool {
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
+        // LAW10: non-JSON bodies use the whole-word text contract below; verification stays conservative.
         return json_indicates_error(&json);
     }
     // Non-JSON fallback: whole-word match so embedded substrings
@@ -174,6 +175,7 @@ fn json_value_is_truthy_error(value: &serde_json::Value) -> bool {
 pub(crate) fn extract_metadata(specs: &[MetadataSpec], body: &str) -> HashMap<String, String> {
     let mut metadata = HashMap::new();
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
+        // LAW10: non-JSON verifier bodies simply have no JSON metadata; verification result still uses response status/body rules.
         for spec in specs {
             if let Some(val) = json.pointer(&spec.json_path) {
                 metadata.insert(spec.name.clone(), json_value_to_contract_string(val));

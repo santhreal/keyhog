@@ -57,6 +57,7 @@ fn keyhog_repo_root() -> Option<&'static std::path::Path> {
                     // in the first dozen lines. Anything bigger is almost
                     // certainly not the keyhog manifest.
                     if let Ok(text) = std::fs::read_to_string(&cargo) {
+                        // LAW10: optional self-repo marker probe; unreadable manifest disables only keyhog-fixture self-suppression, so findings stay emitted.
                         let head: String = text.chars().take(4096).collect();
                         if head.contains("crates/scanner")
                             && head.contains("crates/cli")

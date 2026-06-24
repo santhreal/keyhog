@@ -321,6 +321,7 @@ fn decode_candidate(s: &str) -> Option<Vec<u8>> {
         return crate::decode::hex_decode(s).ok(); // LAW10: recall-preserving trial decode; malformed underscore-hex keeps the original candidate path.
     }
     if let Ok(bytes) = crate::decode::base64_decode(s) {
+        // LAW10: failed trial base64 decode falls through to hex/original candidate handling; recall is preserved.
         return Some(bytes);
     }
     if s.len() >= MIN_DECODE_LEN && s.len().is_multiple_of(2) && is_plain_hex_candidate(s) {

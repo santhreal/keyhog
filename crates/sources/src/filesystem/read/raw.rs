@@ -84,6 +84,7 @@ pub(in crate::filesystem) fn open_file_safe(path: &Path) -> std::io::Result<File
     #[cfg(windows)]
     {
         if let Ok(meta) = std::fs::symlink_metadata(path) {
+            // LAW10: failed pre-open metadata probe falls through to O_NOFOLLOW/open error, which surfaces unreadable paths.
             if meta.file_type().is_symlink() {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
@@ -194,6 +195,7 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileR
     // user-configurable budget; this constant is a HARD ceiling on
     // any mmap-based read regardless of user config.
     if let Ok(meta) = file.metadata() {
+        // LAW10: failed post-open metadata probe only skips TOCTOU optimization; bounded read path still enforces the cap.
         if meta.len() > MMAP_TOCTOU_SANITY_CAP_BYTES {
             tracing::warn!(
                 path = %path.display(),

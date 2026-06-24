@@ -196,14 +196,12 @@ fn isolated_bare_secret_entropy(
     threshold: f64,
     placeholder_keywords: &[String],
 ) -> Option<f64> {
-    // LAW10: side-effect-free probe path; production collection calls the
-    // Result-returning decision helper and records the typed adjudication stage.
-    if let Ok(entropy) =
-        isolated_bare_secret_entropy_decision(candidate, threshold, placeholder_keywords)
-    {
-        Some(entropy)
-    } else {
-        None
+    match isolated_bare_secret_entropy_decision(candidate, threshold, placeholder_keywords) {
+        Ok(entropy) => Some(entropy),
+        Err(_error) => {
+            // LAW10: test/probe adapter only; production calls the Result-returning decision helper and records typed adjudication stages.
+            None
+        }
     }
 }
 

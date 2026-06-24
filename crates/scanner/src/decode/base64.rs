@@ -18,7 +18,9 @@ impl Decoder for Base64Decoder {
         // `extract_encoded_values` already rejects noise shorter than 4.
         visit_classified_base64_string_spans(&chunk.data, 12, |b64_match, variant| {
             if let Ok(decoded) = base64_decode_with_variant(&b64_match.value, variant) {
+                // LAW10: failed trial decode means this span is not valid base64; original chunk remains scanned unchanged.
                 if let Ok(text) = String::from_utf8(decoded) {
+                    // LAW10: non-UTF8 decoded bytes are not source text; original encoded text remains scanned unchanged.
                     // Splice the decoded text back over the original
                     // base64 blob in the parent so companion context
                     // (e.g. `aws_secret = "…"`) stays adjacent to the
@@ -51,7 +53,9 @@ impl Decoder for Z85Decoder {
         let mut decoded_chunks = Vec::new();
         visit_z85_string_spans(&chunk.data, 20, |z_match, value| {
             if let Ok(decoded) = z85_decode(value.as_ref()) {
+                // LAW10: failed trial decode means this span is not valid z85; original chunk remains scanned unchanged.
                 if let Ok(text) = String::from_utf8(decoded) {
+                    // LAW10: non-UTF8 decoded bytes are not source text; original encoded text remains scanned unchanged.
                     push_decoded_text_chunk_spliced_at(
                         &mut decoded_chunks,
                         chunk,

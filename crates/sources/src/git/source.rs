@@ -738,6 +738,7 @@ fn decode_git_blob(data: &[u8]) -> Option<String> {
     // Valid-UTF-8 fast path (the common case for source trees): one validation
     // pass, owned copy on success.
     if let Ok(s) = std::str::from_utf8(data) {
+        // LAW10: invalid UTF-8 falls through to lossy text decode after binary checks, preserving recall.
         return Some(s.to_owned());
     }
     // Not strictly valid UTF-8 but not binary: partial corruption / latin-1 / a

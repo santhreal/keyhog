@@ -181,6 +181,7 @@ pub(crate) fn parse_byte_size(s: &str) -> Result<usize, String> {
     // overflows cleanly to Err on numbers wider than u64). Fall back
     // to f64 for fractional inputs like "1.5G".
     if let Ok(n_int) = num_part.parse::<u64>() {
+        // LAW10: optional exact integer path; fractional inputs are validated by the finite f64 path below.
         // Overflow-safe integer multiply. The previous `as usize`
         // path silently saturated to usize::MAX for `u64::MAX B`,
         // which the test fixtures explicitly assert must error.

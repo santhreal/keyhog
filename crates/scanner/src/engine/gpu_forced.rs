@@ -37,6 +37,7 @@ impl CompiledScanner {
     pub(super) fn record_gpu_degrade(&self, reason: impl Into<String>) {
         let reason = reason.into();
         if let Ok(mut slot) = self.gpu_last_degrade_reason.lock() {
+            // LAW10: poison loses only the diagnostic string; gpu_degrade_count below still records the runtime degrade.
             *slot = Some(reason);
         }
         self.gpu_degrade_count

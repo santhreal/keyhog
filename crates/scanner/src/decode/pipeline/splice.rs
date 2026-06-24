@@ -184,6 +184,7 @@ where
     let mut decoded_chunks = Vec::new();
     for candidate in candidates {
         if let Ok(text) = decode(&candidate.value) {
+            // LAW10: failed trial decode keeps the original candidate-bearing chunk in the scan path unchanged.
             push_decoded_text_chunk_spliced_at(
                 &mut decoded_chunks,
                 chunk,
@@ -209,6 +210,7 @@ where
     let mut decoded_chunks = Vec::new();
     for candidate in candidates {
         if let Ok(text) = decode(&candidate.value) {
+            // LAW10: failed trial decode keeps the original candidate-bearing chunk in the scan path unchanged.
             push_decoded_text_chunk_spliced_at(
                 &mut decoded_chunks,
                 chunk,

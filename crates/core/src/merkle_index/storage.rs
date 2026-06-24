@@ -381,6 +381,7 @@ impl MerkleIndex {
 
     fn remember_cache_file_fingerprint(&self, path: &Path) {
         if let Ok(fingerprint) = cache_file_fingerprint(path) {
+            // LAW10: failed post-write fingerprint leaves cache untrusted; loader rejects missing fingerprint instead of trusting stale entries.
             *self.cache_file_fingerprint.write() = fingerprint;
         }
     }
@@ -525,7 +526,10 @@ fn cache_lock_path(cache_path: &Path) -> std::io::Result<PathBuf> {
     let Some(base_name) = cache_path.file_name() else {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!("merkle cache path '{}' has no file name", cache_path.display()),
+            format!(
+                "merkle cache path '{}' has no file name",
+                cache_path.display()
+            ),
         ));
     };
     let mut file_name = OsString::from(base_name);

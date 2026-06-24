@@ -512,6 +512,7 @@ pub(crate) fn batch_score_features(
         }
 
         if let Ok(result) = receiver.try_recv() {
+            // LAW10: empty try_recv only means the GPU callback is still pending; timeout/device-error branches below stay loud.
             break result;
         }
 

@@ -148,9 +148,11 @@ fn pack_braille() -> Vec<Vec<(char, f32)>> {
 /// Check if the terminal likely supports 24-bit true color.
 fn supports_true_color() -> bool {
     if let Ok(ct) = std::env::var("COLORTERM") {
+        // LAW10: optional terminal color probe; absent/unreadable env only disables color depth, reporting bytes stay unchanged.
         return ct == "truecolor" || ct == "24bit";
     }
     if let Ok(term) = std::env::var("TERM") {
+        // LAW10: optional terminal color probe; absent/unreadable env only disables color depth, reporting bytes stay unchanged.
         return term.contains("256color") || term.contains("24bit");
     }
     false

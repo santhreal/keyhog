@@ -178,6 +178,7 @@ fn decode_octal_escapes(s: &str) -> String {
             }
             if octal.len() == 3 {
                 if let Ok(byte) = u8::from_str_radix(&octal, 8) {
+                    // LAW10: malformed mount escape stays escaped text; mount filtering only gets stricter, never skips a real scan root.
                     out.push(byte as char);
                     continue;
                 }
@@ -193,7 +194,7 @@ fn decode_octal_escapes(s: &str) -> String {
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
-    use super::{MountFilters, decoded_mount_target_if_included};
+    use super::{decoded_mount_target_if_included, MountFilters};
 
     #[test]
     fn skip_path_prefixes_match_decoded_mount_targets() {

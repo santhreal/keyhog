@@ -16,14 +16,14 @@ mod mounts;
 use crate::args::ScanSystemArgs;
 use crate::exit_codes::EXIT_FINDINGS;
 use crate::format::format_bytes;
-use crate::orchestrator::{DefaultScanRuntime, StreamingSourceEvent, compile_default_scan_runtime};
+use crate::orchestrator::{compile_default_scan_runtime, DefaultScanRuntime, StreamingSourceEvent};
 use crate::style;
 use anyhow::{Context, Result};
 use mounts::enumerate_mounts;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 /// Hard ceiling on resident findings held in memory during a system scan.
 ///
@@ -445,6 +445,7 @@ fn discover_git_repos(
     let mut stack: Vec<PathBuf> = Vec::new();
 
     if let Ok(canon) = fs::canonicalize(root) {
+        // LAW10: unreadable scan-system root is handled by the source path; repo discovery simply contributes no git repo.
         stack.push(canon);
     } else {
         return;
@@ -502,6 +503,7 @@ fn discover_git_repos(
                     };
                     if file_type.is_dir() {
                         if let Ok(canon) = fs::canonicalize(entry.path()) {
+                            // LAW10: failed child canonicalization keeps the entry out of git-repo expansion; filesystem scan owns unreadable-path surfacing.
                             if !visited.contains(&canon) {
                                 stack.push(canon);
                             }
@@ -572,7 +574,8 @@ fn scan_git_history(
     }
     #[cfg(not(feature = "git"))]
     {
-        let _ = (scan_runtime, bytes_scanned, space_cap); // LAW10: unused-binding marker; no runtime effect, not a fallback
+        let _ = (scan_runtime, bytes_scanned, space_cap);
+        // LAW10: unused-binding marker; no runtime effect, not a fallback.
         // Law 10: this binary was built WITHOUT the `git` feature, so the git
         // history of a discovered repo cannot be scanned — those commits are
         // unscanned bytes (a recall loss), not "nothing to do". The banner above

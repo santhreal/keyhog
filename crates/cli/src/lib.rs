@@ -207,6 +207,7 @@ pub async fn cli_main() -> ExitCode {
 
     tokio::spawn(async move {
         if let Ok(()) = tokio::signal::ctrl_c().await {
+            // LAW10: failed signal hook only loses graceful Ctrl-C handling; scan/report exit semantics stay owned by the main task.
             let scanned = SCANNED_CHUNKS.load(Ordering::SeqCst);
             let total = TOTAL_CHUNKS.load(Ordering::SeqCst);
             let findings = FINDINGS_COUNT.load(Ordering::SeqCst);

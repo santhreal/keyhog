@@ -6,8 +6,8 @@
 use memmap2::MmapOptions;
 use std::path::Path;
 
-use super::MMAP_TOCTOU_SANITY_CAP_BYTES;
 use super::raw::open_file_safe;
+use super::MMAP_TOCTOU_SANITY_CAP_BYTES;
 
 /// One scanning window over a large file: an absolute byte offset into
 /// the original file plus the lossy-UTF-8 view of those bytes. The
@@ -75,6 +75,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
     // function based on its own size budget; this cap is a defense
     // against the file growing AFTER the walker's stat completed.
     if let Ok(meta) = file.metadata() {
+        // LAW10: failed post-open metadata probe skips only mmap TOCTOU optimization; caller falls back to bounded reads.
         if meta.len() > MMAP_TOCTOU_SANITY_CAP_BYTES {
             tracing::warn!(
                 path = %path.display(),

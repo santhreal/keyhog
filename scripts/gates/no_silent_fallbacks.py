@@ -10,6 +10,7 @@ for TWO idiom classes
 that discard a failure / degrade with no operator-visible surfacing:
   (1) the swallow idioms:
     .ok()              (Result -> Option, error dropped)
+    if let Ok(...)     (error arm omitted)
     Err(_) =>          (error swallowed in a match arm)
     unwrap_or(...)     unwrap_or_else(...)  unwrap_or_default()
     let _ = <expr>     (Result/value explicitly discarded)
@@ -54,6 +55,7 @@ CRATES = ["scanner", "sources", "core", "cli", "verifier"]
 
 IDIOMS = [
     re.compile(r"\.ok\(\)"),
+    re.compile(r"\bif\s+let\s+Ok\b"),
     re.compile(r"Err\(_\)\s*=>"),
     re.compile(r"\.unwrap_or\("),
     re.compile(r"\.unwrap_or_else\("),
@@ -166,6 +168,7 @@ def self_test() -> int:
         'let x = foo().unwrap_or(0);': True,
         'match r { Err(_) => default(), Ok(v) => v };': True,
         'let v = parse().ok();': True,
+        'if let Ok(v) = maybe_value() { use_it(v); }': True,
         # debug/trace degrade-language class -> must flag (incl. inflections)
         'tracing::debug!("GPU init failed, using CPU fallback");': True,
         'tracing::trace!("AC build failed; skipping the fast gate");': True,

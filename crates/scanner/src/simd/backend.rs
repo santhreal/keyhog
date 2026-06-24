@@ -597,15 +597,25 @@ impl HsScanner {
                         );
                         return None;
                     };
-                    if let Ok(db) = payload.deserialize::<BlockMode>() {
-                        tracing::info!(
-                            cache = %cache_path.display(),
-                            shard = shard_idx,
-                            patterns = pattern_count,
-                            dropped = dropped.len(),
-                            "HS shard loaded from cache"
-                        );
-                        return Some((db, dropped));
+                    match payload.deserialize::<BlockMode>() {
+                        Ok(db) => {
+                            tracing::info!(
+                                cache = %cache_path.display(),
+                                shard = shard_idx,
+                                patterns = pattern_count,
+                                dropped = dropped.len(),
+                                "HS shard loaded from cache"
+                            );
+                            return Some((db, dropped));
+                        }
+                        Err(error) => {
+                            tracing::warn!(
+                                cache = %cache_path.display(),
+                                shard = shard_idx,
+                                %error,
+                                "HS shard cache DB deserialization failed; compiling from patterns"
+                            );
+                        }
                     }
                 }
             }
@@ -628,62 +638,72 @@ impl HsScanner {
         cache_path: &std::path::Path,
         shard_idx: usize,
     ) {
-        if let Ok(ser) = db.serialize() {
-            let dropped_bytes = 8usize.saturating_add(dropped.len().saturating_mul(8));
-            let mut data = Vec::with_capacity(
-                ser.as_ref().len() + keyhog_core::HYPERSCAN_CACHE_HEADER_LEN + dropped_bytes,
-            );
-            keyhog_core::write_hyperscan_cache_header(&mut data);
-            write_cached_dropped_ids(&mut data, dropped);
-            data.extend_from_slice(ser.as_ref());
-            if data.len() as u64 > keyhog_core::HYPERSCAN_CACHE_FILE_BYTES {
+        let ser = match db.serialize() {
+            Ok(ser) => ser,
+            Err(error) => {
                 tracing::warn!(
                     cache = %cache_path.display(),
                     shard = shard_idx,
-                    size = data.len(),
-                    cap = keyhog_core::HYPERSCAN_CACHE_FILE_BYTES,
-                    "HS shard cache serialization exceeds cap; not persisting oversized cache artifact"
+                    %error,
+                    "HS shard cache serialization failed; not persisting cache artifact"
                 );
                 return;
             }
-            let parent = cache_path
-                .parent()
-                .unwrap_or_else(|| std::path::Path::new(".")); // LAW10: cache_path is constructed with a parent; fallback only disables atomic cache locality, not scanning.
-            match tempfile::NamedTempFile::new_in(parent) {
-                Ok(mut tmp) => {
-                    if let Err(error) = std::io::Write::write_all(&mut tmp, &data) {
-                        tracing::warn!(
-                            cache = %cache_path.display(),
-                            %error,
-                            "HS shard cache write failed; next run will recompile"
-                        );
-                        return;
-                    }
-                    if let Err(error) = tmp.persist(cache_path) {
-                        tracing::warn!(
-                            cache = %cache_path.display(),
-                            %error,
-                            "HS shard cache persist failed; next run will recompile"
-                        );
-                        return;
-                    }
-                }
-                Err(error) => {
+        };
+        let dropped_bytes = 8usize.saturating_add(dropped.len().saturating_mul(8));
+        let mut data = Vec::with_capacity(
+            ser.as_ref().len() + keyhog_core::HYPERSCAN_CACHE_HEADER_LEN + dropped_bytes,
+        );
+        keyhog_core::write_hyperscan_cache_header(&mut data);
+        write_cached_dropped_ids(&mut data, dropped);
+        data.extend_from_slice(ser.as_ref());
+        if data.len() as u64 > keyhog_core::HYPERSCAN_CACHE_FILE_BYTES {
+            tracing::warn!(
+                cache = %cache_path.display(),
+                shard = shard_idx,
+                size = data.len(),
+                cap = keyhog_core::HYPERSCAN_CACHE_FILE_BYTES,
+                "HS shard cache serialization exceeds cap; not persisting oversized cache artifact"
+            );
+            return;
+        }
+        let parent = cache_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new(".")); // LAW10: cache_path is constructed with a parent; fallback only disables atomic cache locality, not scanning.
+        match tempfile::NamedTempFile::new_in(parent) {
+            Ok(mut tmp) => {
+                if let Err(error) = std::io::Write::write_all(&mut tmp, &data) {
                     tracing::warn!(
                         cache = %cache_path.display(),
                         %error,
-                        "HS shard cache tempfile creation failed; next run will recompile"
+                        "HS shard cache write failed; next run will recompile"
+                    );
+                    return;
+                }
+                if let Err(error) = tmp.persist(cache_path) {
+                    tracing::warn!(
+                        cache = %cache_path.display(),
+                        %error,
+                        "HS shard cache persist failed; next run will recompile"
                     );
                     return;
                 }
             }
-            tracing::info!(
-                cache = %cache_path.display(),
-                shard = shard_idx,
-                dropped = dropped.len(),
-                "HS shard cached"
-            );
+            Err(error) => {
+                tracing::warn!(
+                    cache = %cache_path.display(),
+                    %error,
+                    "HS shard cache tempfile creation failed; next run will recompile"
+                );
+                return;
+            }
         }
+        tracing::info!(
+            cache = %cache_path.display(),
+            shard = shard_idx,
+            dropped = dropped.len(),
+            "HS shard cached"
+        );
     }
 
     fn assemble_scanner_shards(

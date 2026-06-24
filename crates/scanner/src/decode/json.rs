@@ -15,6 +15,7 @@ impl Decoder for JsonDecoder {
         let mut decoded_chunks = Vec::new();
         for json_string in extract_escaped_json_strings(&chunk.data) {
             if let Ok(unescaped) = json_unescape(json_string) {
+                // LAW10: failed trial unescape leaves the original JSON text scanned unchanged.
                 // Splice the unescaped value over its escaped form
                 // in the parent so the JSON key (`"api_key": "…"`)
                 // stays adjacent - exactly the companion anchor most

@@ -158,8 +158,10 @@ pub fn is_private_url(url_str: &str) -> bool {
                 // `looks_like_malformed_ip` still gate it.
                 u32::from_str_radix(d, 8).ok().map(Ipv4Addr::from) // LAW10: fail-open to domain (see above) — post-resolution veto still gates it
             } else if let Ok(n) = d.parse::<u32>() {
+                // LAW10: parse failure falls through to strict IP/domain SSRF checks below; no target is allowed by this branch.
                 Some(Ipv4Addr::from(n))
             } else if let Ok(ip) = d.parse::<Ipv4Addr>() {
+                // LAW10: parse failure falls through to strict IP/domain SSRF checks below; no target is allowed by this branch.
                 Some(ip)
             } else {
                 // Abbreviated dotted forms that glibc/getaddrinfo accept but
