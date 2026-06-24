@@ -26,6 +26,8 @@ mod json_report_support;
 
 use json_report_support::parse_json_array;
 
+const FUNCTIONAL_E2E_BACKEND: &str = "cpu";
+
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
@@ -56,7 +58,7 @@ fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option
     let output = Command::new(binary())
         .arg("scan")
         .arg("--no-daemon")
-        .args(["--backend", "simd"])
+        .args(["--backend", FUNCTIONAL_E2E_BACKEND])
         .args(extra_args)
         .arg("--format")
         .arg("json")
@@ -519,7 +521,7 @@ fn no_suppress_test_fixtures_surfaces_stripe_demo_key() {
         .arg("scan")
         .arg("--no-daemon")
         .arg("--backend")
-        .arg("simd")
+        .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--format")
         .arg("json")
         .arg(&path)
@@ -542,7 +544,7 @@ fn no_suppress_test_fixtures_surfaces_stripe_demo_key() {
         .arg("scan")
         .arg("--no-daemon")
         .arg("--backend")
-        .arg("simd")
+        .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--no-suppress-test-fixtures")
         .arg("--format")
         .arg("json")
@@ -577,7 +579,7 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
         .arg("scan")
         .arg("--no-daemon")
         .arg("--backend")
-        .arg("simd")
+        .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--format")
         .arg("json")
         .arg("--min-confidence")
@@ -598,7 +600,7 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
         .arg("scan")
         .arg("--no-daemon")
         .arg("--backend")
-        .arg("simd")
+        .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--no-suppress-test-fixtures")
         .arg("--format")
         .arg("json")
@@ -665,6 +667,8 @@ fn demo_secret_aws_example_summary_distinguishes_suppression_from_clean() {
     let out = Command::new(binary())
         .arg("scan")
         .arg("--no-daemon")
+        .arg("--backend")
+        .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--format")
         .arg("text")
         .arg(&path)
@@ -695,6 +699,9 @@ fn explicit_format_text_does_not_emit_json() {
     // contrast case we're asserting.
     let output = Command::new(binary())
         .arg("scan")
+        .arg("--no-daemon")
+        .arg("--backend")
+        .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--format")
         .arg("text")
         .arg(&path)
@@ -752,6 +759,9 @@ fn scan_comments_flag_surfaces_credentials_in_comments() {
     // hides findings the default would surface.
     let default_out = Command::new(binary())
         .arg("scan")
+        .arg("--no-daemon")
+        .arg("--backend")
+        .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--format")
         .arg("json")
         .arg(&path)
@@ -764,6 +774,9 @@ fn scan_comments_flag_surfaces_credentials_in_comments() {
 
     let opt_in_out = Command::new(binary())
         .arg("scan")
+        .arg("--no-daemon")
+        .arg("--backend")
+        .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--scan-comments")
         .arg("--format")
         .arg("json")
@@ -847,7 +860,7 @@ fn git_staged_scan_finds_only_staged_secret() {
             "--git-staged",
             "--no-daemon",
             "--backend",
-            "simd",
+            FUNCTIONAL_E2E_BACKEND,
             "--format",
             "json",
             "--path",
@@ -901,7 +914,7 @@ fn baseline_suppresses_acknowledged_findings_on_rescan() {
             "scan",
             "--no-daemon",
             "--backend",
-            "simd",
+            FUNCTIONAL_E2E_BACKEND,
             "--create-baseline",
             baseline_path.to_str().unwrap(),
             "--format",
@@ -923,7 +936,7 @@ fn baseline_suppresses_acknowledged_findings_on_rescan() {
             "scan",
             "--no-daemon",
             "--backend",
-            "simd",
+            FUNCTIONAL_E2E_BACKEND,
             "--baseline",
             baseline_path.to_str().unwrap(),
             "--format",
@@ -966,7 +979,7 @@ fn lockdown_bails_on_verify_flag() {
             "scan",
             "--no-daemon",
             "--backend",
-            "simd",
+            FUNCTIONAL_E2E_BACKEND,
             "--lockdown",
             "--verify",
             "--format",
@@ -980,7 +993,7 @@ fn lockdown_bails_on_verify_flag() {
                 "scan",
                 "--no-daemon",
                 "--backend",
-                "simd",
+                FUNCTIONAL_E2E_BACKEND,
                 "--lockdown",
                 "--verify",
                 "--format",
@@ -1040,7 +1053,7 @@ fn start_daemon() -> (TempDir, std::process::Child) {
             "daemon",
             "start",
             "--backend",
-            "simd",
+            FUNCTIONAL_E2E_BACKEND,
             "--detectors",
             detectors.to_str().unwrap(),
         ])
@@ -1091,7 +1104,7 @@ fn daemon_wire_scan_path_finds_planted_secret() {
 
     let scan = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
-        .args(["scan", "--daemon", "--backend", "simd", "--format", "json"])
+        .args(["scan", "--daemon", "--format", "json"])
         .arg(&fixture)
         .output()
         .expect("daemon scan");
@@ -1268,7 +1281,7 @@ fn daemon_status_reports_payload_after_live_scan() {
     // non-zero in the status payload below.
     let scan = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
-        .args(["scan", "--daemon", "--backend", "simd", "--format", "json"])
+        .args(["scan", "--daemon", "--format", "json"])
         .arg(&fixture)
         .output()
         .expect("daemon scan before status");
@@ -1440,7 +1453,7 @@ fn scan_dir_with_config(
             "scan",
             "--no-daemon",
             "--backend",
-            "simd",
+            FUNCTIONAL_E2E_BACKEND,
             "--format",
             "json",
         ])
@@ -1467,7 +1480,7 @@ fn config_detector_disable_drops_findings() {
     assert_eq!(before, Some(1), "baseline: the AWS key must be found");
     let (out, _e, code) = scan_dir_with_config(
         aws,
-        "[detector.hot-aws_key]\nenabled = false\n[detector.aws-access-key]\nenabled = false\n",
+        "[detector.hot-aws_key]\nenabled = false\n[detector.aws-access-key]\nenabled = false\n[detector.entropy-api-key]\nenabled = false\n",
         &[],
     );
     assert_eq!(
@@ -1513,7 +1526,7 @@ fn config_detector_disable_all_loaded_detectors_fails_closed() {
             "scan",
             "--no-daemon",
             "--backend",
-            "simd",
+            FUNCTIONAL_E2E_BACKEND,
             "--format",
             "json",
             "--detectors",
@@ -1580,7 +1593,7 @@ fn config_detector_min_confidence_floor_drops_findings() {
                 "scan",
                 "--no-daemon",
                 "--backend",
-                "simd",
+                FUNCTIONAL_E2E_BACKEND,
                 "--format",
                 "json",
                 "--detectors",

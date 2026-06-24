@@ -441,7 +441,7 @@ pub(crate) fn record_suppression(
 ) -> Option<StageId> {
     let stage_id = adjudicate_match(CandidateMatch::new(credential), ctx).suppressed_stage();
     if let Some(stage_id) = stage_id {
-        crate::telemetry::record_shape_suppression(path, credential, stage_id.as_str());
+        record_suppression_telemetry(path, credential, stage_id);
     }
     stage_id
 }
@@ -496,10 +496,18 @@ pub(crate) fn finalize_report_candidate(
     ));
     match adjudicate_match(CandidateMatch::new(credential), &final_emit_ctx) {
         Verdict::Suppressed(stage_id) => {
-            crate::telemetry::record_shape_suppression(path, credential, stage_id.as_str());
+            record_suppression_telemetry(path, credential, stage_id);
             None
         }
         Verdict::Reported(confidence) => confidence,
+    }
+}
+
+fn record_suppression_telemetry(path: Option<&str>, credential: &str, stage_id: StageId) {
+    let reason = stage_id.as_str();
+    crate::telemetry::record_shape_suppression(path, credential, reason);
+    if reason == "contains_EXAMPLE_token" {
+        record_example_suppression("pipeline", path, credential, reason);
     }
 }
 
