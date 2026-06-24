@@ -7,9 +7,9 @@ use reqwest::Client;
 use crate::interpolate::interpolate_url;
 use crate::verify::credential::verification_timeout;
 use crate::verify::{
-    apply_header_body_templates, body_indicates_error, build_request_for_step, evaluate_success,
-    execute_and_read_response, extract_metadata, resolved_client_for_url, RequestBuildResult,
-    VerificationAttempt,
+    RequestBuildResult, VerificationAttempt, apply_header_body_templates, body_indicates_error,
+    build_request_for_step, evaluate_success, execute_and_read_response, extract_metadata,
+    resolved_client_for_url,
 };
 
 pub(crate) async fn verify_multi_step(
@@ -103,7 +103,7 @@ pub(crate) async fn verify_multi_step(
             &current_companions,
         );
 
-        let service = auth_service_name(&step.auth).unwrap_or("unknown"); // LAW10: absent name/label => display default; reporting-only, recall-safe
+        let service = rate_limit_service_name(spec, &step.auth);
         crate::rate_limit::get_rate_limiter().wait(service).await;
 
         let response = match execute_and_read_response(request).await {
@@ -156,10 +156,13 @@ pub(crate) async fn verify_multi_step(
     }
 }
 
-fn auth_service_name(auth: &keyhog_core::AuthSpec) -> Option<&str> {
+pub(crate) fn rate_limit_service_name<'a>(
+    spec: &'a keyhog_core::VerifySpec,
+    auth: &'a keyhog_core::AuthSpec,
+) -> &'a str {
     match auth {
-        keyhog_core::AuthSpec::AwsV4 { service, .. } => Some(service),
-        _ => None,
+        keyhog_core::AuthSpec::AwsV4 { service, .. } => service,
+        _ => spec.service.as_str(),
     }
 }
 

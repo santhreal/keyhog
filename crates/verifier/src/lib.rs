@@ -17,18 +17,18 @@ pub mod ssrf;
 mod verify;
 
 use std::collections::HashMap;
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 
 use dashmap::DashMap;
 use keyhog_core::{
-    redact, DedupedMatch, DetectorSpec, SensitiveString, VerificationResult, VerifiedFinding,
+    DedupedMatch, DetectorSpec, SensitiveString, VerificationResult, VerifiedFinding, redact,
 };
 
 // Re-export dedup types from core so existing consumers (`use keyhog_verifier::DedupedMatch`)
 // continue to work without source changes.
-pub use keyhog_core::{dedup_matches, DedupScope};
+pub use keyhog_core::{DedupScope, dedup_matches};
 use reqwest::{Client, Error as ReqwestError};
 use thiserror::Error;
 use tokio::sync::{Notify, Semaphore};
@@ -493,6 +493,11 @@ pub mod testing {
             Output = (keyhog_core::VerificationResult, HashMap<String, String>),
         > + Send;
         fn retry_delay_bounds_for_attempt(&self, attempt: usize, base_delay_ms: u64) -> (u64, u64);
+        fn multi_step_rate_limit_service_name<'a>(
+            &self,
+            spec: &'a keyhog_core::VerifySpec,
+            auth: &'a keyhog_core::AuthSpec,
+        ) -> &'a str;
         fn evaluate_success_for_test(
             &self,
             spec: &keyhog_core::SuccessSpec,
@@ -731,6 +736,14 @@ pub mod testing {
 
         fn retry_delay_bounds_for_attempt(&self, attempt: usize, base_delay_ms: u64) -> (u64, u64) {
             crate::verify::retry_delay_bounds_for_attempt(attempt, base_delay_ms)
+        }
+
+        fn multi_step_rate_limit_service_name<'a>(
+            &self,
+            spec: &'a keyhog_core::VerifySpec,
+            auth: &'a keyhog_core::AuthSpec,
+        ) -> &'a str {
+            crate::verify::multi_step_rate_limit_service_name(spec, auth)
         }
 
         fn evaluate_success_for_test(

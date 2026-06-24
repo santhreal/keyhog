@@ -6,6 +6,7 @@ use keyhog_core::{
     AuthSpec, DedupedMatch, DetectorSpec, HttpMethod, MatchLocation, Severity, StepSpec,
     SuccessSpec, VerificationResult, VerifySpec,
 };
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 use keyhog_verifier::{VerificationEngine, VerifyConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -66,6 +67,42 @@ fn engine_for(spec: DetectorSpec) -> VerificationEngine {
         },
     )
     .unwrap()
+}
+
+#[test]
+fn multi_step_non_aws_auth_uses_verify_service_rate_bucket() {
+    let spec = VerifySpec {
+        service: "service-a".into(),
+        ..Default::default()
+    };
+    let auth = AuthSpec::None;
+
+    assert_eq!(
+        TestApi.multi_step_rate_limit_service_name(&spec, &auth),
+        "service-a",
+        "non-AWS multi-step verification must not collapse into an unknown shared limiter bucket"
+    );
+}
+
+#[test]
+fn multi_step_aws_auth_uses_sigv4_service_rate_bucket() {
+    let spec = VerifySpec {
+        service: "aws-detector-family".into(),
+        ..Default::default()
+    };
+    let auth = AuthSpec::AwsV4 {
+        access_key: "{{match}}".into(),
+        secret_key: "{{companion.secret}}".into(),
+        region: "us-east-1".into(),
+        service: "sts".into(),
+        session_token: None,
+    };
+
+    assert_eq!(
+        TestApi.multi_step_rate_limit_service_name(&spec, &auth),
+        "sts",
+        "SigV4 multi-step verification must rate-limit by the signed AWS service"
+    );
 }
 
 #[tokio::test]
