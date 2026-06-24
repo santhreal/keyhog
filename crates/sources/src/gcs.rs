@@ -139,7 +139,7 @@ fn collect_gcs_chunks(
     let bucket = validate_bucket_name(bucket)?;
     let endpoint = validate_endpoint(endpoint)?;
     let client = crate::cloud::blocking_client("GCS", http)?;
-    let bearer = resolve_gcs_auth(&endpoint, allow_token_forward);
+    let bearer = resolve_gcs_auth(&endpoint, allow_token_forward)?;
     let mut page_token = None::<String>;
     let mut chunks = Vec::new();
     let mut coverage = crate::cloud::CloudListingCoverage::new("gcs", "objects", max_objects);
@@ -187,7 +187,10 @@ fn collect_gcs_chunks(
     Ok(chunks)
 }
 
-fn resolve_gcs_auth(endpoint: &str, allow_token_forward: bool) -> Option<String> {
+fn resolve_gcs_auth(
+    endpoint: &str,
+    allow_token_forward: bool,
+) -> Result<Option<String>, SourceError> {
     gcs_bearer_token(endpoint, allow_token_forward)
 }
 
@@ -401,17 +404,43 @@ pub(crate) fn endpoint_is_google(endpoint: &str) -> bool {
     crate::cloud::host_matches_domain_ascii_ci(host, "googleapis.com")
 }
 
-fn gcs_bearer_token(endpoint: &str, allow_token_forward: bool) -> Option<String> {
-    let token = std::env::var("GOOGLE_OAUTH_ACCESS_TOKEN")
-        .or_else(|_| std::env::var("GCS_BEARER_TOKEN"))
-        .ok()?; // LAW10: absent bearer env is an intended default for anonymous GCS; listing/fetch failures still surface normally.
+fn gcs_bearer_token(
+    endpoint: &str,
+    allow_token_forward: bool,
+) -> Result<Option<String>, SourceError> {
+    let Some((env_name, token)) = (match read_gcs_bearer_env("GOOGLE_OAUTH_ACCESS_TOKEN")? {
+        Some(token) => Some(("GOOGLE_OAUTH_ACCESS_TOKEN", token)),
+        None => read_gcs_bearer_env("GCS_BEARER_TOKEN")?.map(|token| ("GCS_BEARER_TOKEN", token)),
+    }) else {
+        return Ok(None);
+    };
+    if token.trim().is_empty() {
+        return Err(SourceError::Other(format!(
+            "{env_name} is set but empty; unset it for anonymous GCS access or provide a non-empty bearer token"
+        )));
+    }
+    if token.chars().any(char::is_control) {
+        return Err(SourceError::Other(format!(
+            "{env_name} contains control characters; provide a single-line bearer token"
+        )));
+    }
     if endpoint_is_google(endpoint) || crate::cloud::credential_forward_allowed(allow_token_forward)
     {
-        return Some(token);
+        return Ok(Some(token));
     }
     tracing::warn!(
         endpoint,
         "GCS bearer token present but endpoint is not googleapis.com; refusing to forward. Pass the explicit GCS token-forwarding flag only for endpoints you trust."
     );
-    None
+    Ok(None)
+}
+
+fn read_gcs_bearer_env(name: &'static str) -> Result<Option<String>, SourceError> {
+    match std::env::var(name) {
+        Ok(token) => Ok(Some(token)),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => Err(SourceError::Other(format!(
+            "{name} is not valid Unicode; provide a single-line bearer token"
+        ))),
+    }
 }

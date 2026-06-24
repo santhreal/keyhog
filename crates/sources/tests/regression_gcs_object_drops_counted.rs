@@ -372,3 +372,72 @@ fn gcs_token_forward_opt_in_ignores_ambient_env() {
         "explicit caller opt-in must enable forwarding"
     );
 }
+
+#[test]
+fn empty_gcs_bearer_env_fails_before_listing() {
+    let _guard = counter_guard();
+    let saved_google = std::env::var("GOOGLE_OAUTH_ACCESS_TOKEN").ok();
+    let saved_gcs = std::env::var("GCS_BEARER_TOKEN").ok();
+    struct Restore {
+        google: Option<String>,
+        gcs: Option<String>,
+    }
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.google {
+                    Some(value) => std::env::set_var("GOOGLE_OAUTH_ACCESS_TOKEN", value),
+                    None => std::env::remove_var("GOOGLE_OAUTH_ACCESS_TOKEN"),
+                }
+                match &self.gcs {
+                    Some(value) => std::env::set_var("GCS_BEARER_TOKEN", value),
+                    None => std::env::remove_var("GCS_BEARER_TOKEN"),
+                }
+            }
+        }
+    }
+    let _restore = Restore {
+        google: saved_google,
+        gcs: saved_gcs,
+    };
+
+    unsafe {
+        std::env::set_var("GOOGLE_OAUTH_ACCESS_TOKEN", " \t ");
+        std::env::remove_var("GCS_BEARER_TOKEN");
+    }
+
+    let server = httpmock::MockServer::start();
+    let list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o"));
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(listing(&object("config.txt", 40)));
+    });
+
+    let rows: Vec<_> = TestApi
+        .gcs_source_with_endpoint(BUCKET, server.url(""))
+        .chunks()
+        .collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "bad explicit GCS auth config must surface one source error"
+    );
+    let err = rows[0]
+        .as_ref()
+        .expect_err("empty bearer env must not be treated as anonymous or sent");
+    assert!(
+        err.to_string()
+            .contains("GOOGLE_OAUTH_ACCESS_TOKEN is set but empty")
+            && err
+                .to_string()
+                .contains("unset it for anonymous GCS access"),
+        "error must name the bad env var and the fix; got {err}"
+    );
+    assert_eq!(
+        list.calls(),
+        0,
+        "invalid explicit auth config must fail before issuing GCS requests"
+    );
+}
