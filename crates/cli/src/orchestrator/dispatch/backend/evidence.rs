@@ -3,7 +3,6 @@
 use keyhog_core::RawMatch;
 use keyhog_scanner::hw_probe::ScanBackend;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::time::Duration;
 
 use super::{AUTOROUTE_CALIBRATION_TRIALS, AUTOROUTE_GPU_WARM_TRIALS};
@@ -354,24 +353,24 @@ impl TimingConfidenceInterval {
     }
 }
 
-pub(super) type CanonicalMatch = (
+pub(super) type CanonicalMatch<'a> = (
     usize,
-    Arc<str>,
+    &'a str,
     keyhog_core::CredentialHash,
-    Option<Arc<str>>,
+    Option<&'a str>,
     Option<usize>,
     usize,
 );
 
-pub(super) fn canonical_matches(matches: &[Vec<RawMatch>]) -> Vec<CanonicalMatch> {
+pub(super) fn canonical_matches(matches: &[Vec<RawMatch>]) -> Vec<CanonicalMatch<'_>> {
     let mut out = Vec::new();
     for (chunk_idx, chunk_matches) in matches.iter().enumerate() {
         for m in chunk_matches {
             out.push((
                 chunk_idx,
-                m.detector_id.clone(),
+                m.detector_id.as_ref(),
                 m.credential_hash,
-                m.location.file_path.clone(),
+                m.location.file_path.as_deref(),
                 m.location.line,
                 m.location.offset,
             ));
@@ -381,14 +380,14 @@ pub(super) fn canonical_matches(matches: &[Vec<RawMatch>]) -> Vec<CanonicalMatch
     out
 }
 
-pub(super) fn canonical_match_digest(matches: &[CanonicalMatch]) -> u64 {
+pub(super) fn canonical_match_digest(matches: &[CanonicalMatch<'_>]) -> u64 {
     let mut h = crate::stable_hash::StableHasher::new("autoroute-correctness-digest");
     h.field_usize("matches.len", matches.len());
     for (chunk_idx, detector_id, credential_hash, file_path, line, offset) in matches {
         h.field_usize("match.chunk_idx", *chunk_idx);
-        h.field_str("match.detector_id", detector_id.as_ref());
+        h.field_str("match.detector_id", detector_id);
         h.field_bytes("match.credential_hash", credential_hash.as_bytes());
-        h.field_option_str("match.file_path", file_path.as_deref());
+        h.field_option_str("match.file_path", *file_path);
         h.field_option_usize("match.line", *line);
         h.field_usize("match.offset", *offset);
     }

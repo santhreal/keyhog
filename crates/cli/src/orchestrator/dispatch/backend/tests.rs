@@ -1601,7 +1601,7 @@ fn autoroute_reference_inconsistency_aborts_calibration_contract() {
     assert!(
         calibration.contains("fn measure_reference_simd(")
             && calibration.contains(
-                "Result<(Vec<CanonicalMatch>, BackendTimingEvidence), AutorouteRoutingError>"
+                "Result<(Vec<Vec<keyhog_core::RawMatch>>, BackendTimingEvidence), AutorouteRoutingError>"
             )
             && calibration
                 .contains("return Err(AutorouteRoutingError::inconsistent_reference_backend("),

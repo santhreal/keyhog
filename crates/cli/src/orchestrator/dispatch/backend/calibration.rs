@@ -7,7 +7,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::evidence::{
     canonical_match_digest, canonical_matches, gpu_cold_warm_route_evidence,
-    selected_backend_margin_ns, AutorouteDecision, BackendTimingEvidence, CanonicalMatch,
+    selected_backend_margin_ns, AutorouteDecision, BackendTimingEvidence,
 };
 use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS};
 
@@ -20,12 +20,16 @@ pub(super) fn calibrate_fastest_correct_backend(
 ) -> Result<AutorouteDecision, AutorouteRoutingError> {
     let sample_bytes = calibration_sample_bytes(sample)?;
 
-    let (reference_key, simd_timing) = measure_reference_simd(scanner, sample)?;
+    let (reference_matches, simd_timing) = measure_reference_simd(scanner, sample)?;
     let mut candidates = vec![(ScanBackend::SimdCpu, simd_timing.best_ns)];
     let mut best = (ScanBackend::SimdCpu, simd_timing.best_ns);
 
-    let cpu_timing =
-        measure_candidate_backend(scanner, sample, ScanBackend::CpuFallback, &reference_key);
+    let cpu_timing = measure_candidate_backend(
+        scanner,
+        sample,
+        ScanBackend::CpuFallback,
+        &reference_matches,
+    );
     if let Some(cpu_timing) = cpu_timing.clone() {
         if cpu_timing.best_ns < best.1 {
             best = (ScanBackend::CpuFallback, cpu_timing.best_ns);
@@ -40,7 +44,7 @@ pub(super) fn calibrate_fastest_correct_backend(
     let gpu_candidate_allowed = autoroute_gpu && hw_caps.gpu_available && !hw_caps.gpu_is_software;
     if gpu_candidate_allowed {
         if let Some(measured_gpu_timing) =
-            measure_candidate_backend(scanner, sample, ScanBackend::Gpu, &reference_key)
+            measure_candidate_backend(scanner, sample, ScanBackend::Gpu, &reference_matches)
         {
             if let Some((cold_ns, warm_timing, route_ns)) =
                 gpu_cold_warm_route_evidence(&measured_gpu_timing)
@@ -69,7 +73,7 @@ pub(super) fn calibrate_fastest_correct_backend(
             "system clock is before the UNIX epoch ({error})"
         ))
     })?;
-    let correctness_digest = canonical_match_digest(&reference_key);
+    let correctness_digest = canonical_match_digest(&canonical_matches(&reference_matches));
 
     tracing::info!(
         target: "keyhog::routing",
@@ -123,7 +127,7 @@ pub(super) fn calibration_sample_bytes(sample: &[Chunk]) -> Result<u64, Autorout
 fn measure_reference_simd(
     scanner: &CompiledScanner,
     sample: &[Chunk],
-) -> Result<(Vec<CanonicalMatch>, BackendTimingEvidence), AutorouteRoutingError> {
+) -> Result<(Vec<Vec<keyhog_core::RawMatch>>, BackendTimingEvidence), AutorouteRoutingError> {
     scanner.clear_fragment_cache();
     let (reference, first_dur) = timed(|| scanner.scan_coalesced(sample));
     let reference_key = canonical_matches(&reference);
@@ -156,15 +160,16 @@ fn measure_reference_simd(
             "reference SIMD timing evidence was invalid",
         ));
     }
-    Ok((reference_key, timing))
+    Ok((reference, timing))
 }
 
 fn measure_candidate_backend(
     scanner: &CompiledScanner,
     sample: &[Chunk],
     backend: ScanBackend,
-    reference_key: &[CanonicalMatch],
+    reference_matches: &[Vec<keyhog_core::RawMatch>],
 ) -> Option<BackendTimingEvidence> {
+    let reference_key = canonical_matches(reference_matches);
     let mut durations = Vec::with_capacity(AUTOROUTE_CALIBRATION_TRIALS);
     for _ in 0..AUTOROUTE_CALIBRATION_TRIALS {
         scanner.clear_fragment_cache();
