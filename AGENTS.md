@@ -5,7 +5,12 @@
 - Work on `main` unless the user explicitly asks for another branch.
 - Read the code before edits. Don’t invent behavior from memory.
 - Keep changes scoped; do not revert unrelated local edits.
-- Never use subagents, local workers, or “parallel assistant” workflows in this repo. One Codex thread owns implementation, audit, verification, and documentation.
+- Do not use native Codex workers, `codex exec`, Cursor Agent, Gemini CLI, Kimi, OpenCode, Copilot audit, `codex-agents`, dispatch MCP, or any other subagent/worker for implementation, audit, verification, or documentation.
+- EXCEPTION: the `gemini-spawn` MCP is the only sanctioned off-thread work path. Use it frequently for bounded, scoped read-only audits, diff reviews, test-gap hunts, organization scans, naming checks, silent-fallback hunts, failing-gate investigations, and lead discovery while the main Codex thread keeps implementing locally.
+- Every Gemini MCP call that accepts a timeout, including spawn, batch, review, and result collection, must explicitly set `timeout_seconds >= 3600`. Never rely on Gemini defaults and never pass a shorter timeout for quick checks.
+- Use Gemini asynchronously by default. Launch scoped jobs, continue local work immediately, and collect results later with nonblocking polls. Do not wait synchronously unless the next local edit, command, or commit genuinely depends on that exact result.
+- Prefer many narrow Gemini jobs and reviews over one broad job. On substantial repository work, start at least two independent jobs or one batch once the first concrete file set is known, then add more scoped reviews as the diff, tests, or plan surface changes.
+- Gemini output is untrusted context until reviewed locally. One Codex thread still owns integration, edits, tests, commits, and final judgment.
 - Do not add unnecessary runtime overrides in source code. Prefer detector and data/config surfaces for behavior.
 - Never log secrets in stdout/stderr.
 - Keep existing module patterns unless a migration requires breaking design.

@@ -41,3 +41,34 @@ fn filesystem_archive_4x_budget_in_source() {
         );
     }
 }
+
+#[test]
+fn archive_entry_over_cap_skips_are_operator_visible() {
+    let archive = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/filesystem/extract/archive.rs"
+    ))
+    .expect("archive.rs");
+    assert!(
+        archive.contains("fn emit_archive_entry_over_cap_error(")
+            && archive.contains("failed to scan {kind}")
+            && archive.contains("entry was not scanned")
+            && archive.contains("exceeds per-file cap"),
+        "archive over-cap entry reporter must return an explicit SourceError"
+    );
+
+    for relative in [
+        "/src/filesystem/extract/archive/zip_scan.rs",
+        "/src/filesystem/extract/archive/zip_scan/duplicates.rs",
+    ] {
+        let src = std::fs::read_to_string(format!("{}{}", env!("CARGO_MANIFEST_DIR"), relative))
+            .unwrap_or_else(|error| panic!("failed to read {relative}: {error}"));
+        assert!(
+            src.contains("SourceSkipEvent::OverMaxSize")
+                && src.matches("emit_archive_entry_over_cap_error(").count() >= 2
+                && src.contains("\"uncompressed\"")
+                && src.contains("\"decoded\""),
+            "{relative} must report advertised-size and decoded-size over-cap ZIP entries through the shared visible error path"
+        );
+    }
+}

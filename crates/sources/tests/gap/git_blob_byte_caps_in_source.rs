@@ -19,9 +19,10 @@ fn git_blob_byte_caps_in_source() {
         "Git source caps must be owned by SourceLimits"
     );
     assert!(
-        source.contains("git_blob_bytes")
-            && source.contains("git_total_bytes")
-            && source.contains("git_chunk_count"),
+        source.contains("limits.git_blob_bytes")
+            && source.contains("limits.git_chunk_count")
+            && source.contains("git_history_cap_status(total_bytes, chunk_count, limits)")
+            && source.contains("git_history_cap_status(*total_bytes, *chunk_count, self.limits)"),
         "Git blob source must use resolved SourceLimits"
     );
 
@@ -35,7 +36,35 @@ fn git_blob_byte_caps_in_source() {
             src.contains("git_blob_bytes_limit_usize(limits)") && src.contains("hunk_byte_cap"),
             "{rel} must use the shared git_blob_bytes hunk cap"
         );
+        assert!(
+            src.contains("git_history_cap_status(total_bytes, chunk_count, limits)"),
+            "{rel} must enforce SourceLimits::git_total_bytes and SourceLimits::git_chunk_count before continuing history/diff enumeration"
+        );
     }
+
+    let diff = std::fs::read_to_string(root.join("diff.rs")).expect("git/diff.rs");
+    assert!(
+        diff.contains("\"git diff source\"")
+            && diff.contains("\"remaining changed lines\"")
+            && diff.contains("record_git_cap_once("),
+        "git diff aggregate cap hits must emit an operator-visible truncation error, not silently stop"
+    );
+
+    let history = std::fs::read_to_string(root.join("history.rs")).expect("git/history.rs");
+    assert!(
+        history.contains("record_git_history_cap_once(cap, &mut aggregate_cap_reported)"),
+        "git history aggregate cap hits must emit the shared operator-visible truncation error"
+    );
+
+    let git_mod = std::fs::read_to_string(root.join("mod.rs")).expect("git/mod.rs");
+    assert!(
+        git_mod.contains("git source reached aggregate byte cap; remaining work was NOT scanned")
+            && git_mod
+                .contains("git source reached aggregate chunk cap; remaining work was NOT scanned")
+            && git_mod.contains("crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated)")
+            && git_mod.contains("were not scanned"),
+        "shared git cap reporter must warn, count partial coverage, and return an explicit SourceError"
+    );
 }
 
 #[cfg(not(feature = "git"))]
