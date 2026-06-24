@@ -149,7 +149,8 @@ fn source_extract_pdf_and_binary_hot_paths_are_bounded() {
             && capped_read.contains("Vec::with_capacity(capacity)")
             && capped_read.contains("cap.checked_add(1).unwrap_or(u64::MAX)")
             && capped_read.contains("usize::try_from(cap).unwrap_or(usize::MAX)")
-            && capped_read.contains(".min(max_addressable_capacity)"),
+            && capped_read.contains(".min(max_addressable_capacity)")
+            && capped_read.contains(".min(MAX_PREALLOCATED_READ_BYTES)"),
         "binary capped reads must use the shared capped-read owner and clamp sentinel/capacity arithmetic safely"
     );
     assert!(

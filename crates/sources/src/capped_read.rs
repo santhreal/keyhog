@@ -5,6 +5,8 @@ pub(crate) struct CappedRead {
     pub(crate) truncated: bool,
 }
 
+const MAX_PREALLOCATED_READ_BYTES: u64 = 64 * 1024;
+
 pub(crate) fn read_to_cap(
     reader: impl Read,
     cap: u64,
@@ -16,7 +18,8 @@ pub(crate) fn read_to_cap(
     let capacity = capacity_hint
         .unwrap_or(0) // LAW10: absent capacity hint only disables Vec preallocation; read_limit still enforces the byte cap
         .min(read_limit)
-        .min(max_addressable_capacity) as usize;
+        .min(max_addressable_capacity)
+        .min(MAX_PREALLOCATED_READ_BYTES) as usize;
 
     let mut bytes = Vec::with_capacity(capacity);
     reader.take(read_limit).read_to_end(&mut bytes)?;
@@ -60,6 +63,14 @@ mod tests {
         let read = read_to_cap(&b"abc"[..], 3, Some(u64::MAX)).expect("read");
 
         assert_eq!(read.bytes, b"abc");
+        assert!(!read.truncated);
+    }
+
+    #[test]
+    fn read_to_cap_clamps_unlimited_cap_and_huge_capacity_hint() {
+        let read = read_to_cap(std::io::empty(), u64::MAX, Some(u64::MAX)).expect("read");
+
+        assert!(read.bytes.is_empty());
         assert!(!read.truncated);
     }
 }
