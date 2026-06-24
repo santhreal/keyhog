@@ -197,12 +197,13 @@ fn stream_added_lines(
                 done = true;
                 return None;
             };
-            match scanner.next_chunk(
+            match scanner.next_row(
                 &mut total_bytes,
                 &mut chunk_count,
                 &mut aggregate_cap_reported,
             ) {
-                Ok(Some(chunk)) => return Some(Ok(chunk)),
+                Ok(Some(Ok(chunk))) => return Some(Ok(chunk)),
+                Ok(Some(Err(error))) => return Some(Err(error)),
                 Ok(None) => {
                     done = true;
                     return None;
@@ -264,12 +265,13 @@ fn stream_added_lines(
                                     done = true;
                                     return None;
                                 };
-                                match scanner.next_chunk(
+                                match scanner.next_row(
                                     &mut total_bytes,
                                     &mut chunk_count,
                                     &mut aggregate_cap_reported,
                                 ) {
-                                    Ok(Some(chunk)) => return Some(Ok(chunk)),
+                                    Ok(Some(Ok(chunk))) => return Some(Ok(chunk)),
+                                    Ok(Some(Err(error))) => return Some(Err(error)),
                                     Ok(None) => {
                                         done = true;
                                         return None;
@@ -443,6 +445,7 @@ struct UntrackedWorktreeChunks {
     date: String,
     limits: crate::SourceLimits,
     paths: Option<std::vec::IntoIter<String>>,
+    stopped: bool,
 }
 
 impl UntrackedWorktreeChunks {
@@ -462,15 +465,19 @@ impl UntrackedWorktreeChunks {
             date,
             limits,
             paths: None,
+            stopped: false,
         }
     }
 
-    fn next_chunk(
+    fn next_row(
         &mut self,
         total_bytes: &mut usize,
         chunk_count: &mut usize,
         aggregate_cap_reported: &mut bool,
-    ) -> Result<Option<Chunk>, SourceError> {
+    ) -> Result<Option<Result<Chunk, SourceError>>, SourceError> {
+        if self.stopped {
+            return Ok(None);
+        }
         if self.paths.is_none() {
             self.paths =
                 Some(list_untracked_worktree_paths(&self.repo_arg, self.limits)?.into_iter());
@@ -490,21 +497,27 @@ impl UntrackedWorktreeChunks {
                     "git diff source",
                     "remaining changed lines",
                 ) {
-                    return Err(error);
+                    self.stopped = true;
+                    return Ok(Some(Err(error)));
                 }
+                self.stopped = true;
                 return Ok(None);
             }
-            if let Some(chunk) = read_untracked_worktree_chunk(
+            match read_untracked_worktree_chunk(
                 &self.repo_root,
                 &rel,
                 &self.metadata_commit,
                 &self.author,
                 &self.date,
                 self.limits,
-            )? {
-                *total_bytes = total_bytes.saturating_add(chunk.data.as_ref().len());
-                *chunk_count = chunk_count.saturating_add(1);
-                return Ok(Some(chunk));
+            ) {
+                Ok(Some(chunk)) => {
+                    *total_bytes = total_bytes.saturating_add(chunk.data.as_ref().len());
+                    *chunk_count = chunk_count.saturating_add(1);
+                    return Ok(Some(Ok(chunk)));
+                }
+                Ok(None) => {}
+                Err(error) => return Ok(Some(Err(error))),
             }
         }
         Ok(None)

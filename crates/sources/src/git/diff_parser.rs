@@ -88,11 +88,43 @@ impl UnifiedDiffParser {
 }
 
 fn malformed_diff_line_error(source_type: &str, line: &[u8], label: &str) -> SourceError {
-    let line = String::from_utf8_lossy(line);
+    let line = diff_line_excerpt(line);
     SourceError::Other(format!(
         "{source_type} output contains malformed unified-diff {label} {line:?}; \
          refusing to treat it as ordinary diff content because that would hide changed lines"
     ))
+}
+
+fn diff_line_excerpt(line: &[u8]) -> String {
+    const MAX: usize = 96;
+    let mut output = String::with_capacity(line.len().min(MAX).saturating_mul(4));
+    for &byte in line.iter().take(MAX) {
+        match byte {
+            b'\n' => output.push_str("\\n"),
+            b'\r' => output.push_str("\\r"),
+            b'\t' => output.push_str("\\t"),
+            b'\\' => output.push_str("\\\\"),
+            b'"' => output.push_str("\\\""),
+            0x20..=0x7e => output.push(byte as char),
+            other => {
+                output.push_str("\\x");
+                output.push(hex_digit(other >> 4));
+                output.push(hex_digit(other & 0x0f));
+            }
+        }
+    }
+    if line.len() > MAX {
+        output.push_str("...");
+    }
+    output
+}
+
+fn hex_digit(nibble: u8) -> char {
+    match nibble {
+        0..=9 => (b'0' + nibble) as char,
+        10..=15 => (b'a' + (nibble - 10)) as char,
+        _ => '?',
+    }
 }
 
 pub(crate) fn trim_diff_line_bytes(mut line: &[u8]) -> &[u8] {

@@ -361,7 +361,16 @@ fn git_diff_yields_tracked_chunks_before_untracked_file_errors() {
         "base = true\ntracked_secret = sk-live-tracked\n",
     )
     .unwrap();
-    std::fs::write(repo_path.join("oversized-untracked.txt"), "x".repeat(4096)).unwrap();
+    std::fs::write(
+        repo_path.join("a-oversized-untracked.txt"),
+        "x".repeat(4096),
+    )
+    .unwrap();
+    std::fs::write(
+        repo_path.join("z-safe-untracked.txt"),
+        "safe_untracked_secret = sk-live-untracked\n",
+    )
+    .unwrap();
 
     let mut limits = SourceLimits::default();
     limits.git_blob_bytes = 1024;
@@ -383,9 +392,20 @@ fn git_diff_yields_tracked_chunks_before_untracked_file_errors() {
     let error = second.expect_err("untracked oversized file must surface as an error");
     let message = error.to_string();
     assert!(
-        message.contains("oversized-untracked.txt")
+        message.contains("a-oversized-untracked.txt")
             && message.contains("exceeds git_blob_bytes limit"),
         "expected untracked size-cap error after tracked chunk, got {message}"
+    );
+
+    let third = chunks
+        .next()
+        .expect("safe untracked file after a per-file untracked error should still be scanned")
+        .expect("safe untracked file must not be suppressed by earlier untracked error");
+    assert!(
+        third
+            .data
+            .contains("safe_untracked_secret = sk-live-untracked"),
+        "git-diff must continue after recoverable untracked file errors; got {third:?}"
     );
 }
 
