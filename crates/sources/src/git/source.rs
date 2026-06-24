@@ -63,6 +63,21 @@ struct UnreachableGitObjects {
     trees: VecDeque<gix::ObjectId>,
     tags: VecDeque<gix::ObjectId>,
     tree_blob_oids: HashSet<gix::ObjectId>,
+    truncated: bool,
+}
+
+impl UnreachableGitObjects {
+    fn retained_object_count(&self) -> usize {
+        self.commits.len() + self.blobs.len() + self.trees.len() + self.tags.len()
+    }
+
+    fn has_collection_capacity(&mut self, limits: crate::SourceLimits) -> bool {
+        if self.retained_object_count() < limits.git_chunk_count {
+            return true;
+        }
+        self.truncated = true;
+        false
+    }
 }
 
 type GitBlobPathKey = (gix::ObjectId, Vec<u8>);
@@ -195,14 +210,20 @@ struct GitCommitEnumerator {
     log_lines: std::io::Lines<std::io::BufReader<ChildStdout>>,
     log_done: bool,
     unreachable_loaded: bool,
+    unreachable_truncated: bool,
     unreachable_commits: VecDeque<gix::ObjectId>,
     unreachable_blobs: VecDeque<gix::ObjectId>,
     unreachable_trees: VecDeque<gix::ObjectId>,
     unreachable_tags: VecDeque<gix::ObjectId>,
+    limits: crate::SourceLimits,
 }
 
 impl GitCommitEnumerator {
-    fn new(repo_arg: String, max_commits: Option<usize>) -> Result<Self, SourceError> {
+    fn new(
+        repo_arg: String,
+        max_commits: Option<usize>,
+        limits: crate::SourceLimits,
+    ) -> Result<Self, SourceError> {
         // Get commit hashes from refs plus reflogs. `--all` alone misses deleted
         // branch reflog commits on current Git, and it also misses refs/stash on
         // some versions, so stash is added explicitly when present.
@@ -240,10 +261,12 @@ impl GitCommitEnumerator {
             log_lines,
             log_done: false,
             unreachable_loaded: false,
+            unreachable_truncated: false,
             unreachable_commits: VecDeque::new(),
             unreachable_blobs: VecDeque::new(),
             unreachable_trees: VecDeque::new(),
             unreachable_tags: VecDeque::new(),
+            limits,
         })
     }
 
@@ -277,7 +300,9 @@ impl GitCommitEnumerator {
                 let remaining = self
                     .max_commits
                     .map(|limit| limit.saturating_sub(seen_commit_count));
-                let unreachable = collect_unreachable_objects(&self.repo_arg, remaining)?;
+                let unreachable =
+                    collect_unreachable_objects(&self.repo_arg, remaining, self.limits)?;
+                self.unreachable_truncated = unreachable.truncated;
                 self.unreachable_commits = unreachable.commits;
                 self.unreachable_blobs = unreachable.blobs;
                 self.unreachable_trees = unreachable.trees;
@@ -295,7 +320,25 @@ impl GitCommitEnumerator {
             trees: std::mem::take(&mut self.unreachable_trees),
             tags: std::mem::take(&mut self.unreachable_tags),
             tree_blob_oids: HashSet::new(),
+            truncated: false,
         }
+    }
+
+    fn take_unreachable_truncation_error(&mut self) -> Option<SourceError> {
+        if !self.unreachable_truncated {
+            return None;
+        }
+        self.unreachable_truncated = false;
+        let mut reported = false;
+        super::record_git_cap_once(
+            super::GitHistoryCap::Chunks {
+                count: self.limits.git_chunk_count,
+                cap: self.limits.git_chunk_count,
+            },
+            &mut reported,
+            "git unreachable object enumeration",
+            "remaining unreachable objects",
+        )
     }
 }
 
@@ -305,7 +348,7 @@ fn stream_git_blobs(
     limits: crate::SourceLimits,
 ) -> Result<impl Iterator<Item = Result<Chunk, SourceError>>, SourceError> {
     let repo_arg = super::validate_repo_path(repo_path)?;
-    let mut commit_ids = GitCommitEnumerator::new(repo_arg.clone(), max_commits)?;
+    let mut commit_ids = GitCommitEnumerator::new(repo_arg.clone(), max_commits, limits)?;
 
     // Open the gix repo ONCE and reuse it for every commit. The previous
     // version called `gix::open(&repo_owned)` per-commit which on a 10k-commit
@@ -359,6 +402,9 @@ fn stream_git_blobs(
                 let id = match commit_ids.next_id(seen_commits.len()) {
                     Ok(Some(id)) => id,
                     Ok(None) => {
+                        if let Some(error) = commit_ids.take_unreachable_truncation_error() {
+                            pending_errors.push_back(error);
+                        }
                         current_tree_blobs.extend(decode_tag_message_chunks(
                             &repo_handle,
                             &mut reachable_tags,
@@ -955,6 +1001,7 @@ fn parse_fsck_unreachable_object_line(line: &str) -> Option<(FsckUnreachableObje
 fn collect_unreachable_objects(
     repo_arg: &str,
     remaining_commits: Option<usize>,
+    limits: crate::SourceLimits,
 ) -> Result<UnreachableGitObjects, SourceError> {
     let mut command = Command::new(super::git_bin()?);
     command.args([
@@ -989,24 +1036,36 @@ fn collect_unreachable_objects(
                 if remaining_commits.is_some_and(|limit| out.commits.len() >= limit) {
                     continue;
                 }
+                if !out.has_collection_capacity(limits) {
+                    continue;
+                }
                 let Some(id) = parse_git_object_id_line(object_id, "commit")? else {
                     continue;
                 };
                 out.commits.push_back(id);
             }
             FsckUnreachableObjectKind::Blob => {
+                if !out.has_collection_capacity(limits) {
+                    continue;
+                }
                 let Some(id) = parse_git_object_id_line(object_id, "blob")? else {
                     continue;
                 };
                 out.blobs.push_back(id);
             }
             FsckUnreachableObjectKind::Tree => {
+                if !out.has_collection_capacity(limits) {
+                    continue;
+                }
                 let Some(id) = parse_git_object_id_line(object_id, "tree")? else {
                     continue;
                 };
                 out.trees.push_back(id);
             }
             FsckUnreachableObjectKind::Tag => {
+                if !out.has_collection_capacity(limits) {
+                    continue;
+                }
                 let Some(id) = parse_git_object_id_line(object_id, "tag")? else {
                     continue;
                 };

@@ -1494,6 +1494,38 @@ fn secret_only_in_unreachable_loose_blob_is_found() {
 }
 
 #[test]
+fn unreachable_loose_blob_enumeration_respects_git_chunk_count() {
+    let (_t, repo) = init_repo();
+    commit_file(&repo, "main.txt", b"base=1\n", "base on main");
+
+    for i in 0..4 {
+        let secret = format!("K=ghp_unreachableCapSecret{i:024}\n");
+        write_loose_blob(&repo, secret.as_bytes());
+    }
+
+    let limits = SourceLimits {
+        git_chunk_count: 2,
+        ..SourceLimits::default()
+    };
+    let rows: Vec<Result<Chunk, SourceError>> = GitSource::new(repo.clone())
+        .with_limits(limits)
+        .chunks()
+        .collect();
+
+    let errors: Vec<String> = rows
+        .iter()
+        .filter_map(|row| row.as_ref().err().map(ToString::to_string))
+        .collect();
+    assert!(
+        errors.iter().any(|message| {
+            message.contains("git unreachable object enumeration was truncated")
+                && message.contains("remaining unreachable objects were not scanned")
+        }),
+        "unreachable object enumeration must surface the collection cap, errors={errors:?}"
+    );
+}
+
+#[test]
 fn secret_in_unreachable_tree_keeps_tree_relative_path() {
     let (_t, repo) = init_repo();
     commit_file(&repo, "main.txt", b"base=1\n", "base on main");
