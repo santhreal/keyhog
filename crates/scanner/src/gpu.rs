@@ -243,8 +243,11 @@ pub(crate) fn batch_ml_inference_with_timeout(
     }
 }
 
-/// Check if GPU acceleration is available.
 /// Return `true` when GPU scoring support is available in this build/runtime.
+///
+/// Honors the resolved runtime policy before touching the adapter path. A
+/// caller asking after `--no-gpu` must get the same cheap "not available"
+/// answer as `gpu_probe()` instead of triggering a wgpu adapter probe.
 ///
 /// # Examples
 ///
@@ -253,6 +256,9 @@ pub(crate) fn batch_ml_inference_with_timeout(
 /// let _ = gpu_available();
 /// ```
 pub fn gpu_available() -> bool {
+    if gpu_disabled_by_policy() {
+        return false;
+    }
     #[cfg(feature = "gpu")]
     {
         backend::get_gpu().is_some()
@@ -264,6 +270,9 @@ pub fn gpu_available() -> bool {
 }
 
 pub(crate) fn gpu_runtime_identity() -> Option<String> {
+    if gpu_disabled_by_policy() {
+        return None;
+    }
     #[cfg(feature = "gpu")]
     {
         backend::gpu_runtime_identity()
