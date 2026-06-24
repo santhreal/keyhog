@@ -55,6 +55,9 @@ pub(super) fn extract_rar_chunks(
                 let entry_name = entry.name_lossy();
                 let entry_size = u64::from(entry.header.unp_size);
                 if !state.entry_should_scan(&entry_name, entry_size, entry.is_directory(), emit) {
+                    if state.consumer_stopped {
+                        return;
+                    }
                     if state.archive_truncated {
                         break;
                     }
@@ -91,6 +94,9 @@ pub(super) fn extract_rar_chunks(
                 let entry_name = entry.name_lossy();
                 let entry_size = entry.unp_size;
                 if !state.entry_should_scan(&entry_name, entry_size, entry.is_directory(), emit) {
+                    if state.consumer_stopped {
+                        return;
+                    }
                     if state.archive_truncated {
                         break;
                     }
@@ -127,6 +133,9 @@ pub(super) fn extract_rar_chunks(
                 let entry_name = entry.name_lossy();
                 let entry_size = entry.unpacked_size;
                 if !state.entry_should_scan(&entry_name, entry_size, entry.is_directory(), emit) {
+                    if state.consumer_stopped {
+                        return;
+                    }
                     if state.archive_truncated {
                         break;
                     }
@@ -220,7 +229,7 @@ impl<'a> RarExtractionState<'a> {
                 reason,
                 "skipping unsafe RAR entry name"
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            self.report_unreadable_entry(entry_name, reason, emit);
             return false;
         }
         if entry_size > self.per_entry_cap {

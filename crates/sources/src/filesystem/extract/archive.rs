@@ -274,6 +274,18 @@ pub(super) fn emit_archive_unreadable_error(
     ))))
 }
 
+pub(super) fn emit_archive_entry_error(
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+    kind: &str,
+    archive_display: &str,
+    entry_name: &str,
+    reason: impl Display,
+) -> bool {
+    emit(Err(SourceError::Other(format!(
+        "failed to scan {kind} '{archive_display}//{entry_name}': {reason}; entry was not scanned"
+    ))))
+}
+
 pub(super) fn chunk_from_archive_content(
     archive_display: &str,
     entry_name: &str,

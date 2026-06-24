@@ -4,6 +4,18 @@ use sevenz_rust2::{ArchiveEntry, ArchiveWriter};
 use std::io::{Cursor, Write};
 use xz2::write::XzEncoder;
 
+pub fn zip_with_entries(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let cursor = Cursor::new(Vec::new());
+    let mut writer = zip::ZipWriter::new(cursor);
+    let options =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    for (name, content) in entries {
+        writer.start_file(*name, options).expect("start zip entry");
+        writer.write_all(content).expect("write zip entry");
+    }
+    writer.finish().expect("finish zip").into_inner()
+}
+
 pub fn build_seven_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
     let cursor = Cursor::new(Vec::new());
     let mut writer = ArchiveWriter::new(cursor).expect("create 7z writer");

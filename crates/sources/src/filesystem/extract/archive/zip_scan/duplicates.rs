@@ -1,6 +1,6 @@
 use super::{
-    chunk_from_archive_content, report_archive_truncation, validate_scan_archive_entry_name,
-    zip_external_attrs_are_special,
+    chunk_from_archive_content, emit_archive_entry_error, report_archive_truncation,
+    validate_scan_archive_entry_name, zip_external_attrs_are_special,
 };
 use crate::filesystem::filter;
 use keyhog_core::{Chunk, SourceError};
@@ -81,6 +81,15 @@ pub(super) fn extract_zip_archive_from_central_entries(
                 "skipping unsafe archive entry name"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit_archive_entry_error(
+                emit,
+                "duplicate ZIP entry",
+                archive_display,
+                &entry.name,
+                reason,
+            ) {
+                return;
+            }
             continue;
         }
         if zip_external_attrs_are_special(entry.external_attrs) {
