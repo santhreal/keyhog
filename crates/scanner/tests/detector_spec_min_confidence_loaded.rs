@@ -8,6 +8,7 @@
 //! - Validates that the 47 self-declared floors (0.12-0.30) exist and are honored
 
 use keyhog_core::load_detectors;
+use keyhog_scanner::testing::detector_weak_anchor_for_test;
 use std::collections::HashMap;
 
 mod support;
@@ -56,6 +57,23 @@ fn detector_spec_min_confidence_fields_loaded() {
     assert!(
         has_mid_range,
         "expected detectors with min_confidence in range 0.25-0.30, none found"
+    );
+}
+
+#[test]
+fn tier_b_weak_anchor_override_wins_over_min_confidence() {
+    let detectors = load_detectors(&detector_dir()).expect("detectors loaded");
+    let flickr = detectors
+        .iter()
+        .find(|detector| detector.id == "flickr-api-key")
+        .expect("bundled flickr-api-key detector exists");
+    assert!(
+        flickr.min_confidence.is_some(),
+        "test fixture must cover the min_confidence precedence edge"
+    );
+    assert!(
+        detector_weak_anchor_for_test(flickr).expect("detector classification rules must be valid"),
+        "Tier-B weak_anchor classification must remain active even when a detector self-declares min_confidence"
     );
 }
 

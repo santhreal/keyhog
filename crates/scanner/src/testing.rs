@@ -671,6 +671,10 @@ pub(crate) use crate::prefix_trie::build_propagation_table;
 #[cfg(test)]
 pub(crate) use crate::suppression::detector_weak_anchor;
 
+pub fn detector_weak_anchor_for_test(spec: &keyhog_core::DetectorSpec) -> Result<bool, String> {
+    crate::suppression::detector_weak_anchor(spec)
+}
+
 #[cfg(any(feature = "simdsieve", test))]
 pub fn known_example_suppressed(
     credential: &str,
@@ -1116,7 +1120,7 @@ pub(crate) mod entropy_keywords {
 
 pub mod checksum {
     pub use crate::checksum::{
-        checksum_adjusted_confidence, validate_checksum, ChecksumResult, CHECKSUM_VALID_FLOOR,
+        CHECKSUM_VALID_FLOOR, ChecksumResult, checksum_adjusted_confidence, validate_checksum,
     };
 
     pub fn standard_crc32(data: &[u8]) -> u32 {

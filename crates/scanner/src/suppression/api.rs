@@ -424,14 +424,16 @@ pub(crate) fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> Result<b
     {
         return Ok(false);
     }
+    if crate::detector_classification::is_residual_weak_anchor(id)? {
+        return Ok(true);
+    }
     if spec.min_confidence.is_some() {
         return Ok(false);
     }
-    Ok(crate::detector_classification::is_residual_weak_anchor(id)?
-        || spec
-            .patterns
-            .iter()
-            .any(|p| has_broad_identifier_capture(&p.regex)))
+    Ok(spec
+        .patterns
+        .iter()
+        .any(|p| has_broad_identifier_capture(&p.regex)))
 }
 
 /// True if `regex` contains a capture group whose entire body is a single
