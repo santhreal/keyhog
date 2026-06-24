@@ -295,6 +295,7 @@ fn build_pinned_client(
     Client::builder()
         .timeout(timeout)
         .danger_accept_invalid_certs(insecure_tls)
+        .no_proxy()
         .no_gzip()
         .no_brotli()
         .no_zstd()

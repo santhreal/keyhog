@@ -31,3 +31,21 @@ fn proxy_resolution_has_one_mode_owner() {
         );
     }
 }
+
+#[test]
+fn dns_pinned_rebuild_neutralizes_ambient_proxy() {
+    let src = include_str!("../../../src/verify/request.rs");
+    let pinned_builder = src
+        .split("fn build_pinned_client(")
+        .nth(1)
+        .expect("request.rs must own build_pinned_client")
+        .split(".resolve_to_addrs(host, pinned_addrs)")
+        .next()
+        .expect("pinned client builder must call resolve_to_addrs");
+
+    assert!(
+        pinned_builder.contains(".no_proxy()"),
+        "DNS-pinned direct verifier client must disable ambient proxy env before \
+         resolve_to_addrs, or env proxies bypass the pinned DNS result"
+    );
+}
