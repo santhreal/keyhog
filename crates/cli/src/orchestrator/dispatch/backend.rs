@@ -10,15 +10,15 @@ use self::calibration::calibrate_fastest_correct_backend;
 use self::evidence::AutorouteDecision;
 use self::host::AutorouteHostProfile;
 use self::store::{load_autoroute_cache, save_autoroute_cache};
-use self::workload::{workload_key, WorkloadClassificationError, WorkloadKey};
+use self::workload::{WorkloadClassificationError, WorkloadKey, workload_key};
 use keyhog_core::Chunk;
-use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use keyhog_scanner::CompiledScanner;
+use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 18;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 19;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 

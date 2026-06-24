@@ -1,13 +1,13 @@
 use super::evidence::{
-    route_candidates, selected_backend_margin_ns, AutorouteDecision, BackendTimingEvidence,
+    AutorouteDecision, BackendTimingEvidence, route_candidates, selected_backend_margin_ns,
 };
 use super::host::AutorouteHostProfile;
 use super::store::{
-    load_autoroute_cache, save_autoroute_cache, AutorouteCache, AUTOROUTE_CACHE_FILE_BYTES,
+    AUTOROUTE_CACHE_FILE_BYTES, AutorouteCache, load_autoroute_cache, save_autoroute_cache,
 };
 use super::workload::{
-    autoroute_stable_bucket, autoroute_stable_density_bucket, source_class_hash, workload_key,
-    WorkloadKey,
+    WorkloadKey, autoroute_stable_bucket, autoroute_stable_density_bucket, source_class_hash,
+    workload_key,
 };
 use super::*;
 
@@ -1585,6 +1585,41 @@ fn backend_timing_evidence_rejects_empty_trial_sets_at_construction() {
     assert!(
         super::evidence::BackendTimingEvidence::from_trial_ns(Vec::new()).is_none(),
         "autoroute timing evidence must not convert an empty trial set into a zero-duration route"
+    );
+}
+
+#[test]
+fn autoroute_confidence_uses_student_t_for_small_calibration_samples() {
+    let simd_timing = super::evidence::BackendTimingEvidence::from_trial_ns(vec![
+        90, 95, 100, 100, 100, 105, 110,
+    ])
+    .expect("SIMD timing evidence");
+    let cpu_timing = super::evidence::BackendTimingEvidence::from_trial_ns(vec![
+        101, 106, 111, 111, 111, 116, 121,
+    ])
+    .expect("CPU timing evidence");
+    let decision = AutorouteDecision::from_timing_evidence(
+        ScanBackend::SimdCpu,
+        8 * 1024 * 1024,
+        1,
+        0xA11D_0B57_A11D_0B57,
+        1,
+        selected_backend_margin_ns(
+            ScanBackend::SimdCpu,
+            &[(ScanBackend::SimdCpu, 90), (ScanBackend::CpuFallback, 101)],
+        ),
+        simd_timing,
+        Some(cpu_timing),
+        None,
+        None,
+        None,
+        None,
+    );
+
+    assert!(
+        !decision.selected_backend_has_non_overlapping_confidence(ScanBackend::SimdCpu),
+        "n=7 calibration samples must use the wider Student-t interval; the old normal 1.96 \
+         multiplier made these adjacent timing distributions look falsely separated"
     );
 }
 

@@ -345,11 +345,51 @@ impl TimingConfidenceInterval {
         } else {
             0.0
         };
-        let half_width = 1.96 * variance.sqrt() / count.sqrt();
+        let half_width =
+            two_sided_95_student_t_critical(trials_ns.len()) * variance.sqrt() / count.sqrt();
         Self {
             low_ns: (mean - half_width).max(0.0).floor() as u128,
             high_ns: (mean + half_width).ceil() as u128,
         }
+    }
+}
+
+fn two_sided_95_student_t_critical(sample_count: usize) -> f64 {
+    match sample_count {
+        0 | 1 => 0.0,
+        2 => 12.706_204_736,
+        3 => 4.302_652_73,
+        4 => 3.182_446_305,
+        5 => 2.776_445_105,
+        6 => 2.570_581_836,
+        7 => 2.446_911_851,
+        8 => 2.364_624_252,
+        9 => 2.306_004_135,
+        10 => 2.262_157_163,
+        11 => 2.228_138_852,
+        12 => 2.200_985_16,
+        13 => 2.178_812_83,
+        14 => 2.160_368_656,
+        15 => 2.144_786_688,
+        16 => 2.131_449_546,
+        17 => 2.119_905_299,
+        18 => 2.109_815_578,
+        19 => 2.100_922_04,
+        20 => 2.093_024_054,
+        21 => 2.085_963_447,
+        22 => 2.079_613_845,
+        23 => 2.073_873_068,
+        24 => 2.068_657_61,
+        25 => 2.063_898_562,
+        26 => 2.059_538_553,
+        27 => 2.055_529_439,
+        28 => 2.051_830_516,
+        29 => 2.048_407_142,
+        30 => 2.045_229_642,
+        31 => 2.042_272_456,
+        // For larger future trial counts, keep the interval conservative
+        // instead of silently reverting to the narrower normal 1.96 multiplier.
+        _ => 2.042_272_456,
     }
 }
 
