@@ -242,6 +242,138 @@ mod tests {
                 && err.contains("attacker.example"),
             "origin error must name expected and actual host, got {err}"
         );
+
+        let self_hosted = ExpectedCloneOrigin {
+            host: "gitlab.internal".to_string(),
+            port: 443,
+        };
+        assert!(
+            validate_clone_url_for_origin(
+                "gitlab",
+                "https://gitlab.internal/group/repo.git",
+                &self_hosted,
+            )
+            .is_ok(),
+            "operator-configured self-hosted clone origins must not be rejected as SSRF"
+        );
+    }
+
+    #[test]
+    fn git_clone_disables_redirects_and_ambient_credential_helpers() {
+        let args = super::git_clone_args();
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["-c", "http.followRedirects=false"]),
+            "hosted git clone must disable HTTP redirects before askpass credentials are available"
+        );
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["-c", "credential.helper="]),
+            "hosted git clone must ignore ambient credential helpers and use only its scoped askpass material"
+        );
+        assert_eq!(
+            args[6..],
+            ["clone", "--depth", "1", "--quiet"],
+            "git config overrides must precede the clone subcommand"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn askpass_refuses_prompts_outside_expected_origin_without_printing_secret() {
+        let auth =
+            super::GitAskpassAuth::create("github", "x-access-token", "SECRET_TOKEN", "github.com")
+                .expect("askpass auth");
+
+        let allowed = std::process::Command::new(&auth.askpass_path)
+            .arg("Password for 'https://x-access-token@github.com':")
+            .output()
+            .expect("run allowed askpass");
+        assert!(
+            allowed.status.success(),
+            "matching-origin prompt should succeed: {allowed:?}"
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&allowed.stdout).trim(),
+            "SECRET_TOKEN"
+        );
+
+        let blocked = std::process::Command::new(&auth.askpass_path)
+            .arg("Password for 'https://attacker.example':")
+            .output()
+            .expect("run blocked askpass");
+        assert!(
+            !blocked.status.success(),
+            "mismatched-origin prompt must fail closed"
+        );
+        assert!(
+            !String::from_utf8_lossy(&blocked.stdout).contains("SECRET_TOKEN"),
+            "mismatched-origin prompt must not print the token"
+        );
+        assert!(
+            String::from_utf8_lossy(&blocked.stderr).contains("outside expected origin"),
+            "mismatched-origin prompt must explain refusal"
+        );
+    }
+
+    #[cfg(any(feature = "gitlab", feature = "bitbucket"))]
+    #[test]
+    fn api_endpoint_rejects_embedded_credentials_without_leaking_secrets() {
+        let err = super::validated_api_endpoint(
+            "gitlab",
+            "https://user:SECRET@gitlab.example/api/v4?token=SECRET2#SECRET3",
+        )
+        .expect_err("API endpoints must not carry embedded auth material")
+        .to_string();
+
+        assert!(
+            err.contains("embedded credentials") && err.contains("https://gitlab.example/api/v4"),
+            "error must explain the credential refusal and keep the endpoint identifiable, got {err}"
+        );
+        for secret in ["user", "SECRET", "SECRET2", "SECRET3", "token="] {
+            assert!(
+                !err.contains(secret),
+                "API endpoint error leaked {secret:?}: {err}"
+            );
+        }
+    }
+
+    #[cfg(any(feature = "gitlab", feature = "bitbucket"))]
+    #[test]
+    fn api_endpoint_and_pagination_errors_redact_query_fragment_and_userinfo() {
+        let _guard = counter_guard();
+        crate::reset_skip_counters();
+
+        let endpoint_err =
+            super::validated_api_endpoint("gitlab", "https://gitlab.example/api/v4?token=SECRET")
+                .expect_err("API endpoints with query material must be refused")
+                .to_string();
+        assert!(
+            endpoint_err.contains("query or fragment")
+                && endpoint_err.contains("https://gitlab.example/api/v4")
+                && !endpoint_err.contains("SECRET")
+                && !endpoint_err.contains("token="),
+            "endpoint error must not leak query credentials, got {endpoint_err}"
+        );
+
+        let base = reqwest::Url::parse("https://gitlab.example/api/v4").expect("base url");
+        let candidate =
+            reqwest::Url::parse("https://user:SECRET@evil.example/api?next=SECRET2#SECRET3")
+                .expect("candidate url");
+        let origin_err = super::require_same_api_origin("gitlab", &base, &candidate)
+            .expect_err("cross-origin pagination must be refused")
+            .to_string();
+        assert!(
+            origin_err.contains("outside configured API origin")
+                && origin_err.contains("https://evil.example/api"),
+            "pagination origin error must keep sanitized candidate origin, got {origin_err}"
+        );
+        for secret in ["user", "SECRET", "SECRET2", "SECRET3", "next="] {
+            assert!(
+                !origin_err.contains(secret),
+                "pagination origin error leaked {secret:?}: {origin_err}"
+            );
+        }
     }
 }
 
@@ -285,8 +417,8 @@ pub(crate) fn validate_display_path(platform: &str, path: &str) -> Result<(), So
     Ok(())
 }
 
-/// Refuse clone URLs that git would interpret as anything other than a public
-/// HTTPS repository URL.
+/// Refuse clone URLs that git would interpret as anything other than an HTTPS
+/// repository URL bound to the forge origin that supplied it.
 pub(crate) fn validate_clone_url_for_origin(
     platform: &str,
     url: &str,
@@ -358,11 +490,6 @@ fn validate_clone_url_shape(platform: &str, url: &str) -> Result<reqwest::Url, S
             "{platform}: refusing clone URL with query or fragment: {redacted:?}"
         )));
     }
-    if keyhog_verifier::ssrf::is_private_url(parsed.as_str()) {
-        return Err(SourceError::Other(format!(
-            "{platform}: refusing clone URL whose host is private, loopback, link-local, or metadata-only: {redacted:?}"
-        )));
-    }
     Ok(parsed)
 }
 
@@ -396,23 +523,44 @@ pub(crate) fn validated_api_endpoint(
     platform: &str,
     endpoint: &str,
 ) -> Result<reqwest::Url, SourceError> {
+    let safe_endpoint = api_endpoint_for_error(endpoint);
     let url = reqwest::Url::parse(endpoint).map_err(|error| {
         SourceError::Other(format!(
-            "{platform}: invalid API endpoint {endpoint:?}: {error}"
+            "{platform}: invalid API endpoint {safe_endpoint:?}: {error}"
         ))
     })?;
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(SourceError::Other(format!(
+            "{platform}: API endpoint must not include embedded credentials: {safe_endpoint:?}"
+        )));
+    }
     if url.query().is_some() || url.fragment().is_some() {
         return Err(SourceError::Other(format!(
-            "{platform}: API endpoint must not include query or fragment: {endpoint:?}"
+            "{platform}: API endpoint must not include query or fragment: {safe_endpoint:?}"
         )));
     }
     match url.scheme() {
         "https" => Ok(url),
         "http" if url.host_str().is_some_and(is_loopback_host) => Ok(url),
         scheme => Err(SourceError::Other(format!(
-            "{platform}: refusing {scheme:?} API endpoint {endpoint:?}; use https, or loopback http only for local tests"
+            "{platform}: refusing {scheme:?} API endpoint {safe_endpoint:?}; use https, or loopback http only for local tests"
         ))),
     }
+}
+
+#[cfg(any(feature = "gitlab", feature = "bitbucket"))]
+fn api_endpoint_for_error(endpoint: &str) -> String {
+    let redacted = crate::url_redaction::redact_url(endpoint);
+    if let Ok(mut url) = reqwest::Url::parse(redacted.as_ref()) {
+        // LAW10: malformed endpoint diagnostics fall back to delimiter trimming below; validation still fails closed at the caller
+        let _ = url.set_username(""); // LAW10: diagnostic-only URL sanitization; failure leaves the already-redacted URL without changing scan behavior
+        let _ = url.set_password(None); // LAW10: diagnostic-only URL sanitization; failure leaves the already-redacted URL without changing scan behavior
+        url.set_query(None);
+        url.set_fragment(None);
+        return url.to_string();
+    }
+    let cutoff = redacted.find(['?', '#']).unwrap_or(redacted.len()); // LAW10: malformed endpoint diagnostics keep only the non-secret prefix
+    redacted[..cutoff].to_string()
 }
 
 #[cfg(any(feature = "gitlab", feature = "bitbucket"))]
@@ -428,7 +576,8 @@ pub(crate) fn require_same_api_origin(
         return Ok(());
     }
     Err(api_unreadable_error(format!(
-        "{platform}: refusing pagination URL outside configured API origin: {candidate}"
+        "{platform}: refusing pagination URL outside configured API origin: {}",
+        api_endpoint_for_error(candidate.as_str())
     )))
 }
 
@@ -508,7 +657,26 @@ fn clone_repo(
             "{platform}: non-UTF-8 clone path for repo {repo_display_path}"
         ))
     })?;
-    let auth_material = GitAskpassAuth::create(platform, token_username, token_secret)?;
+    let parsed_clone_url = reqwest::Url::parse(clone_url).map_err(|error| {
+        SourceError::Other(format!(
+            "{platform}: validated clone URL could not be reparsed for askpass origin binding: {}: {error}",
+            crate::url_redaction::redact_url(clone_url)
+        ))
+    })?;
+    let expected_prompt_host = parsed_clone_url
+        .host_str()
+        .ok_or_else(|| {
+            SourceError::Other(format!(
+                "{platform}: validated clone URL lost its prompt host for repo {repo_display_path}"
+            ))
+        })?
+        .to_string();
+    let auth_material = GitAskpassAuth::create(
+        platform,
+        token_username,
+        token_secret,
+        &expected_prompt_host,
+    )?;
 
     let git_bin = keyhog_core::resolve_safe_bin("git").ok_or_else(|| {
         SourceError::Other(
@@ -519,7 +687,7 @@ fn clone_repo(
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", &auth_material.askpass_path)
         .env("SSH_ASKPASS", &auth_material.askpass_path)
-        .args(["clone", "--depth", "1", "--quiet"])
+        .args(git_clone_args())
         .arg("--end-of-options")
         .arg(clone_url)
         .arg(clone_target)
@@ -537,6 +705,21 @@ fn clone_repo(
     }
 
     Ok(())
+}
+
+fn git_clone_args() -> [&'static str; 10] {
+    [
+        "-c",
+        "http.followRedirects=false",
+        "-c",
+        "credential.helper=",
+        "-c",
+        "credential.useHttpPath=true",
+        "clone",
+        "--depth",
+        "1",
+        "--quiet",
+    ]
 }
 
 fn scan_repo(
@@ -642,27 +825,36 @@ struct GitAskpassAuth {
 }
 
 impl GitAskpassAuth {
-    fn create(platform: &str, username: &str, secret: &str) -> Result<Self, SourceError> {
+    fn create(
+        platform: &str,
+        username: &str,
+        secret: &str,
+        expected_prompt_host: &str,
+    ) -> Result<Self, SourceError> {
         validate_auth_part(platform, "username", username)?;
         validate_auth_part(platform, "token", secret)?;
+        validate_auth_part(platform, "expected clone host", expected_prompt_host)?;
 
         let dir = tempfile::tempdir().map_err(SourceError::Io)?;
         let username_path = dir.path().join("username");
         let token_path = dir.path().join("token");
+        let origin_path = dir.path().join("origin-host");
         write_secret_file(&username_path, username.as_bytes())?;
         write_secret_file(&token_path, secret.as_bytes())?;
+        write_secret_file(&origin_path, expected_prompt_host.as_bytes())?;
 
         let askpass_path = if cfg!(unix) {
             let path = dir.path().join("askpass.sh");
             write_askpass_file(
                 &path,
-                b"#!/bin/sh\nset -eu\nDIR=\"$(dirname \"$0\")\"\ncase \"$1\" in\n*Username*) exec cat -- \"$DIR/username\" ;;\n*) exec cat -- \"$DIR/token\" ;;\nesac\n",
+                b"#!/bin/sh\nset -eu\nDIR=\"$(dirname \"$0\")\"\nORIGIN=\"$(cat -- \"$DIR/origin-host\")\"\ncase \"${1-}\" in\n*\"$ORIGIN\"*) ;;\n*) echo \"keyhog: refusing git credential prompt outside expected origin\" >&2; exit 1 ;;\nesac\ncase \"${1-}\" in\n*Username*) exec cat -- \"$DIR/username\" ;;\n*) exec cat -- \"$DIR/token\" ;;\nesac\n",
             )?;
             path
         } else {
             let path = dir.path().join("askpass.bat");
             let content = format!(
-                "@echo off\r\nsetlocal EnableExtensions EnableDelayedExpansion\r\nset \"prompt=%~1\"\r\necho(!prompt!| findstr /I /C:\"Username\" >nul\r\nif not errorlevel 1 (\r\n  type \"{}\"\r\n) else (\r\n  type \"{}\"\r\n)\r\n",
+                "@echo off\r\nsetlocal EnableExtensions DisableDelayedExpansion\r\nset \"prompt=%~1\"\r\nset /p origin=<\"{}\"\r\necho(%prompt%| findstr /I /L /C:\"%origin%\" >nul\r\nif errorlevel 1 (\r\n  >&2 echo keyhog: refusing git credential prompt outside expected origin\r\n  exit /b 1\r\n)\r\necho(%prompt%| findstr /I /L /C:\"Username\" >nul\r\nif not errorlevel 1 (\r\n  type \"{}\"\r\n) else (\r\n  type \"{}\"\r\n)\r\n",
+                origin_path.display(),
                 username_path.display(),
                 token_path.display()
             );
