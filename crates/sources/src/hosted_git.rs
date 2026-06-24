@@ -853,7 +853,7 @@ impl GitAskpassAuth {
         } else {
             let path = dir.path().join("askpass.bat");
             let content = format!(
-                "@echo off\r\nsetlocal EnableExtensions DisableDelayedExpansion\r\nset \"prompt=%~1\"\r\nset /p origin=<\"{}\"\r\necho(%prompt%| findstr /I /L /C:\"%origin%\" >nul\r\nif errorlevel 1 (\r\n  >&2 echo keyhog: refusing git credential prompt outside expected origin\r\n  exit /b 1\r\n)\r\necho(%prompt%| findstr /I /L /C:\"Username\" >nul\r\nif not errorlevel 1 (\r\n  type \"{}\"\r\n) else (\r\n  type \"{}\"\r\n)\r\n",
+                "@echo off\r\nsetlocal EnableExtensions EnableDelayedExpansion\r\nset \"prompt=%~1\"\r\nset /p origin=<\"{}\"\r\necho(!prompt!| findstr /I /L /C:\"!origin!\" >nul\r\nif errorlevel 1 (\r\n  >&2 echo keyhog: refusing git credential prompt outside expected origin\r\n  exit /b 1\r\n)\r\necho(!prompt!| findstr /I /C:\"Username\" >nul\r\nif not errorlevel 1 (\r\n  type \"{}\"\r\n) else (\r\n  type \"{}\"\r\n)\r\n",
                 origin_path.display(),
                 username_path.display(),
                 token_path.display()
