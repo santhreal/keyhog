@@ -216,7 +216,8 @@ async fn run_accept_loop(listener: UnixListener, state: Arc<ServerState>) {
             conn = listener.accept() => {
                 match conn {
                     Ok((stream, _addr)) => {
-                        if spawn_connection_handler(state.clone(), stream).await.is_err() {
+                        if let Err(error) = spawn_connection_handler(state.clone(), stream).await {
+                            handle_connection_spawn_error(&state, error);
                             break;
                         }
                     }
@@ -235,11 +236,14 @@ async fn run_accept_loop(listener: UnixListener, state: Arc<ServerState>) {
 async fn spawn_connection_handler(
     state: Arc<ServerState>,
     stream: UnixStream,
-) -> std::result::Result<(), ()> {
+) -> std::result::Result<(), String> {
     let limiter = state.connection_limit.clone();
     // Backpressure: refuse to spawn another handler until a permit is available.
     // A permit drop at the end of the spawned task releases the slot.
-    let permit = limiter.acquire_owned().await.map_err(|_closed| ())?;
+    let permit = limiter
+        .acquire_owned()
+        .await
+        .map_err(|error| format!("connection limiter closed: {error}"))?;
     tokio::spawn(async move {
         let _permit = permit;
         if let Err(e) = handle_connection(state, stream).await {
@@ -247,6 +251,17 @@ async fn spawn_connection_handler(
         }
     });
     Ok(())
+}
+
+fn handle_connection_spawn_error(state: &ServerState, error: String) {
+    let palette = style::for_stderr();
+    eprintln!(
+        "{} keyhog daemon: failed to spawn a connection handler ({error}); \
+         the daemon can no longer accept connections and is shutting down. \
+         Restart it with `keyhog daemon start`.",
+        style::fail("FAIL", &palette)
+    );
+    state.shutdown.notify_waiters();
 }
 
 async fn handle_accept_error(state: &ServerState, error: std::io::Error) -> bool {

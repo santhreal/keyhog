@@ -39,8 +39,20 @@ fn daemon_server_non_empty() {
             && prod.contains("fn bind_trusted_daemon_socket(")
             && prod.contains("fn spawn_accept_loop(")
             && prod.contains("async fn run_accept_loop(")
+            && prod.contains("fn handle_connection_spawn_error(")
             && prod.contains("async fn handle_accept_error("),
-        "daemon server lifecycle must have named owners for compile, trusted bind, accept loop, and accept errors"
+        "daemon server lifecycle must have named owners for compile, trusted bind, accept loop, connection-spawn errors, and accept errors"
+    );
+    let spawn_error = prod
+        .split("fn handle_connection_spawn_error(")
+        .nth(1)
+        .and_then(|tail| tail.split("async fn handle_accept_error(").next())
+        .expect("connection-spawn error handler extractable");
+    assert!(
+        spawn_error.contains("eprintln!")
+            && spawn_error.contains("notify_waiters()")
+            && spawn_error.contains("shutting down"),
+        "connection handler spawn failure must be operator-visible and trigger daemon shutdown"
     );
     let run_body = prod
         .split("pub(crate) async fn run_with_backend_override(")
