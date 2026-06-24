@@ -158,22 +158,30 @@ pub(crate) fn render_severity_line(findings: &[VerifiedFinding], color: bool) ->
     if findings.is_empty() {
         return None;
     }
-    let mut counts = [
-        (Severity::Critical, 0usize),
-        (Severity::High, 0usize),
-        (Severity::Medium, 0usize),
-        (Severity::Low, 0usize),
-        (Severity::ClientSafe, 0usize),
-        (Severity::Info, 0usize),
-    ];
+    let mut critical = 0usize;
+    let mut high = 0usize;
+    let mut medium = 0usize;
+    let mut low = 0usize;
+    let mut client_safe = 0usize;
+    let mut info = 0usize;
     for finding in findings {
-        for (severity, count) in &mut counts {
-            if *severity == finding.severity {
-                *count += 1;
-                break;
-            }
+        match finding.severity {
+            Severity::Critical => critical += 1,
+            Severity::High => high += 1,
+            Severity::Medium => medium += 1,
+            Severity::Low => low += 1,
+            Severity::ClientSafe => client_safe += 1,
+            Severity::Info => info += 1,
         }
     }
+    let counts = [
+        (Severity::Critical, critical),
+        (Severity::High, high),
+        (Severity::Medium, medium),
+        (Severity::Low, low),
+        (Severity::ClientSafe, client_safe),
+        (Severity::Info, info),
+    ];
     let parts: Vec<String> = counts
         .into_iter()
         .filter(|(_, count)| *count > 0)
