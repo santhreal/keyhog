@@ -12,7 +12,7 @@
 
 use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command};
 use std::sync::atomic::AtomicUsize;
 
 /// How many binaries had their requested Ghidra deep-decompiler analysis
@@ -145,19 +145,25 @@ impl BinarySource {
         let status = match child.wait_timeout(timeout) {
             Ok(Some(status)) => Ok(status),
             Ok(None) => {
-                let _ = child.kill(); // LAW10: unused-binding marker; no runtime effect, not a fallback
-                let _ = child.wait(); // LAW10: unused-binding marker; no runtime effect, not a fallback
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
-                    format!("Ghidra analysis timed out after {}s", timeout.as_secs()),
-                ))
+                let cleanup = kill_and_reap_ghidra_child(&mut child, "Ghidra timeout cleanup");
+                let message = match cleanup {
+                    Ok(()) => format!("Ghidra analysis timed out after {}s", timeout.as_secs()),
+                    Err(cleanup_error) => format!(
+                        "Ghidra analysis timed out after {}s; cleanup failed: {cleanup_error}",
+                        timeout.as_secs()
+                    ),
+                };
+                Err(std::io::Error::new(std::io::ErrorKind::TimedOut, message))
             }
             Err(error) => {
-                let _ = child.kill(); // LAW10: unused-binding marker; no runtime effect, not a fallback
-                let _ = child.wait(); // LAW10: unused-binding marker; no runtime effect, not a fallback
-                Err(std::io::Error::other(format!(
-                    "Ghidra process wait failed: {error}"
-                )))
+                let cleanup = kill_and_reap_ghidra_child(&mut child, "Ghidra wait-error cleanup");
+                let message = match cleanup {
+                    Ok(()) => format!("Ghidra process wait failed: {error}"),
+                    Err(cleanup_error) => format!(
+                        "Ghidra process wait failed: {error}; cleanup failed: {cleanup_error}"
+                    ),
+                };
+                Err(std::io::Error::other(message))
             }
         };
         let stderr_excerpt = match stderr_capture {
@@ -362,6 +368,24 @@ impl BinarySource {
         }
 
         chunks
+    }
+}
+
+fn kill_and_reap_ghidra_child(child: &mut Child, context: &str) -> std::io::Result<()> {
+    let kill_result = child.kill();
+    let wait_result = child.wait();
+    match (kill_result, wait_result) {
+        (Ok(()), Ok(_)) => Ok(()),
+        (Err(kill_error), Ok(_)) if kill_error.kind() == std::io::ErrorKind::InvalidInput => Ok(()),
+        (Err(kill_error), Ok(status)) => Err(std::io::Error::other(format!(
+            "{context}: failed to kill child before reap: {kill_error}; reap status: {status}"
+        ))),
+        (Ok(()), Err(wait_error)) => Err(std::io::Error::other(format!(
+            "{context}: killed child but failed to reap it: {wait_error}"
+        ))),
+        (Err(kill_error), Err(wait_error)) => Err(std::io::Error::other(format!(
+            "{context}: failed to kill child: {kill_error}; failed to reap child: {wait_error}"
+        ))),
     }
 }
 

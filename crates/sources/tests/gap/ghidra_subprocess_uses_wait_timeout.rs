@@ -9,6 +9,12 @@ fn ghidra_subprocess_uses_wait_timeout() {
     assert!(src.contains("child.kill()"));
     assert!(src.contains("Ghidra process wait failed"));
     assert!(src.contains("Ghidra analysis timed out"));
+    assert!(src.contains("fn kill_and_reap_ghidra_child("));
+    assert!(src.contains("cleanup failed: {cleanup_error}"));
+    assert!(
+        !src.contains("let _ = child.kill()") && !src.contains("let _ = child.wait()"),
+        "Ghidra timeout/error cleanup must not discard kill/reap failures"
+    );
     assert!(src.contains(".stderr(std::process::Stdio::piped())"));
     assert!(src.contains("capture_ghidra_stderr_excerpt"));
     assert!(src.contains("ghidra stderr: {stderr_excerpt}"));
