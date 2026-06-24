@@ -13,6 +13,20 @@ use sevenz_rust2::{ArchiveEntry, ArchiveWriter, SourceReader};
 use std::io::Cursor;
 use support::split_chunk_results;
 
+#[cfg(unix)]
+fn lock_exclusive(path: &std::path::Path) -> std::fs::File {
+    use std::os::unix::io::AsRawFd;
+
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .expect("open lock target");
+    let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    assert_eq!(rc, 0, "exclusive lock acquired for test fixture");
+    file
+}
+
 fn write_seven_zip_with_special_entries(root: &std::path::Path) -> std::path::PathBuf {
     let archive_path = root.join("special.7z");
     let cursor = Cursor::new(Vec::new());
@@ -98,6 +112,45 @@ fn corrupt_seven_zip_counts_as_unreadable() {
         skip_counts().unreadable,
         1,
         "corrupt 7z coverage gap must be counted as unreadable"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn locked_seven_zip_emits_source_error() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let archive_path = dir.path().join("locked.7z");
+    std::fs::write(&archive_path, b"locked bytes should not be parsed").expect("write 7z");
+    let _lock = lock_exclusive(&archive_path);
+
+    let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
+        .chunks()
+        .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+
+    assert!(
+        chunks.is_empty(),
+        "locked 7z input must not produce clean chunks; chunks={chunks:?}"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "locked 7z input must emit one SourceError row"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("failed to scan 7z archive")
+            && error.contains("locked.7z")
+            && error.contains("compressed input")
+            && error.contains("archive was not scanned"),
+        "locked 7z SourceError must name the unscanned archive, got {error:?}"
+    );
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "locked 7z input must count as unreadable"
     );
 }
 

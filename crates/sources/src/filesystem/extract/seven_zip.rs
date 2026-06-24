@@ -35,7 +35,13 @@ pub(super) fn extract_seven_zip_chunks(
 
     let file_bytes = match read::read_file_for_compressed_input(path, max_size) {
         Some(bytes) => bytes,
-        None => return,
+        None => {
+            let archive_display = display_path(path);
+            emit(Err(SourceError::Other(format!(
+                "failed to scan 7z archive '{archive_display}': cannot read compressed input; archive was not scanned"
+            ))));
+            return;
+        }
     };
     let archive_display = display_path(path);
     let cursor = Cursor::new(file_bytes.as_slice());

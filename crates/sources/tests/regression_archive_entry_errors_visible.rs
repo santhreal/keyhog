@@ -81,6 +81,14 @@ fn rar_entry_read_failures_emit_source_errors() {
         rar.contains("emit_archive_entry_over_cap_error"),
         "RAR over-cap entry skips must emit machine-visible SourceError rows"
     );
+    assert!(
+        rar.contains("fn hit_cap(&self) -> bool")
+            && rar.contains("state.report_entry_error(&entry_name, sink.hit_cap(), &error, emit)")
+            && !rar.contains(
+                "error_text.contains(\"RAR entry decoded size exceeds configured extraction cap\")"
+            ),
+        "RAR decoded-cap handling must use typed sink state, not formatted error string matching"
+    );
 }
 
 #[test]

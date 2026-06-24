@@ -31,7 +31,13 @@ pub(super) fn extract_rar_chunks(
 
     let file_bytes = match read::read_file_for_compressed_input(path, max_size) {
         Some(bytes) => bytes,
-        None => return,
+        None => {
+            let archive_display = display_path(path);
+            emit(Err(SourceError::Other(format!(
+                "failed to scan RAR archive '{archive_display}': cannot read compressed input; archive was not scanned"
+            ))));
+            return;
+        }
     };
     let archive = match ArchiveReader::read(file_bytes.as_slice()) {
         Ok(archive) => archive,
@@ -80,7 +86,7 @@ pub(super) fn extract_rar_chunks(
                 match entry.write_to(archive, None, &mut sink) {
                     Ok(()) => state.emit_entry(emit, sink),
                     Err(error) => {
-                        state.report_entry_error(&entry_name, &error, emit);
+                        state.report_entry_error(&entry_name, sink.hit_cap(), &error, emit);
                     }
                 }
                 if state.consumer_stopped {
@@ -119,7 +125,7 @@ pub(super) fn extract_rar_chunks(
                 match entry.write_to(archive, None, &mut sink) {
                     Ok(()) => state.emit_entry(emit, sink),
                     Err(error) => {
-                        state.report_entry_error(&entry_name, &error, emit);
+                        state.report_entry_error(&entry_name, sink.hit_cap(), &error, emit);
                     }
                 }
                 if state.consumer_stopped {
@@ -162,7 +168,7 @@ pub(super) fn extract_rar_chunks(
                 match entry.write_to(archive, None, &mut sink) {
                     Ok(()) => state.emit_entry(emit, sink),
                     Err(error) => {
-                        state.report_entry_error(&entry_name, &error, emit);
+                        state.report_entry_error(&entry_name, sink.hit_cap(), &error, emit);
                     }
                 }
                 if state.consumer_stopped {
@@ -295,11 +301,11 @@ impl<'a> RarExtractionState<'a> {
     fn report_entry_error(
         &mut self,
         entry_name: &str,
+        hit_sink_cap: bool,
         error: &rars::Error,
         emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
     ) {
-        let error_text = error.to_string();
-        if error_text.contains("RAR entry decoded size exceeds configured extraction cap") {
+        if hit_sink_cap {
             if self.sink_cap() < self.per_entry_cap {
                 self.report_archive_truncation(self.total_budget.saturating_add(1), emit);
             } else {
@@ -385,6 +391,7 @@ struct RarEntrySink {
     entry_name: String,
     content: Vec<u8>,
     cap: u64,
+    hit_cap: bool,
 }
 
 impl RarEntrySink {
@@ -394,7 +401,12 @@ impl RarEntrySink {
             entry_name,
             content: Vec::with_capacity(capacity),
             cap,
+            hit_cap: false,
         }
+    }
+
+    fn hit_cap(&self) -> bool {
+        self.hit_cap
     }
 }
 
@@ -402,6 +414,7 @@ impl Write for RarEntrySink {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let next_len = self.content.len().saturating_add(buf.len()) as u64;
         if next_len > self.cap {
+            self.hit_cap = true;
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "RAR entry decoded size exceeds configured extraction cap",
