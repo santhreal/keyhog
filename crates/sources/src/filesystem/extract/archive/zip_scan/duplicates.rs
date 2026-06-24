@@ -1,4 +1,7 @@
-use super::super::{emit_archive_content, emit_archive_entry_error, report_archive_truncation};
+use super::super::{
+    emit_archive_content, emit_archive_entry_error, emit_archive_entry_over_cap_error,
+    report_archive_truncation,
+};
 use super::{validate_scan_archive_entry_name, zip_external_attrs_are_special};
 use crate::filesystem::filter;
 use keyhog_core::{Chunk, SourceError};
@@ -107,6 +110,17 @@ pub(super) fn extract_zip_archive_from_central_entries(
                 "skipping archive entry: uncompressed size exceeds per-file cap"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            if !emit_archive_entry_over_cap_error(
+                emit,
+                "duplicate ZIP entry",
+                archive_display,
+                &entry.name,
+                entry.uncompressed_size,
+                per_entry_cap,
+                "uncompressed",
+            ) {
+                return;
+            }
             continue;
         }
         if entry.uncompressed_size > 0
@@ -252,6 +266,17 @@ pub(super) fn extract_zip_archive_from_central_entries(
                 "skipping archive entry: decoded size exceeds per-file cap"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            if !emit_archive_entry_over_cap_error(
+                emit,
+                "duplicate ZIP entry",
+                archive_display,
+                &entry.name,
+                actual_uncompressed,
+                per_entry_cap,
+                "decoded",
+            ) {
+                return;
+            }
             continue;
         }
         total_uncompressed = total_uncompressed.saturating_add(actual_uncompressed);

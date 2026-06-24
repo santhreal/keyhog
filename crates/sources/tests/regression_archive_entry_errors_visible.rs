@@ -5,6 +5,7 @@ fn source(path: &str) -> String {
 
 #[test]
 fn zip_entry_read_failures_emit_source_errors() {
+    let archive = source("src/filesystem/extract/archive.rs");
     let zip = source("src/filesystem/extract/archive/zip_scan.rs");
     let duplicate_zip = source("src/filesystem/extract/archive/zip_scan/duplicates.rs");
 
@@ -20,6 +21,13 @@ fn zip_entry_read_failures_emit_source_errors() {
         duplicate_zip.contains("failed to scan duplicate ZIP entry"),
         "duplicate ZIP entry read/rebuild failures must emit machine-visible SourceError rows"
     );
+    assert!(
+        archive.contains("fn emit_archive_entry_over_cap_error(")
+            && archive.contains("exceeds per-file cap {cap}")
+            && zip.contains("emit_archive_entry_over_cap_error")
+            && duplicate_zip.contains("emit_archive_entry_over_cap_error"),
+        "ZIP/OpenPack over-cap entry skips must emit machine-visible SourceError rows"
+    );
 }
 
 #[test]
@@ -33,6 +41,10 @@ fn seven_zip_entry_read_failures_emit_source_errors() {
     assert!(
         seven_zip.contains("return Ok(false);"),
         "7z entry error emission must respect consumer backpressure"
+    );
+    assert!(
+        seven_zip.contains("emit_archive_entry_over_cap_error"),
+        "7z over-cap entry skips must emit machine-visible SourceError rows"
     );
 }
 
@@ -51,6 +63,10 @@ fn rar_entry_read_failures_emit_source_errors() {
     assert!(
         rar.contains("self.consumer_stopped = !emit(Err(SourceError::Other(format!("),
         "RAR entry error emission must respect consumer backpressure"
+    );
+    assert!(
+        rar.contains("emit_archive_entry_over_cap_error"),
+        "RAR over-cap entry skips must emit machine-visible SourceError rows"
     );
 }
 

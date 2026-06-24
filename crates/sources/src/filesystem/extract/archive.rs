@@ -107,6 +107,17 @@ pub(super) fn extract_openpack_archive(
                             "skipping archive entry: uncompressed size exceeds per-file cap"
                         );
                         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+                        if !emit_archive_entry_over_cap_error(
+                            emit,
+                            "archive entry",
+                            &archive_display,
+                            &archive_entry.name,
+                            archive_entry.uncompressed_size,
+                            per_entry_cap,
+                            "uncompressed",
+                        ) {
+                            return;
+                        }
                         continue;
                     }
                     if archive_entry.uncompressed_size > 0
@@ -139,6 +150,17 @@ pub(super) fn extract_openpack_archive(
                                 );
                                 let _event =
                                     crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+                                if !emit_archive_entry_over_cap_error(
+                                    emit,
+                                    "archive entry",
+                                    &archive_display,
+                                    &archive_entry.name,
+                                    actual_uncompressed,
+                                    per_entry_cap,
+                                    "decoded",
+                                ) {
+                                    return;
+                                }
                                 continue;
                             }
                             total_uncompressed =
@@ -284,6 +306,24 @@ pub(super) fn emit_archive_entry_error(
     emit(Err(SourceError::Other(format!(
         "failed to scan {kind} '{archive_display}//{entry_name}': {reason}; entry was not scanned"
     ))))
+}
+
+pub(super) fn emit_archive_entry_over_cap_error(
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+    kind: &str,
+    archive_display: &str,
+    entry_name: &str,
+    size: u64,
+    cap: u64,
+    size_kind: &str,
+) -> bool {
+    emit_archive_entry_error(
+        emit,
+        kind,
+        archive_display,
+        entry_name,
+        format_args!("{size_kind} size {size} exceeds per-file cap {cap}"),
+    )
 }
 
 pub(super) fn chunk_from_archive_content(

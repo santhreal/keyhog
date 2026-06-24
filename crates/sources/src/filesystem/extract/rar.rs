@@ -1,6 +1,8 @@
 //! RAR archive extraction for filesystem entries.
 
-use super::archive::{chunk_from_archive_content, validate_scan_archive_entry_name};
+use super::archive::{
+    chunk_from_archive_content, emit_archive_entry_over_cap_error, validate_scan_archive_entry_name,
+};
 use super::{
     display_path, extraction_total_budget, is_symlink, read, record_default_excluded_archive_entry,
 };
@@ -240,6 +242,7 @@ impl<'a> RarExtractionState<'a> {
                 "skipping RAR entry: uncompressed size exceeds per-file cap"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            self.report_entry_over_cap(entry_name, entry_size, "uncompressed", emit);
             return false;
         }
         if self.total_uncompressed.saturating_add(entry_size) > self.total_budget {
@@ -269,6 +272,24 @@ impl<'a> RarExtractionState<'a> {
             "failed to scan RAR entry '{}//{}': {reason}; entry was not scanned",
             self.archive_display, entry_name
         ))));
+    }
+
+    fn report_entry_over_cap(
+        &mut self,
+        entry_name: &str,
+        size: u64,
+        size_kind: &str,
+        emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+    ) {
+        self.consumer_stopped = !emit_archive_entry_over_cap_error(
+            emit,
+            "RAR entry",
+            &self.archive_display,
+            entry_name,
+            size,
+            self.per_entry_cap,
+            size_kind,
+        );
     }
 
     fn report_entry_error(
@@ -330,6 +351,7 @@ impl<'a> RarExtractionState<'a> {
                 "skipping RAR entry: decoded size exceeds per-file cap"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            self.report_entry_over_cap(&sink.entry_name, actual_uncompressed, "decoded", emit);
             return;
         }
         self.total_uncompressed = self.total_uncompressed.saturating_add(actual_uncompressed);

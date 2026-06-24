@@ -1,6 +1,8 @@
 //! 7z archive extraction for filesystem entries.
 
-use super::archive::{emit_archive_entry_error, validate_scan_archive_entry_name};
+use super::archive::{
+    emit_archive_entry_error, emit_archive_entry_over_cap_error, validate_scan_archive_entry_name,
+};
 use super::{
     display_path, extraction_total_budget, is_symlink, read,
     record_binary_without_printable_strings, record_default_excluded_archive_entry,
@@ -108,6 +110,18 @@ pub(super) fn extract_seven_zip_chunks(
                 "skipping 7z entry: uncompressed size exceeds per-file cap"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            if !emit_archive_entry_over_cap_error(
+                emit,
+                "7z entry",
+                &archive_display,
+                &entry_name,
+                entry_size,
+                per_entry_cap,
+                "uncompressed",
+            ) {
+                consumer_stopped = true;
+                return Ok(false);
+            }
             drain_entry_lossy(&archive_display, &entry_name, entry_reader, false);
             return Ok(true);
         }
