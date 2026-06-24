@@ -1,7 +1,7 @@
 use super::github::{base62_encode_u32, crc32};
 use super::{ChecksumResult, ChecksumValidator};
-use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
 use base64::Engine as _;
+use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
 
 /// Validates modern npm access tokens.
 ///
@@ -58,10 +58,17 @@ impl ChecksumValidator for PypiTokenValidator {
 }
 
 fn decode_pypi_payload(payload: &str) -> Result<Vec<u8>, base64::DecodeError> {
-    let bytes = payload.as_bytes();
-    let has_url_safe_alphabet = bytes.iter().any(|byte| matches!(byte, b'-' | b'_'));
-    let has_standard_alphabet = bytes.iter().any(|byte| matches!(byte, b'+' | b'/'));
-    let has_padding = bytes.contains(&b'=');
+    let mut has_url_safe_alphabet = false;
+    let mut has_standard_alphabet = false;
+    let mut has_padding = false;
+    for &byte in payload.as_bytes() {
+        match byte {
+            b'-' | b'_' => has_url_safe_alphabet = true,
+            b'+' | b'/' => has_standard_alphabet = true,
+            b'=' => has_padding = true,
+            _ => {}
+        }
+    }
 
     if has_url_safe_alphabet && has_standard_alphabet {
         return Err(base64::DecodeError::InvalidByte(0, b'?'));
