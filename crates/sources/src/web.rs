@@ -40,9 +40,6 @@ pub(crate) use ssrf::{
 /// Minimum printable string length for WASM binary string extraction.
 const MIN_WASM_STRING_LEN: usize = 8;
 
-/// WASM magic bytes: `\0asm`.
-const WASM_MAGIC: &[u8; 4] = b"\x00asm";
-
 /// Web content source that fetches JavaScript, source maps, and WASM from URLs.
 ///
 /// URLs ending in `.wasm` are treated as binary and have strings extracted.
@@ -542,7 +539,7 @@ fn handle_wasm(
     };
 
     // Verify WASM magic bytes
-    if bytes.len() < 4 || &bytes[..4] != WASM_MAGIC {
+    if !crate::magic::starts_with_wasm_module(&bytes) {
         let safe_url = redact_url(url);
         tracing::warn!(url = %safe_url, "not a valid WASM file; body was NOT scanned as WebAssembly strings");
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);

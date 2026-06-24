@@ -6,30 +6,6 @@
 
 const SUSPICIOUS_CONTROL_BINARY_MIN: u64 = 4;
 const BINARY_NUL_RUN: usize = 4;
-const UNAMBIGUOUS_BINARY_PREFIXES: &[&[u8]] = &[
-    b"%PDF-",
-    b"PK\x03\x04", // ZIP / JAR / DOCX / XLSX / PPTX / APK / OOXML
-    b"\x89PNG\r\n\x1a\n",
-    b"\xD0\xCF\x11\xE0",            // OLE compound document (older Office)
-    b"\x7fELF",                     // Linux / BSD executables, .so, .o, .a
-    b"\xfe\xed\xfa\xce",            // Mach-O 32-bit (macOS, iOS executables)
-    b"\xfe\xed\xfa\xcf",            // Mach-O 64-bit
-    b"\xcf\xfa\xed\xfe",            // Mach-O 64-bit reversed
-    b"\xca\xfe\xba\xbe",            // Java .class (universal Mach-O collision)
-    crate::magic::GZIP_PREFIX,      // gzip (.gz)
-    crate::magic::ZSTD_FRAME_MAGIC, // zstd (.zst)
-    b"\xfd7zXZ\x00",                // xz (.xz)
-    b"7z\xbc\xaf\x27\x1c",          // 7z (.7z)
-    b"Rar!\x1a\x07",                // RAR
-    b"GIF87a",                      // GIF
-    b"GIF89a",                      // GIF
-    b"\xff\xd8\xff",                // JPEG (any variant)
-    b"\x00\x00\x01\x00",            // ICO
-    b"OggS",                        // Ogg container
-    b"fLaC",                        // FLAC
-    b"\x00asm",                     // WebAssembly module
-    b"!<arch>\n",                   // Unix `ar` archives (.a, .deb)
-];
 
 pub(crate) fn decode_text_file(bytes: &[u8]) -> Option<String> {
     // Cheap O(1) header rejects first - no full pass needed to know a PDF or
@@ -246,14 +222,14 @@ fn has_binary_magic(bytes: &[u8]) -> bool {
     if has_bmp_header(bytes) || has_pe_header(bytes) || has_bzip2_header(bytes) {
         return true;
     }
-    UNAMBIGUOUS_BINARY_PREFIXES
+    crate::magic::UNAMBIGUOUS_BINARY_PREFIXES
         .iter()
         .chain([b"\x80\x02" as &[u8]].iter()) // Python pickle protocol 2+ is full-file only.
         .any(|header| bytes.starts_with(header))
 }
 
 fn has_unambiguous_prefix_magic(bytes: &[u8]) -> bool {
-    UNAMBIGUOUS_BINARY_PREFIXES
+    crate::magic::UNAMBIGUOUS_BINARY_PREFIXES
         .iter()
         .any(|header| bytes.starts_with(header))
 }

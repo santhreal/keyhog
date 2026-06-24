@@ -13,7 +13,7 @@ fn occurrences(haystack: &str, needle: &str) -> usize {
 }
 
 #[test]
-fn gzip_and_zstd_magic_bytes_have_one_sources_owner() {
+fn binary_magic_bytes_have_one_sources_owner() {
     let magic = source("src/magic.rs");
     assert!(
         magic.contains("GZIP_PREFIX") && magic.contains(r#"b"\x1f\x8b""#),
@@ -23,12 +23,20 @@ fn gzip_and_zstd_magic_bytes_have_one_sources_owner() {
         magic.contains("ZSTD_FRAME_MAGIC") && magic.contains(r#"b"\x28\xb5\x2f\xfd""#),
         "zstd frame magic bytes must be owned by src/magic.rs"
     );
+    assert!(
+        magic.contains("UNAMBIGUOUS_BINARY_PREFIXES")
+            && magic.contains(r#"b"%PDF-""#)
+            && magic.contains(r#"b"PK\x03\x04""#)
+            && magic.contains(r#"b"\x89PNG\r\n\x1a\n""#)
+            && magic.contains(r#"b"\x7fELF""#)
+            && magic.contains("WASM_MAGIC"),
+        "common binary signature prefixes must be owned by src/magic.rs"
+    );
 
     let decode = source("src/filesystem/read/decode.rs");
     assert!(
-        decode.contains("crate::magic::GZIP_PREFIX")
-            && decode.contains("crate::magic::ZSTD_FRAME_MAGIC"),
-        "filesystem text decode must consume the shared magic constants"
+        decode.contains("crate::magic::UNAMBIGUOUS_BINARY_PREFIXES"),
+        "filesystem text decode must consume the shared binary magic table"
     );
 
     let docker = source("src/docker.rs");
@@ -38,29 +46,42 @@ fn gzip_and_zstd_magic_bytes_have_one_sources_owner() {
         "Docker layer encoding detection must consume shared magic predicates"
     );
 
+    let web = source("src/web.rs");
+    assert!(
+        web.contains("crate::magic::starts_with_wasm_module"),
+        "web WASM validation must consume the shared WASM magic predicate"
+    );
+
     for path in [
         "src/filesystem/read/decode.rs",
         "src/docker.rs",
+        "src/web.rs",
         "src/filesystem/extract/compressed.rs",
     ] {
         let body = source(path);
-        assert_eq!(
-            occurrences(&body, r#"\x1f\x8b"#),
-            0,
-            "{path} must not repeat raw gzip magic bytes"
-        );
-        assert_eq!(
-            occurrences(&body, r#"\x28\xb5\x2f\xfd"#),
-            0,
-            "{path} must not repeat raw zstd frame magic bytes"
-        );
-        assert!(
-            !body.contains("[0x1f, 0x8b]"),
-            "{path} must not repeat raw gzip magic bytes as an integer array"
-        );
-        assert!(
-            !body.contains("[0x28, 0xb5, 0x2f, 0xfd]"),
-            "{path} must not repeat raw zstd frame magic bytes as an integer array"
-        );
+        for (needle, name) in [
+            (r#"\x1f\x8b"#, "gzip"),
+            (r#"\x28\xb5\x2f\xfd"#, "zstd frame"),
+            (r#"%PDF-"#, "PDF"),
+            (r#"PK\x03\x04"#, "ZIP"),
+            (r#"\x89PNG\r\n\x1a\n"#, "PNG"),
+            (r#"\x7fELF"#, "ELF"),
+            (r#"\x00asm"#, "WASM"),
+        ] {
+            assert_eq!(
+                occurrences(&body, needle),
+                0,
+                "{path} must not repeat raw {name} magic bytes"
+            );
+        }
+        for (needle, name) in [
+            ("[0x1f, 0x8b]", "gzip"),
+            ("[0x28, 0xb5, 0x2f, 0xfd]", "zstd frame"),
+        ] {
+            assert!(
+                !body.contains(needle),
+                "{path} must not repeat raw {name} magic bytes as an integer array"
+            );
+        }
     }
 }
