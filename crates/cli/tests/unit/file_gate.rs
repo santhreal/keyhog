@@ -299,14 +299,17 @@ fn ak_p4_cli_hot_paths_stay_linear() {
         "daemon scan-path suppression normalization must not allocate a fresh Arc per finding"
     );
     assert!(
-        sources.contains("let normalized_excludes: Vec<String> = excludes")
-            && sources.contains("staged_relative_path_matches_exclude(&rel, exclude)")
+        sources.contains("let normalized_excludes: Vec<Cow<'_, str>> = excludes")
+            && sources.contains("fn slash_normalized_path(path: &Path) -> Cow<'_, str>")
+            && sources.contains("if value.as_bytes().contains(&b'\\\\')")
+            && sources.contains("staged_relative_path_matches_exclude(rel.as_ref(), exclude.as_ref())")
             && sources.contains(".strip_suffix(exclude)"),
-        "staged-file exclude filtering must normalize excludes once and match suffixes without per-file format allocation"
+        "staged-file exclude filtering must borrow the common slash-normalized path and only allocate on backslashes"
     );
     assert!(
-        !sources.contains("rel.ends_with(&format!(\"/{exclude}\"))"),
-        "staged-file exclude filtering must not allocate a formatted suffix per exclude check"
+        !sources.contains("rel.to_string_lossy().replace('\\\\', \"/\")")
+            && !sources.contains("rel.ends_with(&format!(\"/{exclude}\"))"),
+        "staged-file exclude filtering must not allocate a normalized path or formatted suffix per exclude check"
     );
 }
 

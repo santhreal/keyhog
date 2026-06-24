@@ -6,9 +6,11 @@ use anyhow::Context;
 use anyhow::Result;
 use keyhog_core::Source;
 use keyhog_core::{Chunk, MerkleIndex, SourceError};
+#[cfg(feature = "git")]
+use std::borrow::Cow;
 use std::num::NonZeroUsize;
 #[cfg(feature = "git")]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 struct EmptySource {
@@ -615,9 +617,9 @@ fn filter_staged_files_by_cli_excludes(files: &mut Vec<PathBuf>, args: &ScanArgs
     let Some(excludes) = args.exclude_paths.as_ref() else {
         return;
     };
-    let normalized_excludes: Vec<String> = excludes
+    let normalized_excludes: Vec<Cow<'_, str>> = excludes
         .iter()
-        .map(|exclude| exclude.replace('\\', "/"))
+        .map(|exclude| slash_normalized_str(exclude))
         .collect();
     let base = args
         .path
@@ -629,11 +631,31 @@ fn filter_staged_files_by_cli_excludes(files: &mut Vec<PathBuf>, args: &ScanArgs
         .unwrap_or_else(|_| PathBuf::from(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
     files.retain(|path| {
         let rel = path.strip_prefix(&base).unwrap_or(path); // LAW10: no prefix/BOM to strip => value unchanged (intended), recall-safe
-        let rel = rel.to_string_lossy().replace('\\', "/");
+        let rel = slash_normalized_path(rel);
         !normalized_excludes
             .iter()
-            .any(|exclude| staged_relative_path_matches_exclude(&rel, exclude))
+            .any(|exclude| staged_relative_path_matches_exclude(rel.as_ref(), exclude.as_ref()))
     });
+}
+
+#[cfg(feature = "git")]
+fn slash_normalized_path(path: &Path) -> Cow<'_, str> {
+    let path = path.to_string_lossy();
+    slash_normalized_cow(path)
+}
+
+#[cfg(feature = "git")]
+fn slash_normalized_str(value: &str) -> Cow<'_, str> {
+    slash_normalized_cow(Cow::Borrowed(value))
+}
+
+#[cfg(feature = "git")]
+fn slash_normalized_cow(value: Cow<'_, str>) -> Cow<'_, str> {
+    if value.as_bytes().contains(&b'\\') {
+        Cow::Owned(value.replace('\\', "/"))
+    } else {
+        value
+    }
 }
 
 #[cfg(feature = "git")]
