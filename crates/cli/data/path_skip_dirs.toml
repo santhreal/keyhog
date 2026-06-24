@@ -1,16 +1,18 @@
-# Tier-B data: directory names skipped by long-running CLI filesystem surfaces.
+# Tier-B data: directory names skipped only by long-running CLI filesystem surfaces.
 #
-# `base` applies to every consumer below. Consumer-specific extras keep the
-# behavioral differences explicit: watch skips VCS/build/venv event storms,
-# while scan-system git discovery must not skip `.git` because it is looking
-# for repository roots.
+# Source-owned default-exclude directory names come from
+# `rules/default_excludes.toml` through `keyhog_sources`; keep them out of this
+# file so watch / scan-system traversal cannot drift from scanner truth.
+# `base` below applies to every CLI consumer in addition to source defaults.
+# Consumer-specific extras keep the behavioral differences explicit: watch
+# skips extra VCS/event-storm directories, while scan-system git discovery must
+# not skip `.git` because it is looking for repository roots.
 
 [skip_dirs]
-base = ["node_modules", "target", ".cargo", ".cache"]
+base = [".cargo", ".cache"]
 
 watch_extra = [
-  ".git", ".svn", ".hg", ".venv", "venv", "__pycache__", ".next", ".turbo",
-  "dist", "build",
+  ".svn", ".hg", ".turbo",
 ]
 
 git_discovery_extra = [

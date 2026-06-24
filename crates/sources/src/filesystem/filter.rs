@@ -36,6 +36,10 @@ fn default_excludes() -> &'static DefaultExcludeRules {
     &DEFAULT_EXCLUDES
 }
 
+pub(super) fn default_exclude_dirs() -> &'static [String] {
+    &default_excludes().dirs
+}
+
 #[derive(Debug)]
 struct DefaultExcludeRules {
     extensions: Vec<String>,

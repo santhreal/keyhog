@@ -13,21 +13,24 @@ fn watch_and_scan_system_share_tier_b_skip_dir_policy() {
     assert!(
         policy.contains("include_str!(\"../data/path_skip_dirs.toml\")")
             && policy.contains("struct SkipDirPolicy")
+            && policy.contains("keyhog_sources::default_exclude_dir_components()")
+            && policy.contains("GIT_DISCOVERY_KEEP_COMPONENTS")
             && policy.contains("path_skip_dirs.toml")
             && policy.contains("keyhog/path_skip_dirs.toml")
             && policy.contains("is_watch_component")
             && policy.contains("is_git_discovery_component"),
-        "src/skip_dirs.rs must own the compiled Tier-B skip-dir policy"
+        "src/skip_dirs.rs must compose CLI skip policy with source-owned default-exclude dirs"
     );
     assert!(
         data.contains("[skip_dirs]")
             && data.contains("base =")
             && data.contains("watch_extra =")
             && data.contains("git_discovery_extra =")
-            && data.contains("\"node_modules\"")
-            && data.contains("\".git\"")
+            && !data.contains("\"node_modules\"")
+            && !data.contains("\"target\"")
+            && !data.contains("\".git\"")
             && data.contains("\"System Volume Information\""),
-        "data/path_skip_dirs.toml must carry base and per-consumer skip-dir lists"
+        "data/path_skip_dirs.toml must carry only CLI-specific base and per-consumer skip-dir lists"
     );
 
     assert!(

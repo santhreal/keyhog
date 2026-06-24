@@ -79,6 +79,15 @@ pub(crate) use skip::{
 };
 pub use skip::{reset_skipped_over_max_size, skip_counts, SkipCounts};
 
+/// Directory path components owned by the source default-exclude policy.
+///
+/// CLI filesystem surfaces compose this with their own consumer-specific
+/// traversal policy so pre-scan traversal cannot drift from the scanner's
+/// source-owned default excludes.
+pub fn default_exclude_dir_components() -> &'static [String] {
+    filesystem::default_exclude_dirs()
+}
+
 #[doc(hidden)]
 pub use testing_facade::testing;
 
