@@ -379,6 +379,22 @@ pub mod testing {
         #[cfg(feature = "slack")]
         fn slack_history_len_for_test(&self, body: &str, channel_id: &str)
             -> Result<usize, String>;
+        #[cfg(feature = "slack")]
+        fn slack_conversations_list_next_cursor_for_test(
+            &self,
+            body: &str,
+        ) -> Result<Option<String>, String>;
+        #[cfg(feature = "slack")]
+        fn slack_history_next_cursor_for_test(
+            &self,
+            body: &str,
+            channel_id: &str,
+        ) -> Result<Option<String>, String>;
+        #[cfg(feature = "slack")]
+        fn slack_source_with_endpoint<T, E>(&self, token: T, endpoint: E) -> crate::SlackSource
+        where
+            T: Into<String>,
+            E: Into<String>;
     }
 
     impl SourceTestApi for TestApi {
@@ -1037,6 +1053,34 @@ pub mod testing {
             channel_id: &str,
         ) -> Result<usize, String> {
             crate::slack::history_len_for_test(body, channel_id).map_err(|error| error.to_string())
+        }
+
+        #[cfg(feature = "slack")]
+        fn slack_conversations_list_next_cursor_for_test(
+            &self,
+            body: &str,
+        ) -> Result<Option<String>, String> {
+            crate::slack::conversations_list_next_cursor_for_test(body)
+                .map_err(|error| error.to_string())
+        }
+
+        #[cfg(feature = "slack")]
+        fn slack_history_next_cursor_for_test(
+            &self,
+            body: &str,
+            channel_id: &str,
+        ) -> Result<Option<String>, String> {
+            crate::slack::history_next_cursor_for_test(body, channel_id)
+                .map_err(|error| error.to_string())
+        }
+
+        #[cfg(feature = "slack")]
+        fn slack_source_with_endpoint<T, E>(&self, token: T, endpoint: E) -> crate::SlackSource
+        where
+            T: Into<String>,
+            E: Into<String>,
+        {
+            crate::SlackSource::new(token).with_endpoint(endpoint)
         }
     }
 }

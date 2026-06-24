@@ -11,6 +11,8 @@ use serde::{de::DeserializeOwned, Deserialize};
 pub struct SlackSource {
     token: String,
     lookback_messages: usize,
+    endpoint: String,
+    limits: crate::SourceLimits,
     /// Shared HTTP policy (proxy, insecure_tls, ua_suffix, timeout). Defaults to
     /// the explicit-only `HttpClientConfig` policy; no environment variable can
     /// reroute Slack API calls. Set via `with_http_config` so the CLI's
@@ -25,6 +27,8 @@ impl SlackSource {
         Self {
             token: token.into(),
             lookback_messages: 1000,
+            endpoint: "https://slack.com/api".into(),
+            limits: crate::SourceLimits::default(),
             http: crate::http::HttpClientConfig {
                 ua_suffix: Some("slack".into()),
                 ..Default::default()
@@ -36,6 +40,16 @@ impl SlackSource {
     /// into the Slack API client.
     pub(crate) fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
         self.http = http;
+        self
+    }
+
+    pub(crate) fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    pub(crate) fn with_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.endpoint = endpoint.into();
         self
     }
 }
@@ -78,6 +92,7 @@ struct SlackResponse<T> {
 #[derive(Deserialize)]
 struct ConversationsList {
     channels: Option<Vec<Channel>>,
+    response_metadata: Option<ResponseMetadata>,
 }
 
 #[derive(Deserialize)]
@@ -89,6 +104,13 @@ struct Channel {
 #[derive(Deserialize)]
 struct History {
     messages: Option<Vec<Message>>,
+    has_more: Option<bool>,
+    response_metadata: Option<ResponseMetadata>,
+}
+
+#[derive(Deserialize)]
+struct ResponseMetadata {
+    next_cursor: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -153,19 +175,56 @@ fn slack_unreadable_error(message: String) -> SourceError {
     SourceError::Other(message)
 }
 
-fn channels_from_response(
+fn slack_next_cursor(metadata: Option<ResponseMetadata>) -> Option<String> {
+    metadata
+        .and_then(|metadata| metadata.next_cursor)
+        .map(|cursor| cursor.trim().to_string())
+        .filter(|cursor| !cursor.is_empty())
+}
+
+fn channels_page_from_response(
     resp: SlackResponse<ConversationsList>,
-) -> Result<Vec<Channel>, SourceError> {
+) -> Result<(Vec<Channel>, Option<String>), SourceError> {
     if !resp.ok {
         return Err(SourceError::Other(format!(
             "Slack API {CONVERSATIONS_LIST} error: {}",
             slack_error_code(resp.error.as_deref())
         )));
     }
+    let next_cursor = slack_next_cursor(resp.data.response_metadata);
     match resp.data.channels {
-        Some(channels) => Ok(channels),
+        Some(channels) => Ok((channels, next_cursor)),
         None => Err(SourceError::Other(format!(
             "Slack API {CONVERSATIONS_LIST} ok response missing channels"
+        ))),
+    }
+}
+
+fn channels_from_response(
+    resp: SlackResponse<ConversationsList>,
+) -> Result<Vec<Channel>, SourceError> {
+    channels_page_from_response(resp).map(|(channels, _next_cursor)| channels)
+}
+
+fn messages_page_from_response(
+    resp: SlackResponse<History>,
+    channel_id: &str,
+) -> Result<(Vec<Message>, Option<String>, bool), SourceError> {
+    if !resp.ok {
+        return Err(SourceError::Other(format!(
+            "Slack API {CONVERSATIONS_HISTORY} error for channel {channel_id}: {}",
+            slack_error_code(resp.error.as_deref())
+        )));
+    }
+    let has_more = match resp.data.has_more {
+        Some(has_more) => has_more,
+        None => false,
+    };
+    let next_cursor = slack_next_cursor(resp.data.response_metadata);
+    match resp.data.messages {
+        Some(messages) => Ok((messages, next_cursor, has_more)),
+        None => Err(SourceError::Other(format!(
+            "Slack API {CONVERSATIONS_HISTORY} ok response for channel {channel_id} missing messages"
         ))),
     }
 }
@@ -174,18 +233,8 @@ fn messages_from_response(
     resp: SlackResponse<History>,
     channel_id: &str,
 ) -> Result<Vec<Message>, SourceError> {
-    if !resp.ok {
-        return Err(SourceError::Other(format!(
-            "Slack API {CONVERSATIONS_HISTORY} error for channel {channel_id}: {}",
-            slack_error_code(resp.error.as_deref())
-        )));
-    }
-    match resp.data.messages {
-        Some(messages) => Ok(messages),
-        None => Err(SourceError::Other(format!(
-            "Slack API {CONVERSATIONS_HISTORY} ok response for channel {channel_id} missing messages"
-        ))),
-    }
+    messages_page_from_response(resp, channel_id)
+        .map(|(messages, _next_cursor, _has_more)| messages)
 }
 
 pub(crate) fn conversations_list_len_for_test(body: &str) -> Result<usize, SourceError> {
@@ -196,6 +245,22 @@ pub(crate) fn conversations_list_len_for_test(body: &str) -> Result<usize, Sourc
 pub(crate) fn history_len_for_test(body: &str, channel_id: &str) -> Result<usize, SourceError> {
     let resp = parse_slack_response::<History>(CONVERSATIONS_HISTORY, body)?;
     messages_from_response(resp, channel_id).map(|messages| messages.len())
+}
+
+pub(crate) fn conversations_list_next_cursor_for_test(
+    body: &str,
+) -> Result<Option<String>, SourceError> {
+    let resp = parse_slack_response::<ConversationsList>(CONVERSATIONS_LIST, body)?;
+    channels_page_from_response(resp).map(|(_channels, next_cursor)| next_cursor)
+}
+
+pub(crate) fn history_next_cursor_for_test(
+    body: &str,
+    channel_id: &str,
+) -> Result<Option<String>, SourceError> {
+    let resp = parse_slack_response::<History>(CONVERSATIONS_HISTORY, body)?;
+    messages_page_from_response(resp, channel_id)
+        .map(|(_messages, next_cursor, _has_more)| next_cursor)
 }
 
 impl SlackSource {
@@ -273,19 +338,42 @@ impl SlackSource {
         Ok(chunks)
     }
 
+    fn api_url(&self, method: &str) -> String {
+        format!("{}/{}", self.endpoint.trim_end_matches('/'), method)
+    }
+
     fn list_channels(&self, client: &Client) -> Result<Vec<Channel>, SourceError> {
-        let resp = client
-            .get("https://slack.com/api/conversations.list")
-            .bearer_auth(&self.token)
-            .query(&[("types", "public_channel,private_channel")])
-            .send()
-            .map_err(|error| {
+        let mut channels = Vec::new();
+        let mut cursor = None::<String>;
+        for _page in 1..=self.limits.hosted_git_pages {
+            let mut request = client
+                .get(self.api_url(CONVERSATIONS_LIST))
+                .bearer_auth(&self.token)
+                .query(&[
+                    ("types", "public_channel,private_channel"),
+                    ("limit", "1000"),
+                ]);
+            if let Some(cursor) = cursor.as_deref() {
+                request = request.query(&[("cursor", cursor)]);
+            }
+            let resp = request.send().map_err(|error| {
                 slack_unreadable_error(format!(
                     "Slack API {CONVERSATIONS_LIST} request failed: {error}"
                 ))
             })?;
-        let resp = read_slack_response(CONVERSATIONS_LIST, resp)?;
-        channels_from_response(resp)
+            let resp = read_slack_response(CONVERSATIONS_LIST, resp)?;
+            let (page_channels, next_cursor) = channels_page_from_response(resp)?;
+            channels.extend(page_channels);
+            let Some(next_cursor) = next_cursor else {
+                return Ok(channels);
+            };
+            cursor = Some(next_cursor);
+        }
+        Err(slack_truncated_error(
+            CONVERSATIONS_LIST,
+            "channel listing",
+            self.limits.hosted_git_pages,
+        ))
     }
 
     fn fetch_history(
@@ -293,20 +381,49 @@ impl SlackSource {
         client: &Client,
         channel_id: &str,
     ) -> Result<Vec<Message>, SourceError> {
-        let resp = client
-            .get("https://slack.com/api/conversations.history")
-            .bearer_auth(&self.token)
-            .query(&[
-                ("channel", channel_id),
-                ("limit", &self.lookback_messages.to_string()),
-            ])
-            .send()
-            .map_err(|error| {
+        let mut messages = Vec::new();
+        let mut cursor = None::<String>;
+        let limit = self.lookback_messages.to_string();
+        for _page in 1..=self.limits.hosted_git_pages {
+            let mut request = client
+                .get(self.api_url(CONVERSATIONS_HISTORY))
+                .bearer_auth(&self.token)
+                .query(&[("channel", channel_id), ("limit", &limit)]);
+            if let Some(cursor) = cursor.as_deref() {
+                request = request.query(&[("cursor", cursor)]);
+            }
+            let resp = request.send().map_err(|error| {
                 slack_unreadable_error(format!(
                     "Slack API {CONVERSATIONS_HISTORY} request failed for channel {channel_id}: {error}"
                 ))
             })?;
-        let resp = read_slack_response(CONVERSATIONS_HISTORY, resp)?;
-        messages_from_response(resp, channel_id)
+            let resp = read_slack_response(CONVERSATIONS_HISTORY, resp)?;
+            let (page_messages, next_cursor, has_more) =
+                messages_page_from_response(resp, channel_id)?;
+            messages.extend(page_messages);
+            match next_cursor {
+                Some(next_cursor) => cursor = Some(next_cursor),
+                None if has_more => {
+                    return Err(slack_truncated_error(
+                        CONVERSATIONS_HISTORY,
+                        &format!("history for channel {channel_id}"),
+                        self.limits.hosted_git_pages,
+                    ));
+                }
+                None => return Ok(messages),
+            }
+        }
+        Err(slack_truncated_error(
+            CONVERSATIONS_HISTORY,
+            &format!("history for channel {channel_id}"),
+            self.limits.hosted_git_pages,
+        ))
     }
+}
+
+fn slack_truncated_error(endpoint: &str, item: &str, max_pages: usize) -> SourceError {
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
+    SourceError::Other(format!(
+        "Slack API {endpoint} {item} exceeded {max_pages} pages; remaining Slack data was not scanned"
+    ))
 }

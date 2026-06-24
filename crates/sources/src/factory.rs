@@ -31,7 +31,9 @@ pub fn create_source_with_http_config_and_limits(
             if let Some(token) = params {
                 #[cfg(feature = "slack")]
                 return Ok(Box::new(
-                    crate::slack::SlackSource::new(token).with_http_config(http),
+                    crate::slack::SlackSource::new(token)
+                        .with_http_config(http)
+                        .with_limits(limits),
                 ));
                 #[cfg(not(feature = "slack"))]
                 {
