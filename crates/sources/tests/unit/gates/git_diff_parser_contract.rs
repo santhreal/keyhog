@@ -19,7 +19,7 @@ fn git_diff_sources_share_byte_oriented_parser() {
         "fn normalize_git_relative_path(",
         "quoted_git_path_body",
         "invalid_path: bool",
-        "parse_hunk_new_start_or_error",
+        "parse_hunk_new_start_bytes_or_error",
         "UnifiedDiffEvent::AddedLine(&line[1..])",
     ] {
         assert!(
@@ -91,13 +91,19 @@ fn git_diff_sources_share_byte_oriented_parser() {
     let git_mod =
         std::fs::read_to_string(root.join("src/git/mod.rs")).expect("git module readable");
     assert!(
-        git_mod.contains("header.split_once('+')")
+        git_mod.contains("fn parse_hunk_new_start_bytes(header: &[u8])")
+            && git_mod.contains("memchr::memchr(b'+', header)")
             && git_mod.contains("let digits_end = after_plus"),
-        "git hunk header parsing must locate borrowed digit slices in git/mod.rs"
+        "git hunk header parsing must locate borrowed digit slices in git/mod.rs without UTF-8 conversion"
     );
     assert!(
         !git_mod.contains("let digits: String")
             && !git_mod.contains(".take_while(|c| c.is_ascii_digit()).collect()"),
         "git hunk header parsing must parse borrowed digit slices without allocating"
+    );
+    assert!(
+        !parser.contains("String::from_utf8_lossy(line)")
+            && !parser.contains("parse_hunk_new_start_or_error(&hunk_line"),
+        "shared git diff parser must not allocate or UTF-8-convert hunk headers on the hot path"
     );
 }

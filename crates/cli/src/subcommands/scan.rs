@@ -81,7 +81,7 @@ pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
         DaemonRoute::Opportunistic => match run_via_daemon(&policy.effective_args).await {
             Ok(exit) => Ok(exit),
             Err(e) => {
-                if matches!(args.daemon, Some(DaemonMode::Auto)) {
+                if policy.effective_args.daemon_mode() == DaemonMode::Auto {
                     eprintln!(
                         "keyhog: daemon auto route unavailable ({e:#}); running in-process scanner"
                     );

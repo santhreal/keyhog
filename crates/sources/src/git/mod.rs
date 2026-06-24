@@ -31,7 +31,7 @@ pub use diff::GitDiffSource;
 pub use history::GitHistorySource;
 pub use source::GitSource;
 
-pub(crate) use diff_parser::{trim_diff_line_bytes, UnifiedDiffEvent, UnifiedDiffParser};
+pub(crate) use diff_parser::{UnifiedDiffEvent, UnifiedDiffParser, trim_diff_line_bytes};
 
 pub(crate) fn git_blob_bytes_limit_usize(limits: crate::SourceLimits) -> usize {
     match usize::try_from(limits.git_blob_bytes) {
@@ -302,7 +302,7 @@ mod capped_line_tests {
 
 #[cfg(test)]
 mod git_child_tests {
-    use super::{spawn_git_child, wait_for_git_child, GIT_STDERR_EXCERPT_BYTES};
+    use super::{GIT_STDERR_EXCERPT_BYTES, spawn_git_child, wait_for_git_child};
     use std::io::{Read, Write};
     use std::process::{Command, Stdio};
 
@@ -352,29 +352,38 @@ mod git_child_tests {
 /// `@@ -old_start[,old_count] +new_start[,new_count] @@ [section]`.
 ///
 /// Returns `new_start` (1-based). The first `+` in the header is always the
-/// new-side marker, so splitting on `+` and reading the leading digits is
-/// robust even when the trailing section text contains a `+`. Shared by the
+/// new-side marker, so scanning to `+` and reading the following ASCII digits
+/// is robust even when the trailing section text contains a `+`. Shared by the
 /// diff and history sources: both run `git diff/log -U0`, where a hunk's added
 /// lines are the contiguous new-file run `new_start, new_start+1, …`, so a
 /// chunk built from those lines reports absolute file lines once it carries
 /// `base_line = new_start - 1`.
-pub(crate) fn parse_hunk_new_start(header: &str) -> Option<usize> {
-    let (_, after_plus) = header.split_once('+')?;
+pub(crate) fn parse_hunk_new_start_bytes(header: &[u8]) -> Option<usize> {
+    let plus = memchr::memchr(b'+', header)?;
+    let after_plus = &header[plus + 1..];
     let digits_end = after_plus
-        .bytes()
+        .iter()
         .position(|b| !b.is_ascii_digit())
         .unwrap_or(after_plus.len()); // LAW10: hunk header digits run to end => borrowed digit slice, no error swallowed
     if digits_end == 0 {
         return None;
     }
-    after_plus[..digits_end].parse().ok() // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
+
+    let mut value = 0usize;
+    for digit in &after_plus[..digits_end] {
+        value = value
+            .checked_mul(10)?
+            .checked_add(usize::from(digit - b'0'))?;
+    }
+    Some(value)
 }
 
-pub(crate) fn parse_hunk_new_start_or_error(
-    header: &str,
+pub(crate) fn parse_hunk_new_start_bytes_or_error(
+    header: &[u8],
     source_type: &str,
 ) -> Result<usize, SourceError> {
-    parse_hunk_new_start(header).ok_or_else(|| {
+    parse_hunk_new_start_bytes(header).ok_or_else(|| {
+        let header = String::from_utf8_lossy(header);
         SourceError::Other(format!(
             "{source_type} output contains malformed unified-diff hunk header {header:?}; \
              refusing to guess line 1 because that would corrupt finding line attribution"
@@ -384,20 +393,26 @@ pub(crate) fn parse_hunk_new_start_or_error(
 
 #[cfg(test)]
 mod hunk_header_tests {
-    use super::{parse_hunk_new_start, parse_hunk_new_start_or_error};
+    use super::{parse_hunk_new_start_bytes, parse_hunk_new_start_bytes_or_error};
 
     #[test]
     fn parses_new_start_with_and_without_count() {
-        assert_eq!(parse_hunk_new_start("@@ -1,0 +90 @@"), Some(90));
-        assert_eq!(parse_hunk_new_start("@@ -10,2 +12,3 @@ fn foo()"), Some(12));
-        assert_eq!(parse_hunk_new_start("@@ -0,0 +1,5 @@"), Some(1));
-        assert_eq!(parse_hunk_new_start("@@ -3,1 +3,1 @@ a + b"), Some(3));
-        assert_eq!(parse_hunk_new_start("@@ garbage @@"), None);
+        assert_eq!(parse_hunk_new_start_bytes(b"@@ -1,0 +90 @@"), Some(90));
+        assert_eq!(
+            parse_hunk_new_start_bytes(b"@@ -10,2 +12,3 @@ fn foo()"),
+            Some(12)
+        );
+        assert_eq!(parse_hunk_new_start_bytes(b"@@ -0,0 +1,5 @@"), Some(1));
+        assert_eq!(
+            parse_hunk_new_start_bytes(b"@@ -3,1 +3,1 @@ a + b"),
+            Some(3)
+        );
+        assert_eq!(parse_hunk_new_start_bytes(b"@@ garbage @@"), None);
     }
 
     #[test]
     fn malformed_hunk_header_is_error_not_line_one() {
-        let err = parse_hunk_new_start_or_error("@@ garbage @@", "git diff")
+        let err = parse_hunk_new_start_bytes_or_error(b"@@ garbage @@", "git diff")
             .expect_err("malformed hunk headers must not default to line 1");
         let keyhog_core::SourceError::Other(message) = err else {
             panic!("expected SourceError::Other");

@@ -58,8 +58,7 @@ impl UnifiedDiffParser {
         }
 
         if line.starts_with(b"@@") && memchr::memmem::find(&line[2..], b"@@").is_some() {
-            let hunk_line = String::from_utf8_lossy(line);
-            let new_start = super::parse_hunk_new_start_or_error(&hunk_line, source_type)?;
+            let new_start = super::parse_hunk_new_start_bytes_or_error(line, source_type)?;
             self.in_hunk = true;
             return Ok(UnifiedDiffEvent::HunkStart {
                 base_line: new_start.saturating_sub(1),
@@ -251,7 +250,7 @@ fn trim_ascii_whitespace(mut bytes: &[u8]) -> &[u8] {
 
 #[cfg(test)]
 mod tests {
-    use super::{sanitize_path_bytes, trim_diff_line_bytes, UnifiedDiffEvent, UnifiedDiffParser};
+    use super::{UnifiedDiffEvent, UnifiedDiffParser, sanitize_path_bytes, trim_diff_line_bytes};
 
     #[test]
     fn parser_emits_added_lines_only_inside_hunks() {

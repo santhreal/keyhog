@@ -452,7 +452,7 @@ fn git_hunk_headers_must_not_default_to_line_one() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let git_mod = std::fs::read_to_string(root.join("src/git/mod.rs")).expect("read git owner");
     assert!(
-        git_mod.contains("fn parse_hunk_new_start_or_error")
+        git_mod.contains("fn parse_hunk_new_start_bytes_or_error")
             && git_mod.contains("refusing to guess line 1"),
         "git/mod.rs must own a loud hunk-header parser for line attribution"
     );
@@ -460,7 +460,7 @@ fn git_hunk_headers_must_not_default_to_line_one() {
     let parser =
         std::fs::read_to_string(root.join("src/git/diff_parser.rs")).expect("read git parser");
     assert!(
-        parser.contains("parse_hunk_new_start_or_error")
+        parser.contains("parse_hunk_new_start_bytes_or_error")
             && parser.contains("UnifiedDiffEvent::HunkStart"),
         "git/diff_parser.rs must fail on malformed hunk headers before callers build chunks"
     );

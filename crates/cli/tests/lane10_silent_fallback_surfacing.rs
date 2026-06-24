@@ -134,3 +134,34 @@ fn daemon_accept_loop_does_not_silently_break_on_error() {
          daemon alive reporting 'ready'"
     );
 }
+
+#[test]
+fn scan_daemon_fallback_warning_uses_resolved_daemon_mode() {
+    let s = src("src/subcommands/scan.rs");
+    let arm = s
+        .split("DaemonRoute::Opportunistic => match run_via_daemon")
+        .nth(1)
+        .expect("scan.rs must have a DaemonRoute::Opportunistic arm");
+    let fallback_arm = arm
+        .split("let orchestrator = ScanOrchestrator::new(args)?;")
+        .next()
+        .unwrap_or(arm);
+
+    assert!(
+        !fallback_arm.contains("matches!(args.daemon,"),
+        "daemon fallback warning must not inspect raw args.daemon; the implicit \
+         default Auto mode would silently skip the operator-visible warning"
+    );
+    assert!(
+        fallback_arm.contains("policy.effective_args.daemon_mode() == DaemonMode::Auto"),
+        "daemon fallback warning must use the resolved daemon mode so implicit \
+         default Auto fallback is surfaced on stderr"
+    );
+    assert!(
+        fallback_arm.contains("eprintln!")
+            && fallback_arm.contains("daemon auto route unavailable")
+            && fallback_arm.contains("running in-process scanner"),
+        "daemon fallback must keep an operator-visible stderr warning naming the \
+         daemon failure and the in-process fallback"
+    );
+}
