@@ -25,6 +25,8 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         "/src/orchestrator_config/calibration.rs"
     ))
     .expect("orchestrator_config calibration source readable");
+    let sources = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/sources.rs"))
+        .expect("sources source readable");
 
     assert!(
         scanner.contains("struct ScannerConfigInput"),
@@ -130,6 +132,29 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         !builder_body.contains("args."),
         "build_scanner_config_from_input must read only ScannerConfigInput, not raw ScanArgs"
     );
+    assert!(
+        sources.contains("resolved: &ResolvedScanConfig")
+            && sources.contains("let source_limits = resolved.source_limits")
+            && sources.contains("resolved.max_file_size")
+            && sources.contains("resolved.no_default_excludes")
+            && sources.contains("resolved.reader_threads")
+            && sources.contains("resolved.exclude_paths")
+            && sources.contains("resolved.max_commits"),
+        "source factory must consume resolved source policy instead of re-reading raw ScanArgs policy fields"
+    );
+    for forbidden in [
+        "args.limits.to_source_limits()",
+        "args.max_file_size",
+        "args.no_default_excludes",
+        "args.reader_threads.and_then",
+        "args.max_commits",
+        "args.exclude_paths.as_ref()",
+    ] {
+        assert!(
+            !sources.contains(forbidden),
+            "source factory must not bypass ResolvedScanConfig through `{forbidden}`"
+        );
+    }
     for forbidden in [
         "struct ScannerConfigInput",
         "fn build_scanner_config_from_input(input: &ScannerConfigInput)",

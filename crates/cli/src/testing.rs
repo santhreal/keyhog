@@ -393,14 +393,17 @@ impl CliTestApi for TestApi {
         allowlist_paths: Vec<String>,
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
     ) -> Result<Vec<Box<dyn Source>>> {
-        crate::sources::build_sources(args, allowlist_paths, merkle)
+        let mut resolved_args = args.clone();
+        let resolved = crate::orchestrator_config::resolve_scan_config(&mut resolved_args)?;
+        crate::sources::build_sources(&resolved_args, &resolved, allowlist_paths, merkle)
     }
     fn merge_scan_ignore_paths(
         &self,
         args: &ScanArgs,
         allowlist_paths: Vec<String>,
     ) -> Vec<String> {
-        crate::sources::merge_scan_ignore_paths(args, allowlist_paths)
+        let exclude_paths = args.exclude_paths.as_deref().unwrap_or(&[]); // LAW10: test API compatibility default; production source construction consumes ResolvedScanConfig::exclude_paths
+        crate::sources::merge_scan_ignore_paths(exclude_paths, allowlist_paths)
     }
     fn validate_cli_path_arg(&self, path: &Path, name: &str) -> Result<()> {
         crate::path_validation::validate_cli_path_arg(path, name)

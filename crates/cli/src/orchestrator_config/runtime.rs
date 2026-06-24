@@ -81,6 +81,8 @@ pub(crate) struct ScanRuntimeInput {
     pub(crate) autoroute_calibration: bool,
     pub(crate) regex_dfa_limit: Option<usize>,
     pub(crate) max_file_size: Option<usize>,
+    #[cfg(feature = "git")]
+    pub(crate) max_commits: usize,
     pub(crate) no_default_excludes: bool,
     pub(crate) exclude_paths: Vec<String>,
     pub(crate) incremental: bool,
@@ -105,6 +107,8 @@ impl ScanRuntimeInput {
             autoroute_calibration: args.autoroute_calibrate,
             regex_dfa_limit: args.regex_dfa_limit,
             max_file_size: args.max_file_size,
+            #[cfg(feature = "git")]
+            max_commits: args.max_commits.unwrap_or(MAX_COMMITS_DEFAULT), // LAW10: absent max-commits => documented compiled git traversal cap; effective config prints the concrete value and source construction consumes this resolved field
             no_default_excludes: args.no_default_excludes,
             exclude_paths: match &args.exclude_paths {
                 Some(paths) => paths.clone(),

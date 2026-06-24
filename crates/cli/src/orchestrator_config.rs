@@ -93,6 +93,9 @@ pub(crate) struct ResolvedScanConfig {
     pub(crate) regex_dfa_limit: Option<usize>,
     /// Resolved filesystem max-file-size cap applied by the source factory.
     pub(crate) max_file_size: Option<usize>,
+    /// Resolved git history/blob traversal cap applied by the source factory.
+    #[cfg(feature = "git")]
+    pub(crate) max_commits: usize,
     /// Whether source-owned default excludes are disabled.
     pub(crate) no_default_excludes: bool,
     /// Explicit operator path/glob exclusions merged with allowlist paths.
@@ -195,6 +198,8 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         require_lockdown: outcome.require_lockdown,
         regex_dfa_limit: runtime_input.regex_dfa_limit,
         max_file_size: runtime_input.max_file_size,
+        #[cfg(feature = "git")]
+        max_commits: runtime_input.max_commits,
         no_default_excludes: runtime_input.no_default_excludes,
         exclude_paths: runtime_input.exclude_paths,
         incremental: runtime_input.incremental,
@@ -239,6 +244,8 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
         require_lockdown: false,
         regex_dfa_limit: None,
         max_file_size: None,
+        #[cfg(feature = "git")]
+        max_commits: MAX_COMMITS_DEFAULT,
         no_default_excludes: false,
         exclude_paths: Vec::new(),
         incremental: false,

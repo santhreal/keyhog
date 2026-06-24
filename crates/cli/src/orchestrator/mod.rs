@@ -515,6 +515,8 @@ impl ScanOrchestrator {
                 require_lockdown: false,
                 regex_dfa_limit: None,
                 max_file_size: None,
+                #[cfg(feature = "git")]
+                max_commits: crate::orchestrator_config::MAX_COMMITS_DEFAULT,
                 no_default_excludes: false,
                 exclude_paths: Vec::new(),
                 incremental: false,

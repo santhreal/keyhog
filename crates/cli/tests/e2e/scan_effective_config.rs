@@ -443,6 +443,31 @@ fn config_effective_prints_source_policy_controls() {
 }
 
 #[test]
+#[cfg(feature = "git")]
+fn config_effective_prints_max_commits_cli_and_toml() {
+    let (stdout, stderr, code) = effective_config_with_toml("max_commits = 456\n");
+
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("max_commits = 456"),
+        "max_commits TOML key must be visible in resolved source config; stdout={stdout}"
+    );
+
+    let dir = TempDir::new().expect("tempdir");
+    let config_path = dir.path().join(".keyhog.toml");
+    std::fs::write(&config_path, "max_commits = 111\n").expect("write config");
+    let config_path = config_path.to_string_lossy();
+    let (stdout, stderr, code) =
+        effective_config(&["--config", &config_path, "--max-commits", "789"]);
+
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("max_commits = 789"),
+        "--max-commits must override TOML in resolved source config; stdout={stdout}"
+    );
+}
+
+#[test]
 #[cfg(feature = "simd")]
 fn config_effective_prints_hyperscan_cache_dir_and_cli_overrides_toml() {
     let (_config_root, config_cache) = home_temp_cache_dir("config-hs-cache");

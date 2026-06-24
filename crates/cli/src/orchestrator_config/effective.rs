@@ -96,6 +96,8 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
             .max_file_size
             .map_or_else(|| "off".to_string(), |bytes| bytes.to_string())
     ));
+    #[cfg(feature = "git")]
+    out.push_str(&format!("max_commits = {}\n", resolved.max_commits));
     out.push_str(&format!(
         "no_default_excludes = {}\n",
         resolved.no_default_excludes
@@ -383,6 +385,8 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
     h.field_bool("autoroute_gpu", resolved.autoroute_gpu);
     h.field_option_usize("regex_dfa_limit", resolved.regex_dfa_limit);
     h.field_option_usize("source_policy.max_file_size", resolved.max_file_size);
+    #[cfg(feature = "git")]
+    h.field_usize("source_policy.max_commits", resolved.max_commits);
     h.field_bool(
         "source_policy.no_default_excludes",
         resolved.no_default_excludes,

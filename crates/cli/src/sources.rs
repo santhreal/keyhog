@@ -1,6 +1,7 @@
 //! Source factory for the KeyHog CLI.
 
 use crate::args::ScanArgs;
+use crate::orchestrator_config::ResolvedScanConfig;
 #[cfg(feature = "git")]
 use anyhow::Context;
 use anyhow::Result;
@@ -43,13 +44,11 @@ impl Source for EmptySource {
 /// actual scanner path, not a CLI glob mirror, decides what is skipped and
 /// records the surfaced skip reason.
 pub(crate) fn merge_scan_ignore_paths(
-    args: &ScanArgs,
+    exclude_paths: &[String],
     allowlist_paths: Vec<String>,
 ) -> Vec<String> {
     let mut merged = allowlist_paths;
-    if let Some(exclude) = &args.exclude_paths {
-        merged.extend(exclude.iter().cloned());
-    }
+    merged.extend(exclude_paths.iter().cloned());
     merged
 }
 
@@ -89,11 +88,12 @@ fn source_http_config(_args: &ScanArgs, ua_suffix: &str) -> keyhog_sources::http
 
 pub(crate) fn build_sources(
     args: &ScanArgs,
+    resolved: &ResolvedScanConfig,
     ignore_paths: Vec<String>,
     merkle: Option<Arc<MerkleIndex>>,
 ) -> Result<Vec<Box<dyn Source>>> {
     let mut sources: Vec<Box<dyn Source>> = Vec::new();
-    let source_limits = args.limits.to_source_limits();
+    let source_limits = resolved.source_limits;
     let scan_path = args.path.as_ref().or(args.input.as_ref());
     validate_source_flag_combinations(args, scan_path.is_some())?;
 
@@ -105,10 +105,10 @@ pub(crate) fn build_sources(
     };
     #[cfg(feature = "git")]
     if args.git_staged {
-        filter_staged_files_by_cli_excludes(&mut staged_files, args);
+        filter_staged_files_by_cli_excludes(&mut staged_files, args, &resolved.exclude_paths);
     }
 
-    let merged_ignore_paths = merge_scan_ignore_paths(args, ignore_paths);
+    let merged_ignore_paths = merge_scan_ignore_paths(&resolved.exclude_paths, ignore_paths);
 
     #[cfg(feature = "git")]
     let staged_include_set_exhausted = args.git_staged && staged_files.is_empty();
@@ -124,11 +124,11 @@ pub(crate) fn build_sources(
             .with_ignore_paths(merged_ignore_paths)
             // Default excludes are source-owned. `--no-default-excludes` must
             // toggle the actual file classifier, not a CLI-side glob mirror.
-            .with_default_excludes(!args.no_default_excludes);
-        if let Some(limit) = args.max_file_size {
+            .with_default_excludes(!resolved.no_default_excludes);
+        if let Some(limit) = resolved.max_file_size {
             fs_source = fs_source.with_max_file_size(limit as u64);
         }
-        if let Some(threads) = args.reader_threads.and_then(NonZeroUsize::new) {
+        if let Some(threads) = resolved.reader_threads.and_then(NonZeroUsize::new) {
             fs_source = fs_source.with_reader_threads(threads);
         }
         if let Some(idx) = merkle.as_ref() {
@@ -155,12 +155,9 @@ pub(crate) fn build_sources(
 
     #[cfg(feature = "git")]
     if let Some(ref path) = args.git_blobs {
-        let max_commits = args
-            .max_commits
-            .unwrap_or(crate::orchestrator_config::MAX_COMMITS_DEFAULT); // LAW10: absent max-commits => documented CLI default; explicit CLI/TOML values remain Some and win
         sources.push(Box::new(
             keyhog_sources::GitSource::new(path.clone())
-                .with_max_commits(max_commits)
+                .with_max_commits(resolved.max_commits)
                 .with_limits(source_limits),
         ));
     }
@@ -179,12 +176,9 @@ pub(crate) fn build_sources(
 
     #[cfg(feature = "git")]
     if let Some(ref path) = args.git_history {
-        let max_commits = args
-            .max_commits
-            .unwrap_or(crate::orchestrator_config::MAX_COMMITS_DEFAULT); // LAW10: absent max-commits => documented CLI default; explicit CLI/TOML values remain Some and win
         sources.push(Box::new(
             keyhog_sources::GitHistorySource::new(path.clone())
-                .with_max_commits(max_commits)
+                .with_max_commits(resolved.max_commits)
                 .with_limits(source_limits),
         ));
     }
@@ -613,13 +607,17 @@ fn get_staged_files(repo_path: Option<&std::path::Path>) -> Result<Vec<PathBuf>>
 }
 
 #[cfg(feature = "git")]
-fn filter_staged_files_by_cli_excludes(files: &mut Vec<PathBuf>, args: &ScanArgs) {
-    let Some(excludes) = args.exclude_paths.as_ref() else {
+fn filter_staged_files_by_cli_excludes(
+    files: &mut Vec<PathBuf>,
+    args: &ScanArgs,
+    excludes: &[String],
+) {
+    if excludes.is_empty() {
         return;
-    };
+    }
     let normalized_excludes: Vec<Cow<'_, str>> = excludes
         .iter()
-        .map(|exclude| slash_normalized_str(exclude))
+        .map(|exclude| slash_normalized_str(exclude.as_str()))
         .collect();
     let base = args
         .path

@@ -222,6 +222,7 @@ impl ScanOrchestrator {
 
         let sources = crate::sources::build_sources(
             &self.args,
+            &self.effective_config,
             allowlist.ignored_paths.clone(),
             merkle.clone(),
         )?;
