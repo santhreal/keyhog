@@ -85,3 +85,12 @@ pub(crate) fn phase2_mark_stats() -> (u64, u64, u64) {
 pub(crate) fn phase2_mark_stats_reset() {
     MARK_STATS.with(|stats| stats.set(MarkStats::default()));
 }
+
+/// Reset the no-candidate fast-path counters to zero between explicit
+/// profiling runs.
+#[cfg(not(test))]
+pub(crate) fn phase2_mark_stats_reset() {
+    MARK_CALLS.store(0, Relaxed);
+    MARK_GATE_SKIPS.store(0, Relaxed);
+    MARK_PERPATTERN_WORK.store(0, Relaxed);
+}

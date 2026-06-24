@@ -16,3 +16,30 @@ fn engine_phase2_profile_route_truth() {
         "phase2 profile must not report parser-only prefix shape or cutoff-limited eligibility as a guaranteed LOCAL route"
     );
 }
+
+#[test]
+fn engine_profile_reset_clears_phase2_mark_stats() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mark_stats = std::fs::read_to_string(root.join("src/engine/phase2/mark_stats.rs"))
+        .expect("phase2 mark stats source readable");
+    let phase2 =
+        std::fs::read_to_string(root.join("src/engine/phase2.rs")).expect("phase2 source readable");
+    let profile = std::fs::read_to_string(root.join("src/engine/profile.rs"))
+        .expect("engine profile source readable");
+
+    assert!(
+        mark_stats.contains("#[cfg(not(test))]\npub(crate) fn phase2_mark_stats_reset()")
+            && mark_stats.contains("MARK_CALLS.store(0, Relaxed)")
+            && mark_stats.contains("MARK_GATE_SKIPS.store(0, Relaxed)")
+            && mark_stats.contains("MARK_PERPATTERN_WORK.store(0, Relaxed)"),
+        "production phase2 mark counters must have a real reset, not only a test-only reset"
+    );
+    assert!(
+        phase2.contains("phase2_mark_stats_reset, record_mark_call"),
+        "engine phase2 owner must re-export phase2_mark_stats_reset outside cfg(test)"
+    );
+    assert!(
+        profile.contains("super::phase2::phase2_mark_stats_reset();"),
+        "engine::profile::reset must clear phase2 mark stats between explicit profile runs"
+    );
+}

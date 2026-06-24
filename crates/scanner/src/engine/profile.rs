@@ -203,6 +203,7 @@ pub fn reset() {
     crate::decode::extract_profile_reset();
     crate::decode::decoder_profile_reset();
     super::phase2_generic::generic_profile_reset();
+    super::phase2::phase2_mark_stats_reset();
     super::scan_postprocess::ml_batch_profile_reset();
     crate::gpu::ml_split_profile_reset();
 }

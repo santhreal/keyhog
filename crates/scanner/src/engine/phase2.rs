@@ -9,8 +9,10 @@ use std::sync::OnceLock;
 
 mod mark_stats;
 #[cfg(test)]
-pub(crate) use mark_stats::{phase2_mark_stats, phase2_mark_stats_reset};
-pub(crate) use mark_stats::{record_mark_call, record_mark_gate_skip, record_mark_perpattern_work};
+pub(crate) use mark_stats::phase2_mark_stats;
+pub(crate) use mark_stats::{
+    phase2_mark_stats_reset, record_mark_call, record_mark_gate_skip, record_mark_perpattern_work,
+};
 
 // The per-scanner performance tuning lives at crate root but remains an
 // engine-internal route selector, not scanner public API.
