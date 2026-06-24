@@ -456,6 +456,56 @@ fn missing_autoroute_cache_does_not_require_gpu_runtime_identity() {
     );
 }
 
+/// An outdated cache (older `version`, written before a field was added to the
+/// schema) must be rejected on its schema version with a clear, actionable
+/// message — NOT the opaque serde "missing field …" error a naive full
+/// deserialize emits. Reproduces the real upgrade-path symptom: a stale on-disk
+/// cache leaked `missing field decode_density_bucket` into every default scan
+/// instead of a clean "unsupported autoroute cache version" verdict, because the
+/// version gate sat after the full deserialize and could never run.
+#[test]
+fn autoroute_cache_rejects_outdated_schema_with_clear_version_error() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_outdated_{}.json",
+        std::process::id()
+    ));
+    // A genuinely old cache: version 1, structurally incompatible with the
+    // current schema (no `decode_density_bucket`, no `binary_version`, …).
+    let outdated = br#"{
+        "version": 1,
+        "detector_digest": 123,
+        "decisions": [
+            [
+                {"bytes_bucket": 1, "chunks_bucket": 1, "max_file_bucket": 1, "pattern_bucket": 13},
+                "simd-regex"
+            ]
+        ]
+    }"#;
+    std::fs::write(&path, outdated).expect("write outdated cache");
+
+    let host = test_host(None);
+    let err = load_autoroute_cache(
+        &path,
+        0x1234_5678_9ABC_DEF0u64,
+        test_rules_digest(),
+        0xA55A_D00D_CAFE_BEEFu64,
+        &host,
+    )
+    .expect_err("outdated-schema cache must be rejected")
+    .to_string();
+    let _ = std::fs::remove_file(&path); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+
+    assert!(
+        err.contains("unsupported autoroute cache version"),
+        "outdated cache must be rejected on its schema version, got: {err:?}"
+    );
+    assert!(
+        !err.contains("missing field"),
+        "version gate must fire BEFORE the full deserialize; a serde 'missing field' \
+         error must not leak to the operator, got: {err:?}"
+    );
+}
+
 #[test]
 fn autoroute_cache_rejects_different_build_feature_set() {
     let path = std::env::temp_dir().join(format!(

@@ -125,6 +125,11 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
         "/../scanner/src/engine/mod.rs"
     ))
     .expect("scanner engine source readable");
+    let scanner_gpu_forced = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../scanner/src/engine/gpu_forced.rs"
+    ))
+    .expect("scanner GPU degrade source readable");
     let scanner_gpu_region_dispatch = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../scanner/src/engine/gpu_region_dispatch.rs"
@@ -255,8 +260,10 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
     );
     assert!(
         scanner_engine.contains("gpu_degrade_count")
-            && scanner_gpu_region_dispatch.contains("gpu_degrade_count")
-            && scanner_backend_triggered.contains("gpu_degrade_count")
+            && scanner_gpu_forced.contains("gpu_degrade_count")
+            && scanner_gpu_forced.contains("fetch_add")
+            && scanner_gpu_region_dispatch.contains("record_gpu_degrade")
+            && scanner_backend_triggered.contains("record_gpu_degrade")
             && backend.contains("scanner.runtime_status().gpu_degrade_count")
             && backend.contains("gpu_degrade_count_before")
             && backend.contains("gpu_degrade_count_after"),

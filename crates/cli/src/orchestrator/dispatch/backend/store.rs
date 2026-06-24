@@ -14,6 +14,20 @@ use super::AUTOROUTE_CALIBRATION_TRIALS;
 
 pub(super) const AUTOROUTE_CACHE_FILE_BYTES: u64 = 8 * 1024 * 1024;
 
+/// Minimal front-matter view used to check the schema `version` BEFORE
+/// deserializing the full payload. A version bump rides along with a structural
+/// schema change, so deserializing an outdated cache straight into
+/// `AutorouteCache` fails with an opaque serde error (e.g. "missing field …")
+/// and the version gate would never run. Reading only the version first lets an
+/// incompatible cache be rejected with a clear, actionable message instead.
+/// `#[serde(default)]` maps a pre-versioning cache (no `version` field) to 0,
+/// which is likewise treated as incompatible.
+#[derive(Deserialize)]
+struct AutorouteCacheVersionEnvelope {
+    #[serde(default)]
+    version: u32,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub(super) struct AutorouteCache {
     pub(super) version: u32,
@@ -188,10 +202,22 @@ pub(super) fn load_autoroute_cache(
     host_profile: &AutorouteHostProfile,
 ) -> Result<HashMap<WorkloadKey, AutorouteDecision>, Box<dyn std::error::Error + Send + Sync>> {
     let data = read_autoroute_cache_file(path)?;
-    let cache: AutorouteCache = serde_json::from_slice(&data)?;
-    if cache.version != AUTOROUTE_CACHE_VERSION {
-        return Err("unsupported autoroute cache version".into());
+    // Gate on the schema version BEFORE the full deserialize. A version bump
+    // accompanies a structural change, so parsing an outdated cache directly
+    // into `AutorouteCache` fails with an opaque serde error and a version
+    // check placed after it can never run. Reading only the version first
+    // rejects an incompatible cache with a clear, actionable message.
+    let envelope: AutorouteCacheVersionEnvelope = serde_json::from_slice(&data)
+        .map_err(|e| format!("autoroute cache is not valid cache JSON: {e}"))?;
+    if envelope.version != AUTOROUTE_CACHE_VERSION {
+        return Err(format!(
+            "unsupported autoroute cache version {} (this build expects {}); \
+             re-run calibration to regenerate it",
+            envelope.version, AUTOROUTE_CACHE_VERSION
+        )
+        .into());
     }
+    let cache: AutorouteCache = serde_json::from_slice(&data)?;
     host_profile.require_exact_identity()?;
     if cache.binary_version != env!("CARGO_PKG_VERSION")
         || cache.git_hash != keyhog_core::git_hash()
