@@ -130,6 +130,86 @@ fn web_unsupported_redirect_scheme_is_counted_unreadable() {
     );
 }
 
+#[cfg(feature = "web")]
+#[test]
+fn web_private_redirect_target_is_counted_unreadable() {
+    use keyhog_core::Source;
+    use keyhog_sources::skip_counts;
+    use keyhog_sources::testing::{SourceTestApi, TestApi};
+
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let redirect = server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/to-metadata");
+        then.status(302)
+            .header("Location", "http://169.254.169.254/latest/meta-data/");
+    });
+
+    let rows: Vec<_> = TestApi
+        .web_source_with_autoroute_loopback_calibration(vec![server.url("/to-metadata")], true)
+        .chunks()
+        .collect();
+
+    redirect.assert();
+    assert_eq!(
+        rows.len(),
+        1,
+        "private redirect target must produce one visible source error"
+    );
+    let error = rows[0]
+        .as_ref()
+        .expect_err("private redirect target must fail");
+    assert!(
+        error.to_string().contains("private / loopback"),
+        "error should name the private redirect target, got {error}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.unreadable - before.unreadable,
+        1,
+        "WebSource private redirect targets must bump SKIPPED_UNREADABLE"
+    );
+}
+
+#[cfg(feature = "web")]
+#[test]
+fn web_dns_failure_is_counted_unreadable() {
+    use keyhog_core::Source;
+    use keyhog_sources::skip_counts;
+    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::WebSource;
+
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let rows: Vec<_> = WebSource::new(vec!["http://keyhog-dns-gap.invalid/app.js".to_string()])
+        .chunks()
+        .collect();
+
+    assert_eq!(
+        rows.len(),
+        1,
+        "DNS failure must produce one visible source error"
+    );
+    let error = rows[0].as_ref().expect_err("DNS failure must fail");
+    assert!(
+        error.to_string().contains("DNS resolution failed"),
+        "error should name the DNS failure, got {error}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.unreadable - before.unreadable,
+        1,
+        "WebSource DNS failures must bump SKIPPED_UNREADABLE"
+    );
+}
+
 #[cfg(not(feature = "web"))]
 #[test]
 fn web_transport_error_is_counted_unreadable() {

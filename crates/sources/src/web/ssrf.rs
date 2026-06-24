@@ -91,14 +91,14 @@ pub(crate) fn resolve_and_screen(
     let addrs: Vec<std::net::SocketAddr> = (host, port)
         .to_socket_addrs()
         .map_err(|e| {
-            SourceError::Other(format!(
+            super::web_unreadable_error(format!(
                 "refusing to fetch {}: DNS resolution failed: {e}",
                 redact_url(host)
             ))
         })?
         .collect();
     if addrs.is_empty() {
-        return Err(SourceError::Other(format!(
+        return Err(super::web_unreadable_error(format!(
             "refusing to fetch {}: DNS returned no addresses",
             redact_url(host)
         )));

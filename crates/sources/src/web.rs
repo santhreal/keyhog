@@ -322,7 +322,7 @@ fn send_with_pinned_redirects(
             && is_autoroute_loopback_calibration_url(&target);
         if is_disallowed_web_host(&target) && !allow_target_calibration_url {
             let redacted = redact_url(&target);
-            return Err(SourceError::Other(format!(
+            return Err(web_unreadable_error(format!(
                 "refusing to follow redirect to {redacted}: target resolves to a \
                  private / loopback / link-local / metadata-service address"
             )));
