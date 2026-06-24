@@ -87,15 +87,21 @@ fn stripe_sk_live_short_payload_invalid() {
 }
 
 #[test]
-fn stripe_sk_live_exact_24_chars_valid() {
+fn stripe_sk_live_exact_24_chars_structurally_valid() {
     let token = "sk_live_".to_string() + &"A".repeat(24);
-    assert_eq!(StripeTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        StripeTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
-fn stripe_sk_test_exact_48_chars_valid() {
+fn stripe_sk_test_exact_48_chars_structurally_valid() {
     let token = "sk_test_".to_string() + &"A".repeat(48);
-    assert_eq!(StripeTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        StripeTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -111,15 +117,21 @@ fn stripe_sk_live_over_max_length_invalid() {
 }
 
 #[test]
-fn stripe_pk_live_valid() {
+fn stripe_pk_live_structurally_valid() {
     let token = "pk_live_".to_string() + &"B".repeat(30);
-    assert_eq!(StripeTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        StripeTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
-fn stripe_rk_test_valid() {
+fn stripe_rk_test_structurally_valid() {
     let token = "rk_test_".to_string() + &"C".repeat(30);
-    assert_eq!(StripeTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        StripeTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]

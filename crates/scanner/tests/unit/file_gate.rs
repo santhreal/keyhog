@@ -143,7 +143,7 @@ fn checksum_github_error() {
 fn checksum_gitlab_happy() {
     assert_eq!(
         validate_checksum("glpat-01234567890123456789"),
-        ChecksumResult::Valid
+        ChecksumResult::StructurallyValid
     );
 }
 #[test]
@@ -204,7 +204,7 @@ fn checksum_slack_error() {
 fn checksum_stripe_happy() {
     assert_eq!(
         validate_checksum(concat!("sk_li", "ve_1234567890abcdefghijklmnop")),
-        ChecksumResult::Valid
+        ChecksumResult::StructurallyValid
     );
 }
 #[test]

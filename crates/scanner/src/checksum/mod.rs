@@ -24,6 +24,8 @@ use std::sync::LazyLock;
 pub enum ChecksumResult {
     /// Checksum matches - token is/was real.
     Valid,
+    /// Token family and shape are valid, but no embedded checksum was verified.
+    StructurallyValid,
     /// Checksum fails - likely false positive.
     Invalid,
     /// Token format doesn't have a checksum (or this validator can't verify it).
@@ -53,7 +55,7 @@ static VALIDATORS: LazyLock<Vec<Box<dyn ChecksumValidator>>> = LazyLock::new(|| 
 
 /// Run the credential through all registered checksum validators.
 ///
-/// The first validator that returns `Valid` or `Invalid` wins.
+/// The first validator that returns a claimed verdict wins.
 /// If none claims the token, [`ChecksumResult::NotApplicable`] is returned.
 pub fn validate_checksum(credential: &str) -> ChecksumResult {
     for validator in VALIDATORS.iter() {
@@ -117,6 +119,8 @@ impl ChecksumConfidenceDecision {
 /// callers while keeping match-scoring ownership in the confidence subsystem.
 ///
 /// - `Valid` -> floor the confidence at [`CHECKSUM_VALID_FLOOR`].
+/// - `StructurallyValid` -> token shape is valid, but no checksum proof exists:
+///   confidence passes through unchanged.
 /// - `Invalid` -> the embedded CRC does not match its body (fabricated or
 ///   corrupted): returns `None` so the caller DROPS the match.
 /// - `NotApplicable` -> no checksum to consult: confidence passes through

@@ -4,7 +4,8 @@ use super::{ChecksumResult, ChecksumValidator};
 ///
 /// Stripe keys follow the format: `{prefix}_{mode}_{24+ alphanumeric chars}`
 /// where prefix is sk/pk/rk and mode is live/test.
-/// No public checksum algorithm, but strict structural validation.
+/// No public checksum algorithm, so valid Stripe-shaped tokens are structural
+/// matches only. They must not receive the embedded-checksum confidence floor.
 pub(crate) struct StripeTokenValidator;
 
 impl ChecksumValidator for StripeTokenValidator {
@@ -17,13 +18,13 @@ impl ChecksumValidator for StripeTokenValidator {
         };
         // Stripe does not publish a checksum. Keep this validator aligned
         // with the detector contract: enforce the family and alphabet, but
-        // do not reject long live keys that still satisfy the regex.
+        // do not claim checksum proof for long live keys that satisfy the regex.
         if payload.len() < 24 || payload.len() > 128 {
             return ChecksumResult::Invalid;
         }
         if !payload.chars().all(|c| c.is_ascii_alphanumeric()) {
             return ChecksumResult::Invalid;
         }
-        ChecksumResult::Valid
+        ChecksumResult::StructurallyValid
     }
 }

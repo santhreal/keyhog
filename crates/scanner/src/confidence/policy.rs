@@ -41,6 +41,7 @@ pub(crate) fn apply_checksum_decision_confidence(
         crate::checksum::ChecksumResult::Valid => {
             Some(confidence.max(crate::checksum::CHECKSUM_VALID_FLOOR))
         }
+        crate::checksum::ChecksumResult::StructurallyValid => Some(confidence),
         crate::checksum::ChecksumResult::NotApplicable => Some(confidence),
     }
 }

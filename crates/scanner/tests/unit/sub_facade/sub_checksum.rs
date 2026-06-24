@@ -170,12 +170,12 @@ fn pypi_wrong_prefix_not_applicable() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn stripe_well_formed_live_key_valid() {
+fn stripe_well_formed_live_key_structurally_valid() {
     let v = StripeTokenValidator;
     // sk_live_ + 28 alphanumeric chars (>= 24, <= 128).
     let token = "sk_live_4eC39HqLyjWDarjtT1zdp7dcABCD";
     assert!(token.len() > 8 + 24);
-    assert_eq!(v.validate(token), ChecksumResult::Valid);
+    assert_eq!(v.validate(token), ChecksumResult::StructurallyValid);
     assert_eq!(v.validator_id(), "stripe-api-key");
 }
 
@@ -206,13 +206,13 @@ fn stripe_wrong_prefix_not_applicable() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn gitlab_classic_20_char_body_valid() {
+fn gitlab_classic_20_char_body_structurally_valid() {
     let v = GitlabTokenValidator;
     // glpat- + exactly 20 base64url body chars.
     let token = "glpat-abcdefghij0123456789";
     assert_eq!(&token[6..], "abcdefghij0123456789");
     assert_eq!(token[6..].len(), 20);
-    assert_eq!(v.validate(token), ChecksumResult::Valid);
+    assert_eq!(v.validate(token), ChecksumResult::StructurallyValid);
     assert_eq!(v.validator_id(), "gitlab-token");
 }
 
@@ -234,10 +234,13 @@ fn gitlab_bad_charset_invalid() {
 }
 
 #[test]
-fn gitlab_runner_token_valid() {
+fn gitlab_runner_token_structurally_valid() {
     let v = GitlabTokenValidator;
     // glrt- + 16-char floor body.
-    assert_eq!(v.validate("glrt-abcdefghij012345"), ChecksumResult::Valid);
+    assert_eq!(
+        v.validate("glrt-abcdefghij012345"),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -292,6 +295,17 @@ fn dispatcher_unknown_token_not_applicable() {
         validate_checksum("this is just prose with no token"),
         ChecksumResult::NotApplicable
     );
+}
+
+#[test]
+fn dispatcher_routes_structural_valid_without_checksum_floor() {
+    let stripe = "sk_live_4eC39HqLyjWDarjtT1zdp7dcABCD";
+    let gitlab = "glpat-abcdefghij0123456789";
+
+    assert_eq!(validate_checksum(stripe), ChecksumResult::StructurallyValid);
+    assert_eq!(validate_checksum(gitlab), ChecksumResult::StructurallyValid);
+    assert_eq!(checksum_adjusted_confidence(0.2, stripe), Some(0.2));
+    assert_eq!(checksum_adjusted_confidence(0.2, gitlab), Some(0.2));
 }
 
 #[test]

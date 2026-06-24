@@ -59,14 +59,20 @@ fn make_valid_npm(entropy: &str) -> String {
 fn gitlab_glpat_classic_20_valid() {
     // body == GITLAB_BODY_MIN (20) -> Valid
     let token = format!("glpat-{}", "A".repeat(20));
-    assert_eq!(GitlabTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        GitlabTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
 fn gitlab_glpat_routable_64_valid() {
     // body == GITLAB_BODY_MAX (64) -> Valid (upper boundary inclusive)
     let token = format!("glpat-{}", "z".repeat(64));
-    assert_eq!(GitlabTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        GitlabTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -74,7 +80,10 @@ fn gitlab_glpat_routable_mid_40_valid() {
     // 40-char routable-band body with the full legal alphabet -> Valid
     let token = format!("glpat-{}", "aZ09-_aZ09-_aZ09-_aZ09-_aZ09-_aZ09-_aZ09");
     assert_eq!(token.len(), "glpat-".len() + 40);
-    assert_eq!(GitlabTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        GitlabTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -83,7 +92,10 @@ fn gitlab_glpat_body_with_dash_and_underscore_valid() {
     let body = format!("{}-_{}", "A".repeat(10), "B".repeat(10)); // 22 chars
     assert_eq!(body.len(), 22);
     let token = format!("glpat-{body}");
-    assert_eq!(GitlabTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        GitlabTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 // ---- glpat- below floor: Invalid ----
@@ -166,19 +178,28 @@ fn gitlab_glpat_space_in_body_invalid() {
 fn gitlab_glcbt_16_floor_valid() {
     // glcbt- floor is 16 (not 20) -> 16-char body is Valid.
     let token = format!("glcbt-{}", "A".repeat(16));
-    assert_eq!(GitlabTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        GitlabTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
 fn gitlab_glrt_16_floor_valid() {
     let token = format!("glrt-{}", "A".repeat(16));
-    assert_eq!(GitlabTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        GitlabTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
 fn gitlab_glcbt_64_ceiling_valid() {
     let token = format!("glcbt-{}", "A".repeat(64));
-    assert_eq!(GitlabTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        GitlabTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -197,7 +218,10 @@ fn gitlab_glrt_18_between_runner_and_classic_floor_valid() {
     // 18 chars: below the classic glpat floor (20) but at/above the runner
     // floor (16). For glrt- this MUST be Valid — the distinct floor matters.
     let token = format!("glrt-{}", "A".repeat(18));
-    assert_eq!(GitlabTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        GitlabTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -723,8 +747,8 @@ fn stripe_all_six_prefixes_valid_at_24() {
         let token = format!("{prefix}{}", "A".repeat(24));
         assert_eq!(
             StripeTokenValidator.validate(&token),
-            ChecksumResult::Valid,
-            "{prefix} with 24-char body must be Valid"
+            ChecksumResult::StructurallyValid,
+            "{prefix} with 24-char body must be structurally valid"
         );
     }
 }
@@ -732,14 +756,20 @@ fn stripe_all_six_prefixes_valid_at_24() {
 #[test]
 fn stripe_body_24_lower_boundary_valid() {
     let token = format!("sk_live_{}", "a".repeat(24));
-    assert_eq!(StripeTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        StripeTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
 fn stripe_body_128_upper_boundary_valid() {
     // 128 is the inclusive max.
     let token = format!("sk_live_{}", "A".repeat(128));
-    assert_eq!(StripeTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        StripeTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -784,7 +814,10 @@ fn stripe_body_with_underscore_invalid() {
 fn stripe_mixed_alnum_body_valid() {
     let token = format!("pk_test_{}", "aB0cD1eF2gH3iJ4kL5mN6oP7");
     assert_eq!(token.len(), "pk_test_".len() + 24);
-    assert_eq!(StripeTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        StripeTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -833,7 +866,7 @@ fn stripe_validator_id_is_stripe_api_key() {
 fn aggregator_stripe_valid_routes_through() {
     // No github/npm/slack/pypi validator claims a stripe key; stripe wins.
     let token = format!("sk_live_{}", "A".repeat(24));
-    assert_eq!(validate_checksum(&token), ChecksumResult::Valid);
+    assert_eq!(validate_checksum(&token), ChecksumResult::StructurallyValid);
 }
 
 #[test]
@@ -856,5 +889,5 @@ fn aggregator_unrelated_token_not_applicable() {
 #[test]
 fn aggregator_gitlab_glpat_valid_routes_through() {
     let token = format!("glpat-{}", "A".repeat(20));
-    assert_eq!(validate_checksum(&token), ChecksumResult::Valid);
+    assert_eq!(validate_checksum(&token), ChecksumResult::StructurallyValid);
 }

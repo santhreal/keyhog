@@ -6,12 +6,13 @@ use super::{ChecksumResult, ChecksumValidator};
 /// routable tokens GitLab ships since 16.x (`glpat-`, `glrt-`, `glcbt-`, …)
 /// are LONGER and embed their own CRC32 in a base64-encoded trailer. This
 /// validator does structural checks only — it does not recompute the routable
-/// CRC — so it must not claim a token is fabricated merely because its length
-/// is not the classic 20: that false `Invalid` verdict makes the engine DROP
-/// every modern GitLab token (the `atlantis-credentials` /
-/// `gitlab-personal-access-token` contract regressions). The rule is:
+/// CRC — so it must not claim checksum proof for structurally valid tokens, or
+/// claim a token is fabricated merely because its length is not the classic 20:
+/// that false `Invalid` verdict makes the engine DROP every modern GitLab
+/// token (the `atlantis-credentials` / `gitlab-personal-access-token` contract
+/// regressions). The rule is:
 ///   - body contains a char a GitLab token cannot                → `Invalid`
-///   - body is base64url-shaped and within the real-world length → `Valid`
+///   - body is base64url-shaped and within the real-world length → `StructurallyValid`
 ///   - anything else (too short / absurdly long to model)        → `NotApplicable`
 /// so we only ever DROP on a positively-malformed body, never on an
 /// unrecognised-but-plausible length.
@@ -43,7 +44,7 @@ impl ChecksumValidator for GitlabTokenValidator {
             }
             return match payload.len() {
                 // classic 20 .. routable-token band: structural pass.
-                GITLAB_BODY_MIN..=GITLAB_BODY_MAX => ChecksumResult::Valid,
+                GITLAB_BODY_MIN..=GITLAB_BODY_MAX => ChecksumResult::StructurallyValid,
                 // a `glpat-` prefix with fewer than 20 body chars cannot be any
                 // real GitLab token: fabricated/truncated -> drop.
                 n if n < GITLAB_BODY_MIN => ChecksumResult::Invalid,
@@ -62,7 +63,7 @@ impl ChecksumValidator for GitlabTokenValidator {
             // CI-build / runner tokens have no fixed classic length; 16 is the
             // floor below which the body is too short to be real.
             return match payload.len() {
-                16..=GITLAB_BODY_MAX => ChecksumResult::Valid,
+                16..=GITLAB_BODY_MAX => ChecksumResult::StructurallyValid,
                 n if n < 16 => ChecksumResult::Invalid,
                 _ => ChecksumResult::NotApplicable,
             };
