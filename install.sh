@@ -1168,14 +1168,29 @@ verify_install() {
     # The previous "may be corrupt" message hid the most common failure mode:
     # a missing shared library on Linux (Hyperscan, libssl, etc.).
     verify_status=0
-    verify_err=$("$INSTALL_DIR/keyhog" --version 2>&1 >/dev/null) || verify_status=$?
+    verify_err_file=$(mktemp -t keyhog-version-stderr.XXXXXX)
+    verify_out=$("$INSTALL_DIR/keyhog" --version 2>"$verify_err_file") || verify_status=$?
+    verify_err=$(cat "$verify_err_file" 2>/dev/null || true)
+    rm -f "$verify_err_file"
 
     # Success is exit 0 from --version. A warning on stderr (deprecation note,
     # config-load warning, locale grumble) is NOT a broken binary - the old
     # `-z "$verify_err"` gate treated any such noise as a failure and would,
     # post-rollback-fix, needlessly roll back a perfectly good upgrade.
     if [ "$verify_status" = "0" ]; then
-        ok "Installed $("$INSTALL_DIR/keyhog" --version)"
+        if [ -n "$TAG" ] && [ "$TAG" != "latest" ] && [ "$TAG" != "(local file)" ]; then
+            observed_tag=$(version_tag_from_text "$verify_out")
+            if [ -z "$observed_tag" ]; then
+                err "Installed binary did not report a version tag; refusing to trust release $TAG."
+                return 1
+            fi
+            if [ "$observed_tag" != "$TAG" ]; then
+                err "Candidate binary version does not match release tag: binary reports $observed_tag but release resolved $TAG."
+                err "Refusing to install a mismatched binary (possible substitution or downgrade attack)."
+                return 1
+            fi
+        fi
+        ok "Installed $(printf '%s\n' "$verify_out" | head -n 1)"
         [ -n "$verify_err" ] && dim "  (binary emitted a startup notice: $verify_err)"
         # Native post-install health check. `keyhog doctor` reuses the same
         # hw_probe the scanner uses (so there's no shell-side GPU detection to

@@ -202,6 +202,18 @@ case "$1" in
   *) ;;
 esac
 SH
+sed 's/v9\.9\.9/v9.9.8/g' "$FIX_DIR/fake_keyhog_healthy" > "$FIX_DIR/fake_keyhog_healthy_v998"
+
+# Signed/checksummed older release substitute. The installer must reject it when
+# the resolved release tag is v9.9.9, even though authenticity and integrity
+# sidecars are valid for the served bytes.
+cat > "$FIX_DIR/fake_keyhog_old_signed" <<'SH'
+#!/bin/sh
+case "$1" in
+  --version) echo "KeyHog v9.9.8 (mock older signed release)" ;;
+  *) exit 0 ;;
+esac
+SH
 
 # Binary that installs successfully, then fails the optional wizard's completion
 # and hook commands with concrete stderr. The PTY test must surface those exact
@@ -672,12 +684,12 @@ expect_match  "2.1 default install resolves latest to a concrete tag" "Release t
 expect_status "2.2 normal install exits 0" 0 "$st"
 expect_nofile "2.3 default latest resolution skips GitHub API when redirect proves tag" "$h/github-api-called"
 rm -rf "$h"; h=$(newhome)
-out=$(MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_latest_empty.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
+out=$(MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_latest_empty.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy_v998" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
 expect_match  "2.4 missing latest asset falls back to API release walk" "checking recent releases" "$out"
 expect_match  "2.5 skips asset-less newest, picks v9.9.8" "Release tag:   v9.9.8" "$out"
 expect_file   "2.6 asset walk calls GitHub API" "$h/github-api-called"
 rm -rf "$h"; h=$(newhome)
-out=$(GITHUB_TOKEN=ghp_mock_token MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_latest_empty.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+out=$(GITHUB_TOKEN=ghp_mock_token MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_latest_empty.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy_v998" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
 expect_status "2.7 authenticated latest-resolution install exits 0" 0 "$st"
 expect_file   "2.8 latest-resolution API sends Authorization when GITHUB_TOKEN is set" "$h/github-api-auth"
 rm -rf "$h"; h=$(newhome)
@@ -894,6 +906,14 @@ out=$(run_install "$sb" "$h" -- --from-file="$FIX_DIR/local_keyhog_no_sidecar" -
 expect_match  "6.4al from-file missing local GPU sidecar refuses" "--from-file requires a sibling GPU literal sidecar" "$out"
 expect_status "6.4am from-file missing local GPU sidecar exits 1" 1 "$st"
 expect_nofile "6.4an no binary written without from-file GPU sidecar" "$h/.local/bin/keyhog"
+rm -rf "$h"
+# 6.4ao valid older signed release cannot substitute for the resolved tag.
+h=$(newhome)
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_old_signed" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_match  "6.4ao signed older release substitution refuses" "Candidate binary version does not match release tag" "$out"
+expect_match  "6.4ap signed older release names mismatch" "v9\\.9\\.8.*v9\\.9\\.9" "$out"
+expect_status "6.4aq signed older release substitution exits 1" 1 "$st"
+expect_nofile "6.4ar no binary written after signed older release substitution" "$h/.local/bin/keyhog"
 rm -rf "$h"
 # 6.5 checksum mismatch refuses + no install
 h=$(newhome)

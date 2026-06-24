@@ -135,3 +135,24 @@ fn bootstrap_installers_verify_gpu_literal_sidecars_before_installing_cache_arti
         "install.ps1 must verify and inspect GPU literal sidecar archives before extraction"
     );
 }
+
+#[test]
+fn bootstrap_installers_reject_binary_release_tag_mismatch() {
+    let sh = include_str!("../../../install.sh");
+    assert!(
+        sh.contains("observed_tag=$(version_tag_from_text \"$verify_out\")")
+            && sh.contains("[ \"$observed_tag\" != \"$TAG\" ]")
+            && sh.contains("Candidate binary version does not match release tag")
+            && sh.contains("possible substitution or downgrade attack"),
+        "install.sh must verify the installed binary version against the resolved release tag"
+    );
+
+    let ps1 = include_str!("../../../install.ps1");
+    assert!(
+        ps1.contains("$observedTag = Get-VersionTagFromText -Text ($out | Out-String)")
+            && ps1.contains("$observedTag -ne $Script:Tag")
+            && ps1.contains("Candidate binary version does not match release tag")
+            && ps1.contains("possible substitution or downgrade attack"),
+        "install.ps1 must verify the installed binary version against the resolved release tag"
+    );
+}

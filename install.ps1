@@ -1529,7 +1529,20 @@ function Test-Binary {
         Err "The download may be corrupt or the wrong build for this machine."
         return $false
     }
-    Ok "Installed $($out | Select-Object -First 1)"
+    $firstLine = $out | Select-Object -First 1
+    if ($Script:Tag -and $Script:Tag -ne 'latest' -and $Script:Tag -ne '(local file)') {
+        $observedTag = Get-VersionTagFromText -Text ($out | Out-String)
+        if (-not $observedTag) {
+            Err "Installed binary did not report a version tag; refusing to trust release $($Script:Tag)."
+            return $false
+        }
+        if ($observedTag -ne $Script:Tag) {
+            Err "Candidate binary version does not match release tag: binary reports $observedTag but release resolved $($Script:Tag)."
+            Err "Refusing to install a mismatched binary (possible substitution or downgrade attack)."
+            return $false
+        }
+    }
+    Ok "Installed $firstLine"
     return $true
 }
 
