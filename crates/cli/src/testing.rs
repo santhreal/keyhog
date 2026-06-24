@@ -17,6 +17,10 @@ pub const API: TestApi = TestApi;
 
 static SCAN_RUNTIME_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+pub struct ScanRuntimeGuard {
+    _guard: MutexGuard<'static, ()>,
+}
+
 /// Public baseline shape used by tests without exposing the production cache.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Baseline {
@@ -297,12 +301,12 @@ pub trait CliTestApi {
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
     ) -> Result<Vec<RawMatch>>;
 
-    fn seed_scan_runtime_state_for_test(&self);
-    fn scan_runtime_guard_for_test(&self) -> MutexGuard<'static, ()>;
-    fn reset_scan_runtime_state_for_test(&self);
-    fn scan_runtime_snapshot(&self) -> ScanRuntimeSnapshot;
-    fn scanned_chunks(&self) -> usize;
-    fn scanner_panicked(&self) -> bool;
+    fn scan_runtime_guard_for_test(&self) -> ScanRuntimeGuard;
+    fn seed_scan_runtime_state_for_test(&self, _guard: &ScanRuntimeGuard);
+    fn reset_scan_runtime_state_for_test(&self, _guard: &ScanRuntimeGuard);
+    fn scan_runtime_snapshot(&self, _guard: &ScanRuntimeGuard) -> ScanRuntimeSnapshot;
+    fn scanned_chunks(&self, _guard: &ScanRuntimeGuard) -> usize;
+    fn scanner_panicked(&self, _guard: &ScanRuntimeGuard) -> bool;
 }
 
 impl CliTestApi for TestApi {
@@ -826,7 +830,17 @@ impl CliTestApi for TestApi {
             .scan_sources_for_test(sources, show_progress, merkle)
     }
 
-    fn seed_scan_runtime_state_for_test(&self) {
+    fn scan_runtime_guard_for_test(&self) -> ScanRuntimeGuard {
+        let guard = match SCAN_RUNTIME_TEST_LOCK.lock() {
+            Ok(guard) => guard,
+            // LAW10: test-only lock poisoning would cascade unrelated failures;
+            // keep the guard held so shared scan-runtime state remains serialized.
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        ScanRuntimeGuard { _guard: guard }
+    }
+
+    fn seed_scan_runtime_state_for_test(&self, _guard: &ScanRuntimeGuard) {
         use std::sync::atomic::Ordering::Relaxed;
 
         crate::SCANNED_CHUNKS.store(11, Relaxed);
@@ -841,17 +855,11 @@ impl CliTestApi for TestApi {
         keyhog_scanner::telemetry::add_example_suppressions(23);
     }
 
-    fn scan_runtime_guard_for_test(&self) -> MutexGuard<'static, ()> {
-        SCAN_RUNTIME_TEST_LOCK
-            .lock()
-            .expect("CLI scan-runtime test guard poisoned")
-    }
-
-    fn reset_scan_runtime_state_for_test(&self) {
+    fn reset_scan_runtime_state_for_test(&self, _guard: &ScanRuntimeGuard) {
         crate::reset_scan_runtime_state();
     }
 
-    fn scan_runtime_snapshot(&self) -> ScanRuntimeSnapshot {
+    fn scan_runtime_snapshot(&self, _guard: &ScanRuntimeGuard) -> ScanRuntimeSnapshot {
         use std::sync::atomic::Ordering::Relaxed;
 
         ScanRuntimeSnapshot {
@@ -869,10 +877,10 @@ impl CliTestApi for TestApi {
         }
     }
 
-    fn scanned_chunks(&self) -> usize {
+    fn scanned_chunks(&self, _guard: &ScanRuntimeGuard) -> usize {
         crate::SCANNED_CHUNKS.load(std::sync::atomic::Ordering::Relaxed)
     }
-    fn scanner_panicked(&self) -> bool {
+    fn scanner_panicked(&self, _guard: &ScanRuntimeGuard) -> bool {
         crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed)
     }
 }

@@ -18,14 +18,14 @@ use std::time::{Duration, Instant};
 #[test]
 fn lib_happy() {
     let _guard = API.scan_runtime_guard_for_test();
-    API.reset_scan_runtime_state_for_test();
-    assert_eq!(API.scanned_chunks(), 0);
+    API.reset_scan_runtime_state_for_test(&_guard);
+    assert_eq!(API.scanned_chunks(&_guard), 0);
 }
 #[test]
 fn lib_error() {
     let _guard = API.scan_runtime_guard_for_test();
-    API.reset_scan_runtime_state_for_test();
-    assert!(!API.scanner_panicked());
+    API.reset_scan_runtime_state_for_test(&_guard);
+    assert!(!API.scanner_panicked(&_guard));
 }
 
 #[test]
@@ -129,8 +129,8 @@ fn git_object_coverage_gaps_are_reported_separately() {
 #[test]
 fn scan_runtime_reset_clears_process_global_scan_state() {
     let _guard = API.scan_runtime_guard_for_test();
-    API.seed_scan_runtime_state_for_test();
-    let seeded = API.scan_runtime_snapshot();
+    API.seed_scan_runtime_state_for_test(&_guard);
+    let seeded = API.scan_runtime_snapshot(&_guard);
     assert!(
         seeded.scanned_chunks > 0
             && seeded.total_chunks > 0
@@ -145,10 +145,10 @@ fn scan_runtime_reset_clears_process_global_scan_state() {
         "test setup must seed every runtime counter that can leak across scans: {seeded:?}"
     );
 
-    API.reset_scan_runtime_state_for_test();
+    API.reset_scan_runtime_state_for_test(&_guard);
 
     assert_eq!(
-        API.scan_runtime_snapshot(),
+        API.scan_runtime_snapshot(&_guard),
         keyhog::testing::ScanRuntimeSnapshot::default(),
         "per-scan runtime reset must clear CLI totals, failure flags, scanner dogfood state, \
          suppression counts, and scanner coverage-gap counters"
@@ -411,7 +411,7 @@ fn reporting_error() {
 #[test]
 fn reporting_sarif_includes_scanner_decode_truncation_gap() {
     let _guard = API.scan_runtime_guard_for_test();
-    API.reset_scan_runtime_state_for_test();
+    API.reset_scan_runtime_state_for_test(&_guard);
     let chunk = Chunk {
         data: SensitiveString::from("plain inert text"),
         metadata: ChunkMetadata {
@@ -423,7 +423,7 @@ fn reporting_sarif_includes_scanner_decode_truncation_gap() {
     let _decoded =
         keyhog_scanner::testing::decode_chunk(&chunk, 1, false, Some(past_deadline), None);
     assert!(
-        API.scan_runtime_snapshot().decode_truncations > 0,
+        API.scan_runtime_snapshot(&_guard).decode_truncations > 0,
         "test setup must create a real scanner decode-through truncation"
     );
 
@@ -448,7 +448,7 @@ fn reporting_sarif_includes_scanner_decode_truncation_gap() {
         }),
         "SARIF notifications must include the scanner decode truncation gap; sarif={sarif}"
     );
-    API.reset_scan_runtime_state_for_test();
+    API.reset_scan_runtime_state_for_test(&_guard);
 }
 
 // ── crates/cli/src/sources.rs ───────────────────────────────────────
