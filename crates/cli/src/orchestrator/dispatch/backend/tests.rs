@@ -59,6 +59,52 @@ fn test_hw_caps() -> keyhog_scanner::hw_probe::HardwareCaps {
     }
 }
 
+#[test]
+fn host_profile_strips_gpu_runtime_when_no_hardware_gpu_participates() {
+    let mut cpu_only = test_hw_caps();
+    cpu_only.gpu_available = false;
+    cpu_only.gpu_name = Some("stale probe name".to_string());
+    cpu_only.gpu_runtime_identity = Some("stale runtime identity".to_string());
+    cpu_only.gpu_is_software = false;
+    let cpu_profile = AutorouteHostProfile::from_caps(&cpu_only, Some("cuda"));
+    assert_eq!(
+        cpu_profile.gpu_name, None,
+        "CPU-only autoroute identity must not persist stale GPU device names"
+    );
+    assert_eq!(
+        cpu_profile.gpu_runtime_backend, None,
+        "CPU-only autoroute identity must not inherit a compiled GPU runtime backend"
+    );
+    assert_eq!(
+        cpu_profile.gpu_driver_runtime_identity, None,
+        "CPU-only autoroute identity must not persist GPU driver identity"
+    );
+
+    let mut software_gpu = test_hw_caps();
+    software_gpu.gpu_available = true;
+    software_gpu.gpu_name = Some("llvmpipe (LLVM 15.0.7)".to_string());
+    software_gpu.gpu_runtime_identity = Some("wgpu:Vulkan:llvmpipe:mesa".to_string());
+    software_gpu.gpu_is_software = true;
+    let software_profile = AutorouteHostProfile::from_caps(&software_gpu, Some("wgpu"));
+    assert_eq!(
+        software_profile.gpu_runtime_backend, None,
+        "software renderer runtimes do not participate in autoroute calibration"
+    );
+    assert_eq!(
+        software_profile.gpu_driver_runtime_identity, None,
+        "software renderer driver churn must not invalidate CPU/SIMD autoroute decisions"
+    );
+    assert_eq!(
+        software_profile.gpu_name.as_deref(),
+        Some("llvmpipe (LLVM 15.0.7)"),
+        "the software renderer device name still records host identity"
+    );
+    assert!(
+        software_profile.gpu_is_software,
+        "software renderer status remains part of host identity"
+    );
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn cpuinfo_parser_prefers_model_name_over_processor_index() {
@@ -444,6 +490,19 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
     assert!(
         wrong_gpu_runtime.is_err(),
         "cache must reject a different GPU driver/runtime identity"
+    );
+    let mut other_runtime_backend = host.clone();
+    other_runtime_backend.gpu_runtime_backend = Some("vulkan".to_string());
+    let wrong_runtime_backend = load_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &other_runtime_backend,
+    );
+    assert!(
+        wrong_runtime_backend.is_err(),
+        "cache must reject a different GPU runtime backend"
     );
     let mut other_cpu = host.clone();
     other_cpu.cpu_model = Some("Test CPU 4.0GHz".to_string());
@@ -1156,6 +1215,184 @@ fn autoroute_cache_rejects_missing_gpu_runtime_identity() {
             .to_string()
             .contains("GPU driver/runtime identity is unavailable"),
         "a GPU-capable autoroute profile must record the driver/runtime identity used for timing"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
+fn autoroute_cache_rejects_empty_or_impossible_gpu_runtime_identity() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_invalid_gpu_identity_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let key = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, Some(40)),
+    );
+
+    let mut whitespace_backend = test_host(Some("NVIDIA GeForce RTX 5090"));
+    whitespace_backend.gpu_runtime_backend = Some("   ".to_string());
+    let saved = save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &whitespace_backend,
+        &decisions,
+    );
+    assert!(
+        saved
+            .expect_err("blank GPU runtime backend must reject cache save")
+            .to_string()
+            .contains("GPU runtime backend identity is unavailable"),
+        "GPU runtime backend identity must not be whitespace"
+    );
+
+    let mut whitespace_driver = test_host(Some("NVIDIA GeForce RTX 5090"));
+    whitespace_driver.gpu_driver_runtime_identity = Some("   ".to_string());
+    let saved = save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &whitespace_driver,
+        &decisions,
+    );
+    assert!(
+        saved
+            .expect_err("blank GPU driver/runtime identity must reject cache save")
+            .to_string()
+            .contains("GPU driver/runtime identity is unavailable"),
+        "GPU driver/runtime identity must not be whitespace"
+    );
+
+    let mut whitespace_device = test_host(None);
+    whitespace_device.gpu_name = Some("   ".to_string());
+    whitespace_device.gpu_runtime_backend = Some("cuda".to_string());
+    whitespace_device.gpu_driver_runtime_identity = Some("cuda:driver:535.00".to_string());
+    let saved = save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &whitespace_device,
+        &decisions,
+    );
+    assert!(
+        saved
+            .expect_err("blank GPU device identity must reject cache save")
+            .to_string()
+            .contains("GPU device identity is unavailable"),
+        "GPU device identity must not be whitespace"
+    );
+
+    let mut runtime_without_device = test_host(None);
+    runtime_without_device.gpu_runtime_backend = Some("cuda".to_string());
+    runtime_without_device.gpu_driver_runtime_identity = Some("cuda:driver:535.00".to_string());
+    let saved = save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &runtime_without_device,
+        &decisions,
+    );
+    assert!(
+        saved
+            .expect_err("GPU runtime without GPU device identity must reject cache save")
+            .to_string()
+            .contains("GPU runtime backend is present without GPU device identity"),
+        "autoroute must not persist impossible GPU runtime state"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
+fn autoroute_cache_allows_software_gpu_without_runtime_identity() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_software_gpu_identity_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let key = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
+    );
+
+    let mut software_gpu_host = test_host(None);
+    software_gpu_host.gpu_name = Some("llvmpipe (LLVM 15.0.7)".to_string());
+    software_gpu_host.gpu_is_software = true;
+    software_gpu_host.gpu_runtime_backend = None;
+    software_gpu_host.gpu_driver_runtime_identity = None;
+
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &software_gpu_host,
+        &decisions,
+    )
+    .expect("software GPU names without a runtime must not block CPU/SIMD autoroute persistence");
+    let loaded = load_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &software_gpu_host,
+    )
+    .expect("software GPU host profile should reload CPU/SIMD autoroute decisions");
+    assert_eq!(
+        loaded, decisions,
+        "software renderer identity must remain part of the host profile without requiring GPU runtime identity"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
+fn autoroute_cache_rejects_software_gpu_runtime_without_driver_identity() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_software_gpu_runtime_identity_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let key = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
+    );
+
+    let mut software_gpu_runtime = test_host(None);
+    software_gpu_runtime.gpu_name = Some("llvmpipe (LLVM 15.0.7)".to_string());
+    software_gpu_runtime.gpu_is_software = true;
+    software_gpu_runtime.gpu_runtime_backend = Some("vulkan".to_string());
+    software_gpu_runtime.gpu_driver_runtime_identity = None;
+    let saved = save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &software_gpu_runtime,
+        &decisions,
+    );
+    assert!(
+        saved
+            .expect_err("explicit software GPU runtime must still require runtime identity")
+            .to_string()
+            .contains("GPU driver/runtime identity is unavailable"),
+        "an explicit GPU runtime backend must not persist without exact driver/runtime identity"
     );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant

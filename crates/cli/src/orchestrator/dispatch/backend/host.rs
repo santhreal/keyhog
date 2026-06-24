@@ -26,6 +26,12 @@ impl AutorouteHostProfile {
         caps: &HardwareCaps,
         gpu_runtime_backend: Option<&'static str>,
     ) -> Self {
+        let gpu_device_identity = caps.gpu_available.then(|| caps.gpu_name.clone()).flatten();
+        let hardware_gpu_present = gpu_device_identity
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|name| !name.is_empty())
+            && !caps.gpu_is_software;
         Self {
             os: std::env::consts::OS.to_string(),
             arch: std::env::consts::ARCH.to_string(),
@@ -36,9 +42,13 @@ impl AutorouteHostProfile {
             has_avx512: caps.has_avx512,
             has_neon: caps.has_neon,
             hyperscan_available: caps.hyperscan_available,
-            gpu_name: caps.gpu_name.clone(),
-            gpu_runtime_backend: gpu_runtime_backend.map(str::to_string),
-            gpu_driver_runtime_identity: caps.gpu_runtime_identity.clone(),
+            gpu_name: gpu_device_identity,
+            gpu_runtime_backend: hardware_gpu_present
+                .then(|| gpu_runtime_backend.map(str::to_string))
+                .flatten(),
+            gpu_driver_runtime_identity: hardware_gpu_present
+                .then(|| caps.gpu_runtime_identity.clone())
+                .flatten(),
             gpu_is_software: caps.gpu_is_software,
             total_memory_mb: caps.total_memory_mb,
         }
@@ -59,13 +69,27 @@ impl AutorouteHostProfile {
             Some(memory_mb) if memory_mb > 0 => {}
             _ => return Err("system memory size is unavailable"),
         }
-        if self.gpu_name.is_some() && !self.gpu_is_software {
-            match self.gpu_runtime_backend.as_deref().map(str::trim) {
-                Some(backend) if !backend.is_empty() => {}
-                _ => return Err("GPU runtime backend identity is unavailable"),
+        let gpu_name = self.gpu_name.as_deref().map(str::trim);
+        if self.gpu_name.is_some() && !matches!(gpu_name, Some(name) if !name.is_empty()) {
+            return Err("GPU device identity is unavailable");
+        }
+        let hardware_gpu_present =
+            matches!(gpu_name, Some(name) if !name.is_empty()) && !self.gpu_is_software;
+        let gpu_runtime_backend = self.gpu_runtime_backend.as_deref().map(str::trim);
+        let gpu_runtime_backend_present =
+            matches!(gpu_runtime_backend, Some(backend) if !backend.is_empty());
+        if self.gpu_runtime_backend.is_some() && !gpu_runtime_backend_present {
+            return Err("GPU runtime backend identity is unavailable");
+        }
+        if gpu_runtime_backend_present && self.gpu_name.is_none() {
+            return Err("GPU runtime backend is present without GPU device identity");
+        }
+        if hardware_gpu_present {
+            if !gpu_runtime_backend_present {
+                return Err("GPU runtime backend identity is unavailable");
             }
         }
-        if self.gpu_name.is_some() || self.gpu_runtime_backend.is_some() {
+        if hardware_gpu_present || gpu_runtime_backend_present {
             match self.gpu_driver_runtime_identity.as_deref().map(str::trim) {
                 Some(identity) if !identity.is_empty() => {}
                 _ => return Err("GPU driver/runtime identity is unavailable"),
