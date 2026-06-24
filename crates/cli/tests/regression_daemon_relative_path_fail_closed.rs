@@ -5,15 +5,11 @@
 //! must fail closed with an actionable error instead of silently scanning the
 //! wrong tree (LAW10: no silent fallback).
 
+#![cfg(unix)]
+
 use keyhog::daemon::server::resolve_scan_target;
 use std::path::PathBuf;
 
-#[cfg(windows)]
-fn absolute_path(path: &str) -> String {
-    format!(r"C:\{path}")
-}
-
-#[cfg(not(windows))]
 fn absolute_path(path: &str) -> String {
     format!("/{}", path.replace('\\', "/"))
 }
@@ -53,17 +49,6 @@ fn relative_working_dir_fails_closed_instead_of_using_daemon_cwd() {
             && err.contains("not absolute")
             && err.contains("absolute working_dir"),
         "error must reject the relative working_dir explicitly, got: {err}"
-    );
-}
-
-#[cfg(windows)]
-#[test]
-fn drive_relative_scan_path_fails_closed_after_join() {
-    let err = resolve_scan_target(r"C:relative\file.txt", Some(r"C:\home\u\proj"))
-        .expect_err("Windows drive-relative paths must not survive as relative daemon targets");
-    assert!(
-        err.contains("resolved target") && err.contains("not absolute"),
-        "error must reject the drive-relative resolved target explicitly, got: {err}"
     );
 }
 

@@ -38,11 +38,7 @@ pub(crate) fn run(args: DetectorArgs) -> Result<ExitCode> {
 }
 
 fn run_list(args: DetectorArgs) -> Result<()> {
-    let detectors = if args.detectors.exists() && args.detectors.is_dir() {
-        keyhog_core::load_detectors(&args.detectors)?
-    } else {
-        crate::orchestrator_config::load_detectors_embedded_or_fail(&args.detectors)?
-    };
+    let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
     let source = if args.detectors.exists() {
         format!("{}", args.detectors.display())
     } else {
@@ -175,11 +171,7 @@ fn print_detectors_json(detectors: &[&DetectorSpec]) -> Result<()> {
 
 fn run_audit(args: &DetectorArgs) -> Result<ExitCode> {
     let palette = style::for_stdout();
-    let detectors = if args.detectors.exists() && args.detectors.is_dir() {
-        keyhog_core::load_detectors(&args.detectors)?
-    } else {
-        crate::orchestrator_config::load_detectors_embedded_or_fail(&args.detectors)?
-    };
+    let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
 
     let mut total_errors = 0usize;
     let mut total_warnings = 0usize;

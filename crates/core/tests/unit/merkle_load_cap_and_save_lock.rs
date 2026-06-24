@@ -135,8 +135,10 @@ fn save_lock_and_cap_source_contract() {
         "load_merge_base should skip disk read/parse when the cache file fingerprint is unchanged"
     );
     assert!(
-        storage_source.contains("encoded.sort_by(|left, right|")
-            && storage_source.contains(".then_with(|| left.chunk_offset.cmp(&right.chunk_offset))"),
+        storage_source.contains("ordered.sort_by(|(left_key, _), (right_key, _)|")
+            && storage_source
+                .contains(".then_with(|| left_key.chunk_offset.cmp(&right_key.chunk_offset))")
+            && storage_source.contains("path: key.path.display().to_string()"),
         "save must serialize Merkle entries deterministically by cache key"
     );
 }

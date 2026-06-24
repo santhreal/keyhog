@@ -12,8 +12,8 @@ mod scanner;
 
 use calibration::load_explicit_scan_calibration;
 pub(crate) use detectors::{
-    auto_discover_detectors, detector_compile_failed, load_detectors_embedded_or_fail,
-    load_detectors_no_cache, load_detectors_or_embedded, load_detectors_with_cache,
+    auto_discover_detectors, detector_compile_failed, load_detectors_no_cache,
+    load_detectors_or_embedded, load_detectors_with_cache,
 };
 pub(crate) use effective::{autoroute_config_digest, render_effective_config};
 pub(crate) use policy::{ResolvedAllowlistConfig, ResolvedReportPolicy, ResolvedVerifyPolicy};

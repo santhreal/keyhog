@@ -19,8 +19,9 @@ fn subcommands_detectors_non_empty() {
         "subcommands::detectors: todo!/unimplemented! forbidden in non-test source"
     );
     assert!(
-        src.contains("crate::orchestrator_config::load_detectors_embedded_or_fail")
+        src.contains("crate::orchestrator_config::load_detectors_or_embedded")
+            && !src.contains("keyhog_core::load_detectors(&args.detectors)")
             && !src.contains("fn load_embedded_or_bail("),
-        "subcommands::detectors must use the canonical embedded detector loader instead of owning a divergent local copy"
+        "subcommands::detectors must use the canonical detector directory-or-embedded loader instead of owning divergent load/fallback branches"
     );
 }

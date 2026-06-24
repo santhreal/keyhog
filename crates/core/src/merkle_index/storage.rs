@@ -459,8 +459,15 @@ pub fn default_cache_path() -> Option<PathBuf> {
 }
 
 fn encode_entries(entries: &HashMap<CacheKey, CacheEntry>) -> Vec<EntryV4> {
-    let mut encoded = entries
-        .iter()
+    let mut ordered = entries.iter().collect::<Vec<_>>();
+    ordered.sort_by(|(left_key, _), (right_key, _)| {
+        left_key
+            .path
+            .cmp(&right_key.path)
+            .then_with(|| left_key.chunk_offset.cmp(&right_key.chunk_offset))
+    });
+    ordered
+        .into_iter()
         .map(|(key, entry)| EntryV4 {
             path: key.path.display().to_string(),
             chunk_offset: key.chunk_offset,
@@ -469,13 +476,7 @@ fn encode_entries(entries: &HashMap<CacheKey, CacheEntry>) -> Vec<EntryV4> {
             last_seen_order: entry.last_seen_order,
             hash: hex_encode(&entry.hash),
         })
-        .collect::<Vec<_>>();
-    encoded.sort_by(|left, right| {
-        left.path
-            .cmp(&right.path)
-            .then_with(|| left.chunk_offset.cmp(&right.chunk_offset))
-    });
-    encoded
+        .collect()
 }
 
 fn flatten_shards(index: &MerkleIndex) -> HashMap<CacheKey, CacheEntry> {
