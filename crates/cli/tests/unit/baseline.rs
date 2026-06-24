@@ -1,4 +1,4 @@
-use keyhog::testing::{API, CliTestApi as _};
+use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -60,7 +60,6 @@ fn baseline_creation_produces_expected_entries() {
         Some("src/aws.py".to_string())
     );
     assert_eq!(baseline.entries[0].line, Some(42));
-    assert_eq!(baseline.entries[0].status, "acknowledged");
 }
 
 #[test]
@@ -132,6 +131,43 @@ fn baseline_save_and_load_roundtrip() {
     let loaded = API.baseline_load(&path).unwrap();
 
     assert_eq!(loaded, baseline);
+}
+
+#[test]
+fn baseline_status_is_not_serialized_but_legacy_status_loads() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("baseline.json");
+    let baseline =
+        API.baseline_from_findings(&[make_finding("github-pat", "abc123", Some("src/config.py"))]);
+
+    API.baseline_save(&baseline, &path).unwrap();
+    let serialized = std::fs::read_to_string(&path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+    assert!(
+        parsed["entries"][0].get("status").is_none(),
+        "baseline status is not a real suppression state and must not be serialized: {serialized}"
+    );
+
+    let legacy = format!(
+        r#"{{
+            "version": 1,
+            "created": "legacy",
+            "entries": [{{
+                "detector_id": "github-pat",
+                "credential_hash": "{}",
+                "file_path": "src/config.py",
+                "line": 42,
+                "status": "rejected"
+            }}]
+        }}"#,
+        baseline_hash("abc123")
+    );
+    std::fs::write(&path, legacy).unwrap();
+    let loaded = API.baseline_load(&path).unwrap();
+    assert!(API.baseline_contains(
+        &loaded,
+        &make_finding("github-pat", "abc123", Some("src/moved.py"))
+    ));
 }
 
 #[test]

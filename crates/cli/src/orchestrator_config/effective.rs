@@ -1,6 +1,20 @@
 use super::{backend_override_label, ResolvedScanConfig};
 use crate::stable_hash::StableHasher;
 
+/// Render an optional path as a value for the effective-config dump: the path's
+/// display form, or `unset_label` (a `<…>` placeholder) when it is `None`. This
+/// is purely a reporting label — the real path (or a deliberate `None`) is
+/// resolved and validated elsewhere before any disk access, so the placeholder
+/// never stands in for an actual cache read (LAW10). One definition keeps the
+/// four optional-cache fields below from drifting to different spellings of the
+/// same `map(display).unwrap_or(placeholder)` idiom.
+fn format_optional_path<P: AsRef<std::path::Path>>(path: Option<P>, unset_label: &str) -> String {
+    match path {
+        Some(path) => path.as_ref().display().to_string(),
+        None => unset_label.to_string(),
+    }
+}
+
 /// Render the resolved scan config as a stable, human + machine readable block
 /// for `keyhog config --effective`. It answers "what will actually run?" in one
 /// place: the resolved engine config AND the post-scan floors, so a test (or an
@@ -91,11 +105,11 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         resolved.exclude_paths.len()
     ));
     out.push_str(&format!("incremental = {}\n", resolved.incremental));
-    let incremental_cache = resolved
-        .incremental_cache_path
-        .as_ref()
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|| "<platform default>".to_string()); // LAW10: reporting-only label; actual cache path is resolved before use when incremental mode is enabled.
+    // LAW10: the actual incremental cache path is resolved before use when incremental mode is enabled.
+    let incremental_cache = format_optional_path(
+        resolved.incremental_cache_path.as_ref(),
+        "<platform default>",
+    );
     out.push_str(&format!("incremental_cache = {incremental_cache}\n"));
     let limits = resolved.source_limits;
     out.push_str(&format!("limit_stdin_bytes = {}\n", limits.stdin_bytes));
@@ -165,23 +179,17 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         "disabled_detectors = {}\n",
         resolved.disabled_detectors.len()
     ));
-    let cache_dir = resolved
-        .hyperscan_cache_dir
-        .as_ref()
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|| "<platform default>".to_string()); // LAW10: reporting-only label for an unset optional cache-dir; scan compilation still resolves and validates the platform default before use.
+    // LAW10: scan compilation still resolves and validates the platform default before use.
+    let cache_dir =
+        format_optional_path(resolved.hyperscan_cache_dir.as_ref(), "<platform default>");
     out.push_str(&format!("hyperscan_cache_dir = {cache_dir}\n"));
-    let autoroute_cache_path = resolved
-        .autoroute_cache_path
-        .as_ref()
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|| "<disabled>".to_string()); // LAW10: reporting-only label for explicit disabled autoroute persistence; scan either has a path or fails before benchmarking.
+    // LAW10: explicit "<disabled>" persistence; scan either has a path or fails before benchmarking.
+    let autoroute_cache_path =
+        format_optional_path(resolved.autoroute_cache_path.as_ref(), "<disabled>");
     out.push_str(&format!("autoroute_cache_path = {autoroute_cache_path}\n"));
-    let calibration_cache_path = resolved
-        .calibration_cache_path
-        .as_ref()
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|| "<disabled>".to_string()); // LAW10: reporting-only label for absent explicit calibration cache; scanner config carries None and does not read disk.
+    // LAW10: absent explicit calibration cache; scanner config carries None and does not read disk.
+    let calibration_cache_path =
+        format_optional_path(resolved.calibration_cache_path.as_ref(), "<disabled>");
     out.push_str(&format!(
         "calibration_cache_path = {calibration_cache_path}\n"
     ));

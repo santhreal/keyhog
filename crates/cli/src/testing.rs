@@ -37,7 +37,6 @@ pub struct BaselineEntry {
     pub credential_hash: String,
     pub file_path: Option<String>,
     pub line: Option<usize>,
-    pub status: String,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -913,7 +912,6 @@ fn expose_baseline(inner: crate::baseline::Baseline) -> Baseline {
                 credential_hash: entry.credential_hash,
                 file_path: entry.file_path,
                 line: entry.line,
-                status: entry.status,
             })
             .collect(),
     }
@@ -932,7 +930,6 @@ impl Baseline {
                 credential_hash: entry.credential_hash.clone(),
                 file_path: entry.file_path.clone(),
                 line: entry.line,
-                status: entry.status.clone(),
             })
             .collect();
         baseline

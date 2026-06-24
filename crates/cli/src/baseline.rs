@@ -14,6 +14,16 @@ use std::path::Path;
 
 const BASELINE_VERSION: u32 = 1;
 
+/// Canonical baseline serialization of a credential hash: the `sha256:`-prefixed
+/// lowercase-hex form stored in, and matched against, baseline entries. One
+/// definition so `from_findings` / `merge` / `contains` / `filter_new` can never
+/// drift to different spellings of the same key. (Note: this `sha256:`-prefixed
+/// form is baseline-specific; the SARIF `partialFingerprints` and `.keyhogignore`
+/// `hash:` surfaces use the bare hex without the prefix.)
+fn baseline_hash_key(hash: &keyhog_core::CredentialHash) -> String {
+    format!("sha256:{}", keyhog_core::hex_encode(hash))
+}
+
 /// A baseline file containing acknowledged secrets.
 ///
 /// `entries` is the canonical persisted form. `cached_index` is built lazily
@@ -39,12 +49,6 @@ pub(crate) struct BaselineEntry {
     pub file_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<usize>,
-    #[serde(default = "default_status")]
-    pub status: String,
-}
-
-fn default_status() -> String {
-    "acknowledged".to_string()
 }
 
 fn default_created() -> String {
@@ -133,10 +137,9 @@ impl Baseline {
                 detector_id: f.detector_id.to_string(),
                 // `credential_hash` is the raw 32 bytes; the baseline stores the
                 // hex form prefixed with the algorithm (hex at the serde boundary).
-                credential_hash: format!("sha256:{}", keyhog_core::hex_encode(&f.credential_hash)),
+                credential_hash: baseline_hash_key(&f.credential_hash),
                 file_path: f.location.file_path.as_ref().map(|p| p.to_string()),
                 line: f.location.line,
-                status: "acknowledged".to_string(),
             })
             .collect();
 
@@ -169,10 +172,7 @@ impl Baseline {
         for finding in findings {
             let key = (
                 finding.detector_id.to_string(),
-                format!(
-                    "sha256:{}",
-                    keyhog_core::hex_encode(&finding.credential_hash)
-                ),
+                baseline_hash_key(&finding.credential_hash),
             );
             if !existing.contains(&key) {
                 self.entries.push(BaselineEntry {
@@ -180,7 +180,6 @@ impl Baseline {
                     credential_hash: key.1,
                     file_path: finding.location.file_path.as_ref().map(|p| p.to_string()),
                     line: finding.location.line,
-                    status: "acknowledged".to_string(),
                 });
             }
         }
@@ -201,10 +200,7 @@ impl Baseline {
     /// O(N) - for hot paths (e.g. filtering a large finding set against a
     /// baseline) prefer `contains_set` + `index_set` to amortize lookups.
     pub(crate) fn contains(&self, finding: &VerifiedFinding) -> bool {
-        let hash = format!(
-            "sha256:{}",
-            keyhog_core::hex_encode(&finding.credential_hash)
-        );
+        let hash = baseline_hash_key(&finding.credential_hash);
         self.entries
             .iter()
             .any(|e| e.detector_id == finding.detector_id.as_ref() && e.credential_hash == hash)
@@ -232,7 +228,7 @@ impl Baseline {
             .filter(|f| {
                 let key = (
                     f.detector_id.to_string(),
-                    format!("sha256:{}", keyhog_core::hex_encode(&f.credential_hash)),
+                    baseline_hash_key(&f.credential_hash),
                 );
                 !index.contains(&key)
             })
