@@ -86,12 +86,12 @@ pub(super) fn extract_seven_zip_chunks(
                 "skipping unsafe 7z entry name"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            drain_entry(entry_reader)?;
+            drain_entry_lossy(&archive_display, &entry_name, entry_reader, false);
             return Ok(true);
         }
         if super::super::filter::is_default_excluded(&entry_name) {
             record_default_excluded_archive_entry(&archive_display, &entry_name);
-            drain_entry(entry_reader)?;
+            drain_entry_lossy(&archive_display, &entry_name, entry_reader, true);
             return Ok(true);
         }
 
@@ -104,7 +104,7 @@ pub(super) fn extract_seven_zip_chunks(
                 "skipping 7z entry: uncompressed size exceeds per-file cap"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            drain_entry(entry_reader)?;
+            drain_entry_lossy(&archive_display, &entry_name, entry_reader, false);
             return Ok(true);
         }
         if total_uncompressed.saturating_add(entry_size) > total_budget {
@@ -124,7 +124,16 @@ pub(super) fn extract_seven_zip_chunks(
         let read_cap = per_entry_cap.min(remaining_budget);
         let read_limit = read_cap.saturating_add(1);
         let mut content = Vec::with_capacity(entry_size.min(READ_CAPACITY_HINT) as usize);
-        entry_reader.take(read_limit).read_to_end(&mut content)?;
+        if let Err(error) = entry_reader.take(read_limit).read_to_end(&mut content) {
+            tracing::warn!(
+                archive = %archive_display,
+                entry = %entry_name,
+                %error,
+                "cannot read 7z entry; skipping"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return Ok(true);
+        }
         let content_len = content.len() as u64;
         if content_len > per_entry_cap {
             tracing::warn!(
@@ -191,9 +200,23 @@ fn archive_uses_unbounded_lzma(archive: &sevenz_rust2::Archive) -> bool {
     })
 }
 
-fn drain_entry(entry_reader: &mut dyn Read) -> Result<(), sevenz_rust2::Error> {
-    std::io::copy(entry_reader, &mut std::io::sink())?;
-    Ok(())
+fn drain_entry_lossy(
+    archive_display: &str,
+    entry_name: &str,
+    entry_reader: &mut dyn Read,
+    count_unreadable: bool,
+) {
+    if let Err(error) = std::io::copy(entry_reader, &mut std::io::sink()) {
+        tracing::warn!(
+            archive = %archive_display,
+            entry = %entry_name,
+            %error,
+            "cannot drain skipped 7z entry; continuing with remaining entries"
+        );
+        if count_unreadable {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        }
+    }
 }
 
 fn chunk_from_entry_content(

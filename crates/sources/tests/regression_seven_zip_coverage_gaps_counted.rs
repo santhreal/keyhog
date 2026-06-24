@@ -8,7 +8,7 @@ mod support;
 
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
-use keyhog_sources::{skip_counts, FilesystemSource};
+use keyhog_sources::{FilesystemSource, skip_counts};
 use support::split_chunk_results;
 
 #[test]
@@ -87,5 +87,31 @@ fn seven_zip_archive_truncation_surfaces_source_error() {
         skip_counts().archive_truncated,
         1,
         "7z archive-budget truncation must bump ARCHIVE_TRUNCATED exactly once"
+    );
+}
+
+#[test]
+fn seven_zip_entry_read_errors_are_per_entry_skips() {
+    let source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/filesystem/extract/seven_zip.rs"
+    ))
+    .expect("7z extractor source must be readable");
+
+    assert!(
+        source.contains("\"cannot read 7z entry; skipping\""),
+        "7z entry read errors must be operator-visible per-entry skips"
+    );
+    assert!(
+        source.contains("return Ok(true);"),
+        "7z entry read errors must continue to the next archive entry"
+    );
+    assert!(
+        !source.contains("read_to_end(&mut content)?"),
+        "7z entry body reads must not abort the whole archive through ?"
+    );
+    assert!(
+        !source.contains("drain_entry(entry_reader)?"),
+        "7z skipped-entry draining must not abort the whole archive through ?"
     );
 }
