@@ -8,6 +8,7 @@
 
 mod api;
 mod blocking_thread;
+mod capped_read;
 mod compression_limits;
 mod decode;
 mod factory;

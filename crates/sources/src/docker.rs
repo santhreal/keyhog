@@ -828,18 +828,16 @@ fn read_capped_file(path: &Path, kind: &str, cap: u64) -> Result<Vec<u8>, Source
             cap
         )));
     }
-    let mut bytes = Vec::with_capacity(metadata.len().min(cap) as usize);
-    file.take(cap.saturating_add(1))
-        .read_to_end(&mut bytes)
+    let read = crate::capped_read::read_to_cap(file, cap, Some(metadata.len()), kind)
         .map_err(SourceError::Io)?;
-    if bytes.len() as u64 > cap {
+    if read.truncated {
         return Err(SourceError::Other(format!(
             "{kind} '{}' exceeded {} bytes while reading",
             path.display(),
             cap
         )));
     }
-    Ok(bytes)
+    Ok(read.bytes)
 }
 
 fn resolve_oci_blob_digest_path(

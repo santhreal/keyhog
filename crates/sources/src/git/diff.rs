@@ -631,20 +631,22 @@ fn read_untracked_worktree_chunk(
             limits.git_blob_bytes
         )));
     }
-    let mut file = std::fs::File::open(&full_path).map_err(SourceError::Io)?;
-    let mut bytes = Vec::new();
-    file.by_ref()
-        .take(limits.git_blob_bytes.saturating_add(1))
-        .read_to_end(&mut bytes)
-        .map_err(SourceError::Io)?;
-    if bytes.len() as u64 > limits.git_blob_bytes {
+    let file = std::fs::File::open(&full_path).map_err(SourceError::Io)?;
+    let read = crate::capped_read::read_to_cap(
+        file,
+        limits.git_blob_bytes,
+        Some(metadata.len()),
+        "git-diff untracked file",
+    )
+    .map_err(SourceError::Io)?;
+    if read.truncated {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return Err(SourceError::Git(format!(
             "git-diff untracked path '{}' grew beyond git_blob_bytes limit while reading",
             rel
         )));
     }
-    let Some(text) = crate::filesystem::decode_text_file(&bytes) else {
+    let Some(text) = crate::filesystem::decode_text_file(&read.bytes) else {
         eprintln!(
             "keyhog: WARNING: git-diff untracked path '{}' decoded as binary/non-text; it was NOT scanned.",
             rel

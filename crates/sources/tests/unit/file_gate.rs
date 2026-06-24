@@ -143,17 +143,19 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
 #[test]
 fn source_extract_pdf_and_binary_hot_paths_are_bounded() {
     let binary = include_str!("../../src/binary/mod.rs");
+    let capped_read = include_str!("../../src/capped_read.rs");
     assert!(
-        binary.contains("let capacity_u64 = file.metadata()?.len().min(read_limit);")
-            && binary.contains("Vec::with_capacity(capacity)")
-            && binary.contains("cap.checked_add(1)")
-            && binary.contains("truncation sentinel byte")
-            && binary.contains("binary capped read capacity exceeds"),
-        "binary capped reads must pre-size from metadata and fail closed on cap/capacity overflow"
+        binary.contains("crate::capped_read::read_to_cap")
+            && capped_read.contains("Vec::with_capacity(capacity)")
+            && capped_read.contains("cap.checked_add(1)")
+            && capped_read.contains("truncation sentinel byte")
+            && capped_read.contains("capped read capacity exceeds"),
+        "binary capped reads must use the shared capped-read owner and fail closed on cap/capacity overflow"
     );
     assert!(
-        !binary.contains("let mut bytes = Vec::new();\n    limited.read_to_end(&mut bytes)?;"),
-        "binary capped read must not feed read_to_end from an empty Vec"
+        !binary.contains("let mut bytes = Vec::new();\n    limited.read_to_end(&mut bytes)?;")
+            && !capped_read.contains("let mut bytes = Vec::new();\n    reader.take"),
+        "capped reads must not feed read_to_end from an empty Vec"
     );
 
     let pdf = include_str!("../../src/filesystem/extract/pdf.rs");

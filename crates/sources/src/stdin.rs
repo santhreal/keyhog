@@ -86,12 +86,17 @@ pub(crate) fn read_to_string_limited(
     reader: &mut impl Read,
     max_bytes: usize,
 ) -> std::io::Result<String> {
-    let mut bytes = Vec::new();
+    let cap = u64::try_from(max_bytes).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "stdin cap is too large for this platform",
+        )
+    })?;
     // Read at most `max_bytes + 1` so oversized stdin is rejected before we
     // hand a giant buffer to the scanner.
-    reader.take(max_bytes as u64 + 1).read_to_end(&mut bytes)?;
+    let read = crate::capped_read::read_to_cap(reader, cap, None, "stdin")?;
 
-    if bytes.len() > max_bytes {
+    if read.truncated {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return Err(std::io::Error::other(format!(
             "stdin exceeds {} byte limit",
@@ -107,5 +112,5 @@ pub(crate) fn read_to_string_limited(
     // the same bytes — an inconsistency, and real secrets do live in otherwise
     // non-UTF-8 inputs (embedded configs, archive members, latin-1 logs). The
     // size cap above already bounds memory.
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    Ok(String::from_utf8_lossy(&read.bytes).into_owned())
 }
