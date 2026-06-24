@@ -113,6 +113,86 @@ fn test_inner_loop_deadline_aborts_many_match_pattern() {
     );
 }
 
+#[test]
+fn test_inner_loop_deadline_aborts_many_match_grouped_pattern() {
+    let detector = DetectorSpec {
+        tests: Vec::new(),
+        id: "many-match-grouped-detector".into(),
+        name: "Many Match Grouped Detector".into(),
+        service: "test".into(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            // Same one-byte storm as the plain-path test, but with an explicit
+            // capture group so the grouped extraction loop owns the work.
+            regex: "([a-z])".into(),
+            description: None,
+            group: Some(1),
+            client_safe: false,
+        }],
+        companions: vec![],
+        verify: None,
+        keywords: vec![],
+        min_confidence: None,
+    };
+
+    let scanner = CompiledScanner::compile(vec![detector]).unwrap();
+    let chunk = Chunk {
+        data: "a".repeat(1024 * 1024).into(),
+        metadata: ChunkMetadata::default(),
+    };
+
+    let start = Instant::now();
+    let deadline = start + Duration::from_millis(5);
+
+    let _ = keyhog_scanner::testing::scan_with_deadline(&scanner, &chunk, Some(deadline));
+
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < Duration::from_millis(100),
+        "Grouped extraction loop ignored the scan deadline: elapsed={elapsed:?}"
+    );
+}
+
+#[test]
+fn test_inner_loop_deadline_aborts_many_match_anchored_pattern() {
+    let detector = DetectorSpec {
+        tests: Vec::new(),
+        id: "many-match-anchored-detector".into(),
+        name: "Many Match Anchored Detector".into(),
+        service: "test".into(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            regex: "sk_live_[A-Za-z0-9]{24}".into(),
+            description: None,
+            group: None,
+            client_safe: false,
+        }],
+        companions: vec![],
+        verify: None,
+        keywords: vec!["sk_live_".into()],
+        min_confidence: None,
+    };
+
+    let scanner = CompiledScanner::compile(vec![detector]).unwrap();
+    let chunk = Chunk {
+        // Dense required-prefix candidates with no valid 24-byte body: this
+        // drives anchored candidate verification without report emission.
+        data: "sk_live_".repeat(500_000).into(),
+        metadata: ChunkMetadata::default(),
+    };
+
+    let start = Instant::now();
+    let deadline = start + Duration::from_millis(5);
+
+    let _ = keyhog_scanner::testing::scan_with_deadline(&scanner, &chunk, Some(deadline));
+
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < Duration::from_millis(250),
+        "Anchored extraction loop ignored the scan deadline: elapsed={elapsed:?}"
+    );
+}
+
 /// Regression test: deadline enforcement must not stop at subsystem borders.
 /// The generic assignment bridge runs after triggered and phase-2 scanning; if
 /// it only inherits a caller-side before/after check, a dense `api_key = value`
