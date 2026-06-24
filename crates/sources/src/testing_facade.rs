@@ -7,6 +7,7 @@ pub mod testing {
         fn set_skip_counts(&self, counts: crate::SkipCounts);
         fn reset_skip_counters(&self);
         fn bump_skipped_over_max_size(&self, delta: usize);
+        fn bump_git_object_unreadable(&self, delta: usize);
         fn read_stdin_test_input_with_limit(
             &self,
             input: &[u8],
@@ -371,6 +372,11 @@ pub mod testing {
 
         fn bump_skipped_over_max_size(&self, delta: usize) {
             let _event = crate::record_skip_events(crate::SourceSkipEvent::OverMaxSize, delta);
+        }
+
+        fn bump_git_object_unreadable(&self, delta: usize) {
+            let _event =
+                crate::record_skip_events(crate::SourceSkipEvent::GitObjectUnreadable, delta);
         }
 
         fn read_stdin_test_input_with_limit(

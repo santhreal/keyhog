@@ -341,6 +341,7 @@ fn reset_skip_counters_zeroes_every_category() {
         structured_source_parse_failures: 77,
         archive_duplicate_scan_unavailable: 88,
     });
+    TestApi.bump_git_object_unreadable(99);
 
     TestApi.reset_skip_counters();
 
