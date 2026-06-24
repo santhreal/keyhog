@@ -22,6 +22,12 @@ fn zip_entry_read_failures_emit_source_errors() {
         "duplicate ZIP entry read/rebuild failures must emit machine-visible SourceError rows"
     );
     assert!(
+        duplicate_zip.contains("emit_archive_unreadable_error")
+            && duplicate_zip.contains("\"duplicate ZIP archive\"")
+            && duplicate_zip.contains("\"cannot open archive\""),
+        "duplicate ZIP archive reopen failures must emit machine-visible SourceError rows"
+    );
+    assert!(
         archive.contains("fn emit_archive_entry_over_cap_error(")
             && archive.contains("exceeds per-file cap {cap}")
             && zip.contains("emit_archive_entry_over_cap_error")

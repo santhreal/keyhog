@@ -374,6 +374,10 @@ pub(crate) fn duplicate_zip_local_entry_data_error_for_test(
     extract::duplicate_zip_local_entry_data_error_for_test(path, compressed_size)
 }
 
+pub(crate) fn duplicate_zip_reopen_error_for_test(path: &std::path::Path) -> Option<String> {
+    extract::duplicate_zip_reopen_error_for_test(path)
+}
+
 pub(crate) fn default_max_file_size_for_test() -> u64 {
     FilesystemSource::new(PathBuf::from(".")).max_file_size
 }

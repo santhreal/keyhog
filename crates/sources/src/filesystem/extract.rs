@@ -45,6 +45,10 @@ pub(crate) fn duplicate_zip_local_entry_data_error_for_test(
     archive::duplicate_zip_local_entry_data_error_for_test(path, compressed_size)
 }
 
+pub(crate) fn duplicate_zip_reopen_error_for_test(path: &Path) -> Option<String> {
+    archive::duplicate_zip_reopen_error_for_test(path)
+}
+
 /// Test whether `path` is a symlink. No cache: the walker visits each
 /// path exactly once, so a process-lifetime `DashMap<PathBuf, bool>`
 /// only ever sees a single lookup per key and retained one PathBuf per

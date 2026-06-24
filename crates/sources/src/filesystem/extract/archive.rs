@@ -23,6 +23,10 @@ pub(crate) fn duplicate_zip_local_entry_data_error_for_test(
     zip_scan::duplicate_zip_local_entry_data_error_for_test(path, compressed_size)
 }
 
+pub(crate) fn duplicate_zip_reopen_error_for_test(path: &Path) -> Option<String> {
+    zip_scan::duplicate_zip_reopen_error_for_test(path)
+}
+
 pub(super) fn is_openpack_archive_ext(ext: &str) -> bool {
     const OPENPACK_EXTS: &[&str] = &[
         // Plain ZIP and ZIP-wrapped app/package formats.

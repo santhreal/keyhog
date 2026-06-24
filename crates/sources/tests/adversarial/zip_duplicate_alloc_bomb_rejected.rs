@@ -65,6 +65,23 @@ fn oversized_local_entry_compressed_size_is_rejected_not_allocated() {
     );
 }
 
+#[test]
+fn duplicate_zip_reopen_failure_emits_source_error() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("missing_after_central_read.zip");
+
+    let err = TestApi
+        .duplicate_zip_reopen_error(&path)
+        .expect("duplicate-ZIP reopen failure must emit a SourceError row");
+
+    assert!(
+        err.contains("failed to scan duplicate ZIP archive")
+            && err.contains("cannot open archive")
+            && err.contains("archive was not scanned"),
+        "unexpected duplicate-ZIP reopen error: {err}"
+    );
+}
+
 fn write_u16(out: &mut Vec<u8>, value: u16) {
     out.extend_from_slice(&value.to_le_bytes());
 }

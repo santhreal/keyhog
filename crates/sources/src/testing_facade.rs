@@ -87,6 +87,7 @@ pub mod testing {
             path: &std::path::Path,
             compressed_size: u64,
         ) -> Result<String, String>;
+        fn duplicate_zip_reopen_error(&self, path: &std::path::Path) -> Option<String>;
         fn filesystem_default_max_file_size(&self) -> u64;
         #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
         fn cloud_is_probably_text_object_key(&self, key: &str) -> bool;
@@ -543,6 +544,10 @@ pub mod testing {
             compressed_size: u64,
         ) -> Result<String, String> {
             crate::filesystem::duplicate_zip_local_entry_data_error_for_test(path, compressed_size)
+        }
+
+        fn duplicate_zip_reopen_error(&self, path: &std::path::Path) -> Option<String> {
+            crate::filesystem::duplicate_zip_reopen_error_for_test(path)
         }
 
         fn filesystem_default_max_file_size(&self) -> u64 {

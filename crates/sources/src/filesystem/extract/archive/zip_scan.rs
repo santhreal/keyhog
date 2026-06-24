@@ -22,6 +22,10 @@ pub(crate) fn duplicate_zip_local_entry_data_error_for_test(
     duplicates::read_local_zip_entry_data_error_for_test(path, compressed_size)
 }
 
+pub(crate) fn duplicate_zip_reopen_error_for_test(path: &Path) -> Option<String> {
+    duplicates::duplicate_zip_reopen_error_for_test(path)
+}
+
 pub(super) fn extract_zip_archive(
     path: &Path,
     archive_display: &str,

@@ -1,6 +1,6 @@
 use super::super::{
     emit_archive_content, emit_archive_entry_error, emit_archive_entry_over_cap_error,
-    report_archive_truncation,
+    emit_archive_unreadable_error, report_archive_truncation,
 };
 use super::{validate_scan_archive_entry_name, zip_external_attrs_are_special};
 use crate::filesystem::filter;
@@ -51,6 +51,15 @@ pub(super) fn extract_zip_archive_from_central_entries(
                 "cannot open archive; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit_archive_unreadable_error(
+                emit,
+                "duplicate ZIP archive",
+                archive_display,
+                "cannot open archive",
+                error,
+            ) {
+                return;
+            }
             return;
         }
     };
@@ -599,6 +608,24 @@ pub(crate) fn read_local_zip_entry_data_error_for_test(
         Ok(_data) => Err("zip local entry payload read without an error".to_string()),
         Err(error) => Ok(error),
     }
+}
+
+pub(crate) fn duplicate_zip_reopen_error_for_test(path: &Path) -> Option<String> {
+    let mut errors = Vec::new();
+    extract_zip_archive_from_central_entries(
+        path,
+        &path.display().to_string(),
+        u64::MAX,
+        u64::MAX,
+        &mut |row| {
+            if let Err(error) = row {
+                errors.push(error.to_string());
+            }
+            true
+        },
+        Vec::new(),
+    );
+    errors.pop()
 }
 
 fn write_u16(out: &mut Vec<u8>, value: u16) {
