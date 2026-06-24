@@ -11,10 +11,26 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 use tempfile::TempDir;
 
-/// Scan a directory containing a unicode filename; must exit 0 with JSON stdout.
+const PLANTED_AWS_KEY: &str = concat!("AKIA", "QYLPMN5HFIQR7XYA");
+
+fn parse_json_array(stdout: &[u8], context: &str) -> Vec<serde_json::Value> {
+    let stdout = String::from_utf8_lossy(stdout);
+    let value = serde_json::from_str::<serde_json::Value>(&stdout)
+        .unwrap_or_else(|error| panic!("{context}: stdout is not valid JSON: {error}\n{stdout}"));
+    value
+        .as_array()
+        .unwrap_or_else(|| panic!("{context}: JSON report must be an array, got {value}"))
+        .clone()
+}
+
+/// Scan a directory containing a unicode filename; must report the finding path.
 pub fn oracle_unicode_path_scan() {
     let dir = TempDir::new().expect("tempdir");
-    std::fs::write(dir.path().join("café.txt"), "hello\n").unwrap();
+    std::fs::write(
+        dir.path().join("café.txt"),
+        format!("AWS_ACCESS_KEY_ID = \"{PLANTED_AWS_KEY}\"\n"),
+    )
+    .unwrap();
     let output = Command::new(binary())
         .args([
             "scan",
@@ -27,7 +43,30 @@ pub fn oracle_unicode_path_scan() {
         .arg(dir.path())
         .output()
         .expect("spawn");
-    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "unicode filename scan must find the planted secret; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let findings = parse_json_array(&output.stdout, "unicode path scan JSON");
+    assert!(
+        findings.iter().any(|finding| {
+            finding
+                .pointer("/location/file_path")
+                .and_then(|v| v.as_str())
+                .is_some_and(|path| {
+                    // macOS may report the accented filename in decomposed form.
+                    path.contains("caf") && path.ends_with(".txt")
+                })
+                && finding
+                    .get("detector_id")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|detector_id| detector_id == "aws-access-key")
+        }),
+        "unicode path scan must report the planted finding with the unicode filename; stdout={}",
+        String::from_utf8_lossy(&output.stdout)
+    );
 }
 
 /// Piped JSON stdout must complete without hanging and parse as JSON.
@@ -48,9 +87,18 @@ pub fn oracle_pipe_stdout_json_valid() {
         .spawn()
         .expect("spawn");
     let output = child.wait_with_output().expect("wait");
-    assert_eq!(output.status.code(), Some(0));
-    let _: serde_json::Value =
-        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("valid json array");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "clean piped scan should exit 0; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let findings = parse_json_array(&output.stdout, "piped stdout scan JSON");
+    assert!(
+        findings.is_empty(),
+        "clean piped scan should produce an empty JSON array; stdout={}",
+        String::from_utf8_lossy(&output.stdout)
+    );
 }
 
 /// Four concurrent scans from isolated temp dirs must each yield valid JSON.
@@ -77,16 +125,23 @@ pub fn oracle_concurrent_four_scans_json() {
                 .stderr(Stdio::piped())
                 .output()
                 .expect("spawn");
-            (
-                output.status.code(),
-                String::from_utf8_lossy(&output.stdout).into_owned(),
-            )
+            (output.status.code(), output.stdout, output.stderr)
         }));
     }
     for h in handles {
-        let (code, stdout) = h.join().expect("thread");
-        assert_eq!(code, Some(0));
-        let _: serde_json::Value = serde_json::from_str(&stdout).expect("json");
+        let (code, stdout, stderr) = h.join().expect("thread");
+        assert_eq!(
+            code,
+            Some(0),
+            "concurrent clean scan should exit 0; stderr={}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let findings = parse_json_array(&stdout, "concurrent scan JSON");
+        assert!(
+            findings.is_empty(),
+            "concurrent clean scan should produce an empty JSON array; stdout={}",
+            String::from_utf8_lossy(&stdout)
+        );
     }
 }
 
