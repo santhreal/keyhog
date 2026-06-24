@@ -40,6 +40,64 @@ pub(crate) fn git_blob_bytes_limit_usize(limits: crate::SourceLimits) -> usize {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GitHistoryCap {
+    TotalBytes { total: usize, cap: usize },
+    Chunks { count: usize, cap: usize },
+}
+
+pub(crate) fn git_history_cap_status(
+    total_bytes: usize,
+    chunk_count: usize,
+    limits: crate::SourceLimits,
+) -> Option<GitHistoryCap> {
+    if total_bytes >= limits.git_total_bytes {
+        return Some(GitHistoryCap::TotalBytes {
+            total: total_bytes,
+            cap: limits.git_total_bytes,
+        });
+    }
+    if chunk_count >= limits.git_chunk_count {
+        return Some(GitHistoryCap::Chunks {
+            count: chunk_count,
+            cap: limits.git_chunk_count,
+        });
+    }
+    None
+}
+
+pub(crate) fn record_git_history_cap_once(
+    cap: GitHistoryCap,
+    reported: &mut bool,
+) -> Option<SourceError> {
+    if *reported {
+        return None;
+    }
+    *reported = true;
+    let reason = match cap {
+        GitHistoryCap::TotalBytes { total, cap } => {
+            tracing::warn!(
+                total_bytes = total,
+                cap,
+                "git history source reached aggregate byte cap; remaining blobs were NOT scanned"
+            );
+            format!("aggregate byte cap reached at {total} bytes (cap {cap})")
+        }
+        GitHistoryCap::Chunks { count, cap } => {
+            tracing::warn!(
+                chunks = count,
+                cap,
+                "git history source reached aggregate chunk cap; remaining blobs were NOT scanned"
+            );
+            format!("aggregate chunk cap reached at {count} chunk(s) (cap {cap})")
+        }
+    };
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
+    Some(SourceError::Other(format!(
+        "git history source was truncated: {reason}; remaining blobs were not scanned"
+    )))
+}
+
 pub(crate) fn drain_trimmed_hunk(buffer: &mut String) -> Option<String> {
     let trimmed = buffer.trim();
     if trimmed.is_empty() {

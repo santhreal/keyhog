@@ -158,6 +158,88 @@ fn git_history_hunk_flush_uses_resolved_git_blob_byte_cap() {
 
 #[cfg(feature = "git")]
 #[test]
+fn git_history_source_honors_aggregate_chunk_cap() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(&repo_path, "first.txt", "FIRST=visible\n", "add first");
+    commit_file(
+        &repo_path,
+        "second.txt",
+        "SECOND=not reached\n",
+        "add second",
+    );
+
+    let mut limits = SourceLimits::default();
+    limits.git_chunk_count = 1;
+
+    let rows: Vec<_> = GitHistorySource::new(repo_path)
+        .with_limits(limits)
+        .chunks()
+        .collect();
+    let ok_chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+
+    assert_eq!(
+        ok_chunks.len(),
+        1,
+        "git-history must emit the first scanned hunk before enforcing the aggregate chunk cap"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "git-history aggregate chunk cap must surface one truncation error"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("git history source was truncated")
+            && err.contains("aggregate chunk cap")
+            && err.contains("remaining blobs were not scanned"),
+        "error must describe partial git-history coverage; got {err}"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
+fn git_history_source_honors_aggregate_byte_cap() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(&repo_path, "first.txt", "FIRST=visible\n", "add first");
+    commit_file(
+        &repo_path,
+        "second.txt",
+        "SECOND=not reached\n",
+        "add second",
+    );
+
+    let mut limits = SourceLimits::default();
+    limits.git_total_bytes = 1;
+
+    let rows: Vec<_> = GitHistorySource::new(repo_path)
+        .with_limits(limits)
+        .chunks()
+        .collect();
+    let ok_chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+
+    assert_eq!(
+        ok_chunks.len(),
+        1,
+        "git-history must emit the first scanned hunk before enforcing the aggregate byte cap"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "git-history aggregate byte cap must surface one truncation error"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("git history source was truncated")
+            && err.contains("aggregate byte cap")
+            && err.contains("remaining blobs were not scanned"),
+        "error must describe partial git-history coverage; got {err}"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
 fn git_history_source_collects_added_files_commit_by_commit() {
     let (_temp_dir, repo_path) = create_test_repo();
     commit_file(&repo_path, "first.txt", "api_key = sk-first", "Add first");

@@ -132,6 +132,9 @@ fn stream_git_history_chunks(
     let mut wait_after_final_chunk = false;
     let mut line_buf = Vec::new();
     let hunk_byte_cap = super::git_blob_bytes_limit_usize(limits);
+    let mut total_bytes = 0usize;
+    let mut chunk_count = 0usize;
+    let mut aggregate_cap_reported = false;
     // New-file line before the current hunk's first added line (hunk header
     // `+new_start - 1`). Added to a match's chunk-local line so findings
     // report the absolute new-file line instead of the chunk-local one
@@ -150,6 +153,11 @@ fn stream_git_history_chunks(
         if done {
             return None;
         }
+        if let Some(cap) = super::git_history_cap_status(total_bytes, chunk_count, limits) {
+            let error = super::record_git_history_cap_once(cap, &mut aggregate_cap_reported);
+            done = true;
+            return error.map(Err);
+        }
 
         loop {
             line_buf.clear();
@@ -166,21 +174,16 @@ fn stream_git_history_chunks(
                                 super::drain_trimmed_hunk(&mut current_content)
                             {
                                 wait_after_final_chunk = true;
-                                return Some(Ok(Chunk {
-                                    data: chunk_content.into(),
-                                    metadata: ChunkMetadata {
-                                        base_offset: 0,
-                                        base_line: current_base_line,
-                                        source_type: "git-history".into(),
-                                        path: Some(path.clone()),
-                                        commit: Some(commit.clone()),
-                                        author: Some(author.clone()),
-                                        date: Some(date.clone()),
-                                        mtime_ns: None,
-                                        size_bytes: None,
-                                        decoded_span: None,
-                                    },
-                                }));
+                                return Some(Ok(make_git_history_chunk(
+                                    chunk_content,
+                                    current_base_line,
+                                    path,
+                                    commit,
+                                    author,
+                                    date,
+                                    &mut total_bytes,
+                                    &mut chunk_count,
+                                )));
                             }
                         }
                         done = true;
@@ -206,20 +209,17 @@ fn stream_git_history_chunks(
                     &current_date,
                     &current_path,
                 ) {
-                    super::drain_trimmed_hunk(&mut current_content).map(|chunk_content| Chunk {
-                        data: chunk_content.into(),
-                        metadata: ChunkMetadata {
-                            base_offset: 0,
-                            base_line: current_base_line,
-                            source_type: "git-history".into(),
-                            path: Some(path.clone()),
-                            commit: Some(commit.clone()),
-                            author: Some(author.clone()),
-                            date: Some(date.clone()),
-                            mtime_ns: None,
-                            size_bytes: None,
-                            decoded_span: None,
-                        },
+                    super::drain_trimmed_hunk(&mut current_content).map(|chunk_content| {
+                        make_git_history_chunk(
+                            chunk_content,
+                            current_base_line,
+                            path,
+                            commit,
+                            author,
+                            date,
+                            &mut total_bytes,
+                            &mut chunk_count,
+                        )
                     })
                 } else {
                     None
@@ -269,20 +269,17 @@ fn stream_git_history_chunks(
                         &current_date,
                         &current_path,
                     ) {
-                        super::drain_trimmed_hunk(&mut current_content).map(|chunk_content| Chunk {
-                            data: chunk_content.into(),
-                            metadata: ChunkMetadata {
-                                base_offset: 0,
-                                base_line: current_base_line,
-                                source_type: "git-history".into(),
-                                path: Some(path.clone()),
-                                commit: Some(commit.clone()),
-                                author: Some(author.clone()),
-                                date: Some(date.clone()),
-                                mtime_ns: None,
-                                size_bytes: None,
-                                decoded_span: None,
-                            },
+                        super::drain_trimmed_hunk(&mut current_content).map(|chunk_content| {
+                            make_git_history_chunk(
+                                chunk_content,
+                                current_base_line,
+                                path,
+                                commit,
+                                author,
+                                date,
+                                &mut total_bytes,
+                                &mut chunk_count,
+                            )
                         })
                     } else {
                         None
@@ -325,21 +322,16 @@ fn stream_git_history_chunks(
                         &current_path,
                     ) {
                         if let Some(prev_content) = prev_content {
-                            return Some(Ok(Chunk {
-                                data: prev_content.into(),
-                                metadata: ChunkMetadata {
-                                    base_offset: 0,
-                                    base_line: prev_base_line,
-                                    source_type: "git-history".into(),
-                                    path: Some(path.clone()),
-                                    commit: Some(commit.clone()),
-                                    author: Some(author.clone()),
-                                    date: Some(date.clone()),
-                                    mtime_ns: None,
-                                    size_bytes: None,
-                                    decoded_span: None,
-                                },
-                            }));
+                            return Some(Ok(make_git_history_chunk(
+                                prev_content,
+                                prev_base_line,
+                                path,
+                                commit,
+                                author,
+                                date,
+                                &mut total_bytes,
+                                &mut chunk_count,
+                            )));
                         }
                     }
                     continue;
@@ -370,24 +362,48 @@ fn stream_git_history_chunks(
                         // by the lines emitted now so the remaining lines of the
                         // SAME hunk stay correctly attributed after the reset.
                         current_base_line = current_base_line.saturating_add(emitted_lines);
-                        return Some(Ok(Chunk {
-                            data: chunk_content.into(),
-                            metadata: ChunkMetadata {
-                                base_offset: 0,
-                                base_line: flush_base_line,
-                                source_type: "git-history".into(),
-                                path: Some(path.clone()),
-                                commit: Some(commit.clone()),
-                                author: Some(author.clone()),
-                                date: Some(date.clone()),
-                                mtime_ns: None,
-                                size_bytes: None,
-                                decoded_span: None,
-                            },
-                        }));
+                        return Some(Ok(make_git_history_chunk(
+                            chunk_content,
+                            flush_base_line,
+                            path,
+                            commit,
+                            author,
+                            date,
+                            &mut total_bytes,
+                            &mut chunk_count,
+                        )));
                     }
                 }
             }
         }
     }))
+}
+
+fn make_git_history_chunk(
+    content: String,
+    base_line: usize,
+    path: &str,
+    commit: &str,
+    author: &str,
+    date: &str,
+    total_bytes: &mut usize,
+    chunk_count: &mut usize,
+) -> Chunk {
+    *total_bytes = total_bytes.saturating_add(content.len());
+    *chunk_count = chunk_count.saturating_add(1);
+    Chunk {
+        data: content.into(),
+        metadata: ChunkMetadata {
+            base_offset: 0,
+            base_line,
+            source_type: "git-history".into(),
+            path: Some(path.to_string()),
+            commit: Some(commit.to_string()),
+            author: Some(author.to_string()),
+            date: Some(date.to_string()),
+            mtime_ns: None,
+            size_bytes: None,
+            decoded_span: None,
+        },
+    }
 }

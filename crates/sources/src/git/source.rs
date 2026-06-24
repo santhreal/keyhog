@@ -83,61 +83,6 @@ enum GitBlobSkip {
     Binary,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum GitHistoryCap {
-    TotalBytes { total: usize, cap: usize },
-    Chunks { count: usize, cap: usize },
-}
-
-fn git_history_cap_status(
-    total_bytes: usize,
-    chunk_count: usize,
-    limits: crate::SourceLimits,
-) -> Option<GitHistoryCap> {
-    if total_bytes >= limits.git_total_bytes {
-        return Some(GitHistoryCap::TotalBytes {
-            total: total_bytes,
-            cap: limits.git_total_bytes,
-        });
-    }
-    if chunk_count >= limits.git_chunk_count {
-        return Some(GitHistoryCap::Chunks {
-            count: chunk_count,
-            cap: limits.git_chunk_count,
-        });
-    }
-    None
-}
-
-fn record_git_history_cap_once(cap: GitHistoryCap, reported: &mut bool) -> Option<SourceError> {
-    if *reported {
-        return None;
-    }
-    *reported = true;
-    let reason = match cap {
-        GitHistoryCap::TotalBytes { total, cap } => {
-            tracing::warn!(
-                total_bytes = total,
-                cap,
-                "git history source reached aggregate byte cap; remaining blobs were NOT scanned"
-            );
-            format!("aggregate byte cap reached at {total} bytes (cap {cap})")
-        }
-        GitHistoryCap::Chunks { count, cap } => {
-            tracing::warn!(
-                chunks = count,
-                cap,
-                "git history source reached aggregate chunk cap; remaining blobs were NOT scanned"
-            );
-            format!("aggregate chunk cap reached at {count} chunk(s) (cap {cap})")
-        }
-    };
-    let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
-    Some(SourceError::Other(format!(
-        "git history source was truncated: {reason}; remaining blobs were not scanned"
-    )))
-}
-
 /// Scans git blobs reachable from refs, reflogs, stashes, and dangling commits.
 ///
 /// # Examples
@@ -351,8 +296,8 @@ fn stream_git_blobs(
                 return Some(Ok(chunk));
             }
 
-            if let Some(cap) = git_history_cap_status(total_bytes, chunk_count, limits) {
-                let error = record_git_history_cap_once(cap, &mut aggregate_cap_reported);
+            if let Some(cap) = super::git_history_cap_status(total_bytes, chunk_count, limits) {
+                let error = super::record_git_history_cap_once(cap, &mut aggregate_cap_reported);
                 done = true;
                 return error.map(Err);
             }
@@ -473,7 +418,7 @@ impl GitBlobChunkDecoder<'_> {
         let mut blob_metadata = blob_metadata.into_iter();
 
         'blob_batches: loop {
-            if git_history_cap_status(*total_bytes, *chunk_count, self.limits).is_some() {
+            if super::git_history_cap_status(*total_bytes, *chunk_count, self.limits).is_some() {
                 break;
             }
 
@@ -493,7 +438,8 @@ impl GitBlobChunkDecoder<'_> {
                 decode_git_blob_candidates_parallel(self.repo_path, candidates).into_iter();
 
             for item in batch {
-                if git_history_cap_status(*total_bytes, *chunk_count, self.limits).is_some() {
+                if super::git_history_cap_status(*total_bytes, *chunk_count, self.limits).is_some()
+                {
                     break 'blob_batches;
                 }
 
