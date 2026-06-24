@@ -10,7 +10,10 @@ fn explicit_backend_unknown_value_is_rejected() {
     assert!(
         message.contains("invalid --backend value")
             && message.contains("not-a-real-backend")
-            && message.contains("Supported values"),
+            && message.contains("Supported values")
+            && message.contains("gpu-region-presence")
+            && message.contains("simd-regex")
+            && message.contains("cpu-fallback"),
         "diagnostic must name the bad value and the fix; got {message}"
     );
 }

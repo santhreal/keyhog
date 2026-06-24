@@ -178,16 +178,21 @@ zeroize = { version = "=1.8.2", features = ["derive"] }
 status = "alpha"
 
 # Build Profiles
-# cargo build --release                          → default (ML + entropy + decode + multiline)
+# cargo build --release                          -> CLI default: scanner full desktop stack
+#                                                   (GPU + Hyperscan/SIMD + simdsieve +
+#                                                   ML/entropy/decode/multiline), source
+#                                                   backends, verification, and mimalloc
 # `--fast` is a runtime CLI flag (not Cargo `-F fast`; the `fast` feature is unused).
-# cargo build --release -F gpu                   → wgpu compute shader batch MoE inference
-# cargo build --release -F binary                → Ghidra decompiler + printable string extraction
-# cargo build --release -F full                  → all scanner features + live verification
-# cargo build --release --no-default-features    → bare minimum (Aho-Corasick + regex only)
+# cargo build --release -F binary                -> add Ghidra decompiler + printable string extraction
+# cargo build --release -F full                  -> source/decompiler surface without accelerator/system-library features
+# cargo build --release --no-default-features    -> bare filesystem/stdin scanner surface
+# cargo build --release --no-default-features -F portable -> portable source-backend build without Hyperscan/GPU/CUDA/Ghidra
+# cargo build --release --no-default-features -F ci       -> lean CI/embeddable scanner
+# cargo build --release --no-default-features -F ci-lean -> default source/verification surface without GPU dispatch
 #
-# Features are independently toggleable. Combine freely:
-#   cargo build --release -F gpu,binary,full     → everything
-#   cargo build --release -F binary              → add Ghidra to default build
+# Features are additive on the selected base:
+#   cargo build --release -F binary              -> default build plus Ghidra
+#   cargo build --release --no-default-features -F full,gpu,simd -> full source/decompiler surface plus accelerator paths
 
 # ── Release profile: max-perf single-binary deploys ────────────────────
 # - opt-level = 3            full compiler optimization (loop vec, inlining)

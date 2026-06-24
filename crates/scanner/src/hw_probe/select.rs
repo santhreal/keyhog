@@ -417,6 +417,24 @@ pub(super) fn test_backend_override() -> Option<ScanBackend> {
     }
 }
 
+/// Operator-facing `--backend` values accepted by the CLI.
+///
+/// Keep this list at the parser owner so Clap validation, error messages, docs
+/// gates, and `parse_backend_str` cannot drift into rejecting canonical labels
+/// before routing sees them.
+pub const BACKEND_OVERRIDE_VALUES: [&str; 10] = [
+    "auto",
+    "gpu",
+    "gpu-region-presence",
+    "mega-scan",
+    "megascan",
+    "gpu-mega-scan",
+    "simd",
+    "simd-regex",
+    "cpu",
+    "cpu-fallback",
+];
+
 /// Pure backend string → [`ScanBackend`] mapping, with no env or
 /// thread-local override read. Tests that only verify the string→backend
 /// mapping MUST call this directly rather than mutating global process state.

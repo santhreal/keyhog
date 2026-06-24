@@ -34,8 +34,9 @@ pub(crate) fn parse_backend_override(
     keyhog_scanner::hw_probe::parse_backend_str(trimmed)
         .map(Some)
         .ok_or_else(|| {
+            let supported = keyhog_scanner::hw_probe::BACKEND_OVERRIDE_VALUES.join(", ");
             anyhow::anyhow!(
-                "invalid --backend value {:?}. Supported values: auto, gpu, gpu-region-presence, mega-scan, megascan, simd, cpu.",
+                "invalid --backend value {:?}. Supported values: {supported}.",
                 raw
             )
         })

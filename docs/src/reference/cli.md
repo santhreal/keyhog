@@ -83,7 +83,7 @@ minus the `limit-` prefix and with dashes changed to underscores.
 
 | Variable                              | Effect                                                                |
 |---------------------------------------|-----------------------------------------------------------------------|
-| `keyhog scan --backend gpu\|simd\|cpu\|auto` | Force a scan backend instead of using automatic backend selection. |
+| `keyhog scan --backend auto\|gpu\|gpu-region-presence\|mega-scan\|megascan\|gpu-mega-scan\|simd\|simd-regex\|cpu\|cpu-fallback` | Force a scan backend instead of using automatic backend selection. |
 | `keyhog scan --no-gpu`                | Short-circuit GPU init at hardware-probe time. The scanner runs as if no GPU adapter existed. |
 | `keyhog scan --require-gpu`           | Fail closed with exit `12` when no usable GPU stack is available. |
 | `keyhog scan --autoroute-calibrate`   | Installer/maintenance mode: benchmark parity-checked autoroute candidates and persist fastest-correct decisions. Normal scans do not use this mode. |

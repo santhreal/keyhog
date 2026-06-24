@@ -4,6 +4,10 @@ fn manifest_dir() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
+fn workspace_manifest_path() -> std::path::PathBuf {
+    manifest_dir().join("../../Cargo.toml")
+}
+
 fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{} not readable: {e}", path.display()))
 }
@@ -70,4 +74,112 @@ fn cli_default_scanner_feature_comment_matches_manifest_contract() {
         !scanner_default_comment.contains("ml, entropy, decode-through, multiline"),
         "`keyhog-scanner/default` comment must not list only data features while scanner/default also includes gpu/simd"
     );
+}
+
+#[test]
+fn workspace_build_profile_comments_match_cli_feature_contract() {
+    let workspace_toml = read(&workspace_manifest_path());
+    let cli_toml = read(&manifest_dir().join("Cargo.toml"));
+    let cli_manifest: toml::Value = toml::from_str(&cli_toml).expect("cli Cargo.toml parses");
+    let cli_features = features(&cli_manifest);
+
+    let default_features = feature_list(cli_features, "default");
+    assert!(
+        default_features.contains(&"keyhog-scanner/default"),
+        "root build-profile comments cover the workspace CLI default feature contract"
+    );
+
+    let full_features = feature_list(cli_features, "full");
+    assert!(
+        full_features.contains(&"binary")
+            && full_features.contains(&"verify")
+            && full_features.contains(&"git")
+            && full_features.contains(&"web")
+            && full_features.contains(&"github")
+            && full_features.contains(&"gitlab")
+            && full_features.contains(&"bitbucket")
+            && full_features.contains(&"azure")
+            && full_features.contains(&"gcs")
+            && full_features.contains(&"s3")
+            && full_features.contains(&"docker")
+            && full_features.contains(&"keyhog-scanner/ml")
+            && full_features.contains(&"keyhog-scanner/entropy")
+            && full_features.contains(&"keyhog-scanner/decode")
+            && full_features.contains(&"keyhog-scanner/multiline")
+            && !full_features.iter().any(|feature| *feature == "keyhog-scanner/gpu"
+                || *feature == "keyhog-scanner/simd"
+                || *feature == "keyhog-scanner/cuda"
+                || *feature == "keyhog-scanner/default"),
+        "CLI full feature is the source/decompiler surface and must not be documented as all scanner accelerators"
+    );
+
+    let portable_features = feature_list(cli_features, "portable");
+    assert!(
+        portable_features.contains(&"verify")
+            && portable_features.contains(&"git")
+            && portable_features.contains(&"web")
+            && portable_features.contains(&"github")
+            && portable_features.contains(&"gitlab")
+            && portable_features.contains(&"bitbucket")
+            && portable_features.contains(&"azure")
+            && portable_features.contains(&"gcs")
+            && portable_features.contains(&"s3")
+            && portable_features.contains(&"docker")
+            && portable_features.contains(&"keyhog-scanner/ml")
+            && portable_features.contains(&"keyhog-scanner/entropy")
+            && portable_features.contains(&"keyhog-scanner/decode")
+            && portable_features.contains(&"keyhog-scanner/multiline")
+            && !portable_features.contains(&"binary")
+            && !portable_features
+                .iter()
+                .any(|feature| *feature == "keyhog-scanner/gpu"
+                    || *feature == "keyhog-scanner/simd"
+                    || *feature == "keyhog-scanner/cuda"
+                    || *feature == "keyhog-scanner/default"),
+        "portable is the no-system-library source-backend feature set"
+    );
+
+    let build_profile_comments = workspace_toml
+        .lines()
+        .skip_while(|line| !line.contains("# Build Profiles"))
+        .take_while(|line| line.starts_with('#') || line.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .to_ascii_lowercase();
+
+    for stale_claim in [
+        "default (ml + entropy + decode + multiline)",
+        "wgpu compute shader batch moe inference",
+        "all scanner features + live verification",
+        "bare minimum (aho-corasick + regex only)",
+        "combine freely",
+        "everything",
+    ] {
+        assert!(
+            !build_profile_comments.contains(stale_claim),
+            "workspace build-profile comments still contain stale feature claim {stale_claim:?}: {build_profile_comments}"
+        );
+    }
+    assert!(
+        !build_profile_comments
+            .lines()
+            .any(|line| line.contains("cargo build --release -f gpu")),
+        "workspace build-profile comments must not present `-F gpu` as its own build profile: {build_profile_comments}"
+    );
+
+    for required_claim in [
+        "cli default: scanner full desktop stack",
+        "gpu + hyperscan/simd + simdsieve",
+        "source/decompiler surface without accelerator/system-library features",
+        "bare filesystem/stdin scanner surface",
+        "portable source-backend build without hyperscan/gpu/cuda/ghidra",
+        "lean ci/embeddable scanner",
+        "default source/verification surface without gpu dispatch",
+        "features are additive on the selected base",
+    ] {
+        assert!(
+            build_profile_comments.contains(required_claim),
+            "workspace build-profile comments must document {required_claim:?}: {build_profile_comments}"
+        );
+    }
 }

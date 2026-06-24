@@ -410,18 +410,15 @@ pub struct ScanArgs {
     pub perf_trace: bool,
 
     /// Force a specific scan backend instead of using persisted autoroute.
-    /// Values: `gpu`, `mega-scan`, `simd`, `cpu`, or `auto`.
+    /// Values: `auto`, `gpu`, `gpu-region-presence`, `mega-scan`,
+    /// `megascan`, `gpu-mega-scan`, `simd`, `simd-regex`, `cpu`,
+    /// or `cpu-fallback`.
     #[arg(
         long,
         value_name = "BACKEND",
-        value_parser = clap::builder::PossibleValuesParser::new([
-            "gpu",
-            "mega-scan",
-            "megascan",
-            "simd",
-            "cpu",
-            "auto",
-        ])
+        value_parser = clap::builder::PossibleValuesParser::new(
+            keyhog_scanner::hw_probe::BACKEND_OVERRIDE_VALUES
+        )
     )]
     pub backend: Option<String>,
 

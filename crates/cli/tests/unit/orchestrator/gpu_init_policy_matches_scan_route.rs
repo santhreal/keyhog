@@ -2,7 +2,7 @@ use super::support::ENV_LOCK;
 use clap::{CommandFactory, Parser};
 use keyhog::args::ScanArgs;
 use keyhog::testing::{CliTestApi as _, API};
-use keyhog_scanner::hw_probe::parse_backend_str;
+use keyhog_scanner::hw_probe::{parse_backend_str, BACKEND_OVERRIDE_VALUES};
 use keyhog_scanner::GpuInitPolicy;
 
 fn scan_args(args: &[&str]) -> ScanArgs {
@@ -230,7 +230,36 @@ fn every_advertised_backend_value_is_recognized_by_the_canonical_parser() {
         advertised.len() >= 4,
         "the --backend flag must advertise its fixed value set; got {advertised:?}"
     );
+    let expected: Vec<String> = BACKEND_OVERRIDE_VALUES
+        .iter()
+        .map(|value| value.to_string())
+        .collect();
+    assert_eq!(
+        advertised, expected,
+        "Clap --backend values must come from the scanner-owned backend override contract"
+    );
+    for canonical_label in [
+        "gpu-region-presence",
+        "gpu-mega-scan",
+        "simd-regex",
+        "cpu-fallback",
+    ] {
+        assert!(
+            advertised.iter().any(|value| value == canonical_label),
+            "canonical backend label `{canonical_label}` must be accepted at the CLI boundary"
+        );
+    }
     for value in &advertised {
+        let parsed_args = ScanArgs::try_parse_from(["scan", "--backend", value, "--path", "."])
+            .unwrap_or_else(|error| {
+                panic!("clap rejected advertised --backend `{value}`: {error}")
+            });
+        assert_eq!(
+            parsed_args.backend.as_deref(),
+            Some(value.as_str()),
+            "clap must preserve the advertised backend token for routing"
+        );
+
         if value == "auto" {
             // `auto` is the explicit "defer to the router" choice, not a fixed
             // backend the parser names.

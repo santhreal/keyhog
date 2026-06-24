@@ -69,7 +69,7 @@ Each row is the same knob across all three layers. Defaults are
 | Coalesced batch pipeline | off | `[system] batch_pipeline` | `--batch-pipeline` / `--no-batch-pipeline` | Diagnostic/calibration route that bypasses the fused filesystem pipeline. Printed by `keyhog config --effective` and included in autoroute scan identity. |
 | AWS canary issuer extensions | embedded baseline | `[aws] canary_accounts` / `knockoff_accounts` | — | Extra 12-digit AWS account IDs treated as canary-token issuers during offline access-key metadata classification and verification suppression. |
 | Scanner tuning | compiled scanner defaults | `[tuning]` | — | Detection/recall route gates that affect engine work selection. These are explicit config so autoroute calibration identity includes them; ambient `KEYHOG_*` tuning env vars are ignored. |
-| Backend | `auto` | — | `--backend` | `auto`/`simd`/`cpu`/`gpu`/`megascan`. Auto uses a persisted installer-calibrated fastest-correct decision for the exact workload bucket; missing/stale/incomplete calibration is an error, not permission to substitute another backend. |
+| Backend | `auto` | — | `--backend` | `auto`/`gpu`/`gpu-region-presence`/`mega-scan`/`megascan`/`gpu-mega-scan`/`simd`/`simd-regex`/`cpu`/`cpu-fallback`. Auto uses a persisted installer-calibrated fastest-correct decision for the exact workload bucket; missing/stale/incomplete calibration is an error, not permission to substitute another backend. |
 
 ## Source limits
 

@@ -509,7 +509,9 @@ fn docs_keep_backend_override_on_explicit_cli_surface() {
         "env.md must not document the retired KEYHOG_BACKEND control"
     );
     assert!(
-        config_doc.contains("`--backend`") && config_doc.contains("`auto`/`simd`/`cpu`/`gpu`"),
+        config_doc.contains("`--backend`")
+            && config_doc.contains("`auto`/`gpu`/`gpu-region-presence`")
+            && config_doc.contains("`simd`/`simd-regex`/`cpu`/`cpu-fallback`"),
         "configuration docs must document the explicit --backend surface"
     );
     assert!(

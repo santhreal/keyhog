@@ -22,6 +22,10 @@ pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 18;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
+fn backend_override_hint() -> String {
+    keyhog_scanner::hw_probe::BACKEND_OVERRIDE_VALUES.join("|")
+}
+
 /// Persistent calibrated backend router.
 ///
 /// Autoroute probes only in explicit calibration mode (installer / backend
@@ -76,7 +80,7 @@ impl AutorouteRoutingError {
                  missing decision. Run \
                  `install.sh --calibrate` on Unix or `install.ps1 -Calibrate` on Windows for \
                  this binary, host, detector corpus, resolved scan config, source class, and \
-                 explicit scan controls; or pass an explicit `--backend <simd|cpu|gpu|megascan>` \
+                 explicit scan controls; or pass an explicit `--backend <{}>` \
                  for diagnostics.",
                 key.bytes_bucket,
                 key.chunks_bucket,
@@ -84,6 +88,7 @@ impl AutorouteRoutingError {
                 key.pattern_bucket,
                 key.decode_density_bucket,
                 key.source_class_hash,
+                backend_override_hint(),
             ),
         }
     }
@@ -117,8 +122,9 @@ impl AutorouteRoutingError {
                 "autoroute host identity unavailable: {error}. Autoroute calibration must be \
                  tied to an exact host profile before it can prove fastest-correct routing. \
                  Fix host hardware probing and rerun `install.sh --calibrate` or \
-                 `install.ps1 -Calibrate`; or pass an explicit `--backend <simd|cpu|gpu|megascan>` \
-                 for diagnostics."
+                 `install.ps1 -Calibrate`; or pass an explicit `--backend <{}>` \
+                 for diagnostics.",
+                backend_override_hint()
             ),
         }
     }
@@ -130,7 +136,8 @@ impl AutorouteRoutingError {
                  source-class evidence before it can trust a persisted fastest-correct backend \
                  decision. Fix the source implementation so it populates ChunkMetadata.source_type, \
                  rerun `install.sh --calibrate` or `install.ps1 -Calibrate`, or pass an explicit \
-                 `--backend <simd|cpu|gpu|megascan>` for diagnostics."
+                 `--backend <{}>` for diagnostics.",
+                backend_override_hint()
             ),
         }
     }
@@ -141,7 +148,8 @@ impl AutorouteRoutingError {
                 "autoroute calibration reference backend produced inconsistent findings on trial \
                  {trial}. Autoroute cannot prove fastest-correct routing when the SIMD reference \
                  is unstable, so no backend decision was persisted. Fix scanner nondeterminism or \
-                 run an explicit `--backend <simd|cpu|gpu|megascan>` diagnostic scan."
+                 run an explicit `--backend <{}>` diagnostic scan.",
+                backend_override_hint()
             ),
         }
     }
@@ -152,7 +160,8 @@ impl AutorouteRoutingError {
                 "autoroute selected unsupported scan backend {backend:?}. This binary cannot prove \
                  fastest-correct routing for a backend variant it does not implement in the \
                  coalesced scanner worker. Recalibrate with a matching keyhog/scanner build or pass \
-                 an explicit supported `--backend <simd|cpu|gpu|megascan>` diagnostic override."
+                 an explicit supported `--backend <{}>` diagnostic override.",
+                backend_override_hint()
             ),
         }
     }
