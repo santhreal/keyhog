@@ -68,23 +68,31 @@ fn self_scan_path_scope_caches_canonicalization_per_filter_pass() {
 
     for required in [
         "struct SelfScanPathScope",
-        "canonicalized_paths: std::collections::HashMap<String, bool>",
+        "canonicalized_parent_dirs:",
+        "std::collections::HashMap<std::path::PathBuf, std::path::PathBuf>",
+        "fn canonical_parent_dir(&mut self, parent: &std::path::Path) -> &std::path::Path",
         "let mut self_scan_path_scope = SelfScanPathScope::new();",
         "self_scan_path_scope.finding_inside_keyhog_repo(file_path)",
-        ".entry(file_path.to_owned())",
+        ".entry(parent.to_path_buf())",
+        "canonical_parent.join(file_name).starts_with(root)",
     ] {
         assert!(
             postprocess.contains(required),
-            "self-scan path suppression must keep the per-pass canonicalization cache boundary `{required}`"
+            "self-scan path suppression must keep the per-pass parent canonicalization cache boundary `{required}`"
         );
     }
 
     assert_eq!(
+        postprocess.matches("std::fs::canonicalize(parent)").count(),
+        1,
+        "finding parent directories must be canonicalized only inside the cached SelfScanPathScope owner"
+    );
+    assert_eq!(
         postprocess
             .matches("std::fs::canonicalize(file_path)")
             .count(),
-        1,
-        "finding paths must be canonicalized only inside the cached SelfScanPathScope owner"
+        0,
+        "finding file paths must not be canonicalized per distinct file; cache canonicalized parent dirs instead"
     );
 }
 

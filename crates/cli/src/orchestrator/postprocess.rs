@@ -81,15 +81,24 @@ fn keyhog_repo_root() -> Option<&'static std::path::Path> {
 
 struct SelfScanPathScope {
     keyhog_root: Option<&'static std::path::Path>,
-    canonicalized_paths: std::collections::HashMap<String, bool>,
+    canonicalized_parent_dirs: std::collections::HashMap<std::path::PathBuf, std::path::PathBuf>,
 }
 
 impl SelfScanPathScope {
     fn new() -> Self {
         Self {
             keyhog_root: keyhog_repo_root(),
-            canonicalized_paths: std::collections::HashMap::new(),
+            canonicalized_parent_dirs: std::collections::HashMap::new(),
         }
+    }
+
+    fn canonical_parent_dir(&mut self, parent: &std::path::Path) -> &std::path::Path {
+        self.canonicalized_parent_dirs
+            .entry(parent.to_path_buf())
+            .or_insert_with(|| {
+                std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf()) // LAW10: canonicalize failure => original parent path (best-effort normalization); recall-safe
+            })
+            .as_path()
     }
 
     /// True when the given finding's file path is a descendant of keyhog's own
@@ -98,14 +107,16 @@ impl SelfScanPathScope {
         let Some(root) = self.keyhog_root else {
             return false;
         };
-        *self
-            .canonicalized_paths
-            .entry(file_path.to_owned())
-            .or_insert_with(|| {
-                let canonical = std::fs::canonicalize(file_path)
-                    .unwrap_or_else(|_| std::path::PathBuf::from(file_path)); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
-                canonical.starts_with(root)
-            })
+        let path = std::path::Path::new(file_path);
+        let parent = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::Path::new(".")); // LAW10: bare relative file has CWD as parent for self-scan scoping; recall-safe
+        let Some(file_name) = path.file_name() else {
+            return self.canonical_parent_dir(parent).starts_with(root);
+        };
+        let canonical_parent = self.canonical_parent_dir(parent);
+        canonical_parent.join(file_name).starts_with(root)
     }
 }
 
