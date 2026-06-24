@@ -22,6 +22,7 @@ mod scan_chunks_preserves_chunk_count;
 mod scan_coalesced_phase2_trigger_rows;
 mod scan_cpu_fallback_finds_match;
 mod scan_does_not_cross_chunk_boundary;
+mod scan_git_history_source_type_downgrades_severity;
 mod scan_simd_cpu_empty_chunk;
 mod scan_skips_detectors_directory_path;
 mod scan_skips_keyhogignore_path;

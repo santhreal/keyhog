@@ -5,6 +5,17 @@ use keyhog_core::{Chunk, MatchLocation, RawMatch, Severity};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+fn source_adjusted_severity(source_type: &str, severity: Severity) -> Severity {
+    if matches!(
+        source_type,
+        "git/history" | "git-history" | "git/unreachable"
+    ) {
+        severity.downgrade_one()
+    } else {
+        severity
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_raw_match(
     detector: &keyhog_core::DetectorSpec,
@@ -28,9 +39,9 @@ pub(crate) fn build_raw_match(
     // git history (the developer already removed it from `main`) is still
     // a leak - but it's strictly less urgent than a credential live in HEAD
     // that an attacker can grep right now. Drop one tier when the source
-    // backend tagged this chunk as `git/history`. Everything else (live
-    // filesystem, `git/head`, S3/Docker/Web/etc) keeps the detector's
-    // declared severity.
+    // backend tagged this chunk as removed or unreachable git history.
+    // Everything else (live filesystem, `git/head`, S3/Docker/Web/etc) keeps
+    // the detector's declared severity.
     //
     // Client-safe tier: a match against a pattern marked `client_safe = true`
     // (Sentry DSN, Stripe pk_*, Firebase web key, etc.) is collapsed to
@@ -42,13 +53,8 @@ pub(crate) fn build_raw_match(
     // detector still gets flagged.
     let severity = if pattern_client_safe {
         keyhog_core::Severity::ClientSafe
-    } else if matches!(
-        chunk.metadata.source_type.as_str(),
-        "git/history" | "git/unreachable"
-    ) {
-        detector.severity.downgrade_one()
     } else {
-        detector.severity
+        source_adjusted_severity(&chunk.metadata.source_type, detector.severity)
     };
     RawMatch {
         detector_id,
@@ -109,6 +115,7 @@ pub(crate) fn build_synthetic_raw_match(
     scan_state: &mut ScanState,
 ) -> RawMatch {
     let (detector_id, detector_name, service) = metadata;
+    let severity = source_adjusted_severity(&chunk.metadata.source_type, severity);
     RawMatch {
         detector_id,
         detector_name,

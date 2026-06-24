@@ -48,6 +48,7 @@ pub(crate) const SEED_SOURCE_TYPES: &[&str] = &[
     "git/diff",
     "git/staged",
     "git-diff",
+    "git-history",
     "stdin",
     "s3",
     "docker",
