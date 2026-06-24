@@ -146,7 +146,7 @@ pub(crate) fn read_capped_line<R: std::io::BufRead>(
         if available.is_empty() {
             return Ok(consumed); // EOF
         }
-        let nl = available.iter().position(|&b| b == b'\n');
+        let nl = memchr::memchr(b'\n', available);
         let take = nl.map_or(available.len(), |i| i + 1);
         if buf.len() < max {
             let keep = take.min(max - buf.len());
