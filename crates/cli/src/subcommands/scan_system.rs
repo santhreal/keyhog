@@ -302,7 +302,7 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     if !args.no_git_history {
         let skip_dirs = crate::skip_dirs::SkipDirPolicy::load()?;
         for mount in &mounts {
-            discover_git_repos(mount, &mut git_repos, args.space, &skip_dirs);
+            discover_git_repos(mount, &mut git_repos, &skip_dirs);
         }
         eprintln!("🌿 discovered {} git repo(s)", git_repos.len());
     }
@@ -425,8 +425,7 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     }
 }
 
-/// Recursively find `.git` directories (worktrees + bare repos) up to the
-/// space cap.
+/// Recursively find `.git` directories (worktrees + bare repos).
 ///
 /// kimi-wave2 §Critical: previously this followed symlinks via plain
 /// `fs::read_dir` + `is_dir`. A circular symlink (e.g. `a/b -> ../a`)
@@ -436,7 +435,6 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
 fn discover_git_repos(
     root: &Path,
     out: &mut Vec<PathBuf>,
-    _space_cap: u64,
     skip_dirs: &crate::skip_dirs::SkipDirPolicy,
 ) {
     use std::collections::HashSet;
@@ -444,12 +442,25 @@ fn discover_git_repos(
     let mut visited: HashSet<PathBuf> = HashSet::new();
     let mut stack: Vec<PathBuf> = Vec::new();
 
-    if let Ok(canon) = fs::canonicalize(root) {
-        // LAW10: unreadable scan-system root is handled by the source path; repo discovery simply contributes no git repo.
-        stack.push(canon);
-    } else {
-        return;
-    }
+    let canon = match fs::canonicalize(root) {
+        Ok(canon) => canon,
+        Err(error) => {
+            let palette = style::for_stderr();
+            eprintln!(
+                "{} cannot canonicalize root path while discovering git repositories; skipping discovery for {}: {}",
+                style::warn("WARN", &palette),
+                root.display(),
+                error
+            );
+            tracing::warn!(
+                root = %root.display(),
+                %error,
+                "cannot canonicalize root path while discovering git repositories; skipping discovery"
+            );
+            return;
+        }
+    };
+    stack.push(canon);
 
     while let Some(dir) = stack.pop() {
         if !visited.insert(dir.clone()) {
@@ -502,10 +513,18 @@ fn discover_git_repos(
                         }
                     };
                     if file_type.is_dir() {
-                        if let Ok(canon) = fs::canonicalize(entry.path()) {
-                            // LAW10: failed child canonicalization keeps the entry out of git-repo expansion; filesystem scan owns unreadable-path surfacing.
-                            if !visited.contains(&canon) {
-                                stack.push(canon);
+                        match fs::canonicalize(entry.path()) {
+                            Ok(canon) => {
+                                if !visited.contains(&canon) {
+                                    stack.push(canon);
+                                }
+                            }
+                            Err(error) => {
+                                tracing::warn!(
+                                    path = %entry.path().display(),
+                                    %error,
+                                    "cannot canonicalize directory while discovering git repositories; skipping subtree"
+                                );
                             }
                         }
                     }

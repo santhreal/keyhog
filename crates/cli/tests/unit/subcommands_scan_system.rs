@@ -145,8 +145,14 @@ fn git_repo_discovery_does_not_flatten_read_dir_errors() {
     );
     assert!(
         src.contains("cannot read directory entry while discovering git repositories")
-            && src.contains("cannot read directory while discovering git repositories"),
-        "scan-system repo discovery must warn for per-entry and whole-directory read failures"
+            && src.contains("cannot read directory while discovering git repositories")
+            && src.contains("cannot canonicalize root path while discovering git repositories")
+            && src.contains("cannot canonicalize directory while discovering git repositories"),
+        "scan-system repo discovery must warn for canonicalization, per-entry, and whole-directory read failures"
+    );
+    assert!(
+        !src.contains("_space_cap"),
+        "scan-system repo discovery must not advertise a fake space-cap traversal contract"
     );
 }
 
