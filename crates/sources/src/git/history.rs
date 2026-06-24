@@ -300,7 +300,13 @@ fn stream_git_history_chunks(
                                 .into(),
                         ));
                     }
-                    current_path = new_path;
+                    current_path = match new_path {
+                        Some(path) if crate::filesystem::is_default_excluded_path(&path) => {
+                            let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
+                            None
+                        }
+                        path => path,
+                    };
                     current_content.clear();
                     // New commit/file: the next `@@` sets the base for its hunks.
                     current_base_line = 0;

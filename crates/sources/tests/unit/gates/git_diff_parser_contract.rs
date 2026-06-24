@@ -88,10 +88,12 @@ fn git_diff_sources_share_byte_oriented_parser() {
                 && source.contains("SourceSkipEvent::Unreadable")
                 && source.contains("UnifiedDiffEvent::BinaryFile")
                 && source.contains("SourceSkipEvent::Binary")
+                && source.contains("crate::filesystem::is_default_excluded_path")
+                && source.contains("SourceSkipEvent::Excluded")
                 && source.contains("pending_errors")
                 && source.contains("pending_errors.push_back(SourceError::Other")
                 && source.contains("pending_errors.pop_front()"),
-            "{rel} must emit SourceError rows for invalid unified-diff file headers and count binary patch skips instead of silently dropping added lines"
+            "{rel} must emit SourceError rows for invalid unified-diff file headers and count binary/excluded patch skips instead of silently dropping added lines"
         );
     }
 

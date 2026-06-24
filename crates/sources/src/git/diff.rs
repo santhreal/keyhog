@@ -319,7 +319,13 @@ fn stream_added_lines(
                                 .into(),
                         ));
                     }
-                    current_path = new_path;
+                    current_path = match new_path {
+                        Some(path) if crate::filesystem::is_default_excluded_path(&path) => {
+                            let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
+                            None
+                        }
+                        path => path,
+                    };
 
                     if let Some(path) = prev_path {
                         if let Some(prev_content) = prev_content {

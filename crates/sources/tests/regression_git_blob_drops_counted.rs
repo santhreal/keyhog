@@ -443,6 +443,81 @@ fn default_excluded_git_blob_is_counted_excluded() {
     );
 }
 
+/// A changed file that is skipped by the shared default-exclude policy in
+/// `git diff` still has to reach the shared excluded coverage counter.
+#[test]
+fn default_excluded_git_diff_patch_is_counted_excluded() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path();
+    init_repo(repo);
+    std::fs::write(repo.join("Cargo.lock"), "BASE=clean\n").expect("write base lockfile");
+    git(repo, &["add", "Cargo.lock"]);
+    git(repo, &["commit", "-m", "base lockfile"]);
+
+    std::fs::write(
+        repo.join("Cargo.lock"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n", // keyhog:ignore detector=aws-access-key (synthetic excluded fixture)
+    )
+    .expect("write excluded lockfile update");
+
+    let chunks: Vec<_> = GitDiffSource::new(repo.to_path_buf(), "HEAD")
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(
+        chunks.is_empty(),
+        "default-excluded git-diff patch yields no scannable chunks"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.excluded - before.excluded,
+        1,
+        "the default-excluded Git diff patch MUST bump SKIPPED_EXCLUDED exactly once"
+    );
+}
+
+/// A committed file skipped by the shared default-exclude policy in
+/// `git log -p` still has to reach the shared excluded coverage counter.
+#[test]
+fn default_excluded_git_history_patch_is_counted_excluded() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path();
+    init_repo(repo);
+    std::fs::write(
+        repo.join("Cargo.lock"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n", // keyhog:ignore detector=aws-access-key (synthetic excluded fixture)
+    )
+    .expect("write excluded lockfile");
+    git(repo, &["add", "Cargo.lock"]);
+    git(repo, &["commit", "-m", "excluded lockfile"]);
+
+    let chunks: Vec<_> = GitHistorySource::new(repo.to_path_buf())
+        .with_max_commits(1)
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(
+        chunks.is_empty(),
+        "default-excluded git-history patch yields no scannable chunks"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.excluded - before.excluded,
+        1,
+        "the default-excluded Git history patch MUST bump SKIPPED_EXCLUDED exactly once"
+    );
+}
+
 /// Aggregate history caps stop the source before all remaining blobs are
 /// exhausted. That is a source-level partial-coverage gap, not a clean end of
 /// history and not a per-file size skip.
