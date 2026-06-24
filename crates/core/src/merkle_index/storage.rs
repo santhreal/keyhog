@@ -13,8 +13,9 @@ use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    tmp_hygiene::sweep_stale_tmp_files, CacheEntry, CacheFileFingerprint, CacheKey, MerkleIndex,
-    MerkleLoadReport, MerkleLoadStatus, SCHEMA_VERSION,
+    tmp_hygiene::{sweep_stale_tmp_files, MERKLE_TMP_PREFIX},
+    CacheEntry, CacheFileFingerprint, CacheKey, MerkleIndex, MerkleLoadReport, MerkleLoadStatus,
+    SCHEMA_VERSION,
 };
 use crate::hex_encode;
 use crate::merkle_spec_hash::hex_to_array;
@@ -490,7 +491,9 @@ fn persist_atomically(path: &Path, serialized: &[u8]) -> std::io::Result<()> {
     let parent = path.parent().unwrap_or_else(|| Path::new(".")); // LAW10: deterministic default, not a swallowed failure
     std::fs::create_dir_all(parent)?;
 
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    let mut tmp = tempfile::Builder::new()
+        .prefix(MERKLE_TMP_PREFIX)
+        .tempfile_in(parent)?;
     std::io::Write::write_all(&mut tmp, serialized)?;
     tmp.as_file().sync_all()?;
     tmp.persist(path).map_err(|error| error.error)?;

@@ -10,6 +10,9 @@
 
 use std::path::Path;
 
+const TMP_STEM_FALLBACK: &str = "merkle";
+pub(super) const MERKLE_TMP_PREFIX: &str = ".tmp.keyhog-merkle-";
+
 /// Stale-tmp-file age cutoff. `tempfile::NamedTempFile`'s Drop impl
 /// cleans up on panic but NOT on SIGKILL/SIGTERM - those leak a
 /// random-named tmp file in the cache directory. Older than this
@@ -31,12 +34,7 @@ pub(super) fn sweep_stale_tmp_files(cache_path: &Path) {
     let Ok(entries) = std::fs::read_dir(parent) else {
         return;
     };
-    // A default tmp-name PREFIX for the sweep matcher (best-effort cleanup of our
-    // own `.tmp` siblings). `file_stem` is `None`/non-UTF8 only for an unnamed path.
-    let stem = cache_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("merkle"); // LAW10: default prefix for best-effort tmp sweep, no recall impact
+    let legacy_tmp_prefix = legacy_cache_tmp_prefix(cache_path);
     let now = std::time::SystemTime::now();
     let mut swept = 0usize;
     for entry in entries {
@@ -55,15 +53,18 @@ pub(super) fn sweep_stale_tmp_files(cache_path: &Path) {
         let Some(name_str) = name.to_str() else {
             continue;
         };
-        // tempfile::NamedTempFile uses random hex-suffixed names with
-        // a `.tmp` prefix - match conservatively to avoid eating
-        // unrelated files: `<stem>.tmp*` OR `.tmp<hex>`.
+        let path = entry.path();
+        if path == cache_path {
+            continue;
+        }
+        // Current saves use a fixed keyhog-owned prefix. Keep matching the
+        // old `<stem>.tmp*` prefix, but do not sweep arbitrary anonymous
+        // `.tmp*` files from a shared cache directory.
         let is_tmp_sibling =
-            name_str.starts_with(&format!("{stem}.tmp")) || name_str.starts_with(".tmp");
+            name_str.starts_with(MERKLE_TMP_PREFIX) || name_str.starts_with(&legacy_tmp_prefix);
         if !is_tmp_sibling {
             continue;
         }
-        let path = entry.path();
         let Ok(meta) = path.metadata() else {
             tracing::debug!(
                 path = %path.display(),
@@ -94,4 +95,14 @@ pub(super) fn sweep_stale_tmp_files(cache_path: &Path) {
             "swept stale cache tmp files left by an interrupted save"
         );
     }
+}
+
+fn legacy_cache_tmp_prefix(cache_path: &Path) -> String {
+    // `file_stem` is `None`/non-UTF8 only for an unnamed or non-UTF8 path.
+    // Falling back to "merkle" keeps cleanup best-effort and recall-neutral.
+    let stem = cache_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(TMP_STEM_FALLBACK); // LAW10: best-effort temp filename prefix only; cleanup remains conservative and recall-neutral
+    format!("{stem}.tmp")
 }

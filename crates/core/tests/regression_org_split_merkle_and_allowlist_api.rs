@@ -247,6 +247,13 @@ fn merkle_storage_split_keeps_spec_gate_and_atomic_persist_owner() {
         storage_src.contains("detector spec changed since last scan"),
         "storage module must still enforce detector-spec invalidation"
     );
+    assert!(
+        storage_src.contains("tmp_hygiene::{sweep_stale_tmp_files, MERKLE_TMP_PREFIX}")
+            && storage_src.contains("tempfile::Builder::new()")
+            && storage_src.contains(".prefix(MERKLE_TMP_PREFIX)")
+            && !storage_src.contains("tempfile::NamedTempFile::new_in(parent)"),
+        "merkle storage must create temp files through the same explicit prefix owner swept by tmp_hygiene"
+    );
 
     let root_src =
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/merkle_index.rs"))
@@ -254,6 +261,84 @@ fn merkle_storage_split_keeps_spec_gate_and_atomic_persist_owner() {
     assert!(
         !root_src.contains("serde_json::to_vec_pretty"),
         "merkle root should not own disk serialization after the storage split"
+    );
+}
+
+#[test]
+fn cache_temp_file_prefix_contract_is_explicit() {
+    let tmp_hygiene_src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/merkle_index/tmp_hygiene.rs"
+    ))
+    .expect("tmp hygiene source readable");
+    assert!(
+        tmp_hygiene_src.contains("pub(super) const MERKLE_TMP_PREFIX"),
+        "tmp hygiene must own the merkle cache temp-file prefix constant"
+    );
+    assert!(
+        tmp_hygiene_src.contains("name_str.starts_with(MERKLE_TMP_PREFIX)")
+            && tmp_hygiene_src.contains("legacy_cache_tmp_prefix(cache_path)")
+            && !tmp_hygiene_src.contains("name_str.starts_with(\".tmp\")"),
+        "tmp hygiene must sweep keyhog-owned temp prefixes without broad anonymous .tmp deletion"
+    );
+
+    let calibration_src =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/calibration.rs"))
+            .expect("calibration source readable");
+    assert!(
+        calibration_src.contains("const CALIBRATION_TMP_PREFIX")
+            && calibration_src.contains("sweep_stale_calibration_tmp_files(path);")
+            && calibration_src.contains("tempfile::Builder::new()")
+            && calibration_src.contains(".prefix(CALIBRATION_TMP_PREFIX)")
+            && !calibration_src.contains("tempfile::NamedTempFile::new_in(parent)"),
+        "calibration saves must use and sweep an explicit cache temp-file prefix instead of anonymous .tmp siblings"
+    );
+}
+
+#[test]
+fn merkle_tmp_sweep_never_deletes_the_active_cache_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache_path = dir.path().join(".tmp.keyhog-merkle-cache");
+    std::fs::write(&cache_path, b"not-json").unwrap();
+    let two_hours_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60);
+    let _ = set_mtime(&cache_path, two_hours_ago);
+
+    let _ =
+        keyhog_core::testing::CoreTestApi::merkle_load(&keyhog_core::testing::TestApi, &cache_path);
+
+    assert!(
+        cache_path.exists(),
+        "merkle tmp sweep must never remove the active cache path even when its name matches the tmp prefix"
+    );
+}
+
+#[test]
+fn calibration_load_sweeps_only_keyhog_calibration_tmp_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache_path = dir.path().join("calibration.json");
+    let stale = dir.path().join(".tmp.keyhog-calibration-deadbeef");
+    let fresh = dir.path().join(".tmp.keyhog-calibration-fresh");
+    let unrelated = dir.path().join(".tmp-other-app");
+    std::fs::write(&stale, b"stale calibration tmp").unwrap();
+    std::fs::write(&fresh, b"fresh calibration tmp").unwrap();
+    std::fs::write(&unrelated, b"not ours").unwrap();
+    let two_hours_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60);
+    let stale_backdated = set_mtime(&stale, two_hours_ago).is_ok();
+    let _ = keyhog_core::Calibration::try_load(&cache_path);
+
+    if stale_backdated {
+        assert!(
+            !stale.exists(),
+            "calibration load should sweep stale keyhog-owned calibration tmp files"
+        );
+    }
+    assert!(
+        fresh.exists(),
+        "calibration load must not sweep fresh in-flight temp files"
+    );
+    assert!(
+        unrelated.exists(),
+        "calibration load must not sweep unrelated anonymous .tmp files"
     );
 }
 

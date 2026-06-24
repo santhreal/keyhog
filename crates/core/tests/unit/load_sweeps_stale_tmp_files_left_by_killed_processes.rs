@@ -46,7 +46,7 @@ mod filetime_workaround {
 }
 #[test]
 fn load_sweeps_stale_tmp_files_left_by_killed_processes() {
-    // Plant a fake stale tmp file matching tempfile's pattern,
+    // Plant a fake stale tmp file matching keyhog's explicit tempfile prefix,
     // backdate its mtime to 2 hours ago. Calling `load` (which
     // doesn't even need to find the real cache) should trigger
     // the sweep and delete it. A fresh tmp must survive the
@@ -56,7 +56,7 @@ fn load_sweeps_stale_tmp_files_left_by_killed_processes() {
     let cache_path = dir.path().join("merkle.idx");
 
     // Old tmp - should be swept.
-    let old_tmp = dir.path().join(".tmpABCDEF");
+    let old_tmp = dir.path().join(".tmp.keyhog-merkle-ABCDEF");
     std::fs::write(&old_tmp, b"stale leftover").unwrap();
     let two_hours_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60);
     let _ = filetime_workaround::set_mtime(&old_tmp, two_hours_ago);
@@ -66,7 +66,7 @@ fn load_sweeps_stale_tmp_files_left_by_killed_processes() {
     // can't easily backdate without extra deps.)
 
     // Fresh tmp - should be preserved.
-    let fresh_tmp = dir.path().join(".tmpFRESH");
+    let fresh_tmp = dir.path().join(".tmp.keyhog-merkle-FRESH");
     std::fs::write(&fresh_tmp, b"in-flight save").unwrap();
 
     // Also a non-tmp sibling that must NEVER be touched.

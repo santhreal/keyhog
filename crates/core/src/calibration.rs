@@ -39,6 +39,9 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+const CALIBRATION_TMP_PREFIX: &str = ".tmp.keyhog-calibration-";
+const STALE_CALIBRATION_TMP_CUTOFF_SECS: u64 = 60 * 60;
+
 /// A detector's running Beta posterior counters. Always ≥1 each (Beta(1,1)
 /// uniform prior baseline) to avoid posterior_mean undefined when a detector
 /// has had no observations yet.
@@ -153,6 +156,7 @@ impl Calibration {
     }
 
     pub fn try_load(path: &Path) -> Result<Option<Self>, CalibrationLoadError> {
+        sweep_stale_calibration_tmp_files(path);
         let bytes = match std::fs::read(path) {
             Ok(b) => b,
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -206,9 +210,9 @@ impl Calibration {
             .map_err(|e| std::io::Error::other(format!("calibration encode: {e}")))?;
         let parent = path.parent().unwrap_or_else(|| std::path::Path::new(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
         std::fs::create_dir_all(parent)?;
-        // Same atomic-write-via-NamedTempFile pattern used by
-        // `merkle_index::save` - see that file's note for rationale.
-        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+        let mut tmp = tempfile::Builder::new()
+            .prefix(CALIBRATION_TMP_PREFIX)
+            .tempfile_in(parent)?;
         std::io::Write::write_all(&mut tmp, &serialized)?;
         tmp.as_file().sync_all()?;
         tmp.persist(path).map_err(|e| e.error)?;
@@ -315,4 +319,53 @@ fn validate_on_disk(path: &Path, on_disk: &OnDisk) -> Result<(), CalibrationLoad
         }
     }
     Ok(())
+}
+
+fn sweep_stale_calibration_tmp_files(cache_path: &Path) {
+    let Some(parent) = cache_path.parent() else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return;
+    };
+    let now = std::time::SystemTime::now();
+    let mut swept = 0usize;
+    for entry in entries {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let name = entry.file_name();
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
+        if !name_str.starts_with(CALIBRATION_TMP_PREFIX) {
+            continue;
+        }
+        let path = entry.path();
+        if path == cache_path {
+            continue;
+        }
+        let Ok(meta) = path.metadata() else {
+            continue;
+        };
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
+        let Ok(age) = now.duration_since(modified) else {
+            continue;
+        };
+        if age.as_secs() < STALE_CALIBRATION_TMP_CUTOFF_SECS {
+            continue;
+        }
+        if std::fs::remove_file(&path).is_ok() {
+            swept += 1;
+        }
+    }
+    if swept > 0 {
+        tracing::debug!(
+            count = swept,
+            dir = %parent.display(),
+            "swept stale calibration cache tmp files left by an interrupted save"
+        );
+    }
 }
