@@ -55,6 +55,7 @@
 //! refuses to load or write the cache at all.
 
 use std::collections::{hash_map::Entry, HashMap};
+use std::hash::{BuildHasherDefault, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
@@ -73,6 +74,43 @@ const SCHEMA_VERSION: u32 = 4;
 /// Shard count: spreads concurrent `record` / `unchanged` calls across
 /// independent locks so tiny-file storms don't serialize all rayon workers.
 const MERKLE_SHARDS: usize = 64;
+
+type MerkleShardBuildHasher = BuildHasherDefault<MerkleShardHasher>;
+type MerkleShardMap = HashMap<CacheKey, CacheEntry, MerkleShardBuildHasher>;
+
+const MERKLE_FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+const MERKLE_FNV_PRIME: u64 = 0x100000001b3;
+
+#[derive(Clone, Copy, Debug)]
+struct MerkleShardHasher {
+    hash: u64,
+}
+
+impl Default for MerkleShardHasher {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            hash: MERKLE_FNV_OFFSET_BASIS,
+        }
+    }
+}
+
+impl Hasher for MerkleShardHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.hash
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        let mut hash = self.hash;
+        for &byte in bytes {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(MERKLE_FNV_PRIME);
+        }
+        self.hash = hash;
+    }
+}
 
 #[cfg(target_pointer_width = "64")]
 const SHARD_MIX: usize = 0x517c_c1b7_2722_0a95;
@@ -248,7 +286,7 @@ struct CacheFileFingerprint {
 /// concurrent updates rarely contend.
 #[derive(Debug)]
 pub struct MerkleIndex {
-    shards: Vec<RwLock<HashMap<CacheKey, CacheEntry>>>,
+    shards: Vec<RwLock<MerkleShardMap>>,
     /// Upper bound on the number of retained entries across all shards.
     /// Defaults to [`MERKLE_DEFAULT_MAX_ENTRIES`]. Once reached, only
     /// updates to existing paths are accepted; new paths are dropped
@@ -293,7 +331,12 @@ impl MerkleIndex {
         let shard_capacity = shard_capacity(max_entries);
         Self {
             shards: (0..MERKLE_SHARDS)
-                .map(|_| RwLock::new(HashMap::with_capacity(shard_capacity)))
+                .map(|_| {
+                    RwLock::new(HashMap::with_capacity_and_hasher(
+                        shard_capacity,
+                        MerkleShardBuildHasher::default(),
+                    ))
+                })
                 .collect(),
             max_entries,
             cap_warned: std::sync::atomic::AtomicBool::new(false),

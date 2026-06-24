@@ -23,6 +23,14 @@ fn merkle_index_non_empty() {
         "merkle_index: shard routing is a hot path and must not use SipHasher DefaultHasher"
     );
     assert!(
+        prod.contains("type MerkleShardMap = HashMap<CacheKey, CacheEntry, MerkleShardBuildHasher>")
+            && prod.contains("type MerkleShardBuildHasher = BuildHasherDefault<MerkleShardHasher>")
+            && prod.contains("impl Hasher for MerkleShardHasher")
+            && prod.contains("MERKLE_FNV_OFFSET_BASIS")
+            && prod.contains("MERKLE_FNV_PRIME"),
+        "merkle_index: per-shard HashMap lookups must use the dedicated fast hasher, not std RandomState"
+    );
+    assert!(
         prod.contains("fn shard_index_bytes(bytes: &[u8]) -> usize")
             && prod.contains("SHARD_MIX")
             && prod.contains("hash & (MERKLE_SHARDS - 1)"),
@@ -30,8 +38,10 @@ fn merkle_index_non_empty() {
     );
     assert!(
         prod.contains("fn shard_capacity(max_entries: usize) -> usize")
-            && prod.contains("HashMap::with_capacity(shard_capacity)")
-            && !prod.contains("RwLock::new(HashMap::new())"),
+            && prod.contains("HashMap::with_capacity_and_hasher(")
+            && prod.contains("MerkleShardBuildHasher::default()")
+            && !prod.contains("RwLock::new(HashMap::new())")
+            && !prod.contains("HashMap::with_capacity(shard_capacity)"),
         "merkle_index: shard maps must be pre-sized from the configured entry cap"
     );
 }
