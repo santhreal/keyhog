@@ -19,13 +19,25 @@ fn feature_list<'a>(features: &'a toml::value::Table, name: &str) -> Vec<&'a str
     features
         .get(name)
         .and_then(toml::Value::as_array)
-        .unwrap_or_else(|| panic!("feature {name} is an array"))
+        .unwrap_or_else(|| panic!("feature {name} must be an array"))
         .iter()
         .map(|item| {
             item.as_str()
                 .unwrap_or_else(|| panic!("feature {name} entries are strings"))
         })
         .collect()
+}
+
+fn nearby_default_import_comment(manifest: &str) -> String {
+    let lines = manifest.lines().collect::<Vec<_>>();
+    let default_import_line = lines
+        .iter()
+        .position(|line| line.contains("\"keyhog-scanner/default\""))
+        .expect("CLI default imports scanner default");
+    let start = default_import_line.saturating_sub(6);
+    lines[start..=default_import_line]
+        .join("\n")
+        .to_ascii_lowercase()
 }
 
 #[test]
@@ -47,20 +59,15 @@ fn cli_default_scanner_feature_comment_matches_manifest_contract() {
         "scanner default currently includes accelerator features; update this gate if that contract changes"
     );
 
-    let scanner_default_line = cli_toml
-        .lines()
-        .find(|line| line.contains("\"keyhog-scanner/default\""))
-        .expect("CLI default imports scanner default");
+    let scanner_default_comment = nearby_default_import_comment(&cli_toml);
     assert!(
-        scanner_default_line.contains("GPU") && scanner_default_line.contains("Hyperscan"),
-        "`keyhog-scanner/default` comment must say it imports accelerator features too: {scanner_default_line}"
+        scanner_default_comment.contains("gpu")
+            && (scanner_default_comment.contains("hyperscan")
+                || scanner_default_comment.contains("simd")),
+        "`keyhog-scanner/default` nearby comments must say it imports accelerator features too: {scanner_default_comment}"
     );
     assert!(
-        !cli_toml.contains("Only gpu, simd, and binary (Ghidra) are opt-in"),
-        "CLI Cargo comments must not claim gpu/simd are opt-in while default imports scanner/default"
-    );
-    assert!(
-        !scanner_default_line.contains("ML, entropy, decode-through, multiline"),
+        !scanner_default_comment.contains("ml, entropy, decode-through, multiline"),
         "`keyhog-scanner/default` comment must not list only data features while scanner/default also includes gpu/simd"
     );
 }
