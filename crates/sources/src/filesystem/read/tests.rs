@@ -254,6 +254,16 @@ fn decode_text_file_owned_with_bom_preserves_original_bytes_on_binary_reject() {
 }
 
 #[test]
+fn decode_text_file_owned_with_bom_invalid_utf8_preserves_original_bytes_on_binary_reject() {
+    let mut bytes = vec![0xEF, 0xBB, 0xBF, 0xFF];
+    bytes.extend_from_slice(b"\0\0\0\0binary");
+
+    let rejected = decode_text_file_owned_or_bytes(bytes.clone()).expect_err("binary reject");
+
+    assert_eq!(rejected, bytes);
+}
+
+#[test]
 fn decode_text_file_pdf_magic_is_rejected() {
     let mut bytes = b"%PDF-1.7\n".to_vec();
     bytes.extend_from_slice(&vec![b'a'; 4096]);

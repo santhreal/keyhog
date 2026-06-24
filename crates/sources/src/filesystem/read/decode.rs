@@ -102,7 +102,7 @@ pub(in crate::filesystem) fn decode_text_file_owned_or_bytes(
     }
     let mut bytes = bytes;
     let had_utf8_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
-    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+    if had_utf8_bom {
         bytes.drain(..3);
     }
     // Valid-UTF-8 fast path - identical gate to `decode_text_file`, but the
