@@ -307,8 +307,13 @@ fn download_s3_listing_page(
                         key = %object.key,
                         "skipping S3 object: extension is treated as binary/container content; NOT scanned as text",
                     );
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                    return Ok(None);
+                    return Err(crate::cloud::record_unscanned_object_skip(
+                        crate::SourceSkipEvent::Binary,
+                        "S3 object",
+                        "object",
+                        &format!("s3://{bucket}/{}", object.key),
+                        "extension is treated as binary/container content",
+                    ));
                 }
                 fetch_object_chunk(
                     client,
@@ -346,8 +351,13 @@ fn fetch_object_chunk(
             cap = max_object_bytes,
             "skipping S3 object: listed size exceeds the per-object byte cap; NOT scanned",
         );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-        return Ok(None);
+        return Err(crate::cloud::record_unscanned_object_skip(
+            crate::SourceSkipEvent::OverMaxSize,
+            "S3 object",
+            "object",
+            &format!("s3://{bucket}/{key}"),
+            format!("listed size {object_size} exceeds the per-object byte cap {max_object_bytes}"),
+        ));
     }
 
     let encoded_key = crate::cloud::encode_object_key_path(key);

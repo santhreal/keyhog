@@ -208,13 +208,19 @@ fn download_azure_blob_listing_page(
                 if listed_size == Some(0) {
                     return Ok(None);
                 }
+                let display_path = azure_blob_display_path(container_url, &blob.name)?;
                 if !crate::cloud::is_probably_text_object_key(&blob.name) {
                     tracing::warn!(
                         key = %blob.name,
                         "skipping Azure blob: extension is treated as binary/container content; NOT scanned as text",
                     );
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                    return Ok(None);
+                    return Err(crate::cloud::record_unscanned_object_skip(
+                        crate::SourceSkipEvent::Binary,
+                        "Azure blob",
+                        "blob",
+                        &display_path,
+                        "extension is treated as binary/container content",
+                    ));
                 }
                 if let Some(content_type) = blob.properties.content_type.as_deref() {
                     if crate::cloud::is_binary_content_type(content_type) {
@@ -223,8 +229,13 @@ fn download_azure_blob_listing_page(
                             content_type,
                             "skipping Azure blob: listing reports binary content-type; NOT scanned as text",
                         );
-                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                        return Ok(None);
+                        return Err(crate::cloud::record_unscanned_object_skip(
+                            crate::SourceSkipEvent::Binary,
+                            "Azure blob",
+                            "blob",
+                            &display_path,
+                            format!("listing reports binary content-type {content_type:?}"),
+                        ));
                     }
                 }
                 fetch_azure_blob_chunk(client, container_url, &blob.name, listed_size, max_blob_bytes)
@@ -248,8 +259,14 @@ fn fetch_azure_blob_chunk(
                 cap = max_blob_bytes,
                 "skipping Azure blob: listed size exceeds the per-blob byte cap; NOT scanned",
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            return Ok(None);
+            let display_path = azure_blob_display_path(container_url, name)?;
+            return Err(crate::cloud::record_unscanned_object_skip(
+                crate::SourceSkipEvent::OverMaxSize,
+                "Azure blob",
+                "blob",
+                &display_path,
+                format!("listed size {size} exceeds the per-blob byte cap {max_blob_bytes}"),
+            ));
         }
     }
 

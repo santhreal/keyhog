@@ -150,12 +150,25 @@ fn binary_extension_object_is_counted_binary_without_get() {
         })
         .collect();
 
-    let ok: Vec<_> = TestApi
+    let rows: Vec<_> = TestApi
         .gcs_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+        .collect();
+    let (ok, errors) = split_chunk_results(&rows);
     assert_eq!(ok.len(), 0, "binary-extension object must not be scanned");
+    assert_eq!(
+        errors.len(),
+        support::CLOUD_PREFILTER_BINARY_EXTS.len(),
+        "GCS binary/container extension prefilter must emit one error row per refused object"
+    );
+    for error in errors {
+        let error = error.to_string();
+        assert!(
+            error.contains("extension is treated as binary/container content")
+                && error.contains("object was not scanned"),
+            "error should name the unscanned binary-extension GCS object, got {error}"
+        );
+    }
 
     let after = skip_counts();
     assert_eq!(
@@ -170,6 +183,60 @@ fn binary_extension_object_is_counted_binary_without_get() {
             "binary-extension object must not be fetched"
         );
     }
+}
+
+#[test]
+fn oversized_listed_object_emits_source_error_without_get() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+    let cap = keyhog_sources::SourceLimits::default().gcs_object_bytes;
+
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o"))
+            .query_param("alt", "json");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(listing(&object("huge.txt", cap + 1)));
+    });
+    let object_get = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o/huge.txt"));
+        then.status(200).body("SHOULD_NOT_BE_FETCHED");
+    });
+
+    let rows: Vec<_> = TestApi
+        .gcs_source_with_endpoint(BUCKET, server.url(""))
+        .chunks()
+        .collect();
+    let (ok, errors) = split_chunk_results(&rows);
+    assert_eq!(ok.len(), 0, "over-cap GCS object must not be scanned");
+    assert_eq!(
+        errors.len(),
+        1,
+        "over-cap GCS object must emit one error row"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("listed size")
+            && error.contains("exceeds the per-object byte cap")
+            && error.contains("object was not scanned"),
+        "error should name the unscanned over-cap GCS object, got {error}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.over_max_size - before.over_max_size,
+        1,
+        "GCS listed over-cap object MUST bump SKIPPED_OVER_MAX_SIZE"
+    );
+    assert_eq!(
+        object_get.calls(),
+        0,
+        "over-cap GCS object must not be fetched"
+    );
 }
 
 #[test]

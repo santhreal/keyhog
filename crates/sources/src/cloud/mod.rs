@@ -139,6 +139,28 @@ pub(crate) fn push_page_chunks(
     }
 }
 
+pub(crate) fn unscanned_object_error(
+    source: &str,
+    item_kind: &str,
+    display_path: &str,
+    reason: impl std::fmt::Display,
+) -> SourceError {
+    SourceError::Other(format!(
+        "failed to scan {source} {display_path}: {reason}; {item_kind} was not scanned"
+    ))
+}
+
+pub(crate) fn record_unscanned_object_skip(
+    event: crate::SourceSkipEvent,
+    source: &str,
+    item_kind: &str,
+    display_path: &str,
+    reason: impl std::fmt::Display,
+) -> SourceError {
+    let _event = crate::record_skip_event(event);
+    unscanned_object_error(source, item_kind, display_path, reason)
+}
+
 pub(crate) struct TextObjectBodyContext<'a> {
     pub(crate) source: &'static str,
     pub(crate) item_kind: &'static str,
@@ -159,11 +181,13 @@ pub(crate) fn read_text_object_body(
             %status,
             "skipping cloud object: GET returned non-success status; NOT scanned",
         );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        return Err(SourceError::Other(format!(
-            "failed to scan {} {}: GET returned {status}; {} was not scanned",
-            ctx.source, ctx.display_path, ctx.item_kind
-        )));
+        return Err(record_unscanned_object_skip(
+            crate::SourceSkipEvent::Unreadable,
+            ctx.source,
+            ctx.item_kind,
+            &ctx.display_path,
+            format!("GET returned {status}"),
+        ));
     }
 
     if let Some(content_length) = response.content_length() {
@@ -175,11 +199,16 @@ pub(crate) fn read_text_object_body(
                 cap = ctx.max_bytes,
                 "skipping cloud object: Content-Length exceeds the per-object byte cap; NOT scanned",
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            return Err(SourceError::Other(format!(
-                "failed to scan {} {}: Content-Length {content_length} exceeds the per-object byte cap {}; {} was not scanned",
-                ctx.source, ctx.display_path, ctx.max_bytes, ctx.item_kind
-            )));
+            return Err(record_unscanned_object_skip(
+                crate::SourceSkipEvent::OverMaxSize,
+                ctx.source,
+                ctx.item_kind,
+                &ctx.display_path,
+                format!(
+                    "Content-Length {content_length} exceeds the per-object byte cap {}",
+                    ctx.max_bytes
+                ),
+            ));
         }
     }
 
@@ -206,8 +235,13 @@ pub(crate) fn read_text_object_body(
                 content_type,
                 "skipping cloud object: binary content-type; NOT scanned as text",
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-            return Ok(None);
+            return Err(record_unscanned_object_skip(
+                crate::SourceSkipEvent::Binary,
+                ctx.source,
+                ctx.item_kind,
+                &ctx.display_path,
+                format!("binary content-type {content_type:?}"),
+            ));
         }
     }
     let content_type_is_unknown_binary = content_type.is_some_and(is_unknown_binary_content_type);
@@ -232,15 +266,17 @@ pub(crate) fn read_text_object_body(
             cap = ctx.max_bytes,
             "skipping cloud object: streamed body exceeds the per-object byte cap; NOT scanned",
         );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-        return Err(SourceError::Other(format!(
-            "failed to scan {} {}: streamed body exceeded the per-object byte cap {} after reading {} bytes; {} was not scanned",
+        return Err(record_unscanned_object_skip(
+            crate::SourceSkipEvent::OverMaxSize,
             ctx.source,
-            ctx.display_path,
-            ctx.max_bytes,
-            body.len(),
-            ctx.item_kind
-        )));
+            ctx.item_kind,
+            &ctx.display_path,
+            format!(
+                "streamed body exceeded the per-object byte cap {} after reading {} bytes",
+                ctx.max_bytes,
+                body.len()
+            ),
+        ));
     }
 
     if content_type_is_unknown_binary {
@@ -252,8 +288,13 @@ pub(crate) fn read_text_object_body(
                     key = ctx.item_name,
                     "skipping cloud object: octet-stream body is binary after capped decode; NOT scanned as text"
                 );
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                Ok(None)
+                Err(record_unscanned_object_skip(
+                    crate::SourceSkipEvent::Binary,
+                    ctx.source,
+                    ctx.item_kind,
+                    &ctx.display_path,
+                    "octet-stream body is binary after capped decode",
+                ))
             }
         };
     }
@@ -268,11 +309,13 @@ pub(crate) fn read_text_object_body(
                 valid_up_to,
                 "skipping cloud object: body claimed text content-type but failed UTF-8 decode; NOT scanned"
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            Err(SourceError::Other(format!(
-                "failed to scan {} {}: body failed UTF-8 decode at byte {valid_up_to}; {} was not scanned",
-                ctx.source, ctx.display_path, ctx.item_kind
-            )))
+            Err(record_unscanned_object_skip(
+                crate::SourceSkipEvent::Unreadable,
+                ctx.source,
+                ctx.item_kind,
+                &ctx.display_path,
+                format!("body failed UTF-8 decode at byte {valid_up_to}"),
+            ))
         }
     }
 }

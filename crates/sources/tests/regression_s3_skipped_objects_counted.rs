@@ -95,16 +95,24 @@ fn oversized_listed_object_is_counted_over_max_size() {
         then.status(200).body("PLACEHOLDER_SHOULD_NOT_BE_FETCHED");
     });
 
-    let ok: Vec<_> = TestApi
+    let rows: Vec<_> = TestApi
         .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+        .collect();
+    let (ok, errors) = split_chunk_results(&rows);
     assert_eq!(
         ok.len(),
         0,
         "an over-cap object yields no scanned chunk; got {} chunk(s)",
         ok.len()
+    );
+    assert_eq!(errors.len(), 1, "over-cap object must emit one error row");
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("listed size")
+            && error.contains("exceeds the per-object byte cap")
+            && error.contains("object was not scanned"),
+        "error should name the unscanned over-cap S3 object, got {error}"
     );
 
     let after = skip_counts();
@@ -145,16 +153,28 @@ fn binary_content_type_object_is_counted_binary() {
             .body(vec![0u8; 512]);
     });
 
-    let ok: Vec<_> = TestApi
+    let rows: Vec<_> = TestApi
         .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+        .collect();
+    let (ok, errors) = split_chunk_results(&rows);
     assert_eq!(
         ok.len(),
         0,
         "a binary content-type object yields no scanned chunk; got {} chunk(s)",
         ok.len()
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "binary content-type object must emit one error row"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("binary content-type")
+            && error.contains("image/png")
+            && error.contains("object was not scanned"),
+        "error should name the unscanned binary S3 object, got {error}"
     );
 
     let after = skip_counts();
@@ -239,15 +259,25 @@ fn octet_stream_binary_object_is_counted_binary_after_fetch() {
             .body(vec![0u8; 64]);
     });
 
-    let ok: Vec<_> = TestApi
+    let rows: Vec<_> = TestApi
         .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+        .collect();
+    let (ok, errors) = split_chunk_results(&rows);
     assert_eq!(
         ok.len(),
         0,
         "octet-stream binary object must not produce a text chunk"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "octet-stream binary object must emit one error row"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("octet-stream body is binary") && error.contains("object was not scanned"),
+        "error should name the unscanned octet-stream S3 object, got {error}"
     );
 
     let after = skip_counts();
@@ -290,12 +320,25 @@ fn binary_extension_object_is_counted_binary_without_get() {
         })
         .collect();
 
-    let ok: Vec<_> = TestApi
+    let rows: Vec<_> = TestApi
         .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+        .collect();
+    let (ok, errors) = split_chunk_results(&rows);
     assert_eq!(ok.len(), 0, "binary-extension object must not be scanned");
+    assert_eq!(
+        errors.len(),
+        support::CLOUD_PREFILTER_BINARY_EXTS.len(),
+        "binary-extension prefilter must emit one error row per refused object"
+    );
+    for error in errors {
+        let error = error.to_string();
+        assert!(
+            error.contains("extension is treated as binary/container content")
+                && error.contains("object was not scanned"),
+            "error should name the unscanned binary-extension S3 object, got {error}"
+        );
+    }
 
     let after = skip_counts();
     assert_eq!(

@@ -171,11 +171,24 @@ fn binary_extension_blob_is_counted_binary_without_get() {
         })
         .collect();
 
-    let ok: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
         .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+        .collect();
+    let (ok, errors) = split_chunk_results(&rows);
     assert_eq!(ok.len(), 0, "binary-extension blob must not be scanned");
+    assert_eq!(
+        errors.len(),
+        support::CLOUD_PREFILTER_BINARY_EXTS.len(),
+        "Azure binary/container extension prefilter must emit one error row per refused blob"
+    );
+    for error in errors {
+        let error = error.to_string();
+        assert!(
+            error.contains("extension is treated as binary/container content")
+                && error.contains("blob was not scanned"),
+            "error should name the unscanned binary-extension Azure blob, got {error}"
+        );
+    }
 
     let after = skip_counts();
     assert_eq!(
@@ -190,6 +203,117 @@ fn binary_extension_blob_is_counted_binary_without_get() {
             "binary-extension blob must not be fetched"
         );
     }
+}
+
+#[test]
+fn binary_listing_content_type_blob_emits_source_error_without_get() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container")
+            .query_param("restype", "container")
+            .query_param("comp", "list");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body(listing(&blob("payload", 512, "image/png")));
+    });
+    let object_get = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container/payload");
+        then.status(200).body("SHOULD_NOT_BE_FETCHED");
+    });
+
+    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+        .chunks()
+        .collect();
+    let (ok, errors) = split_chunk_results(&rows);
+    assert_eq!(
+        ok.len(),
+        0,
+        "binary content-type Azure blob must not be scanned"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "binary content-type Azure blob must emit one error row"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("listing reports binary content-type")
+            && error.contains("image/png")
+            && error.contains("blob was not scanned"),
+        "error should name the unscanned binary content-type Azure blob, got {error}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.binary - before.binary,
+        1,
+        "Azure binary listing content-type MUST bump SKIPPED_BINARY"
+    );
+    assert_eq!(
+        object_get.calls(),
+        0,
+        "binary listing content-type Azure blob must not be fetched"
+    );
+}
+
+#[test]
+fn oversized_listed_blob_emits_source_error_without_get() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+    let cap = keyhog_sources::SourceLimits::default().azure_blob_bytes;
+
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container")
+            .query_param("restype", "container")
+            .query_param("comp", "list");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body(listing(&blob("huge.txt", cap + 1, "text/plain")));
+    });
+    let object_get = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container/huge.txt");
+        then.status(200).body("SHOULD_NOT_BE_FETCHED");
+    });
+
+    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+        .chunks()
+        .collect();
+    let (ok, errors) = split_chunk_results(&rows);
+    assert_eq!(ok.len(), 0, "over-cap Azure blob must not be scanned");
+    assert_eq!(
+        errors.len(),
+        1,
+        "over-cap Azure blob must emit one error row"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("listed size")
+            && error.contains("exceeds the per-blob byte cap")
+            && error.contains("blob was not scanned"),
+        "error should name the unscanned over-cap Azure blob, got {error}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.over_max_size - before.over_max_size,
+        1,
+        "Azure listed over-cap blob MUST bump SKIPPED_OVER_MAX_SIZE"
+    );
+    assert_eq!(
+        object_get.calls(),
+        0,
+        "over-cap Azure blob must not be fetched"
+    );
 }
 
 #[test]

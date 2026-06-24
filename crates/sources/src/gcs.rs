@@ -255,8 +255,13 @@ fn download_gcs_listing_page(
                         key = %object.name,
                         "skipping GCS object: extension is treated as binary/container content; NOT scanned as text",
                     );
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                    return Ok(None);
+                    return Err(crate::cloud::record_unscanned_object_skip(
+                        crate::SourceSkipEvent::Binary,
+                        "GCS object",
+                        "object",
+                        &format!("gs://{bucket}/{}", object.name),
+                        "extension is treated as binary/container content",
+                    ));
                 }
                 fetch_gcs_object_chunk(
                     client,
@@ -290,8 +295,13 @@ fn fetch_gcs_object_chunk(
                 cap = max_object_bytes,
                 "skipping GCS object: listed size exceeds the per-object byte cap; NOT scanned",
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            return Ok(None);
+            return Err(crate::cloud::record_unscanned_object_skip(
+                crate::SourceSkipEvent::OverMaxSize,
+                "GCS object",
+                "object",
+                &format!("gs://{bucket}/{name}"),
+                format!("listed size {size} exceeds the per-object byte cap {max_object_bytes}"),
+            ));
         }
     }
 
