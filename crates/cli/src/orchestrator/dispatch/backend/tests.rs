@@ -59,6 +59,40 @@ fn test_hw_caps() -> keyhog_scanner::hw_probe::HardwareCaps {
     }
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn cpuinfo_parser_prefers_model_name_over_processor_index() {
+    let cpuinfo = "\
+processor\t: 0
+vendor_id\t: GenuineIntel
+cpu family\t: 6
+model name\t: Intel(R) Core(TM) Ultra 9 285K
+processor\t: 1
+model name\t: Intel(R) Core(TM) Ultra 9 285K
+";
+
+    assert_eq!(
+        super::host::parse_cpuinfo_model(cpuinfo).as_deref(),
+        Some("Intel(R) Core(TM) Ultra 9 285K"),
+        "autoroute host identity must use the CPU model, not Linux core index 0"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn cpuinfo_parser_keeps_textual_processor_fallback() {
+    let cpuinfo = "\
+processor\t: ARMv7 Processor rev 5 (v7l)
+BogoMIPS\t: 38.40
+";
+
+    assert_eq!(
+        super::host::parse_cpuinfo_model(cpuinfo).as_deref(),
+        Some("ARMv7 Processor rev 5 (v7l)"),
+        "textual Linux Processor entries remain valid when model name/hardware are absent"
+    );
+}
+
 fn write_tampered_decision_cache(
     path: &std::path::Path,
     digest: u64,

@@ -107,7 +107,7 @@ fn linux_cpu_model() -> Option<String> {
 }
 
 #[cfg(target_os = "linux")]
-fn parse_cpuinfo_model(content: &str) -> Option<String> {
+pub(super) fn parse_cpuinfo_model(content: &str) -> Option<String> {
     for line in content.lines() {
         let Some((key, value)) = line.split_once(':') else {
             continue;
@@ -115,6 +115,9 @@ fn parse_cpuinfo_model(content: &str) -> Option<String> {
         let key = key.trim().to_ascii_lowercase();
         if matches!(key.as_str(), "model name" | "hardware" | "processor") {
             let value = value.trim();
+            if key == "processor" && value.parse::<usize>().is_ok() {
+                continue;
+            }
             if !value.is_empty() {
                 return Some(value.to_string());
             }
