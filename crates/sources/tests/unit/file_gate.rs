@@ -76,8 +76,10 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
             && extract.contains("read::read_file_prefix_safe(&path, &mut buf)")
             && extract.contains("read::looks_binary_prefix(head)")
             && extract.contains("match read::open_file_safe(&path)")
+            && extract.contains("libc::LOCK_SH | libc::LOCK_NB")
+            && extract.contains("skipping buffered fallback to avoid scanning a torn write")
             && !extract.contains("std::fs::File::open(&path)"),
-        "extensionless header sniff and large-file fallback must use bounded/no-follow shared readers, not symlink-following File::open"
+        "extensionless header sniff and large-file fallback must use bounded/no-follow shared readers with large-file lock parity, not symlink-following File::open"
     );
     assert!(
         extract

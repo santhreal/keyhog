@@ -388,6 +388,29 @@ pub(super) fn process_entry(
         }
         match read::open_file_safe(&path) {
             Ok(mut file) => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::io::AsRawFd;
+                    let fd = file.as_raw_fd();
+                    // SAFETY: advisory shared lock on the already-open
+                    // no-follow descriptor. If another process owns an
+                    // exclusive lock, do not scan an unlocked buffered fallback
+                    // after the mmap path already refused the same file.
+                    if unsafe { libc::flock(fd, libc::LOCK_SH | libc::LOCK_NB) } != 0 {
+                        tracing::warn!(
+                            path = %path.display(),
+                            "large file is locked by another process; skipping buffered fallback to avoid scanning a torn write"
+                        );
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                        let error = std::io::Error::new(
+                            std::io::ErrorKind::PermissionDenied,
+                            "large file is locked by another process",
+                        );
+                        let _ = emit(Err(keyhog_core::SourceError::Io(error))); // LAW10: locked fallback is visible partial coverage, not a silent clean file
+                        return;
+                    }
+                }
+
                 let mut current_offset = 0;
                 // Newlines in the file before `current_offset` - the absolute
                 // base line of the window about to be emitted, advanced in
