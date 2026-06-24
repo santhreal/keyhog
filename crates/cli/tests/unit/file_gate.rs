@@ -17,10 +17,14 @@ use std::time::{Duration, Instant};
 // ── crates/cli/src/lib.rs ─────────────────────────────────────────────
 #[test]
 fn lib_happy() {
+    let _guard = API.scan_runtime_guard_for_test();
+    API.reset_scan_runtime_state_for_test();
     assert_eq!(API.scanned_chunks(), 0);
 }
 #[test]
 fn lib_error() {
+    let _guard = API.scan_runtime_guard_for_test();
+    API.reset_scan_runtime_state_for_test();
     assert!(!API.scanner_panicked());
 }
 
@@ -124,6 +128,7 @@ fn git_object_coverage_gaps_are_reported_separately() {
 
 #[test]
 fn scan_runtime_reset_clears_process_global_scan_state() {
+    let _guard = API.scan_runtime_guard_for_test();
     API.seed_scan_runtime_state_for_test();
     let seeded = API.scan_runtime_snapshot();
     assert!(
@@ -405,6 +410,7 @@ fn reporting_error() {
 
 #[test]
 fn reporting_sarif_includes_scanner_decode_truncation_gap() {
+    let _guard = API.scan_runtime_guard_for_test();
     API.reset_scan_runtime_state_for_test();
     let chunk = Chunk {
         data: SensitiveString::from("plain inert text"),

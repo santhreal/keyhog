@@ -7,13 +7,15 @@ use keyhog_scanner::{CompiledScanner, ScannerConfig};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// Zero-sized handle for integration tests that need crate-internal seams.
 pub struct TestApi;
 
 /// Integration-test handle. Import [`CliTestApi`] to call its methods.
 pub const API: TestApi = TestApi;
+
+static SCAN_RUNTIME_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 /// Public baseline shape used by tests without exposing the production cache.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -296,6 +298,7 @@ pub trait CliTestApi {
     ) -> Result<Vec<RawMatch>>;
 
     fn seed_scan_runtime_state_for_test(&self);
+    fn scan_runtime_guard_for_test(&self) -> MutexGuard<'static, ()>;
     fn reset_scan_runtime_state_for_test(&self);
     fn scan_runtime_snapshot(&self) -> ScanRuntimeSnapshot;
     fn scanned_chunks(&self) -> usize;
@@ -836,6 +839,12 @@ impl CliTestApi for TestApi {
         let _scanner_panic_receipt = crate::record_scanner_panic();
         keyhog_scanner::telemetry::enable_dogfood();
         keyhog_scanner::telemetry::add_example_suppressions(23);
+    }
+
+    fn scan_runtime_guard_for_test(&self) -> MutexGuard<'static, ()> {
+        SCAN_RUNTIME_TEST_LOCK
+            .lock()
+            .expect("CLI scan-runtime test guard poisoned")
     }
 
     fn reset_scan_runtime_state_for_test(&self) {
