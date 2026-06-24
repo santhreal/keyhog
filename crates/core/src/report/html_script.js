@@ -530,6 +530,7 @@ function renderTable(findings, isInitial) {
 function renderMetrics(findings, isInitial) {
   const total = findings.length;
   const live = findings.filter(f => f.verification.toLowerCase().startsWith('live')).length;
+  const notChecked = findings.filter(f => verificationIsUnattempted(f.verification)).length;
   const critical = findings.filter(f => f.severity.toLowerCase() === 'critical').length;
   const high = findings.filter(f => f.severity.toLowerCase() === 'high').length;
   const medium = findings.filter(f => f.severity.toLowerCase() === 'medium').length;
@@ -541,6 +542,7 @@ function renderMetrics(findings, isInitial) {
   // re-rendering from a filter so the numbers track typing without jitter.
   setStat('cnt-total', total, isInitial);
   setStat('cnt-live', live, isInitial);
+  setStat('cnt-not-checked', notChecked, isInitial);
   setStat('cnt-critical', critical, isInitial);
   setStat('cnt-high', high, isInitial);
   const liveEl = document.getElementById('cnt-live');

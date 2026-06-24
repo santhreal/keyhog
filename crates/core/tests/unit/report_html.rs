@@ -171,6 +171,24 @@ fn html_report_does_not_interpolate_scan_data_into_class_names() {
 }
 
 #[test]
+fn html_report_summary_surfaces_not_checked_findings() {
+    let out = render(&sample_finding());
+
+    assert!(
+        out.contains("id=\"cnt-not-checked\"") && out.contains(">Not checked<"),
+        "summary metrics must include an explicit not-checked count"
+    );
+    assert!(
+        out.contains("const notChecked = findings.filter(f => verificationIsUnattempted(f.verification)).length;"),
+        "summary not-checked count must reuse the canonical verification predicate"
+    );
+    assert!(
+        out.contains("setStat('cnt-not-checked', notChecked, isInitial);"),
+        "summary not-checked count must be wired into renderMetrics"
+    );
+}
+
+#[test]
 fn html_report_embeds_scan_metadata_panel() {
     let out = render_with_metadata(HtmlScanMetadata {
         keyhog_version: "1.2.3".to_string(),
