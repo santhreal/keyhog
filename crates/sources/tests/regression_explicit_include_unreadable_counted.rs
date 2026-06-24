@@ -18,6 +18,7 @@ use support::collect_chunks;
 
 #[test]
 fn explicitly_included_unreadable_path_is_counted_not_silently_dropped() {
+    let _guard = TestApi.skip_counter_guard();
     let dir = tempfile::tempdir().expect("tempdir");
 
     // An explicitly-included path that does not exist: `canonicalize` fails so

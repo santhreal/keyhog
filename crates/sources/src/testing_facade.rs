@@ -1,9 +1,14 @@
 //! Hidden test facade for source crate internals.
 
 pub mod testing {
+    use std::sync::{Mutex, MutexGuard};
+
+    static SKIP_COUNTER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
     pub struct TestApi;
 
     pub trait SourceTestApi {
+        fn skip_counter_guard(&self) -> MutexGuard<'static, ()>;
         fn set_skip_counts(&self, counts: crate::SkipCounts);
         fn reset_skip_counters(&self);
         fn bump_skipped_over_max_size(&self, delta: usize);
@@ -362,6 +367,12 @@ pub mod testing {
     }
 
     impl SourceTestApi for TestApi {
+        fn skip_counter_guard(&self) -> MutexGuard<'static, ()> {
+            SKIP_COUNTER_TEST_LOCK
+                .lock()
+                .expect("sources skip-counter test guard poisoned")
+        }
+
         fn set_skip_counts(&self, counts: crate::SkipCounts) {
             crate::skip::set_skip_counts_for_test(counts);
         }

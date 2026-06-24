@@ -131,6 +131,7 @@ fn include_paths_restricts_to_listed_files() {
 
 #[test]
 fn max_file_size_skips_oversize_file_and_bumps_counter() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().unwrap();
     // 2 KiB file with a sentinel; cap at 100 bytes => skipped.
@@ -330,6 +331,7 @@ fn skip_counts_default_is_all_zero() {
 
 #[test]
 fn reset_skip_counters_zeroes_every_category() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.set_skip_counts(SkipCounts {
         over_max_size: 11,
         binary: 22,
@@ -376,6 +378,7 @@ fn reset_skip_counters_zeroes_every_category() {
 
 #[test]
 fn skip_counts_reads_live_counters() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     TestApi.set_skip_counts(SkipCounts {
         binary: 9,

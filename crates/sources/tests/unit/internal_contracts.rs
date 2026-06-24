@@ -1193,3 +1193,53 @@ fn hosted_git_wait_errors_kill_and_reap_child() {
         "hosted Git clone wait must not return directly from try_wait errors before child cleanup"
     );
 }
+
+#[test]
+fn skip_counter_reset_tests_hold_shared_guard() {
+    fn visit_rs_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("read test directory") {
+            let path = entry.expect("read test entry").path();
+            if path.is_dir() {
+                visit_rs_files(&path, out);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let tests_root = root.join("tests");
+    let mut files = Vec::new();
+    visit_rs_files(&tests_root, &mut files);
+
+    let mut offenders = Vec::new();
+    for path in files {
+        let src = std::fs::read_to_string(&path).expect("read source test");
+        let mut touches_counters = src.contains("TestApi.reset_skip_counters()")
+            || src.contains("TestApi.set_skip_counts(");
+        touches_counters |= src.contains("TestApi.bump_skipped_over_max_size(")
+            || src.contains("TestApi.bump_git_object_unreadable(");
+        if !touches_counters {
+            continue;
+        }
+        let has_guard = src.contains("skip_counter_guard()")
+            || src.contains("COUNTER_LOCK")
+            || src.contains("SKIP_COUNTER_GUARD")
+            || src.contains("GITHUB_SKIP_COUNTER_GUARD")
+            || src.contains("GITLAB_SKIP_COUNTER_GUARD")
+            || src.contains("BITBUCKET_SKIP_COUNTER_GUARD");
+        if !has_guard {
+            offenders.push(
+                path.strip_prefix(root)
+                    .unwrap_or(&path)
+                    .display()
+                    .to_string(),
+            );
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "tests touching process-global source skip counters must hold TestApi.skip_counter_guard() or an existing local guard: {offenders:?}"
+    );
+}

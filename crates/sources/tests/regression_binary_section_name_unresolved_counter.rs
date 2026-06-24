@@ -23,6 +23,7 @@ use keyhog_sources::testing::{SourceTestApi, TestApi};
 #[cfg(feature = "binary")]
 #[test]
 fn binary_section_name_unresolved_is_a_public_resettable_counter() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     let c = skip_counts();
     assert_eq!(

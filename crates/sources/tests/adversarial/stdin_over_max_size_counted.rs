@@ -5,6 +5,7 @@ use keyhog_sources::testing::{SourceTestApi, TestApi};
 
 #[test]
 fn stdin_over_max_size_counted() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
 
     let err = TestApi
@@ -28,6 +29,7 @@ fn stdin_over_max_size_counted() {
 
 #[test]
 fn stdin_at_max_size_is_not_counted_as_skipped() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
 
     let text = TestApi

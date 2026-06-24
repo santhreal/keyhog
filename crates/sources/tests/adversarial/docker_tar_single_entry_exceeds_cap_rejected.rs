@@ -7,6 +7,7 @@ use keyhog_sources::testing::{SourceTestApi, TestApi};
 #[cfg(feature = "docker")]
 #[test]
 fn docker_tar_single_entry_exceeds_cap_rejected() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().expect("tempdir");
     let tar_path = dir.path().join("huge.tar");

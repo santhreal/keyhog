@@ -16,6 +16,7 @@ fn drain(name: &str, bytes: &[u8]) -> Vec<String> {
 
 #[test]
 fn corrupt_xz_and_bzip2_streams_bump_unreadable_gaps() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     let mut errors = drain("bad.xz", b"\xfd7zXZ\x00not-a-valid-xz-stream");
     errors.extend(drain("bad.bz2", b"BZhnot-a-valid-bzip2-stream"));

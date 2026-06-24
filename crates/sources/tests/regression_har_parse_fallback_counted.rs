@@ -4,6 +4,7 @@ use keyhog_sources::{skip_counts, FilesystemSource};
 
 #[test]
 fn malformed_har_shape_counts_partial_parse_gap_and_scans_raw_text() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
 
     let dir = tempfile::tempdir().expect("tempdir");

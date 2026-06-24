@@ -40,6 +40,7 @@ fn write_tar_with_over_cap_entry(root: &std::path::Path) -> std::path::PathBuf {
 
 #[test]
 fn tar_over_cap_entry_emits_source_error_and_keeps_safe_sibling() {
+    let _guard = TestApi.skip_counter_guard();
     let dir = tempfile::tempdir().expect("tempdir");
     let _tar = write_tar_with_over_cap_entry(dir.path());
 

@@ -8,6 +8,7 @@ use keyhog_sources::testing::{SourceTestApi, TestApi};
 #[cfg(feature = "docker")]
 #[test]
 fn docker_tar_aggregate_cap_enforced() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().expect("tempdir");
     let tar_path = dir.path().join("aggregate_bomb.tar");

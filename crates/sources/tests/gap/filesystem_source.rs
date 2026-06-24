@@ -180,6 +180,7 @@ fn included_symlinked_plain_file_is_canonicalized_then_read() {
 fn merkle_skip_does_not_mask_symlink_refusal() {
     use std::os::unix::fs::symlink;
 
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
 
     let dir = tempfile::tempdir().unwrap();
@@ -632,6 +633,7 @@ fn tar_archive_content_is_unpacked_and_scanned() {
 
 #[test]
 fn zip_archive_default_excluded_entries_are_counted() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("bundle.zip");
@@ -904,6 +906,7 @@ fn binary_with_only_short_runs_yields_no_chunk() {
     // runs are all < 8 chars yields an empty strings vec -> process_entry
     // returns with no chunk, and must count that unscannable binary as a
     // coverage gap.
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().unwrap();
     // Each printable run ("abc", "de") is < 8 chars, separated by NULs.

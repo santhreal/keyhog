@@ -13,6 +13,7 @@ use support::split_chunk_results;
 
 #[test]
 fn corrupt_seven_zip_counts_as_unreadable() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("broken.7z"), b"not a seven zip archive")
@@ -44,6 +45,7 @@ fn corrupt_seven_zip_counts_as_unreadable() {
 
 #[test]
 fn seven_zip_archive_truncation_surfaces_source_error() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     const MAX_FILE_SIZE: u64 = 16 * 1024;
     let dir = tempfile::tempdir().expect("tempdir");

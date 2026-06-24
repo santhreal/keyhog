@@ -3,6 +3,7 @@ use keyhog_sources::testing::{SourceTestApi, TestApi};
 
 #[test]
 fn mmap_toctou_sanity_cap_counted_as_over_max_size() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
 
     let dir = tempfile::tempdir().expect("tempdir");
@@ -31,6 +32,7 @@ fn mmap_toctou_sanity_cap_counted_as_over_max_size() {
 
 #[test]
 fn windowed_mmap_toctou_sanity_cap_stops_before_stream_fallback() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
 
     let dir = tempfile::tempdir().expect("tempdir");

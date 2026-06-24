@@ -21,6 +21,7 @@ fn lock_exclusive(path: &std::path::Path) -> std::fs::File {
 
 #[test]
 fn locked_compressed_file_emits_source_error() {
+    let _guard = TestApi.skip_counter_guard();
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("locked.gz");
     std::fs::write(&path, b"compressed input bytes").expect("write compressed input");

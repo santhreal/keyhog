@@ -7,6 +7,7 @@ use keyhog_sources::{skip_counts, FilesystemSource};
 
 #[test]
 fn corrupt_rar_counts_as_unreadable() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("broken.rar"), b"not a rar archive").expect("write corrupt RAR");

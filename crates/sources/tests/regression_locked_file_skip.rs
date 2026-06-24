@@ -18,6 +18,7 @@ fn lock_exclusive(path: &std::path::Path) -> std::fs::File {
 
 #[test]
 fn locked_files_are_counted_and_not_reopened_unlocked() {
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
 
     let dir = tempfile::tempdir().expect("tempdir");
