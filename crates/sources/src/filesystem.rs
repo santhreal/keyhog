@@ -349,7 +349,11 @@ impl Source for FilesystemSource {
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
         let max_size = self.max_file_size;
-        let mut config = walker_config(self.max_file_size, &self.ignore_paths);
+        let mut config = walker_config(
+            self.max_file_size,
+            &self.ignore_paths,
+            self.respect_default_excludes,
+        );
         if !self.respect_gitignore {
             config = config.respect_gitignore(false);
         }

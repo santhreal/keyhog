@@ -299,6 +299,10 @@ fn default_excludes_skip_build_and_dependency_dirs() {
     fs::create_dir_all(&dist).unwrap();
     fs::write(dist.join("bundle.js"), "SECRET = 'also_skip'").unwrap();
 
+    let cache = dir.path().join(".cache");
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(cache.join("token.env"), "SECRET = 'cache_skip'").unwrap();
+
     let source = FilesystemSource::new(dir.path().to_path_buf());
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
 

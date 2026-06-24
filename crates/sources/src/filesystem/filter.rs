@@ -257,12 +257,17 @@ fn is_default_excluded_segment(segment: &[u8]) -> bool {
         .any(|skip| segment.eq_ignore_ascii_case(skip.as_bytes()))
 }
 
-pub(super) fn walker_config(max_file_size: u64, ignore_paths: &[String]) -> WalkConfig {
+pub(super) fn walker_config(
+    max_file_size: u64,
+    ignore_paths: &[String],
+    respect_default_excludes: bool,
+) -> WalkConfig {
     let mut exclude_extensions = HashSet::new();
-    exclude_extensions.extend(default_excludes().extensions.iter().cloned());
-
     let mut exclude_dirs = HashSet::new();
-    exclude_dirs.extend(default_excludes().dirs.iter().cloned());
+    if respect_default_excludes {
+        exclude_extensions.extend(default_excludes().extensions.iter().cloned());
+        exclude_dirs.extend(default_excludes().dirs.iter().cloned());
+    }
 
     let ignore_overrides = ignore_paths
         .iter()

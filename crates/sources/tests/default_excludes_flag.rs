@@ -124,3 +124,26 @@ fn default_excludes_apply_to_direct_include_paths_by_relative_path() {
         "disabled default excludes must not emit excluded skip events"
     );
 }
+
+#[test]
+fn default_excludes_apply_to_cache_directories() {
+    let _guard = SKIP_COUNTER_GUARD.lock().expect("counter guard");
+    let dir = tempfile::tempdir().unwrap();
+    let excluded = dir.path().join(".cache");
+    fs::create_dir_all(&excluded).unwrap();
+    let secret = excluded.join("token.env");
+    fs::write(&secret, format!("TOKEN={SENTINEL}\n")).unwrap();
+
+    TestApi.reset_skip_counters();
+    let skipped = scan_dir(dir.path(), true);
+    assert!(
+        !body_contains(&skipped, SENTINEL),
+        ".cache directories must be source-owned default excludes, not CLI-only skips"
+    );
+
+    let included = scan_dir(dir.path(), false);
+    assert!(
+        body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan .cache directories"
+    );
+}

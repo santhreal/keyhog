@@ -9,7 +9,7 @@
 # not skip `.git` because it is looking for repository roots.
 
 [skip_dirs]
-base = [".cargo", ".cache"]
+base = [".cargo"]
 
 watch_extra = [
   ".svn", ".hg", ".turbo",

@@ -28,6 +28,7 @@ fn watch_and_scan_system_share_tier_b_skip_dir_policy() {
             && data.contains("git_discovery_extra =")
             && !data.contains("\"node_modules\"")
             && !data.contains("\"target\"")
+            && !data.contains("\".cache\"")
             && !data.contains("\".git\"")
             && data.contains("\"System Volume Information\""),
         "data/path_skip_dirs.toml must carry only CLI-specific base and per-consumer skip-dir lists"

@@ -224,9 +224,11 @@ mod tests {
 
         assert!(policy.is_watch_component(".GIT"));
         assert!(policy.is_watch_component("NODE_MODULES"));
+        assert!(policy.is_watch_component(".cache"));
         assert!(policy.is_watch_component("vendor"));
         assert!(policy.is_watch_component(".nuxt"));
         assert!(policy.is_git_discovery_component("node_modules"));
+        assert!(policy.is_git_discovery_component(".cache"));
         assert!(policy.is_git_discovery_component("vendor"));
         assert!(policy.is_git_discovery_component(".nuxt"));
         assert!(policy.is_git_discovery_component("system volume information"));
