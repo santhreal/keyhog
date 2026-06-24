@@ -83,16 +83,16 @@ fn redact_short_secret() {
 #[test]
 fn redact_long_secret() {
     let redacted = redact("abcdefghijklmnop");
-    assert_eq!(redacted, "abcd...mnop");
+    assert_eq!(redacted, "ab...op");
 }
 
 #[test]
 fn redact_utf8_secret_handles_multibyte_chars() {
-    // 12 chars / 48 bytes (each emoji is 4 bytes in UTF-8). The scaled
-    // preview keeps the first 3 and last 3 chars, not bytes.
+    // 12 chars / 48 bytes (each emoji is 4 bytes in UTF-8). The scaled preview
+    // keeps the first and last char, not bytes.
     let s = "😀😁😂😃😄😅😆😇😈😉😊😋";
     let redacted = redact(s);
-    assert_eq!(redacted, "😀😁😂...😉😊😋");
+    assert_eq!(redacted, "😀...😋");
 }
 
 #[test]

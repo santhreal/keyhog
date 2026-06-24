@@ -186,7 +186,7 @@ pub fn redact(s: &str) -> Cow<'static, str> {
 }
 
 fn redaction_edge_len(char_count: usize) -> usize {
-    (char_count / 4).clamp(1, 4)
+    (char_count / 8).clamp(1, 4)
 }
 
 #[doc(hidden)]

@@ -25,25 +25,25 @@ fn redact_eight_chars_returns_stars() {
 
 #[test]
 fn redact_nine_chars_reveals_edges() {
-    // 9 ASCII chars: first 2 + "..." + last 2.
+    // 9 ASCII chars: first 1 + "..." + last 1.
     let result = redact("123456789");
-    assert_eq!(result, "12...89");
+    assert_eq!(result, "1...9");
 }
 
 #[test]
 fn redact_twelve_chars_no_overlap() {
     let result = redact("abcdefghijkl");
-    assert_eq!(result, "abc...jkl");
+    assert_eq!(result, "a...l");
 }
 
 #[test]
 fn redact_short_preview_edges_scale_with_length() {
-    assert_eq!(redact("123456789"), "12...89");
-    assert_eq!(redact("1234567890"), "12...90");
-    assert_eq!(redact("12345678901"), "12...01");
-    assert_eq!(redact("123456789012"), "123...012");
-    assert_eq!(redact("123456789012345"), "123...345");
-    assert_eq!(redact("1234567890123456"), "1234...3456");
+    assert_eq!(redact("123456789"), "1...9");
+    assert_eq!(redact("1234567890"), "1...0");
+    assert_eq!(redact("12345678901"), "1...1");
+    assert_eq!(redact("123456789012"), "1...2");
+    assert_eq!(redact("123456789012345"), "1...5");
+    assert_eq!(redact("1234567890123456"), "12...56");
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn redact_long_string_never_exposes_middle() {
 fn redact_preserves_first_four_and_last_four() {
     let secret = "ABCD_middle_WXYZ";
     let result = redact(secret);
-    assert_eq!(result.as_ref(), "ABCD...WXYZ");
+    assert_eq!(result.as_ref(), "AB...YZ");
 }
 
 // ── UTF-8 slow path ───────────────────────────────────────────────────────────
@@ -84,14 +84,8 @@ fn redact_utf8_nine_graphemes_reveals_edges() {
     let secret = "αβγδεζηθι";
     let result = redact(secret);
     assert!(result.contains("..."), "must contain ellipsis");
-    assert!(
-        result.as_ref().starts_with("αβ"),
-        "first 2 graphemes preserved"
-    );
-    assert!(
-        result.as_ref().ends_with("θι"),
-        "last 2 graphemes preserved"
-    );
+    assert!(result.as_ref().starts_with('α'), "first grapheme preserved");
+    assert!(result.as_ref().ends_with('ι'), "last grapheme preserved");
 }
 
 #[test]
@@ -116,10 +110,9 @@ fn redact_never_returns_full_secret_above_eight_chars() {
 
 #[test]
 fn redact_output_shorter_than_input_for_long_secrets() {
-    // "XXXX...YYYY" (11 chars) < original length for any secret > 11 chars.
+    // "X...Y" (5 chars) < original length for any secret > 11 chars.
     let secret = "twelve_chars"; // 12 chars
     let result = redact(secret);
-    // Output format: 4 + 3 ("...") + 4 = 11 chars
     assert!(
         result.len() < secret.len(),
         "redacted output must be shorter than the input for long secrets"

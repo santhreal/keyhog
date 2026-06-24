@@ -123,11 +123,12 @@ fn redact_len8_boundary_is_four_stars() {
 
 #[test]
 fn redact_len9_boundary_reveals_scaled_edges() {
-    // First length where the preview branch fires: first 2 + "..." + last 2.
+    // First length where the preview branch fires: first 1 + "..." + last 1.
     let out = redact("ABCDEFGHI");
-    assert_eq!(out, "AB...HI");
+    assert_eq!(out, "A...I");
     assert!(matches!(out, Cow::Owned(_)));
     // The middle characters must NOT appear.
+    assert!(!out.contains('B'));
     assert!(!out.contains('C'));
     assert!(!out.contains('D'));
     assert!(!out.contains('E'));
@@ -137,14 +138,15 @@ fn redact_len9_boundary_reveals_scaled_edges() {
 fn redact_len9_no_middle_exposure_distinct_middle() {
     // Distinct middle byte 'X' is the only char that can't appear in output.
     let out = redact("WXYZ@MNOP");
-    assert_eq!(out, "WX...OP");
+    assert_eq!(out, "W...P");
     assert!(!out.contains('@'));
 }
 
 #[test]
 fn redact_len10_preview_drops_two_middle_bytes() {
     let out = redact("0123456789");
-    assert_eq!(out, "01...89");
+    assert_eq!(out, "0...9");
+    assert!(!out.contains('1'));
     assert!(!out.contains('2'));
     assert!(!out.contains('3'));
     assert!(!out.contains('4'));
@@ -154,22 +156,21 @@ fn redact_len10_preview_drops_two_middle_bytes() {
 #[test]
 fn redact_len11_preview() {
     let out = redact("ABCDEFGHIJK");
-    assert_eq!(out, "AB...JK");
+    assert_eq!(out, "A...K");
 }
 
 #[test]
 fn redact_long_key_only_endpoints_survive() {
     let secret = "AKIAIOSFODNN7EXAMPLE"; // 20 chars
     let out = redact(secret);
-    assert_eq!(out, "AKIA...MPLE");
-    // Length of preview is always 11 for any ascii secret > 8 chars.
-    assert_eq!(out.len(), 11);
+    assert_eq!(out, "AK...LE");
+    assert_eq!(out.len(), 7);
     // The high-entropy middle "IOSFODNN7EXA" is gone.
     assert!(!out.contains("IOSFODNN"));
 }
 
 #[test]
-fn redact_preview_len_is_always_11_for_ascii_over_8() {
+fn redact_preview_len_scales_under_twenty_five_percent_for_ascii_over_8() {
     for s in [
         "123456789",
         "1234567890",
@@ -177,30 +178,30 @@ fn redact_preview_len_is_always_11_for_ascii_over_8() {
         &"Z".repeat(4096),
     ] {
         let out = redact(s);
-        let edge = (s.len() / 4).clamp(1, 4);
+        let edge = (s.len() / 8).clamp(1, 4);
         assert_eq!(
             out.len(),
             (edge * 2) + 3,
-            "ascii >8 should redact to scaled edge windows"
+            "ascii >8 should redact to <=25% total edge exposure"
         );
         assert!(out.contains("..."));
     }
 }
 
 #[test]
-fn redact_first4_and_last4_match_source_slices_ascii() {
+fn redact_scaled_edges_match_source_slices_ascii() {
     let s = "PREFIXmiddleSUFFIX";
     let out = redact(s);
-    assert_eq!(&out[..4], &s[..4]);
-    assert_eq!(&out[out.len() - 4..], &s[s.len() - 4..]);
-    assert_eq!(out, "PREF...FFIX");
+    assert_eq!(&out[..2], &s[..2]);
+    assert_eq!(&out[out.len() - 2..], &s[s.len() - 2..]);
+    assert_eq!(out, "PR...IX");
 }
 
 #[test]
 fn redact_whitespace_and_symbols_preserved_at_edges() {
     // Whitespace at the edges is kept verbatim; redact does not trim.
     let out = redact("  spaces  end!"); // 14 chars
-    assert_eq!(out, "  s...nd!");
+    assert_eq!(out, " ...!");
 }
 
 // --- redact() UTF-8 / multibyte path (char_count, not byte len) ------------
@@ -220,7 +221,8 @@ fn redact_utf8_9_chars_preview_by_char_not_byte() {
     assert!(!s.is_ascii());
     assert_eq!(s.chars().count(), 9);
     let out = redact(s);
-    assert_eq!(out, "αβ...θι");
+    assert_eq!(out, "α...ι");
+    assert!(!out.contains('β'));
     assert!(!out.contains('γ'));
     assert!(!out.contains('δ'));
     assert!(!out.contains('ε'));
@@ -241,17 +243,18 @@ fn redact_utf8_long_preview_takes_first4_last4_chars() {
     let s = "café_münchen_zürich"; // mixed; not ascii due to é/ü
     assert!(!s.is_ascii());
     let n = s.chars().count();
-    let first4: String = s.chars().take(4).collect();
-    let last4: String = s.chars().skip(n - 4).collect();
-    assert_eq!(redact(s), format!("{first4}...{last4}"));
+    let edge = (n / 8).clamp(1, 4);
+    let prefix: String = s.chars().take(edge).collect();
+    let suffix: String = s.chars().skip(n - edge).collect();
+    assert_eq!(redact(s), format!("{prefix}...{suffix}"));
 }
 
 #[test]
 fn redact_property_never_leaks_strict_interior_char() {
-    // Property: for any secret with >8 chars, every char strictly between
-    // index 4 and char_count-4 (i.e. not in first4 or last4) is absent from
-    // the rendered preview. (Edge chars may coincidentally repeat interior
-    // chars, so we only assert about chars unique to the interior.)
+    // Property: for any secret with >8 chars, every char strictly outside
+    // the scaled edge windows is absent from the rendered preview. (Edge chars
+    // may coincidentally repeat interior chars, so we only assert about chars
+    // unique to the interior.)
     use proptest::prelude::*;
     let mut runner = proptest::test_runner::TestRunner::default();
     runner
@@ -261,10 +264,11 @@ fn redact_property_never_leaks_strict_interior_char() {
             prop_assume!(n > 8);
             let out = redact(&s);
             let cv: Vec<char> = s.chars().collect();
-            let first4: std::collections::HashSet<char> = cv[..4].iter().copied().collect();
-            let last4: std::collections::HashSet<char> = cv[n - 4..].iter().copied().collect();
-            for &c in &cv[4..n - 4] {
-                if !first4.contains(&c) && !last4.contains(&c) && c != '.' {
+            let edge = (n / 8).clamp(1, 4);
+            let prefix: std::collections::HashSet<char> = cv[..edge].iter().copied().collect();
+            let suffix: std::collections::HashSet<char> = cv[n - edge..].iter().copied().collect();
+            for &c in &cv[edge..n - edge] {
+                if !prefix.contains(&c) && !suffix.contains(&c) && c != '.' {
                     prop_assert!(
                         !out.contains(c),
                         "interior char {:?} leaked into preview {:?}",
@@ -1292,7 +1296,7 @@ fn pipeline_credential_then_cross_detector_one_finding() {
     assert_eq!(out[0].severity, Severity::Critical);
     assert_eq!(out[0].confidence, Some(0.97));
     // The redacted preview of the winner credential is well-formed.
-    assert_eq!(redact(&out[0].credential), "AKIA...MPLE");
+    assert_eq!(redact(&out[0].credential), "AK...LE");
 }
 
 #[test]

@@ -358,23 +358,23 @@ fn redact_short_ascii_fully_masked() {
 
 #[test]
 fn redact_long_ascii_uses_scaled_edges() {
-    assert_eq!(redact("123456789"), "12...89"); // 9 chars
-    assert_eq!(redact("ghp_0123456789abcdef"), "ghp_...cdef");
+    assert_eq!(redact("123456789"), "1...9"); // 9 chars
+    assert_eq!(redact("ghp_0123456789abcdef"), "gh...ef");
 }
 
 #[test]
 fn redact_boundary_at_nine_chars() {
     // 8 -> masked, 9 -> partial; pin the boundary.
     assert_eq!(redact("AAAAAAAA"), "****");
-    assert_eq!(redact("AAAAAAAAA"), "AA...AA");
+    assert_eq!(redact("AAAAAAAAA"), "A...A");
 }
 
 #[test]
 fn redact_unicode_uses_char_count() {
-    // 9 multibyte chars -> first 2 ... last 2.
+    // 9 multibyte chars -> first 1 ... last 1.
     let s = "αβγδεζηθι"; // 9 Greek letters, 2 bytes each
     assert_eq!(s.chars().count(), 9);
-    assert_eq!(redact(s), "αβ...θι");
+    assert_eq!(redact(s), "α...ι");
 }
 
 #[test]

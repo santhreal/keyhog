@@ -9,14 +9,14 @@ use keyhog_core::redact;
 #[test]
 fn redact_long_secret_never_contains_middle_chars() {
     // Secret: "ghp_AAAAAABBBBBBCCCCCC" (20 chars)
-    // Output should be: "ghp_...CCCC" (never expose the middle A/B/C block)
+    // Output should reveal at most 25% total edge characters.
     let secret = "ghp_AAAAAABBBBBBCCCCCC";
     let result = redact(secret);
 
     // Verify structure.
     assert!(result.contains("..."), "must have ellipsis");
-    assert!(result.starts_with("ghp_"), "must start with first 4");
-    assert!(result.ends_with("CCCC"), "must end with last 4");
+    assert!(result.starts_with("gh"), "must start with first 2");
+    assert!(result.ends_with("CC"), "must end with last 2");
 
     // Verify the middle is NOT exposed.
     // The middle part "AAAAAABBBBBBCCCC" should not appear.
@@ -32,7 +32,7 @@ fn redact_exactly_nine_chars_no_full_exposure() {
     let secret = "ABCDEFGHI";
     let result = redact(secret);
 
-    assert_eq!(result, "AB...HI");
+    assert_eq!(result, "A...I");
 
     // The full secret must not appear.
     assert!(
@@ -41,8 +41,8 @@ fn redact_exactly_nine_chars_no_full_exposure() {
     );
 
     // Individual characters are visible, but not contiguously.
-    assert!(result.as_ref().contains("AB"));
-    assert!(result.as_ref().contains("HI"));
+    assert!(result.as_ref().contains('A'));
+    assert!(result.as_ref().contains('I'));
     // The transition DEFG must be hidden.
     assert!(!result.as_ref().contains("DEFG"));
 }
@@ -86,9 +86,9 @@ fn redact_utf8_long_secret_no_middle_exposure() {
     let secret = "αβγδ🔒🔒🔒🔒абвг";
     let result = redact(secret);
 
-    // 12 chars keeps 3 chars at each edge.
-    assert!(result.starts_with("αβγ"));
-    assert!(result.ends_with("бвг"));
+    // 12 chars keeps 1 char at each edge.
+    assert!(result.starts_with('α'));
+    assert!(result.ends_with('г'));
     assert!(result.as_ref().contains("..."));
 
     // The emoji sequence must not appear.
