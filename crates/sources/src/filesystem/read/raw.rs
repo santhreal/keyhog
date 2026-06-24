@@ -145,7 +145,7 @@ pub(in crate::filesystem) fn read_file_safe(
     // standard corpus; see docs/EXECUTION_PLAN.md sources finding.
     // io_uring belongs in a shared batched owner with benchmark proof, not as
     // per-file ring setup in this hot-path read.
-    let mut file = open_file_safe(path)?;
+    let file = open_file_safe(path)?;
     // Hint to the kernel: this fd will be read sequentially start-to-end.
     // posix_fadvise(POSIX_FADV_SEQUENTIAL) doubles the readahead window
     // and disables prefetching past the end. Free perf on Linux; no-op
@@ -180,28 +180,17 @@ pub(in crate::filesystem) fn read_file_safe(
         return Ok(read.bytes);
     }
 
-    // Sized read (PERF-io_path-2). The walker already stat'd this file, so we
-    // know its byte length. Read EXACTLY that many bytes into a buffer presized
-    // to it: on a regular file the kernel returns the whole file in a single
-    // `read(2)`, and because we stop the instant the buffer is full we do NOT
-    // pay `read_to_end`'s trailing zero-length EOF probe (nor its empty-Vec
-    // capacity-doubling, which cost many small reads per tiny file). A file that
-    // shrank since the stat ends early on the first short/zero read; a file that
-    // GREW is read only up to its stat-time length — exactly the bounded,
-    // snapshot-at-walk-time behaviour the cap already guarantees, never an OOM.
-    let cap = cap as usize;
-    let mut bytes = vec![0u8; cap];
-    let mut filled = 0;
-    while filled < cap {
-        match file.read(&mut bytes[filled..]) {
-            Ok(0) => break, // EOF before the stat-time size (file shrank / short file)
-            Ok(n) => filled += n,
-            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(e) => return Err(e),
-        }
+    let read = crate::capped_read::read_to_cap(file, cap, Some(cap))?;
+    if read.truncated {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "filesystem buffered read exceeded stat-time {} byte cap",
+                cap
+            ),
+        ));
     }
-    bytes.truncate(filled);
-    Ok(bytes)
+    Ok(read.bytes)
 }
 
 pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileRead> {

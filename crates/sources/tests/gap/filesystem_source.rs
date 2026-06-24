@@ -13,11 +13,11 @@
 //!   * `process_entry` (extract.rs:44) gate order:
 //!       1. `is_default_excluded(filename)`  (filename component only)
 //!       2. `.min.` / `.bundle.` / `.chunk.js` / `.min.js` / `.bundle.js`
-//!       3. `max_size > 0 && file_size > max_size` -> warn + counter + SourceError
-//!       4. `is_skip_extension(ext)` ASCII-case-insensitive extension gate
-//!       5. merkle skip
-//!       6. empty-ext: sniff a bounded structural prefix for binary magic /
+//!       3. `is_skip_extension(ext)` ASCII-case-insensitive extension gate
+//!       4. empty-ext: sniff a bounded structural prefix for binary magic /
 //!          repeated NUL run
+//!       5. `max_size > 0 && file_size > max_size` -> warn + counter + SourceError
+//!       6. merkle skip
 //!       7. pdf structured extraction
 //!       8. archive (zip/apk/ipa/crx/jar) with symlink refusal
 //!       9. compressed (gz/zst/lz4/sz)
@@ -531,7 +531,13 @@ fn oversize_skip_increments_global_counter() {
     fs::write(dir.path().join("toobig.txt"), &big).unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(64);
-    let _ = collect_chunks(&source);
+    let rows: Vec<_> = source.chunks().collect();
+    let (_chunks, errors) = split_chunk_results(&rows);
+    assert_eq!(
+        errors.len(),
+        1,
+        "over-cap file must emit one SourceError row"
+    );
 
     assert!(
         skip_counts().over_max_size >= 1,
@@ -548,14 +554,17 @@ fn cap_applies_to_included_single_file() {
     let big = "I=".to_string() + &"w".repeat(1000);
     fs::write(&path, &big).unwrap();
 
-    let chunks: Vec<_> = collect_chunks(
-        &FilesystemSource::new(dir.path().to_path_buf())
-            .with_include_paths(vec![path.clone()])
-            .with_max_file_size(128),
-    )
-    .into_iter()
-    .collect();
+    let source = FilesystemSource::new(dir.path().to_path_buf())
+        .with_include_paths(vec![path.clone()])
+        .with_max_file_size(128);
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
     assert_eq!(chunks.len(), 0, "cap must apply on the include path too");
+    assert_eq!(
+        errors.len(),
+        1,
+        "included over-cap file must emit one SourceError row"
+    );
 }
 
 // ───────────────── binary skip: extension list ─────────────────
@@ -611,6 +620,25 @@ fn dot_bin_extension_skipped_via_include_path() {
     fs::write(&path, "AKIA-looking text TOKEN=ignored").unwrap();
     let chunks = scan_single_file(&path);
     assert!(chunks.is_empty(), ".bin must be skipped by extension");
+}
+
+#[test]
+fn over_cap_binary_extension_skips_as_binary_not_source_error() {
+    // Binary-extension classification is an intentional skip, so it must win
+    // before the max-size coverage-error gate to avoid noisy SourceError rows
+    // for large media/firmware files that were never eligible text inputs.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("firmware.bin");
+    fs::write(&path, vec![0u8; 4096]).unwrap();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(64);
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(chunks.is_empty(), ".bin must not emit scan chunks");
+    assert!(
+        errors.is_empty(),
+        ".bin over cap must remain a binary skip, not SourceError: {errors:?}"
+    );
 }
 
 #[test]

@@ -13,11 +13,16 @@ fn read_file_safe_capped_in_source() {
     assert!(
         src.contains("crate::capped_read::read_to_cap")
             && src.contains("MAX_BUFFERED_READ_BYTES")
-            && src.contains("read.truncated"),
-        "read_file_safe must route unknown-size buffered reads through the shared capped-read owner"
+            && src.contains("read.truncated")
+            && src.contains("\"filesystem buffered read exceeded stat-time {} byte cap\""),
+        "read_file_safe must route all buffered reads through the shared capped-read owner and reject stat-time growth"
     );
     assert!(
         !src.contains("read_to_end(&mut file, &mut bytes)?"),
         "unbounded read_to_end must be replaced with capped read"
+    );
+    assert!(
+        !src.contains("let mut bytes = vec![0u8; cap]"),
+        "read_file_safe must not preallocate attacker-sized stat hints"
     );
 }

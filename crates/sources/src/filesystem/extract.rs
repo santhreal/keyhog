@@ -170,6 +170,30 @@ pub(super) fn process_entry(
     let live_metadata = file_live_metadata(&path);
     let file_size = live_metadata.map_or(entry.size, |meta| meta.size_bytes);
     let live_mtime_ns = live_metadata.and_then(|meta| meta.mtime_ns);
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+
+    // Compile the SKIP_EXTENSIONS array into a fast HashSet at startup to accelerate file-type screening (KH-45)
+    if is_skip_extension(ext) {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+        return;
+    }
+
+    if ext.is_empty() {
+        // Sniff a small structural prefix of files without extensions to quickly
+        // skip binary structures without full content reads (KH-50). Use the same
+        // no-follow safe open as the real file reader: an extensionless symlink
+        // must not get a pre-guard `File::open` of its target just because this
+        // is only a header sniff.
+        let mut buf = [0u8; 256];
+        if let Ok(n) = read::read_file_prefix_safe(&path, &mut buf) {
+            // LAW10: failed prefix probe leaves binary hint false; full safe read path below still surfaces unreadable files.
+            let head = &buf[..n];
+            if read::looks_binary_prefix(head) {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                return;
+            }
+        }
+    }
 
     if max_size > 0 && file_size > max_size {
         tracing::warn!(
@@ -187,14 +211,6 @@ pub(super) fn process_entry(
         return;
     }
 
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
-
-    // Compile the SKIP_EXTENSIONS array into a fast HashSet at startup to accelerate file-type screening (KH-45)
-    if is_skip_extension(ext) {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-        return;
-    }
-
     if let (Some(idx), Some(meta)) = (merkle.as_ref(), live_metadata) {
         if !meta.is_symlink {
             if let Some(mtime_ns) = meta.mtime_ns {
@@ -202,23 +218,6 @@ pub(super) fn process_entry(
                     skipped.fetch_add(1, Ordering::Relaxed);
                     return;
                 }
-            }
-        }
-    }
-
-    if ext.is_empty() {
-        // Sniff a small structural prefix of files without extensions to quickly
-        // skip binary structures without full content reads (KH-50). Use the same
-        // no-follow safe open as the real file reader: an extensionless symlink
-        // must not get a pre-guard `File::open` of its target just because this
-        // is only a header sniff.
-        let mut buf = [0u8; 256];
-        if let Ok(n) = read::read_file_prefix_safe(&path, &mut buf) {
-            // LAW10: failed prefix probe leaves binary hint false; full safe read path below still surfaces unreadable files.
-            let head = &buf[..n];
-            if read::looks_binary_prefix(head) {
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                return;
             }
         }
     }
