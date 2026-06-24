@@ -28,6 +28,14 @@ import tomllib
 REPO = pathlib.Path(__file__).resolve().parents[2]
 ROOT_CARGO = REPO / "Cargo.toml"
 REQUIRED_VERSION = "0.6.3"
+GENERATED_PARTS = {
+    ".git",
+    "target",
+    "docs/book",
+    "benchmarks/corpora",
+    "benchmarks/results",
+    "benchmarks/results-cross-device",
+}
 
 # Logical dep key in [workspace.dependencies] -> published crate name.
 VYRE_DEPS: dict[str, str] = {
@@ -84,8 +92,26 @@ def _manifest_version_and_path(
 def _cargo_manifests() -> list[pathlib.Path]:
     manifests: list[pathlib.Path] = []
     for path in REPO.rglob("Cargo.toml"):
+        if _is_generated_path(path):
+            continue
         manifests.append(path)
     return sorted(manifests)
+
+
+def _is_generated_path(path: pathlib.Path) -> bool:
+    try:
+        rel = path.relative_to(REPO).as_posix()
+    except ValueError:
+        return True
+    return any(rel == part or rel.startswith(f"{part}/") for part in GENERATED_PARTS)
+
+
+def _vendor_dirs() -> list[pathlib.Path]:
+    return sorted(
+        path
+        for path in REPO.rglob("vendor")
+        if path.is_dir() and not _is_generated_path(path)
+    )
 
 
 def check() -> list[str]:
@@ -97,10 +123,12 @@ def check() -> list[str]:
     ws = data.get("workspace", {})
     deps = ws.get("dependencies", {})
 
-    if (REPO / "vendor").exists():
+    vendor_dirs = _vendor_dirs()
+    if vendor_dirs:
+        found = ", ".join(path.relative_to(REPO).as_posix() for path in vendor_dirs)
         violations.append(
-            "repository-level vendor/ must not exist. Keyhog consumes Vyre from "
-            "crates.io pins and must not carry vendored source snapshots."
+            f"vendor/ source tree must not exist (found: {found}). Keyhog consumes "
+            "Vyre from crates.io pins and must not carry vendored source snapshots."
         )
 
     exclude = ws.get("exclude", [])

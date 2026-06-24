@@ -24,6 +24,7 @@ docs/book/
 *.dogfood
 dogfood-output*.json
 metrics/generated/
+/vendor/
 
 # Generated benchmark corpora; reproducible with `make -C benchmarks mirror`
 # and full of synthetic secret-shaped fixtures.

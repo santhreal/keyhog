@@ -107,7 +107,7 @@ generic_keyword_low_entropy = true
 # Minimum confidence score to report findings (0.0 - 1.0, default: 0.40)
 # Bench-tuned on the SecretBench mirror (max F1). NOTE: the floor is
 # currently non-monotonic in precision around 0.50 (a scan-time/ML
-# entanglement, tracked in backlog DET-08); 0.40 is the measured optimum.
+# entanglement, see docs/EXECUTION_PLAN.md); 0.40 is the measured optimum.
 # - 0.30: Aggressive (more findings, more false positives)
 # - 0.40: Balanced (default)
 # - 0.85: Conservative (fewer findings, fewer false positives)

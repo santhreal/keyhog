@@ -4,13 +4,13 @@
 //! ancestors that may carry a `.keyhog.toml`. `find_config_file` walks up to the
 //! filesystem root, so without an opt-out the benched config would silently
 //! merge that stray file and drift from the shipped defaults the leaderboard
-//! claims to measure (backlog MC-07). `--no-config` skips discovery entirely and
+//! claims to measure (hermetic config policy). `--no-config` skips discovery entirely and
 //! runs on the compiled Tier-A shipped defaults BY DESIGN.
 //!
 //! Bidirectional contract, driven through the real binary ("the product is the
 //! binary", CLAUDE.md test type 10):
-//!   * a `[detector.aws-access-key] enabled = false` config IS honored on the
-//!     default path — the planted AWS key is suppressed (exit 0); and
+//!   * a config disabling every detector that can report the planted AWS key IS
+//!     honored on the default path — the planted key is suppressed (exit 0); and
 //!   * the SAME config is IGNORED under `--no-config` — the key fires (exit 1).
 //! Plus the clap guard: `--config` and `--no-config` together is a user error.
 
@@ -27,8 +27,9 @@ fn binary() -> PathBuf {
 /// literal token never appears in source and trips the repo's own self-scan.
 const PLANTED: &str = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n");
 
-/// Config that disables the detector the planted key fires.
-const DISABLE_AWS: &str = "[detector.aws-access-key]\nenabled = false\n";
+/// Config that disables every detector known to report the planted fixture.
+const DISABLE_PLANTED: &str =
+    "[detector.aws-access-key]\nenabled = false\n[detector.entropy-api-key]\nenabled = false\n";
 
 /// Write the planted fixture + a `.keyhog.toml` into a temp dir, scan the dir
 /// with the given extra args, and return (exit code, stdout, stderr).
@@ -58,14 +59,14 @@ fn scan_dir_with_config(config: &str, extra: &[&str]) -> (Option<i32>, String, S
 
 #[test]
 fn ambient_config_is_honored_without_no_config() {
-    // Baseline: the `.keyhog.toml` disables `aws-access-key`, so the planted key
-    // is suppressed and the scan exits clean. This proves the config genuinely
+    // Baseline: the `.keyhog.toml` disables every detector that can report this
+    // planted key, so the scan exits clean. This proves the config genuinely
     // changes behavior — without it the next test's assertion would be vacuous.
-    let (code, stdout, stderr) = scan_dir_with_config(DISABLE_AWS, &[]);
+    let (code, stdout, stderr) = scan_dir_with_config(DISABLE_PLANTED, &[]);
     assert_eq!(
         code,
         Some(0),
-        "an ambient `.keyhog.toml` disabling aws-access-key must be honored on \
+        "an ambient `.keyhog.toml` disabling the planted-key detectors must be honored on \
          the default path (planted key suppressed → exit 0).\n\
          --- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
     );
@@ -76,13 +77,13 @@ fn no_config_ignores_ambient_keyhog_toml() {
     // The identical `.keyhog.toml` is present, but `--no-config` skips discovery,
     // so the detector stays enabled and the planted key fires (exit 1). This is
     // the hermetic guarantee the bench relies on.
-    let (code, stdout, stderr) = scan_dir_with_config(DISABLE_AWS, &["--no-config"]);
+    let (code, stdout, stderr) = scan_dir_with_config(DISABLE_PLANTED, &["--no-config"]);
     assert_eq!(
         code,
         Some(1),
         "`--no-config` must ignore an ambient `.keyhog.toml`: the planted \
          aws-access-key key must still fire (exit 1) despite the on-disk \
-         `enabled = false` (MC-07 hermeticity).\n\
+         `enabled = false`.\n\
          --- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
     );
     assert!(
@@ -99,7 +100,7 @@ fn config_and_no_config_conflict_is_a_user_error() {
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(dir.path().join("planted.txt"), PLANTED).expect("write fixture");
     let cfg_path = dir.path().join("explicit.toml");
-    std::fs::write(&cfg_path, DISABLE_AWS).expect("write config");
+    std::fs::write(&cfg_path, DISABLE_PLANTED).expect("write config");
 
     let output = Command::new(binary())
         .arg("scan")

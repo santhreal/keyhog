@@ -634,8 +634,8 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
     );
 }
 
-/// Regression for the demo-secret.env UX bug originally flagged
-/// in TODO.md (2026-05-17): scanning a file that holds an
+/// Regression for the demo-secret.env UX bug originally flagged internally
+/// on 2026-05-17: scanning a file that holds an
 /// AWS-published EXAMPLE credential (AKIAIOSFODNN7EXAMPLE) used to
 /// print "No secrets found. Your code is clean." - identical to a
 /// genuinely clean repo - because the test-fixture suppression

@@ -234,7 +234,7 @@ HAND_POSITIVES: dict[str, list[tuple[str, str]]] = {
 
 
 def top50_ids() -> list[str]:
-    log = (REPO / "audits" / "round-r1-red-wall-full.log").read_text()
+    log = pathlib.Path("/tmp/round-r1-red-wall-full.log").read_text()
     pat = re.compile(r"^\s*- ([a-z0-9-]+): positive MISSED", re.M)
     from collections import Counter
 

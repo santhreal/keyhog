@@ -24,7 +24,7 @@ DETECTORS = REPO / "detectors"
 CONTRACTS = REPO / "crates" / "scanner" / "tests" / "contracts"
 README_CLAIM = "902 service-specific detectors"
 DEFAULT_IDS_FILE = pathlib.Path("/tmp/keyhog-missing-chunk-aa")
-DEFAULT_FAILURES_OUT = REPO / "audits" / "r1-contract-failures-aa.txt"
+DEFAULT_FAILURES_OUT = pathlib.Path("/tmp/r1-contract-failures-aa.txt")
 
 # Hand-verified fixtures for regex shapes the auto-synthesizer cannot satisfy.
 MANUAL_OVERRIDES: dict[str, tuple[str, str]] = {

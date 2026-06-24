@@ -23,7 +23,7 @@ fn adversarial_suite_covers_non_scan_subcommands() {
     ] {
         assert!(
             combined.contains(needle),
-            "adversarial/ must include hostile subprocess coverage for {needle} (TESTING_PROGRAM §2A)"
+            "adversarial/ must include hostile subprocess coverage for {needle}"
         );
     }
 }

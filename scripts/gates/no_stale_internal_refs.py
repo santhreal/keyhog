@@ -25,9 +25,14 @@ PATTERNS = [
     "GAP_FINDINGS",
     "coordination/rounds",
     "adjudication_decision_inventory",
+    "TESTING_PROGRAM",
+    "TODO.md",
+    "FP_AUDIT_REPORT",
+    "cli-surface-bloat.md",
 ]
 
 ALLOWED = {
+    ".gitignore",
     "CHANGELOG.md",
     "docs/EXECUTION_PLAN.md",
     "crates/scanner/tests/gap/findings_registry_integrity.rs",
@@ -101,6 +106,8 @@ def self_test() -> int:
         "see docs/legendary/20_detection.md": True,
         "open GAP_FINDINGS.toml": True,
         "write coordination/rounds/R5.md": True,
+        "see TESTING_PROGRAM.md section 3": True,
+        "old backlog cli-surface-bloat.md": True,
         "normal docs/EXECUTION_PLAN.md reference": False,
         "Druid coordinator string is unrelated": False,
     }

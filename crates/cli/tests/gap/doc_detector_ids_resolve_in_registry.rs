@@ -94,7 +94,7 @@ fn shipped_markdown_docs(root: &std::path::Path) -> Vec<PathBuf> {
 }
 
 #[test]
-fn fp_audit_report_detector_ids_resolve() {
+fn shipped_docs_detector_ids_resolve() {
     let root = repo_root();
     let ids = embedded_ids();
     let mut stems = BTreeSet::new();

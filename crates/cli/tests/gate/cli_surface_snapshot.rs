@@ -2,7 +2,7 @@
 //! subcommand set and the `scan` long-flag set — so neither can grow (or
 //! silently churn via rename) without a deliberate edit to this file.
 //!
-//! The backlog (cli-surface-bloat.md) flags the concern directly: "scan carries
+//! This snapshot flags the concern directly: "scan carries
 //! 68 flags; the binary exposes 18 subcommands. Surface this large is hard to
 //! keep coherent, document, and test." This gate makes every addition show up
 //! as a failing test that names exactly what was added/removed, forcing the
@@ -53,7 +53,7 @@ fn expected_subcommands() -> BTreeSet<String> {
 }
 
 /// `scan` long-flags that are ALWAYS compiled in (no feature gate). This is the
-/// 68-flag monster the backlog calls out; the feature-gated source/verify/binary
+/// 68-flag monster this snapshot protects; the feature-gated source/verify/binary
 /// flags are layered on in [`expected_scan_long_flags`] under the SAME `#[cfg]`
 /// gates the real args carry, so a new flag fails this gate until it is added
 /// here (or in the matching cfg block) on purpose. A rename shows up as one
@@ -95,7 +95,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "ml-weight",
     // `--no-config`: hermetic run on the compiled-in Tier-A shipped defaults,
     // rejecting ambient `.keyhog.toml` discovery (conflicts_with = "config";
-    // backlog MC-07). Unconditional — not feature-gated.
+    // hermetic config enforcement). Unconditional — not feature-gated.
     "no-config",
     "no-autoroute-gpu",
     "no-batch-pipeline",

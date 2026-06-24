@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     # PR + main gate. contracts_runner is always strict (no env var); the
-    # multiplier runners honor KEYHOG_*_STRICT=1 (see TESTING_PROGRAM.md §3.1).
+    # multiplier runners honor KEYHOG_*_STRICT=1.
     env:
       KEYHOG_ADVERSARIAL_STRICT: "1"
       KEYHOG_ENCODING_STRICT: "1"
@@ -201,6 +201,8 @@ jobs:
         run: cargo test -p keyhog-verifier --test all_tests --profile release-fast
       - name: cli all_tests
         run: cargo test -p keyhog --test all_tests --no-default-features --features ci-lean --profile release-fast
+      - name: cli vendor staleness target spec
+        run: cargo test -p keyhog --test vyre_vendor_staleness_target_spec --no-default-features --features ci-lean --profile release-fast
       # Coherence test binaries: standalone (not in all_tests) so they stay
       # bounded; each drives the real keyhog binary + reads the committed
       # docs/README to pin doc<->binary coherence (format set, exit codes,

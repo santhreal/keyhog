@@ -1,4 +1,4 @@
-//! KH-GAP-078: PR gate must run all 14 strict runners (TESTING_PROGRAM §3.1).
+//! KH-GAP-078: PR gate must run all 14 strict runners.
 
 use std::path::PathBuf;
 

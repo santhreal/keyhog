@@ -1,7 +1,7 @@
 //! DET-08 regression: the `min_confidence` floor is MONOTONIC in the finding
 //! set.
 //!
-//! The detection backlog (DET-08) reported FP swinging 173 → 37 → 306 as the
+//! Historical benchmarks reported FP swinging 173 → 37 → 306 as the
 //! floor rose 0.30 → 0.40 → 0.50 — a non-monotonic floor, which a clean cutoff
 //! can never produce. That evidence was a measurement artifact of two *other*
 //! bugs, both since fixed:

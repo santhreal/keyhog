@@ -45,7 +45,7 @@
 //! The genuine remaining perf opportunity (run Hyperscan as the primary scan and
 //! a REDUCED AC over only the ~6 HS-unsound bounded-repeat patterns, instead of
 //! the full AC sweep) requires statically partitioning the pattern set by
-//! HS-soundness and is tracked as a backlog rewrite — NOT a removable union.
+//! HS-soundness and is tracked for rewrite — NOT a removable union.
 //!
 //! When the `simd` feature is compiled out (`--no-default-features` without
 //! `simd`) there is no Hyperscan prefilter, `SimdCpu` falls back to the AC

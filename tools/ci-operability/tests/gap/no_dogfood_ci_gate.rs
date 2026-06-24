@@ -1,4 +1,4 @@
-//! KH-GAP-131: STANDARD dogfood (§596) + TESTING_PROGRAM §4 require real-product CI exercise.
+//! KH-GAP-131: STANDARD dogfood requires real-product CI exercise.
 
 use std::path::PathBuf;
 

@@ -14,7 +14,7 @@ CONTRACTS = REPO / "crates" / "scanner" / "tests" / "contracts"
 
 
 def extract_top50_from_r1_log() -> list[str]:
-    log = (REPO / "audits" / "round-r1-red-wall-full.log").read_text()
+    log = pathlib.Path("/tmp/round-r1-red-wall-full.log").read_text()
     out: list[str] = []
     seen: set[str] = set()
     for line in log.splitlines():

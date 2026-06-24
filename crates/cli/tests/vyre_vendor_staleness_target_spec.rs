@@ -4,7 +4,7 @@
 //! active build must resolve the Vyre runtime fleet from crates.io exact pins.
 //! The old repository-level `vendor/` snapshots must not exist.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use toml::Value;
 
 fn repo_root() -> PathBuf {
@@ -18,6 +18,57 @@ fn root_cargo() -> Value {
     let path = repo_root().join("Cargo.toml");
     let text = std::fs::read_to_string(&path).expect("read root Cargo.toml");
     toml::from_str::<Value>(&text).expect("parse root Cargo.toml")
+}
+
+fn is_generated_path(root: &Path, path: &Path) -> bool {
+    let rel = path.strip_prefix(root).unwrap_or(path);
+    let text = rel.to_string_lossy().replace('\\', "/");
+    [
+        ".git",
+        "target",
+        "docs/book",
+        "benchmarks/corpora",
+        "benchmarks/results",
+        "benchmarks/results-cross-device",
+    ]
+    .iter()
+    .any(|part| text == *part || text.starts_with(&format!("{part}/")))
+}
+
+fn collect_cargo_manifests(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
+    if is_generated_path(root, dir) {
+        return;
+    }
+    for entry in std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display())) {
+        let path = entry.expect("dir entry").path();
+        if is_generated_path(root, &path) {
+            continue;
+        }
+        if path.is_dir() {
+            collect_cargo_manifests(root, &path, out);
+        } else if path.file_name().is_some_and(|name| name == "Cargo.toml") {
+            out.push(path);
+        }
+    }
+}
+
+fn collect_vendor_dirs(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
+    if is_generated_path(root, dir) {
+        return;
+    }
+    for entry in std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display())) {
+        let path = entry.expect("dir entry").path();
+        if is_generated_path(root, &path) {
+            continue;
+        }
+        if path.is_dir() {
+            if path.file_name().is_some_and(|name| name == "vendor") {
+                out.push(path);
+            } else {
+                collect_vendor_dirs(root, &path, out);
+            }
+        }
+    }
 }
 
 const VYRE_DEPS: &[&str] = &[
@@ -83,22 +134,21 @@ fn repository_vendor_tree_is_removed_and_not_a_cargo_resolution_path() {
         })
         .unwrap_or_default();
 
-    assert!(
-        !root.join("vendor").exists(),
-        "repository vendor/ must not exist; keyhog consumes published dependencies from crates.io"
+    let mut vendor_dirs = Vec::new();
+    collect_vendor_dirs(&root, &root, &mut vendor_dirs);
+    assert_eq!(
+        vendor_dirs,
+        Vec::<PathBuf>::new(),
+        "repository vendor/ trees must not exist; keyhog consumes published dependencies from crates.io"
     );
     assert!(
         !excludes.iter().any(|entry| entry.starts_with("vendor/")),
         "root [workspace] exclude must not preserve retired vendor snapshots"
     );
 
-    let mut cargo_files = vec![root.join("Cargo.toml")];
-    for entry in std::fs::read_dir(root.join("crates")).expect("read crates") {
-        let path = entry.unwrap().path().join("Cargo.toml");
-        if path.is_file() {
-            cargo_files.push(path);
-        }
-    }
+    let mut cargo_files = Vec::new();
+    collect_cargo_manifests(&root, &root, &mut cargo_files);
+    cargo_files.sort();
 
     let mut offenders = Vec::new();
     for path in cargo_files {
