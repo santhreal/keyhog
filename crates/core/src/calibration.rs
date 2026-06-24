@@ -296,9 +296,9 @@ impl Calibration {
     }
 }
 
-/// Default cache location: `$XDG_CACHE_HOME/keyhog/calibration.json` (or
-/// the macOS/Windows equivalents via the `dirs` crate).
-pub fn default_cache_path() -> Option<PathBuf> {
+/// Default calibration cache location: `$XDG_CACHE_HOME/keyhog/calibration.json`
+/// (or the macOS/Windows equivalents via the `dirs` crate).
+pub fn calibration_default_cache_path() -> Option<PathBuf> {
     dirs::cache_dir().map(|d| d.join("keyhog").join("calibration.json"))
 }
 

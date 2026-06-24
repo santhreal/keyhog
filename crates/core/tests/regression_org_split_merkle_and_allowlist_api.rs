@@ -216,6 +216,38 @@ fn merkle_default_cache_path_unchanged() {
 }
 
 #[test]
+fn root_cache_path_exports_use_explicit_owner_names() {
+    let api = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/api.rs"))
+        .expect("core api source readable");
+    let calibration =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/calibration.rs"))
+            .expect("calibration source readable");
+    let merkle_index =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/merkle_index.rs"))
+            .expect("merkle index source readable");
+    let merkle_storage = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/merkle_index/storage.rs"
+    ))
+    .expect("merkle storage source readable");
+
+    assert!(
+        calibration.contains("pub fn calibration_default_cache_path()")
+            && merkle_storage.contains("pub fn merkle_default_cache_path()")
+            && merkle_index
+                .contains("pub use storage::{default_cache_path, merkle_default_cache_path};"),
+        "cache path owners must expose explicit names at their ownership boundary"
+    );
+    assert!(
+        api.contains("calibration_default_cache_path")
+            && api.contains("merkle_default_cache_path")
+            && !api.contains("default_cache_path as calibration_default_cache_path")
+            && !api.contains("default_cache_path as merkle_default_cache_path"),
+        "root api.rs must re-export explicit cache path names instead of resolving name clashes with import aliases"
+    );
+}
+
+#[test]
 fn merkle_tmp_hygiene_does_not_flatten_read_dir_errors() {
     let src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),

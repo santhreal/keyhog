@@ -13,9 +13,9 @@ use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    tmp_hygiene::{sweep_stale_tmp_files, MERKLE_TMP_PREFIX},
     CacheEntry, CacheFileFingerprint, CacheKey, MerkleIndex, MerkleLoadReport, MerkleLoadStatus,
     SCHEMA_VERSION,
+    tmp_hygiene::{MERKLE_TMP_PREFIX, sweep_stale_tmp_files},
 };
 use crate::hex_encode;
 use crate::merkle_spec_hash::hex_to_array;
@@ -451,12 +451,14 @@ fn oldest_eviction_keys(
         .collect()
 }
 
-/// Default index location: `$XDG_CACHE_HOME/keyhog/merkle.idx` or
+/// Default Merkle index location: `$XDG_CACHE_HOME/keyhog/merkle.idx` or
 /// `~/.cache/keyhog/merkle.idx` on Linux, `~/Library/Caches/keyhog/...` on
 /// macOS.
-pub fn default_cache_path() -> Option<PathBuf> {
+pub fn merkle_default_cache_path() -> Option<PathBuf> {
     dirs::cache_dir().map(|dir| dir.join("keyhog").join("merkle.idx"))
 }
+
+pub use merkle_default_cache_path as default_cache_path;
 
 fn encode_entries(entries: &HashMap<CacheKey, CacheEntry>) -> Vec<EntryV4> {
     let mut ordered = entries.iter().collect::<Vec<_>>();

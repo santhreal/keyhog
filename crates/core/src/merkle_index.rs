@@ -54,7 +54,7 @@
 //! and what its content fingerprint is, which is why `--lockdown`
 //! refuses to load or write the cache at all.
 
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{HashMap, hash_map::Entry};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
@@ -66,7 +66,7 @@ use parking_lot::RwLock;
 mod storage;
 mod tmp_hygiene;
 
-pub use storage::default_cache_path;
+pub use storage::{default_cache_path, merkle_default_cache_path};
 
 const SCHEMA_VERSION: u32 = 4;
 

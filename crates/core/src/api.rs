@@ -9,8 +9,7 @@ pub use crate::aws::{
     validate_canary_accounts,
 };
 pub use crate::calibration::{
-    default_cache_path as calibration_default_cache_path, BetaCounters, Calibration,
-    CalibrationLoadError,
+    BetaCounters, Calibration, CalibrationLoadError, calibration_default_cache_path,
 };
 pub use crate::config::*;
 pub use crate::credential::{Credential, SensitiveString};
@@ -19,11 +18,10 @@ pub use crate::display::strip_windows_verbatim_prefix;
 pub use crate::encoding::decode_standard_base64;
 pub use crate::finding::*;
 pub use crate::hardening::{
-    apply_protections, apply_protections_with_persistence_paths, HardeningReport,
+    HardeningReport, apply_protections, apply_protections_with_persistence_paths,
 };
 pub use crate::merkle_index::{
-    default_cache_path as merkle_default_cache_path, MerkleIndex, MerkleLoadReport,
-    MerkleLoadStatus,
+    MerkleIndex, MerkleLoadReport, MerkleLoadStatus, merkle_default_cache_path,
 };
 pub use crate::merkle_spec_hash::compute_spec_hash;
 pub use crate::report::*;
