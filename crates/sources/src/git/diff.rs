@@ -157,7 +157,7 @@ fn stream_added_lines(
     };
 
     let mut current_path: Option<String> = None;
-    let mut current_content = String::new();
+    let mut current_content = Vec::new();
     let mut diff_parser = super::UnifiedDiffParser::new();
     let mut done = false;
     let mut emit_untracked = false;
@@ -374,16 +374,15 @@ fn stream_added_lines(
                     if current_path.is_none() {
                         continue;
                     }
-                    current_content.push_str(&String::from_utf8_lossy(bytes));
-                    current_content.push('\n');
+                    current_content.extend_from_slice(bytes);
+                    current_content.push(b'\n');
                 }
                 super::UnifiedDiffEvent::Other => {}
             }
 
             if current_content.len() > hunk_byte_cap {
                 if let Some(ref path) = current_path {
-                    let emitted_lines =
-                        memchr::memchr_iter(b'\n', current_content.as_bytes()).count();
+                    let emitted_lines = memchr::memchr_iter(b'\n', &current_content).count();
                     if let Some(chunk_content) = super::drain_trimmed_hunk(&mut current_content) {
                         let flush_base_line = current_base_line;
                         // Mid-hunk flush of a single over-cap hunk: the lines

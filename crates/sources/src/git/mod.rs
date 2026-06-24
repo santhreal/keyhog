@@ -116,8 +116,9 @@ pub(crate) fn git_unscanned_object_error(reason: impl std::fmt::Display) -> Sour
     SourceError::Git(format!("failed to scan git object: {reason}"))
 }
 
-pub(crate) fn drain_trimmed_hunk(buffer: &mut String) -> Option<String> {
-    let trimmed = buffer.trim();
+pub(crate) fn drain_trimmed_hunk(buffer: &mut Vec<u8>) -> Option<String> {
+    let decoded = String::from_utf8_lossy(buffer);
+    let trimmed = decoded.trim();
     if trimmed.is_empty() {
         buffer.clear();
         return None;

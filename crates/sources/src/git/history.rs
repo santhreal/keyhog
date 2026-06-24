@@ -127,7 +127,7 @@ fn stream_git_history_chunks(
     let mut current_author: Option<String> = None;
     let mut current_date: Option<String> = None;
     let mut current_path: Option<String> = None;
-    let mut current_content = String::new();
+    let mut current_content = Vec::new();
     let mut diff_parser = super::UnifiedDiffParser::new();
     let mut done = false;
     let mut wait_after_final_chunk = false;
@@ -352,8 +352,8 @@ fn stream_git_history_chunks(
                     if current_path.is_none() {
                         continue;
                     }
-                    current_content.push_str(&String::from_utf8_lossy(bytes));
-                    current_content.push('\n');
+                    current_content.extend_from_slice(bytes);
+                    current_content.push(b'\n');
                 }
                 super::UnifiedDiffEvent::Other => {}
             }
@@ -366,8 +366,7 @@ fn stream_git_history_chunks(
                     &current_date,
                     &current_path,
                 ) {
-                    let emitted_lines =
-                        memchr::memchr_iter(b'\n', current_content.as_bytes()).count();
+                    let emitted_lines = memchr::memchr_iter(b'\n', &current_content).count();
                     if let Some(chunk_content) = super::drain_trimmed_hunk(&mut current_content) {
                         let flush_base_line = current_base_line;
                         // Mid-hunk flush of a single over-cap hunk: advance the base
