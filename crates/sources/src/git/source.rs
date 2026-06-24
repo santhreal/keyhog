@@ -885,6 +885,17 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
         record_git_object_unreadable();
         Ok(())
     }
+
+    fn handle_unscanned_entry(&mut self, filepath: &[u8], mode: String) -> Result<(), SourceError> {
+        let path = String::from_utf8_lossy(filepath);
+        tracing::warn!(
+            %path,
+            mode,
+            "git tree entry is not a blob or tree; referenced content was NOT scanned"
+        );
+        record_git_object_unreadable();
+        Ok(())
+    }
 }
 
 fn record_git_object_unreadable() {

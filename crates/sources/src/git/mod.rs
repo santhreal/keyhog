@@ -316,6 +316,14 @@ pub(crate) trait GitTreeVisitor {
         filepath: &[u8],
         error: String,
     ) -> Result<(), SourceError>;
+
+    fn handle_unscanned_entry(
+        &mut self,
+        _filepath: &[u8],
+        _mode: String,
+    ) -> Result<(), SourceError> {
+        Ok(())
+    }
 }
 
 pub(crate) fn walk_tree_recursive<V: GitTreeVisitor + ?Sized>(
@@ -356,6 +364,8 @@ pub(crate) fn walk_tree_recursive<V: GitTreeVisitor + ?Sized>(
             }
         } else if mode.is_blob() {
             visitor.visit_blob(oid, filepath)?;
+        } else {
+            visitor.handle_unscanned_entry(&filepath, format!("{mode:?}"))?;
         }
     }
     Ok(())

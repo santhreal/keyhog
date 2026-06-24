@@ -12,6 +12,7 @@ fn git_tree_walk_uses_shared_visitor_boundary() {
         "visitor.handle_entry_error",
         "visitor.handle_subtree_object_error",
         "visitor.handle_subtree_type_error",
+        "visitor.handle_unscanned_entry",
     ] {
         assert!(
             git_mod.contains(required),
