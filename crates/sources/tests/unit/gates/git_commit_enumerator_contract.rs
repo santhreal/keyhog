@@ -6,7 +6,8 @@ fn git_commit_enumeration_is_split_from_blob_stream() {
     for required in [
         "struct GitCommitEnumerator",
         "fn next_id(&mut self, seen_commit_count: usize)",
-        "collect_unreachable_commit_ids(&self.repo_arg, remaining)",
+        "collect_unreachable_objects(&self.repo_arg, remaining)",
+        "fn take_unreachable_blobs(&mut self)",
         "super::wait_for_git_child(",
     ] {
         assert!(
@@ -22,7 +23,7 @@ fn git_commit_enumeration_is_split_from_blob_stream() {
         .expect("stream_git_blobs body extractable");
     for forbidden in [
         "log_lines.next()",
-        "collect_unreachable_commit_ids(",
+        "collect_unreachable_objects(",
         "unreachable_loaded",
         "unreachable_commits",
         "super::wait_for_git_child(",

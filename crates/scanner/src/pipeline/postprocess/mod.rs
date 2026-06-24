@@ -42,7 +42,10 @@ pub(crate) fn build_raw_match(
     // detector still gets flagged.
     let severity = if pattern_client_safe {
         keyhog_core::Severity::ClientSafe
-    } else if chunk.metadata.source_type == "git/history" {
+    } else if matches!(
+        chunk.metadata.source_type.as_str(),
+        "git/history" | "git/unreachable"
+    ) {
         detector.severity.downgrade_one()
     } else {
         detector.severity

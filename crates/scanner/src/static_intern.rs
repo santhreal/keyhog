@@ -41,7 +41,9 @@ use std::sync::Arc;
 pub(crate) const SEED_SOURCE_TYPES: &[&str] = &[
     "filesystem",
     "git",
+    "git/head",
     "git/history",
+    "git/unreachable",
     "git/diff",
     "git/staged",
     "git-diff",

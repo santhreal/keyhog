@@ -43,6 +43,12 @@ struct GitCommitBlobSet {
     blob_metadata: Vec<(gix::ObjectId, Vec<u8>)>,
 }
 
+#[derive(Default)]
+struct UnreachableGitObjects {
+    commits: VecDeque<gix::ObjectId>,
+    blobs: VecDeque<gix::ObjectId>,
+}
+
 type GitBlobPathKey = (gix::ObjectId, Vec<u8>);
 
 #[derive(Debug)]
@@ -83,7 +89,8 @@ enum GitBlobSkip {
     Binary,
 }
 
-/// Scans git blobs reachable from refs, reflogs, stashes, and dangling commits.
+/// Scans git blobs reachable from refs, reflogs, stashes, dangling commits, and
+/// unreachable loose blobs.
 ///
 /// # Examples
 ///
@@ -169,6 +176,7 @@ struct GitCommitEnumerator {
     log_done: bool,
     unreachable_loaded: bool,
     unreachable_commits: VecDeque<gix::ObjectId>,
+    unreachable_blobs: VecDeque<gix::ObjectId>,
 }
 
 impl GitCommitEnumerator {
@@ -211,6 +219,7 @@ impl GitCommitEnumerator {
             log_done: false,
             unreachable_loaded: false,
             unreachable_commits: VecDeque::new(),
+            unreachable_blobs: VecDeque::new(),
         })
     }
 
@@ -222,7 +231,7 @@ impl GitCommitEnumerator {
             if !self.log_done {
                 match self.log_lines.next() {
                     Some(Ok(line)) => {
-                        if let Some(id) = parse_commit_id_line(&line)? {
+                        if let Some(id) = parse_git_object_id_line(&line, "commit")? {
                             return Ok(Some(id));
                         }
                         continue;
@@ -244,12 +253,17 @@ impl GitCommitEnumerator {
                 let remaining = self
                     .max_commits
                     .map(|limit| limit.saturating_sub(seen_commit_count));
-                self.unreachable_commits =
-                    collect_unreachable_commit_ids(&self.repo_arg, remaining)?;
+                let unreachable = collect_unreachable_objects(&self.repo_arg, remaining)?;
+                self.unreachable_commits = unreachable.commits;
+                self.unreachable_blobs = unreachable.blobs;
                 continue;
             }
             return Ok(None);
         }
+    }
+
+    fn take_unreachable_blobs(&mut self) -> VecDeque<gix::ObjectId> {
+        std::mem::take(&mut self.unreachable_blobs)
     }
 }
 
@@ -281,6 +295,7 @@ fn stream_git_blobs(
     let mut current_tree_blobs: VecDeque<Chunk> = VecDeque::new();
     let mut seen_blob_paths: HashSet<GitBlobPathKey> = HashSet::new();
     let mut seen_commits: HashSet<gix::ObjectId> = HashSet::new();
+    let mut unreachable_blobs: Option<VecDeque<gix::ObjectId>> = None;
     let mut total_bytes = 0usize;
     let mut chunk_count = 0usize;
     let mut done = false;
@@ -302,43 +317,68 @@ fn stream_git_blobs(
                 return error.map(Err);
             }
 
-            let id = match commit_ids.next_id(seen_commits.len()) {
-                Ok(Some(id)) => id,
-                Ok(None) => {
+            if unreachable_blobs.is_none() {
+                let id = match commit_ids.next_id(seen_commits.len()) {
+                    Ok(Some(id)) => id,
+                    Ok(None) => {
+                        unreachable_blobs = Some(commit_ids.take_unreachable_blobs());
+                        continue;
+                    }
+                    Err(error) => {
+                        done = true;
+                        return Some(Err(error));
+                    }
+                };
+
+                // Cache visited Git commit OIDs in a fast set to avoid traversing duplicate merge commits (KH-56)
+                if !seen_commits.insert(id) {
+                    continue;
+                }
+
+                let commit_blobs =
+                    match load_commit_blob_set(&repo_handle, id, &mut seen_blob_paths) {
+                        Ok(Some(commit_blobs)) => commit_blobs,
+                        Ok(None) => continue,
+                        Err(error) => {
+                            done = true;
+                            return Some(Err(error));
+                        }
+                    };
+
+                if !commit_blobs.blob_metadata.is_empty() {
+                    let chunk_decoder = GitBlobChunkDecoder {
+                        repo: &repo_handle,
+                        repo_path: &repo_owned,
+                        head_blob_paths: &head_blob_paths,
+                        limits,
+                    };
+                    current_tree_blobs.extend(chunk_decoder.decode_commit_chunks(
+                        commit_blobs.blob_metadata,
+                        &commit_blobs.commit_id,
+                        &commit_blobs.author,
+                        &mut total_bytes,
+                        &mut chunk_count,
+                    ));
+
+                    if let Some(chunk) = current_tree_blobs.pop_front() {
+                        return Some(Ok(chunk));
+                    }
+                }
+            } else if let Some(blobs) = unreachable_blobs.as_mut() {
+                let blob_metadata = collect_unreachable_blob_metadata(blobs);
+                if blob_metadata.is_empty() {
                     done = true;
                     return None;
                 }
-                Err(error) => {
-                    done = true;
-                    return Some(Err(error));
-                }
-            };
 
-            // Cache visited Git commit OIDs in a fast set to avoid traversing duplicate merge commits (KH-56)
-            if !seen_commits.insert(id) {
-                continue;
-            }
-
-            let commit_blobs = match load_commit_blob_set(&repo_handle, id, &mut seen_blob_paths) {
-                Ok(Some(commit_blobs)) => commit_blobs,
-                Ok(None) => continue,
-                Err(error) => {
-                    done = true;
-                    return Some(Err(error));
-                }
-            };
-
-            if !commit_blobs.blob_metadata.is_empty() {
                 let chunk_decoder = GitBlobChunkDecoder {
                     repo: &repo_handle,
                     repo_path: &repo_owned,
                     head_blob_paths: &head_blob_paths,
                     limits,
                 };
-                current_tree_blobs.extend(chunk_decoder.decode_commit_chunks(
-                    commit_blobs.blob_metadata,
-                    &commit_blobs.commit_id,
-                    &commit_blobs.author,
+                current_tree_blobs.extend(chunk_decoder.decode_unreachable_chunks(
+                    blob_metadata,
                     &mut total_bytes,
                     &mut chunk_count,
                 ));
@@ -414,6 +454,35 @@ impl GitBlobChunkDecoder<'_> {
         total_bytes: &mut usize,
         chunk_count: &mut usize,
     ) -> VecDeque<Chunk> {
+        self.decode_chunks(
+            blob_metadata,
+            GitBlobProvenance::Commit { commit_id, author },
+            total_bytes,
+            chunk_count,
+        )
+    }
+
+    fn decode_unreachable_chunks(
+        &self,
+        blob_metadata: Vec<(gix::ObjectId, Vec<u8>)>,
+        total_bytes: &mut usize,
+        chunk_count: &mut usize,
+    ) -> VecDeque<Chunk> {
+        self.decode_chunks(
+            blob_metadata,
+            GitBlobProvenance::Unreachable,
+            total_bytes,
+            chunk_count,
+        )
+    }
+
+    fn decode_chunks(
+        &self,
+        blob_metadata: Vec<(gix::ObjectId, Vec<u8>)>,
+        provenance: GitBlobProvenance<'_>,
+        total_bytes: &mut usize,
+        chunk_count: &mut usize,
+    ) -> VecDeque<Chunk> {
         let mut chunks = VecDeque::new();
         let mut blob_metadata = blob_metadata.into_iter();
 
@@ -465,7 +534,7 @@ impl GitBlobChunkDecoder<'_> {
                     },
                 };
 
-                let chunk = self.chunk_from_decoded_blob(decoded_blob, commit_id, author);
+                let chunk = self.chunk_from_decoded_blob(decoded_blob, provenance);
                 *total_bytes = total_bytes.saturating_add(chunk.data.len());
                 *chunk_count += 1;
                 chunks.push_back(chunk);
@@ -478,22 +547,29 @@ impl GitBlobChunkDecoder<'_> {
     fn chunk_from_decoded_blob(
         &self,
         decoded_blob: DecodedGitBlob,
-        commit_id: &str,
-        author: &str,
+        provenance: GitBlobProvenance<'_>,
     ) -> Chunk {
         let in_head = self
             .head_blob_paths
             .contains(&(decoded_blob.oid.to_owned(), decoded_blob.filepath.clone()));
         let path = String::from_utf8_lossy(&decoded_blob.filepath).to_string();
+        let (source_type, commit, author) = match provenance {
+            GitBlobProvenance::Commit { commit_id, author } => (
+                if in_head { "git/head" } else { "git/history" },
+                Some(commit_id.to_owned()),
+                Some(author.to_owned()),
+            ),
+            GitBlobProvenance::Unreachable => ("git/unreachable", None, None),
+        };
         Chunk {
             data: decoded_blob.file_text.into(),
             metadata: ChunkMetadata {
                 base_offset: 0,
                 base_line: 0,
-                source_type: if in_head { "git/head" } else { "git/history" }.into(),
+                source_type: source_type.into(),
                 path: Some(path),
-                commit: Some(commit_id.to_owned()),
-                author: Some(author.to_owned()),
+                commit,
+                author,
                 date: None,
                 mtime_ns: None,
                 size_bytes: Some(decoded_blob.size_bytes),
@@ -501,6 +577,12 @@ impl GitBlobChunkDecoder<'_> {
             },
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum GitBlobProvenance<'a> {
+    Commit { commit_id: &'a str, author: &'a str },
+    Unreachable,
 }
 
 fn next_git_blob_batch(
@@ -675,17 +757,21 @@ fn git_ref_exists(repo_arg: &str, ref_name: &str) -> Result<bool, SourceError> {
     Ok(output.status.success())
 }
 
-fn parse_commit_id_line(line: &str) -> Result<Option<gix::ObjectId>, SourceError> {
-    let Some(commit_id) = line.split_whitespace().next() else {
+fn parse_git_object_id_line(
+    line: &str,
+    object_label: &'static str,
+) -> Result<Option<gix::ObjectId>, SourceError> {
+    let Some(object_id) = line.split_whitespace().next() else {
         return Ok(None);
     };
-    match gix::ObjectId::from_hex(commit_id.as_bytes()) {
+    match gix::ObjectId::from_hex(object_id.as_bytes()) {
         Ok(id) => Ok(Some(id)),
         Err(error) => {
             tracing::warn!(
                 %error,
-                commit = commit_id,
-                "git reported an unparsable commit id; commit NOT scanned"
+                object = object_id,
+                object_kind = object_label,
+                "git reported an unparsable object id; object NOT scanned"
             );
             record_git_object_unreadable();
             Ok(None)
@@ -693,14 +779,10 @@ fn parse_commit_id_line(line: &str) -> Result<Option<gix::ObjectId>, SourceError
     }
 }
 
-fn collect_unreachable_commit_ids(
+fn collect_unreachable_objects(
     repo_arg: &str,
-    remaining: Option<usize>,
-) -> Result<VecDeque<gix::ObjectId>, SourceError> {
-    if remaining == Some(0) {
-        return Ok(VecDeque::new());
-    }
-
+    remaining_commits: Option<usize>,
+) -> Result<UnreachableGitObjects, SourceError> {
     let mut command = Command::new(super::git_bin()?);
     command.args([
         "-C",
@@ -718,7 +800,7 @@ fn collect_unreachable_commit_ids(
         .take_stdout()
         .ok_or_else(|| SourceError::Io(std::io::Error::other("missing fsck stdout")))?;
     let mut reader = std::io::BufReader::new(stdout);
-    let mut out = VecDeque::new();
+    let mut out = UnreachableGitObjects::default();
     let mut line_buf = Vec::new();
     while super::read_capped_line(&mut reader, &mut line_buf, GIT_FSCK_LINE_BYTES)
         .map_err(SourceError::Io)?
@@ -726,19 +808,38 @@ fn collect_unreachable_commit_ids(
     {
         let line = String::from_utf8_lossy(&line_buf);
         let line = line.trim_end_matches('\n').trim_end_matches('\r');
-        let Some(commit_id) = line.strip_prefix("unreachable commit ") else {
+        if let Some(commit_id) = line.strip_prefix("unreachable commit ") {
+            if remaining_commits.is_some_and(|limit| out.commits.len() >= limit) {
+                continue;
+            }
+            let Some(id) = parse_git_object_id_line(commit_id, "commit")? else {
+                continue;
+            };
+            out.commits.push_back(id);
             continue;
-        };
-        let Some(id) = parse_commit_id_line(commit_id)? else {
-            continue;
-        };
-        out.push_back(id);
-        if remaining.is_some_and(|limit| out.len() >= limit) {
-            break;
+        }
+        if let Some(blob_id) = line.strip_prefix("unreachable blob ") {
+            let Some(id) = parse_git_object_id_line(blob_id, "blob")? else {
+                continue;
+            };
+            out.blobs.push_back(id);
         }
     }
-    super::wait_for_git_child(&mut child, "git fsck", "enumerating unreachable commits")?;
+    super::wait_for_git_child(&mut child, "git fsck", "enumerating unreachable objects")?;
     Ok(out)
+}
+
+fn collect_unreachable_blob_metadata(
+    blobs: &mut VecDeque<gix::ObjectId>,
+) -> Vec<(gix::ObjectId, Vec<u8>)> {
+    let mut metadata = Vec::new();
+    while metadata.len() < GIT_PARALLEL_BLOB_BATCH_ITEMS {
+        let Some(id) = blobs.pop_front() else {
+            break;
+        };
+        metadata.push((id, format!(".git/unreachable/{id}").into_bytes()));
+    }
+    metadata
 }
 
 fn commit_author_name(commit: &gix::Commit<'_>, commit_id: &str) -> Result<String, SourceError> {

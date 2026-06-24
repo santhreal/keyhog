@@ -11,8 +11,8 @@
 //!   path-aware blob dedup / `seen_commits` dedup, the filesystem-owned
 //!   default-exclude path classifier,
 //!   the `header.size() > MAX_GIT_BLOB_BYTES` (10 MiB, strict `>`) bound,
-//!   `source_type = git/head` vs `git/history`, `commit`/`author`/`size_bytes`
-//!   attribution, and `date: None`.
+//!   `source_type = git/head` vs `git/history` vs `git/unreachable`,
+//!   commit-backed `commit`/`author`/`size_bytes` attribution, and `date: None`.
 //!
 //! The tests are self-contained: they shell out to the real `git` binary to
 //! build fixtures (mirroring `regression_git_blob_non_utf8_still_scanned.rs`)
@@ -22,8 +22,9 @@
 #![cfg(feature = "git")]
 
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use keyhog_core::{Chunk, Source, SourceError};
 use keyhog_sources::{FilesystemSource, GitSource};
@@ -1194,6 +1195,49 @@ fn secret_only_in_unreachable_commit_is_found() {
 }
 
 #[test]
+fn secret_only_in_unreachable_loose_blob_is_found() {
+    let (_t, repo) = init_repo();
+    commit_file(&repo, "main.txt", b"base=1\n", "base on main");
+
+    let mut child = Command::new("git")
+        .args(["hash-object", "-w", "--stdin"])
+        .current_dir(&repo)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn git hash-object");
+    child
+        .stdin
+        .take()
+        .expect("hash-object stdin")
+        .write_all(b"K=ghp_unreachableLooseBlobSecret0001\n")
+        .expect("write loose blob stdin");
+    let output = child.wait_with_output().expect("hash-object output");
+    assert!(
+        output.status.success(),
+        "git hash-object failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let oid = String::from_utf8(output.stdout)
+        .expect("hash-object oid utf8")
+        .trim()
+        .to_string();
+
+    let chunks = collect_chunks(&repo, 100);
+    let c = chunks
+        .iter()
+        .find(|c| c.data.contains("ghp_unreachableLooseBlobSecret0001"))
+        .expect("git fsck unreachable blob enumeration must feed the blob scanner");
+    assert_eq!(c.metadata.source_type, "git/unreachable");
+    assert_eq!(
+        c.metadata.path.as_deref(),
+        Some(format!(".git/unreachable/{oid}").as_str())
+    );
+    assert_eq!(c.metadata.commit, None, "loose blobs are not commits");
+    assert_eq!(c.metadata.author, None, "loose blobs have no commit author");
+}
+
+#[test]
 fn git_source_commit_enumerator_names_reflog_stash_and_unreachable_coverage() {
     let source =
         std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/git/source.rs"))
@@ -1210,8 +1254,9 @@ fn git_source_commit_enumerator_names_reflog_stash_and_unreachable_coverage() {
         source.contains("\"fsck\"")
             && source.contains("\"--unreachable\"")
             && source.contains("\"--no-reflogs\"")
-            && source.contains("unreachable commit "),
-        "GitSource must enumerate commits that are neither refs nor reflogs"
+            && source.contains("unreachable commit ")
+            && source.contains("unreachable blob "),
+        "GitSource must enumerate commits and loose blobs that are neither refs nor reflogs"
     );
 }
 
@@ -1441,7 +1486,9 @@ fn iterator_is_fused_after_exhaustion() {
 
 #[test]
 fn every_emitted_chunk_carries_path_and_commit() {
-    // Invariant: GitSource always sets path and commit (Some) on every chunk.
+    // Invariant: GitSource always sets path and size. Commit-backed chunks
+    // carry commit/author; loose unreachable objects are explicit instead of
+    // pretending to have commit metadata.
     let (_t, repo) = init_repo();
     commit_file(&repo, "p1.txt", b"a=1\n", "c1");
     commit_file(&repo, "p2.txt", b"b=2\n", "c2");
@@ -1450,16 +1497,26 @@ fn every_emitted_chunk_carries_path_and_commit() {
     assert!(!chunks.is_empty());
     for c in &chunks {
         assert!(c.metadata.path.is_some(), "every git chunk has a path");
-        assert!(c.metadata.commit.is_some(), "every git chunk has a commit");
-        assert!(c.metadata.author.is_some(), "every git chunk has an author");
         assert!(
             c.metadata.size_bytes.is_some(),
             "every git chunk has size_bytes"
         );
-        assert!(
-            c.metadata.source_type == "git/head" || c.metadata.source_type == "git/history",
-            "source_type is one of the two git buckets; got {:?}",
-            c.metadata.source_type
-        );
+        match c.metadata.source_type.as_str() {
+            "git/head" | "git/history" => {
+                assert!(
+                    c.metadata.commit.is_some(),
+                    "commit-backed git chunk has a commit"
+                );
+                assert!(
+                    c.metadata.author.is_some(),
+                    "commit-backed git chunk has an author"
+                );
+            }
+            "git/unreachable" => {
+                assert_eq!(c.metadata.commit, None, "loose blob is not a commit");
+                assert_eq!(c.metadata.author, None, "loose blob has no author");
+            }
+            other => panic!("unexpected git source_type {other:?}"),
+        }
     }
 }
