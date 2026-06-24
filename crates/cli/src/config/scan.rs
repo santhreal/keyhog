@@ -340,21 +340,21 @@ pub(super) fn apply_top_level_scan_fields(
     }
 
     if let Some(timeout) = config.timeout {
-        if args.timeout == 5 {
-            args.timeout = timeout;
+        if args.timeout.is_none() {
+            args.timeout = Some(timeout);
         }
     }
 
     if let Some(rate) = config.rate {
-        if args.rate == 5 {
-            args.rate = rate;
+        if args.rate.is_none() {
+            args.rate = Some(rate);
         }
     }
 
     if let Some(max_commits) = config.max_commits {
         #[cfg(feature = "git")]
-        if args.max_commits == 1000 {
-            args.max_commits = max_commits;
+        if args.max_commits.is_none() {
+            args.max_commits = Some(max_commits);
         }
     }
 

@@ -286,8 +286,8 @@ pub struct ScanArgs {
 
     /// Max git commits to traverse
     #[cfg(feature = "git")]
-    #[arg(long, default_value = "1000")]
-    pub max_commits: usize,
+    #[arg(long)]
+    pub max_commits: Option<usize>,
 
     /// Verify discovered credentials via API calls
     #[cfg(feature = "verify")]
@@ -489,12 +489,12 @@ pub struct ScanArgs {
     pub output: Option<PathBuf>,
 
     /// Verification timeout in seconds
-    #[arg(long, default_value = "5")]
-    pub timeout: u64,
+    #[arg(long)]
+    pub timeout: Option<u64>,
 
     /// Max concurrent verification requests per service
-    #[arg(long, default_value = "5")]
-    pub rate: usize,
+    #[arg(long)]
+    pub rate: Option<usize>,
 
     /// Steady-state cap for verification calls *per service*, in
     /// requests-per-second. Default 5.0. Drop this to be polite to

@@ -90,6 +90,64 @@ fn config_top_level_min_secret_len_wins_over_scan_table() {
 }
 
 #[test]
+fn config_top_level_ml_threshold_and_verify_knobs_reach_scan_args() {
+    let args = args_for_config(
+        "ml_threshold = 0.5\n\
+         timeout = 9\n\
+         rate = 7\n\
+         max_commits = 123\n",
+    );
+    assert_eq!(args.ml_threshold, Some(0.5));
+    assert_eq!(args.timeout, Some(9));
+    assert_eq!(args.rate, Some(7));
+    #[cfg(feature = "git")]
+    assert_eq!(args.max_commits, Some(123));
+}
+
+#[test]
+fn config_scan_ml_threshold_reaches_scan_args() {
+    let args = args_for_config("[scan]\nml_threshold = 0.6\n");
+    assert_eq!(args.ml_threshold, Some(0.6));
+}
+
+#[test]
+fn explicit_cli_default_values_win_over_config_sentinels() {
+    let mut extra_args = vec!["--ml-threshold", "0.5", "--timeout", "5", "--rate", "5"];
+    #[cfg(feature = "git")]
+    extra_args.extend(["--max-commits", "1000"]);
+
+    let args = args_for_config_with_extra(
+        "ml_threshold = 0.9\n\
+         timeout = 30\n\
+         rate = 11\n\
+         max_commits = 222\n",
+        &extra_args,
+    );
+
+    assert_eq!(
+        args.ml_threshold,
+        Some(0.5),
+        "explicit --ml-threshold 0.5 must not be overwritten by TOML"
+    );
+    assert_eq!(
+        args.timeout,
+        Some(5),
+        "explicit --timeout 5 must not be overwritten by TOML"
+    );
+    assert_eq!(
+        args.rate,
+        Some(5),
+        "explicit --rate 5 must not be overwritten by TOML"
+    );
+    #[cfg(feature = "git")]
+    assert_eq!(
+        args.max_commits,
+        Some(1000),
+        "explicit --max-commits 1000 must not be overwritten by TOML"
+    );
+}
+
+#[test]
 fn config_top_level_generic_keyword_low_entropy_false_reaches_scan_args() {
     let args = args_for_config("generic_keyword_low_entropy = false\n");
     assert!(

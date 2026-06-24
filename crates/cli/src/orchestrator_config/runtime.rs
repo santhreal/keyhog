@@ -12,6 +12,10 @@ pub(crate) const MAX_THREADS_CAP: usize = 256;
 /// `ScanArgs::ml_threshold` is optional so the runtime can distinguish an
 /// absent flag/config from an explicit `0.5`.
 pub(crate) const ML_THRESHOLD_DEFAULT: f64 = 0.5;
+pub(crate) const VERIFY_TIMEOUT_DEFAULT_SECS: u64 = 5;
+pub(crate) const VERIFY_MAX_CONCURRENT_DEFAULT: usize = 5;
+#[cfg(feature = "git")]
+pub(crate) const MAX_COMMITS_DEFAULT: usize = 1000;
 
 /// Default chunk batch size for the fused filesystem read+scan pipeline.
 pub(crate) const FUSED_BATCH_DEFAULT: usize = 32;

@@ -1,4 +1,5 @@
 use crate::args::{CliDedupScope, ScanArgs, SeverityFilter};
+use crate::orchestrator_config::{VERIFY_MAX_CONCURRENT_DEFAULT, VERIFY_TIMEOUT_DEFAULT_SECS};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -56,8 +57,12 @@ impl ResolvedVerifyPolicy {
     pub(super) fn from_scan_args(args: &ScanArgs) -> Self {
         Self {
             rate: args.verify_rate,
-            max_concurrent_per_service: if args.verify_batch { 1 } else { args.rate },
-            timeout_secs: args.timeout,
+            max_concurrent_per_service: if args.verify_batch {
+                1
+            } else {
+                args.rate.unwrap_or(VERIFY_MAX_CONCURRENT_DEFAULT) // LAW10: absent verify concurrency => documented default; explicit CLI/TOML values remain Some and win
+            },
+            timeout_secs: args.timeout.unwrap_or(VERIFY_TIMEOUT_DEFAULT_SECS), // LAW10: absent verify timeout => documented default; explicit CLI/TOML values remain Some and win
             proxy: args.proxy.clone(),
             insecure_tls: args.insecure,
             allow_script_verify: args.allow_script_verify,
@@ -72,8 +77,8 @@ impl ResolvedVerifyPolicy {
     pub(crate) fn disabled() -> Self {
         Self {
             rate: 1.0,
-            max_concurrent_per_service: 5,
-            timeout_secs: 5,
+            max_concurrent_per_service: VERIFY_MAX_CONCURRENT_DEFAULT,
+            timeout_secs: VERIFY_TIMEOUT_DEFAULT_SECS,
             proxy: None,
             insecure_tls: false,
             allow_script_verify: false,

@@ -153,9 +153,12 @@ pub(crate) fn build_sources(
 
     #[cfg(feature = "git")]
     if let Some(ref path) = args.git_blobs {
+        let max_commits = args
+            .max_commits
+            .unwrap_or(crate::orchestrator_config::MAX_COMMITS_DEFAULT); // LAW10: absent max-commits => documented CLI default; explicit CLI/TOML values remain Some and win
         sources.push(Box::new(
             keyhog_sources::GitSource::new(path.clone())
-                .with_max_commits(args.max_commits)
+                .with_max_commits(max_commits)
                 .with_limits(source_limits),
         ));
     }
@@ -174,9 +177,12 @@ pub(crate) fn build_sources(
 
     #[cfg(feature = "git")]
     if let Some(ref path) = args.git_history {
+        let max_commits = args
+            .max_commits
+            .unwrap_or(crate::orchestrator_config::MAX_COMMITS_DEFAULT); // LAW10: absent max-commits => documented CLI default; explicit CLI/TOML values remain Some and win
         sources.push(Box::new(
             keyhog_sources::GitHistorySource::new(path.clone())
-                .with_max_commits(args.max_commits)
+                .with_max_commits(max_commits)
                 .with_limits(source_limits),
         ));
     }
