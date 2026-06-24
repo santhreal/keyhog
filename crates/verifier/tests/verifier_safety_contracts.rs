@@ -21,8 +21,8 @@
 //!      cap gzip bomb).
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use keyhog_core::{
@@ -196,6 +196,45 @@ async fn script_auth_verify_requires_explicit_config_not_env() {
             );
         }
         other => panic!("expected script engine allowlist error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn script_auth_requires_explicit_status_token() {
+    let mut spec = spec_for(
+        "script-auth-status",
+        Some("http://127.0.0.1/script".into()),
+        vec![],
+    );
+    spec.verify.as_mut().unwrap().auth = Some(AuthSpec::Script {
+        engine: ScriptEngine::Python3,
+        code: "print('script ran but did not classify credential')".into(),
+    });
+
+    let engine = VerificationEngine::new(
+        &[spec],
+        VerifyConfig {
+            danger_allow_private_ips: true,
+            danger_allow_http: true,
+            allow_script_verify: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let findings = engine
+        .verify_all(vec![group_for("script-auth-status", "secret")])
+        .await;
+
+    match &findings[0].verification {
+        VerificationResult::Error(message) => {
+            assert!(
+                message.contains("returned no explicit status")
+                    && message.contains("STATUS: LIVE")
+                    && message.contains("STATUS: DEAD"),
+                "malformed script output must be an explicit verifier contract error, got: {message}"
+            );
+        }
+        other => panic!("malformed script output must not collapse to dead, got {other:?}"),
     }
 }
 

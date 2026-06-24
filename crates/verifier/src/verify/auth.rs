@@ -120,21 +120,11 @@ pub(crate) async fn build_request_for_auth(
             )
             .await
             {
-                Ok(output) => {
-                    if output.contains("STATUS: LIVE") {
-                        RequestBuildResult::Final {
-                            result: VerificationResult::Live,
-                            metadata: HashMap::new(),
-                            transient: false,
-                        }
-                    } else {
-                        RequestBuildResult::Final {
-                            result: VerificationResult::Dead,
-                            metadata: HashMap::new(),
-                            transient: false,
-                        }
-                    }
-                }
+                Ok(output) => RequestBuildResult::Final {
+                    result: script_auth_result(&output),
+                    metadata: HashMap::new(),
+                    transient: false,
+                },
                 Err(e) => RequestBuildResult::Final {
                     result: VerificationResult::Error(e.to_string()),
                     metadata: HashMap::new(),
@@ -142,5 +132,19 @@ pub(crate) async fn build_request_for_auth(
                 },
             }
         }
+    }
+}
+
+fn script_auth_result(output: &str) -> VerificationResult {
+    if output.contains("STATUS: LIVE") {
+        VerificationResult::Live
+    } else if output.contains("STATUS: DEAD") {
+        VerificationResult::Dead
+    } else {
+        VerificationResult::Error(
+            "AuthSpec::Script verification returned no explicit status; expected \
+             STATUS: LIVE or STATUS: DEAD"
+                .to_string(),
+        )
     }
 }
