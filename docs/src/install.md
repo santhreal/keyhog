@@ -13,19 +13,20 @@ Drops a binary in `~/.local/bin/keyhog`. The installer detects your
 CPU, GPU, and existing install before downloading, and tells you the
 asset it picked and why.
 
-The default is the **WGPU + SIMD** build everywhere: it already
-dispatches the same vyre AC / RulePipeline on your GPU via the vulkan
-backend, with a smaller binary and no `libcuda.so` runtime
+On Linux x86_64, the default asset is the **WGPU + Hyperscan/SIMD**
+build: it can dispatch the same vyre AC / RulePipeline on your GPU via
+the vulkan backend, with a smaller binary and no `libcuda.so` runtime
 dependency. The dedicated `keyhog-linux-x86_64-cuda` build is only
 auto-selected on Linux when the host has the **full CUDA toolkit
 installed** - `nvcc` on PATH, `$CUDA_HOME` set, or `/usr/local/cuda`
 present. A driver-only NVIDIA host (libcuda.so loadable but no
-toolkit) stays on the WGPU build, since the native-CUDA dispatch
-saves only single-digit percent on typical repo scans and the
+toolkit) stays on the default Linux asset, since the native-CUDA
+dispatch saves only single-digit percent on typical repo scans and the
 binary footprint + runtime dependency are not worth it for the
 non-CUDA-developer case. Pass `--variant=cuda` to force the CUDA build
-anyway. macOS release assets run SIMD on CPU plus the WGPU GPU path on
-compatible adapters; no separate native Metal release asset ships.
+anyway. macOS release assets are portable no-system-library builds:
+they include the scanner data/source surface without Hyperscan, WGPU,
+CUDA, or a native Metal asset in the current release.
 
 ## Interactive mode (recommended for first install)
 
@@ -65,8 +66,9 @@ iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -use
 ```
 
 Drops the binary in `%LOCALAPPDATA%\keyhog\bin\keyhog.exe`. Detects
-your GPU for diagnostics; the Windows installer ships the WGPU + SIMD
-binary, and there is no separate CUDA-on-Windows release asset.
+your GPU for diagnostics; the Windows installer ships the portable
+no-system-library build, with no Hyperscan, WGPU, or CUDA asset in the
+current release.
 
 For the interactive flow:
 
@@ -89,7 +91,7 @@ The installer auto-detects, but you can override:
 | Env var / flag                          | Effect                                                        |
 |-----------------------------------------|---------------------------------------------------------------|
 | `--variant=cuda`                        | Force the CUDA-accelerated Linux build (requires libcuda.so). |
-| `--variant=cpu`                         | Force the default WGPU + SIMD build, skip GPU detection.      |
+| `--variant=cpu`                         | Force the default non-CUDA release asset for this platform, skipping CUDA-asset auto-selection. |
 | `KEYHOG_VERSION=v0.5.40` (or `--version=v0.5.40`) | Pin a specific release tag (default: GitHub's latest-asset redirect, with API fallback only when that asset is missing). |
 | `--install-dir=...`                     | Install into a different directory.            |
 | `GITHUB_TOKEN=...`                      | Optional auth for the fallback GitHub releases API lookup. The normal latest-asset path does not need it. |
@@ -111,10 +113,10 @@ Hosted CI runners normally have no useful GPU. Use `--no-gpu` or
 closed instead of running as a CPU-only scan.
 
 An explicit `--variant=cuda` request requires the `keyhog-linux-x86_64-cuda`
-release asset and fails closed if that asset is missing. The portable WGPU +
-SIMD fallback is allowed only when the installer auto-selected CUDA from host
-detection; in that case the installer made the accelerator choice and logs the
-fallback before installing the default asset.
+release asset and fails closed if that asset is missing. Falling back to the
+default Linux asset is allowed only when the installer auto-selected CUDA from
+host detection; in that case the installer made the accelerator choice and logs
+the fallback before installing the default asset.
 
 ## Repair, diagnose, uninstall
 
@@ -131,8 +133,8 @@ the asset the installer would download for the latest release tag.
 
 `--repair` re-downloads the asset matching your current host even if
 the existing binary still runs. Useful after a host upgrade adds a
-new GPU, or after CUDA userland gets installed and the WGPU build
-should be swapped for the CUDA build.
+new GPU, or on Linux after CUDA userland gets installed and the
+non-CUDA asset should be swapped for the CUDA build.
 
 `--uninstall` removes the binary, asks an installed `keyhog uninstall --yes`
 to surface/clean persisted state first when that subcommand is available,

@@ -237,11 +237,11 @@ function Resolve-Asset {
     $gpus = Get-GpuInfo
     $nv = $gpus | Where-Object { $_ -match 'NVIDIA' } | Select-Object -First 1
     if ($nv) {
-        $Script:GpuNote = "Detected NVIDIA GPU ($nv). Installing the WGPU + SIMD Windows build. No separate CUDA-on-Windows release asset ships."
+        $Script:GpuNote = "Detected NVIDIA GPU ($nv). Installing the portable no-system-library Windows build (no Hyperscan, WGPU, or CUDA asset in the current release)."
     } elseif ($gpus.Count -gt 0) {
-        $Script:GpuNote = "Detected non-NVIDIA GPU(s): $($gpus -join ', '). Installing the WGPU + SIMD Windows build."
+        $Script:GpuNote = "Detected non-NVIDIA GPU(s): $($gpus -join ', '). Installing the portable no-system-library Windows build (no Hyperscan, WGPU, or CUDA asset in the current release)."
     } else {
-        $Script:GpuNote = "No GPU detected. Installing the WGPU + SIMD Windows build."
+        $Script:GpuNote = "No GPU detected. Installing the portable no-system-library Windows build (no Hyperscan, WGPU, or CUDA asset in the current release)."
     }
 }
 

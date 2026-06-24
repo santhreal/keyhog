@@ -20,7 +20,7 @@
 # Common flags:
 #   --version=v0.5.37   pin a release tag (default: latest release with assets)
 #   --variant=cuda      force CUDA variant (Linux only)
-#   --variant=cpu       force the default WGPU + SIMD variant
+#   --variant=cpu       force the default non-CUDA variant
 #   --install-dir=PATH  override the default install directory
 #   --from-file=PATH    install a pre-built/pre-downloaded keyhog binary instead
 #                       of downloading a release (offline / air-gapped installs,
@@ -340,7 +340,7 @@ resolve_asset() {
         case "$VARIANT" in
           cpu)
             ASSET="keyhog-linux-x86_64"
-            GPU_NOTE="Variant=cpu, installing default build (WGPU + SIMD)."
+            GPU_NOTE="Variant=cpu, installing the Linux default accelerator build and skipping CUDA-asset auto-selection."
             ;;
           cuda)
             ASSET="keyhog-linux-x86_64-cuda"
@@ -384,11 +384,11 @@ resolve_asset() {
         ;;
       darwin-arm64|darwin-aarch64)
         ASSET="keyhog-macos-aarch64"
-        GPU_NOTE="Apple Silicon. Current macOS build runs SIMD on CPU + the WGPU GPU path on compatible adapters; no separate native Metal release asset ships."
+        GPU_NOTE="Apple Silicon. Installing the portable no-system-library macOS build (no Hyperscan, WGPU, CUDA, or native Metal asset in the current release)."
         ;;
       darwin-x86_64|darwin-amd64)
         ASSET="keyhog-macos-x86_64"
-        GPU_NOTE="Intel Mac. Current macOS build runs SIMD on CPU + WGPU on a compatible discrete adapter; no separate native Metal release asset ships."
+        GPU_NOTE="Intel Mac. Installing the portable no-system-library macOS build (no Hyperscan, WGPU, CUDA, or native Metal asset in the current release)."
         ;;
       *)
         err "Unsupported platform: $OS-$ARCH"

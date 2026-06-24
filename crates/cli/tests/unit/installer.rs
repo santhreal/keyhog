@@ -1,5 +1,9 @@
 use keyhog::testing::{API, CliTestApi as _};
 
+fn normalize_ws(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 #[test]
 fn asset_name_matches_release_convention() {
     assert_eq!(
@@ -97,7 +101,7 @@ fn omitted_variant_uses_install_script_cuda_default_contract() {
     ] {
         assert!(
             !API.default_wants_cuda_variant_for_host(os, arch, nvidia_gpu, libcuda, cuda_toolkit),
-            "host tuple {os}-{arch} nvidia={nvidia_gpu} libcuda={libcuda} toolkit={cuda_toolkit} must default to portable"
+            "host tuple {os}-{arch} nvidia={nvidia_gpu} libcuda={libcuda} toolkit={cuda_toolkit} must default to the non-CUDA asset"
         );
     }
 }
@@ -117,6 +121,69 @@ fn explicit_variant_resolution_is_strict() {
 }
 
 #[test]
+fn installer_variant_words_match_release_feature_matrix() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let release_yml =
+        std::fs::read_to_string(root.join(".github/workflows/release.yml")).expect("release.yml");
+    let readme = std::fs::read_to_string(root.join("README.md")).expect("README.md");
+    let install_doc = std::fs::read_to_string(root.join("docs/src/install.md"))
+        .expect("docs/src/install.md readable");
+    let install_sh = std::fs::read_to_string(root.join("install.sh")).expect("install.sh");
+    let install_ps1 = std::fs::read_to_string(root.join("install.ps1")).expect("install.ps1");
+    let maintenance_rs = std::fs::read_to_string(root.join("crates/cli/src/args/maintenance.rs"))
+        .expect("maintenance.rs");
+    let variant_rs = std::fs::read_to_string(root.join("crates/cli/src/installer/variant.rs"))
+        .expect("variant.rs");
+    let readme_words = normalize_ws(&readme);
+    let install_doc_words = normalize_ws(&install_doc);
+
+    assert!(
+        release_yml.contains("asset: keyhog-macos-aarch64")
+            && release_yml.contains("asset: keyhog-windows-x86_64.exe")
+            && release_yml.contains("features: '--no-default-features --features portable'")
+            && release_yml.contains("artifact_features: 'ml,entropy,decode,multiline'"),
+        "release matrix must keep macOS/Windows portable feature evidence visible"
+    );
+
+    for (name, text) in [
+        ("README.md", readme.as_str()),
+        ("docs/src/install.md", install_doc.as_str()),
+        ("install.sh", install_sh.as_str()),
+        ("install.ps1", install_ps1.as_str()),
+        ("maintenance.rs", maintenance_rs.as_str()),
+        ("variant.rs", variant_rs.as_str()),
+    ] {
+        for stale in [
+            "portable WGPU+SIMD",
+            "portable WGPU + SIMD",
+            "macOS release assets run SIMD on CPU plus the WGPU",
+            "Windows installer ships the WGPU + SIMD",
+            "WGPU + SIMD Windows build",
+            "default WGPU + SIMD build, skip GPU detection",
+        ] {
+            assert!(
+                !text.contains(stale),
+                "{name} must not claim portable macOS/Windows assets ship accelerators absent from release.yml: {stale}"
+            );
+        }
+    }
+
+    assert!(
+        readme_words
+            .contains("macOS and Windows release assets are portable no-system-library builds")
+            && install_doc_words
+                .contains("macOS release assets are portable no-system-library builds")
+            && install_doc_words
+                .contains("Windows installer ships the portable no-system-library build")
+            && install_sh.contains("portable no-system-library macOS build")
+            && install_ps1.contains("portable no-system-library Windows build")
+            && maintenance_rs.contains("default non-CUDA release asset")
+            && variant_rs.contains("default non-CUDA release asset"),
+        "docs, installers, and CLI help must describe portable/non-CUDA variants honestly"
+    );
+}
+
+#[test]
 fn update_and_repair_use_shared_variant_resolver() {
     for rel in ["src/subcommands/update.rs", "src/subcommands/repair.rs"] {
         let src = std::fs::read_to_string(format!("{}/{}", env!("CARGO_MANIFEST_DIR"), rel))
@@ -128,7 +195,9 @@ fn update_and_repair_use_shared_variant_resolver() {
         let variant_pos = src
             .find("installer::wants_cuda_variant(args.variant.as_deref())?")
             .expect("variant resolver call present");
-        let client_pos = src.find("installer::http_client()?").expect("HTTP client call present");
+        let client_pos = src
+            .find("installer::http_client()?")
+            .expect("HTTP client call present");
         assert!(
             variant_pos < client_pos,
             "{rel} must reject invalid variants before network setup"

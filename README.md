@@ -154,16 +154,19 @@ cargo install keyhog --no-default-features --features portable
 Works on **Linux**, **macOS** (Intel + Apple Silicon), **Windows**. Zero
 configuration. `keyhog scan .` works out of the box.
 
-The installer auto-detects host state and picks a sensible default:
-**WGPU + SIMD everywhere**, including on Linux NVIDIA hosts - WGPU runs
-the same vyre AC / RulePipeline dispatch on the GPU via the vulkan
-backend, with a smaller binary and no `libcuda.so` runtime dependency.
+The installer auto-detects host state and picks a sensible default.
+On Linux x86_64, the default asset is the **WGPU + Hyperscan/SIMD**
+build: WGPU runs the same vyre AC / RulePipeline dispatch on the GPU
+via the vulkan backend, with a smaller binary and no `libcuda.so`
+runtime dependency.
 The dedicated `keyhog-linux-x86_64-cuda` variant is only auto-picked
 when the full CUDA toolkit is present (nvcc on PATH, `$CUDA_HOME` set,
 or `/usr/local/cuda` exists) - the signal that you actively run a CUDA
-development setup, not just an NVIDIA driver. macOS release assets run
-SIMD on CPU plus the WGPU GPU path on compatible adapters. Each download is
-verified before it can replace your binary: the installer checks the release's
+development setup, not just an NVIDIA driver. macOS and Windows release
+assets are portable no-system-library builds: they include the scanner
+data/source surface without Hyperscan, WGPU, CUDA, or a native Metal asset in
+the current release. Each download is verified before it can replace your binary:
+the installer checks the release's
 **minisign signature** against keyhog's pinned public key and **fails closed**
 (refuses to install, touching nothing) if the signature is missing, wrong, or
 minisign itself is not installed - in which case it prints the one-line install
@@ -174,11 +177,11 @@ without signature verification, pass `--insecure` (the SHA256 is still checked).
 
 Override the variant with `--variant=cuda` (force the native CUDA build,
 requires `libcuda.so` at runtime) or `--variant=cpu` (force the default
-WGPU + SIMD build, skip GPU detection entirely). Pin a version with
+non-CUDA release asset and skip CUDA-asset auto-selection). Pin a version with
 `KEYHOG_VERSION=v0.5.40`. Change the install dir with
 `--install-dir=/usr/local/bin`. An explicit CUDA variant request requires the
 `keyhog-linux-x86_64-cuda` release asset and fails closed if that asset is
-missing; only auto-selected CUDA hosts may fall back to the WGPU + SIMD asset.
+missing; only auto-selected CUDA hosts may fall back to the default Linux asset.
 
 Three diagnostic modes ship with the same script:
 ```bash

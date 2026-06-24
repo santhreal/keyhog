@@ -3,7 +3,8 @@
 //! `install.sh`, `keyhog update`, and `keyhog repair` must agree on the
 //! omitted-variant behavior: on Linux x86_64 hosts with an NVIDIA GPU, loadable
 //! libcuda, and an installed CUDA toolkit, default to the CUDA asset; otherwise
-//! use the portable WGPU+SIMD asset. Explicit variants are strict.
+//! use the platform's default non-CUDA release asset. Explicit variants are
+//! strict.
 
 use anyhow::{Result, anyhow};
 use std::ffi::OsStr;
@@ -15,7 +16,7 @@ pub(crate) fn wants_cuda_variant(explicit: Option<&str>) -> Result<bool> {
         Some("cpu") => Ok(false),
         Some(other) => Err(anyhow!(
             "invalid release variant `{other}`. Use `--variant cuda` for the CUDA Linux build or \
-             `--variant cpu` for the portable WGPU+SIMD build."
+             `--variant cpu` for the default non-CUDA release asset."
         )),
         None => Ok(default_wants_cuda_variant()),
     }

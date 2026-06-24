@@ -64,8 +64,8 @@ pub struct UpdateArgs {
     pub version: Option<String>,
 
     /// Asset variant: `cuda` selects the CUDA-accelerated Linux build;
-    /// `cpu` selects the portable WGPU+SIMD build. Omit to use the same host
-    /// CUDA-toolkit heuristic as the installer.
+    /// `cpu` selects the default non-CUDA release asset for this platform.
+    /// Omit to use the same host CUDA-toolkit heuristic as the installer.
     #[arg(long)]
     pub variant: Option<String>,
 
@@ -87,9 +87,9 @@ pub struct RepairArgs {
     #[arg(long)]
     pub version: Option<String>,
 
-    /// Asset variant: `cuda` for the CUDA Linux build; `cpu` for the portable
-    /// WGPU+SIMD build. Omit to use the same host CUDA-toolkit heuristic as the
-    /// installer.
+    /// Asset variant: `cuda` for the CUDA Linux build; `cpu` for the default
+    /// non-CUDA release asset for this platform. Omit to use the same host
+    /// CUDA-toolkit heuristic as the installer.
     #[arg(long)]
     pub variant: Option<String>,
 
