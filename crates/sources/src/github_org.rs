@@ -97,7 +97,7 @@ impl Source for GitHubOrgSource {
             }
         });
         match result {
-            Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
+            Ok(rows) => Box::new(rows.into_iter()),
             Err(err) => Box::new(std::iter::once(Err(err))),
         }
     }
@@ -159,7 +159,7 @@ fn collect_org_chunks(
     token: &str,
     http: &crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
-) -> Result<Vec<Chunk>, SourceError> {
+) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     validate_org_name(org)?;
     let client = build_client(token, http)?;
     let repos = list_repos(&client, org, limits.hosted_git_pages)?;

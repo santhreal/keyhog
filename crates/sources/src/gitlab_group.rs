@@ -76,7 +76,7 @@ impl Source for GitLabGroupSource {
             }
         });
         match result {
-            Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
+            Ok(rows) => Box::new(rows.into_iter()),
             Err(err) => Box::new(std::iter::once(Err(err))),
         }
     }
@@ -98,7 +98,7 @@ fn collect_group_chunks(
     endpoint: &str,
     http: &crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
-) -> Result<Vec<Chunk>, SourceError> {
+) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     validate_group_path(group)?;
     let api_root = normalize_gitlab_api_root(endpoint)?;
     let client = build_client(token, http)?;

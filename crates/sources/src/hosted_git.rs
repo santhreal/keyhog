@@ -26,7 +26,7 @@ pub(crate) fn scan_hosted_repos(
     token_username: &str,
     token_secret: &str,
     repos: &[HostedRepo],
-) -> Result<Vec<Chunk>, SourceError> {
+) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     use rayon::prelude::*;
 
     let temp_dir = tempfile::tempdir().map_err(SourceError::Io)?;
@@ -64,11 +64,97 @@ pub(crate) fn scan_hosted_repos(
             .collect()
     });
 
-    let mut chunks = Vec::new();
-    for result in per_repo {
-        chunks.extend(result?);
+    Ok(merge_hosted_repo_results(platform, repos, per_repo))
+}
+
+fn merge_hosted_repo_results(
+    platform: &str,
+    repos: &[HostedRepo],
+    per_repo: Vec<Result<Vec<Chunk>, SourceError>>,
+) -> Vec<Result<Chunk, SourceError>> {
+    let mut rows = Vec::new();
+    for (repo, result) in repos.iter().zip(per_repo) {
+        match result {
+            Ok(chunks) => rows.extend(chunks.into_iter().map(Ok)),
+            Err(error) => rows.push(Err(repo_unreadable_error(
+                platform,
+                &repo.display_path,
+                error,
+            ))),
+        }
     }
-    Ok(chunks)
+    rows
+}
+
+fn repo_unreadable_error(
+    platform: &str,
+    repo_display_path: &str,
+    error: SourceError,
+) -> SourceError {
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+    SourceError::Other(format!(
+        "{platform}: failed to scan hosted repository {repo_display_path}: {error}; repository was not scanned"
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Mutex, MutexGuard};
+
+    use keyhog_core::{Chunk, SourceError};
+
+    use super::{merge_hosted_repo_results, HostedRepo};
+
+    static COUNTER_LOCK: Mutex<()> = Mutex::new(());
+
+    fn counter_guard() -> MutexGuard<'static, ()> {
+        COUNTER_LOCK.lock().expect("hosted git counter lock")
+    }
+
+    fn repo(name: &str) -> HostedRepo {
+        HostedRepo {
+            clone_dir_name: name.to_string(),
+            display_path: name.to_string(),
+            clone_url: format!("https://example.com/{name}.git"),
+        }
+    }
+
+    #[test]
+    fn repo_failure_keeps_sibling_chunks_and_counts_unreadable() {
+        let _guard = counter_guard();
+        crate::reset_skip_counters();
+
+        let chunk = Chunk::from("found-secret");
+        let rows = merge_hosted_repo_results(
+            "github",
+            &[repo("good"), repo("bad")],
+            vec![
+                Ok(vec![chunk]),
+                Err(SourceError::Git("clone failed".to_string())),
+            ],
+        );
+
+        assert_eq!(rows.len(), 2, "one good chunk and one repo error row");
+        let good = rows[0]
+            .as_ref()
+            .expect("successful sibling chunk must be preserved");
+        assert_eq!(good.data.as_ref(), "found-secret");
+        let error = rows[1]
+            .as_ref()
+            .expect_err("failed sibling must become a visible row")
+            .to_string();
+        assert!(
+            error.contains("bad")
+                && error.contains("clone failed")
+                && error.contains("repository was not scanned"),
+            "repo error must identify the unscanned sibling, got {error}"
+        );
+        assert_eq!(
+            crate::skip_counts().unreadable,
+            1,
+            "one failed hosted repo must count one unreadable skip"
+        );
+    }
 }
 
 /// Refuse repo directory names that escape the temp clone root: `..`, absolute

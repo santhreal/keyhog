@@ -79,7 +79,7 @@ impl Source for BitbucketWorkspaceSource {
             }
         });
         match result {
-            Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
+            Ok(rows) => Box::new(rows.into_iter()),
             Err(err) => Box::new(std::iter::once(Err(err))),
         }
     }
@@ -119,7 +119,7 @@ fn collect_workspace_chunks(
     endpoint: &str,
     http: &crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
-) -> Result<Vec<Chunk>, SourceError> {
+) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     validate_workspace(workspace)?;
     validate_basic_auth(username, token)?;
     let api_root = hosted_git::validated_api_endpoint("bitbucket", endpoint)?;
