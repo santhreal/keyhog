@@ -43,6 +43,7 @@ use thiserror::Error;
 /// uniform prior baseline) to avoid posterior_mean undefined when a detector
 /// has had no observations yet.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct BetaCounters {
     pub alpha: u32,
     pub beta: u32,
@@ -86,6 +87,7 @@ impl BetaCounters {
 
 /// On-disk format. The version field gates breaking schema changes.
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct OnDisk {
     version: u32,
     detectors: HashMap<String, BetaCounters>,
@@ -118,6 +120,21 @@ pub enum CalibrationLoadError {
         found: u32,
         expected: u32,
     },
+    /// The cache JSON matches the schema shape but violates semantic invariants.
+    #[error(
+        "calibration cache '{}' has invalid counters for detector '{}': alpha={alpha}, beta={beta}; counters must be >= 1",
+        path.display(),
+        detector_id
+    )]
+    InvalidCounters {
+        path: PathBuf,
+        detector_id: String,
+        alpha: u32,
+        beta: u32,
+    },
+    /// Detector identifiers are part of the persisted routing identity.
+    #[error("calibration cache '{}' contains an empty detector id", path.display())]
+    EmptyDetectorId { path: PathBuf },
 }
 
 /// Process-wide calibration store. Concurrent updates are serialized via
@@ -158,6 +175,7 @@ impl Calibration {
                 expected: SCHEMA_VERSION,
             });
         }
+        validate_on_disk(path, &on_disk)?;
         Ok(Some(Self {
             inner: RwLock::new(on_disk.detectors),
         }))
@@ -278,4 +296,23 @@ impl Calibration {
 /// the macOS/Windows equivalents via the `dirs` crate).
 pub fn default_cache_path() -> Option<PathBuf> {
     dirs::cache_dir().map(|d| d.join("keyhog").join("calibration.json"))
+}
+
+fn validate_on_disk(path: &Path, on_disk: &OnDisk) -> Result<(), CalibrationLoadError> {
+    for (detector_id, counters) in &on_disk.detectors {
+        if detector_id.trim().is_empty() {
+            return Err(CalibrationLoadError::EmptyDetectorId {
+                path: path.to_path_buf(),
+            });
+        }
+        if counters.alpha == 0 || counters.beta == 0 {
+            return Err(CalibrationLoadError::InvalidCounters {
+                path: path.to_path_buf(),
+                detector_id: detector_id.clone(),
+                alpha: counters.alpha,
+                beta: counters.beta,
+            });
+        }
+    }
+    Ok(())
 }

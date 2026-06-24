@@ -246,3 +246,39 @@ fn calibrate_update_corrupt_cache_does_not_overwrite() {
         "failed calibrate update must not overwrite a corrupt existing cache"
     );
 }
+
+#[test]
+fn calibrate_show_invalid_counter_cache_exits_two() {
+    let dir = TempDir::new().expect("tempdir");
+    let cache = dir.path().join("calibration.json");
+    let invalid = serde_json::json!({
+        "version": 1,
+        "detectors": { "aws-access-key": { "alpha": 0, "beta": 1 } }
+    });
+    std::fs::write(&cache, serde_json::to_vec(&invalid).expect("encode cache"))
+        .expect("write invalid calibration cache");
+
+    let output = Command::new(binary())
+        .arg("calibrate")
+        .arg("--show")
+        .arg("--cache")
+        .arg(&cache)
+        .output()
+        .expect("spawn keyhog calibrate --show invalid cache");
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "invalid calibration counters must fail closed; stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("invalid counters")
+            && stderr.contains("aws-access-key")
+            && stderr.contains("No calibration counters were changed")
+            && stderr.contains("--cache"),
+        "stderr must name the invalid calibration artifact and repair path; stderr={stderr}"
+    );
+}
