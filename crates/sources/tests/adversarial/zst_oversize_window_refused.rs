@@ -14,7 +14,8 @@
 //! mean the frame was refused (a mere output-budget truncation would still keep
 //! the head where the secret lives).
 
-use super::support::collect_chunks;
+use crate::support::split_chunk_results;
+use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 
 /// AWS access key id, split so the literal never sits as a plaintext secret in
@@ -41,10 +42,15 @@ fn write_bomb(dir: &std::path::Path) {
     std::fs::write(dir.join("bomb.zst"), &compressed).expect("write bomb.zst");
 }
 
-fn scan_finds_secret(root: &std::path::Path, max_file_size: u64) -> bool {
-    collect_chunks(&FilesystemSource::new(root.to_path_buf()).with_max_file_size(max_file_size))
-        .into_iter()
-        .any(|c| c.data.contains(SECRET))
+fn scan_zst(root: &std::path::Path, max_file_size: u64) -> (bool, Vec<String>) {
+    let rows: Vec<_> = FilesystemSource::new(root.to_path_buf())
+        .with_max_file_size(max_file_size)
+        .chunks()
+        .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    let found_secret = chunks.iter().any(|c| c.data.contains(SECRET));
+    let errors = errors.iter().map(|error| error.to_string()).collect();
+    (found_secret, errors)
 }
 
 #[test]
@@ -56,10 +62,15 @@ fn zst_oversize_window_is_refused_under_small_budget() {
     // above the frame's windowLog 23, so the frame decodes and the secret (on
     // the first decoded line) is recovered. This proves the window cap does NOT
     // reject a normal frame.
+    let (control_found_secret, control_errors) = scan_zst(dir.path(), 100 * 1024 * 1024);
     assert!(
-        scan_finds_secret(dir.path(), 100 * 1024 * 1024),
+        control_found_secret,
         "control: a frame whose window fits the budget must decode and surface \
          the secret — the window cap must not reject legitimately-sized frames"
+    );
+    assert!(
+        control_errors.is_empty(),
+        "control: in-budget zstd frame must not emit SourceError; got {control_errors:?}"
     );
 
     // Guard: a 512 KiB max-file-size → 2 MiB budget → window cap ~21, BELOW the
@@ -68,10 +79,23 @@ fn zst_oversize_window_is_refused_under_small_budget() {
     // post-fix the frame is refused, the file yields nothing, and the secret is
     // NOT found. The compressed file is tens of KiB, well under 512 KiB, so it
     // is the WINDOW that is refused here, not the file being skipped for size.
+    let (guard_found_secret, guard_errors) = scan_zst(dir.path(), 512 * 1024);
     assert!(
-        !scan_finds_secret(dir.path(), 512 * 1024),
+        !guard_found_secret,
         "guard: a frame advertising a window LARGER than the extraction budget \
          must be refused (HUNT-1), not honored with a giant up-front allocation. \
          The secret was recovered, which means the oversize window was allocated."
+    );
+    assert_eq!(
+        guard_errors.len(),
+        1,
+        "guard: refused zstd frame must emit one visible SourceError"
+    );
+    let error = &guard_errors[0];
+    assert!(
+        error.contains("failed to scan compressed file")
+            && error.contains("failed to decompress file")
+            && error.contains("compressed file was not scanned"),
+        "guard: refused zstd frame must describe the unscanned compressed file; got {error:?}"
     );
 }
