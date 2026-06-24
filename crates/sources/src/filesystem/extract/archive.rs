@@ -242,6 +242,15 @@ pub(super) fn extract_openpack_archive(
                             );
                             let _event =
                                 crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                            if !emit_archive_entry_error(
+                                emit,
+                                "archive entry",
+                                &archive_display,
+                                &archive_entry.name,
+                                format!("cannot read archive entry ({error})"),
+                            ) {
+                                return;
+                            }
                         }
                     }
                 }
