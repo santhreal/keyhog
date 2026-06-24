@@ -8,7 +8,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use crate::verify::request::{execute_request, resolved_client_for_url};
+use crate::verify::request::{RequestError, execute_request, resolved_client_for_url};
 use crate::verify::response::read_response_body;
 
 const AWS_VALID_ACCESS_KEY_PREFIXES: &[&str] = &["AKIA", "ASIA", "AROA", "AIDA", "AGPA"];
@@ -141,10 +141,10 @@ pub(crate) async fn build_aws_probe(
             metadata,
             transient,
         },
-        Err(error_msg) => super::request::RequestBuildResult::Final {
-            result: VerificationResult::Error(error_msg),
+        Err(error) => super::request::RequestBuildResult::Final {
+            result: error.result,
             metadata: HashMap::from([("format_valid".into(), "true".into())]),
-            transient: true,
+            transient: error.transient,
         },
     }
 }
@@ -172,12 +172,15 @@ async fn build_sigv4_request(
     region: &str,
     service: &str,
     timeout: Duration,
-) -> std::result::Result<(VerificationResult, HashMap<String, String>, bool), String> {
+) -> std::result::Result<(VerificationResult, HashMap<String, String>, bool), RequestError> {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let now_secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
+        .map_err(|error| RequestError {
+            result: VerificationResult::Error(format!("failed to read system clock: {error}")),
+            transient: false,
+        })?
         .as_secs();
     let canonical_uri = "/";
     let payload_hash = hex::encode(Sha256::digest(body.as_bytes()));
@@ -194,7 +197,11 @@ async fn build_sigv4_request(
         &payload_hash,
         now_secs,
         &[],
-    )?;
+    )
+    .map_err(|error| RequestError {
+        result: VerificationResult::Error(error),
+        transient: false,
+    })?;
 
     let mut request = client
         .post(url)
@@ -210,13 +217,9 @@ async fn build_sigv4_request(
 
     crate::rate_limit::get_rate_limiter().wait(service).await;
 
-    let response = execute_request(request)
-        .await
-        .map_err(|e| verification_result_text(&e.result))?;
+    let response = execute_request(request).await?;
     let status = response.status().as_u16();
-    let resp_body = read_response_body(response)
-        .await
-        .map_err(|e| verification_result_text(&e.result))?;
+    let resp_body = read_response_body(response).await?;
 
     if resp_body.contains("RequestTimeTooSkewed") || resp_body.contains("SignatureDoesNotMatch") {
         tracing::warn!(
@@ -262,18 +265,6 @@ pub(crate) fn classify_aws_sts_failure(status: u16, body: &str) -> (Verification
         return (VerificationResult::Dead, false);
     }
     (VerificationResult::RateLimited, true)
-}
-
-fn verification_result_text(result: &VerificationResult) -> String {
-    match result {
-        VerificationResult::Live => "live".to_string(),
-        VerificationResult::Revoked => "revoked".to_string(),
-        VerificationResult::Dead => "dead".to_string(),
-        VerificationResult::RateLimited => "rate_limited".to_string(),
-        VerificationResult::Error(message) => message.clone(),
-        VerificationResult::Unverifiable => "unverifiable".to_string(),
-        VerificationResult::Skipped => "skipped".to_string(),
-    }
 }
 
 #[derive(Debug, Default, Deserialize)]

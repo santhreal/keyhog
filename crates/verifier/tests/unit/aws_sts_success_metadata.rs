@@ -124,7 +124,13 @@ fn aws_request_errors_do_not_use_debug_verification_text() {
         "AWS request/body errors must surface canonical operator text, not Debug-derived Error(\"...\") strings"
     );
     assert!(
-        source.contains("verification_result_text(&e.result)"),
-        "AWS request/body errors must route through the explicit verification-result text adapter"
+        source.contains(
+            "std::result::Result<(VerificationResult, HashMap<String, String>, bool), RequestError>"
+        ),
+        "AWS request/body errors must preserve RequestError.transient instead of stringifying the result"
+    );
+    assert!(
+        source.contains("transient: error.transient"),
+        "AWS STS RequestBuildResult must preserve transient/final classification from RequestError"
     );
 }
