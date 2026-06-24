@@ -43,6 +43,54 @@ fn persisted_cache_load_enforces_configured_cap() {
 }
 
 #[test]
+fn persisted_cache_entries_are_sorted_by_cache_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache_path = dir.path().join("merkle.idx");
+    let index = TestApi.merkle_with_max_entries(0);
+    for (path, offset) in [
+        ("/repo/z.txt", 8),
+        ("/repo/a.txt", 16),
+        ("/repo/a.txt", 0),
+        ("/repo/m.txt", 4),
+    ] {
+        TestApi.merkle_record_chunk_at_offset_and_check_unchanged(
+            &index,
+            PathBuf::from(path),
+            offset,
+            offset + 1,
+            1,
+            format!("{path}:{offset}").as_bytes(),
+        );
+    }
+
+    TestApi.merkle_save(&index, &cache_path).unwrap();
+    let saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&cache_path).unwrap()).unwrap();
+    let persisted = saved["entries"]
+        .as_array()
+        .expect("cache entries are serialized as an array")
+        .iter()
+        .map(|entry| {
+            (
+                entry["path"].as_str().expect("entry path").to_owned(),
+                entry["chunk_offset"].as_u64().expect("entry chunk_offset"),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        persisted,
+        vec![
+            ("/repo/a.txt".to_owned(), 0),
+            ("/repo/a.txt".to_owned(), 16),
+            ("/repo/m.txt".to_owned(), 4),
+            ("/repo/z.txt".to_owned(), 8),
+        ],
+        "persisted Merkle cache order must not depend on randomized hash-map iteration"
+    );
+}
+
+#[test]
 fn save_lock_and_cap_source_contract() {
     let storage_source =
         std::fs::read_to_string("src/merkle_index/storage.rs").expect("read merkle storage");
@@ -85,5 +133,10 @@ fn save_lock_and_cap_source_contract() {
         merge_base.contains("if !self.cache_file_changed_since_load_or_save(path)")
             && merge_base.contains("return HashMap::new();"),
         "load_merge_base should skip disk read/parse when the cache file fingerprint is unchanged"
+    );
+    assert!(
+        storage_source.contains("encoded.sort_by(|left, right|")
+            && storage_source.contains(".then_with(|| left.chunk_offset.cmp(&right.chunk_offset))"),
+        "save must serialize Merkle entries deterministically by cache key"
     );
 }

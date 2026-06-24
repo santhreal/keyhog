@@ -459,7 +459,7 @@ pub fn default_cache_path() -> Option<PathBuf> {
 }
 
 fn encode_entries(entries: &HashMap<CacheKey, CacheEntry>) -> Vec<EntryV4> {
-    entries
+    let mut encoded = entries
         .iter()
         .map(|(key, entry)| EntryV4 {
             path: key.path.display().to_string(),
@@ -469,7 +469,13 @@ fn encode_entries(entries: &HashMap<CacheKey, CacheEntry>) -> Vec<EntryV4> {
             last_seen_order: entry.last_seen_order,
             hash: hex_encode(&entry.hash),
         })
-        .collect()
+        .collect::<Vec<_>>();
+    encoded.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then_with(|| left.chunk_offset.cmp(&right.chunk_offset))
+    });
+    encoded
 }
 
 fn flatten_shards(index: &MerkleIndex) -> HashMap<CacheKey, CacheEntry> {

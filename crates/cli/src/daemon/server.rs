@@ -425,13 +425,46 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
     }
 }
 
-async fn scan_path(state: &ServerState, path: String, working_dir: Option<String>) -> Response {
-    let resolved = if Path::new(&path).is_absolute() {
-        PathBuf::from(&path)
-    } else if let Some(wd) = working_dir.as_deref() {
-        PathBuf::from(wd).join(&path)
+/// Resolve the path a client asked the daemon to scan into the path the scanner
+/// will open. Absolute paths pass through; a relative path is anchored to the
+/// client's absolute `working_dir`; a relative path with no usable working_dir
+/// fails closed with an actionable error. The client sends `working_dir=None`
+/// only when its own `std::env::current_dir()` failed (see subcommands/scan.rs),
+/// and the daemon's own cwd is unrelated to what the client wants scanned -
+/// resolving against it would silently scan the wrong tree (LAW10: no silent
+/// fallback). `pub` only so the external resolution regression test can reach
+/// it; not protocol surface.
+pub fn resolve_scan_target(path: &str, working_dir: Option<&str>) -> Result<PathBuf, String> {
+    if Path::new(path).is_absolute() {
+        Ok(PathBuf::from(path))
+    } else if let Some(wd) = working_dir {
+        let working_dir = Path::new(wd);
+        if !working_dir.is_absolute() {
+            return Err(format!(
+                "daemon: cannot resolve relative path {path:?} - working_dir {wd:?} is not absolute. \
+                 Resend the request with an absolute path or absolute working_dir."
+            ));
+        }
+        let resolved = working_dir.join(path);
+        if !resolved.is_absolute() {
+            return Err(format!(
+                "daemon: cannot resolve relative path {path:?} - resolved target {resolved:?} is \
+                 not absolute. Resend the request with a fully absolute path."
+            ));
+        }
+        Ok(resolved)
     } else {
-        PathBuf::from(&path)
+        Err(format!(
+            "daemon: cannot resolve relative path {path:?} - no working_dir was provided (the client \
+             could not determine its current directory). Resend the request with an absolute path."
+        ))
+    }
+}
+
+async fn scan_path(state: &ServerState, path: String, working_dir: Option<String>) -> Response {
+    let resolved = match resolve_scan_target(&path, working_dir.as_deref()) {
+        Ok(target) => target,
+        Err(message) => return Response::Error { message },
     };
 
     state.active_scans.fetch_add(1, Ordering::Relaxed);
