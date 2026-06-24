@@ -237,7 +237,9 @@ jobs:
       # gap (inner literal `secret` shadowed by `client_secret`). A divergence is
       # a real recall regression to fix at the source, never to weaken here.
       - name: homoglyph ASCII-skip parity + shadow gate
-        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test homoglyph_ascii_skip_parity --test regression_ac_overlap_shadow
+        run: |
+          cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test homoglyph_ascii_skip_parity homoglyph_ascii_skip_parity_default
+          cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_ac_overlap_shadow shadowed_inner_literal_is_ac_confirmed_with_variant_skipped
       # Finding-set determinism gate. `ScanState::push_match` keeps the top-N by
       # `RawMatch::Ord` when a chunk overflows `max_matches_per_chunk`; the kept set
       # must not depend on insertion order (== fallback extraction order, and
@@ -248,7 +250,7 @@ jobs:
       # `fallback_order_independence` test in the same file is `#[ignore]` (needs the
       # mirror corpus); this invocation runs only the corpus-free boundary gate.
       - name: finding-set eviction order-independence
-        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test fallback_order_independence
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test fallback_order_independence push_match_eviction_set_is_insertion_order_independent
       # Basic-Auth detector recall contract. `basic-auth-credentials` closes the
       # Auth:Basic-Authorization CredData category (0 -> 491 TP, recall 0.824);
       # this pins that a realistic `Basic <base64>` blob surfaces, the curl-shape

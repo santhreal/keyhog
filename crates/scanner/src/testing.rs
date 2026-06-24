@@ -727,8 +727,7 @@ pub fn named_detector_suppressed(
     )
 }
 
-#[cfg(test)]
-pub(crate) fn scan_state_drain(
+pub fn scan_state_drain(
     matches: Vec<keyhog_core::RawMatch>,
     limit: usize,
 ) -> Vec<keyhog_core::RawMatch> {
@@ -871,9 +870,8 @@ pub(crate) mod thresholds {
         crate::hw_probe::thresholds::GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER;
 }
 
-#[cfg(test)]
-pub(crate) fn set_phase2_hs(scanner: &crate::engine::CompiledScanner, mode: Option<bool>) {
-    scanner.tuning().set_phase2_hs(mode);
+pub fn set_phase2_hs(scanner: &crate::engine::CompiledScanner, mode: Option<bool>) {
+    scanner.tuning.set_phase2_hs(mode);
 }
 
 #[cfg(test)]
@@ -897,17 +895,12 @@ pub(crate) fn set_phase2_homoglyph_gate(
     scanner.tuning().set_phase2_homoglyph_gate(mode);
 }
 
-#[cfg(test)]
-pub(crate) fn set_homoglyph_ascii_skip(
-    scanner: &crate::engine::CompiledScanner,
-    mode: Option<bool>,
-) {
-    scanner.tuning().set_homoglyph_ascii_skip(mode);
+pub fn set_homoglyph_ascii_skip(scanner: &crate::engine::CompiledScanner, mode: Option<bool>) {
+    scanner.tuning.set_homoglyph_ascii_skip(mode);
 }
 
-#[cfg(test)]
-pub(crate) fn set_phase2_reverse(scanner: &crate::engine::CompiledScanner, mode: Option<bool>) {
-    scanner.tuning().set_phase2_reverse(mode);
+pub fn set_phase2_reverse(scanner: &crate::engine::CompiledScanner, mode: Option<bool>) {
+    scanner.tuning.set_phase2_reverse(mode);
 }
 
 #[cfg(test)]
