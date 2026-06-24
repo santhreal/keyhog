@@ -19,6 +19,9 @@ fn scan_system_uses_shared_scan_runtime_boundary() {
     for required in [
         "struct DefaultScanRuntime",
         "fn compile_default_scan_runtime(",
+        "fn setup_default_scan_runtime(",
+        "load_detectors_or_embedded(detectors_path)",
+        "detector_compile_failed(subcommand_name, detectors_path, e)",
         "fn scan_chunk(&self, chunk: &Chunk)",
         "self.router.choose(None, std::slice::from_ref(chunk))",
         "self.scanner.scan_with_backend(chunk, backend)",
@@ -44,8 +47,8 @@ fn scan_system_uses_shared_scan_runtime_boundary() {
 
     for required in [
         "StreamingSourceEvent",
-        "let scan_runtime = compile_default_scan_runtime(",
-        "scan_runtime.warm();",
+        "setup_default_scan_runtime(",
+        "\"keyhog scan-system\"",
         "crate::orchestrator::scan_streaming_source(",
         "chunk_fits_space_cap(bytes_scanned.load(Ordering::Relaxed), chunk_len, space_cap)",
         "handle_streaming_source_event(event, bytes_scanned, out);",
@@ -60,6 +63,10 @@ fn scan_system_uses_shared_scan_runtime_boundary() {
 
     for forbidden in [
         "cached_autoroute_router_for_default_config(",
+        "compile_default_scan_runtime(",
+        "scan_runtime.warm();",
+        "load_detectors_or_embedded(",
+        "detector_compile_failed(",
         "router.choose(",
         "scan_with_backend(&chunk, backend)",
         "fn scan_source_chunks(",

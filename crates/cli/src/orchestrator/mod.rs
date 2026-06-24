@@ -105,6 +105,30 @@ pub(crate) fn compile_default_scan_runtime(
     Ok(DefaultScanRuntime::new(scanner, &detectors))
 }
 
+pub(crate) fn setup_default_scan_runtime(
+    detectors_path: &std::path::Path,
+    cache_dir: Option<std::path::PathBuf>,
+    threads: Option<usize>,
+    subcommand_name: &'static str,
+    warm: bool,
+) -> Result<DefaultScanRuntime> {
+    crate::runtime_preflight::validate_scan_runtime_config()?;
+    crate::orchestrator_config::configure_hyperscan_cache_dir(cache_dir)?;
+
+    let hw = keyhog_scanner::hw_probe::probe_hardware();
+    crate::orchestrator_config::configure_threads(threads, hw.physical_cores);
+
+    let detectors = crate::orchestrator_config::load_detectors_or_embedded(detectors_path)?;
+    let scan_runtime = compile_default_scan_runtime(detectors, |e| {
+        crate::orchestrator_config::detector_compile_failed(subcommand_name, detectors_path, e)
+    })?;
+
+    if warm {
+        scan_runtime.warm();
+    }
+    Ok(scan_runtime)
+}
+
 #[doc(hidden)]
 pub(crate) fn gpu_init_policy_for_args_for_test(args: &ScanArgs) -> GpuInitPolicy {
     gpu_init_policy_for_args(

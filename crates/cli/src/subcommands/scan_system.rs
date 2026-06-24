@@ -16,7 +16,7 @@ mod mounts;
 use crate::args::ScanSystemArgs;
 use crate::exit_codes::{EXIT_FINDINGS, EXIT_SOURCE_FAILED};
 use crate::format::format_bytes;
-use crate::orchestrator::{compile_default_scan_runtime, DefaultScanRuntime, StreamingSourceEvent};
+use crate::orchestrator::{setup_default_scan_runtime, DefaultScanRuntime, StreamingSourceEvent};
 use crate::style;
 use anyhow::{Context, Result};
 use mounts::enumerate_mounts;
@@ -219,14 +219,9 @@ pub(crate) mod testing {
 }
 
 pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
-    crate::runtime_preflight::validate_scan_runtime_config()?;
-    crate::orchestrator_config::configure_hyperscan_cache_dir(args.cache_dir.clone())?;
-
     if args.space == 0 {
         anyhow::bail!("scan-system --space must be greater than zero bytes");
     }
-    let hw = keyhog_scanner::hw_probe::probe_hardware();
-    crate::orchestrator_config::configure_threads(args.threads, hw.physical_cores);
 
     // kimi-wave3 §5: lockdown forbids --include-network on scan-system
     // because NFS/SMB/sshfs mounts host other tenants' data and a
@@ -283,25 +278,19 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         },
     );
 
-    let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
+    let scan_runtime = setup_default_scan_runtime(
+        &args.detectors,
+        args.cache_dir.clone(),
+        args.threads,
+        "keyhog scan-system",
+        true,
+    )?;
     let palette = style::for_stderr();
     eprintln!(
         "{} loaded {} detectors",
         style::info("INFO", &palette),
-        detectors.len()
+        scan_runtime.detector_count()
     );
-    let scan_runtime = compile_default_scan_runtime(detectors, |e| {
-        crate::orchestrator_config::detector_compile_failed(
-            "keyhog scan-system",
-            &args.detectors,
-            e,
-        )
-    })?;
-    // System-wide scan touches every mounted drive and every git history:
-    // detector regexes compile lazily on first use, so warm them all up
-    // front (in parallel) rather than stalling the first file that hits each
-    // detector across a multi-hour, multi-TB walk.
-    scan_runtime.warm();
 
     let mounts = enumerate_mounts(args.include_network)?;
     eprintln!("💾 will scan {} mount(s):", mounts.len());

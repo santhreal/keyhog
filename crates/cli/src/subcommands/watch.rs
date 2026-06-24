@@ -18,7 +18,7 @@
 //! they can always invoke `keyhog scan` separately.
 
 use crate::args::WatchArgs;
-use crate::orchestrator::{compile_default_scan_runtime, DefaultScanRuntime};
+use crate::orchestrator::{setup_default_scan_runtime, DefaultScanRuntime};
 use crate::skip_dirs::SkipDirPolicy;
 use crate::style;
 use anyhow::{Context, Result};
@@ -37,9 +37,6 @@ use std::time::{Duration, Instant};
 const DEDUP_WINDOW: Duration = Duration::from_millis(750);
 
 pub(crate) fn run(args: WatchArgs) -> Result<()> {
-    crate::runtime_preflight::validate_scan_runtime_config()?;
-    crate::orchestrator_config::configure_hyperscan_cache_dir(args.cache_dir.clone())?;
-
     let watch_root = std::fs::canonicalize(&args.path)
         .with_context(|| format!("canonicalize {}", args.path.display()))?;
     if !watch_root.is_dir() {
@@ -51,10 +48,13 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
         );
     }
 
-    let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
-    let scan_runtime = compile_default_scan_runtime(detectors, |e| {
-        crate::orchestrator_config::detector_compile_failed("keyhog watch", &args.detectors, e)
-    })?;
+    let scan_runtime = setup_default_scan_runtime(
+        &args.detectors,
+        args.cache_dir.clone(),
+        None,
+        "keyhog watch",
+        false,
+    )?;
     let detector_count = scan_runtime.detector_count();
 
     if !args.quiet {
