@@ -126,12 +126,14 @@ fn collect_workspace_chunks(
     let client = build_client(username, token, http)?;
     let (repos, listing_errors) =
         list_repositories(&client, &api_root, workspace, limits.hosted_git_pages)?;
+    let expected_clone_origin = hosted_git::ExpectedCloneOrigin::bitbucket(&api_root)?;
     let mut rows = hosted_git::scan_hosted_repos(
         "bitbucket",
         "bitbucket-workspace",
         Some(workspace),
         username,
         token,
+        &expected_clone_origin,
         &repos,
     )?;
     rows.extend(listing_errors.into_iter().map(Err));

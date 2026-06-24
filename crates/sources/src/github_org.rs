@@ -151,7 +151,11 @@ pub(crate) fn validate_org_name(name: &str) -> Result<(), SourceError> {
 /// negotiation. We accept only `https://<host>/...` URLs because that
 /// is the only shape the GitHub API ever returns for public repos.
 pub(crate) fn validate_clone_url(url: &str) -> Result<(), SourceError> {
-    hosted_git::validate_clone_url("github", url)
+    hosted_git::validate_clone_url_for_origin(
+        "github",
+        url,
+        &hosted_git::ExpectedCloneOrigin::host("github.com"),
+    )
 }
 
 fn collect_org_chunks(
@@ -169,6 +173,7 @@ fn collect_org_chunks(
         Some(org),
         "x-access-token",
         token,
+        &hosted_git::ExpectedCloneOrigin::host("github.com"),
         &repos,
     )
 }

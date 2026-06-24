@@ -103,7 +103,16 @@ fn collect_group_chunks(
     let api_root = normalize_gitlab_api_root(endpoint)?;
     let client = build_client(token, http)?;
     let repos = list_projects(&client, &api_root, group, limits.hosted_git_pages)?;
-    hosted_git::scan_hosted_repos("gitlab", "gitlab-group", None, "oauth2", token, &repos)
+    let expected_clone_origin = hosted_git::ExpectedCloneOrigin::from_api_root(&api_root)?;
+    hosted_git::scan_hosted_repos(
+        "gitlab",
+        "gitlab-group",
+        None,
+        "oauth2",
+        token,
+        &expected_clone_origin,
+        &repos,
+    )
 }
 
 fn build_client(token: &str, http: &crate::http::HttpClientConfig) -> Result<Client, SourceError> {

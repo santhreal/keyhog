@@ -620,10 +620,7 @@ fn github_repo_name_and_clone_url_contracts() {
     let too_long = "x".repeat(101);
     assert!(TestApi.validate_repo_name(&too_long).is_err());
 
-    for ok in [
-        "https://github.com/santhsecurity/keyhog.git",
-        "https://ghe.example.com/org/repo.git",
-    ] {
+    for ok in ["https://github.com/santhsecurity/keyhog.git"] {
         assert!(
             TestApi.validate_clone_url(ok).is_ok(),
             "should accept {ok:?}"
@@ -639,6 +636,7 @@ fn github_repo_name_and_clone_url_contracts() {
         "https://user:secret@example.com/repo.git",
         "https://example.com/repo.git?token=secret",
         "https://example.com/repo.git#secret",
+        "https://ghe.example.com/org/repo.git",
         "https://a&calc.com/repo.git",
         "https://127.0.0.1/repo.git",
         "https://169.254.169.254/latest/meta-data",
@@ -651,6 +649,34 @@ fn github_repo_name_and_clone_url_contracts() {
             "should reject {bad:?}"
         );
     }
+
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let hosted_git =
+        std::fs::read_to_string(root.join("src/hosted_git.rs")).expect("hosted_git source");
+    let github_org =
+        std::fs::read_to_string(root.join("src/github_org.rs")).expect("github_org source");
+    let gitlab_group =
+        std::fs::read_to_string(root.join("src/gitlab_group.rs")).expect("gitlab_group source");
+    let bitbucket_workspace = std::fs::read_to_string(root.join("src/bitbucket_workspace.rs"))
+        .expect("bitbucket_workspace source");
+    assert!(
+        hosted_git.contains("expected_clone_origin: &ExpectedCloneOrigin")
+            && hosted_git.contains("validate_clone_url_for_origin(")
+            && hosted_git.contains("outside expected clone origin"),
+        "hosted git clone validation must bind API-listed clone URLs to an expected origin before askpass credentials are installed"
+    );
+    assert!(
+        github_org.contains("ExpectedCloneOrigin::host(\"github.com\")"),
+        "GitHub org scans must only send GitHub PAT askpass credentials to github.com clone URLs"
+    );
+    assert!(
+        gitlab_group.contains("ExpectedCloneOrigin::from_api_root(&api_root)"),
+        "GitLab group scans must bind clone URLs to the configured GitLab origin"
+    );
+    assert!(
+        bitbucket_workspace.contains("ExpectedCloneOrigin::bitbucket(&api_root)"),
+        "Bitbucket scans must use the explicit Bitbucket clone-origin policy"
+    );
 }
 
 #[cfg(feature = "github")]

@@ -19,12 +19,59 @@ pub(crate) struct HostedRepo {
     pub(crate) clone_url: String,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ExpectedCloneOrigin {
+    host: String,
+    port: u16,
+}
+
+impl ExpectedCloneOrigin {
+    pub(crate) fn host(host: &str) -> Self {
+        Self {
+            host: host.to_ascii_lowercase(),
+            port: 443,
+        }
+    }
+
+    #[cfg(feature = "gitlab")]
+    pub(crate) fn from_api_root(api_root: &reqwest::Url) -> Result<Self, SourceError> {
+        let host = api_root.host_str().ok_or_else(|| {
+            SourceError::Other("gitlab: API endpoint did not include a host".into())
+        })?;
+        Ok(Self {
+            host: host.to_ascii_lowercase(),
+            port: api_root.port_or_known_default().ok_or_else(|| {
+                SourceError::Other("gitlab: API endpoint did not expose a comparable port".into())
+            })?,
+        })
+    }
+
+    #[cfg(feature = "bitbucket")]
+    pub(crate) fn bitbucket(api_root: &reqwest::Url) -> Result<Self, SourceError> {
+        let host = api_root.host_str().ok_or_else(|| {
+            SourceError::Other("bitbucket: API endpoint did not include a host".into())
+        })?;
+        if host.eq_ignore_ascii_case("api.bitbucket.org") {
+            return Ok(Self::host("bitbucket.org"));
+        }
+        Ok(Self {
+            host: host.to_ascii_lowercase(),
+            port: api_root.port_or_known_default().ok_or_else(|| {
+                SourceError::Other(
+                    "bitbucket: API endpoint did not expose a comparable port".into(),
+                )
+            })?,
+        })
+    }
+}
+
 pub(crate) fn scan_hosted_repos(
     platform: &str,
     source_type: &str,
     namespace: Option<&str>,
     token_username: &str,
     token_secret: &str,
+    expected_clone_origin: &ExpectedCloneOrigin,
     repos: &[HostedRepo],
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     use rayon::prelude::*;
@@ -43,7 +90,7 @@ pub(crate) fn scan_hosted_repos(
             .map(|repo| -> Result<Vec<Chunk>, SourceError> {
                 validate_repo_name(platform, &repo.clone_dir_name)?;
                 validate_display_path(platform, &repo.display_path)?;
-                validate_clone_url(platform, &repo.clone_url)?;
+                validate_clone_url_for_origin(platform, &repo.clone_url, expected_clone_origin)?;
                 let clone_path = temp_root.join(&repo.clone_dir_name);
                 clone_repo(
                     platform,
@@ -111,7 +158,9 @@ mod tests {
 
     use keyhog_core::{Chunk, SourceError};
 
-    use super::{merge_hosted_repo_results, HostedRepo};
+    use super::{
+        merge_hosted_repo_results, validate_clone_url_for_origin, ExpectedCloneOrigin, HostedRepo,
+    };
 
     static COUNTER_LOCK: Mutex<()> = Mutex::new(());
 
@@ -163,6 +212,37 @@ mod tests {
             "one failed hosted repo must count one unreadable skip"
         );
     }
+
+    #[test]
+    fn clone_url_origin_policy_blocks_cross_host_token_forwarding() {
+        let github = ExpectedCloneOrigin::host("github.com");
+        assert!(validate_clone_url_for_origin(
+            "github",
+            "https://github.com/org/repo.git",
+            &github
+        )
+        .is_ok());
+        assert!(validate_clone_url_for_origin(
+            "github",
+            "https://github.com:443/org/repo.git",
+            &github
+        )
+        .is_ok());
+
+        let err = validate_clone_url_for_origin(
+            "github",
+            "https://attacker.example/org/repo.git",
+            &github,
+        )
+        .expect_err("cross-host clone URL must be refused before askpass is installed")
+        .to_string();
+        assert!(
+            err.contains("outside expected clone origin")
+                && err.contains("github.com")
+                && err.contains("attacker.example"),
+            "origin error must name expected and actual host, got {err}"
+        );
+    }
 }
 
 /// Refuse repo directory names that escape the temp clone root: `..`, absolute
@@ -207,7 +287,34 @@ pub(crate) fn validate_display_path(platform: &str, path: &str) -> Result<(), So
 
 /// Refuse clone URLs that git would interpret as anything other than a public
 /// HTTPS repository URL.
-pub(crate) fn validate_clone_url(platform: &str, url: &str) -> Result<(), SourceError> {
+pub(crate) fn validate_clone_url_for_origin(
+    platform: &str,
+    url: &str,
+    expected: &ExpectedCloneOrigin,
+) -> Result<(), SourceError> {
+    let parsed = validate_clone_url_shape(platform, url)?;
+    let actual_host = parsed.host_str().ok_or_else(|| {
+        SourceError::Other(format!(
+            "{platform}: refusing hostless clone URL after validation"
+        ))
+    })?;
+    let actual_port = parsed.port_or_known_default().ok_or_else(|| {
+        SourceError::Other(format!(
+            "{platform}: refusing clone URL without a comparable port after validation"
+        ))
+    })?;
+    if actual_host.eq_ignore_ascii_case(&expected.host) && actual_port == expected.port {
+        return Ok(());
+    }
+    Err(SourceError::Other(format!(
+        "{platform}: refusing clone URL outside expected clone origin {}:{}: {}",
+        expected.host,
+        expected.port,
+        crate::url_redaction::redact_url(url)
+    )))
+}
+
+fn validate_clone_url_shape(platform: &str, url: &str) -> Result<reqwest::Url, SourceError> {
     let redacted = crate::url_redaction::redact_url(url);
     if url.chars().any(|c| c.is_control() || c.is_whitespace()) {
         return Err(SourceError::Other(format!(
@@ -256,7 +363,7 @@ pub(crate) fn validate_clone_url(platform: &str, url: &str) -> Result<(), Source
             "{platform}: refusing clone URL whose host is private, loopback, link-local, or metadata-only: {redacted:?}"
         )));
     }
-    Ok(())
+    Ok(parsed)
 }
 
 fn contains_windows_cmd_metachar(url: &str) -> bool {
