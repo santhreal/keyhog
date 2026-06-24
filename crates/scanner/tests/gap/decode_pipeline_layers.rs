@@ -22,8 +22,9 @@
 //!                            KNOWN_PREFIX + digit + 8-alnum run.
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::decode::hex::find_hex_strings;
-use keyhog_scanner::decode::{base64_decode, find_base64_strings, hex_decode, z85_decode};
+use keyhog_scanner::decode::{
+    base64_decode, find_base64_strings, find_hex_strings, hex_decode, z85_decode,
+};
 use keyhog_scanner::testing::decode_caesar::{
     caesar_shift, is_source_code_path, looks_credential_shaped,
 };

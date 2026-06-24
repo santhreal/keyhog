@@ -1718,29 +1718,28 @@ pub(crate) fn match_proves_keyword_nearby(regex: &str, keywords: &[String]) -> b
 /// shift-selection parity test migrated out of `src/decode/caesar.rs`
 /// (no-inline-tests gate). The `matched_caesar_shifts` optimization must emit
 /// the exact same decoded-variant set as the all-25-shifts reference.
-#[cfg(test)]
-pub(crate) mod decode_caesar {
-    pub(crate) use crate::confidence::KNOWN_PREFIXES;
+pub mod decode_caesar {
+    pub const KNOWN_PREFIXES: &[&str] = crate::confidence::KNOWN_PREFIXES;
 
-    pub(crate) const MIN_CAESAR_LEN: usize = crate::decode::caesar::MIN_CAESAR_LEN;
+    pub const MIN_CAESAR_LEN: usize = crate::decode::caesar::MIN_CAESAR_LEN;
 
-    pub(crate) fn caesar_shift(input: &str, shift: u8) -> String {
+    pub fn caesar_shift(input: &str, shift: u8) -> String {
         crate::decode::caesar::caesar_shift(input, shift)
     }
 
-    pub(crate) fn candidate_shape_invariant(value: &str) -> bool {
+    pub fn candidate_shape_invariant(value: &str) -> bool {
         crate::decode::caesar::candidate_shape_invariant(value)
     }
 
-    pub(crate) fn looks_credential_shaped(value: &str) -> bool {
+    pub fn looks_credential_shaped(value: &str) -> bool {
         crate::decode::caesar::looks_credential_shaped(value)
     }
 
-    pub(crate) fn matched_caesar_shifts(candidate: &str) -> [bool; 26] {
+    pub fn matched_caesar_shifts(candidate: &str) -> [bool; 26] {
         crate::decode::caesar::matched_caesar_shifts(candidate)
     }
 
-    pub(crate) fn is_source_code_path(path: Option<&str>) -> bool {
+    pub fn is_source_code_path(path: Option<&str>) -> bool {
         crate::decode::caesar::is_source_code_path(path)
     }
 }
@@ -1961,20 +1960,17 @@ pub mod segment_attribution {
     }
 }
 
-#[cfg(test)]
-pub(crate) struct CaesarDecoder;
+pub struct CaesarDecoder;
 
-#[cfg(test)]
 impl CaesarDecoder {
-    pub(crate) fn decode_chunk(&self, chunk: &keyhog_core::Chunk) -> Vec<keyhog_core::Chunk> {
+    pub fn decode_chunk(&self, chunk: &keyhog_core::Chunk) -> Vec<keyhog_core::Chunk> {
         use crate::decode::Decoder;
         let inner = crate::decode::caesar::CaesarDecoder;
         inner.decode_chunk(chunk)
     }
 }
 
-#[cfg(test)]
-pub(crate) fn caesar_shift(input: &str, shift: u8) -> String {
+pub fn caesar_shift(input: &str, shift: u8) -> String {
     crate::decode::caesar::caesar_shift(input, shift)
 }
 
@@ -1982,12 +1978,11 @@ pub fn is_source_code_path(path: Option<&str>) -> bool {
     crate::decode::caesar::is_source_code_path(path)
 }
 
-#[cfg(test)]
-pub(crate) fn looks_credential_shaped(value: &str) -> bool {
+pub fn looks_credential_shaped(value: &str) -> bool {
     crate::decode::caesar::looks_credential_shaped(value)
 }
-#[cfg(test)]
-pub(crate) fn find_hex_strings(text: &str, min_length: usize) -> Vec<crate::decode::EncodedString> {
+
+pub fn find_hex_strings(text: &str, min_length: usize) -> Vec<crate::decode::EncodedString> {
     crate::decode::find_hex_strings(text, min_length)
 }
 
@@ -2006,13 +2001,11 @@ pub fn extracted_value_strings_for_test(text: &str) -> Vec<String> {
     crate::decode::extracted_value_strings_for_test(text)
 }
 
-#[cfg(test)]
-pub(crate) fn looks_reversible(candidate: &str) -> bool {
+pub fn looks_reversible(candidate: &str) -> bool {
     crate::decode::reverse::looks_reversible(candidate)
 }
 
-#[cfg(test)]
-pub(crate) fn reverse_str(s: &str) -> String {
+pub fn reverse_str(s: &str) -> String {
     crate::decode::reverse::reverse_str(s)
 }
 

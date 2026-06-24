@@ -19,3 +19,16 @@ fn gap_mod_covers_every_gap_rs_except_mod() {
         );
     }
 }
+
+#[test]
+fn decode_pipeline_layers_gap_has_cargo_target() {
+    let manifest = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"),
+    )
+    .expect("scanner Cargo.toml");
+    assert!(
+        manifest.contains("name = \"gap_decode_pipeline_layers\"")
+            && manifest.contains("path = \"tests/gap/decode_pipeline_layers.rs\""),
+        "decode_pipeline_layers gap suite must be executable as a Cargo test target"
+    );
+}

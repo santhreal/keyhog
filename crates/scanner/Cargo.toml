@@ -184,6 +184,10 @@ name = "execution_plan_hunt_inventory"
 path = "tests/gap/execution_plan_hunt_inventory.rs"
 
 [[test]]
+name = "gap_decode_pipeline_layers"
+path = "tests/gap/decode_pipeline_layers.rs"
+
+[[test]]
 name = "gpu_tests_fail_not_skip"
 path = "tests/gap/gpu_tests_fail_not_skip.rs"
 
