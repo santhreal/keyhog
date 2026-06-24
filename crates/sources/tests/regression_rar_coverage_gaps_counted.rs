@@ -1,9 +1,17 @@
 //! RAR archives that cannot be read must emit a source error and increment skip
 //! counters.
 
+mod support;
+
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
+use rars::{rar15_40, rar50, ArchiveVersion, FeatureSet};
+use support::split_chunk_results;
+
+const UNIX_SYMLINK_MODE: u64 = 0o120777;
+const UNIX_REGULAR_MODE: u64 = 0o100644;
+const UNIX_HOST_OS: u64 = 3;
 
 #[cfg(unix)]
 fn lock_exclusive(path: &std::path::Path) -> std::fs::File {
@@ -83,5 +91,133 @@ fn locked_rar_emits_source_error() {
         skip_counts().unreadable,
         1,
         "locked RAR coverage gap must be counted as unreadable"
+    );
+}
+
+#[test]
+fn rar15_40_unix_special_entry_emits_source_error_and_keeps_safe_sibling() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let archive_path = dir.path().join("rar29-special.rar");
+    let archive = rar15_40::write_stored_archive(
+        &[
+            rar15_40::StoredEntry {
+                name: b"link.env",
+                data: b"SHOULD_NOT_SCAN=rar29_link_payload\n",
+                file_time: 0,
+                file_attr: (UNIX_SYMLINK_MODE as u32) << 16,
+                host_os: UNIX_HOST_OS as u8,
+                password: None,
+                file_comment: None,
+            },
+            rar15_40::StoredEntry {
+                name: b"safe.env",
+                data: b"SAFE_RAR29_SECRET=visible\n",
+                file_time: 0,
+                file_attr: (UNIX_REGULAR_MODE as u32) << 16,
+                host_os: UNIX_HOST_OS as u8,
+                password: None,
+                file_comment: None,
+            },
+        ],
+        rar15_40::WriterOptions::new(ArchiveVersion::Rar29, FeatureSet::store_only()),
+    )
+    .expect("write rar29 fixture");
+    std::fs::write(&archive_path, archive).expect("write rar29 archive");
+
+    let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
+        .chunks()
+        .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+    let rendered_errors: Vec<_> = errors.iter().map(|error| error.to_string()).collect();
+
+    assert!(
+        bodies.iter().any(|body| body.contains("SAFE_RAR29_SECRET")),
+        "safe RAR29 sibling must still scan; bodies={bodies:?}"
+    );
+    assert!(
+        !bodies.iter().any(|body| body.contains("SHOULD_NOT_SCAN")),
+        "RAR29 symlink payload must not be scanned as regular content; bodies={bodies:?}"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "RAR29 special entry must emit one SourceError row"
+    );
+    assert!(
+        rendered_errors.iter().any(|error| {
+            error.contains("rar29-special.rar//link.env") && error.contains("special file type")
+        }),
+        "RAR29 special-entry error must name the refused entry, got {rendered_errors:?}"
+    );
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "the refused RAR29 special entry must count as unreadable"
+    );
+}
+
+#[test]
+fn rar50_unix_special_entry_emits_source_error_and_keeps_safe_sibling() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let archive_path = dir.path().join("rar50-special.rar");
+    let archive = rar50::Rar50Writer::new(rar50::WriterOptions::new(
+        ArchiveVersion::Rar50,
+        FeatureSet::store_only(),
+    ))
+    .stored_entries(&[
+        rar50::StoredEntry {
+            name: b"link.env",
+            data: b"SHOULD_NOT_SCAN=rar50_link_payload\n",
+            mtime: None,
+            attributes: UNIX_SYMLINK_MODE,
+            host_os: UNIX_HOST_OS,
+        },
+        rar50::StoredEntry {
+            name: b"safe.env",
+            data: b"SAFE_RAR50_SECRET=visible\n",
+            mtime: None,
+            attributes: UNIX_REGULAR_MODE,
+            host_os: UNIX_HOST_OS,
+        },
+    ])
+    .finish()
+    .expect("write rar50 fixture");
+    std::fs::write(&archive_path, archive).expect("write rar50 archive");
+
+    let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
+        .chunks()
+        .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+    let rendered_errors: Vec<_> = errors.iter().map(|error| error.to_string()).collect();
+
+    assert!(
+        bodies.iter().any(|body| body.contains("SAFE_RAR50_SECRET")),
+        "safe RAR50 sibling must still scan; bodies={bodies:?}"
+    );
+    assert!(
+        !bodies.iter().any(|body| body.contains("SHOULD_NOT_SCAN")),
+        "RAR50 symlink payload must not be scanned as regular content; bodies={bodies:?}"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "RAR50 special entry must emit one SourceError row"
+    );
+    assert!(
+        rendered_errors.iter().any(|error| {
+            error.contains("rar50-special.rar//link.env") && error.contains("special file type")
+        }),
+        "RAR50 special-entry error must name the refused entry, got {rendered_errors:?}"
+    );
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "the refused RAR50 special entry must count as unreadable"
     );
 }

@@ -1,7 +1,8 @@
 //! RAR archive extraction for filesystem entries.
 
 use super::archive::{
-    chunk_from_archive_content, emit_archive_entry_over_cap_error, validate_scan_archive_entry_name,
+    archive_unix_mode_is_special, chunk_from_archive_content, emit_archive_entry_over_cap_error,
+    validate_scan_archive_entry_name,
 };
 use super::{
     display_path, extraction_total_budget, is_symlink, read, record_default_excluded_archive_entry,
@@ -110,6 +111,13 @@ pub(super) fn extract_rar_chunks(
                     }
                     continue;
                 }
+                if rar15_40_entry_is_special(entry) {
+                    state.report_unreadable_entry(&entry_name, "special file type", emit);
+                    if state.consumer_stopped {
+                        return;
+                    }
+                    continue;
+                }
                 if entry.is_encrypted() || entry.is_split_before() || entry.is_split_after() {
                     state.report_unreadable_entry(
                         &entry_name,
@@ -146,6 +154,13 @@ pub(super) fn extract_rar_chunks(
                     }
                     if state.archive_truncated {
                         break;
+                    }
+                    continue;
+                }
+                if rar50_entry_is_special(entry) {
+                    state.report_unreadable_entry(&entry_name, "special file type", emit);
+                    if state.consumer_stopped {
+                        return;
                     }
                     continue;
                 }
@@ -191,6 +206,23 @@ pub(super) fn extract_rar_chunks(
             ))));
         }
     }
+}
+
+const RAR_UNIX_HOST_OS: u64 = 3;
+
+fn rar15_40_entry_is_special(entry: &rars::rar15_40::FileHeader) -> bool {
+    if u64::from(entry.host_os) != RAR_UNIX_HOST_OS {
+        return false;
+    }
+    archive_unix_mode_is_special(entry.attr) || archive_unix_mode_is_special(entry.attr >> 16)
+}
+
+fn rar50_entry_is_special(entry: &rars::rar50::FileHeader) -> bool {
+    rar_unix_attr_is_special(entry.host_os, entry.attributes)
+}
+
+fn rar_unix_attr_is_special(host_os: u64, attr: u64) -> bool {
+    host_os == RAR_UNIX_HOST_OS && archive_unix_mode_is_special((attr & u64::from(u32::MAX)) as u32)
 }
 
 struct RarExtractionState<'a> {

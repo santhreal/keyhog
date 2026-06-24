@@ -82,6 +82,13 @@ fn rar_entry_read_failures_emit_source_errors() {
         "RAR over-cap entry skips must emit machine-visible SourceError rows"
     );
     assert!(
+        rar.contains("rar15_40_entry_is_special")
+            && rar.contains("rar50_entry_is_special")
+            && rar.contains("archive_unix_mode_is_special")
+            && rar.contains("\"special file type\""),
+        "RAR Unix special-file entries must emit machine-visible SourceError rows"
+    );
+    assert!(
         rar.contains("fn hit_cap(&self) -> bool")
             && rar.contains("state.report_entry_error(&entry_name, sink.hit_cap(), &error, emit)")
             && !rar.contains(
