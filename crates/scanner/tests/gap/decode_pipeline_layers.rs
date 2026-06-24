@@ -2,7 +2,7 @@
 //! and the per-encoding primitives it composes.
 //!
 //! Coverage: every registered decoder (base64, hex, url-percent, JSON-unescape,
-//! MIME encoded-word, octal-escape, hex-escape, unicode-escape, html named /
+//! MIME encoded-word, octal-escape, unicode-escape, html named /
 //! numeric entity, quoted-printable, z85, reverse, caesar) must surface a
 //! planted secret either standalone or behind nested encoding layers, and the
 //! per-root fan-out / wall-clock budget must bound a pathological input.
@@ -14,7 +14,7 @@
 //!   - `base64.rs`          : Base64Decoder floor 12, classify_base64 padding
 //!                            rules, z85_decode 5-byte grouping.
 //!   - `hex.rs`             : HexDecoder floor 16, `_` stripping, even-length.
-//!   - `url.rs`             : url/qp/mime/octal/hex-escape/html entity decoders.
+//!   - `url.rs`             : url/qp/mime/octal/html entity decoders.
 //!   - `json.rs`            : JSON-string escape extraction (>=4 content bytes).
 //!   - `unicode_escape.rs`  : \uXXXX / \xXX.
 //!   - `reverse.rs`         : >=16 chars + reversed contains a KNOWN_PREFIX.
@@ -289,19 +289,13 @@ fn pipeline_surfaces_octal_escape_single_layer() {
 
 #[test]
 fn pipeline_surfaces_hex_escape_single_layer() {
-    // \xXX escapes; HexEscapeDecoder filter is `contains("\\x")`.
+    // \xXX escapes are owned by UnicodeEscapeDecoder, same as \uXXXX.
     let c = chunk(
         "secret=\\x41\\x4b\\x49\\x41\\x49\\x4f\\x53\\x46\\x4f\\x44\\x4e\\x4e\\x37\\x45\\x58\\x41\\x4d\\x50\\x4c\\x45",
     );
     let out = decode_all(&c);
-    let hit = find_decoded(&out, SECRET).expect("hex-escape layer must surface the secret");
-    // hex-escape OR unicode-escape may both fire (UnicodeEscapeDecoder also
-    // matches `\x`); at least one decoded chunk carries the plaintext.
-    assert!(out
-        .iter()
-        .any(|c| c.metadata.source_type.ends_with("/hex-escape")
-            || c.metadata.source_type.ends_with("/unicode-escape")));
-    let _ = hit;
+    let hit = find_decoded(&out, SECRET).expect("unicode-escape layer must surface \\x secrets");
+    assert!(hit.metadata.source_type.ends_with("/unicode-escape"));
 }
 
 #[test]

@@ -4,8 +4,8 @@ use crate::decode::hex::HexDecoder;
 use crate::decode::json::JsonDecoder;
 use crate::decode::reverse::ReverseDecoder;
 use crate::decode::url::{
-    HexEscapeDecoder, HtmlNamedEntityDecoder, HtmlNumericEntityDecoder, MimeEncodedWordDecoder,
-    OctalEscapeDecoder, QuotedPrintableDecoder, UnicodeEscapeDecoder, UrlDecoder,
+    HtmlNamedEntityDecoder, HtmlNumericEntityDecoder, MimeEncodedWordDecoder, OctalEscapeDecoder,
+    QuotedPrintableDecoder, UnicodeEscapeDecoder, UrlDecoder,
 };
 use crate::decode::Decoder;
 use parking_lot::RwLock;
@@ -114,7 +114,6 @@ fn default_decoders() -> Vec<Arc<dyn Decoder>> {
         Arc::new(QuotedPrintableDecoder),
         Arc::new(HtmlNamedEntityDecoder),
         Arc::new(HtmlNumericEntityDecoder),
-        Arc::new(HexEscapeDecoder),
         Arc::new(OctalEscapeDecoder),
         Arc::new(MimeEncodedWordDecoder),
         // JSON unescape - strips `\"` / `\\` / `\n` style escapes inside JSON

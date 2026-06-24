@@ -84,6 +84,12 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
 
     let url = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/decode/url.rs"))
         .expect("url source readable");
+    assert!(
+        !url.contains("HexEscapeDecoder")
+            && !url.contains("hex_escape_decode")
+            && !url.contains("\"hex-escape\""),
+        "`\\xNN` escape decoding must stay owned by UnicodeEscapeDecoder, not a duplicate hex-escape decoder"
+    );
     let url_body = impl_body(
         &url,
         "impl Decoder for UrlDecoder",
@@ -137,11 +143,6 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         (
             "html numeric entity",
             "fn html_numeric_entity_decode",
-            "fn hex_escape_decode",
-        ),
-        (
-            "hex escape",
-            "fn hex_escape_decode",
             "fn octal_escape_decode",
         ),
         (
@@ -168,5 +169,16 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         unicode_body.contains("let mut decoded_text: Option<String> = None")
             && !unicode_body.contains("let mut decoded_text = String::with_capacity(input.len())"),
         "unicode escape decoder should allocate output lazily after a real escape"
+    );
+
+    let registry = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/decode/pipeline/registry.rs"
+    ))
+    .expect("decoder registry source readable");
+    assert!(
+        registry.contains("Arc::new(UnicodeEscapeDecoder)")
+            && !registry.contains("Arc::new(HexEscapeDecoder)"),
+        "decoder registry must not run a duplicate hex-escape pass for `\\xNN` inputs"
     );
 }

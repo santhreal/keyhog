@@ -1,4 +1,4 @@
-//! Hex escape `\xNN` decoder must reject incomplete sequences.
+//! Unicode escape decoder owns `\xNN` as well as `\uXXXX` and rejects incomplete sequences.
 
 use keyhog_core::Chunk;
 use keyhog_scanner::testing::decode_chunk;
@@ -12,11 +12,10 @@ fn hex_escape_backslash_x_alone() {
         metadata: Default::default(),
     };
     let decoded = decode_chunk(&chunk, 1, false, None, None);
-    // Should not emit hex-escape chunk.
     assert!(
         !decoded
             .iter()
-            .any(|c| c.metadata.source_type.contains("hex-escape")),
+            .any(|c| c.metadata.source_type.contains("unicode-escape")),
         "bare \\x at EOF must not decode"
     );
 }
@@ -33,8 +32,8 @@ fn hex_escape_single_hex_digit() {
     assert!(
         !decoded
             .iter()
-            .any(|c| c.metadata.source_type.contains("hex-escape")),
-        "\\xA (one hex digit) must not trigger hex-escape decode"
+            .any(|c| c.metadata.source_type.contains("unicode-escape")),
+        "\\xA (one hex digit) must not trigger unicode-escape decode"
     );
 }
 
@@ -50,7 +49,7 @@ fn hex_escape_non_hex_after_backslash_x() {
     assert!(
         !decoded
             .iter()
-            .any(|c| c.metadata.source_type.contains("hex-escape")),
+            .any(|c| c.metadata.source_type.contains("unicode-escape")),
         "\\xGG (no hex digits) must not decode"
     );
 }
@@ -67,7 +66,7 @@ fn hex_escape_valid_pair_decodes() {
     assert!(
         decoded
             .iter()
-            .any(|c| c.metadata.source_type.contains("hex-escape") && c.data.contains("ABC")),
+            .any(|c| c.metadata.source_type.contains("unicode-escape") && c.data.contains("ABC")),
         "valid \\xHH pairs must decode to characters"
     );
 }

@@ -236,7 +236,7 @@ fn caesar_runfree_chunk_must_be_gated_not_fanned_out() {
 /// "looks-decodable" gate like the reverted `has_decodable_payload`
 /// (crates/scanner/src/decode/pipeline.rs:95), which dropped url/html/escape
 /// recall. A `KNOWN_PREFIXES` credential wrapped in url-percent, HTML numeric
-/// entity, and `\xNN` hex-escape must STILL be recovered by the full
+/// entity, and `\xNN` escaped bytes must STILL be recovered by the full
 /// `decode_chunk` pipeline. If a future "speed up Caesar" change accidentally
 /// short-circuits the whole fan-out on these run-free wrappers, this fails.
 #[test]
@@ -274,7 +274,7 @@ fn url_html_escape_wrapped_credential_still_decodes() {
     );
     let html_ok = html_out.iter().any(|c| c.data.as_ref().contains(aws));
 
-    // C/JS hex-escape: \xNN per byte.
+    // C/JS \xNN escapes per byte.
     let mut hx = String::new();
     for b in plain.bytes() {
         hx.push_str(&format!("\\x{b:02x}"));
@@ -292,7 +292,7 @@ fn url_html_escape_wrapped_credential_still_decodes() {
         url_ok && html_ok && hx_ok,
         "recall regression: a known-prefix credential wrapped in url/html/escape \
          must still decode through the pipeline (url={url_ok} html={html_ok} \
-         hex-escape={hx_ok}). The Caesar alphabetic-run gate must be local to \
+         x-escape={hx_ok}). The Caesar alphabetic-run gate must be local to \
          the Caesar decoder, NOT a pipeline-wide skip — see the reverted \
          has_decodable_payload at decode/pipeline.rs:95."
     );

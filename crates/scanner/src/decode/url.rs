@@ -13,7 +13,6 @@ pub(super) struct UrlDecoder;
 pub(super) struct QuotedPrintableDecoder;
 pub(super) struct HtmlNamedEntityDecoder;
 pub(super) struct HtmlNumericEntityDecoder;
-pub(super) struct HexEscapeDecoder;
 pub(super) struct OctalEscapeDecoder;
 pub(super) struct MimeEncodedWordDecoder;
 pub(super) struct UnicodeEscapeDecoder;
@@ -224,12 +223,6 @@ simple_decoder!(
     "html-numeric-entity",
     |s: &str| s.contains("&#"),
     html_numeric_entity_decode
-);
-simple_decoder!(
-    HexEscapeDecoder,
-    "hex-escape",
-    |s: &str| s.contains("\\x"),
-    hex_escape_decode
 );
 simple_decoder!(
     OctalEscapeDecoder,
@@ -470,27 +463,6 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
     } else {
         Err(())
     }
-}
-
-fn hex_escape_decode(input: &str) -> Result<String, ()> {
-    let mut decoded: Option<String> = None;
-    let mut chars = input.char_indices().peekable();
-
-    while let Some((idx, ch)) = chars.next() {
-        if ch != '\\' || !chars.peek().is_some_and(|&(_, next)| next == 'x') {
-            if let Some(decoded) = decoded.as_mut() {
-                decoded.push(ch);
-            }
-            continue;
-        }
-
-        chars.next();
-        let high = chars.next().ok_or(())?.1.to_digit(16).ok_or(())?;
-        let low = chars.next().ok_or(())?.1.to_digit(16).ok_or(())?;
-        lazy_decoded_prefix(&mut decoded, input, idx).push(char::from(((high << 4) | low) as u8));
-    }
-
-    decoded.ok_or(())
 }
 
 fn octal_escape_decode(input: &str) -> Result<String, ()> {
