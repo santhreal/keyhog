@@ -79,16 +79,34 @@ fn keyhog_repo_root() -> Option<&'static std::path::Path> {
         .as_deref()
 }
 
-/// True when the given finding's file path is a descendant of keyhog's
-/// own source tree. Returns false when the path can't be canonicalized
-/// or no keyhog repo root was found.
-fn finding_inside_keyhog_repo(file_path: &str) -> bool {
-    let Some(root) = keyhog_repo_root() else {
-        return false;
-    };
-    let canonical =
-        std::fs::canonicalize(file_path).unwrap_or_else(|_| std::path::PathBuf::from(file_path)); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
-    canonical.starts_with(root)
+struct SelfScanPathScope {
+    keyhog_root: Option<&'static std::path::Path>,
+    canonicalized_paths: std::collections::HashMap<String, bool>,
+}
+
+impl SelfScanPathScope {
+    fn new() -> Self {
+        Self {
+            keyhog_root: keyhog_repo_root(),
+            canonicalized_paths: std::collections::HashMap::new(),
+        }
+    }
+
+    /// True when the given finding's file path is a descendant of keyhog's own
+    /// source tree. Returns false when no keyhog repo root was found.
+    fn finding_inside_keyhog_repo(&mut self, file_path: &str) -> bool {
+        let Some(root) = self.keyhog_root else {
+            return false;
+        };
+        *self
+            .canonicalized_paths
+            .entry(file_path.to_owned())
+            .or_insert_with(|| {
+                let canonical = std::fs::canonicalize(file_path)
+                    .unwrap_or_else(|_| std::path::PathBuf::from(file_path)); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
+                canonical.starts_with(root)
+            })
+    }
 }
 
 pub(crate) fn suppresses_test_fixture(
@@ -158,6 +176,7 @@ impl ScanOrchestrator {
         matches: Vec<RawMatch>,
         allowlist: &keyhog_core::Allowlist,
     ) -> Result<Vec<RawMatch>> {
+        let mut self_scan_path_scope = SelfScanPathScope::new();
         let mut filtered = matches
             .into_iter()
             .filter(|m| {
@@ -204,7 +223,7 @@ impl ScanOrchestrator {
                 // named keyhog/ (forks, docs paths, Reddit demo trees).
                 if !self.effective_config.report.no_suppress_test_fixtures {
                     if let Some(file_path) = m.location.file_path.as_deref() {
-                        if finding_inside_keyhog_repo(file_path) {
+                        if self_scan_path_scope.finding_inside_keyhog_repo(file_path) {
                             let mut segs = file_path.split(['/', '\\']);
                             let suppressed = segs.any(|seg| {
                                 seg.eq_ignore_ascii_case("detectors")

@@ -59,6 +59,36 @@ fn daemon_finalize_uses_shared_postprocess_helpers() {
 }
 
 #[test]
+fn self_scan_path_scope_caches_canonicalization_per_filter_pass() {
+    let postprocess = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/postprocess.rs"
+    ))
+    .expect("postprocess source readable");
+
+    for required in [
+        "struct SelfScanPathScope",
+        "canonicalized_paths: std::collections::HashMap<String, bool>",
+        "let mut self_scan_path_scope = SelfScanPathScope::new();",
+        "self_scan_path_scope.finding_inside_keyhog_repo(file_path)",
+        ".entry(file_path.to_owned())",
+    ] {
+        assert!(
+            postprocess.contains(required),
+            "self-scan path suppression must keep the per-pass canonicalization cache boundary `{required}`"
+        );
+    }
+
+    assert_eq!(
+        postprocess
+            .matches("std::fs::canonicalize(file_path)")
+            .count(),
+        1,
+        "finding paths must be canonicalized only inside the cached SelfScanPathScope owner"
+    );
+}
+
+#[test]
 fn verification_progress_ticker_is_drop_guarded() {
     let postprocess = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
