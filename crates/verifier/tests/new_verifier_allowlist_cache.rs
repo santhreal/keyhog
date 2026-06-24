@@ -156,12 +156,23 @@ fn host_case_insensitive() {
 #[test]
 fn host_shared_tenant_suffix_is_exact_only() {
     for suffix in [
+        "atlassian.net",
+        "auth0.com",
+        "azure-api.net",
         "azurewebsites.net",
         "firebaseapp.com",
+        "firebaseio.com",
         "herokuapp.com",
+        "jfrog.io",
+        "mongodb.net",
         "myshopify.com",
         "netlify.app",
+        "on.aws",
+        "openai.azure.com",
+        "supabase.co",
+        "upstash.io",
         "vercel.app",
+        "windows.net",
     ] {
         assert!(
             TestApi.host_is_allowed(suffix, &[suffix.to_string()]),
@@ -228,6 +239,15 @@ fn check_url_blocks_builtin_shared_tenant_subdomain() {
         .expect_err("built-in myshopify.com suffix must not allow arbitrary shops");
     assert!(
         err.contains("attacker.myshopify.com") && err.contains("not in the allowlist"),
+        "error must name the rejected shared-tenant host: {err}"
+    );
+
+    let jira = spec("jira", &[]);
+    let err = TestApi
+        .check_url_against_spec("https://attacker.atlassian.net/rest/api/3/myself", &jira)
+        .expect_err("built-in atlassian.net suffix must not allow arbitrary tenants");
+    assert!(
+        err.contains("attacker.atlassian.net") && err.contains("not in the allowlist"),
         "error must name the rejected shared-tenant host: {err}"
     );
 }

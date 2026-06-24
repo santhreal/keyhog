@@ -19,6 +19,26 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+const EXACT_ONLY_SHARED_TENANT_SUFFIXES: &[&str] = &[
+    "atlassian.net",
+    "auth0.com",
+    "azure-api.net",
+    "azurewebsites.net",
+    "firebaseapp.com",
+    "firebaseio.com",
+    "herokuapp.com",
+    "jfrog.io",
+    "mongodb.net",
+    "myshopify.com",
+    "netlify.app",
+    "on.aws",
+    "openai.azure.com",
+    "supabase.co",
+    "upstash.io",
+    "vercel.app",
+    "windows.net",
+];
+
 /// Builtin map of `service` → allowed apex domains. Detectors that set
 /// `service = "<key>"` and DON'T provide their own `allowed_domains` list
 /// inherit this entry. Anything not in this map (and without an explicit
@@ -216,15 +236,7 @@ fn host_is_subdomain_of_allowed(host: &str, allowed: &str) -> bool {
 }
 
 fn is_exact_only_shared_tenant_suffix(domain: &str) -> bool {
-    matches!(
-        domain,
-        "azurewebsites.net"
-            | "firebaseapp.com"
-            | "herokuapp.com"
-            | "myshopify.com"
-            | "netlify.app"
-            | "vercel.app"
-    )
+    EXACT_ONLY_SHARED_TENANT_SUFFIXES.contains(&domain)
 }
 
 /// Top-level guard: parse `raw_url`, look up the allowlist for `spec`, and
