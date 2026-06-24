@@ -212,11 +212,11 @@ async fn build_sigv4_request(
 
     let response = execute_request(request)
         .await
-        .map_err(|e| format!("{:?}", e.result))?;
+        .map_err(|e| verification_result_text(&e.result))?;
     let status = response.status().as_u16();
     let resp_body = read_response_body(response)
         .await
-        .map_err(|e| format!("{:?}", e.result))?;
+        .map_err(|e| verification_result_text(&e.result))?;
 
     if resp_body.contains("RequestTimeTooSkewed") || resp_body.contains("SignatureDoesNotMatch") {
         tracing::warn!(
@@ -262,6 +262,18 @@ pub(crate) fn classify_aws_sts_failure(status: u16, body: &str) -> (Verification
         return (VerificationResult::Dead, false);
     }
     (VerificationResult::RateLimited, true)
+}
+
+fn verification_result_text(result: &VerificationResult) -> String {
+    match result {
+        VerificationResult::Live => "live".to_string(),
+        VerificationResult::Revoked => "revoked".to_string(),
+        VerificationResult::Dead => "dead".to_string(),
+        VerificationResult::RateLimited => "rate_limited".to_string(),
+        VerificationResult::Error(message) => message.clone(),
+        VerificationResult::Unverifiable => "unverifiable".to_string(),
+        VerificationResult::Skipped => "skipped".to_string(),
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
