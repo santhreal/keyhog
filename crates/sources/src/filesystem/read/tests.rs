@@ -85,7 +85,8 @@ fn binary_magic_structural_bmp_pe_and_bzip2_headers_are_binary() {
 
 #[test]
 fn binary_magic_zstd_header_is_binary_in_full_and_prefix_paths() {
-    let mut bytes = vec![0x28, 0xb5, 0x2f, 0xfd, 0x00, b'a', b'b', b'c'];
+    let mut bytes = crate::magic::ZSTD_FRAME_MAGIC.to_vec();
+    bytes.extend_from_slice(&[0x00, b'a', b'b', b'c']);
     bytes.extend_from_slice(&[b'a'; 256]);
 
     assert!(looks_binary(&bytes));

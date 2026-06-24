@@ -13,6 +13,7 @@ mod compression_limits;
 mod decode;
 mod factory;
 mod limits;
+mod magic;
 #[cfg(any(
     feature = "azure",
     feature = "s3",

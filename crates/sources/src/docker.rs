@@ -519,10 +519,11 @@ enum LayerArchiveEncoding {
 fn layer_archive_encoding(file: &mut File) -> Result<LayerArchiveEncoding, SourceError> {
     let mut magic = [0u8; 4];
     let read = file.read(&mut magic).map_err(SourceError::Io)?;
-    if read >= 2 && magic[..2] == [0x1f, 0x8b] {
+    let prefix = &magic[..read];
+    if crate::magic::starts_with_gzip(prefix) {
         return Ok(LayerArchiveEncoding::GzipTar);
     }
-    if read == 4 && magic == [0x28, 0xb5, 0x2f, 0xfd] {
+    if crate::magic::starts_with_zstd_frame(prefix) {
         return Ok(LayerArchiveEncoding::ZstdTar);
     }
     Ok(LayerArchiveEncoding::RawTar)
