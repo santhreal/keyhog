@@ -392,14 +392,14 @@ impl ScanOrchestrator {
             std::process::ExitCode::from(EXIT_SCANNER_PANIC)
         } else if has_new_entries {
             std::process::ExitCode::from(EXIT_FINDINGS)
+        } else if incremental_cache_failed {
+            std::process::ExitCode::from(EXIT_SYSTEM_ERROR)
         } else if source_coverage_incomplete {
             eprintln!(
                 "error: input coverage was incomplete (see coverage warnings above). Not \
                  reporting \"clean\": some requested bytes were not scanned."
             );
             std::process::ExitCode::from(EXIT_SOURCE_FAILED)
-        } else if incremental_cache_failed {
-            std::process::ExitCode::from(EXIT_SYSTEM_ERROR)
         } else {
             std::process::ExitCode::SUCCESS
         })
