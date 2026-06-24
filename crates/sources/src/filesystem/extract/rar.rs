@@ -656,15 +656,15 @@ impl<'a> RarExtractionState<'a> {
                     archive = %self.archive_path.display(),
                     entry = %entry_name,
                     cap = self.per_entry_cap,
-                    "skipping RAR entry: decoded size exceeds per-file cap; remaining entries were NOT scanned"
+                    "skipping RAR entry: decoded size exceeds per-file cap"
                 );
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
-                self.archive_truncated = true;
-                self.consumer_stopped = !emit(Err(SourceError::Other(format!(
-                    "RAR entry '{}//{}' exceeded the per-file cap during capped decode; remaining entries were not scanned",
-                    self.archive_display, entry_name
-                ))));
+                self.report_entry_over_cap(
+                    entry_name,
+                    self.per_entry_cap.saturating_add(1),
+                    "decoded",
+                    emit,
+                );
             }
             return;
         }

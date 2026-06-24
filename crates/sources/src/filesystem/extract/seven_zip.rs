@@ -223,17 +223,29 @@ pub(super) fn extract_seven_zip_chunks(
                 entry = %entry_name,
                 size = content_len,
                 cap = per_entry_cap,
-                "skipping 7z entry: decoded size exceeds per-file cap; remaining entries were NOT scanned"
+                "skipping 7z entry: decoded size exceeds per-file cap"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
-            archive_truncated = true;
-            if !emit(Err(SourceError::Other(format!(
-                "7z entry '{archive_display}//{entry_name}' exceeded the per-file cap after capped decode ({content_len} > {per_entry_cap}); remaining entries were not scanned"
-            )))) {
+            if !emit_archive_entry_over_cap_error(
+                emit,
+                "7z entry",
+                &archive_display,
+                &entry_name,
+                content_len,
+                per_entry_cap,
+                "decoded",
+            ) {
                 consumer_stopped = true;
+                return Ok(false);
             }
-            return Ok(false);
+            drain_skipped_entry_if_needed(
+                archive_requires_skip_drain,
+                &archive_display,
+                &entry_name,
+                entry_reader,
+                false,
+            );
+            return Ok(true);
         }
         if content_len > read_cap {
             let attempted_total = total_uncompressed.saturating_add(content.len() as u64);
