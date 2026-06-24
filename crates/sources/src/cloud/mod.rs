@@ -176,6 +176,17 @@ pub(crate) fn record_unreadable_object_skip(
     )
 }
 
+pub(crate) fn record_unreadable_listing_skip(
+    source: &str,
+    item_plural: &str,
+    reason: impl std::fmt::Display,
+) -> SourceError {
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+    SourceError::Other(format!(
+        "{source} source listing failed: {reason}; {item_plural} were not scanned"
+    ))
+}
+
 pub(crate) struct TextObjectBodyContext<'a> {
     pub(crate) source: &'static str,
     pub(crate) item_kind: &'static str,

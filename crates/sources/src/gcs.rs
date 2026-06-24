@@ -216,19 +216,35 @@ fn fetch_gcs_listing_page(
         request = request.bearer_auth(token);
     }
 
-    let response = request
-        .send()
-        .map_err(|error| SourceError::Other(format!("failed to list GCS objects: {error}")))?;
+    let response = request.send().map_err(|error| {
+        crate::cloud::record_unreadable_listing_skip(
+            "GCS",
+            "objects",
+            format!("failed to list objects: {error}"),
+        )
+    })?;
     if !response.status().is_success() {
-        return Err(SourceError::Other(format!(
-            "failed to list GCS objects: bucket request returned {}",
-            response.status()
-        )));
+        let status = response.status();
+        return Err(crate::cloud::record_unreadable_listing_skip(
+            "GCS",
+            "objects",
+            format!("bucket request returned {status}"),
+        ));
     }
-    let body = response
-        .text()
-        .map_err(|error| SourceError::Other(format!("failed to read GCS listing: {error}")))?;
-    parse_gcs_listing(&body)
+    let body = response.text().map_err(|error| {
+        crate::cloud::record_unreadable_listing_skip(
+            "GCS",
+            "objects",
+            format!("failed to read listing response body: {error}"),
+        )
+    })?;
+    parse_gcs_listing(&body).map_err(|error| {
+        crate::cloud::record_unreadable_listing_skip(
+            "GCS",
+            "objects",
+            format!("failed to parse listing response: {error}"),
+        )
+    })
 }
 
 fn download_gcs_listing_page(
@@ -443,11 +459,9 @@ fn gcs_bearer_token(
     {
         return Ok(Some(token));
     }
-    tracing::warn!(
-        endpoint,
-        "GCS bearer token present but endpoint is not googleapis.com; refusing to forward. Pass the explicit GCS token-forwarding flag only for endpoints you trust."
-    );
-    Ok(None)
+    Err(SourceError::Other(format!(
+        "{env_name} is present but endpoint {endpoint} is not googleapis.com; refusing to run anonymously after dropping credentials. Pass the explicit GCS token-forwarding flag only for endpoints you trust, or unset {env_name} for anonymous GCS-compatible scans."
+    )))
 }
 
 fn read_gcs_bearer_env(name: &'static str) -> Result<Option<String>, SourceError> {

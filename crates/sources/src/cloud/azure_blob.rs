@@ -178,18 +178,34 @@ fn fetch_azure_blob_listing_page(
 ) -> Result<AzureListResponse, SourceError> {
     let list_url = azure_list_url(container_url, prefix, marker);
     let response = client.get(list_url.clone()).send().map_err(|error| {
-        SourceError::Other(format!("failed to list Azure blobs at {list_url}: {error}"))
+        crate::cloud::record_unreadable_listing_skip(
+            "Azure Blob",
+            "blobs",
+            format!("failed to list blobs at {list_url}: {error}"),
+        )
     })?;
     if !response.status().is_success() {
-        return Err(SourceError::Other(format!(
-            "failed to list Azure blobs: container request returned {}",
-            response.status()
-        )));
+        let status = response.status();
+        return Err(crate::cloud::record_unreadable_listing_skip(
+            "Azure Blob",
+            "blobs",
+            format!("container request returned {status}"),
+        ));
     }
     let body = response.text().map_err(|error| {
-        SourceError::Other(format!("failed to read Azure Blob listing: {error}"))
+        crate::cloud::record_unreadable_listing_skip(
+            "Azure Blob",
+            "blobs",
+            format!("failed to read listing response body: {error}"),
+        )
     })?;
-    parse_azure_listing(&body)
+    parse_azure_listing(&body).map_err(|error| {
+        crate::cloud::record_unreadable_listing_skip(
+            "Azure Blob",
+            "blobs",
+            format!("failed to parse listing response: {error}"),
+        )
+    })
 }
 
 fn download_azure_blob_listing_page(

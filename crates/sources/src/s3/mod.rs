@@ -155,7 +155,7 @@ fn collect_s3_chunks(
     // existing behavior for callers that don't override.
     let client = crate::cloud::blocking_client("S3", http)?;
     let base_url = build_base_url(&bucket, endpoint)?;
-    let aws_auth = resolve_s3_auth(&base_url, endpoint, allow_credential_forward);
+    let aws_auth = resolve_s3_auth(&base_url, endpoint, allow_credential_forward)?;
     let mut continuation_token = None::<String>;
     let mut chunks = Vec::new();
     let mut coverage = crate::cloud::CloudListingCoverage::new("s3", "objects", max_objects);
@@ -212,7 +212,7 @@ fn resolve_s3_auth(
     base_url: &str,
     endpoint: Option<&str>,
     allow_credential_forward: bool,
-) -> Option<AwsSigV4Config> {
+) -> Result<Option<AwsSigV4Config>, SourceError> {
     // Issue #4: scope SigV4 auto-signing to AWS-owned endpoints. When the
     // user points `--s3-endpoint` at a non-AWS host (MinIO, Ceph, attacker-
     // controlled), reading `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
@@ -227,7 +227,7 @@ fn resolve_s3_auth(
         None => true,
     };
     if endpoint_is_aws_host {
-        return AwsSigV4Config::from_env(base_url);
+        return Ok(AwsSigV4Config::from_env(base_url));
     }
     if crate::cloud::credential_forward_allowed(allow_credential_forward) {
         tracing::warn!(
@@ -235,17 +235,29 @@ fn resolve_s3_auth(
             "explicit S3 credential-forwarding override active: forwarding \
              ambient AWS credentials to non-AWS endpoint. Verify you trust this host."
         );
-        return AwsSigV4Config::from_env(base_url);
+        return Ok(AwsSigV4Config::from_env(base_url));
     }
-    if std::env::var("AWS_ACCESS_KEY_ID").is_ok() {
-        tracing::warn!(
-            endpoint = %endpoint.unwrap_or(""),  // LAW10: missing/non-string field => empty/placeholder; recall-safe
-            "AWS credentials present but endpoint is non-AWS; refusing to \
-             forward. Pass the explicit S3 credential-forwarding flag only \
-             for endpoints you trust."
-        );
+    if ambient_s3_credentials_present() {
+        let endpoint_display = match endpoint {
+            Some(endpoint) => endpoint,
+            None => "<default AWS endpoint>",
+        };
+        return Err(SourceError::Other(format!(
+            "AWS credentials are present but endpoint {} is non-AWS; refusing to run anonymously after dropping credentials. Pass the explicit S3 credential-forwarding flag only for endpoints you trust, or unset AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY for anonymous S3-compatible scans.",
+            endpoint_display
+        )));
     }
-    None
+    Ok(None)
+}
+
+fn ambient_s3_credentials_present() -> bool {
+    [
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+    ]
+    .iter()
+    .any(|name| std::env::var_os(name).is_some())
 }
 
 fn fetch_s3_listing_page(
@@ -266,21 +278,37 @@ fn fetch_s3_listing_page(
         request = auth.sign(request, base_url)?;
     }
 
-    let response = request
-        .send()
-        .map_err(|e| SourceError::Other(format!("failed to list S3 objects: {e}")))?;
+    let response = request.send().map_err(|error| {
+        crate::cloud::record_unreadable_listing_skip(
+            "S3",
+            "objects",
+            format!("failed to list objects: {error}"),
+        )
+    })?;
 
     if !response.status().is_success() {
-        return Err(SourceError::Other(format!(
-            "failed to list S3 objects: bucket request returned {}",
-            response.status()
-        )));
+        let status = response.status();
+        return Err(crate::cloud::record_unreadable_listing_skip(
+            "S3",
+            "objects",
+            format!("bucket request returned {status}"),
+        ));
     }
 
-    let body = response
-        .text()
-        .map_err(|e| SourceError::Other(format!("failed to read S3 listing: {e}")))?;
-    parse_s3_listing(&body)
+    let body = response.text().map_err(|error| {
+        crate::cloud::record_unreadable_listing_skip(
+            "S3",
+            "objects",
+            format!("failed to read listing response body: {error}"),
+        )
+    })?;
+    parse_s3_listing(&body).map_err(|error| {
+        crate::cloud::record_unreadable_listing_skip(
+            "S3",
+            "objects",
+            format!("failed to parse listing response: {error}"),
+        )
+    })
 }
 
 fn download_s3_listing_page(
