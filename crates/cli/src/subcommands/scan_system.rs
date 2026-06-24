@@ -14,7 +14,7 @@
 mod mounts;
 
 use crate::args::ScanSystemArgs;
-use crate::exit_codes::EXIT_FINDINGS;
+use crate::exit_codes::{EXIT_FINDINGS, EXIT_SOURCE_FAILED};
 use crate::format::format_bytes;
 use crate::orchestrator::{compile_default_scan_runtime, DefaultScanRuntime, StreamingSourceEvent};
 use crate::style;
@@ -327,12 +327,7 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     // that aborts when --space is hit.
     for mount in &mounts {
         if bytes_scanned.load(Ordering::Relaxed) >= space_cap {
-            let palette = style::for_stderr();
-            eprintln!(
-                "{} space cap reached ({}); skipping remaining mounts",
-                style::warn("WARN", &palette),
-                format_bytes(space_cap)
-            );
+            record_space_cap_gap(&mut sink, space_cap, "skipping remaining mounts");
             break;
         }
         let palette = style::for_stderr();
@@ -349,17 +344,17 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
             space_cap,
             &mut sink,
         )?;
+        if bytes_scanned.load(Ordering::Relaxed) >= space_cap {
+            record_space_cap_gap(&mut sink, space_cap, "stopping filesystem walk");
+            break;
+        }
     }
 
     // Then walk every git history.
     if !args.no_git_history {
         for repo in &git_repos {
             if bytes_scanned.load(Ordering::Relaxed) >= space_cap {
-                let palette = style::for_stderr();
-                eprintln!(
-                    "{} space cap reached; skipping remaining git histories",
-                    style::warn("WARN", &palette)
-                );
+                record_space_cap_gap(&mut sink, space_cap, "skipping remaining git histories");
                 break;
             }
             let palette = style::for_stderr();
@@ -369,16 +364,29 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
                 repo.display()
             );
             scan_git_history(&scan_runtime, repo, &bytes_scanned, space_cap, &mut sink)?;
+            if bytes_scanned.load(Ordering::Relaxed) >= space_cap {
+                record_space_cap_gap(&mut sink, space_cap, "stopping git history walk");
+                break;
+            }
         }
     }
 
     let palette = style::for_stderr();
-    eprintln!(
-        "{} system scan complete | bytes scanned: {} | findings: {}",
-        style::pass("PASS", &palette),
-        format_bytes(bytes_scanned.load(Ordering::Relaxed)),
-        sink.total
-    );
+    if sink.skipped_chunks() > 0 {
+        eprintln!(
+            "{} system scan partial | bytes scanned: {} | findings: {}",
+            style::warn("WARN", &palette),
+            format_bytes(bytes_scanned.load(Ordering::Relaxed)),
+            sink.total
+        );
+    } else {
+        eprintln!(
+            "{} system scan complete | bytes scanned: {} | findings: {}",
+            style::pass("PASS", &palette),
+            format_bytes(bytes_scanned.load(Ordering::Relaxed)),
+            sink.total
+        );
+    }
     // Law 10: if any chunk was unreadable, the "complete" above covered LESS than
     // the whole tree. Say so loudly — a partial audit that looks clean is worse
     // than no audit.
@@ -386,10 +394,10 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         let palette = style::for_stderr();
         eprintln!(
             "{} {} source/discovery coverage gap(s) were UNREADABLE or skipped \
-             before scanning (git discovery errors, corrupt git objects, \
-             permission-denied paths, or non-text files). This scan did NOT cover \
-             everything; rerun affected paths with elevated permissions to close \
-             the gap.",
+             before scanning (space cap reached, git discovery errors, corrupt \
+             git objects, permission-denied paths, or non-text files). This scan \
+             did NOT cover everything; rerun affected paths with elevated \
+             permissions or raise --space to close the gap.",
             style::warn("WARN", &palette),
             sink.skipped_chunks()
         );
@@ -427,10 +435,12 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     // can't gate on it. Match the rest of the CLI: 0 = clean,
     // 1 = findings above floor, 2 = error (handled by caller's
     // Result<_> path).
-    if sink.is_empty() {
-        Ok(ExitCode::SUCCESS)
-    } else {
+    if !sink.is_empty() {
         Ok(ExitCode::from(EXIT_FINDINGS))
+    } else if sink.skipped_chunks() > 0 {
+        Ok(ExitCode::from(EXIT_SOURCE_FAILED))
+    } else {
+        Ok(ExitCode::SUCCESS)
     }
 }
 
@@ -560,6 +570,22 @@ fn record_git_discovery_gap(
         %operation,
         %error,
         "git repository discovery skipped scope; scan coverage gap"
+    );
+}
+
+fn record_space_cap_gap(out: &mut FindingSink, space_cap: u64, skipped_scope: &'static str) {
+    out.record_skipped_chunk();
+    let palette = style::for_stderr();
+    eprintln!(
+        "{} space cap reached ({}); {}. This scan did NOT cover everything.",
+        style::warn("WARN", &palette),
+        format_bytes(space_cap),
+        skipped_scope
+    );
+    tracing::warn!(
+        space_cap,
+        skipped_scope,
+        "space cap stopped scan before all requested scope was scanned"
     );
 }
 

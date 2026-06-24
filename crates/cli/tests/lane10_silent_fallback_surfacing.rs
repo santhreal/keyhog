@@ -112,6 +112,27 @@ fn scan_system_git_discovery_gaps_are_counted_and_surfaced() {
 }
 
 #[test]
+fn scan_system_space_cap_partial_scan_is_counted_and_nonzero() {
+    let s = src("src/subcommands/scan_system.rs");
+    assert!(
+        s.contains("record_space_cap_gap")
+            && s.contains("space cap reached")
+            && s.contains("record_skipped_chunk"),
+        "`--space` stopping a scan must be counted as skipped scope, not only \
+         printed as an informational warning"
+    );
+    assert!(
+        s.contains("system scan partial") && s.contains("space cap reached"),
+        "a space-capped scan must not print only a PASS-looking complete summary"
+    );
+    assert!(
+        s.contains("EXIT_SOURCE_FAILED") && s.contains("sink.skipped_chunks() > 0"),
+        "a clean-but-incomplete space-capped scan must return the incomplete-source \
+         exit code instead of success"
+    );
+}
+
+#[test]
 fn verify_low_confidence_skips_are_surfaced_loudly() {
     let s = src("src/orchestrator/postprocess.rs");
     let block = s
