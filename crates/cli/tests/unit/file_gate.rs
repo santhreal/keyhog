@@ -160,6 +160,10 @@ fn scan_runtime_test_facade_guards_in_process_global_state() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let testing = std::fs::read_to_string(root.join("src/testing.rs")).expect("read test facade");
 
+    assert!(
+        testing.contains("#[must_use = \"hold ScanRuntimeGuard"),
+        "ScanRuntimeGuard must be must-use so ignored guard acquisition is a warning"
+    );
     for required in [
         "fn report_findings(\n        &self,\n        findings: &[VerifiedFinding],\n        args: &ScanArgs,\n        _guard: &ScanRuntimeGuard,",
         "fn scan_orchestrator_scan_sources_for_test(\n        &self,\n        orchestrator: &ScanOrchestrator,\n        sources: Vec<Box<dyn Source>>,\n        show_progress: bool,\n        merkle: Option<Arc<keyhog_core::MerkleIndex>>,\n        _guard: &ScanRuntimeGuard,",
@@ -189,6 +193,23 @@ fn scan_runtime_test_facade_guards_in_process_global_state() {
             path.display()
         );
     }
+}
+
+#[test]
+fn scan_runtime_guard_recovers_from_poisoned_test_lock() {
+    let joined = std::thread::spawn(|| {
+        let _guard = API.scan_runtime_guard_for_test();
+        panic!("poison CLI scan-runtime test lock");
+    })
+    .join();
+    assert!(
+        joined.is_err(),
+        "poisoning setup should panic inside thread"
+    );
+
+    let guard = API.scan_runtime_guard_for_test();
+    API.reset_scan_runtime_state_for_test(&guard);
+    assert_eq!(API.scan_runtime_snapshot(&guard), Default::default());
 }
 
 #[test]

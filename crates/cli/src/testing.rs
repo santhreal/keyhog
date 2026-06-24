@@ -17,6 +17,7 @@ pub const API: TestApi = TestApi;
 
 static SCAN_RUNTIME_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+#[must_use = "hold ScanRuntimeGuard across CLI test-facade calls that touch process-global scan state"]
 pub struct ScanRuntimeGuard {
     _guard: MutexGuard<'static, ()>,
 }
@@ -847,7 +848,10 @@ impl CliTestApi for TestApi {
             Ok(guard) => guard,
             // LAW10: test-only lock poisoning would cascade unrelated failures;
             // keep the guard held so shared scan-runtime state remains serialized.
-            Err(poisoned) => poisoned.into_inner(),
+            Err(poisoned) => {
+                SCAN_RUNTIME_TEST_LOCK.clear_poison();
+                poisoned.into_inner()
+            }
         };
         ScanRuntimeGuard { _guard: guard }
     }
