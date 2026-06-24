@@ -278,33 +278,33 @@ fn send_with_pinned_redirects(
         )?;
         let resp = client.get(&current_url).send().map_err(|e| {
             let safe_url = redact_url(&current_url);
-            SourceError::Other(format!("failed to fetch {safe_url}: {e}"))
+            web_unreadable_error(format!("failed to fetch {safe_url}: {e}"))
         })?;
         if !resp.status().is_redirection() {
             return Ok(resp);
         }
         if hop >= crate::http::REDIRECT_LIMIT {
             let safe_url = redact_url(&current_url);
-            return Err(SourceError::Other(format!(
+            return Err(web_unreadable_error(format!(
                 "failed to fetch {safe_url}: too many redirects (> {})",
                 crate::http::REDIRECT_LIMIT
             )));
         }
         let Some(location) = resp.headers().get(reqwest::header::LOCATION) else {
             let safe_url = redact_url(&current_url);
-            return Err(SourceError::Other(format!(
+            return Err(web_unreadable_error(format!(
                 "failed to fetch {safe_url}: redirect response missing Location header"
             )));
         };
         let location = location.to_str().map_err(|e| {
             let safe_url = redact_url(&current_url);
-            SourceError::Other(format!(
+            web_unreadable_error(format!(
                 "failed to fetch {safe_url}: redirect Location header is invalid: {e}"
             ))
         })?;
         let target = resp.url().join(location).map_err(|e| {
             let safe_url = redact_url(&current_url);
-            SourceError::Other(format!(
+            web_unreadable_error(format!(
                 "failed to fetch {safe_url}: redirect Location {location:?} is invalid: {e}"
             ))
         })?;
@@ -312,7 +312,7 @@ fn send_with_pinned_redirects(
             "http" | "https" => {}
             scheme => {
                 let safe_target = redact_url(target.as_str());
-                return Err(SourceError::Other(format!(
+                return Err(web_unreadable_error(format!(
                     "refusing to follow redirect to {safe_target}: unsupported URL scheme {scheme:?}"
                 )));
             }
@@ -331,6 +331,11 @@ fn send_with_pinned_redirects(
         allow_current_calibration_url = allow_target_calibration_url;
     }
     unreachable!("redirect loop exits by return or redirect cap");
+}
+
+fn web_unreadable_error(message: String) -> SourceError {
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+    SourceError::Other(message)
 }
 
 /// Handle a JavaScript file: return the full text as a single chunk.
