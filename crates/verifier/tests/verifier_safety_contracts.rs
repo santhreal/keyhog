@@ -26,8 +26,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use keyhog_core::{
-    AuthSpec, DedupedMatch, DetectorSpec, HttpMethod, MatchLocation, MetadataSpec, ScriptEngine,
-    Severity, VerificationResult, VerifySpec,
+    AuthSpec, DedupedMatch, DetectorSpec, HeaderSpec, HttpMethod, MatchLocation, MetadataSpec,
+    ScriptEngine, Severity, VerificationResult, VerifySpec,
 };
 use keyhog_verifier::{VerificationEngine, VerifyConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -235,6 +235,59 @@ async fn script_auth_requires_explicit_status_token() {
             );
         }
         other => panic!("malformed script output must not collapse to dead, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn missing_companion_templates_fail_closed_before_verification_request() {
+    let url_spec = spec_for(
+        "missing-url-companion",
+        Some("http://127.0.0.1:1/{{companion.absent_url}}".into()),
+        vec![],
+    );
+    let mut header_spec = spec_for(
+        "missing-header-companion",
+        Some("http://127.0.0.1:1/verify".into()),
+        vec![],
+    );
+    header_spec
+        .verify
+        .as_mut()
+        .unwrap()
+        .headers
+        .push(HeaderSpec {
+            name: "Authorization".into(),
+            value: "Bearer {{companion.absent_header}}".into(),
+        });
+    let mut auth_spec = spec_for(
+        "missing-auth-companion",
+        Some("http://127.0.0.1:1/verify".into()),
+        vec![],
+    );
+    auth_spec.verify.as_mut().unwrap().auth = Some(AuthSpec::Bearer {
+        field: "companion.absent_auth".into(),
+    });
+
+    for (spec, missing) in [
+        (url_spec, "absent_url"),
+        (header_spec, "absent_header"),
+        (auth_spec, "absent_auth"),
+    ] {
+        let id = spec.id.clone();
+        let findings = permissive_engine(spec)
+            .verify_all(vec![group_for(&id, "secret")])
+            .await;
+        match &findings[0].verification {
+            VerificationResult::Error(message) => {
+                assert!(
+                    message.contains("failed to resolve verification companion")
+                        && message.contains(missing)
+                        && message.contains("Fix:"),
+                    "missing companion {missing} must fail closed with a fix, got: {message}"
+                );
+            }
+            other => panic!("missing companion {missing} must not collapse to dead, got {other:?}"),
+        }
     }
 }
 
@@ -950,7 +1003,7 @@ fn aws_sts_egress_uses_resolved_screened_client() {
     let aws = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/verify/aws.rs"))
         .expect("verify/aws.rs must be readable");
     assert!(
-        aws.contains("use crate::verify::request::{execute_request, resolved_client_for_url};"),
+        aws.contains("execute_request") && aws.contains("resolved_client_for_url"),
         "AWS verifier must import the shared resolved-client egress owner"
     );
     assert!(

@@ -8,7 +8,8 @@ use crate::interpolate::interpolate_url;
 use crate::verify::credential::verification_timeout;
 use crate::verify::{
     apply_header_body_templates, body_indicates_error, build_request_for_step, evaluate_success,
-    execute_and_read_response, extract_metadata, resolved_client_for_url, RequestBuildResult,
+    execute_and_read_response, extract_metadata, resolved_client_for_url,
+    validate_header_body_templates, validate_template_companions, RequestBuildResult,
     VerificationAttempt,
 };
 
@@ -30,6 +31,15 @@ pub(crate) async fn verify_multi_step(
 
     for step in &spec.steps {
         let step_timeout = verification_timeout(spec, timeout);
+        if let Err(result) =
+            validate_template_companions("verification step URL", &step.url, &current_companions)
+        {
+            return VerificationAttempt {
+                result,
+                metadata: all_metadata,
+                transient: false,
+            };
+        }
         let raw_url = interpolate_url(&step.url, credential, &current_companions);
         // SECURITY: per-step domain allowlist enforcement, same gate as
         // single-step verify. Multi-step URLs are interpolated from earlier
@@ -95,6 +105,15 @@ pub(crate) async fn verify_multi_step(
                 };
             }
         };
+        if let Err(result) =
+            validate_header_body_templates(&step.headers, step.body.as_deref(), &current_companions)
+        {
+            return VerificationAttempt {
+                result,
+                metadata: all_metadata,
+                transient: false,
+            };
+        }
         let request = apply_header_body_templates(
             request,
             &step.headers,

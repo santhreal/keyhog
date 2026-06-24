@@ -11,7 +11,8 @@ use crate::oob::{OobObservation, OobSession};
 use crate::verify::multi_step::verify_multi_step;
 use crate::verify::{
     apply_header_body_templates, body_indicates_error, build_request_for_step, evaluate_success,
-    execute_and_read_response, extract_metadata, resolved_client_for_url, RequestBuildResult,
+    execute_and_read_response, extract_metadata, resolved_client_for_url,
+    validate_header_body_templates, validate_template_companions, RequestBuildResult,
 };
 
 const MAX_VERIFY_ATTEMPTS: usize = 3;
@@ -390,6 +391,15 @@ pub(crate) async fn verify_credential(
         )
         .await
     } else {
+        if let Err(result) =
+            validate_template_companions("verification URL", url_template, companions_ref)
+        {
+            return VerificationAttempt {
+                result,
+                metadata: HashMap::new(),
+                transient: false,
+            };
+        }
         let raw_url = interpolate_url(url_template, credential, companions_ref);
         if let Err(reason) = crate::domain_allowlist::check_url_against_spec(&raw_url, spec) {
             return VerificationAttempt {
@@ -449,6 +459,15 @@ pub(crate) async fn verify_credential(
             };
         }
     };
+    if let Err(result) =
+        validate_header_body_templates(&spec.headers, spec.body.as_deref(), companions_ref)
+    {
+        return VerificationAttempt {
+            result,
+            metadata: HashMap::new(),
+            transient: false,
+        };
+    }
     let request = apply_header_body_templates(
         request,
         &spec.headers,

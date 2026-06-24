@@ -7,7 +7,7 @@ use dashmap::DashMap;
 use keyhog_core::{HeaderSpec, HttpMethod, VerificationResult};
 use reqwest::Client;
 
-use crate::interpolate::interpolate_http_value;
+use crate::interpolate::{interpolate_http_value, missing_companion_refs};
 use crate::ssrf::{is_private_ip_addr, is_private_url};
 
 pub(crate) const PRIVATE_URL_ERROR: &str = "blocked: private URL";
@@ -361,6 +361,40 @@ pub(crate) fn apply_header_body_templates(
     }
 
     request
+}
+
+pub(crate) fn missing_companion_error(context: &str, missing: &[String]) -> VerificationResult {
+    VerificationResult::Error(format!(
+        "failed to resolve verification companion(s) in {context}: {}. Fix: configure detector companions that populate every companion.<name> reference before verification",
+        missing.join(", ")
+    ))
+}
+
+pub(crate) fn validate_template_companions(
+    context: &str,
+    template: &str,
+    companions: &HashMap<String, String>,
+) -> Result<(), VerificationResult> {
+    let missing = missing_companion_refs(template, companions);
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(missing_companion_error(context, &missing))
+    }
+}
+
+pub(crate) fn validate_header_body_templates(
+    headers: &[HeaderSpec],
+    body_template: Option<&str>,
+    companions: &HashMap<String, String>,
+) -> Result<(), VerificationResult> {
+    for header in headers {
+        validate_template_companions("verification header", &header.value, companions)?;
+    }
+    if let Some(body_template) = body_template {
+        validate_template_companions("verification body", body_template, companions)?;
+    }
+    Ok(())
 }
 
 fn request_for_method(

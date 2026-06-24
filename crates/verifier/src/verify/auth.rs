@@ -4,8 +4,11 @@ use std::time::Duration;
 use keyhog_core::{AuthSpec, VerificationResult};
 use reqwest::Client;
 
-use crate::interpolate::{interpolate_http_value, resolve_field, sanitize_raw_value};
-use crate::verify::{build_aws_probe, RequestBuildResult};
+use crate::interpolate::{
+    interpolate_http_value, missing_companion_field, missing_companion_refs, resolve_field,
+    sanitize_raw_value,
+};
+use crate::verify::{build_aws_probe, missing_companion_error, RequestBuildResult};
 
 pub(crate) async fn build_request_for_auth(
     request: reqwest::RequestBuilder,
@@ -23,6 +26,9 @@ pub(crate) async fn build_request_for_auth(
     match auth {
         AuthSpec::None => RequestBuildResult::Ready(request),
         AuthSpec::Bearer { field } => {
+            if let Some(missing) = missing_companion_field(field, companions) {
+                return missing_auth_companion("bearer auth field", vec![missing]);
+            }
             // SECURITY: kimi verifier audit LOW finding. Bearer token
             // values feed into `Authorization:` headers. If a credential
             // contains a CR/LF or NUL it must be stripped first, matching
@@ -34,6 +40,10 @@ pub(crate) async fn build_request_for_auth(
             RequestBuildResult::Ready(request.bearer_auth(token))
         }
         AuthSpec::Basic { username, password } => {
+            let missing = missing_auth_fields([username.as_str(), password.as_str()], companions);
+            if !missing.is_empty() {
+                return missing_auth_companion("basic auth field", missing);
+            }
             // SECURITY: same finding - Basic auth values land in the
             // Authorization header after reqwest base64-encodes them, but
             // a NUL byte in the raw username/password still propagates as
@@ -44,10 +54,17 @@ pub(crate) async fn build_request_for_auth(
             RequestBuildResult::Ready(request.basic_auth(u, Some(p)))
         }
         AuthSpec::Header { name, template } => {
+            let missing = missing_companion_refs(template, companions);
+            if !missing.is_empty() {
+                return missing_auth_companion("header auth template", missing);
+            }
             let value = interpolate_http_value(template, credential, companions);
             RequestBuildResult::Ready(request.header(name, value))
         }
         AuthSpec::Query { param, field } => {
+            if let Some(missing) = missing_companion_field(field, companions) {
+                return missing_auth_companion("query auth field", vec![missing]);
+            }
             // SECURITY: same finding - query params land in the URL.
             // reqwest percent-encodes safe chars but control bytes can
             // still survive in raw form depending on serializer path.
@@ -61,6 +78,16 @@ pub(crate) async fn build_request_for_auth(
             region,
             ..
         } => {
+            let missing =
+                missing_auth_fields([access_key.as_str(), secret_key.as_str()], companions);
+            if !missing.is_empty() {
+                return missing_auth_companion("AWS auth field", missing);
+            }
+            if let Some(token) = session_token.as_deref() {
+                if let Some(missing) = missing_companion_field(token, companions) {
+                    return missing_auth_companion("AWS session-token field", vec![missing]);
+                }
+            }
             build_aws_probe(
                 access_key,
                 secret_key,
@@ -132,6 +159,29 @@ pub(crate) async fn build_request_for_auth(
                 },
             }
         }
+    }
+}
+
+fn missing_auth_fields<const N: usize>(
+    fields: [&str; N],
+    companions: &HashMap<String, String>,
+) -> Vec<String> {
+    let mut missing = Vec::new();
+    for field in fields {
+        if let Some(name) = missing_companion_field(field, companions) {
+            if !missing.iter().any(|known| known == &name) {
+                missing.push(name);
+            }
+        }
+    }
+    missing
+}
+
+fn missing_auth_companion(context: &str, missing: Vec<String>) -> RequestBuildResult {
+    RequestBuildResult::Final {
+        result: missing_companion_error(context, &missing),
+        metadata: HashMap::new(),
+        transient: false,
     }
 }
 

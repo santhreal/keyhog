@@ -16,8 +16,8 @@ mod request;
 mod response;
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
@@ -28,20 +28,21 @@ use tokio::sync::{Notify, Semaphore};
 use tokio::task::JoinSet;
 
 use crate::cache;
-use crate::{DedupedMatch, VerificationEngine, VerifyConfig, VerifyError, into_finding};
+use crate::{into_finding, DedupedMatch, VerificationEngine, VerifyConfig, VerifyError};
 
 pub(crate) use aws::{build_aws_probe, classify_aws_sts_failure, parse_aws_sts_success_metadata};
 pub(crate) use credential::{
-    VerificationAttempt, rate_limit_feedback_sequence_for_test, retry_delay_bounds_for_attempt,
+    rate_limit_feedback_sequence_for_test, retry_delay_bounds_for_attempt,
     retry_loop_preserves_metadata_on_exhaustion_for_test,
-    retry_loop_records_rate_limit_feedback_for_test, verify_with_retry,
+    retry_loop_records_rate_limit_feedback_for_test, verify_with_retry, VerificationAttempt,
 };
 pub(crate) use multi_step::rate_limit_service_name as multi_step_rate_limit_service_name;
 pub(crate) use request::{
-    RequestBuildResult, apply_header_body_templates, build_request_for_step,
-    clear_pinned_client_cache_for_test, pinned_client_cache_len_for_host_for_test,
+    apply_header_body_templates, build_request_for_step, clear_pinned_client_cache_for_test,
+    missing_companion_error, pinned_client_cache_len_for_host_for_test,
     pinned_client_cache_len_for_test, pinned_client_for_test, resolved_client_for_url,
-    ssrf_check_url_with_resolved_addrs_for_test,
+    ssrf_check_url_with_resolved_addrs_for_test, validate_header_body_templates,
+    validate_template_companions, RequestBuildResult,
 };
 pub(crate) use response::{
     body_indicates_error, evaluate_success, execute_and_read_response, extract_metadata,

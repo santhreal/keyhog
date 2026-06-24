@@ -122,6 +122,45 @@ pub(crate) fn interpolate_http_value(
     )
 }
 
+pub(crate) fn missing_companion_field(
+    field: &str,
+    companions: &HashMap<String, String>,
+) -> Option<String> {
+    field
+        .strip_prefix("companion.")
+        .filter(|name| !companions.contains_key(*name))
+        .map(str::to_string)
+}
+
+pub(crate) fn missing_companion_refs(
+    template: &str,
+    companions: &HashMap<String, String>,
+) -> Vec<String> {
+    const MAX_COMPANION_REF_SCAN: usize = 1024;
+
+    let mut missing = Vec::new();
+    let mut search_from = 0usize;
+    let mut scanned = 0usize;
+    while scanned < MAX_COMPANION_REF_SCAN {
+        let Some(offset) = template[search_from..].find("{{companion.") else {
+            break;
+        };
+        let start = search_from + offset;
+        let Some(end_offset) = template[start..].find("}}") else {
+            break;
+        };
+        let name_start = start + "{{companion.".len();
+        let name_end = start + end_offset;
+        let name = &template[name_start..name_end];
+        if !companions.contains_key(name) && !missing.iter().any(|m| m == name) {
+            missing.push(name.to_string());
+        }
+        search_from = start + end_offset + 2;
+        scanned += 1;
+    }
+    missing
+}
+
 #[derive(Copy, Clone)]
 enum InterpolationContext {
     Url,
