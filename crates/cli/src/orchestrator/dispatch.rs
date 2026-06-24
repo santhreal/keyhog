@@ -26,6 +26,20 @@ use std::time::Instant;
 
 const COALESCED_CHUNK_SCAN_CEILING_BYTES: usize = 512 * 1024 * 1024;
 
+pub(super) fn record_oversized_coalesced_chunk_skip(chunk: &Chunk) {
+    let mb = chunk.data.len() / (1024 * 1024);
+    let path = chunk.metadata.path.as_deref().unwrap_or("<unknown>"); // LAW10: absent path/field => display placeholder for REPORTING only; coverage gap still recorded
+    eprintln!(
+        "keyhog: WARNING: skipping chunk over 512 MiB scan ceiling ({mb} MiB) at {path}; it was NOT scanned for secrets."
+    );
+    let _receipt = crate::record_source_error();
+    tracing::warn!(
+        path = %path,
+        size_mb = mb,
+        "skipping chunk over 512 MiB scan ceiling"
+    );
+}
+
 struct CoalescedScannerWorker {
     scanner: Arc<CompiledScanner>,
     router: CoalescedBatchRouter,
@@ -287,13 +301,7 @@ impl CoalescedBatchProducer {
                     }
                     Ok(c) => {
                         src_chunks += 1;
-                        let mb = c.data.len() / (1024 * 1024);
-                        let path = c.metadata.path.as_deref().unwrap_or("<unknown>"); // LAW10: absent path/field => display placeholder for REPORTING only; finding still emitted, recall-safe
-                        tracing::warn!(
-                            path = %path,
-                            size_mb = mb,
-                            "skipping chunk over 512 MiB scan ceiling"
-                        );
+                        record_oversized_coalesced_chunk_skip(&c);
                     }
                     Err(e) => {
                         let _receipt = crate::record_source_error();

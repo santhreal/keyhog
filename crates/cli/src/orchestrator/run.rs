@@ -423,6 +423,7 @@ impl ScanOrchestrator {
 
 fn source_coverage_incomplete() -> bool {
     let counts = keyhog_sources::skip_counts();
+    let source_errors = crate::SOURCE_ERRORS.load(std::sync::atomic::Ordering::Relaxed);
     let source_gaps = counts.over_max_size
         + counts.binary
         + counts.unreadable
@@ -444,5 +445,5 @@ fn source_coverage_incomplete() -> bool {
         + keyhog_scanner::telemetry::invalid_pattern_index_skip_count()
         + keyhog_scanner::telemetry::boundary_result_cardinality_mismatch_count();
 
-    source_gaps + binary_gaps + scanner_coverage_gaps > 0
+    source_errors + source_gaps + binary_gaps + scanner_coverage_gaps > 0
 }

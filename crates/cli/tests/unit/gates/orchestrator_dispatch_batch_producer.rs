@@ -9,6 +9,7 @@ fn coalesced_batch_producer_owns_source_to_batch_flow() {
     for required in [
         "struct CoalescedBatchProducer",
         "struct CoalescedProducerOutcome",
+        "fn record_oversized_coalesced_chunk_skip(",
         "fn produce_sources(mut self",
         "fn record_unchanged_chunk(&mut self",
         "fn flush_batch(&mut self)",
@@ -20,6 +21,12 @@ fn coalesced_batch_producer_owns_source_to_batch_flow() {
             "coalesced scan dispatch must keep source-to-batch boundary `{required}`"
         );
     }
+    assert!(
+        dispatch.contains("record_oversized_coalesced_chunk_skip(&c)")
+            && dispatch.contains("record_source_error()")
+            && dispatch.contains("it was NOT scanned for secrets"),
+        "oversized coalesced chunks must be operator-visible source coverage gaps, not trace-only drops"
+    );
 
     let scan_sources = dispatch
         .split("pub(crate) fn scan_sources(")

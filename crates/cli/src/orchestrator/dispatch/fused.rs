@@ -182,7 +182,7 @@ impl ScanOrchestrator {
                 let mut src_errored = false;
                 for chunk_result in source.chunks() {
                     match chunk_result {
-                        Ok(c) if c.data.len() <= 512 * 1024 * 1024 => {
+                        Ok(c) if c.data.len() <= super::COALESCED_CHUNK_SCAN_CEILING_BYTES => {
                             src_chunks += 1;
                             batch.push(c);
                             if batch.len() >= fused_batch {
@@ -194,13 +194,7 @@ impl ScanOrchestrator {
                         }
                         Ok(c) => {
                             src_chunks += 1;
-                            let mb = c.data.len() / (1024 * 1024);
-                            let path = c.metadata.path.as_deref().unwrap_or("<unknown>"); // LAW10: absent path/field => display placeholder for REPORTING only; finding still emitted, recall-safe
-                            tracing::warn!(
-                                path = %path,
-                                size_mb = mb,
-                                "skipping chunk over 512 MiB scan ceiling"
-                            );
+                            super::record_oversized_coalesced_chunk_skip(&c);
                         }
                         Err(e) => {
                             let _receipt = crate::record_source_error();

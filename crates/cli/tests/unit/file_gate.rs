@@ -63,6 +63,12 @@ fn lib_scan_failure_counters_have_typed_owner() {
         "incremental cache persistence failures must go through the typed failure owner and stderr"
     );
     assert!(
+        dispatch.contains("fn record_oversized_coalesced_chunk_skip(")
+            && fused.contains("super::record_oversized_coalesced_chunk_skip(&c)")
+            && fused.contains("COALESCED_CHUNK_SCAN_CEILING_BYTES"),
+        "coalesced and fused oversized chunk drops must share one loud source-error recorder"
+    );
+    assert!(
         fused.contains("fused source drain thread panicked")
             && fused.contains("record_scanner_panic()")
             && !fused.contains("let _ = drain.join()"),
@@ -99,6 +105,11 @@ fn scan_exit_precedence_keeps_system_failure_above_source_coverage_gap() {
         "exit precedence must be live -> panic -> findings -> system/cache failure -> \
          source coverage failure. A source coverage warning must not mask a system \
          cache failure when there are no findings."
+    );
+    assert!(
+        run.contains("let source_errors = crate::SOURCE_ERRORS.load")
+            && run.contains("source_errors + source_gaps + binary_gaps + scanner_coverage_gaps > 0"),
+        "source errors emitted by partial sources or orchestrator drops must make clean-looking scans exit as incomplete coverage"
     );
 }
 
