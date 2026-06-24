@@ -14,9 +14,12 @@ use tempfile::TempDir;
 const PLANTED_AWS_KEY: &str = concat!("AKIA", "QYLPMN5HFIQR7XYA");
 
 fn parse_json_array(stdout: &[u8], context: &str) -> Vec<serde_json::Value> {
-    let stdout = String::from_utf8_lossy(stdout);
-    let value = serde_json::from_str::<serde_json::Value>(&stdout)
-        .unwrap_or_else(|error| panic!("{context}: stdout is not valid JSON: {error}\n{stdout}"));
+    let value = serde_json::from_slice::<serde_json::Value>(stdout).unwrap_or_else(|error| {
+        panic!(
+            "{context}: stdout is not valid UTF-8 JSON: {error}\n{}",
+            String::from_utf8_lossy(stdout)
+        )
+    });
     value
         .as_array()
         .unwrap_or_else(|| panic!("{context}: JSON report must be an array, got {value}"))
@@ -49,16 +52,21 @@ pub fn oracle_unicode_path_scan() {
         "unicode filename scan must find the planted secret; stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
+    assert!(
+        !output
+            .stdout
+            .windows(PLANTED_AWS_KEY.len())
+            .any(|window| window == PLANTED_AWS_KEY.as_bytes()),
+        "unicode path JSON report must redact the planted credential; stdout={}",
+        String::from_utf8_lossy(&output.stdout)
+    );
     let findings = parse_json_array(&output.stdout, "unicode path scan JSON");
     assert!(
         findings.iter().any(|finding| {
             finding
                 .pointer("/location/file_path")
                 .and_then(|v| v.as_str())
-                .is_some_and(|path| {
-                    // macOS may report the accented filename in decomposed form.
-                    path.contains("caf") && path.ends_with(".txt")
-                })
+                .is_some_and(|path| path.ends_with("café.txt") || path.ends_with("cafe\u{301}.txt"))
                 && finding
                     .get("detector_id")
                     .and_then(|v| v.as_str())

@@ -73,6 +73,14 @@ fn multi_step_oob_refused() -> VerificationAttempt {
     }
 }
 
+pub(crate) fn empty_credential_attempt() -> VerificationAttempt {
+    VerificationAttempt {
+        result: VerificationResult::Unverifiable,
+        metadata: HashMap::new(),
+        transient: false,
+    }
+}
+
 pub(crate) struct VerificationAttempt {
     pub result: VerificationResult,
     pub metadata: HashMap<String, String>,
@@ -295,6 +303,10 @@ pub(crate) async fn verify_credential(
     allow_script_verify: bool,
     oob_session: Option<&Arc<OobSession>>,
 ) -> VerificationAttempt {
+    if credential.is_empty() {
+        return empty_credential_attempt();
+    }
+
     if !spec.steps.is_empty() {
         if spec.oob.is_some() {
             return multi_step_oob_refused();

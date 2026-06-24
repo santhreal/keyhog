@@ -5,7 +5,7 @@ use keyhog_core::VerificationResult;
 use reqwest::Client;
 
 use crate::interpolate::interpolate_url;
-use crate::verify::credential::verification_timeout;
+use crate::verify::credential::{empty_credential_attempt, verification_timeout};
 use crate::verify::{
     apply_header_body_templates, body_indicates_error, build_request_for_step, evaluate_success,
     execute_and_read_response, extract_metadata, resolved_client_for_url,
@@ -25,6 +25,10 @@ pub(crate) async fn verify_multi_step(
     insecure_tls: bool,
     allow_script_verify: bool,
 ) -> VerificationAttempt {
+    if credential.is_empty() {
+        return empty_credential_attempt();
+    }
+
     let mut all_metadata = HashMap::new();
     let mut current_companions = companions.clone();
     let mut last_result = VerificationResult::Unverifiable;
