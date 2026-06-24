@@ -81,6 +81,25 @@ fn binary_magic_structural_bmp_pe_and_bzip2_headers_are_binary() {
 }
 
 #[test]
+fn binary_magic_zstd_header_is_binary_in_full_and_prefix_paths() {
+    let mut bytes = vec![0x28, 0xb5, 0x2f, 0xfd, 0x00, b'a', b'b', b'c'];
+    bytes.extend_from_slice(&[b'a'; 256]);
+
+    assert!(looks_binary(&bytes));
+    assert!(looks_binary_prefix(&bytes));
+    assert!(decode_text_file(&bytes).is_none());
+}
+
+#[test]
+fn binary_magic_pickle_header_is_full_file_only() {
+    let bytes = [0x80, 0x02, b'}'];
+
+    assert!(looks_binary(&bytes));
+    assert!(!looks_binary_prefix(&bytes));
+    assert!(decode_text_file(&bytes).is_none());
+}
+
+#[test]
 fn looks_binary_short_circuit_matches_full_scan() {
     // Random fixed-seed mix; exhaustive comparison against the
     // previous "filter().count()" implementation for several sizes
