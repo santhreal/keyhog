@@ -3,6 +3,7 @@
 use super::gpu_shader::MOE_SHADER;
 
 use bytemuck::{Pod, Zeroable};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::TryRecvError;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -287,11 +288,11 @@ pub(super) fn gpu_runtime_identity() -> Option<String> {
 
 /// One-shot guard so a *runtime* GPU-MoE dispatch failure surfaces once per
 /// process, not once per batch on a multi-thousand-batch scan.
-static MOE_RUNTIME_DEGRADE_WARNED: OnceLock<()> = OnceLock::new();
+static MOE_RUNTIME_DEGRADE_WARNED: AtomicBool = AtomicBool::new(false);
 
 /// One-shot guard for the distinct NaN/Inf-score case (a GPU correctness fault,
 /// not a dispatch failure); surfaced once per process by [`moe_nonfinite_degrade`].
-static MOE_NONFINITE_WARNED: OnceLock<()> = OnceLock::new();
+static MOE_NONFINITE_WARNED: AtomicBool = AtomicBool::new(false);
 
 /// Surface a runtime GPU-MoE dispatch failure that is about to degrade the
 /// affected batch(es) to the CPU MoE. This mirrors `engine::gpu_forced`'s
@@ -321,7 +322,11 @@ fn moe_runtime_degrade(reason: &str) {
     if no_gpu {
         return;
     }
-    if MOE_RUNTIME_DEGRADE_WARNED.set(()).is_ok() {
+    tracing::warn!(
+        reason,
+        "GPU MoE dispatch failed at runtime; affected batches are scored on the CPU MoE"
+    );
+    if !MOE_RUNTIME_DEGRADE_WARNED.swap(true, Ordering::Relaxed) {
         eprintln!(
             "keyhog: GPU MoE dispatch failed at runtime ({reason}); affected batches in \
 this scan are scored on the CPU MoE (identical scores, lower throughput). Set \
@@ -354,7 +359,12 @@ Refusing to silently sanitize and continue."
     if no_gpu {
         return;
     }
-    if MOE_NONFINITE_WARNED.set(()).is_ok() {
+    tracing::error!(
+        nonfinite,
+        total,
+        "GPU MoE produced non-finite confidence scores; scores were sanitized to neutral 0.5"
+    );
+    if !MOE_NONFINITE_WARNED.swap(true, Ordering::Relaxed) {
         eprintln!(
             "keyhog: GPU MoE produced {nonfinite}/{total} non-finite (NaN/Inf) confidence \
 score(s); each was sanitized to a neutral 0.5 so the finding still surfaces on its \

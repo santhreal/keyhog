@@ -1,24 +1,21 @@
-#[test]
-fn verify_all_preserves_join_error_groups_as_error_findings() {
-    let verify = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/verify/mod.rs"))
-        .expect("read verifier implementation");
-    let verify_all = verify
-        .split("pub async fn verify_all(")
-        .nth(1)
-        .and_then(|tail| tail.split("pub async fn enable_oob(").next())
-        .expect("verify_all body extractable");
+use keyhog_core::VerificationResult;
 
-    for required in [
-        "join_next_with_id()",
-        "let mut task_groups = HashMap::new();",
-        "spawn_tracked_verify_task(",
-        "let task_id = join_error.id();",
-        "task_groups.remove(&task_id)",
-        "VerificationResult::Error(format!",
-    ] {
-        assert!(
-            verify_all.contains(required),
-            "verify_all must preserve verifier task join failures through `{required}`"
-        );
+#[tokio::test]
+async fn verify_all_preserves_join_error_groups_as_error_findings() {
+    let finding = keyhog_verifier::testing::tracked_join_error_preservation_for_test()
+        .await
+        .expect("aborted tracked verifier task should produce an error finding");
+
+    assert_eq!(finding.detector_id.as_ref(), "test-detector");
+    assert_eq!(finding.service.as_ref(), "test-service");
+    assert_eq!(finding.location.file_path.as_deref(), Some("fixture.txt"));
+    match finding.verification {
+        VerificationResult::Error(message) => {
+            assert!(
+                message.contains("verification task failed to join"),
+                "join failure must be preserved in the verification result, got {message}"
+            );
+        }
+        other => panic!("expected verification error for aborted task, got {other:?}"),
     }
 }

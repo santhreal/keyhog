@@ -22,10 +22,12 @@ use std::time::Duration;
 
 use dashmap::DashMap;
 use futures_util::FutureExt;
-use keyhog_core::{SensitiveString, VerificationResult, VerifiedFinding};
+use keyhog_core::{
+    CredentialHash, MatchLocation, SensitiveString, Severity, VerificationResult, VerifiedFinding,
+};
 use reqwest::Client;
 use tokio::sync::{Notify, Semaphore};
-use tokio::task::{Id as TaskId, JoinSet};
+use tokio::task::{Id as TaskId, JoinError, JoinSet};
 
 use crate::cache;
 use crate::{into_finding, DedupedMatch, VerificationEngine, VerifyConfig, VerifyError};
@@ -197,6 +199,65 @@ fn spawn_tracked_verify_task(
     let group_for_error = group.clone();
     let abort_handle = join_set.spawn(verify_group_task_safe(shared, group));
     task_groups.insert(abort_handle.id(), group_for_error);
+}
+
+fn finding_for_join_error(
+    join_error: JoinError,
+    task_groups: &mut HashMap<TaskId, DedupedMatch>,
+) -> Option<VerifiedFinding> {
+    let task_id = join_error.id();
+    tracing::error!(
+        %join_error,
+        %task_id,
+        "a verification task failed to join; preserving the credential group as a verification error"
+    );
+    match task_groups.remove(&task_id) {
+        Some(group) => Some(into_finding(
+            group,
+            VerificationResult::Error(format!("verification task failed to join: {join_error}")),
+            HashMap::new(),
+        )),
+        None => {
+            tracing::error!(
+                %task_id,
+                "a verification task failed to join but had no tracked credential group"
+            );
+            None
+        }
+    }
+}
+
+#[doc(hidden)]
+pub async fn tracked_join_error_preservation_for_test() -> Option<VerifiedFinding> {
+    let mut join_set = JoinSet::new();
+    let mut task_groups = HashMap::new();
+    let group = DedupedMatch {
+        detector_id: Arc::from("test-detector"),
+        detector_name: Arc::from("Test Detector"),
+        service: Arc::from("test-service"),
+        severity: Severity::High,
+        credential: SensitiveString::from("test-secret-for-join-error"),
+        credential_hash: CredentialHash::ZERO,
+        companions: HashMap::new(),
+        primary_location: MatchLocation {
+            source: Arc::from("test"),
+            file_path: Some(Arc::from("fixture.txt")),
+            line: Some(1),
+            offset: 0,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        additional_locations: Vec::new(),
+        confidence: Some(0.9),
+    };
+    let abort_handle = join_set.spawn(async { std::future::pending::<VerifiedFinding>().await });
+    task_groups.insert(abort_handle.id(), group);
+    abort_handle.abort();
+    match join_set.join_next_with_id().await {
+        Some(Err(join_error)) => finding_for_join_error(join_error, &mut task_groups),
+        _ => None,
+    }
 }
 
 async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> VerifiedFinding {
@@ -421,20 +482,8 @@ impl VerificationEngine {
                     out.push(finding);
                 }
                 Err(join_error) => {
-                    let task_id = join_error.id();
-                    tracing::error!(
-                        %join_error,
-                        %task_id,
-                        "a verification task failed to join; preserving the credential group as a verification error"
-                    );
-                    if let Some(group) = task_groups.remove(&task_id) {
-                        out.push(into_finding(
-                            group,
-                            VerificationResult::Error(format!(
-                                "verification task failed to join: {join_error}"
-                            )),
-                            HashMap::new(),
-                        ));
+                    if let Some(finding) = finding_for_join_error(join_error, &mut task_groups) {
+                        out.push(finding);
                     }
                 }
             }
