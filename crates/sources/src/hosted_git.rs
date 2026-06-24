@@ -97,6 +97,14 @@ fn repo_unreadable_error(
     ))
 }
 
+pub(crate) fn repo_listing_unreadable_error(
+    platform: &str,
+    repo_display_path: &str,
+    error: SourceError,
+) -> SourceError {
+    repo_unreadable_error(platform, repo_display_path, error)
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Mutex, MutexGuard};

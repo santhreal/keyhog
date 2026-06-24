@@ -124,15 +124,18 @@ fn collect_workspace_chunks(
     validate_basic_auth(username, token)?;
     let api_root = hosted_git::validated_api_endpoint("bitbucket", endpoint)?;
     let client = build_client(username, token, http)?;
-    let repos = list_repositories(&client, &api_root, workspace, limits.hosted_git_pages)?;
-    hosted_git::scan_hosted_repos(
+    let (repos, listing_errors) =
+        list_repositories(&client, &api_root, workspace, limits.hosted_git_pages)?;
+    let mut rows = hosted_git::scan_hosted_repos(
         "bitbucket",
         "bitbucket-workspace",
         Some(workspace),
         username,
         token,
         &repos,
-    )
+    )?;
+    rows.extend(listing_errors.into_iter().map(Err));
+    Ok(rows)
 }
 
 fn build_client(
@@ -164,8 +167,9 @@ fn list_repositories(
     api_root: &reqwest::Url,
     workspace: &str,
     max_pages: usize,
-) -> Result<Vec<HostedRepo>, SourceError> {
+) -> Result<(Vec<HostedRepo>, Vec<SourceError>), SourceError> {
     let mut repos = Vec::new();
+    let mut listing_errors = Vec::new();
     let mut url = api_root.clone();
     url.set_path(&format!(
         "{}/repositories/{workspace}",
@@ -188,9 +192,18 @@ fn list_repositories(
             hosted_git::api_unreadable_error(format!("failed to parse Bitbucket API response: {e}"))
         })?;
         for repo in page.values {
-            hosted_git::validate_repo_name("bitbucket", &repo.slug)?;
             let slug = repo.slug.clone();
-            let clone_url = repo_https_clone_url(repo)?;
+            let clone_url = match repo_https_clone_url(repo) {
+                Ok(clone_url) => clone_url,
+                Err(error) => {
+                    listing_errors.push(hosted_git::repo_listing_unreadable_error(
+                        "bitbucket",
+                        &slug,
+                        error,
+                    ));
+                    continue;
+                }
+            };
             repos.push(HostedRepo {
                 clone_dir_name: format!("repo-{}", repos.len()),
                 display_path: slug,
@@ -199,7 +212,7 @@ fn list_repositories(
         }
 
         let Some(next) = page.next else {
-            return Ok(repos);
+            return Ok((repos, listing_errors));
         };
         let next_url = reqwest::Url::parse(&next).map_err(|e| {
             hosted_git::api_unreadable_error(format!("bitbucket: invalid next page URL: {e}"))
@@ -212,7 +225,7 @@ fn list_repositories(
         "Bitbucket",
         "workspace",
         workspace,
-        repos.len(),
+        repos.len() + listing_errors.len(),
         max_pages,
     ))
 }
@@ -230,6 +243,61 @@ fn repo_https_clone_url(repo: BitbucketRepo) -> Result<String, SourceError> {
                 slug
             ))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Mutex, MutexGuard};
+
+    use super::list_repositories;
+
+    static COUNTER_LOCK: Mutex<()> = Mutex::new(());
+
+    fn counter_guard() -> MutexGuard<'static, ()> {
+        COUNTER_LOCK.lock().expect("bitbucket counter lock")
+    }
+
+    fn api_root(server: &httpmock::MockServer) -> reqwest::Url {
+        reqwest::Url::parse(&server.url("/2.0")).expect("valid mock API root")
+    }
+
+    #[test]
+    fn missing_https_clone_link_is_row_error_not_listing_abort() {
+        let _guard = counter_guard();
+        crate::reset_skip_counters();
+        let server = httpmock::MockServer::start();
+        let _list = server.mock(|when, then| {
+            when.method(httpmock::Method::GET)
+                .path("/2.0/repositories/acme")
+                .query_param("pagelen", "100");
+            then.status(200).header("content-type", "application/json")
+                .body(r#"{"values":[{"slug":"good","links":{"clone":[{"name":"https","href":"https://bitbucket.org/acme/good.git"}]}},{"slug":"bad","links":{"clone":[{"name":"ssh","href":"ssh://git@bitbucket.org/acme/bad.git"}]}}],"next":null}"#);
+        });
+
+        let (repos, errors) =
+            list_repositories(&http_client(), &api_root(&server), "acme", 1).expect("listing");
+        assert_eq!(repos.len(), 1, "valid sibling repo must be preserved");
+        assert_eq!(repos[0].display_path, "good");
+        assert_eq!(errors.len(), 1, "bad sibling must become one row error");
+        let error = errors[0].to_string();
+        assert!(
+            error.contains("bad")
+                && error.contains("did not include an HTTPS clone link")
+                && error.contains("repository was not scanned"),
+            "bad repo error must explain the unscanned malformed record, got {error}"
+        );
+        assert_eq!(
+            crate::skip_counts().unreadable,
+            1,
+            "malformed Bitbucket repo record must count as unreadable"
+        );
+    }
+
+    fn http_client() -> reqwest::blocking::Client {
+        reqwest::blocking::Client::builder()
+            .build()
+            .expect("mock client")
+    }
 }
 
 pub(crate) fn validate_workspace(workspace: &str) -> Result<(), SourceError> {

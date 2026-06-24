@@ -159,7 +159,6 @@ fn list_projects(
         })?;
         let count = projects.len();
         for project in projects {
-            hosted_git::validate_display_path("gitlab", &project.path_with_namespace)?;
             repos.push(HostedRepo {
                 clone_dir_name: format!("repo-{}", repos.len()),
                 display_path: project.path_with_namespace,
