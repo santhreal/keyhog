@@ -42,6 +42,7 @@ mod octal_escape_truncated_at_eol;
 mod reverse_rejects_alphabetic_prose;
 mod reverse_rejects_short_candidates;
 mod take_hex_digits_empty_iterator;
+mod unicode_escape_control_chars;
 mod unicode_escape_invalid_codepoint;
 mod url_percent_double_encoded_invalid;
 mod z85_decode_four_null_bytes;

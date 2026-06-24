@@ -33,9 +33,22 @@ pub(super) fn unicode_escape_decode(input: &str) -> Result<String, ()> {
                 lazy_decoded_prefix(&mut decoded_text, input, idx)
                     .push(char::from_u32(code).ok_or(())?);
             }
-            Some(escaped) => lazy_decoded_prefix(&mut decoded_text, input, idx).push(escaped),
+            Some(escaped) => {
+                lazy_decoded_prefix(&mut decoded_text, input, idx).push(simple_escape(escaped));
+            }
             None => return Err(()),
         }
     }
     decoded_text.ok_or(())
+}
+
+fn simple_escape(escaped: char) -> char {
+    match escaped {
+        'b' => '\x08',
+        'f' => '\x0c',
+        'n' => '\n',
+        'r' => '\r',
+        't' => '\t',
+        other => other,
+    }
 }

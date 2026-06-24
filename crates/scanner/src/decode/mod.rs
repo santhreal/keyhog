@@ -19,14 +19,18 @@ pub(crate) use base64::{is_base64_candidate_byte, is_standard_base64_byte, stand
 pub use hex::{find_hex_strings, hex_decode};
 pub(crate) use pipeline::decode_chunk;
 pub use pipeline::register_decoder;
+#[cfg(test)]
+pub(crate) use pipeline::{ScopedDecoderRegistration, register_thread_decoder};
 pub(crate) use pipeline::{
     decoder_profile_dump, decoder_profile_reset, extract_profile_dump, extract_profile_reset,
 };
-#[cfg(test)]
-pub(crate) use pipeline::{register_thread_decoder, ScopedDecoderRegistration};
 pub(crate) use util::take_hex_digits;
 
 use keyhog_core::Chunk;
+
+pub(crate) fn unicode_escape_decode(input: &str) -> Result<String, ()> {
+    unicode_escape::unicode_escape_decode(input)
+}
 
 /// Minimum contiguous encoded-alphabet run that makes a chunk worth decoding.
 /// A base64 of a ~16-byte secret is ~24 chars; shorter runs are too small to

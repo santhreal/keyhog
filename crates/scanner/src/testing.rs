@@ -1096,7 +1096,7 @@ pub(crate) mod entropy_keywords {
 
 pub mod checksum {
     pub use crate::checksum::{
-        checksum_adjusted_confidence, validate_checksum, ChecksumResult, CHECKSUM_VALID_FLOOR,
+        CHECKSUM_VALID_FLOOR, ChecksumResult, checksum_adjusted_confidence, validate_checksum,
     };
 
     pub fn standard_crc32(data: &[u8]) -> u32 {
@@ -1969,6 +1969,10 @@ where
     I: Iterator<Item = char>,
 {
     crate::decode::take_hex_digits(chars, count)
+}
+
+pub fn unicode_escape_decode(input: &str) -> Result<String, ()> {
+    crate::decode::unicode_escape_decode(input)
 }
 
 #[cfg(test)]
