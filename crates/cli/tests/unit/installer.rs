@@ -499,6 +499,16 @@ fn reap_stale_binaries_does_not_flatten_read_dir_errors() {
         "installer stale-artifact reap must match read_dir entry errors explicitly"
     );
     assert!(
+        src.contains("fn remove_installer_artifact_best_effort(")
+            && src.contains("failed to remove installer artifact; it may need manual cleanup")
+            && src.contains("remove_installer_artifact_best_effort(")
+            && !src.contains("let _ = std::fs::remove_file(&tmp)")
+            && !src.contains("let _ = std::fs::remove_file(entry.path())")
+            && !src.contains("let _ = std::fs::remove_file(&backup)")
+            && !src.contains("let _ = std::fs::remove_file(&stash)"),
+        "installer artifact cleanup must be best-effort but visible, not anonymous let-_ remove_file"
+    );
+    assert!(
         src.contains("cannot read installer artifact directory entry"),
         "installer stale-artifact reap must log unreadable directory entries"
     );

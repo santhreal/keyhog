@@ -37,6 +37,17 @@ mod variant;
 pub(crate) use release::*;
 pub(crate) use variant::*;
 
+fn remove_installer_artifact_best_effort(path: &Path, context: &str) {
+    if let Err(error) = std::fs::remove_file(path) {
+        tracing::warn!(
+            path = %path.display(),
+            %error,
+            %context,
+            "failed to remove installer artifact; it may need manual cleanup"
+        );
+    }
+}
+
 /// Resolve the running binary, following symlinks so we replace the real file.
 pub(crate) fn current_binary() -> Result<std::path::PathBuf> {
     let exe = std::env::current_exe().context("locate current executable")?;
@@ -60,7 +71,7 @@ pub(crate) fn install_binary(exe: &Path, bytes: &[u8]) -> Result<()> {
     // up the new binary.
     let tmp = dir.join(format!(".keyhog-update-{}.tmp", std::process::id()));
     let cleanup = |e: std::io::Error| {
-        let _ = std::fs::remove_file(&tmp); // LAW10: unused-binding marker; no runtime effect, not a fallback
+        remove_installer_artifact_best_effort(&tmp, "failed unix install_binary cleanup");
         e
     };
     std::fs::write(&tmp, bytes)
@@ -246,7 +257,7 @@ pub(crate) fn reap_stale_binaries(exe: &Path) {
         let fname = entry.file_name();
         let fname = fname.to_string_lossy();
         if should_reap_installer_artifact(&fname, &stash_prefix, &backup_prefix) {
-            let _ = std::fs::remove_file(entry.path()); // LAW10: unused-binding marker; no runtime effect, not a fallback
+            remove_installer_artifact_best_effort(&entry.path(), "stale installer artifact reap");
         }
     }
 }
@@ -524,7 +535,10 @@ where
     // succeed or leave the original), so just drop the backup and bail.
     if let Err(e) = install_binary(exe, bytes) {
         if had_prior {
-            let _ = std::fs::remove_file(&backup); // LAW10: unused-binding marker; no runtime effect, not a fallback
+            remove_installer_artifact_best_effort(
+                &backup,
+                "failed unix rollback backup cleanup after install error",
+            );
         }
         return Err(e);
     }
@@ -532,7 +546,10 @@ where
     let verify_error = match verify(exe) {
         Ok(()) => {
             if had_prior {
-                let _ = std::fs::remove_file(&backup); // LAW10: unused-binding marker; no runtime effect, not a fallback
+                remove_installer_artifact_best_effort(
+                    &backup,
+                    "failed unix rollback backup cleanup after successful install",
+                );
             }
             return Ok(());
         }
@@ -578,7 +595,10 @@ where
     // the next `update`/`repair` to clear via `reap_stale_binaries`.
     let stash = replace_running_binary_checked(exe, bytes, verify)?;
     if let Some(stash) = stash {
-        let _ = std::fs::remove_file(&stash); // LAW10: unused-binding marker; no runtime effect, not a fallback
+        remove_installer_artifact_best_effort(
+            &stash,
+            "failed windows rename-away stash cleanup after successful install",
+        );
     }
     Ok(())
 }
