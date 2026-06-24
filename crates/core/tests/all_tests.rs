@@ -5,6 +5,7 @@ pub mod gap;
 pub mod integration;
 pub mod property;
 pub mod regression;
+pub mod regression_text_summary_revoked_is_inactive;
 pub mod support {
     pub mod reporters;
 }

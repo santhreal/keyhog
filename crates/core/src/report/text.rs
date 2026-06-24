@@ -90,11 +90,20 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
         }
         self.count += 1;
 
-        // Track verification stats
+        // Track verification stats. `Dead` and `Revoked` are both CONFIRMED-
+        // INACTIVE outcomes of a real verification, so both count toward the
+        // inactive (`dead`) tally. Folding `Revoked` here keeps the summary's
+        // `unverified = count - live - dead` honest: a verified-revoked secret
+        // was verified - it must not be reported as "unverified" (which means
+        // "liveness unknown"). The per-finding line still shows `revoked`
+        // precisely; only this coarse roll-up groups the two inactive states.
         match &finding.verification {
             VerificationResult::Live => self.live_count += 1,
-            VerificationResult::Dead => self.dead_count += 1,
-            _ => {}
+            VerificationResult::Dead | VerificationResult::Revoked => self.dead_count += 1,
+            VerificationResult::RateLimited
+            | VerificationResult::Error(_)
+            | VerificationResult::Unverifiable
+            | VerificationResult::Skipped => {}
         }
 
         let severity_str = report_style::severity_label(finding.severity, self.color);
