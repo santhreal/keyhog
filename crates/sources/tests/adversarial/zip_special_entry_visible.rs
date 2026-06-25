@@ -3,7 +3,7 @@
 use crate::support::split_chunk_results;
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
-use keyhog_sources::FilesystemSource;
+use keyhog_sources::{skip_counts, FilesystemSource};
 use std::io::Cursor;
 use std::io::Write;
 use zip::write::SimpleFileOptions;
@@ -12,6 +12,7 @@ use zip::ZipWriter;
 #[test]
 fn zip_symlink_entry_emits_source_error() {
     let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().expect("tempdir");
     let zip_path = dir.path().join("special.zip");
     let cursor = Cursor::new(Vec::new());
@@ -58,6 +59,11 @@ fn zip_symlink_entry_emits_source_error() {
             && error.contains("special file type")
             && error.contains("entry was not scanned"),
         "special ZIP entry error must name the skipped entry and reason, got {error}"
+    );
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "refused ZIP symlink entry must count one unreadable coverage gap"
     );
 }
 
