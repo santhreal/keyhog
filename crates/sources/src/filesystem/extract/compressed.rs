@@ -26,29 +26,32 @@ struct DecompressedBytes {
 }
 
 impl CompressedFormat {
-    fn from_ext(ext: &str) -> Self {
-        if ext.eq_ignore_ascii_case("gz") || ext.eq_ignore_ascii_case("tgz") {
+    fn from_ext(ext: &str) -> Option<Self> {
+        if ext.eq_ignore_ascii_case("gz") || is_tgz_ext(ext) {
             // `.tgz` is `gzip(tar)`; the outer stream is always gzip.
-            CompressedFormat::Gzip
+            Some(CompressedFormat::Gzip)
         } else if ext.eq_ignore_ascii_case("zst") {
-            CompressedFormat::Zstd
+            Some(CompressedFormat::Zstd)
         } else if ext.eq_ignore_ascii_case("lz4") {
-            CompressedFormat::Lz4
+            Some(CompressedFormat::Lz4)
+        } else if ext.eq_ignore_ascii_case("sz") {
+            Some(CompressedFormat::Snappy)
         } else if ext.eq_ignore_ascii_case("bz2") {
-            CompressedFormat::Bzip2
+            Some(CompressedFormat::Bzip2)
         } else if ext.eq_ignore_ascii_case("xz") {
-            CompressedFormat::Xz
+            Some(CompressedFormat::Xz)
         } else {
-            CompressedFormat::Snappy
+            None
         }
     }
 }
 
 pub(super) fn is_compressed_ext(ext: &str) -> bool {
-    const COMPRESSED_EXTS: &[&str] = &["gz", "tgz", "zst", "lz4", "sz", "bz2", "xz"];
-    COMPRESSED_EXTS
-        .iter()
-        .any(|candidate| ext.eq_ignore_ascii_case(candidate))
+    CompressedFormat::from_ext(ext).is_some()
+}
+
+fn is_tgz_ext(ext: &str) -> bool {
+    ext.eq_ignore_ascii_case("tgz")
 }
 
 fn decompress_to_bytes(
@@ -425,7 +428,15 @@ pub(super) fn extract_compressed_chunks(
     }
 
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
-    let format = CompressedFormat::from_ext(ext);
+    let Some(format) = CompressedFormat::from_ext(ext) else {
+        let path_display = display_path(path);
+        if !emit(Err(SourceError::Other(format!(
+            "failed to scan compressed file '{path_display}': extension '{ext}' is not a supported compressed stream"
+        )))) {
+            return;
+        }
+        return;
+    };
 
     let file_bytes = match read::read_file_for_compressed_input(path, max_size) {
         Some(b) => b,
@@ -476,7 +487,7 @@ pub(super) fn extract_compressed_chunks(
 
     // `.tgz` is unconditionally a tarball; for the other extensions sniff the
     // decompressed bytes (a `foo.tar.gz` arrives as ext `gz`).
-    if ext.eq_ignore_ascii_case("tgz") || looks_like_tar(&decompressed) {
+    if is_tgz_ext(ext) || looks_like_tar(&decompressed) {
         emit_tar_entries(&decompressed, &path_display, max_size, emit);
         return;
     }

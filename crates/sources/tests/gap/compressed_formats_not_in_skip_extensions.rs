@@ -17,15 +17,16 @@ fn xz_and_bzip2_route_to_compressed_extractor() {
     }
 
     let extract = read("src/filesystem/extract.rs");
-    for ext in ["bz2", "xz"] {
-        assert!(
-            extract.contains(&format!("ext == \"{ext}\"")),
-            "process_entry must route .{ext} to extract_compressed_chunks"
-        );
-    }
+    assert!(
+        extract.contains("compressed::is_compressed_ext(ext)")
+            && extract.contains("compressed::extract_compressed_chunks"),
+        "process_entry must route compressed extensions through the shared compressed classifier"
+    );
 
     let compressed = read("src/filesystem/extract/compressed.rs");
     for needle in [
+        "ext.eq_ignore_ascii_case(\"bz2\")",
+        "ext.eq_ignore_ascii_case(\"xz\")",
         "CompressedFormat::Bzip2",
         "CompressedFormat::Xz",
         "new_stream_decoder",

@@ -120,11 +120,12 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
     );
     assert!(
         compressed.contains("pub(super) fn is_compressed_ext(ext: &str)")
-            && compressed.contains("ext.eq_ignore_ascii_case(candidate)")
-            && compressed.contains("ext.eq_ignore_ascii_case(\"tgz\")")
+            && compressed.contains("CompressedFormat::from_ext(ext).is_some()")
+            && compressed.contains("fn is_tgz_ext(ext: &str)")
+            && !compressed.contains("const COMPRESSED_EXTS")
             && !compressed.contains(".to_lowercase();")
             && !compressed.contains(".to_ascii_lowercase();"),
-        "compressed extension routing must stay allocation-free and ASCII-case-insensitive"
+        "compressed extension routing must stay allocation-free, ASCII-case-insensitive, and single-sourced through CompressedFormat::from_ext"
     );
     assert!(
         read_mod.contains("BufferedFileRead")
