@@ -397,7 +397,7 @@ fn docker_manifest_rejects_parent_layer_path() {
 
 #[cfg(feature = "docker")]
 #[test]
-fn docker_manifest_deduplicates_repeated_layer_content() {
+fn docker_manifest_preserves_repeated_layer_content_paths() {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().join("root");
     let blobs = root.join("blobs").join("sha256");
@@ -415,8 +415,8 @@ fn docker_manifest_deduplicates_repeated_layer_content() {
     let layers = TestApi.docker_manifest_layer_archives(&root).unwrap();
     assert_eq!(
         layers,
-        vec![layer_a],
-        "duplicate Docker layer archive content must be scanned once"
+        vec![layer_a, layer_b],
+        "duplicate Docker layer archive content under distinct manifest paths must keep both layer labels"
     );
 }
 
@@ -925,7 +925,7 @@ fn docker_manifest_rejects_parent_layer_path() {
 
 #[cfg(not(feature = "docker"))]
 #[test]
-fn docker_manifest_deduplicates_repeated_layer_content() {
+fn docker_manifest_preserves_repeated_layer_content_paths() {
     assert!(!cfg!(feature = "docker"));
 }
 

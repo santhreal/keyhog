@@ -2,7 +2,7 @@
 //! layer, and reuses the filesystem source to scan extracted files safely.
 
 use codewalk::{CodeWalker, WalkConfig};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::{Component, Path, PathBuf};
@@ -714,7 +714,7 @@ fn find_layer_archives(
 ) -> Result<Vec<PathBuf>, SourceError> {
     let manifest_layers = find_manifest_layer_archives(root_path, limits)?;
     if !manifest_layers.is_empty() {
-        return dedup_layer_archives_by_content(manifest_layers);
+        return Ok(manifest_layers);
     }
 
     let mut layers = Vec::new();
@@ -745,7 +745,7 @@ fn find_layer_archives(
     }
     layers.sort();
     layers.dedup();
-    dedup_layer_archives_by_content(layers)
+    Ok(layers)
 }
 
 fn is_fallback_layer_archive_path(path: &Path) -> bool {
@@ -1210,34 +1210,6 @@ fn find_oci_layer_archives(
         }
     }
     Ok(layers)
-}
-
-fn dedup_layer_archives_by_content(layers: Vec<PathBuf>) -> Result<Vec<PathBuf>, SourceError> {
-    let mut seen = HashSet::new();
-    let mut unique = Vec::new();
-    for layer in layers {
-        let fingerprint = layer_archive_fingerprint(&layer)?;
-        if seen.insert(fingerprint) {
-            unique.push(layer);
-        }
-    }
-    Ok(unique)
-}
-
-fn layer_archive_fingerprint(path: &Path) -> Result<(u64, blake3::Hash), SourceError> {
-    let mut file = File::open(path).map_err(SourceError::Io)?;
-    let metadata = file.metadata().map_err(SourceError::Io)?;
-    let mut hasher = blake3::Hasher::new();
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        match file.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(n) => hasher.update(&buffer[..n]),
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(error) => return Err(SourceError::Io(error)),
-        };
-    }
-    Ok((metadata.len(), hasher.finalize()))
 }
 
 fn read_capped_file(path: &Path, kind: &str, cap: u64) -> Result<Vec<u8>, SourceError> {
