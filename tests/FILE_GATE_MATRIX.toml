@@ -1079,6 +1079,15 @@ path = "crates/scanner/src/adjudicate/stage.rs"
 path = "crates/scanner/src/context/placeholder.rs"
 
 [[module]]
+path = "crates/scanner/src/credential_shapes.rs"
+
+[[module]]
+path = "crates/scanner/src/detector_catalog.rs"
+
+[[module]]
+path = "crates/scanner/src/detector_classification.rs"
+
+[[module]]
 path = "crates/scanner/src/detector_ids.rs"
 
 [[module]]
@@ -1133,6 +1142,9 @@ path = "crates/scanner/src/engine/phase2_gpu_dfa/workload.rs"
 path = "crates/scanner/src/engine/gpu_stack.rs"
 
 [[module]]
+path = "crates/scanner/src/engine/gpu_artifacts.rs"
+
+[[module]]
 path = "crates/scanner/src/engine/scan_postprocess/confirmed_anchor.rs"
 
 [[module]]
@@ -1155,3 +1167,6 @@ path = "crates/scanner/src/simd/backend/scan.rs"
 
 [[module]]
 path = "crates/scanner/src/tuning.rs"
+
+[[module]]
+path = "crates/scanner/src/bin/keyhog-scanner-artifacts.rs"
