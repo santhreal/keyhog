@@ -34,6 +34,81 @@ fn scan_pdf(bytes: &[u8]) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceE
 }
 
 #[test]
+fn non_pdf_extension_text_fallback_keeps_plain_files_scannable() {
+    let _guard = COUNTER_LOCK.lock().unwrap();
+    TestApi.reset_skip_counters();
+
+    let rows = scan_pdf(b"KEYHOG_NOT_ACTUALLY_PDF_TEXT_SECRET_1234567890\n");
+    let (chunks, errors) = split_chunk_results(&rows);
+
+    assert!(
+        errors.is_empty(),
+        "non-PDF text with a .pdf extension should not emit coverage errors: {errors:?}"
+    );
+    assert!(
+        chunks.iter().any(|chunk| {
+            chunk.metadata.source_type == "filesystem"
+                && chunk
+                    .data
+                    .contains("KEYHOG_NOT_ACTUALLY_PDF_TEXT_SECRET_1234567890")
+        }),
+        "non-PDF text with a .pdf extension must still scan as filesystem text; chunks={chunks:?}"
+    );
+    assert_eq!(
+        skip_counts().total(),
+        0,
+        "plain text with a .pdf extension is fully scanned, not a coverage gap"
+    );
+}
+
+#[test]
+fn non_pdf_extension_binary_strings_fallback_preserves_printable_runs() {
+    let _guard = COUNTER_LOCK.lock().unwrap();
+    TestApi.reset_skip_counters();
+
+    let rows = scan_pdf(b"\0\0\0KEYHOG_NOT_PDF_BINARY_STRING_SECRET_1234567890\0\0\0");
+    let (chunks, errors) = split_chunk_results(&rows);
+
+    assert!(
+        errors.is_empty(),
+        "non-PDF binary-string fallback should not emit source errors: {errors:?}"
+    );
+    assert!(
+        chunks.iter().any(|chunk| {
+            chunk.metadata.source_type == "filesystem:binary-strings"
+                && chunk
+                    .data
+                    .contains("KEYHOG_NOT_PDF_BINARY_STRING_SECRET_1234567890")
+        }),
+        "non-PDF binary .pdf files with printable strings must keep the printable run; chunks={chunks:?}"
+    );
+    assert_eq!(
+        skip_counts().total(),
+        0,
+        "binary-string recovery scans the admitted printable bytes and should not count a skip"
+    );
+}
+
+#[test]
+fn non_pdf_extension_binary_without_strings_counts_binary_skip() {
+    let _guard = COUNTER_LOCK.lock().unwrap();
+    TestApi.reset_skip_counters();
+
+    let rows = scan_pdf(b"\0\x01\x02\x03\x04\x05\x06\x07");
+    let (chunks, errors) = split_chunk_results(&rows);
+
+    assert!(
+        chunks.is_empty() && errors.is_empty(),
+        "pure binary .pdf impostors without printable strings should yield no chunks or errors; rows={rows:?}"
+    );
+    assert_eq!(
+        skip_counts().binary,
+        1,
+        "pure binary .pdf impostors must count one binary skip"
+    );
+}
+
+#[test]
 fn pdf_extraction_failures_emit_source_errors_and_count_unreadable_gaps() {
     let _guard = COUNTER_LOCK.lock().unwrap();
     TestApi.reset_skip_counters();
@@ -75,6 +150,51 @@ fn pdf_extraction_failures_emit_source_errors_and_count_unreadable_gaps() {
         skip_counts().unreadable,
         2,
         "encrypted PDFs and corrupt FlateDecode streams must both be surfaced as unreadable coverage gaps"
+    );
+}
+
+#[test]
+fn pdf_missing_endstream_and_unsupported_filter_count_unreadable_gaps() {
+    let _guard = COUNTER_LOCK.lock().unwrap();
+    TestApi.reset_skip_counters();
+
+    let missing_endstream =
+        scan_pdf(b"%PDF-1.7\n1 0 obj\n<< /Length 16 >>\nstream\nBT (secret) Tj\nendobj\n%%EOF\n");
+    let unsupported_filter = scan_pdf(&pdf_support::minimal_pdf(
+        " /Filter /LZWDecode",
+        b"BT (KEYHOG_PDF_UNSUPPORTED_FILTER_SECRET_1234567890) Tj ET",
+    ));
+    let (_missing_chunks, missing_errors) = split_chunk_results(&missing_endstream);
+    let (_unsupported_chunks, unsupported_errors) = split_chunk_results(&unsupported_filter);
+
+    assert_eq!(
+        missing_errors.len(),
+        1,
+        "missing endstream must surface one source error row"
+    );
+    assert!(
+        missing_errors[0]
+            .to_string()
+            .contains("stream without endstream marker"),
+        "missing-endstream error should name the unscanned gap, got {}",
+        missing_errors[0]
+    );
+    assert_eq!(
+        unsupported_errors.len(),
+        1,
+        "unsupported PDF filters must surface one source error row"
+    );
+    assert!(
+        unsupported_errors[0]
+            .to_string()
+            .contains("unsupported stream filter"),
+        "unsupported-filter error should name the unscanned gap, got {}",
+        unsupported_errors[0]
+    );
+    assert_eq!(
+        skip_counts().unreadable,
+        2,
+        "missing endstream and unsupported filters must both count unreadable coverage gaps"
     );
 }
 
