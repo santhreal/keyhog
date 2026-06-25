@@ -1,7 +1,7 @@
 //! Shared clone-and-scan machinery for hosted Git repository collections.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -11,6 +11,8 @@ use crate::FilesystemSource;
 
 mod sanitize;
 use sanitize::sanitize_git_error_message;
+
+const HOSTED_GIT_STDERR_EXCERPT_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone)]
 pub(crate) struct HostedRepo {
@@ -146,6 +148,7 @@ fn repo_unreadable_error(
     ))
 }
 
+#[cfg(feature = "bitbucket")]
 pub(crate) fn repo_listing_unreadable_error(
     platform: &str,
     repo_display_path: &str,
@@ -278,6 +281,27 @@ mod tests {
             ["clone", "--depth", "1", "--quiet"],
             "git config overrides must precede the clone subcommand"
         );
+    }
+
+    #[test]
+    fn hosted_git_stderr_drain_is_bounded_and_marks_truncation() {
+        let payload = vec![b'E'; super::HOSTED_GIT_STDERR_EXCERPT_BYTES * 2];
+        let excerpt = super::drain_hosted_git_stderr_excerpt(&payload[..]);
+        assert!(
+            excerpt.len() <= super::HOSTED_GIT_STDERR_EXCERPT_BYTES + 64,
+            "stderr excerpt must remain bounded, got {} bytes",
+            excerpt.len()
+        );
+        assert!(
+            excerpt.contains("[stderr truncated after 65536 bytes]"),
+            "large stderr must be marked truncated"
+        );
+    }
+
+    #[test]
+    fn hosted_git_stdout_drain_consumes_large_output_without_buffering() {
+        let payload = vec![b'O'; super::HOSTED_GIT_STDERR_EXCERPT_BYTES * 2];
+        super::drain_hosted_git_stdout(&payload[..]).expect("stdout drain");
     }
 
     #[cfg(unix)]
@@ -685,7 +709,7 @@ fn clone_repo(
             "git binary not found in trusted system bin dirs (refusing $PATH lookup)".into(),
         )
     })?;
-    let child = Command::new(&git_bin)
+    let mut child = Command::new(&git_bin)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", &auth_material.askpass_path)
         .env("SSH_ASKPASS", &auth_material.askpass_path)
@@ -697,14 +721,27 @@ fn clone_repo(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(SourceError::Io)?;
+    let stdout_drain = child
+        .stdout
+        .take()
+        .map(|pipe| thread::spawn(move || drain_hosted_git_stdout(pipe)));
+    let stderr_drain = child
+        .stderr
+        .take()
+        .map(|pipe| thread::spawn(move || drain_hosted_git_stderr_excerpt(pipe)));
 
-    let output = wait_for_command_with_timeout(child, crate::timeouts::GIT_CLONE)
-        .map_err(|err| SourceError::Git(format!("failed to clone {repo_display_path}: {err}")))?;
+    let output = wait_for_command_with_timeout(
+        child,
+        stdout_drain,
+        stderr_drain,
+        crate::timeouts::GIT_CLONE,
+    )
+    .map_err(|err| SourceError::Git(format!("failed to clone {repo_display_path}: {err}")))?;
 
     if !output.status.success() {
         return Err(SourceError::Git(format!(
             "failed to clone {repo_display_path}: {}",
-            sanitize_git_error_message(&String::from_utf8_lossy(&output.stderr))
+            sanitize_git_error_message(&output.stderr)
         )));
     }
 
@@ -782,14 +819,25 @@ fn make_relative_path(
     Ok(relative.to_string_lossy().into_owned())
 }
 
+struct HostedGitCommandOutput {
+    status: ExitStatus,
+    stderr: String,
+}
+
 fn wait_for_command_with_timeout(
-    mut child: std::process::Child,
+    mut child: Child,
+    stdout_drain: Option<thread::JoinHandle<Result<(), String>>>,
+    stderr_drain: Option<thread::JoinHandle<String>>,
     timeout: Duration,
-) -> Result<std::process::Output, String> {
+) -> Result<HostedGitCommandOutput, String> {
     let start = Instant::now();
+    let mut stdout_drain = stdout_drain;
+    let mut stderr_drain = stderr_drain;
     loop {
         match child.try_wait() {
-            Ok(Some(_status)) => return child.wait_with_output().map_err(|e| e.to_string()),
+            Ok(Some(status)) => {
+                return finish_hosted_git_child(status, stdout_drain.take(), stderr_drain.take());
+            }
             Ok(None) => {}
             Err(error) => {
                 kill_and_reap_child(&mut child).map_err(|cleanup_error| {
@@ -797,19 +845,115 @@ fn wait_for_command_with_timeout(
                         "git clone status check failed: {error}; additionally failed to stop child: {cleanup_error}"
                     )
                 })?;
+                let stdout_cleanup = match join_hosted_git_stdout(stdout_drain.take()) {
+                    Ok(()) => String::new(),
+                    Err(error) => format!("; stdout cleanup failed: {error}"),
+                };
+                let stderr = join_hosted_git_stderr(stderr_drain.take());
+                let stderr = stderr.trim();
+                let stderr_suffix = if stderr.is_empty() {
+                    String::new()
+                } else {
+                    format!("; git stderr: {stderr}")
+                };
                 return Err(format!(
-                    "git clone status check failed: {error}; child was killed and reaped"
+                    "git clone status check failed: {error}; child was killed and reaped{stdout_cleanup}{stderr_suffix}"
                 ));
             }
         }
 
         if start.elapsed() >= timeout {
             kill_and_reap_child(&mut child)?;
-            return Err(format!("git clone timed out after {}s", timeout.as_secs()));
+            let stderr = join_hosted_git_stderr(stderr_drain.take());
+            join_hosted_git_stdout(stdout_drain.take())?;
+            let stderr = stderr.trim();
+            let stderr_suffix = if stderr.is_empty() {
+                String::new()
+            } else {
+                format!("; git stderr: {stderr}")
+            };
+            return Err(format!(
+                "git clone timed out after {}s{stderr_suffix}",
+                timeout.as_secs()
+            ));
         }
 
         thread::sleep(Duration::from_millis(100));
     }
+}
+
+fn finish_hosted_git_child(
+    status: ExitStatus,
+    stdout_drain: Option<thread::JoinHandle<Result<(), String>>>,
+    stderr_drain: Option<thread::JoinHandle<String>>,
+) -> Result<HostedGitCommandOutput, String> {
+    join_hosted_git_stdout(stdout_drain)?;
+    Ok(HostedGitCommandOutput {
+        status,
+        stderr: join_hosted_git_stderr(stderr_drain),
+    })
+}
+
+fn join_hosted_git_stdout(
+    stdout_drain: Option<thread::JoinHandle<Result<(), String>>>,
+) -> Result<(), String> {
+    match stdout_drain {
+        Some(handle) => match handle.join() {
+            Ok(result) => result,
+            Err(_panic_payload) => Err("git clone stdout reader panicked".to_string()),
+        },
+        None => Ok(()),
+    }
+}
+
+fn join_hosted_git_stderr(stderr_drain: Option<thread::JoinHandle<String>>) -> String {
+    match stderr_drain {
+        Some(handle) => match handle.join() {
+            Ok(stderr) => stderr,
+            Err(_panic_payload) => "stderr unavailable: git clone stderr reader panicked".into(),
+        },
+        None => "stderr unavailable: git clone stderr was not captured".into(),
+    }
+}
+
+fn drain_hosted_git_stdout(mut stdout_pipe: impl std::io::Read) -> Result<(), String> {
+    let mut buffer = [0_u8; 8192];
+    loop {
+        match std::io::Read::read(&mut stdout_pipe, &mut buffer) {
+            Ok(0) => return Ok(()),
+            Ok(_) => {}
+            Err(error) => return Err(format!("stdout unavailable: {error}")),
+        }
+    }
+}
+
+fn drain_hosted_git_stderr_excerpt(mut stderr_pipe: impl std::io::Read) -> String {
+    let mut excerpt = Vec::new();
+    let mut buffer = [0_u8; 8192];
+    let mut truncated = false;
+    loop {
+        match std::io::Read::read(&mut stderr_pipe, &mut buffer) {
+            Ok(0) => break,
+            Ok(read) => {
+                if excerpt.len() < HOSTED_GIT_STDERR_EXCERPT_BYTES {
+                    let keep = read.min(HOSTED_GIT_STDERR_EXCERPT_BYTES - excerpt.len());
+                    excerpt.extend_from_slice(&buffer[..keep]);
+                    if keep < read {
+                        truncated = true;
+                    }
+                } else {
+                    truncated = true;
+                }
+            }
+            Err(error) => return format!("stderr unavailable: {error}"),
+        }
+    }
+
+    let mut text = String::from_utf8_lossy(&excerpt).into_owned();
+    if truncated {
+        text.push_str("\n[stderr truncated after 65536 bytes]");
+    }
+    text
 }
 
 fn kill_and_reap_child(child: &mut std::process::Child) -> Result<(), String> {

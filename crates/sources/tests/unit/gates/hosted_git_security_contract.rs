@@ -39,8 +39,14 @@ fn hosted_git_clone_origin_and_wait_cleanup_contracts_stay_wired() {
     assert!(
         hosted_git.contains(".stdout(Stdio::piped())")
             && hosted_git.contains(".stderr(Stdio::piped())")
-            && hosted_git.contains("sanitize_git_error_message(&String::from_utf8_lossy(&output.stderr))"),
-        "hosted Git clone must capture child output so git failure diagnostics are sanitized instead of inherited"
+            && hosted_git.contains("drain_hosted_git_stdout")
+            && hosted_git.contains("drain_hosted_git_stderr_excerpt")
+            && hosted_git.contains("sanitize_git_error_message(&output.stderr)"),
+        "hosted Git clone must capture and drain child output so diagnostics are sanitized instead of inherited"
+    );
+    assert!(
+        !hosted_git.contains("wait_with_output()"),
+        "hosted Git clone must not poll try_wait while leaving piped stdout/stderr undrained for wait_with_output"
     );
 
     let wait_start = hosted_git
