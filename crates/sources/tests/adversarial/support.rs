@@ -3,9 +3,9 @@
 use keyhog_core::{Chunk, Source, SourceError};
 use keyhog_sources::FilesystemSource;
 
+pub use crate::support::collect_chunks;
 #[cfg(feature = "binary")]
 pub use crate::support::split_chunk_results;
-pub use crate::support::{collect_chunks, count_chunks};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
