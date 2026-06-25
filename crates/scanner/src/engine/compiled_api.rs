@@ -2,6 +2,7 @@ use super::*;
 use crate::hw_probe::ScanBackend;
 
 static SIMD_AUTO_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+static GPU_AUTO_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
 impl CompiledScanner {
     /// Whether a SIMD (Hyperscan/Vectorscan) prefilter is compiled in and live.
@@ -47,6 +48,24 @@ Forced --backend simd is rejected instead of silently running another backend."
             target: "keyhog::routing",
             %context,
             "SIMD backend unavailable; automatic CPU-tier route changed to cpu-fallback"
+        );
+    }
+
+    pub(crate) fn warn_gpu_auto_degrade(&self, selected_backend: ScanBackend, context: &str) {
+        if GPU_AUTO_DEGRADE_WARNED.set(()).is_ok() {
+            eprintln!(
+                "keyhog: {} auto-selected but this scanner has no live GPU stack ({context}); \
+routing this automatic scan through {}. Forced GPU backends still fail closed.",
+                selected_backend.label(),
+                self.live_cpu_backend().label()
+            );
+        }
+        tracing::warn!(
+            target: "keyhog::routing",
+            backend = selected_backend.label(),
+            fallback = self.live_cpu_backend().label(),
+            %context,
+            "GPU backend auto-selected but scanner GPU stack is unavailable; automatic route changed to live CPU tier"
         );
     }
 
@@ -283,11 +302,33 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     /// Return the preferred backend for a file of the given size.
     #[must_use]
     pub(crate) fn select_backend_for_file(&self, file_size: u64) -> crate::hw_probe::ScanBackend {
-        crate::hw_probe::select_backend_for_file(
+        let selected = crate::hw_probe::select_backend_for_file(
             crate::hw_probe::probe_hardware(),
             file_size,
             self.pattern_count(),
-        )
+        );
+        if matches!(
+            selected,
+            crate::hw_probe::ScanBackend::Gpu | crate::hw_probe::ScanBackend::MegaScan
+        ) && !self.gpu_stack_usable()
+        {
+            if crate::gpu::gpu_required_by_policy() {
+                crate::process_exit::require_gpu_unmet(format!(
+                    "{} auto-selected under required GPU policy, but this scanner has no live GPU stack \
+(gpu_literals={}, gpu_backend={}, gpu_matcher={}); refusing to run on CPU/SIMD.",
+                    selected.label(),
+                    self.gpu_literals.is_some(),
+                    self.gpu_backend.is_some(),
+                    self.gpu_matcher().is_some()
+                ));
+            }
+            self.warn_gpu_auto_degrade(
+                selected,
+                "auto route selected GPU without acquired scanner GPU stack",
+            );
+            return self.live_cpu_backend();
+        }
+        selected
     }
 
     /// Identifier of the GPU backend acquired at compile time, or

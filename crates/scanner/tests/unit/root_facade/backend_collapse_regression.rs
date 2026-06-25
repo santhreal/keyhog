@@ -405,6 +405,13 @@ fn workload_selector_is_the_single_branch_owner() {
         "CompiledScanner file routing must use the file-shaped hw_probe wrapper"
     );
     assert!(
+        compiled_wrapper.contains("&& !self.gpu_stack_usable()")
+            && compiled_wrapper.contains("crate::gpu::gpu_required_by_policy()")
+            && compiled_wrapper.contains("self.warn_gpu_auto_degrade(")
+            && compiled_wrapper.contains("return self.live_cpu_backend();"),
+        "automatic GPU routing must check this compiled scanner's live GPU stack: required GPU fails closed, ordinary auto routes to the live CPU tier loudly"
+    );
+    assert!(
         !compiled_wrapper.contains("crate::hw_probe::select_backend("),
         "CompiledScanner file routing must not bypass the file-shaped selector"
     );

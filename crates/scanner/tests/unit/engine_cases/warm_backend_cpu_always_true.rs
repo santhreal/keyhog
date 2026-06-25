@@ -22,5 +22,10 @@ fn warm_backend_cpu_always_true() {
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();
     assert!(s.warm_backend(ScanBackend::CpuFallback));
-    assert!(s.warm_backend(ScanBackend::SimdCpu));
+    let simd_ready = s.warm_backend(ScanBackend::SimdCpu);
+    assert_eq!(
+        simd_ready,
+        s.warm_backend(ScanBackend::SimdCpu),
+        "SIMD warmup must report stable live-backend readiness instead of pretending every scanner has a SIMD prefilter"
+    );
 }

@@ -612,7 +612,12 @@ fn boundary_scan_uses_full_pair_for_unbounded_detector_regex() {
 fn scan_gpu_warm_backend_cpu_paths_always_succeed() {
     let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
     assert!(scanner.warm_backend(ScanBackend::CpuFallback));
-    assert!(scanner.warm_backend(ScanBackend::SimdCpu));
+    let simd_ready = scanner.warm_backend(ScanBackend::SimdCpu);
+    assert_eq!(
+        simd_ready,
+        scanner.warm_backend(ScanBackend::SimdCpu),
+        "SIMD warmup must report stable live-backend readiness instead of pretending every scanner has a SIMD prefilter"
+    );
 }
 
 #[test]
