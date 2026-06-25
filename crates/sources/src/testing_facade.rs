@@ -18,6 +18,14 @@ pub mod testing {
             input: &[u8],
             max_bytes: usize,
         ) -> std::io::Result<String>;
+        #[cfg(any(
+            feature = "git",
+            feature = "docker",
+            feature = "github",
+            feature = "gitlab",
+            feature = "bitbucket"
+        ))]
+        fn drain_process_stderr_excerpt(&self, reader: &mut dyn std::io::Read) -> String;
         fn expand_har(
             &self,
             bytes: &[u8],
@@ -478,6 +486,17 @@ pub mod testing {
         ) -> std::io::Result<String> {
             let mut reader = std::io::Cursor::new(input);
             crate::stdin::read_to_string_limited(&mut reader, max_bytes)
+        }
+
+        #[cfg(any(
+            feature = "git",
+            feature = "docker",
+            feature = "github",
+            feature = "gitlab",
+            feature = "bitbucket"
+        ))]
+        fn drain_process_stderr_excerpt(&self, reader: &mut dyn std::io::Read) -> String {
+            crate::process_excerpt::drain_stderr_excerpt(reader)
         }
 
         fn expand_har(

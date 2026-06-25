@@ -23,6 +23,7 @@ pub(crate) fn drain_stderr_excerpt(mut stderr_pipe: impl Read) -> String {
                     truncated = true;
                 }
             }
+            Err(ref error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(error) => return format!("stderr unavailable: {error}"),
         }
     }

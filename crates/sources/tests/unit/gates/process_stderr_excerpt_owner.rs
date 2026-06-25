@@ -14,6 +14,7 @@ fn process_stderr_excerpt_has_one_owner() {
     assert!(
         owner.contains("pub(crate) const STDERR_EXCERPT_BYTES: usize = 64 * 1024")
             && owner.contains("pub(crate) fn drain_stderr_excerpt(")
+            && owner.contains("ErrorKind::Interrupted")
             && owner.contains("[stderr truncated after 65536 bytes]"),
         "src/process_excerpt.rs must own the bounded stderr excerpt primitive"
     );

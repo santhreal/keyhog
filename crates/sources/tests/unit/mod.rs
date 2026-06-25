@@ -19,4 +19,5 @@ pub mod har;
 pub mod http;
 pub mod internal_contracts;
 pub mod lib;
+pub mod process_excerpt;
 pub mod timeouts;
