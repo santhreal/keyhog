@@ -66,7 +66,7 @@ pub(in crate::decode) fn push_decoded_text_chunk_spliced_at(
     // keeps only a bounded parent window, so parent file size must not
     // disable context preservation.
     let text_len = text.len();
-    let (base_offset, payload, decoded_span) = if !original_encoded.is_empty() {
+    let (base_offset, base_line, payload, decoded_span) = if !original_encoded.is_empty() {
         let spliced = match original_span {
             Some((start, end)) => {
                 splice_decoded_payload_at(chunk.data.as_ref(), start, end, &text, decoder_name)
@@ -76,22 +76,39 @@ pub(in crate::decode) fn push_decoded_text_chunk_spliced_at(
             }
         };
         match spliced {
-            Some((win_start, spliced, decoded_at)) => (
-                chunk.metadata.base_offset.saturating_add(win_start),
-                spliced,
-                Some((decoded_at, decoded_at + text_len)),
+            Some((win_start, spliced, decoded_at)) => {
+                let base_line = chunk
+                    .metadata
+                    .base_line
+                    .saturating_add(bytecount_newlines(&chunk.data.as_bytes()[..win_start]));
+                (
+                    chunk.metadata.base_offset.saturating_add(win_start),
+                    base_line,
+                    spliced,
+                    Some((decoded_at, decoded_at + text_len)),
+                )
+            }
+            None => (
+                chunk.metadata.base_offset,
+                chunk.metadata.base_line,
+                text,
+                Some((0, text_len)),
             ),
-            None => (chunk.metadata.base_offset, text, Some((0, text_len))),
         }
     } else {
-        (chunk.metadata.base_offset, text, Some((0, text_len)))
+        (
+            chunk.metadata.base_offset,
+            chunk.metadata.base_line,
+            text,
+            Some((0, text_len)),
+        )
     };
 
     decoded_chunks.push(Chunk {
         data: payload.into(),
         metadata: ChunkMetadata {
             base_offset,
-            base_line: chunk.metadata.base_line,
+            base_line,
             source_type: format!("{}/{}", chunk.metadata.source_type, decoder_name),
             path: chunk.metadata.path.clone(),
             commit: chunk.metadata.commit.clone(),
@@ -102,6 +119,10 @@ pub(in crate::decode) fn push_decoded_text_chunk_spliced_at(
             decoded_span,
         },
     });
+}
+
+fn bytecount_newlines(bytes: &[u8]) -> usize {
+    bytes.iter().filter(|&&b| b == b'\n').count()
 }
 
 /// Bytes of surrounding parent text kept on each side of the spliced-in decoded

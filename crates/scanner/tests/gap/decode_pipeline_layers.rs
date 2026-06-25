@@ -565,6 +565,41 @@ fn b64_standard(bytes: &[u8]) -> String {
 }
 
 #[test]
+fn pipeline_spliced_decode_base_line_tracks_window_start() {
+    let padding = (0..120)
+        .map(|i| format!("noise line {i:03}\n"))
+        .collect::<String>();
+    let blob = b64_standard(SECRET.as_bytes());
+    let text = format!("{padding}aws_secret_access_key = \"{blob}\"\n");
+    let c = Chunk {
+        data: text.into(),
+        metadata: ChunkMetadata {
+            base_line: 7,
+            path: Some("audit.log".into()),
+            ..Default::default()
+        },
+    };
+
+    let out = decode_all(&c);
+    let hit = find_decoded(&out, SECRET).expect("spliced base64 secret decoded");
+    let window_start = hit.metadata.base_offset - c.metadata.base_offset;
+    let expected_base_line = c.metadata.base_line
+        + c.data.as_ref().as_bytes()[..window_start]
+            .iter()
+            .filter(|&&b| b == b'\n')
+            .count();
+
+    assert!(
+        window_start > 0,
+        "fixture must force a nonzero splice window start"
+    );
+    assert_eq!(
+        hit.metadata.base_line, expected_base_line,
+        "decoded splice base_line must account for parent lines before the retained window"
+    );
+}
+
+#[test]
 fn pipeline_never_emits_nul_byte_decodes_under_either_validate_mode() {
     // base64 of bytes containing a NUL. `push_decoded_text_chunk_spliced`
     // rejects any decoded text with a control byte < 0x20 (except \n\r\t),
