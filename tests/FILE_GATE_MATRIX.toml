@@ -342,438 +342,583 @@ path = "crates/core/src/testing.rs"
 
 [[module]]
 path = "crates/scanner/src/alphabet_filter.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/ascii_ci.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/aws.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/bigram_bloom.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/checksum/github.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/checksum/gitlab.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/checksum/mod.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/checksum/npm.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/checksum/slack.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/checksum/stripe.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/compiler.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/compiler/compiler_build.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/compiler/compiler_compile.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/compiler/compiler_prefix.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/confidence/mod.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/confidence/policy.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/confidence/penalties.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/confidence/prefixes.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/confidence/signals.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/context/documentation.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/context/false_positive.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/context/inference.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/context/mod.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/decode/base64.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/decode/caesar.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/decode/hex.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/decode/json.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/decode/mod.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/decode/pipeline.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/decode/pipeline/extractor.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/decode/pipeline/registry.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/decode/pipeline/splice.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/decode/reverse.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/decode/unicode_escape.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/decode/url.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/decode/util.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/decode_structure.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/deadline.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/backend.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/backend_dispatch.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/backend_prepared.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/backend_triggered.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/boundary.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/compile.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/extract.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_anchor.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_entropy.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_generic.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_gpu_dfa.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_cache.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_forced.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_lazy.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_literal_scratch.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_region_batch.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_region_dispatch.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_region_dispatch_helpers.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/hot_patterns.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/mod.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/process.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/profile.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/rule_pipeline.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/scan.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/scan_coalesced.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/scan_filters.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/scan_inner_profile.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/scan_no_hit_reassembly.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/scan_postprocess.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/segment_attribution.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/windowed.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/entropy/keywords.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/entropy/isolated.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/entropy/mod.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/entropy/plausibility.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/entropy/scanner.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/entropy/avx512.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/entropy/fast.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/entropy/fast_neon.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/entropy/fast_x86.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/error.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/gpu.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/gpu/policy.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/gpu/backend.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/gpu/gpu_shader.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/gpu/self_test.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/homoglyph.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/hw_probe/banner.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/hw_probe/mod.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/hw_probe/platform.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/hw_probe/select.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/hw_probe/thresholds.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/hw_probe/tier.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/jwt.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/lib.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/ml_scorer/ml_features.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/ml_scorer.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/ml_scorer/ml_weights.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/multiline/config.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/fragment_cache.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/multiline/mod.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/multiline/preprocessor.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/multiline/structural.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/pipeline/context_window.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/pipeline/mod.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/pipeline/postprocess/mod.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/pipeline/scan_loop.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/platform_compat/mod.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/platform_compat/path.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/prefix_trie.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/probabilistic_gate.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/process_exit.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/resolution.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/scanner_config.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/scan_state.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/shared_regexes.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/simd.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/simdsieve_prefilter.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/static_intern.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/structured/mod.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/structured/parsers.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/structured/parsers/env.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/structured/parsers/hcl.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/structured/parsers/json.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/structured/parsers/line.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/structured/parsers/yaml.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/api.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/decision.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/decode.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/doc_markers.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/mod.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/path_filter.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/shape.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/shape/canonical.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/shape/mod.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/shape/path.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/shape/prose.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/shape/public.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/shape/source.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/shape_gates.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/token_randomness.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/telemetry.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/testing.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/types.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/unicode_hardening.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/util_hash.rs"
+adversarial = true
 
 [[module]]
 path = "crates/sources/src/binary/ghidra.rs"
@@ -1014,159 +1159,212 @@ path = "crates/verifier/src/verify/response.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/compiled_api.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/csr.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_anchor_scan.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_compiled.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_compiled_anchored.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_generic_shape.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_hs.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_prefilter.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_truncate.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/scan_postprocess/fragments.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/scan_postprocess/ml.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/scan_postprocess/profile.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/scan_postprocess/suffix_gate.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/trigger_bitmap.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/prefilter_degrade.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/api.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/anchored_regex.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/adjudicate/mod.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/adjudicate/entropy.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/adjudicate/generic.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/adjudicate/stage.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/context/placeholder.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/credential_shapes.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/detector_catalog.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/detector_classification.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/detector_ids.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/generic_keyword_owner.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2/first_bigram.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2/mark_stats.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_entropy/gates.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_entropy/helpers.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_entropy/example_suppression.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_entropy/line_context.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_generic/auth_value.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_generic/keywords.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_generic/line_mapping.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_generic/metrics.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_gpu_dfa/batch.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_gpu_dfa/candidates.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_gpu_dfa/lowering.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_gpu_dfa/shard.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_gpu_dfa/workload.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_stack.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_artifacts.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/scan_postprocess/confirmed_anchor.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/scan_postprocess/confirmed_extract.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/windowed_support.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/multiline/string_extract.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/placeholder_words.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/simd/backend.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/simd/backend/scan.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/tuning.rs"
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/bin/keyhog-scanner-artifacts.rs"
+adversarial = true

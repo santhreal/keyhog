@@ -19,18 +19,30 @@ fn file_gate_matrix_scanner_rows_mark_adversarial_coverage() {
             .strip_prefix("path = \"")
             .and_then(|p| p.strip_suffix('"'))
         {
-            current = Some(path.to_string());
+            current = path
+                .starts_with("crates/scanner/")
+                .then(|| path.to_string());
         }
-        if line.trim() == "adversarial = false" {
-            if let Some(path) = &current {
-                if path.starts_with("crates/scanner/") {
-                    unmarked.push(path.clone());
-                }
+        if line.trim().starts_with("[[module]]") {
+            if let Some(path) = current.take() {
+                unmarked.push(path);
+            }
+            continue;
+        }
+        if let Some(path) = &current {
+            if line.trim() == "adversarial = true" {
+                current = None;
+            } else if line.trim() == "adversarial = false" {
+                unmarked.push(path.clone());
+                current = None;
             }
         }
     }
+    if let Some(path) = current {
+        unmarked.push(path);
+    }
     assert!(
         unmarked.is_empty(),
-        "scanner matrix rows must mark adversarial=true when adversarial suites exist; unmarked={unmarked:?}"
+        "scanner matrix rows must explicitly mark adversarial=true when adversarial suites exist; unmarked={unmarked:?}"
     );
 }
