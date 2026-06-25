@@ -837,6 +837,8 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
         key,
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
+    let mut measured_this_run = HashSet::new();
+    measured_this_run.insert(key);
     let mut router = MeasuredBackendRouter {
         hw_caps: keyhog_scanner::hw_probe::HardwareCaps {
             physical_cores: 8,
@@ -861,7 +863,7 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
         calibration_mode: true,
         host_profile: host,
         decisions,
-        measured_this_run: HashSet::new(),
+        measured_this_run,
         cache_path: Some(path.clone()),
         cache_load_error: None,
         cache_dirty: true,
