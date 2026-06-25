@@ -64,6 +64,16 @@ fn mmap_fallback_buffered_reads_are_capped() {
             && raw.contains("SourceSkipEvent::OverMaxSize"),
         "the mmap-failure buffered fallback must use the shared capped-read owner and count over-cap growth"
     );
+
+    let extract = read_src("src/filesystem/extract.rs");
+    assert!(
+        extract.contains("refusing large-file buffered fallback: live size exceeds mmap sanity cap")
+            && extract.contains("cannot stat large file for buffered fallback sanity cap; skipping")
+            && extract.contains("read::MMAP_TOCTOU_SANITY_CAP_BYTES")
+            && extract.contains("SourceSkipEvent::OverMaxSize")
+            && extract.contains("SourceSkipEvent::Unreadable"),
+        "large-file buffered fallback after windowed-mmap refusal must re-prove the hard mmap sanity cap and fail closed when it cannot"
+    );
 }
 
 #[test]

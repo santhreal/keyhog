@@ -4,5 +4,7 @@
 mod binary_literal_decode;
 mod compressed_open_errors_visible;
 mod max_file_size_cap;
+#[path = "../regression_oom_unbounded_read_caps.rs"]
+mod oom_unbounded_read_caps;
 mod raw_container_read_errors_visible;
 mod tar_entry_errors_visible;
