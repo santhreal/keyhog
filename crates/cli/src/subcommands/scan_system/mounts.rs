@@ -92,11 +92,7 @@ fn include_windows_drive(
     include_network: bool,
     filters: &MountFilters,
 ) -> bool {
-    if filters
-        .skip_path_prefixes
-        .iter()
-        .any(|prefix| root.starts_with(prefix))
-    {
+    if windows_root_matches_any_skip_prefix(root, &filters.skip_path_prefixes) {
         return false;
     }
     match drive_class {
@@ -104,6 +100,16 @@ fn include_windows_drive(
         WindowsDriveClass::Network => include_network,
         WindowsDriveClass::Unsupported => false,
     }
+}
+
+fn windows_root_matches_any_skip_prefix(root: &str, prefixes: &[String]) -> bool {
+    let normalized_root = root.replace('/', "\\");
+    prefixes.iter().any(|prefix| {
+        let normalized_prefix = prefix.replace('/', "\\");
+        normalized_root
+            .get(..normalized_prefix.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(&normalized_prefix))
+    })
 }
 
 #[cfg(target_os = "linux")]
@@ -337,13 +343,20 @@ pub(crate) mod testing {
             unsupported,
         ))
     }
+
+    pub(crate) fn windows_drive_skip_prefix_decisions_for_test() -> (bool, bool) {
+        let prefixes = vec!["z:/".to_string()];
+        (
+            super::windows_root_matches_any_skip_prefix("Z:\\", &prefixes),
+            super::windows_root_matches_any_skip_prefix("C:\\", &prefixes),
+        )
+    }
 }
 
 #[cfg(target_os = "windows")]
 fn windows_drives(include_network: bool) -> Result<Vec<PathBuf>> {
     use windows_sys::Win32::Storage::FileSystem::{
-        DRIVE_CDROM, DRIVE_FIXED, DRIVE_RAMDISK, DRIVE_REMOTE, DRIVE_REMOVABLE, GetDriveTypeW,
-        GetLogicalDrives,
+        DRIVE_FIXED, DRIVE_RAMDISK, DRIVE_REMOTE, GetDriveTypeW, GetLogicalDrives,
     };
 
     let filters = load_mount_filters()?;
@@ -360,7 +373,7 @@ fn windows_drives(include_network: bool) -> Result<Vec<PathBuf>> {
         let root = format!("{}:\\", letter as char);
         let wide: Vec<u16> = root.encode_utf16().chain(std::iter::once(0)).collect();
         let drive_class = match unsafe { GetDriveTypeW(wide.as_ptr()) } {
-            DRIVE_FIXED | DRIVE_REMOVABLE | DRIVE_CDROM | DRIVE_RAMDISK => WindowsDriveClass::Local,
+            DRIVE_FIXED | DRIVE_RAMDISK => WindowsDriveClass::Local,
             DRIVE_REMOTE => WindowsDriveClass::Network,
             _ => WindowsDriveClass::Unsupported,
         };

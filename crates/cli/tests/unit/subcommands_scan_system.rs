@@ -319,6 +319,20 @@ fn windows_drive_filter_respects_network_flag() {
 }
 
 #[test]
+fn windows_drive_skip_prefixes_are_case_and_separator_insensitive() {
+    let (skips_z, skips_c) = API.windows_drive_skip_prefix_decisions_for_test();
+
+    assert!(
+        skips_z,
+        "Windows mount skip prefixes must match drive roots across slash and case differences"
+    );
+    assert!(
+        !skips_c,
+        "Windows mount skip prefixes must not match unrelated drive roots"
+    );
+}
+
+#[test]
 fn scan_system_output_uses_atomic_file_writer() {
     let scan_system = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),

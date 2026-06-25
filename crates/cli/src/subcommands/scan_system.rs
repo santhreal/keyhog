@@ -171,6 +171,10 @@ pub(crate) mod testing {
         super::mounts::testing::windows_drive_filter_decisions_for_test()
     }
 
+    pub(crate) fn windows_drive_skip_prefix_decisions_for_test() -> (bool, bool) {
+        super::mounts::testing::windows_drive_skip_prefix_decisions_for_test()
+    }
+
     pub(crate) struct FindingSink {
         inner: super::FindingSink,
     }
