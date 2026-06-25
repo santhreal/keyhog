@@ -24,12 +24,33 @@ pub(super) enum ContinuationType {
 }
 
 pub(crate) fn extract_prefix(var_name: &str) -> String {
-    var_name
-        .to_lowercase()
-        .replace("part", "")
-        .replace(['_', '-'], "")
-        .trim_end_matches(|ch: char| ch.is_ascii_digit())
-        .to_string()
+    let bytes = var_name.as_bytes();
+    let mut prefix = String::with_capacity(var_name.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'_' || bytes[i] == b'-' {
+            i += 1;
+            continue;
+        }
+        if bytes[i..]
+            .get(..4)
+            .is_some_and(|head| head.eq_ignore_ascii_case(b"part"))
+        {
+            i += 4;
+            continue;
+        }
+        let Some(ch) = var_name[i..].chars().next() else {
+            break;
+        };
+        prefix.push(ch.to_ascii_lowercase());
+        i += ch.len_utf8();
+    }
+    prefix.truncate(
+        prefix
+            .trim_end_matches(|ch: char| ch.is_ascii_digit())
+            .len(),
+    );
+    prefix
 }
 
 pub(crate) fn fragment_assignment_name_is_credential_like(var_name: &str) -> bool {

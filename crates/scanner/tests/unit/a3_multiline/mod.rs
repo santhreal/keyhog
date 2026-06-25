@@ -4,6 +4,7 @@ mod cross_file_different_directory_no_join;
 mod default_join_window_covers_long_split_secret;
 mod duplicate_fragment_not_recorded_twice;
 mod empty_input;
+mod extract_prefix_case_mixed_part_suffix;
 mod extract_prefix_strips_part_suffix;
 mod fragment_cache_cross_dir_no_join;
 mod fragment_cache_same_dir_join;
