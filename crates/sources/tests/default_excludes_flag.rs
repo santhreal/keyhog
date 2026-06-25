@@ -11,7 +11,8 @@ use keyhog_sources::{skip_counts, FilesystemSource};
 use std::fs;
 use std::io::Write;
 use support::archive::{
-    build_seven_zip, stored_zip_with_duplicate_names, tar_with_entries, zip_with_entries,
+    build_seven_zip, crx_with_zip_payload, stored_zip_with_duplicate_names, tar_with_entries,
+    zip_with_entries,
 };
 use support::collect_chunks;
 
@@ -186,6 +187,45 @@ fn write_seven_zip_with_default_excluded_entry(path: &std::path::Path) {
     .unwrap();
 }
 
+fn write_crx_with_default_excluded_entry(path: &std::path::Path) {
+    fs::write(
+        path,
+        crx_with_zip_payload(&zip_with_entries(&[
+            (
+                "package-lock.json",
+                format!("{{ \"token\": \"{SENTINEL}\" }}\n").as_bytes(),
+            ),
+            (
+                "config.env",
+                b"API=crx_normal_always_scanned_marker\n".as_slice(),
+            ),
+        ])),
+    )
+    .unwrap();
+}
+
+#[cfg(feature = "git")]
+fn run_git(repo: &std::path::Path, args: &[&str]) {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git");
+    assert!(
+        output.status.success(),
+        "git {args:?} failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[cfg(feature = "git")]
+fn git_body_contains<S: keyhog_core::Source + ?Sized>(source: &S, needle: &str) -> bool {
+    collect_chunks(source)
+        .into_iter()
+        .any(|chunk| chunk.data.contains(needle))
+}
+
 #[test]
 fn default_excludes_drop_lockfiles_then_flag_includes_them() {
     let _guard = counter_guard();
@@ -308,6 +348,140 @@ fn default_excludes_apply_to_cache_directories() {
     );
 }
 
+#[cfg(feature = "git")]
+#[test]
+fn default_excludes_apply_inside_git_blob_source() {
+    let _guard = counter_guard();
+    let (_tmp, repo) = support::git::init_repo();
+    support::git::commit(
+        &repo,
+        "package-lock.json",
+        &format!("{{ \"token\": \"{SENTINEL}\" }}\n"),
+        "add lockfile",
+    );
+    support::git::commit(
+        &repo,
+        "config.env",
+        "API=git_blob_normal_always_scanned_marker\n",
+        "add config",
+    );
+
+    TestApi.reset_skip_counters();
+    let skipped = keyhog_sources::GitSource::new(repo.clone()).with_max_commits(5);
+    assert!(
+        git_body_contains(&skipped, "git_blob_normal_always_scanned_marker"),
+        "control Git blob path must be scanned when git default excludes are enabled"
+    );
+    assert!(
+        !git_body_contains(&skipped, SENTINEL),
+        "default-excluded Git blob paths must not leak into chunks by default"
+    );
+    assert!(
+        skip_counts().excluded >= 1,
+        "default-excluded Git blob paths must emit excluded telemetry"
+    );
+
+    TestApi.reset_skip_counters();
+    let included = keyhog_sources::GitSource::new(repo)
+        .with_max_commits(5)
+        .with_default_excludes(false);
+    assert!(
+        git_body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan default-excluded paths in GitSource"
+    );
+    assert_eq!(skip_counts().excluded, 0);
+}
+
+#[cfg(feature = "git")]
+#[test]
+fn default_excludes_apply_inside_git_history_source() {
+    let _guard = counter_guard();
+    let (_tmp, repo) = support::git::init_repo();
+    support::git::commit(
+        &repo,
+        "package-lock.json",
+        &format!("{{ \"token\": \"{SENTINEL}\" }}\n"),
+        "add lockfile",
+    );
+    support::git::commit(
+        &repo,
+        "config.env",
+        "API=git_history_normal_always_scanned_marker\n",
+        "add config",
+    );
+
+    TestApi.reset_skip_counters();
+    let skipped = keyhog_sources::GitHistorySource::new(repo.clone()).with_max_commits(5);
+    assert!(
+        git_body_contains(&skipped, "git_history_normal_always_scanned_marker"),
+        "control Git history path must be scanned when git default excludes are enabled"
+    );
+    assert!(
+        !git_body_contains(&skipped, SENTINEL),
+        "default-excluded Git history paths must not leak into chunks by default"
+    );
+    assert!(
+        skip_counts().excluded >= 1,
+        "default-excluded Git history paths must emit excluded telemetry"
+    );
+
+    TestApi.reset_skip_counters();
+    let included = keyhog_sources::GitHistorySource::new(repo)
+        .with_max_commits(5)
+        .with_default_excludes(false);
+    assert!(
+        git_body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan default-excluded paths in GitHistorySource"
+    );
+    assert_eq!(skip_counts().excluded, 0);
+}
+
+#[cfg(feature = "git")]
+#[test]
+fn default_excludes_apply_inside_git_diff_source() {
+    let _guard = counter_guard();
+    let (_tmp, repo) = support::git::init_repo();
+    support::git::commit(&repo, "README.md", "base\n", "base");
+    run_git(&repo, &["checkout", "-b", "feature"]);
+    support::git::commit(
+        &repo,
+        "package-lock.json",
+        &format!("{{ \"token\": \"{SENTINEL}\" }}\n"),
+        "add lockfile",
+    );
+    support::git::commit(
+        &repo,
+        "config.env",
+        "API=git_diff_normal_always_scanned_marker\n",
+        "add config",
+    );
+
+    TestApi.reset_skip_counters();
+    let skipped = keyhog_sources::GitDiffSource::new(repo.clone(), "main").with_head_ref("feature");
+    assert!(
+        git_body_contains(&skipped, "git_diff_normal_always_scanned_marker"),
+        "control Git diff path must be scanned when git default excludes are enabled"
+    );
+    assert!(
+        !git_body_contains(&skipped, SENTINEL),
+        "default-excluded Git diff paths must not leak into chunks by default"
+    );
+    assert!(
+        skip_counts().excluded >= 1,
+        "default-excluded Git diff paths must emit excluded telemetry"
+    );
+
+    TestApi.reset_skip_counters();
+    let included = keyhog_sources::GitDiffSource::new(repo, "main")
+        .with_head_ref("feature")
+        .with_default_excludes(false);
+    assert!(
+        git_body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan default-excluded paths in GitDiffSource"
+    );
+    assert_eq!(skip_counts().excluded, 0);
+}
+
 #[test]
 fn default_excludes_apply_inside_zip_archives() {
     let _guard = counter_guard();
@@ -370,6 +544,33 @@ fn default_excludes_apply_inside_openpack_zip_archives() {
     assert!(
         body_contains(&included, SENTINEL),
         "--no-default-excludes must scan default-excluded entries inside OpenPack ZIP archives"
+    );
+    assert_eq!(skip_counts().excluded, 0);
+}
+
+#[test]
+fn default_excludes_apply_inside_crx_archives() {
+    let _guard = counter_guard();
+    let dir = tempfile::tempdir().unwrap();
+    write_crx_with_default_excluded_entry(&dir.path().join("fixture.crx"));
+
+    TestApi.reset_skip_counters();
+    let skipped = scan_dir(dir.path(), true);
+    assert!(
+        body_contains(&skipped, "crx_normal_always_scanned_marker"),
+        "control CRX entry must be scanned when archive default excludes are enabled"
+    );
+    assert!(
+        !body_contains(&skipped, SENTINEL),
+        "default-excluded CRX entries must not leak into chunks by default"
+    );
+    assert_eq!(skip_counts().excluded, 1);
+
+    TestApi.reset_skip_counters();
+    let included = scan_dir(dir.path(), false);
+    assert!(
+        body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan default-excluded entries inside CRX archives"
     );
     assert_eq!(skip_counts().excluded, 0);
 }

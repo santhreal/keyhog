@@ -31,6 +31,7 @@ pub struct GitHubOrgSource {
     /// configured corporate proxy.
     http: crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
 }
 
 impl GitHubOrgSource {
@@ -54,6 +55,7 @@ impl GitHubOrgSource {
                 ..Default::default()
             },
             limits: crate::SourceLimits::default(),
+            respect_default_excludes: true,
         }
     }
 
@@ -66,6 +68,11 @@ impl GitHubOrgSource {
 
     pub(crate) fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
         self.limits = limits;
+        self
+    }
+
+    pub(crate) fn with_default_excludes(mut self, respect_default_excludes: bool) -> Self {
+        self.respect_default_excludes = respect_default_excludes;
         self
     }
 }
@@ -87,7 +94,15 @@ impl Source for GitHubOrgSource {
         // the orchestrator turns into a non-zero exit instead of a crash.
         let result = thread::scope(|s| {
             match s
-                .spawn(|| collect_org_chunks(&self.org, &self.token, &self.http, self.limits))
+                .spawn(|| {
+                    collect_org_chunks(
+                        &self.org,
+                        &self.token,
+                        &self.http,
+                        self.limits,
+                        self.respect_default_excludes,
+                    )
+                })
                 .join()
             {
                 Ok(result) => result,
@@ -163,6 +178,7 @@ fn collect_org_chunks(
     token: &str,
     http: &crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     validate_org_name(org)?;
     let client = build_client(token, http)?;
@@ -181,6 +197,7 @@ fn collect_org_chunks(
         &hosted_git::ExpectedCloneOrigin::host("github.com"),
         &repos,
         limits,
+        respect_default_excludes,
     )
 }
 

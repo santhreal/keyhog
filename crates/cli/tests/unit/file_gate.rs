@@ -544,6 +544,56 @@ fn sources_error() {
     assert!(API.build_sources(&args, vec![], None).is_err());
 }
 
+#[test]
+fn sources_wires_no_default_excludes_into_git_sources() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let sources = std::fs::read_to_string(root.join("src/sources.rs")).expect("read sources.rs");
+
+    for constructor in [
+        "keyhog_sources::GitSource::new(path.clone())",
+        "keyhog_sources::GitDiffSource::new(repo_path, base_ref.clone())",
+        "keyhog_sources::GitHistorySource::new(path.clone())",
+    ] {
+        let start = sources.find(constructor).unwrap_or_else(|| {
+            panic!("sources.rs must construct {constructor} through the resolved config path")
+        });
+        let tail = &sources[start..];
+        let end = tail
+            .find("));")
+            .expect("git source constructor chain must close");
+        let chain = &tail[..end];
+        assert!(
+            chain.contains(".with_default_excludes(!resolved.no_default_excludes)"),
+            "{constructor} must receive the resolved no-default-excludes flag"
+        );
+    }
+
+    assert!(
+        sources.contains("create_source_with_http_config_limits_and_policy"),
+        "CLI source construction must use the policy-aware source factory"
+    );
+    for source_name in [
+        "\"github-org\"",
+        "\"gitlab-group\"",
+        "\"bitbucket-workspace\"",
+        "source_name",
+    ] {
+        let start = sources.find(source_name).unwrap_or_else(|| {
+            panic!("sources.rs must construct {source_name} through the resolved config path")
+        });
+        let tail = &sources[start..];
+        let call_end = tail.find(")?").unwrap_or_else(|| {
+            tail.find(") {")
+                .expect("dynamic source factory call must close")
+        });
+        let call = &tail[..call_end];
+        assert!(
+            call.contains("!resolved.no_default_excludes"),
+            "{source_name} source factory call must receive the resolved no-default-excludes flag"
+        );
+    }
+}
+
 // ── crates/cli/src/subcommands/mod.rs ─────────────────────────────────
 #[test]
 fn subcommands_mod_happy() {

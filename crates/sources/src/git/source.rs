@@ -146,6 +146,7 @@ pub struct GitSource {
     repo_path: PathBuf,
     max_commits: Option<usize>,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
 }
 
 impl GitSource {
@@ -166,6 +167,7 @@ impl GitSource {
             repo_path,
             max_commits: None,
             limits: crate::SourceLimits::default(),
+            respect_default_excludes: true,
         }
     }
 
@@ -190,6 +192,11 @@ impl GitSource {
         self.limits = limits;
         self
     }
+
+    pub fn with_default_excludes(mut self, respect_default_excludes: bool) -> Self {
+        self.respect_default_excludes = respect_default_excludes;
+        self
+    }
 }
 
 impl Source for GitSource {
@@ -198,7 +205,12 @@ impl Source for GitSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        match stream_git_blobs(&self.repo_path, self.max_commits, self.limits) {
+        match stream_git_blobs(
+            &self.repo_path,
+            self.max_commits,
+            self.limits,
+            self.respect_default_excludes,
+        ) {
             Ok(iter) => Box::new(iter),
             Err(e) => Box::new(std::iter::once(Err(e))),
         }
@@ -351,6 +363,7 @@ fn stream_git_blobs(
     repo_path: &Path,
     max_commits: Option<usize>,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
 ) -> Result<impl Iterator<Item = Result<Chunk, SourceError>>, SourceError> {
     let repo_arg = super::validate_repo_path(repo_path)?;
     let mut commit_ids = GitCommitEnumerator::new(repo_arg.clone(), max_commits, limits)?;
@@ -436,15 +449,19 @@ fn stream_git_blobs(
                     continue;
                 }
 
-                let commit_blobs =
-                    match load_commit_blob_set(&repo_handle, id, &mut seen_blob_paths) {
-                        Ok(Some(commit_blobs)) => commit_blobs,
-                        Ok(None) => continue,
-                        Err(error) => {
-                            done = true;
-                            return Some(Err(error));
-                        }
-                    };
+                let commit_blobs = match load_commit_blob_set(
+                    &repo_handle,
+                    id,
+                    &mut seen_blob_paths,
+                    respect_default_excludes,
+                ) {
+                    Ok(Some(commit_blobs)) => commit_blobs,
+                    Ok(None) => continue,
+                    Err(error) => {
+                        done = true;
+                        return Some(Err(error));
+                    }
+                };
                 pending_errors.extend(commit_blobs.errors);
 
                 if !commit_blobs.blob_metadata.is_empty() {
@@ -484,6 +501,7 @@ fn stream_git_blobs(
                     &repo_handle,
                     objects,
                     &mut seen_blob_paths,
+                    respect_default_excludes,
                 );
                 pending_errors.extend(blob_metadata.errors);
                 if blob_metadata.metadata.is_empty() {
@@ -519,6 +537,7 @@ fn load_commit_blob_set(
     repo: &gix::Repository,
     id: gix::ObjectId,
     seen_blob_paths: &mut HashSet<GitBlobPathKey>,
+    respect_default_excludes: bool,
 ) -> Result<Option<GitCommitBlobSet>, SourceError> {
     let commit_id = id.to_string();
     // Law 10: `git log` already enumerated this commit, so a gix failure to
@@ -583,6 +602,7 @@ fn load_commit_blob_set(
         &mut blob_metadata,
         b"",
         &mut errors,
+        respect_default_excludes,
     );
 
     Ok(Some(GitCommitBlobSet {
@@ -1090,6 +1110,7 @@ fn collect_unreachable_non_commit_blob_metadata(
     repo: &gix::Repository,
     objects: &mut UnreachableGitObjects,
     seen_blob_paths: &mut HashSet<GitBlobPathKey>,
+    respect_default_excludes: bool,
 ) -> GitBlobMetadataBatch {
     let mut batch = GitBlobMetadataBatch::default();
     while batch.metadata.len() < GIT_PARALLEL_BLOB_BATCH_ITEMS {
@@ -1103,6 +1124,7 @@ fn collect_unreachable_non_commit_blob_metadata(
             &mut objects.tree_blob_oids,
             &mut batch.metadata,
             &mut batch.errors,
+            respect_default_excludes,
         );
     }
     if !objects.trees.is_empty() {
@@ -1129,6 +1151,7 @@ fn collect_unreachable_tree_blob_metadata(
     tree_blob_oids: &mut HashSet<gix::ObjectId>,
     blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
     errors: &mut Vec<SourceError>,
+    respect_default_excludes: bool,
 ) {
     let obj = match repo.find_object(tree_id) {
         Ok(obj) => obj,
@@ -1170,6 +1193,7 @@ fn collect_unreachable_tree_blob_metadata(
         blob_metadata,
         b"",
         errors,
+        respect_default_excludes,
     );
     tree_blob_oids.extend(
         blob_metadata[before..]
@@ -1209,12 +1233,14 @@ fn collect_tree_blobs_metadata(
     blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
     prefix: &[u8],
     errors: &mut Vec<SourceError>,
+    respect_default_excludes: bool,
 ) {
     let mut visitor = HistoricalBlobCollector {
         seen_blob_paths,
         tree_blob_oids,
         blob_metadata,
         errors,
+        respect_default_excludes,
     };
     if let Err(error) = super::walk_tree_recursive(repo, tree, prefix, &mut visitor) {
         tracing::warn!(
@@ -1278,11 +1304,14 @@ struct HistoricalBlobCollector<'a> {
     tree_blob_oids: Option<&'a mut HashSet<gix::ObjectId>>,
     blob_metadata: &'a mut Vec<(gix::ObjectId, Vec<u8>)>,
     errors: &'a mut Vec<SourceError>,
+    respect_default_excludes: bool,
 }
 
 impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
     fn accept_path(&mut self, filepath: &[u8]) -> Result<bool, SourceError> {
-        if crate::filesystem::is_default_excluded_path_bytes(filepath) {
+        if self.respect_default_excludes
+            && crate::filesystem::is_default_excluded_path_bytes(filepath)
+        {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
             return Ok(false);
         }

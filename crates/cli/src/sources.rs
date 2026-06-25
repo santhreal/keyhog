@@ -158,6 +158,7 @@ pub(crate) fn build_sources(
         sources.push(Box::new(
             keyhog_sources::GitSource::new(path.clone())
                 .with_max_commits(resolved.max_commits)
+                .with_default_excludes(!resolved.no_default_excludes)
                 .with_limits(source_limits),
         ));
     }
@@ -170,6 +171,7 @@ pub(crate) fn build_sources(
             .unwrap_or_else(|| PathBuf::from(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
         sources.push(Box::new(
             keyhog_sources::GitDiffSource::new(repo_path, base_ref.clone())
+                .with_default_excludes(!resolved.no_default_excludes)
                 .with_limits(source_limits),
         ));
     }
@@ -179,6 +181,7 @@ pub(crate) fn build_sources(
         sources.push(Box::new(
             keyhog_sources::GitHistorySource::new(path.clone())
                 .with_max_commits(resolved.max_commits)
+                .with_default_excludes(!resolved.no_default_excludes)
                 .with_limits(source_limits),
         ));
     }
@@ -186,23 +189,29 @@ pub(crate) fn build_sources(
     #[cfg(feature = "github")]
     if let (Some(org), Some(token)) = (&args.github_org, &args.github_token) {
         let params = format!("{org}\n{token}");
-        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
-            "github-org",
-            Some(&params),
-            source_http_config(args, "github-org"),
-            source_limits,
-        )?);
+        sources.push(
+            keyhog_sources::create_source_with_http_config_limits_and_policy(
+                "github-org",
+                Some(&params),
+                source_http_config(args, "github-org"),
+                source_limits,
+                !resolved.no_default_excludes,
+            )?,
+        );
     }
 
     #[cfg(feature = "gitlab")]
     if let (Some(group), Some(token)) = (&args.gitlab_group, &args.gitlab_token) {
         let params = format!("{group}\n{token}\n{}", args.gitlab_endpoint);
-        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
-            "gitlab-group",
-            Some(&params),
-            source_http_config(args, "gitlab-group"),
-            source_limits,
-        )?);
+        sources.push(
+            keyhog_sources::create_source_with_http_config_limits_and_policy(
+                "gitlab-group",
+                Some(&params),
+                source_http_config(args, "gitlab-group"),
+                source_limits,
+                !resolved.no_default_excludes,
+            )?,
+        );
     }
 
     #[cfg(feature = "bitbucket")]
@@ -215,12 +224,15 @@ pub(crate) fn build_sources(
             "{workspace}\n{username}\n{token}\n{}",
             args.bitbucket_endpoint
         );
-        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
-            "bitbucket-workspace",
-            Some(&params),
-            source_http_config(args, "bitbucket-workspace"),
-            source_limits,
-        )?);
+        sources.push(
+            keyhog_sources::create_source_with_http_config_limits_and_policy(
+                "bitbucket-workspace",
+                Some(&params),
+                source_http_config(args, "bitbucket-workspace"),
+                source_limits,
+                !resolved.no_default_excludes,
+            )?,
+        );
     }
 
     #[cfg(feature = "s3")]
@@ -242,12 +254,15 @@ pub(crate) fn build_sources(
             "{bucket}\n{}\n{}\n{}",
             s3_prefix, s3_endpoint, args.allow_s3_credential_forward
         );
-        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
-            "s3",
-            Some(&params),
-            source_http_config(args, "s3"),
-            source_limits,
-        )?);
+        sources.push(
+            keyhog_sources::create_source_with_http_config_limits_and_policy(
+                "s3",
+                Some(&params),
+                source_http_config(args, "s3"),
+                source_limits,
+                !resolved.no_default_excludes,
+            )?,
+        );
     }
 
     #[cfg(feature = "gcs")]
@@ -269,12 +284,15 @@ pub(crate) fn build_sources(
             "{bucket}\n{}\n{}\n{}",
             gcs_prefix, gcs_endpoint, args.allow_gcs_token_forward
         );
-        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
-            "gcs",
-            Some(&params),
-            source_http_config(args, "gcs"),
-            source_limits,
-        )?);
+        sources.push(
+            keyhog_sources::create_source_with_http_config_limits_and_policy(
+                "gcs",
+                Some(&params),
+                source_http_config(args, "gcs"),
+                source_limits,
+                !resolved.no_default_excludes,
+            )?,
+        );
     }
 
     #[cfg(feature = "azure")]
@@ -284,22 +302,28 @@ pub(crate) fn build_sources(
             None => "",
         };
         let params = format!("{container_url}\n{azure_prefix}");
-        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
-            "azure_blob",
-            Some(&params),
-            source_http_config(args, "azure-blob"),
-            source_limits,
-        )?);
+        sources.push(
+            keyhog_sources::create_source_with_http_config_limits_and_policy(
+                "azure_blob",
+                Some(&params),
+                source_http_config(args, "azure-blob"),
+                source_limits,
+                !resolved.no_default_excludes,
+            )?,
+        );
     }
 
     #[cfg(feature = "docker")]
     if let Some(image) = &args.docker_image {
-        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
-            "docker",
-            Some(image),
-            source_http_config(args, "docker"),
-            source_limits,
-        )?);
+        sources.push(
+            keyhog_sources::create_source_with_http_config_limits_and_policy(
+                "docker",
+                Some(image),
+                source_http_config(args, "docker"),
+                source_limits,
+                !resolved.no_default_excludes,
+            )?,
+        );
     }
 
     #[cfg(feature = "web")]
@@ -309,12 +333,15 @@ pub(crate) fn build_sources(
         } else {
             urls.join("\n")
         };
-        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
-            "web",
-            Some(&params),
-            source_http_config(args, "web"),
-            source_limits,
-        )?);
+        sources.push(
+            keyhog_sources::create_source_with_http_config_limits_and_policy(
+                "web",
+                Some(&params),
+                source_http_config(args, "web"),
+                source_limits,
+                !resolved.no_default_excludes,
+            )?,
+        );
     }
 
     if let Some(ref dynamic_sources) = args.source {
@@ -325,11 +352,12 @@ pub(crate) fn build_sources(
                 (source_spec.as_str(), None)
             };
 
-            match keyhog_sources::create_source_with_http_config_and_limits(
+            match keyhog_sources::create_source_with_http_config_limits_and_policy(
                 source_name,
                 params,
                 source_http_config(args, source_name),
                 source_limits,
+                !resolved.no_default_excludes,
             ) {
                 Ok(s) => {
                     sources.push(s);

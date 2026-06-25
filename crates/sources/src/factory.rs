@@ -14,7 +14,13 @@ pub fn create_source_with_http_config(
     params: Option<&str>,
     http: crate::http::HttpClientConfig,
 ) -> Result<Box<dyn keyhog_core::Source>, keyhog_core::SourceError> {
-    create_source_with_http_config_and_limits(name, params, http, crate::SourceLimits::default())
+    create_source_with_http_config_limits_and_policy(
+        name,
+        params,
+        http,
+        crate::SourceLimits::default(),
+        true,
+    )
 }
 
 /// Create a source while applying shared HTTP policy and source byte/count
@@ -25,7 +31,20 @@ pub fn create_source_with_http_config_and_limits(
     http: crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
 ) -> Result<Box<dyn keyhog_core::Source>, keyhog_core::SourceError> {
-    let _ = (&http, &limits); // LAW10: feature-disabled builds still return loud source errors; this is compile hygiene only.
+    create_source_with_http_config_limits_and_policy(name, params, http, limits, true)
+}
+
+/// Create a source while applying shared HTTP policy, source byte/count limits,
+/// and the source-owned default-exclude policy to implementations that perform
+/// filesystem scanning after remote retrieval.
+pub fn create_source_with_http_config_limits_and_policy(
+    name: &str,
+    params: Option<&str>,
+    http: crate::http::HttpClientConfig,
+    limits: crate::SourceLimits,
+    respect_default_excludes: bool,
+) -> Result<Box<dyn keyhog_core::Source>, keyhog_core::SourceError> {
+    let _ = (&http, &limits, respect_default_excludes); // LAW10: feature-disabled builds still return loud source errors; this is compile hygiene only.
     match name {
         "slack" => {
             if let Some(token) = params {
@@ -75,7 +94,8 @@ pub fn create_source_with_http_config_and_limits(
                     return Ok(Box::new(
                         crate::github_org::GitHubOrgSource::new(org.to_string(), token.to_string())
                             .with_http_config(http)
-                            .with_limits(limits),
+                            .with_limits(limits)
+                            .with_default_excludes(respect_default_excludes),
                     ));
                 }
                 #[cfg(not(feature = "github"))]
@@ -241,7 +261,10 @@ pub fn create_source_with_http_config_and_limits(
             if let Some(params) = params {
                 #[cfg(feature = "gitlab")]
                 return Ok(Box::new(crate::gitlab_group::source_from_params(
-                    params, http, limits,
+                    params,
+                    http,
+                    limits,
+                    respect_default_excludes,
                 )?));
                 #[cfg(not(feature = "gitlab"))]
                 {
@@ -260,7 +283,10 @@ pub fn create_source_with_http_config_and_limits(
             if let Some(params) = params {
                 #[cfg(feature = "bitbucket")]
                 return Ok(Box::new(crate::bitbucket_workspace::source_from_params(
-                    params, http, limits,
+                    params,
+                    http,
+                    limits,
+                    respect_default_excludes,
                 )?));
                 #[cfg(not(feature = "bitbucket"))]
                 {

@@ -26,6 +26,7 @@ pub struct GitDiffSource {
     base_ref: String,
     head_ref: Option<String>,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
 }
 
 impl GitDiffSource {
@@ -47,6 +48,7 @@ impl GitDiffSource {
             base_ref: base_ref.into(),
             head_ref: None,
             limits: crate::SourceLimits::default(),
+            respect_default_excludes: true,
         }
     }
 
@@ -71,6 +73,11 @@ impl GitDiffSource {
         self.limits = limits;
         self
     }
+
+    pub fn with_default_excludes(mut self, respect_default_excludes: bool) -> Self {
+        self.respect_default_excludes = respect_default_excludes;
+        self
+    }
 }
 
 impl Source for GitDiffSource {
@@ -84,6 +91,7 @@ impl Source for GitDiffSource {
             &self.base_ref,
             self.head_ref.as_deref(),
             self.limits,
+            self.respect_default_excludes,
         ) {
             Ok(iter) => Box::new(iter),
             Err(e) => Box::new(std::iter::once(Err(e))),
@@ -100,6 +108,7 @@ fn stream_added_lines(
     base_ref: &str,
     head_ref: Option<&str>,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
 ) -> Result<impl Iterator<Item = Result<Chunk, SourceError>>, SourceError> {
     let base_ref = super::validate_ref_name(base_ref)?;
     let head_ref = head_ref.map(super::validate_ref_name).transpose()?;
@@ -151,6 +160,7 @@ fn stream_added_lines(
             metadata.author.clone(),
             metadata.date.clone(),
             limits,
+            respect_default_excludes,
         ))
     } else {
         None
@@ -328,7 +338,10 @@ fn stream_added_lines(
                         ));
                     }
                     current_path = match new_path {
-                        Some(path) if crate::filesystem::is_default_excluded_path(&path) => {
+                        Some(path)
+                            if respect_default_excludes
+                                && crate::filesystem::is_default_excluded_path(&path) =>
+                        {
                             let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
                             None
                         }
@@ -464,6 +477,7 @@ struct UntrackedWorktreeChunks {
     author: String,
     date: String,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
     paths: Option<std::vec::IntoIter<String>>,
     stopped: bool,
 }
@@ -476,6 +490,7 @@ impl UntrackedWorktreeChunks {
         author: String,
         date: String,
         limits: crate::SourceLimits,
+        respect_default_excludes: bool,
     ) -> Self {
         Self {
             repo_arg,
@@ -484,6 +499,7 @@ impl UntrackedWorktreeChunks {
             author,
             date,
             limits,
+            respect_default_excludes,
             paths: None,
             stopped: false,
         }
@@ -508,6 +524,10 @@ impl UntrackedWorktreeChunks {
             ));
         };
         while let Some(rel) = paths.next() {
+            if self.respect_default_excludes && crate::filesystem::is_default_excluded_path(&rel) {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
+                continue;
+            }
             if let Some(cap) =
                 super::git_history_cap_status(*total_bytes, *chunk_count, self.limits)
             {

@@ -19,6 +19,7 @@ pub(crate) struct BitbucketWorkspaceSource {
     endpoint: String,
     http: crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
 }
 
 impl BitbucketWorkspaceSource {
@@ -33,6 +34,7 @@ impl BitbucketWorkspaceSource {
                 ..Default::default()
             },
             limits: crate::SourceLimits::default(),
+            respect_default_excludes: true,
         }
     }
 
@@ -48,6 +50,11 @@ impl BitbucketWorkspaceSource {
 
     pub(crate) fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
         self.limits = limits;
+        self
+    }
+
+    pub(crate) fn with_default_excludes(mut self, respect_default_excludes: bool) -> Self {
+        self.respect_default_excludes = respect_default_excludes;
         self
     }
 }
@@ -68,6 +75,7 @@ impl Source for BitbucketWorkspaceSource {
                         &self.endpoint,
                         &self.http,
                         self.limits,
+                        self.respect_default_excludes,
                     )
                 })
                 .join()
@@ -119,6 +127,7 @@ fn collect_workspace_chunks(
     endpoint: &str,
     http: &crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     validate_workspace(workspace)?;
     validate_basic_auth(username, token)?;
@@ -141,6 +150,7 @@ fn collect_workspace_chunks(
         &expected_clone_origin,
         &repos,
         limits,
+        respect_default_excludes,
     )?;
     rows.extend(listing_errors.into_iter().map(Err));
     Ok(rows)
@@ -336,6 +346,7 @@ pub(crate) fn source_from_params(
     params: &str,
     http: crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
 ) -> Result<BitbucketWorkspaceSource, SourceError> {
     let mut parts = params.splitn(4, '\n');
     let Some(workspace) = parts.next() else {
@@ -369,7 +380,8 @@ pub(crate) fn source_from_params(
     )
     .with_endpoint(endpoint.to_string())
     .with_http_config(http)
-    .with_limits(limits))
+    .with_limits(limits)
+    .with_default_excludes(respect_default_excludes))
 }
 
 pub(crate) fn listing_truncated_error_for_test(

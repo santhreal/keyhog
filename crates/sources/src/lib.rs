@@ -82,6 +82,7 @@ pub use api::*;
 pub use decode::decode_file_bytes;
 pub use factory::{
     create_source, create_source_with_http_config, create_source_with_http_config_and_limits,
+    create_source_with_http_config_limits_and_policy,
 };
 pub use limits::{SourceLimits, DEFAULT_SOURCE_LIMITS};
 pub use skip::{git_object_unreadable, reset_skipped_over_max_size, skip_counts, SkipCounts};

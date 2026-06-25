@@ -16,14 +16,14 @@ mod mounts;
 use crate::args::ScanSystemArgs;
 use crate::exit_codes::{EXIT_FINDINGS, EXIT_SOURCE_FAILED};
 use crate::format::format_bytes;
-use crate::orchestrator::{DefaultScanRuntime, StreamingSourceEvent, setup_default_scan_runtime};
+use crate::orchestrator::{setup_default_scan_runtime, DefaultScanRuntime, StreamingSourceEvent};
 use crate::style;
 use anyhow::{Context, Result};
 use mounts::enumerate_mounts;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 /// Hard ceiling on resident findings held in memory during a system scan.
 ///
@@ -166,8 +166,8 @@ pub(crate) mod testing {
         super::mounts::testing::parse_macos_mount_table_for_test(text, include_network)
     }
 
-    pub(crate) fn windows_drive_filter_decisions_for_test()
-    -> Result<(bool, bool, bool, bool), toml::de::Error> {
+    pub(crate) fn windows_drive_filter_decisions_for_test(
+    ) -> Result<(bool, bool, bool, bool), toml::de::Error> {
         super::mounts::testing::windows_drive_filter_decisions_for_test()
     }
 
@@ -668,7 +668,7 @@ fn scan_git_history(
 ) -> Result<bool> {
     #[cfg(feature = "git")]
     {
-        let source = keyhog_sources::GitSource::new(repo.to_path_buf());
+        let source = keyhog_sources::GitSource::new(repo.to_path_buf()).with_default_excludes(true);
         let mut stopped_by_space_cap = false;
         crate::orchestrator::scan_streaming_source(
             scan_runtime,

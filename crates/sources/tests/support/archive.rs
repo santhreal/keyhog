@@ -16,6 +16,16 @@ pub fn zip_with_entries(entries: &[(&str, &[u8])]) -> Vec<u8> {
     writer.finish().expect("finish zip").into_inner()
 }
 
+pub fn crx_with_zip_payload(payload: &[u8]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"Cr24");
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(payload);
+    bytes
+}
+
 pub fn stored_zip_with_duplicate_names(entries: &[(&str, &[u8])]) -> Vec<u8> {
     stored_zip_with_duplicate_names_and_comment(entries, &[])
 }

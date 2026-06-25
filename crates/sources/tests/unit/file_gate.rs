@@ -53,6 +53,7 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
     let extract = include_str!("../../src/filesystem/extract.rs");
     let archive = include_str!("../../src/filesystem/extract/archive.rs");
     let compressed = include_str!("../../src/filesystem/extract/compressed.rs");
+    let rar = include_str!("../../src/filesystem/extract/rar.rs");
     let filter = include_str!("../../src/filesystem/filter.rs");
     let read_mod = include_str!("../../src/filesystem/read/mod.rs");
     let raw = include_str!("../../src/filesystem/read/raw.rs");
@@ -143,6 +144,16 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
         "compressed extension routing must stay allocation-free, ASCII-case-insensitive, and single-sourced through CompressedFormat::from_ext"
     );
     assert!(
+        extract.contains("rar::extract_rar_chunks(&path, max_size, respect_default_excludes, emit)")
+            && rar.contains(
+                "fn new(archive_path: &'a Path, max_size: u64, respect_default_excludes: bool)"
+            )
+            && rar.contains(
+                "self.respect_default_excludes && super::super::filter::is_default_excluded(entry_name)"
+            ),
+        "RAR extraction must receive and honor the source default-exclude flag"
+    );
+    assert!(
         read_mod.contains("BufferedFileRead")
             && raw.contains("enum BufferedFileRead")
             && raw.contains("Mmap(memmap2::Mmap)")
@@ -157,6 +168,48 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
             && extract.contains("extract_printable_strings(&mmap, 8)"),
         "filesystem binary-strings fallback must reuse buffered/mmap bytes instead of rereading the file"
     );
+}
+
+#[test]
+fn hosted_git_sources_thread_default_exclude_policy() {
+    let factory = include_str!("../../src/factory.rs");
+    let hosted = include_str!("../../src/hosted_git.rs");
+    let github = include_str!("../../src/github_org.rs");
+    let gitlab = include_str!("../../src/gitlab_group.rs");
+    let bitbucket = include_str!("../../src/bitbucket_workspace.rs");
+
+    assert!(
+        factory.contains("pub fn create_source_with_http_config_limits_and_policy")
+            && factory.contains("respect_default_excludes: bool")
+            && factory.contains(".with_default_excludes(respect_default_excludes)")
+            && factory.contains(
+                "params,\n                    http,\n                    limits,\n                    respect_default_excludes,"
+            ),
+        "source factory must expose and pass the source default-exclude policy to hosted git providers"
+    );
+    assert!(
+        hosted.contains("pub(crate) fn scan_hosted_repos(")
+            && hosted.contains("respect_default_excludes: bool")
+            && hosted.contains("scan_single_hosted_repo(")
+            && hosted.contains(".with_default_excludes(respect_default_excludes)"),
+        "hosted git shared scanner must carry default-exclude policy into the cloned filesystem source"
+    );
+    for (name, source) in [
+        ("github-org", github),
+        ("gitlab-group", gitlab),
+        ("bitbucket-workspace", bitbucket),
+    ] {
+        assert!(
+            source.contains("respect_default_excludes: bool")
+                && source.contains("respect_default_excludes: true")
+                && source.contains(
+                    "fn with_default_excludes(mut self, respect_default_excludes: bool) -> Self"
+                )
+                && source.contains("self.respect_default_excludes")
+                && source.contains("hosted_git::scan_hosted_repos("),
+            "{name} source must store and forward the default-exclude policy"
+        );
+    }
 }
 
 #[test]

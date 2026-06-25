@@ -22,6 +22,7 @@ pub struct GitHistorySource {
     repo_path: PathBuf,
     max_commits: Option<usize>,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
 }
 
 impl GitHistorySource {
@@ -42,6 +43,7 @@ impl GitHistorySource {
             repo_path,
             max_commits: None,
             limits: crate::SourceLimits::default(),
+            respect_default_excludes: true,
         }
     }
 
@@ -66,6 +68,11 @@ impl GitHistorySource {
         self.limits = limits;
         self
     }
+
+    pub fn with_default_excludes(mut self, respect_default_excludes: bool) -> Self {
+        self.respect_default_excludes = respect_default_excludes;
+        self
+    }
 }
 
 impl Source for GitHistorySource {
@@ -74,7 +81,12 @@ impl Source for GitHistorySource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        match stream_git_history_chunks(&self.repo_path, self.max_commits, self.limits) {
+        match stream_git_history_chunks(
+            &self.repo_path,
+            self.max_commits,
+            self.limits,
+            self.respect_default_excludes,
+        ) {
             Ok(iter) => Box::new(iter),
             Err(error) => Box::new(std::iter::once(Err(error))),
         }
@@ -88,6 +100,7 @@ fn stream_git_history_chunks(
     repo_path: &Path,
     max_commits: Option<usize>,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
 ) -> Result<impl Iterator<Item = Result<Chunk, SourceError>>, SourceError> {
     let repo_arg = super::validate_repo_path(repo_path)?;
     let mut command = Command::new(super::git_bin()?);
@@ -309,7 +322,10 @@ fn stream_git_history_chunks(
                         ));
                     }
                     current_path = match new_path {
-                        Some(path) if crate::filesystem::is_default_excluded_path(&path) => {
+                        Some(path)
+                            if respect_default_excludes
+                                && crate::filesystem::is_default_excluded_path(&path) =>
+                        {
                             let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
                             None
                         }
