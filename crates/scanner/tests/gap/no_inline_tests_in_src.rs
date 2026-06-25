@@ -29,11 +29,6 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // tests co-located preserves the crate boundary instead of making GPU
     // admission internals pub(crate) solely for test placement.
     "engine/phase2_gpu_dfa.rs",
-    // GPU presence rows are a private packed-bit contract across confirmed
-    // literals, phase-2 keyword hints, and always-active anchor presence.
-    // Co-located tests keep the bit-layout helpers and counters private instead
-    // of exporting them only for external test placement.
-    "engine/backend_triggered.rs",
     // The root module has test-only imports used by crate-internal unit builds.
     // These are not behavioral inline tests; moving them to `tests/` would not
     // remove source-owned test logic, only break crate-local compilation seams.
