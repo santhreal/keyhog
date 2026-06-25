@@ -101,6 +101,86 @@ fn slack_api_error_is_counted_unreadable() {
     );
 }
 
+#[cfg(feature = "slack")]
+#[test]
+fn slack_channel_failure_preserves_sibling_chunks() {
+    use keyhog_core::Source;
+    use keyhog_sources::skip_counts;
+    use keyhog_sources::testing::{SourceTestApi, TestApi};
+
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.list")
+            .query_param("types", "public_channel,private_channel")
+            .query_param("limit", "1000");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{"ok":true,"channels":[{"id":"C1","name":"alpha"},{"id":"C2","name":"beta"}]}"#,
+            );
+    });
+    let alpha_history = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.history")
+            .query_param("channel", "C1")
+            .query_param("limit", "1000");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{"ok":true,"messages":[{"user":"U1","text":"alpha page ghp_slackSiblingToken1234567890","ts":"1.0"}],"has_more":false}"#,
+            );
+    });
+    let beta_history = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.history")
+            .query_param("channel", "C2")
+            .query_param("limit", "1000");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"ok":false,"error":"channel_not_found"}"#);
+    });
+
+    let rows: Vec<_> = TestApi
+        .slack_source_with_endpoint("xoxb-test-token", server.url(""))
+        .chunks()
+        .collect();
+    assert_eq!(list.calls(), 1, "Slack channel list request count");
+    assert_eq!(
+        alpha_history.calls(),
+        1,
+        "healthy channel history request count"
+    );
+    assert_eq!(
+        beta_history.calls(),
+        1,
+        "failing channel history request count"
+    );
+    assert!(
+        rows.iter().any(|row| row
+            .as_ref()
+            .is_ok_and(|chunk| chunk.data.contains("ghp_slackSiblingToken1234567890"))),
+        "healthy sibling channel chunk must survive failed channel: {rows:?}"
+    );
+    assert!(
+        rows.iter().any(|row| row
+            .as_ref()
+            .is_err_and(|error| error.to_string().contains("channel_not_found"))),
+        "failed sibling channel must remain visible as an error row: {rows:?}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.unreadable - before.unreadable,
+        1,
+        "one failed Slack channel must bump SKIPPED_UNREADABLE once"
+    );
+}
+
 #[cfg(not(feature = "slack"))]
 #[test]
 fn slack_transport_error_is_counted_unreadable() {
@@ -110,5 +190,11 @@ fn slack_transport_error_is_counted_unreadable() {
 #[cfg(not(feature = "slack"))]
 #[test]
 fn slack_api_error_is_counted_unreadable() {
+    assert!(!cfg!(feature = "slack"));
+}
+
+#[cfg(not(feature = "slack"))]
+#[test]
+fn slack_channel_failure_preserves_sibling_chunks() {
     assert!(!cfg!(feature = "slack"));
 }

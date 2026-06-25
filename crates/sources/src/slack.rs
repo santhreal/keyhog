@@ -71,7 +71,7 @@ impl Source for SlackSource {
             )),
         });
         match result {
-            Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
+            Ok(chunks) => Box::new(chunks.into_iter()),
             Err(e) => Box::new(std::iter::once(Err(e))),
         }
     }
@@ -284,7 +284,7 @@ pub(crate) fn history_next_cursor_for_test(
 }
 
 impl SlackSource {
-    fn collect_chunks(&self) -> Result<Vec<Chunk>, SourceError> {
+    fn collect_chunks(&self) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
         let http = if self.http.timeout.is_none() {
             let mut h = self.http.clone();
             h.timeout = Some(crate::timeouts::HTTP_REQUEST);
@@ -307,53 +307,24 @@ impl SlackSource {
             "slack",
             crate::parallel_fetch::REMOTE_API_FETCH_THREADS,
         )?;
-        let per_channel: Vec<Result<Vec<Chunk>, SourceError>> = pool.install(|| {
+        let per_channel: Vec<Vec<Result<Chunk, SourceError>>> = pool.install(|| {
             channels
                 .par_iter()
-                .map(|channel| -> Result<Vec<Chunk>, SourceError> {
-                    let messages = self.fetch_history(&client, &channel.id)?;
-                    let mut channel_chunks = Vec::new();
-                    let mut channel_buffer = String::new();
-                    for msg in messages {
-                        if let Some(user) = &msg.user {
-                            channel_buffer
-                                .push_str(&format!("\n[USER: {} TS: {}]\n", user, msg.ts));
-                        }
-                        channel_buffer.push_str(&msg.text);
-                        channel_buffer.push('\n');
-                        if channel_buffer.len() > 64 * 1024 {
-                            channel_chunks.push(Chunk {
-                                data: std::mem::take(&mut channel_buffer).into(),
-                                metadata: ChunkMetadata {
-                                    base_offset: 0,
-                                    base_line: 0,
-                                    source_type: "slack".into(),
-                                    path: Some(format!("slack://#{}", channel.name)),
-                                    ..Default::default()
-                                },
-                            });
-                        }
+                .map(|channel| -> Vec<Result<Chunk, SourceError>> {
+                    match self.fetch_history(&client, &channel.id) {
+                        Ok(messages) => slack_channel_chunks(channel, messages)
+                            .into_iter()
+                            .map(Ok)
+                            .collect(),
+                        Err(error) => vec![Err(error)],
                     }
-                    if !channel_buffer.is_empty() {
-                        channel_chunks.push(Chunk {
-                            data: channel_buffer.into(),
-                            metadata: ChunkMetadata {
-                                base_offset: 0,
-                                base_line: 0,
-                                source_type: "slack".into(),
-                                path: Some(format!("slack://#{}", channel.name)),
-                                ..Default::default()
-                            },
-                        });
-                    }
-                    Ok(channel_chunks)
                 })
                 .collect()
         });
 
         let mut chunks = Vec::new();
-        for result in per_channel {
-            chunks.extend(result?);
+        for channel_chunks in per_channel {
+            chunks.extend(channel_chunks);
         }
         Ok(chunks)
     }
@@ -439,6 +410,43 @@ impl SlackSource {
             self.limits.hosted_git_pages,
         ))
     }
+}
+
+fn slack_channel_chunks(channel: &Channel, messages: Vec<Message>) -> Vec<Chunk> {
+    let mut channel_chunks = Vec::new();
+    let mut channel_buffer = String::new();
+    for msg in messages {
+        if let Some(user) = &msg.user {
+            channel_buffer.push_str(&format!("\n[USER: {} TS: {}]\n", user, msg.ts));
+        }
+        channel_buffer.push_str(&msg.text);
+        channel_buffer.push('\n');
+        if channel_buffer.len() > 64 * 1024 {
+            channel_chunks.push(Chunk {
+                data: std::mem::take(&mut channel_buffer).into(),
+                metadata: ChunkMetadata {
+                    base_offset: 0,
+                    base_line: 0,
+                    source_type: "slack".into(),
+                    path: Some(format!("slack://#{}", channel.name)),
+                    ..Default::default()
+                },
+            });
+        }
+    }
+    if !channel_buffer.is_empty() {
+        channel_chunks.push(Chunk {
+            data: channel_buffer.into(),
+            metadata: ChunkMetadata {
+                base_offset: 0,
+                base_line: 0,
+                source_type: "slack".into(),
+                path: Some(format!("slack://#{}", channel.name)),
+                ..Default::default()
+            },
+        });
+    }
+    channel_chunks
 }
 
 fn slack_truncated_error(endpoint: &str, item: &str, max_pages: usize) -> SourceError {
