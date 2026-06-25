@@ -2447,10 +2447,7 @@
     "service": "deepl",
     "severity": "high",
     "keywords": [
-      "DEEPL_API_KEY",
-      "DEEPL_AUTH_KEY",
-      "DeepL-Auth-Key",
-      "auth_key"
+      ":fx"
     ]
   },
   {

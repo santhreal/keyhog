@@ -79,9 +79,9 @@ minus the `limit-` prefix and with dashes changed to underscores.
 | `--baseline <FILE>`           | Compare against a prior scan; show only new.   |
 | `--hide-client-safe`          | Drop every `CLIENT-SAFE` finding (Sentry DSN, Stripe `pk_*`, Mapbox `pk.`, PostHog `phc_`, etc.) before reporting. Use this for bug-bounty / exfiltration-impact workflows where keys public by design are noise. |
 
-### Environment variables
+### Scan controls
 
-| Variable                              | Effect                                                                |
+| Control                               | Effect                                                                |
 |---------------------------------------|-----------------------------------------------------------------------|
 | `keyhog scan --backend auto\|gpu\|gpu-region-presence\|mega-scan\|megascan\|gpu-mega-scan\|simd\|simd-regex\|cpu\|cpu-fallback` | Force a scan backend instead of using automatic backend selection. |
 | `keyhog scan --no-gpu`                | Short-circuit GPU init at hardware-probe time. The scanner runs as if no GPU adapter existed. |

@@ -299,10 +299,10 @@ mod scratch_lifetime {
                 .send((
                     scanner_a_id,
                     super::current_thread_scratch_count_for_test(scanner_a_id),
+                    scanner_a,
                 ))
                 .expect("send scanner A cache count");
             continue_rx.recv().expect("wait for prune command");
-            drop(scanner_a);
 
             let patterns_b = [(0usize, 0usize, "KHFRESH_[A-Z0-9]{8}", false)];
             let (scanner_b, unsupported_b) =
@@ -320,12 +320,13 @@ mod scratch_lifetime {
             )
         });
 
-        let (_scanner_a_id, cached_before_drop) =
+        let (_scanner_a_id, cached_before_drop, scanner_a) =
             ready_rx.recv().expect("receive scanner A cache count");
         assert!(
             cached_before_drop > 0,
             "worker should retain scanner A scratch before scanner A is dropped"
         );
+        drop(scanner_a);
         continue_tx.send(()).expect("release worker");
         let (stale_after_touch, fresh_after_touch) = worker.join().expect("worker joins");
 

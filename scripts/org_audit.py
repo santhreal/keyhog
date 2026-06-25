@@ -73,7 +73,8 @@ def check_no_loc_cap_bloat(violations: list[str]) -> None:
     stale_source_patterns = (
         "500-line modularity cap",
         "500-line cap",
-        "line cap",
+        "500 line cap",
+        "file line cap",
         "under 500",
         "under_500",
         "modularity cap is 500",
@@ -113,6 +114,14 @@ def check_current_claims(violations: list[str]) -> None:
     for path in sorted(p for p in claim_paths if p.is_file()):
         src = path.read_text(encoding="utf-8", errors="replace")
         rel_path = rel(path)
+        if rel_path == "docs/src/reference/cli.md" and re.search(
+            r"(?ms)^### Environment variables\s*\n\s*\|[^\n]*\|\s*\n\s*\|[^\n]*\|\s*\n\s*\| `keyhog scan ",
+            src,
+        ):
+            fail(
+                violations,
+                "CLI reference labels scan command controls as environment variables: docs/src/reference/cli.md",
+            )
         for pattern, reason in stale_patterns.items():
             if pattern == r"\bgpu-zero-copy\b" and rel_path == "crates/scanner/src/hw_probe/select.rs":
                 continue
