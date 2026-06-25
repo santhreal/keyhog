@@ -307,6 +307,13 @@ jobs:
       # (word-internal `ser.` and a too-short locationiq body → no claim).
       - name: leading-construct prefix recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_leading_assertion_and_alternation_prefix_recall
+      # Distinctive required-infix anchor recall contract. A named detector whose
+      # regex opens with a class (no prefix) and captures the whole match (no
+      # keyword group) but REQUIRES a distinctive literal infix (terraform
+      # `\.atlasv1\.`) earns the anchor floor on that infix. Pins the token
+      # surfaces and the soundness twin (same shape without `.atlasv1.` → no claim).
+      - name: distinctive-infix anchor recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_distinctive_infix_anchor_recall
       - name: RawMatch total-order gate
         run: cargo test -p keyhog-core --test new_core_finding_dedup --profile release-fast
 

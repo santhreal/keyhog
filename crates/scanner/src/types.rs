@@ -273,6 +273,14 @@ pub(crate) struct LazyRegex {
     /// so a strong pattern in an otherwise-weak detector keeps its anchor. Pure
     /// function of the regex source; cached like `has_literal_prefix`.
     has_broad_identifier_capture: Arc<std::sync::OnceLock<bool>>,
+    /// Memoized `regex_has_required_literal_run(src, MIN_DISTINCTIVE_INFIX_CHARS)`
+    /// — whether every match necessarily contains a distinctive required literal
+    /// run (the terraform `…\.atlasv1\.…` infix). Such a pattern opens with a
+    /// character class (no extractable prefix) and captures the whole match (no
+    /// keyword group), so it earns neither existing anchor signal despite being
+    /// unmistakably service-specific. Pure function of the regex source; cached
+    /// like `has_literal_prefix`.
+    has_distinctive_inner_literal: Arc<std::sync::OnceLock<bool>>,
 }
 
 impl LazyRegex {
@@ -288,6 +296,7 @@ impl LazyRegex {
             cell: Arc::new(std::sync::OnceLock::new()),
             has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
             has_broad_identifier_capture: Arc::new(std::sync::OnceLock::new()),
+            has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
         }
     }
 
@@ -302,6 +311,7 @@ impl LazyRegex {
             cell: Arc::new(std::sync::OnceLock::from(compiled)),
             has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
             has_broad_identifier_capture: Arc::new(std::sync::OnceLock::new()),
+            has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
         }
     }
 
@@ -316,6 +326,7 @@ impl LazyRegex {
             cell: Arc::new(std::sync::OnceLock::new()),
             has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
             has_broad_identifier_capture: Arc::new(std::sync::OnceLock::new()),
+            has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
         }
     }
 
@@ -330,6 +341,7 @@ impl LazyRegex {
             cell: Arc::new(std::sync::OnceLock::from(compiled)),
             has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
             has_broad_identifier_capture: Arc::new(std::sync::OnceLock::new()),
+            has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
         }
     }
 
@@ -369,6 +381,23 @@ impl LazyRegex {
     pub(crate) fn has_broad_identifier_capture(&self) -> bool {
         *self.has_broad_identifier_capture.get_or_init(|| {
             crate::suppression::api::pattern_has_broad_identifier_capture(&self.src)
+        })
+    }
+
+    /// Whether every match of this pattern necessarily contains a distinctive
+    /// required literal run (the terraform `\.atlasv1\.` infix), memoized. This
+    /// is an anchor signal of the same strength as a leading literal prefix for
+    /// a named detector whose regex opens with a class and captures the whole
+    /// match, so it carries neither `has_literal_prefix` nor a keyword
+    /// `has_context_anchor`. Pure function of the regex SOURCE, cached on first
+    /// touch.
+    #[must_use]
+    pub(crate) fn has_distinctive_inner_literal(&self) -> bool {
+        *self.has_distinctive_inner_literal.get_or_init(|| {
+            crate::compiler::compiler_prefix::regex_has_required_literal_run(
+                &self.src,
+                crate::compiler::compiler_prefix::MIN_DISTINCTIVE_INFIX_CHARS,
+            )
         })
     }
 

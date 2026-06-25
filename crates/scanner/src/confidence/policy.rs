@@ -95,6 +95,10 @@ pub(crate) struct CandidateMatchScorePolicy<'a> {
     pub(crate) ml_enabled: bool,
     pub(crate) credential: &'a str,
     pub(crate) is_named_detector: bool,
+    /// The matched pattern requires a distinctive literal infix (terraform
+    /// `\.atlasv1\.`) — a third anchor form alongside the keyword context anchor
+    /// and the literal prefix, for named detectors that carry neither.
+    pub(crate) has_distinctive_inner_literal: bool,
 }
 
 pub(crate) fn match_heuristic_confidence(policy: MatchHeuristicConfidencePolicy) -> f64 {
@@ -124,8 +128,11 @@ pub(crate) const NAMED_DETECTOR_ANCHOR_FLOOR: f64 = 0.55;
 
 /// Lift the heuristic confidence of a service-anchored detector match to
 /// [`NAMED_DETECTOR_ANCHOR_FLOOR`] when the match carried a strong anchor — a
-/// required keyword **context anchor** (capture group) OR a distinctive
-/// **literal prefix** (`cs_`, `pl_`, `tk_`, `sk-`, `ghp_`).
+/// required keyword **context anchor** (capture group), a distinctive **literal
+/// prefix** (`cs_`, `pl_`, `tk_`, `sk-`, `ghp_`), or a distinctive **required
+/// literal infix** (terraform `\.atlasv1\.`, whose regex opens with a class and
+/// captures the whole match so it carries neither of the other two). All three
+/// are folded into the single `has_anchor` argument by the caller.
 ///
 /// `compute_confidence` is a *normalized* weighted sum: it divides the earned
 /// signal weight by the full signal set (literal prefix, context anchor,
@@ -173,16 +180,20 @@ pub(crate) fn candidate_match_score<'a>(
     });
     // An anchored service-detector match is positive evidence the normalized
     // signal sum structurally under-credits; lift it to clear the floor. The
-    // anchor is EITHER a required keyword group (`has_context_anchor`) OR a
-    // distinctive literal prefix (`has_literal_prefix` — `cs_`, `pl_`, `tk_`,
-    // bare service tokens with no surrounding keyword). Applied before the ML
-    // branch so it propagates through both the heuristic-only `Final` path and
-    // the `Pending` path (whose `ml_pending_confidence` takes
-    // `max(heuristic, model)`).
+    // anchor is a required keyword group (`has_context_anchor`), a distinctive
+    // literal prefix (`has_literal_prefix` — `cs_`, `pl_`, `tk_`, bare service
+    // tokens with no surrounding keyword), OR a distinctive required literal
+    // infix (`has_distinctive_inner_literal` — terraform `\.atlasv1\.`, whose
+    // regex opens with a class and captures the whole match so it carries
+    // neither of the other two). Applied before the ML branch so it propagates
+    // through both the heuristic-only `Final` path and the `Pending` path (whose
+    // `ml_pending_confidence` takes `max(heuristic, model)`).
     let heuristic_conf = apply_named_detector_anchor_floor(
         heuristic_conf,
         policy.is_named_detector,
-        policy.has_context_anchor || policy.has_literal_prefix,
+        policy.has_context_anchor
+            || policy.has_literal_prefix
+            || policy.has_distinctive_inner_literal,
     );
 
     #[cfg(not(feature = "ml"))]

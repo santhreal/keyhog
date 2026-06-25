@@ -226,6 +226,10 @@ impl CompiledScanner {
                 ml_enabled: self.config.ml_enabled,
                 credential,
                 is_named_detector,
+                // Per-PATTERN constant, memoized on the `LazyRegex`: the matched
+                // regex requires a distinctive literal infix (terraform
+                // `\.atlasv1\.`) that no prefix/keyword-group anchor captures.
+                has_distinctive_inner_literal: entry.regex.has_distinctive_inner_literal(),
             },
         );
 

@@ -832,6 +832,66 @@ fn walk_ast(ast: &regex_syntax::ast::Ast, out: &mut Vec<String>) {
     }
 }
 
+/// Minimum length of a REQUIRED literal run for it to count as a distinctive
+/// inner-literal anchor. A required run this long inside a token is a service
+/// signature (the terraform `.atlasv1.` infix, 9 chars) rather than incidental
+/// punctuation, so a named-detector match that contains it has earned the same
+/// anchor credit as a leading literal prefix.
+pub(crate) const MIN_DISTINCTIVE_INFIX_CHARS: usize = 8;
+
+/// True iff EVERY match of `pattern` necessarily contains a literal run of at
+/// least `min_len` characters — a required distinctive literal such as the
+/// terraform `…\.atlasv1\.…` infix, whose detector regex opens with a character
+/// class (no extractable prefix) and captures the whole match (no keyword
+/// group), so it earns neither existing anchor signal despite being unmistakably
+/// service-specific.
+///
+/// Sound by construction — only literals guaranteed in every match are counted:
+///   * a top-level `Concat` contributes its longest run of CONSECUTIVE literal
+///     nodes;
+///   * a plain/non-capturing/capturing `Group` is always entered, so it is
+///     descended into; and
+///   * an `Alternation` (only one branch matches), a `Repetition` (the operand
+///     may repeat zero times, and even `+`/`{n,}` the run is not contiguous with
+///     its neighbours here), a class, dot, or assertion contribute nothing.
+/// A literal inside an optional/alternative therefore never produces a false
+/// "required" claim. The walk does not multiply repeated operands, so it can
+/// only UNDER-count, never over-claim.
+pub(crate) fn regex_has_required_literal_run(pattern: &str, min_len: usize) -> bool {
+    use regex_syntax::ast::{parse::Parser, Ast};
+
+    fn max_required_run(ast: &Ast) -> usize {
+        match ast {
+            Ast::Literal(_) => 1,
+            Ast::Concat(concat) => {
+                let mut best = 0usize;
+                let mut run = 0usize;
+                for node in concat.asts.iter() {
+                    if matches!(node, Ast::Literal(_)) {
+                        run += 1;
+                        best = best.max(run);
+                    } else {
+                        // A required group may carry its own internal run, but it
+                        // breaks the contiguous run of its literal neighbours.
+                        best = best.max(max_required_run(node));
+                        run = 0;
+                    }
+                }
+                best
+            }
+            Ast::Group(group) => max_required_run(&group.ast),
+            // Alternation, Repetition (optional operand), classes, dot,
+            // assertions, flags, empty: not a guaranteed contiguous literal run.
+            _ => 0,
+        }
+    }
+
+    let Ok(ast) = Parser::new().parse(pattern) else {
+        return false;
+    };
+    max_required_run(&ast) >= min_len
+}
+
 #[cfg(test)]
 mod charclass_prefix_expansion_tests {
     use super::*;
@@ -1006,5 +1066,64 @@ mod literal_alternation_tail_tests {
         assert_eq!(leading_literal_run("_x[0-9]"), "_x");
         // A bare `.` is the any-char metachar and stops the run.
         assert_eq!(leading_literal_run(".abc"), "");
+    }
+}
+
+#[cfg(test)]
+mod required_literal_run_tests {
+    use super::*;
+
+    #[test]
+    fn terraform_atlasv1_infix_is_a_required_run() {
+        // `.atlasv1.` (9 chars) is required by every match even though the
+        // regex opens with a class and captures the whole token.
+        assert!(regex_has_required_literal_run(
+            r"[a-zA-Z0-9]{14}\.atlasv1\.[a-zA-Z0-9]{67,}",
+            MIN_DISTINCTIVE_INFIX_CHARS
+        ));
+    }
+
+    #[test]
+    fn short_or_absent_required_literal_is_not_distinctive() {
+        // A pure char-class body has no required literal run.
+        assert!(!regex_has_required_literal_run("[a-f0-9]{32}", 8));
+        // `_live_` (6) is below the distinctive threshold.
+        assert!(!regex_has_required_literal_run(
+            r"sk[a-z]{4}_live_[0-9]{20}",
+            8
+        ));
+    }
+
+    #[test]
+    fn literal_inside_alternation_is_not_required() {
+        // Only one branch matches, so neither `atlasv1x` nor `betaaaaa` is
+        // guaranteed — must NOT count as required.
+        assert!(!regex_has_required_literal_run(
+            r"[0-9]{4}(?:atlasv1x|betaaaaa)?[0-9]{4}",
+            8
+        ));
+        assert!(!regex_has_required_literal_run(
+            r"(?:atlasv1x|betbbbbb)[0-9]{4}",
+            8
+        ));
+    }
+
+    #[test]
+    fn literal_inside_required_group_is_counted() {
+        // A required (non-optional) group is always entered, so its internal
+        // run counts.
+        assert!(regex_has_required_literal_run(
+            r"[0-9]{4}(?:\.atlasv1\.)[0-9]{4}",
+            8
+        ));
+    }
+
+    #[test]
+    fn optional_group_literal_is_not_required() {
+        // The `?` makes the group optional — its run is not guaranteed.
+        assert!(!regex_has_required_literal_run(
+            r"[0-9]{4}(?:\.atlasv1\.)?[0-9]{4}",
+            8
+        ));
     }
 }
