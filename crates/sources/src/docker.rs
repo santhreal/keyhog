@@ -84,6 +84,10 @@ fn collect_docker_chunks(
     let mut error_rows =
         unpack_tar(workspace.archive_path(), workspace.root_path(), limits)?.into_rows();
 
+    match find_archive_metadata_chunks(workspace.root_path(), &image, limits) {
+        Ok(chunks) => rows.extend(chunks.into_iter().map(Ok)),
+        Err(error) => error_rows.push(Err(error)),
+    }
     match find_manifest_config_chunks(workspace.root_path(), &image, limits) {
         Ok(chunks) => rows.extend(chunks.into_iter().map(Ok)),
         Err(error) => error_rows.push(Err(error)),
@@ -806,6 +810,61 @@ struct OciLoadedManifest {
     manifest: OciImageManifest,
 }
 
+const DOCKER_ROOT_METADATA_FILES: &[&str] = &["manifest.json", "index.json", "oci-layout"];
+
+fn find_archive_metadata_chunks(
+    root_path: &Path,
+    image: &str,
+    limits: crate::SourceLimits,
+) -> Result<Vec<Chunk>, SourceError> {
+    let mut chunks = Vec::new();
+    for file_name in DOCKER_ROOT_METADATA_FILES {
+        let metadata_path = root_path.join(file_name);
+        if !metadata_path.exists() {
+            continue;
+        }
+        if !metadata_path.is_file() {
+            return Err(SourceError::Other(format!(
+                "docker metadata file '{}' is not a regular file; docker image metadata was not scanned",
+                metadata_path.display()
+            )));
+        }
+        let bytes = read_capped_file(
+            &metadata_path,
+            "docker metadata file",
+            limits.docker_image_config_bytes,
+        )?;
+        let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
+            SourceError::Other(format!(
+                "invalid docker metadata file '{}': {error}",
+                metadata_path.display()
+            ))
+        })?;
+        let data = serde_json::to_string_pretty(&value).map_err(|error| {
+            SourceError::Other(format!(
+                "failed to serialize docker metadata file '{}' for scanning: {error}",
+                metadata_path.display()
+            ))
+        })?;
+        chunks.push(Chunk {
+            metadata: ChunkMetadata {
+                base_offset: 0,
+                base_line: 0,
+                source_type: "docker".into(),
+                path: Some(format!("{image}:metadata:{file_name}")),
+                commit: None,
+                author: None,
+                date: None,
+                mtime_ns: None,
+                size_bytes: Some(data.len() as u64),
+                decoded_span: None,
+            },
+            data: data.into(),
+        });
+    }
+    Ok(chunks)
+}
+
 fn load_manifest_entries(
     root_path: &Path,
     limits: crate::SourceLimits,
@@ -1395,6 +1454,13 @@ pub(crate) fn manifest_config_chunks_for_test(
     image: &str,
 ) -> Result<Vec<Chunk>, SourceError> {
     find_manifest_config_chunks(root_path, image, crate::SourceLimits::default())
+}
+
+pub(crate) fn archive_metadata_chunks_for_test(
+    root_path: &Path,
+    image: &str,
+) -> Result<Vec<Chunk>, SourceError> {
+    find_archive_metadata_chunks(root_path, image, crate::SourceLimits::default())
 }
 
 pub(crate) fn unpack_layer_archive_for_test(

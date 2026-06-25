@@ -558,6 +558,54 @@ fn docker_metadata_less_config_json_yields_metadata_chunks() {
 
 #[cfg(feature = "docker")]
 #[test]
+fn docker_root_metadata_files_yield_scan_chunks() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(&root).expect("mkdir root");
+    std::fs::write(
+        root.join("manifest.json"),
+        r#"[{"Config":"config.json","RepoTags":["ghp_manifestMetadataToken000000000001"],"Layers":[]}]"#,
+    )
+    .expect("write manifest metadata");
+    std::fs::write(
+        root.join("index.json"),
+        r#"{"schemaVersion":2,"annotations":{"com.example.token":"ghp_indexMetadataToken00000000000001"},"manifests":[]}"#,
+    )
+    .expect("write index metadata");
+    std::fs::write(
+        root.join("oci-layout"),
+        r#"{"imageLayoutVersion":"1.0.0","com.example.token":"ghp_ociLayoutMetadataToken0000000001"}"#,
+    )
+    .expect("write oci layout metadata");
+
+    let chunks = TestApi
+        .docker_archive_metadata_chunks(&root, "keyhog:test")
+        .unwrap();
+    assert_eq!(chunks.len(), 3);
+    let paths: Vec<_> = chunks
+        .iter()
+        .map(|chunk| chunk.metadata.path.as_deref().unwrap_or_default())
+        .collect();
+    assert_eq!(
+        paths,
+        vec![
+            "keyhog:test:metadata:manifest.json",
+            "keyhog:test:metadata:index.json",
+            "keyhog:test:metadata:oci-layout",
+        ],
+        "Docker root metadata chunks must keep stable source labels"
+    );
+    assert!(
+        chunks[0].data.contains("ghp_manifestMetadataToken")
+            && chunks[1].data.contains("ghp_indexMetadataToken")
+            && chunks[2].data.contains("ghp_ociLayoutMetadataToken"),
+        "Docker root metadata file content must be scan-visible: {:?}",
+        chunks.iter().map(|chunk| &chunk.data).collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
 fn docker_manifest_directory_fails_loud() {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().join("root");
@@ -890,6 +938,12 @@ fn docker_manifest_config_yields_metadata_chunks() {
 #[cfg(not(feature = "docker"))]
 #[test]
 fn docker_metadata_less_config_json_yields_metadata_chunks() {
+    assert!(!cfg!(feature = "docker"));
+}
+
+#[cfg(not(feature = "docker"))]
+#[test]
+fn docker_root_metadata_files_yield_scan_chunks() {
     assert!(!cfg!(feature = "docker"));
 }
 

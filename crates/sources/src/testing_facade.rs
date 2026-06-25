@@ -306,6 +306,12 @@ pub mod testing {
             image: &str,
         ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>;
         #[cfg(feature = "docker")]
+        fn docker_archive_metadata_chunks(
+            &self,
+            root_path: &std::path::Path,
+            image: &str,
+        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>;
+        #[cfg(feature = "docker")]
         fn unpack_docker_layer_archive(
             &self,
             archive_path: &std::path::Path,
@@ -946,6 +952,15 @@ pub mod testing {
             image: &str,
         ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError> {
             crate::docker::manifest_config_chunks_for_test(root_path, image)
+        }
+
+        #[cfg(feature = "docker")]
+        fn docker_archive_metadata_chunks(
+            &self,
+            root_path: &std::path::Path,
+            image: &str,
+        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError> {
+            crate::docker::archive_metadata_chunks_for_test(root_path, image)
         }
 
         #[cfg(feature = "docker")]
