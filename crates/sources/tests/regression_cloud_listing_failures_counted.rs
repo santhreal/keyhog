@@ -168,6 +168,70 @@ fn s3_custom_endpoint_with_ambient_credentials_fails_before_anonymous_listing() 
 
 #[cfg(feature = "s3")]
 #[test]
+fn s3_partial_ambient_access_key_fails_before_unsigned_listing() {
+    let _guard = counter_guard();
+    let _restore = RestoreS3Env::capture();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    unsafe {
+        std::env::set_var("AWS_ACCESS_KEY_ID", "AKIAQYLPMN5HFIQR7XYA");
+        std::env::remove_var("AWS_SECRET_ACCESS_KEY");
+        std::env::remove_var("AWS_SESSION_TOKEN");
+    }
+
+    let rows: Vec<_> = keyhog_sources::S3Source::new(BUCKET).chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert_eq!(chunks.len(), 0, "the refused scan must not yield chunks");
+    assert_eq!(errors.len(), 1, "the refused scan must surface one error");
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("AWS_ACCESS_KEY_ID is set")
+            && error.contains("AWS_SECRET_ACCESS_KEY is missing")
+            && error.contains("refusing to run unsigned"),
+        "partial S3 env auth must be explicit, got {error}"
+    );
+    assert_eq!(
+        skip_counts(),
+        before,
+        "credential policy refusals are config errors, not scan coverage skips"
+    );
+}
+
+#[cfg(feature = "s3")]
+#[test]
+fn s3_partial_ambient_secret_key_fails_before_unsigned_listing() {
+    let _guard = counter_guard();
+    let _restore = RestoreS3Env::capture();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    unsafe {
+        std::env::remove_var("AWS_ACCESS_KEY_ID");
+        std::env::set_var("AWS_SECRET_ACCESS_KEY", "synthetic-secret");
+        std::env::remove_var("AWS_SESSION_TOKEN");
+    }
+
+    let rows: Vec<_> = keyhog_sources::S3Source::new(BUCKET).chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert_eq!(chunks.len(), 0, "the refused scan must not yield chunks");
+    assert_eq!(errors.len(), 1, "the refused scan must surface one error");
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("AWS_SECRET_ACCESS_KEY is set")
+            && error.contains("AWS_ACCESS_KEY_ID is missing")
+            && error.contains("refusing to run unsigned"),
+        "partial S3 env auth must be explicit, got {error}"
+    );
+    assert_eq!(
+        skip_counts(),
+        before,
+        "credential policy refusals are config errors, not scan coverage skips"
+    );
+}
+
+#[cfg(feature = "s3")]
+#[test]
 fn s3_non_success_listing_is_counted_unreadable() {
     let _guard = counter_guard();
     TestApi.reset_skip_counters();

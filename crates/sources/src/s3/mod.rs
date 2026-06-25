@@ -225,7 +225,7 @@ fn resolve_s3_auth(
         None => true,
     };
     if endpoint_is_aws_host {
-        return Ok(AwsSigV4Config::from_env(base_url));
+        return AwsSigV4Config::from_env(base_url);
     }
     if crate::cloud::credential_forward_allowed(allow_credential_forward) {
         tracing::warn!(
@@ -233,7 +233,7 @@ fn resolve_s3_auth(
             "explicit S3 credential-forwarding override active: forwarding \
              ambient AWS credentials to non-AWS endpoint. Verify you trust this host."
         );
-        return Ok(AwsSigV4Config::from_env(base_url));
+        return AwsSigV4Config::from_env(base_url);
     }
     if ambient_s3_credentials_present() {
         let endpoint_display = match endpoint {
