@@ -64,7 +64,11 @@ fn breakdown_tallies_each_verification_state() {
 #[test]
 fn all_skipped_says_verification_did_not_run() {
     use keyhog_core::VerificationResult as V;
-    let findings = vec![finding(V::Skipped), finding(V::Skipped), finding(V::Skipped)];
+    let findings = vec![
+        finding(V::Skipped),
+        finding(V::Skipped),
+        finding(V::Skipped),
+    ];
     let line = API
         .render_verification_summary(&findings, false)
         .expect("line for >0 findings");
@@ -94,8 +98,14 @@ fn mixed_states_render_breakdown_omitting_zeros() {
     assert!(line.contains("1 revoked/dead"), "{line}");
     assert!(line.contains("1 not checked"), "{line}");
     assert!(line.contains("verification:"), "{line}");
-    assert!(!line.contains("no verifier"), "zero category omitted: {line}");
-    assert!(!line.contains("inconclusive"), "zero category omitted: {line}");
+    assert!(
+        !line.contains("no verifier"),
+        "zero category omitted: {line}"
+    );
+    assert!(
+        !line.contains("inconclusive"),
+        "zero category omitted: {line}"
+    );
 }
 
 #[test]
@@ -115,7 +125,10 @@ fn severity_summary_is_heat_ordered_and_color_gated() {
         finding_with(S::High, V::Skipped),
     ];
     let plain = API.render_severity_summary(&findings, false).unwrap();
-    assert_eq!(plain, "↳ severity: 1 critical · 2 high · 1 low · 1 client-safe");
+    assert_eq!(
+        plain,
+        "↳ severity: 1 critical · 2 high · 1 low · 1 client-safe"
+    );
     assert!(!plain.contains('\x1b'), "plain severity line: {plain:?}");
     let colored = API.render_severity_summary(&findings, true).unwrap();
     assert!(
@@ -136,8 +149,14 @@ fn verification_summary_colours_posture_without_plain_ansi() {
         finding(V::Error("e".into())),
     ];
     let plain = API.render_verification_summary(&findings, false).unwrap();
-    assert_eq!(plain, "↳ verification: 1 live · 1 not checked · 1 inconclusive");
-    assert!(!plain.contains('\x1b'), "plain verification line: {plain:?}");
+    assert_eq!(
+        plain,
+        "↳ verification: 1 live · 1 not checked · 1 inconclusive"
+    );
+    assert!(
+        !plain.contains('\x1b'),
+        "plain verification line: {plain:?}"
+    );
     let colored = API.render_verification_summary(&findings, true).unwrap();
     assert!(
         colored.contains('\x1b'),
@@ -208,14 +227,20 @@ fn preparing_line_used_before_first_chunk() {
     let line = API.render_scanning_ticker(0, 0, 0, 0.4, 0, false);
     assert!(line.contains("preparing"), "pre-dispatch label: {line}");
     assert!(line.contains("0 findings"));
-    assert!(!line.contains('%'), "no percent before total is known: {line}");
+    assert!(
+        !line.contains('%'),
+        "no percent before total is known: {line}"
+    );
 }
 
 #[test]
 fn verification_line_carries_stage_and_candidate_count() {
     let line = API.render_verification_ticker(3, 1.2, 0, false);
     assert!(line.contains("verifying"), "stage label: {line}");
-    assert!(line.contains("checking 3 secrets"), "candidate count: {line}");
+    assert!(
+        line.contains("checking 3 secrets"),
+        "candidate count: {line}"
+    );
     assert!(
         !line.contains('%'),
         "verification is indeterminate until verifier results return: {line}"

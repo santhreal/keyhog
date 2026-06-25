@@ -25,7 +25,9 @@ fn require_gpu_scan_when_self_test_passes() {
         || self_test_report.contains("SKIP")
         || self_test_report.contains("not detected");
     if self_test.status.code() != Some(0) || gpu_unavailable {
-        eprintln!("skip: GPU self-test did not PASS a real GPU on this host; report={self_test_report}");
+        eprintln!(
+            "skip: GPU self-test did not PASS a real GPU on this host; report={self_test_report}"
+        );
         return;
     }
 

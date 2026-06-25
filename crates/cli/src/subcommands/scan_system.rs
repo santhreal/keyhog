@@ -180,7 +180,10 @@ pub(crate) mod testing {
         target: &str,
         skip_path_prefixes: Vec<String>,
     ) -> anyhow::Result<Option<String>> {
-        super::mounts::testing::decoded_mount_target_if_included_for_test(target, skip_path_prefixes)
+        super::mounts::testing::decoded_mount_target_if_included_for_test(
+            target,
+            skip_path_prefixes,
+        )
     }
 
     pub(crate) fn git_repos_for_test(

@@ -164,4 +164,3 @@ pub(crate) fn write_diagnostic_finding<W: std::io::Write>(
         prefix, detector_id, file_path, line_str, severity, conf_str, credential_redacted
     )
 }
-
