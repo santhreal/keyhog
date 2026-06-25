@@ -1,19 +1,42 @@
 #![allow(clippy::needless_borrow, clippy::needless_update, clippy::useless_vec)]
 
+#[path = "gap/analyze_keyword_only_must_assert.rs"]
+mod analyze_keyword_only_must_assert;
+#[path = "gap/checksum_github.rs"]
+mod checksum_github;
+#[path = "gap/checksum_gitlab_npm_slack_stripe.rs"]
+mod checksum_gitlab_npm_slack_stripe;
+#[path = "gap/confidence_floor_policy.rs"]
+mod confidence_floor_policy;
+#[path = "gap/context_tokio_async_fn_test_body_is_test_code.rs"]
+mod context_tokio_async_fn_test_body_is_test_code;
+#[path = "gap/cross_platform_cfg_gates_absent.rs"]
+mod cross_platform_cfg_gates_absent;
 #[path = "gap/csr_hot_maps_adopted.rs"]
 mod csr_hot_maps_adopted;
+#[path = "gap/decode_pipeline_exceeds_modularity_cap.rs"]
+mod decode_pipeline_exceeds_modularity_cap;
 #[path = "gap/detector_contract_coverage_100pct.rs"]
 mod detector_contract_coverage_100pct;
 #[path = "gap/docs_megakernel_env_claim_matches_engine.rs"]
 mod docs_megakernel_env_claim_matches_engine;
+#[path = "gap/engine_backend_parity.rs"]
+mod engine_backend_parity;
+#[path = "gap/entropy_keyword_only_requires_keyword_line.rs"]
+mod entropy_keyword_only_requires_keyword_line;
 #[path = "gap/file_gate_matrix_scanner_adversarial_unmarked.rs"]
 mod file_gate_matrix_scanner_adversarial_unmarked;
 #[path = "gap/file_gate_matrix_scanner_missing_submodule_rows.rs"]
 mod file_gate_matrix_scanner_missing_submodule_rows;
 #[path = "gap/findings_registry_integrity.rs"]
 mod findings_registry_integrity;
+#[allow(dead_code)]
+#[path = "gap/inline_gate.rs"]
+mod inline_gate;
 #[path = "gap/inline_migrated_tests_not_wired.rs"]
 mod inline_migrated_tests_not_wired;
+#[path = "gap/multiline_reassembly.rs"]
+mod multiline_reassembly;
 #[path = "gap/nightly_exports_all_strict_env_vars.rs"]
 mod nightly_exports_all_strict_env_vars;
 #[path = "gap/nightly_matrix_has_fourteen_runner_binaries.rs"]

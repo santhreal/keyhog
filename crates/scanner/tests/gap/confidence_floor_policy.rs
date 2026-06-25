@@ -15,13 +15,13 @@
 //! `keyhog_scanner::testing::checksum`, which calls the same CRC32/base62 owner
 //! the validators use; this is a round-trip proof, not a magic literal.
 
-use keyhog_scanner::ScannerConfig;
-use keyhog_scanner::confidence::known_prefix_confidence_floor;
+use keyhog_scanner::testing::confidence::known_prefix_confidence_floor;
 use keyhog_scanner::testing::checksum::{
-    CHECKSUM_VALID_FLOOR, ChecksumResult, base62_encode_u32, checksum_adjusted_confidence,
-    crc32_base62_suffix, github_classic_pat_with_checksum, npm_token_with_checksum,
-    validate_checksum,
+    base62_encode_u32, checksum_adjusted_confidence, crc32_base62_suffix,
+    github_classic_pat_with_checksum, npm_token_with_checksum, validate_checksum, ChecksumResult,
+    CHECKSUM_VALID_FLOOR,
 };
+use keyhog_scanner::ScannerConfig;
 
 /// 6-char base62 CRC32 trailer for a given entropy body (the format GitHub
 /// classic / npm tokens embed).
@@ -297,14 +297,14 @@ fn stripe_well_formed_live_key_is_valid() {
     // sk_live_ + 24 alnum chars -> structural Valid.
     let token = format!("sk_live_{}", "a1B2c3D4e5F6g7H8i9J0kLmN"); // 24 chars
     assert_eq!(token.len(), 8 + 24);
-    assert_eq!(validate_checksum(&token), ChecksumResult::Valid);
+    assert_eq!(validate_checksum(&token), ChecksumResult::StructurallyValid);
 }
 
 #[test]
 fn stripe_boundary_24_char_body_is_valid() {
     let body: String = std::iter::repeat('a').take(24).collect();
     let token = format!("sk_test_{body}");
-    assert_eq!(validate_checksum(&token), ChecksumResult::Valid);
+    assert_eq!(validate_checksum(&token), ChecksumResult::StructurallyValid);
 }
 
 #[test]
@@ -318,7 +318,7 @@ fn stripe_boundary_23_char_body_is_invalid() {
 fn stripe_boundary_128_char_body_is_valid() {
     let body: String = std::iter::repeat('a').take(128).collect();
     let token = format!("pk_live_{body}");
-    assert_eq!(validate_checksum(&token), ChecksumResult::Valid);
+    assert_eq!(validate_checksum(&token), ChecksumResult::StructurallyValid);
 }
 
 #[test]
@@ -361,7 +361,7 @@ fn slack_prefix_only_not_applicable_for_other_prefixes() {
 #[test]
 fn gitlab_glpat_20_char_body_is_valid() {
     let token = format!("glpat-{}", "a".repeat(20));
-    assert_eq!(validate_checksum(&token), ChecksumResult::Valid);
+    assert_eq!(validate_checksum(&token), ChecksumResult::StructurallyValid);
 }
 
 #[test]
@@ -373,13 +373,13 @@ fn gitlab_glpat_19_char_body_is_invalid() {
 #[test]
 fn gitlab_glpat_64_char_body_is_valid() {
     let token = format!("glpat-{}", "a".repeat(64));
-    assert_eq!(validate_checksum(&token), ChecksumResult::Valid);
+    assert_eq!(validate_checksum(&token), ChecksumResult::StructurallyValid);
 }
 
 #[test]
 fn gitlab_glrt_16_char_body_is_valid() {
     let token = format!("glrt-{}", "a".repeat(16));
-    assert_eq!(validate_checksum(&token), ChecksumResult::Valid);
+    assert_eq!(validate_checksum(&token), ChecksumResult::StructurallyValid);
 }
 
 #[test]

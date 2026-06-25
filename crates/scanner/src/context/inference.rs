@@ -113,12 +113,7 @@ fn is_test_file(path: &str) -> bool {
         .filename_suffixes
         .iter()
         .any(|suffix| filename.ends_with(suffix))
-        || crate::platform_compat::path_component_matches(path, |part| {
-            rules
-                .path_components
-                .iter()
-                .any(|component| part.eq_ignore_ascii_case(component))
-        })
+        || crate::platform_compat::path_has_any_component(path, &rules.path_components)
 }
 
 fn test_path_rules() -> &'static TestPathRules {

@@ -40,25 +40,33 @@ fn scanner_path_compat_owner_is_declared_and_used() {
         "path confidence penalties must use the platform path owner"
     );
 
-    for file in [
-        "src/suppression/api.rs",
-        "src/engine/phase2_entropy/gates.rs",
-    ] {
-        let body = src(file);
-        assert!(
-            body.contains("platform_compat::path_basename_bytes"),
-            "{file} must use the shared byte-basename owner"
-        );
-        assert!(
-            !body.contains("rposition(|&b| b == b'/' || b == b'\\\\')"),
-            "{file} reintroduced local byte basename extraction"
-        );
-    }
+    let path_filter = src("src/suppression/path_filter.rs");
+    assert!(
+        path_filter.contains("platform_compat::path_basename_bytes"),
+        "raw-base64 file path suppression must use the shared byte-basename owner"
+    );
+    assert!(
+        !path_filter.contains("rposition(|&b| b == b'/' || b == b'\\\\')")
+            && !path_filter.contains("rsplit(['/', '\\\\']).next"),
+        "path_filter reintroduced local basename extraction"
+    );
+
+    let suppression_api = src("src/suppression/api.rs");
+    assert!(
+        suppression_api.contains("looks_like_raw_base64_file_path(path)"),
+        "suppression/api.rs must delegate raw-base64 path policy to path_filter"
+    );
+    let entropy_gates = src("src/engine/phase2_entropy/gates.rs");
+    assert!(
+        entropy_gates.contains("looks_like_entropy_raw_base64_file_path(chunk.metadata.path.as_deref())"),
+        "phase2 entropy gates must delegate raw-base64 path policy to path_filter"
+    );
 
     for file in [
         "src/context/inference.rs",
         "src/confidence/penalties.rs",
         "src/suppression/decision.rs",
+        "src/suppression/path_filter.rs",
     ] {
         let body = src(file);
         assert!(

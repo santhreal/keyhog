@@ -21,10 +21,10 @@ pub(crate) fn path_component_matches(path: &str, predicate: impl FnMut(&str) -> 
 }
 
 /// Case-insensitive match against any exact path component.
-pub(crate) fn path_has_any_component(path: &str, components: &[&str]) -> bool {
+pub(crate) fn path_has_any_component<T: AsRef<str>>(path: &str, components: &[T]) -> bool {
     path_component_matches(path, |part| {
         components
             .iter()
-            .any(|component| part.eq_ignore_ascii_case(component))
+            .any(|component| part.eq_ignore_ascii_case(component.as_ref()))
     })
 }

@@ -9,7 +9,8 @@
 //!
 //! Verdict matrix derived directly from the source:
 //!   * `strip_prefix("ghp_")` fails                 -> NotApplicable
-//!   * payload.len() != 36                          -> NotApplicable
+//!   * payload.len() < 36                           -> NotApplicable
+//!   * payload.len() > 36                           -> Invalid
 //!   * payload has any non-ascii-alphanumeric char  -> Invalid
 //!   * trailing-6 base62 CRC matches entropy CRC     -> Valid
 //!   * otherwise (well-formed but wrong checksum)    -> Invalid
@@ -223,7 +224,7 @@ fn wrong_checksum_through_registry_is_invalid() {
     assert_eq!(validate_checksum(tok), ChecksumResult::Invalid);
 }
 
-// ── BOUNDARY: payload length -> NotApplicable (only 36 is in-family) ─────────
+// ── BOUNDARY: payload length policy ─────────────────────────────────────────
 
 #[test]
 fn payload_one_short_is_not_applicable() {
@@ -232,9 +233,9 @@ fn payload_one_short_is_not_applicable() {
 }
 
 #[test]
-fn payload_one_long_is_not_applicable() {
+fn payload_one_long_is_invalid() {
     let tok = format!("ghp_{}", "a".repeat(37)); // payload len 37
-    assert_eq!(classic().validate(&tok), ChecksumResult::NotApplicable);
+    assert_eq!(classic().validate(&tok), ChecksumResult::Invalid);
 }
 
 #[test]
@@ -244,16 +245,16 @@ fn empty_payload_is_not_applicable() {
 }
 
 #[test]
-fn payload_far_too_long_is_not_applicable() {
+fn payload_far_too_long_is_invalid() {
     let tok = format!("ghp_{}", "a".repeat(100));
-    assert_eq!(classic().validate(&tok), ChecksumResult::NotApplicable);
+    assert_eq!(classic().validate(&tok), ChecksumResult::Invalid);
 }
 
 #[test]
 fn payload_36_minus_and_plus_one_boundary() {
-    // Exactly 36 alnum -> in-family (here checksum won't match -> Invalid),
-    // while 35 and 37 fall out of the family (-> NotApplicable). This pins the
-    // `!= 36` boundary precisely.
+    // Exactly 36 alnum -> in-family (here checksum won't match -> Invalid);
+    // short payloads remain NotApplicable, while overlong `ghp_` payloads are
+    // fail-closed Invalid.
     let body36 = "a".repeat(36);
     let body35 = "a".repeat(35);
     let body37 = "a".repeat(37);
@@ -267,7 +268,7 @@ fn payload_36_minus_and_plus_one_boundary() {
     );
     assert_eq!(
         classic().validate(&format!("ghp_{}", body37)),
-        ChecksumResult::NotApplicable
+        ChecksumResult::Invalid
     );
 }
 
@@ -310,18 +311,18 @@ fn non_alnum_space_in_payload_is_invalid() {
 }
 
 #[test]
-fn non_ascii_alnum_unicode_digit_is_not_applicable() {
+fn non_ascii_alnum_unicode_digit_overlong_is_invalid() {
     // U+0660 ARABIC-INDIC DIGIT ZERO is alphanumeric to Unicode but NOT
     // ascii-alphanumeric; the source uses `is_ascii_alphanumeric`. It is also
     // 2 bytes in UTF-8, so a 36-CHAR payload ending in it is 37 BYTES. The
     // source gates on `payload.len()` (the BYTE length) BEFORE the alnum check,
-    // so `37 != 36` short-circuits to NotApplicable and the alnum gate is never
-    // reached. This pins the byte-vs-char distinction in the length gate.
+    // so `37 > 36` fail-closes as Invalid before the alnum gate is reached.
+    // This pins the byte-vs-char distinction in the length gate.
     let payload = format!("{}\u{0660}", "a".repeat(35));
     assert_eq!(payload.chars().count(), 36);
     assert_eq!(payload.len(), 37); // byte length: 35 ASCII + 2-byte U+0660
     let tok = format!("ghp_{}", payload);
-    assert_eq!(classic().validate(&tok), ChecksumResult::NotApplicable);
+    assert_eq!(classic().validate(&tok), ChecksumResult::Invalid);
 }
 
 #[test]
@@ -494,15 +495,16 @@ fn proptest_every_single_entropy_byte_flip_breaks_checksum() {
 }
 
 #[test]
-fn proptest_appended_or_truncated_payload_is_not_applicable() {
-    // Adding/removing a single char shifts payload length off 36 -> NotApplicable.
+fn proptest_appended_or_truncated_payload_uses_length_policy() {
+    // Appending to `ghp_` fail-closes as Invalid; truncating below the
+    // modeled length is NotApplicable.
     for entropy in CORPUS {
         let valid = valid_token(entropy); // len 40, payload 36
         let too_long = format!("{valid}a"); // payload 37
         let too_short = &valid[..valid.len() - 1]; // payload 35
         assert_eq!(
             classic().validate(&too_long),
-            ChecksumResult::NotApplicable,
+            ChecksumResult::Invalid,
             "{too_long}"
         );
         assert_eq!(

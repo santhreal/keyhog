@@ -177,7 +177,7 @@ pub(crate) fn path_is_i18n_file(path: Option<&str>) -> bool {
         || p.ends_with(".po")
         || p.ends_with(".pot")
         || {
-            let name = p.rsplit(['/', '\\']).next().unwrap_or(p); // LAW10: split yields >=1 element; unwrap_or is the never-taken total default, recall-safe
+            let name = crate::platform_compat::path_basename(p);
             (name.starts_with("locale_")
                 || name.starts_with("messages_")
                 || name.starts_with("strings_"))

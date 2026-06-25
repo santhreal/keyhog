@@ -84,6 +84,15 @@ EXEMPT = re.compile(r"//\s*LAW10:")
 WS = re.compile(r"\s+")
 
 
+def _is_tests_path_relative_to(path: pathlib.Path, repo: pathlib.Path) -> bool:
+    rel = path.relative_to(repo)
+    return "tests" in rel.parts
+
+
+def _is_repo_tests_path(path: pathlib.Path) -> bool:
+    return _is_tests_path_relative_to(path, REPO)
+
+
 def _iter_src_files():
     for crate in CRATES:
         for subdir in ("src", "examples", "benches"):
@@ -94,7 +103,7 @@ def _iter_src_files():
                 # Skip in-file unit tests crudely: files that are predominantly tests
                 # still get scanned, but pure test modules under a `tests/` dir are
                 # out of scope (those don't ship in the scan path).
-                if "/tests/" in str(f):
+                if _is_repo_tests_path(f):
                     continue
                 yield f
 
@@ -259,6 +268,25 @@ def self_test() -> int:
     if multiline_debug_exempt:
         ok = False
         print("  FAIL preceding LAW10 comment did not exempt multiline log", file=sys.stderr)
+    if _is_repo_tests_path(REPO / "crates/scanner/src/lib.rs"):
+        ok = False
+        print("  FAIL production src path was classified as tests/", file=sys.stderr)
+    if not _is_repo_tests_path(REPO / "crates/scanner/tests/gap/example.rs"):
+        ok = False
+        print("  FAIL repo-relative tests/ path was not classified as tests/", file=sys.stderr)
+    fake_repo_under_tests = pathlib.Path("/tmp/tests/keyhog")
+    if _is_tests_path_relative_to(
+        fake_repo_under_tests / "crates/scanner/src/lib.rs",
+        fake_repo_under_tests,
+    ):
+        ok = False
+        print("  FAIL absolute parent tests/ segment leaked into repo-relative skip", file=sys.stderr)
+    if not _is_tests_path_relative_to(
+        fake_repo_under_tests / "crates/scanner/tests/gap/example.rs",
+        fake_repo_under_tests,
+    ):
+        ok = False
+        print("  FAIL fake repo-relative tests/ path was not classified as tests/", file=sys.stderr)
     print("self-test PASS" if ok else "self-test FAIL", file=sys.stderr)
     return 0 if ok else 1
 

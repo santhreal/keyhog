@@ -131,8 +131,10 @@ const AWS_KEY: &str = "AKIAQYLPMN5HFIQR7BBB"; // AKIA + 16 [0-9A-Z]; no checksum
                                               // `0-9A-Za-z` the validator uses. So this PAT survives the drop and is emitted.
 const GH_PAT: &str =
     "github_pat_ABCDEFGHIJKLMNOPQRSTUV_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQ0qzktM";
-// No checksum validator → always emitted.
-const SENDGRID: &str = "SG.0000000000000000000000.0000000000000000000000000000000000000000000";
+// No checksum validator; non-placeholder 22/43 segment lengths match the
+// tightened SendGrid detector without tripping synthetic-decoy suppression.
+const SENDGRID: &str =
+    "SG.AbCdEfGhIjKlMnOpQrStUv.A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0UvW";
 // `SlackTokenValidator` regex `^xoxb-[0-9]{10,15}-[0-9]{10,15}-[a-zA-Z0-9]{15,40}$`:
 // segments 10/10/24 → Valid → emitted.
 const SLACK_BOT: &str = "xoxb-1234567890-1234567890-abcdefghijklmnopqrstuvwx";

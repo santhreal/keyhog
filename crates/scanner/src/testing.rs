@@ -135,6 +135,10 @@ pub mod confidence {
         crate::confidence::compute_confidence(&signals.into())
     }
 
+    pub fn known_prefix_confidence_floor(credential: &str) -> Option<f64> {
+        crate::confidence::known_prefix_confidence_floor(credential)
+    }
+
     #[cfg(test)]
     pub(crate) fn finalize_confidence(score: f64) -> f64 {
         crate::confidence::penalties::finalize_confidence(score)
