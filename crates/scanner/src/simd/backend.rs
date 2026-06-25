@@ -262,6 +262,14 @@ pub(crate) struct HsScanner {
 unsafe impl Send for HsScanner {}
 unsafe impl Sync for HsScanner {}
 
+impl Drop for HsScanner {
+    fn drop(&mut self) {
+        let scanner_id = self.scanner_id;
+        scan::purge_scanner_scratch(scanner_id);
+        rayon::broadcast(|_| scan::purge_scanner_scratch(scanner_id));
+    }
+}
+
 /// Per-pattern compilation options for [`HsScanner::compile_with_opts`].
 ///
 /// The legacy phase-1 [`HsScanner::compile`] path compiles every pattern

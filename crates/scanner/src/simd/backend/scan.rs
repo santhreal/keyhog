@@ -42,6 +42,23 @@ fn retain_current_scanner_scratch(
     tls.retain(|(scanner_id, _), _| *scanner_id == current_scanner_id);
 }
 
+pub(super) fn purge_scanner_scratch(scanner_id: u64) {
+    SCRATCH_TLS.with(|tls| {
+        tls.borrow_mut()
+            .retain(|(cached_scanner_id, _), _| *cached_scanner_id != scanner_id);
+    });
+}
+
+#[cfg(test)]
+fn current_thread_scratch_count_for_test(scanner_id: u64) -> usize {
+    SCRATCH_TLS.with(|tls| {
+        tls.borrow()
+            .keys()
+            .filter(|(cached_scanner_id, _)| *cached_scanner_id == scanner_id)
+            .count()
+    })
+}
+
 impl HsScanner {
     pub(crate) fn scan_matches_result(
         &self,
@@ -156,5 +173,39 @@ impl HsScanner {
     /// ```
     pub(crate) fn pattern_count(&self) -> usize {
         self.pattern_map.len()
+    }
+}
+
+#[cfg(test)]
+mod scratch_lifetime {
+    use super::super::HsScanner;
+
+    #[test]
+    fn dropping_scanner_purges_current_thread_tls_scratch() {
+        let patterns = [(0usize, 0usize, "KHDROP_[A-Z0-9]{8}", false)];
+        let (scanner, unsupported) = HsScanner::compile(&patterns).expect("probe pattern compiles");
+        assert!(
+            unsupported.is_empty(),
+            "probe pattern must be Hyperscan-supported, got unsupported={unsupported:?}"
+        );
+        let scanner_id = scanner.scanner_id;
+
+        let mut ids = Vec::new();
+        scanner
+            .scan_matches_result(b"KHDROP_AB12CD34", |id, _start, _end| ids.push(id))
+            .expect("scan succeeds and retains scratch in this thread");
+        assert_eq!(ids, vec![0]);
+        assert!(
+            super::current_thread_scratch_count_for_test(scanner_id) > 0,
+            "scan should retain at least one scratch for the live scanner"
+        );
+
+        drop(scanner);
+
+        assert_eq!(
+            super::current_thread_scratch_count_for_test(scanner_id),
+            0,
+            "dropping a scanner must evict its thread-local Hyperscan scratches"
+        );
     }
 }

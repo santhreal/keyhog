@@ -93,9 +93,13 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
             && scan.contains("fn take_scratch(")
             && scan.contains("fn put_scratch(")
             && scan.contains("fn retain_current_scanner_scratch(")
+            && scan.contains("fn purge_scanner_scratch(")
             && scan.contains("retain_current_scanner_scratch(&mut tls, scanner_id);")
-            && scan.contains("put_scratch(self.scanner_id, shard_idx, scratch);"),
-        "fallible Hyperscan scan paths must return scratch and evict stale per-thread scanner scratches before reporting an error"
+            && scan.contains("put_scratch(self.scanner_id, shard_idx, scratch);")
+            && backend.contains("impl Drop for HsScanner")
+            && backend.contains("scan::purge_scanner_scratch(scanner_id);")
+            && backend.contains("rayon::broadcast(|_| scan::purge_scanner_scratch(scanner_id));"),
+        "fallible Hyperscan scan paths must return scratch and scanner drop must evict retained thread-local scratches on current and Rayon worker threads"
     );
     assert!(
         !scan.contains("alloc_scratch().ok()"),
