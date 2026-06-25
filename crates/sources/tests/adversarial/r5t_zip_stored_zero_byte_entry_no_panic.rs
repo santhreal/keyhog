@@ -1,6 +1,7 @@
 //! R5-T archive adversarial: zip with zero-byte stored entry does not panic.
 
-use super::support::collect_chunks;
+use crate::support::split_chunk_results;
+use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use zip::write::SimpleFileOptions;
@@ -15,11 +16,16 @@ fn r5t_zip_stored_zero_byte_entry_no_panic() {
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     zip.start_file("empty.txt", opts).expect("start");
     zip.finish().expect("finish");
-    let count = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
-        .into_iter()
-        .count();
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
     assert_eq!(
-        count, 0,
+        chunks.len(),
+        0,
         "zero-byte zip member must not yield scannable chunks"
+    );
+    assert!(
+        errors.is_empty(),
+        "valid zero-byte zip member should not emit SourceError rows: {errors:?}"
     );
 }
