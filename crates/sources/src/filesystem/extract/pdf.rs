@@ -54,7 +54,7 @@ pub(super) fn extract_pdf_chunks(
     };
     let path_display = display_path(path);
 
-    if !bytes.starts_with(b"%PDF-") {
+    if !crate::magic::starts_with_pdf(&bytes) {
         emit_non_pdf_extension_fallback(bytes, path_display, live_mtime_ns, file_size, emit);
         return;
     }

@@ -441,7 +441,7 @@ fn entry_is_embedded_openpack_archive(entry_name: &str, content: &[u8]) -> bool 
         .extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(is_openpack_archive_ext);
-    has_openpack_ext && content.starts_with(b"PK")
+    has_openpack_ext && crate::magic::starts_with_zip_container_prefix(content)
 }
 
 fn chunk_from_archive_content_inner(

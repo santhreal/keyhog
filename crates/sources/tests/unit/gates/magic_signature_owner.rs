@@ -25,7 +25,9 @@ fn binary_magic_bytes_have_one_sources_owner() {
     );
     assert!(
         magic.contains("UNAMBIGUOUS_BINARY_PREFIXES")
+            && magic.contains("PDF_PREFIX")
             && magic.contains(r#"b"%PDF-""#)
+            && magic.contains("ZIP_LOCAL_FILE_PREFIX")
             && magic.contains(r#"b"PK\x03\x04""#)
             && magic.contains(r#"b"\x89PNG\r\n\x1a\n""#)
             && magic.contains(r#"b"\x7fELF""#)
@@ -60,11 +62,25 @@ fn binary_magic_bytes_have_one_sources_owner() {
         "web WASM validation must consume the shared WASM magic predicate"
     );
 
+    let pdf = source("src/filesystem/extract/pdf.rs");
+    assert!(
+        pdf.contains("crate::magic::starts_with_pdf") && !pdf.contains(r#"starts_with(b"%PDF-")"#),
+        "PDF extractor must consume the shared PDF magic predicate"
+    );
+
+    let archive = source("src/filesystem/extract/archive.rs");
+    assert!(
+        archive.contains("crate::magic::starts_with_zip_container_prefix")
+            && !archive.contains(r#"starts_with(b"PK")"#),
+        "OpenPack archive sniffing must consume the shared ZIP container prefix predicate"
+    );
+
     for path in [
         "src/filesystem/read/decode.rs",
         "src/docker.rs",
         "src/web.rs",
         "src/filesystem/extract/compressed.rs",
+        "src/filesystem/extract/archive.rs",
     ] {
         let body = source(path);
         for (needle, name) in [
