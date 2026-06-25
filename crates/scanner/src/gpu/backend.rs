@@ -476,7 +476,8 @@ fn dispatch_moe_batch(
         mapped_at_creation: false,
     });
 
-    // Per-dispatch params buffer (NOT a shared `gpu.params_buf`). Per-chunk ML
+    // Per-dispatch params buffer (NOT a single shared `GpuContext` params
+    // buffer). Per-chunk ML
     // scoring runs `dispatch_moe_batch` CONCURRENTLY across chunks (the rayon
     // par_iter in `scan_coalesced`). A single uniform buffer written by every
     // concurrent dispatch is a data race (Law 7): dispatch A writes batch_size
@@ -757,18 +758,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn gpu_moe_dispatch_matches_cpu_every_repeat_no_zeroed_workgroup() {
-        // Regression for the autoroute-calibration abort: the GPU MoE readback
-        // used a NON-BLOCKING `device.poll(PollType::Poll)` spin and broke as
-        // soon as the map-async callback arrived. On the NVIDIA Vulkan backend
-        // that callback could be delivered before one workgroup's storage writes
-        // were visible to the output->staging copy, so a >=GPU_BATCH_THRESHOLD
-        // batch intermittently read back EXACTLY one workgroup (64) of 0.0
-        // scores. Those zeros dropped real findings below the confidence floor,
-        // so a floor-straddling entropy candidate flipped present/absent between
-        // identical scans and `install.sh --calibrate` aborted. The dispatch now
-        // blocks on `WaitForSubmissionIndex`; assert every repeat reproduces the
-        // CPU MoE with ZERO spurious zeros (the bug fired ~1 dispatch in 2).
+    fn gpu_moe_dispatch_matches_cpu_on_every_repeat() {
+        // GPU/CPU parity guard: the GPU MoE compute shader must reproduce the CPU
+        // MoE (`ml_scorer::score_features`, the reference every confidence floor is
+        // tuned and benched against) on EVERY dispatch of a >=GPU_BATCH_THRESHOLD
+        // batch, with no spurious 0.0 scores. This runs dispatches ONE AT A TIME,
+        // so it isolates a genuinely broken shader/weights/driver from the
+        // concurrent params-race regression below (which the autoroute-calibration
+        // abort actually turned out to be) and proves the dispatch is stable across
+        // many repeats.
         if super::super::gpu_disabled_by_policy() || get_gpu().is_none() {
             eprintln!("no usable GPU adapter; skipping GPU MoE dispatch regression");
             return;
@@ -779,8 +777,12 @@ mod tests {
         let timeout = Duration::from_millis(30_000);
         for rep in 0..128 {
             let gpu = dispatch_moe_batch(&probe, timeout)
-                .unwrap_or_else(|| panic!("GPU MoE dispatch {rep} returned no result")); // LAW10: test-only proof panic; a missing dispatch result is the failure under test, not a shipped fallback
-            assert_eq!(gpu.len(), probe.len(), "dispatch {rep}: score count mismatch");
+                .unwrap_or_else(|| panic!("GPU MoE dispatch {rep} returned no result")); // LAW10: test-only proof panic — not a fallback; a missing dispatch result is the failure under test
+            assert_eq!(
+                gpu.len(),
+                probe.len(),
+                "dispatch {rep}: score count mismatch"
+            );
             let zeroed = gpu
                 .iter()
                 .zip(cpu.iter())
@@ -794,7 +796,7 @@ mod tests {
             assert_eq!(
                 zeroed, 0,
                 "dispatch {rep}: {zeroed} candidate(s) read back 0.0 while the CPU MoE scores them >0.01 \
-                 (GPU workgroup-visibility readback race)"
+                 (the GPU MoE must never emit a spurious 0.0 for a real candidate)"
             );
             assert!(
                 worst <= GPU_MOE_PARITY_TOLERANCE,
@@ -805,14 +807,19 @@ mod tests {
 
     #[test]
     fn gpu_moe_dispatch_is_race_free_under_concurrent_batches() {
-        // Regression for the shared `gpu.params_buf` data race: per-chunk ML
-        // scoring dispatches MoE batches concurrently (rayon par_iter in
+        // Regression for the shared `GpuContext` params-buffer data race that aborted
+        // `install.sh --calibrate` ("inconsistent calibration results"): per-chunk
+        // ML scoring dispatches MoE batches concurrently (rayon par_iter in
         // scan_coalesced). A single shared uniform written by every dispatch let
-        // one dispatch clobber another's batch_size, so the larger batch
-        // processed too few candidates and its tail read back 0.0. Each dispatch
-        // now owns its params buffer. Two distinct batch sizes are dispatched
-        // from many threads in a tight loop; assert every concurrent dispatch
-        // reproduces ITS OWN CPU reference with zero spurious zeros.
+        // one dispatch clobber another's batch_size, so the larger batch processed
+        // too few candidates and its tail read back 0.0 — dropping a
+        // floor-straddling finding so the SIMD reference flipped between trials.
+        // The diagnostic signature was unmistakable: on the demo a batch of 136
+        // intermittently read back EXACTLY 64 zeros == 136 - 72, the other
+        // concurrent batch size (NOT a coincidental workgroup multiple). Each
+        // dispatch now owns its params buffer. Two distinct batch sizes are
+        // dispatched from many threads in a tight loop; assert every concurrent
+        // dispatch reproduces ITS OWN CPU reference with zero spurious zeros.
         if super::super::gpu_disabled_by_policy() || get_gpu().is_none() {
             eprintln!("no usable GPU adapter; skipping concurrent GPU MoE regression");
             return;

@@ -133,20 +133,8 @@ pub(crate) fn verification_token(result: &VerificationResult) -> std::borrow::Co
     }
 }
 
-/// Stable, machine-readable severity token for STRUCTURED report formats.
-/// Returns the SAME string as the `#[serde(rename_all = "kebab-case")]` JSON
-/// serialization of [`Severity`] — notably `client-safe`, not the Debug-derived
-/// `clientsafe`. SARIF derived its `properties.severity` from
-/// `format!("{:?}", s).to_lowercase()`, which diverged from JSON for the only
-/// multi-word variant (`ClientSafe`). The drift-guard test below asserts this
-/// stays byte-identical to serde so the two can never separate again.
-pub(crate) fn severity_token(severity: Severity) -> &'static str {
-    match severity {
-        Severity::Critical => "critical",
-        Severity::High => "high",
-        Severity::Medium => "medium",
-        Severity::Low => "low",
-        Severity::ClientSafe => "client-safe",
-        Severity::Info => "info",
-    }
-}
+// `severity_token` was removed: it duplicated [`Severity::as_str`] (the declared
+// single source of truth for severity text, also the serde kebab-case wire form).
+// The lone SARIF caller now uses `finding.severity.as_str()` directly; the
+// as_str <-> serde drift guard lives in tests/new_core_types.rs
+// (`severity_as_str_and_display_kebab` + `severity_serde_kebab_roundtrip`).

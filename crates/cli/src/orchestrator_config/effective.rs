@@ -113,7 +113,7 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         resolved.exclude_paths.len()
     ));
     out.push_str(&format!("incremental = {}\n", resolved.incremental));
-    // LAW10: the actual incremental cache path is resolved before use when incremental mode is enabled.
+    // LAW10: display-only — the actual incremental cache path is resolved before use when incremental mode is enabled.
     let incremental_cache = format_optional_path(
         resolved.incremental_cache_path.as_ref(),
         "<platform default>",
@@ -187,11 +187,13 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         "disabled_detectors = {}\n",
         resolved.disabled_detectors.len()
     ));
-    // LAW10: scan compilation still resolves and validates the platform default before use.
+    // LAW10: display-only — scan compilation still resolves and validates the platform default before use.
     let cache_dir =
         format_optional_path(resolved.hyperscan_cache_dir.as_ref(), "<platform default>");
     out.push_str(&format!("hyperscan_cache_dir = {cache_dir}\n"));
-    // LAW10: explicit "<disabled>" persistence; scan either has a path or fails before benchmarking.
+    // LAW10: display-only — formats the resolved autoroute_cache_path for the
+    // effective-config dump ("<disabled>" when absent); does not change routing
+    // or scan coverage.
     let autoroute_cache_path =
         format_optional_path(resolved.autoroute_cache_path.as_ref(), "<disabled>");
     out.push_str(&format!("autoroute_cache_path = {autoroute_cache_path}\n"));

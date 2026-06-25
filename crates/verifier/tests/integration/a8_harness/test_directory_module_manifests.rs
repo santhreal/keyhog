@@ -21,11 +21,8 @@ fn declared_modules(manifest: &Path) -> BTreeSet<String> {
                 .strip_prefix("pub mod ")
                 .or_else(|| line.strip_prefix("mod "))?;
             let name = rest.trim_end_matches(';').trim();
-            (!name.is_empty()
-                && name
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_'))
-            .then(|| name.to_string())
+            (!name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+                .then(|| name.to_string())
         })
         .collect()
 }
@@ -41,7 +38,8 @@ fn sibling_rust_modules(dir: &Path) -> BTreeSet<String> {
             if !is_rs || is_mod {
                 return None;
             }
-            path.file_stem().map(|stem| stem.to_string_lossy().into_owned())
+            path.file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
         })
         .collect()
 }
@@ -60,8 +58,8 @@ fn manifest_for_dir(tests_root: &Path, dir: &Path) -> PathBuf {
 }
 
 fn visit_module_dirs(dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in std::fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("read test tree {}: {e}", dir.display()))
+    for entry in
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read test tree {}: {e}", dir.display()))
     {
         let entry = entry.unwrap_or_else(|e| panic!("read test tree entry {}: {e}", dir.display()));
         let path = entry.path();

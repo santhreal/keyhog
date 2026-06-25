@@ -14,9 +14,9 @@
 //! the whole gate. There is no opt-out: no environment variable can disable the
 //! signature gate (config-policy mandate + security).
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
-use keyhog_scanner::{CompiledScanner, hw_probe::ScanBackend};
+use keyhog_scanner::{hw_probe::ScanBackend, CompiledScanner};
 use serde::Deserialize;
 
 pub(crate) const REPO: &str = "santhsecurity/keyhog";

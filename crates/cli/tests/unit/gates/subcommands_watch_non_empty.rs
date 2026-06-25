@@ -1,6 +1,6 @@
 //! Gate `subcommands::watch`: substantive source, no todo!/unimplemented! in prod paths.
 
-use keyhog::testing::{API, CliTestApi as _};
+use keyhog::testing::{CliTestApi as _, API};
 use std::time::Duration;
 
 #[test]

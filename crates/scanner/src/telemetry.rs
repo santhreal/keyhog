@@ -329,7 +329,7 @@ fn record_example_suppression_in(
     // helper leaked up to 6 of 8 bytes of short credentials.
     let redacted = keyhog_core::redact(credential).into_owned();
     if let Ok(mut events) = events.lock() {
-        // LAW10: poisoned dogfood event buffer loses only diagnostic trace; finding/reporting behavior is unaffected.
+        // LAW10: poisoned dogfood telemetry event buffer loses only a diagnostic trace; finding/reporting behavior is unaffected.
         events.push(DogfoodEvent::ExampleSuppressed {
             detector: detector.to_string(),
             path: path.map(str::to_string),
@@ -410,7 +410,7 @@ fn record_shape_suppression_in(
     }
     let redacted = keyhog_core::redact(credential).into_owned();
     if let Ok(mut events) = events.lock() {
-        // LAW10: poisoned dogfood event buffer loses only diagnostic trace; finding/reporting behavior is unaffected.
+        // LAW10: poisoned dogfood telemetry event buffer loses only a diagnostic trace; finding/reporting behavior is unaffected.
         events.push(DogfoodEvent::ShapeSuppressed {
             path: path.map(str::to_string),
             credential_redacted: redacted,
@@ -521,7 +521,7 @@ pub fn line_offset_mapping_mismatch_count() -> usize {
 pub fn append_events<I: IntoIterator<Item = DogfoodEvent>>(events: I) {
     let t = cell();
     if let Ok(mut buf) = t.events.lock() {
-        // LAW10: poisoned dogfood event buffer loses only diagnostic trace; finding/reporting behavior is unaffected.
+        // LAW10: poisoned dogfood telemetry event buffer loses only a diagnostic trace; finding/reporting behavior is unaffected.
         buf.extend(events);
     }
 }
@@ -541,11 +541,11 @@ fn drain_event_buffers(
     // its own events for the same credentials, so clear the per-credential
     // emitted-event dedup alongside the drain.
     if let Ok(mut emitted) = emitted_suppression_events.lock() {
-        // LAW10: poisoned dogfood dedup set can only duplicate diagnostics; findings/reporting are unaffected.
+        // LAW10: poisoned dogfood dedup set can only duplicate a diagnostic telemetry event; findings/reporting are unaffected.
         emitted.clear();
     }
     if let Ok(mut events) = events.lock() {
-        // LAW10: poisoned dogfood event buffer returns empty diagnostics only; findings/reporting behavior is unaffected.
+        // LAW10: poisoned dogfood event buffer returns empty diagnostics only; this telemetry event drain leaves findings/reporting behavior unaffected.
         std::mem::take(&mut *events)
     } else {
         Vec::new()
@@ -594,11 +594,11 @@ pub fn reset_for_scan() {
     BOUNDARY_RESULT_CARDINALITY_MISMATCHES.store(0, Ordering::Relaxed);
     LINE_OFFSET_MAPPING_MISMATCHES.store(0, Ordering::Relaxed);
     if let Ok(mut events) = t.events.lock() {
-        // LAW10: reset of poisoned dogfood diagnostics cannot hide findings; scan counters are reset above.
+        // LAW10: reset of poisoned dogfood diagnostics cannot hide findings; telemetry event reset only, scan counters are reset above.
         events.clear();
     }
     if let Ok(mut emitted) = t.emitted_suppression_events.lock() {
-        // LAW10: reset of poisoned diagnostic dedup cannot hide findings; scan counters are reset above.
+        // LAW10: reset of poisoned diagnostic dedup cannot hide findings; telemetry event dedup only, scan counters are reset above.
         emitted.clear();
     }
     CURRENT_SCAN_TELEMETRY.with(|slot| {

@@ -53,7 +53,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use keyhog_core::{DedupScope, MatchLocation, RawMatch, Severity, dedup_matches};
+use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
 
 /// Doubling input must not roughly quadruple time for the dedup pass. A
 /// log-linear dedup ratios ~2.0-2.4 (the +log term); the O(K^2)

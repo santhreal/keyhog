@@ -167,6 +167,25 @@ trait WriterBackedReporter {
     }
 }
 
+/// Implements [`WriterBackedReporter`] for a reporter whose only state behind
+/// the trait is a single `writer: W` field. Every reporter in this module is
+/// generic over `W: Write + Send` and exposes its writer identically, so the
+/// impl is purely mechanical — the macro keeps all nine reporters from drifting
+/// to nine subtly different spellings of the same three lines. Invoked as
+/// `impl_writer_backed!(CsvReporter);` inside each reporter's module, where both
+/// `Write` and `WriterBackedReporter` are already in scope.
+macro_rules! impl_writer_backed {
+    ($reporter:ident) => {
+        impl<W: Write + Send> WriterBackedReporter for $reporter<W> {
+            type Writer = W;
+            fn writer_mut(&mut self) -> &mut Self::Writer {
+                &mut self.writer
+            }
+        }
+    };
+}
+pub(crate) use impl_writer_backed;
+
 // `BufferedFindingReporter` was the legacy buffer-everything trait. The
 // SARIF reporter now streams results directly to its writer (audit
 // legendary-2026-04-26), so the trait has no callers and is removed. Other

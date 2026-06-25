@@ -13,7 +13,7 @@ impl CompiledScanner {
         chunk: &Chunk,
         scan_state: &mut ScanState,
     ) {
-        use crate::simdsieve_prefilter::{HOT_PATTERNS, hot_pattern_index_at};
+        use crate::simdsieve_prefilter::{hot_pattern_index_at, HOT_PATTERNS};
         use simdsieve::SimdSieve;
 
         let text_bytes = text.as_bytes();

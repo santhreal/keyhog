@@ -38,7 +38,7 @@ pub(crate) fn decode_text_file(bytes: &[u8]) -> Option<String> {
     // `from_utf8_lossy` (full O(n) validate + alloc) sequentially - two
     // full passes. The fused path drops one of them on valid UTF-8.
     if let Ok(s) = std::str::from_utf8(bytes) {
-        // LAW10: invalid UTF-8 falls through to lossy text decode after binary checks, preserving recall.
+        // LAW10: recall-preserving — invalid UTF-8 falls through to lossy text decode after binary checks.
         if looks_binary_header_check(bytes) {
             return None;
         }

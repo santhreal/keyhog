@@ -9,7 +9,8 @@ path:tests/**/*.fixture
 node_modules/
 9d6060e21ef8d5daec9cfe4a44b1b1bc9792246bfad28210edaaa1782a8a675f
 ";
-    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(&keyhog_core::testing::TestApi, content);
+    let al =
+        keyhog_core::testing::CoreTestApi::allowlist_parse(&keyhog_core::testing::TestApi, content);
     assert!(al.ignored_detectors.contains("asana-pat"));
     assert_eq!(al.credential_hashes.len(), 2);
     assert!(al.ignored_paths.iter().any(|p| p == "tests/**/*.fixture"));

@@ -15,7 +15,7 @@
 //! `keyhog/keyhog` value and PASS once the URI tracks the manifest.
 
 use keyhog_core::{
-    MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding, write_report,
+    write_report, MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;

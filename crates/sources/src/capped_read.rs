@@ -33,9 +33,9 @@ pub(crate) fn read_to_cap_preserving_error(
     cap: u64,
     capacity_hint: Option<u64>,
 ) -> CappedReadPrefix {
-    let read_limit = cap.checked_add(1).unwrap_or(u64::MAX); // LAW10: u64::MAX has no representable sentinel byte; reading up to the finite reader cap preserves all reachable bytes.
-    let cap_usize = usize::try_from(cap).unwrap_or(usize::MAX); // LAW10: a Vec length cannot exceed usize::MAX on this platform, so larger caps cannot be crossed by an in-memory read result.
-    let max_addressable_capacity = u64::try_from(usize::MAX).unwrap_or(u64::MAX); // LAW10: on wider-than-u64 usize targets, every u64 capacity hint is addressable.
+    let read_limit = cap.checked_add(1).unwrap_or(u64::MAX); // LAW10: recall-preserving — u64::MAX has no representable sentinel byte; reading up to the finite reader cap still reads all reachable bytes.
+    let cap_usize = usize::try_from(cap).unwrap_or(usize::MAX); // LAW10: unreachable on real platforms — a Vec length cannot exceed usize::MAX, so larger caps cannot be crossed by an in-memory read result.
+    let max_addressable_capacity = u64::try_from(usize::MAX).unwrap_or(u64::MAX); // LAW10: unreachable on real platforms — only a wider-than-u64 usize target takes this arm, where every u64 capacity hint is addressable.
     let capacity = capacity_hint
         .unwrap_or(0) // LAW10: absent capacity hint only disables Vec preallocation; read_limit still enforces the byte cap
         .min(read_limit)

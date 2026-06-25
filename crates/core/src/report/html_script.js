@@ -444,16 +444,44 @@ function renderTable(findings, isInitial) {
     tr.onkeydown = event => toggleDetailsFromKeyboard(event, idx);
 
     const line = finding.location.line ? `:${finding.location.line}` : '';
-    const filePath = finding.location.file_path ? escapeHtml(finding.location.file_path) : '&lt;unknown&gt;';
-    const shortPath = `${filePath}${line}`;
+    // Split the path so the filename — what the eye scans for — is emphasised
+    // while the directory recedes and the line number reads as an accent. Both
+    // segments are escaped independently; no scan-derived bytes skip escaping.
+    const rawPath = finding.location.file_path || '';
+    const sepIdx = Math.max(rawPath.lastIndexOf('/'), rawPath.lastIndexOf('\\'));
+    const dirPart = sepIdx >= 0 ? rawPath.slice(0, sepIdx + 1) : '';
+    const basePart = sepIdx >= 0 ? rawPath.slice(sepIdx + 1) : rawPath;
+    // Filename first (bold, never split) with the line as an accent; the
+    // directory follows on a dimmed second line that left-truncates to its
+    // meaningful tail (…/parent/) with the full path on hover — so a column of
+    // long absolute paths stays compact and scannable instead of wrapping into
+    // tall mid-word blocks.
+    const lineHtml = line ? `<span class="kh-path-line">${escapeHtml(line)}</span>` : '';
+    const fullTitle = escapeHtml(rawPath + line);
+    // Collapse a long absolute directory to its last two segments (…/parent/child/)
+    // so the row stays one tidy line; the full path is on hover (title).
+    let dirDisplay = dirPart;
+    const segs = dirPart.split(/[/\\]/).filter(Boolean);
+    if (segs.length > 2 && dirPart.length > 42) {
+      dirDisplay = '…/' + segs.slice(-2).join('/') + '/';
+    }
+    const shortPath = rawPath
+      ? `<span class="kh-path-file" title="${fullTitle}">${escapeHtml(basePart)}${lineHtml}</span>`
+        + (dirPart ? `<span class="kh-path-dir" title="${fullTitle}">${escapeHtml(dirDisplay)}</span>` : '')
+      : '<span class="kh-path-file">&lt;unknown&gt;</span>';
 
     // Status visual elements use closed class maps. Text remains the escaped
     // original value, but no scan-derived bytes can enter a class attribute.
     const severityClass = severityBadgeClass(finding.severity);
     let statusClass = verificationDotClass(finding.verification);
 
-    // Format verification status as a clear, human-readable label.
+    // Format verification status as a clear, human-readable label, then split
+    // the "primary · qualifier" form so it can render as a compact two-line
+    // stack (primary verdict / dim qualifier) instead of wrapping mid-phrase.
     const statusText = verificationLabel(finding.verification);
+    const statusParts = statusText.split(' · ');
+    const statusPrimary = statusParts[0];
+    const statusQual = statusParts.length > 1 ? statusParts.slice(1).join(' · ') : '';
     const unattempted = verificationIsUnattempted(finding.verification);
     if (unattempted) statusClass += ' dot-unattempted';
     const statusTitle = unattempted
@@ -462,13 +490,16 @@ function renderTable(findings, isInitial) {
 
     tr.innerHTML = `
       <td><strong>${escapeHtml(finding.detector_name)}</strong><br><small style="color: var(--text-muted); font-size:10px;">${escapeHtml(finding.detector_id)}</small></td>
-      <td><span style="font-family:monospace; font-size:12px;">${escapeHtml(finding.service)}</span></td>
-      <td><span style="font-family:monospace;">${shortPath}</span></td>
+      <td><span class="kh-service" title="${escapeHtml(finding.service)}">${escapeHtml(finding.service)}</span></td>
+      <td><span class="kh-path">${shortPath}</span></td>
       <td><span class="badge ${severityClass}">${escapeHtml(finding.severity)}</span></td>
       <td>
-        <span class="status-badge${unattempted ? ' status-badge--unattempted' : ''}" title="${statusTitle}">
+        <span class="status-badge${unattempted ? ' status-badge--unattempted' : ''}" title="${escapeHtml(statusText)}">
           <span class="status-dot ${statusClass}"></span>
-          <span style="font-size:11px;">${escapeHtml(statusText)}</span>
+          <span class="status-text">
+            <span class="status-primary">${escapeHtml(statusPrimary)}</span>
+            ${statusQual ? `<span class="status-qual">${escapeHtml(statusQual)}</span>` : ''}
+          </span>
         </span>
       </td>
     `;

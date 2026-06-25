@@ -17,7 +17,10 @@ fn report_gitlab_sast_uses_typed_serialization() {
         "struct GitlabDetails",
         "fn vulnerability_object(finding: &VerifiedFinding) -> Result<GitlabVulnerability<'_>, ReportError>",
     ] {
-        assert!(prod.contains(required), "missing typed GitLab SAST owner: {required}");
+        assert!(
+            prod.contains(required),
+            "missing typed GitLab SAST owner: {required}"
+        );
     }
     assert!(
         !prod.contains("serde_json::json!") && !prod.contains("serde_json::Value"),

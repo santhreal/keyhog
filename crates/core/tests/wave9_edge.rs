@@ -58,13 +58,11 @@ w9_edge!(w9_kh_01, {
 
 w9_edge!(w9_kh_02, {
     let c = Credential::from("");
-    assert!(
-        keyhog_core::testing::CoreTestApi::credential_expose_secret(
-            &keyhog_core::testing::TestApi,
-            &c
-        )
-        .is_empty()
-    );
+    assert!(keyhog_core::testing::CoreTestApi::credential_expose_secret(
+        &keyhog_core::testing::TestApi,
+        &c
+    )
+    .is_empty());
 });
 
 w9_edge!(w9_kh_03, {

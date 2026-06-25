@@ -404,7 +404,17 @@ impl ScanOrchestrator {
         let incremental_cache_failed =
             crate::INCREMENTAL_CACHE_ERRORS.load(std::sync::atomic::Ordering::Relaxed) > 0;
         let source_coverage_incomplete = source_coverage_incomplete();
-        Ok(if has_live_credentials {
+        Ok(if self.args.autoroute_calibrate && !scanner_panicked {
+            // `--autoroute-calibrate` is a routing-measurement command, not a
+            // findings scan: reaching here means calibration persisted a routing
+            // decision (a calibration failure errors out earlier with a non-zero
+            // exit). Its exit code therefore reflects CALIBRATION success, never
+            // whatever secrets or coverage gaps the throwaway calibration probe
+            // happened to contain — so the installer's calibration phase is not
+            // failed by a decode-heavy probe that legitimately decodes to a
+            // secret. A scanner panic still overrides (the scan was unreliable).
+            std::process::ExitCode::SUCCESS
+        } else if has_live_credentials {
             std::process::ExitCode::from(EXIT_LIVE_CREDENTIALS)
         } else if scanner_panicked {
             std::process::ExitCode::from(EXIT_SCANNER_PANIC)

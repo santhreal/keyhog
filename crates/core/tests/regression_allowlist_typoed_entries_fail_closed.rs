@@ -71,10 +71,8 @@ fn explicit_path_prefix_allows_ambiguous_path_globs() {
     let _ = std::fs::remove_file(&path);
 
     assert!(allowlist.ignored_paths.iter().any(|path| path == "foo:bar"));
-    assert!(
-        allowlist
-            .ignored_paths
-            .iter()
-            .any(|path| path == &hex_like_path)
-    );
+    assert!(allowlist
+        .ignored_paths
+        .iter()
+        .any(|path| path == &hex_like_path));
 }

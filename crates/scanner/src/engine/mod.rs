@@ -126,15 +126,15 @@ mod windowed_support;
 // sole call site in compile.rs is `#[cfg(feature = "simd")]` too. Gate the
 // import to match, or non-simd builds (the `portable` feature used for the
 // macOS/Windows/musl release assets) fail with E0432.
-pub(crate) use backend_prepared::PreparedChunk;
 #[cfg(feature = "simd")]
 pub(crate) use backend_prepared::build_simd_scanner;
 pub(crate) use backend_prepared::code_lines_from_offsets;
+pub(crate) use backend_prepared::PreparedChunk;
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries;
 pub use gpu_artifacts::{
-    GpuLiteralArtifact, GpuLiteralArtifacts, compile_gpu_literal_artifacts,
-    compile_gpu_literal_artifacts_default,
+    compile_gpu_literal_artifacts, compile_gpu_literal_artifacts_default, GpuLiteralArtifact,
+    GpuLiteralArtifacts,
 };
 #[cfg(test)]
 pub(crate) use gpu_forced::gpu_forced_unavailable_message;

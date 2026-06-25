@@ -12,8 +12,8 @@
 //! Every asserted value is derived from that code, not guessed.
 
 use keyhog_core::{
-    CredentialHash, DedupScope, MatchLocation, RawMatch, Severity, dedup_cross_detector,
-    dedup_matches, redact,
+    dedup_cross_detector, dedup_matches, redact, CredentialHash, DedupScope, MatchLocation,
+    RawMatch, Severity,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -1108,28 +1108,22 @@ fn cross_detector_three_losers_indexed_in_confidence_order() {
     let out = dedup_cross_detector(deduped);
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].detector_id.as_ref(), "d1"); // 0.9 winner
-    // cross_detector.0 = 0.7 (d2), .1 = 0.5 (d4), .2 = 0.3 (d3).
-    assert!(
-        out[0]
-            .companions
-            .get("cross_detector.0")
-            .unwrap()
-            .contains("0.70")
-    );
-    assert!(
-        out[0]
-            .companions
-            .get("cross_detector.1")
-            .unwrap()
-            .contains("0.50")
-    );
-    assert!(
-        out[0]
-            .companions
-            .get("cross_detector.2")
-            .unwrap()
-            .contains("0.30")
-    );
+                                                   // cross_detector.0 = 0.7 (d2), .1 = 0.5 (d4), .2 = 0.3 (d3).
+    assert!(out[0]
+        .companions
+        .get("cross_detector.0")
+        .unwrap()
+        .contains("0.70"));
+    assert!(out[0]
+        .companions
+        .get("cross_detector.1")
+        .unwrap()
+        .contains("0.50"));
+    assert!(out[0]
+        .companions
+        .get("cross_detector.2")
+        .unwrap()
+        .contains("0.30"));
     assert!(out[0].companions.get("cross_detector.3").is_none());
 }
 

@@ -14,10 +14,10 @@
 //! Law 6: every assertion checks an exact value, never `is_empty`/`is_ok`.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
-use keyhog_core::{DedupedMatch, MatchLocation, Severity, dedup_cross_detector};
+use keyhog_core::{dedup_cross_detector, DedupedMatch, MatchLocation, Severity};
 
 fn dedup_lost_singleton() -> u64 {
     keyhog_core::testing::CoreTestApi::dedup_lost_singleton_load(

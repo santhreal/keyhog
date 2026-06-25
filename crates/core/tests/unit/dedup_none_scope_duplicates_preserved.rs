@@ -2,7 +2,7 @@
 //! Contract: With DedupScope::None, identical credentials in identical files
 //! remain as separate findings (no grouping, no primary/additional split).
 
-use keyhog_core::{DedupScope, MatchLocation, RawMatch, Severity, dedup_matches};
+use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
 use std::collections::HashMap;
 use std::sync::Arc;
 

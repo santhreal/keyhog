@@ -41,8 +41,8 @@ fn sarif_uri_full_run_with_absolute_path() {
         ["artifactLocation"]["uri"]
         .as_str();
     assert_eq!(loc_uri, Some("file:///etc/keys/aws.env"));
-    let fix_uri =
-        json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]["artifactLocation"]["uri"]
-            .as_str();
+    let fix_uri = json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]
+        ["artifactLocation"]["uri"]
+        .as_str();
     assert_eq!(fix_uri, Some("file:///etc/keys/aws.env"));
 }

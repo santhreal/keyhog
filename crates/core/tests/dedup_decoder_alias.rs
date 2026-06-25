@@ -1,4 +1,4 @@
-use keyhog_core::{DedupScope, MatchLocation, RawMatch, Severity, dedup_matches};
+use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
 use std::collections::HashMap;
 
 fn raw_match(source: &str, line: usize, offset: usize) -> RawMatch {

@@ -96,7 +96,8 @@ impl SelfScanPathScope {
         self.canonicalized_parent_dirs
             .entry(parent.to_path_buf())
             .or_insert_with(|| {
-                std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf()) // LAW10: canonicalize failure => original parent path (best-effort normalization); recall-safe
+                std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf())
+                // LAW10: canonicalize failure => original parent path (best-effort normalization); recall-safe
             })
             .as_path()
     }

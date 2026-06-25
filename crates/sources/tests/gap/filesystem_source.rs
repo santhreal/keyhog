@@ -1337,3 +1337,28 @@ fn deeply_nested_real_directories_are_walked() {
         "deep real directory chain must be fully walked"
     );
 }
+
+#[test]
+fn embedded_non_zip_file_starting_with_pk_is_scanned_as_text() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bundle.zip");
+    let file = fs::File::create(&path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let opts =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    // Write an entry with a zip extension, but containing plain text starting with "PK" (which is NOT a valid ZIP).
+    zip.start_file("not_a_zip.zip", opts).unwrap();
+    zip.write_all(b"PK_is_the_start_but_this_is_plain_text_TOKEN=some_mock_secret_value")
+        .unwrap();
+    zip.finish().unwrap();
+
+    let chunks = scan_single_file(&path);
+    let body = combined_body(&chunks);
+
+    assert!(
+        body.contains("TOKEN=some_mock_secret_value"),
+        "embedded plain text file starting with PK must be successfully scanned; got chunks: {chunks:#?}"
+    );
+}

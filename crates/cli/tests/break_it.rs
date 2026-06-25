@@ -1,4 +1,4 @@
-use keyhog::testing::{API, CliTestApi as _};
+use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use std::sync::Arc;
 use std::thread;
@@ -263,10 +263,9 @@ fn test_negative_byte_size() {
 
 #[test]
 fn test_huge_byte_size() {
-    assert!(
-        API.parse_byte_size("10000000000000000000000000000MB")
-            .is_err()
-    );
+    assert!(API
+        .parse_byte_size("10000000000000000000000000000MB")
+        .is_err());
 }
 
 #[test]

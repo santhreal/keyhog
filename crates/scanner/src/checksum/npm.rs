@@ -1,7 +1,7 @@
 use super::github::{base62_encode_u32, crc32};
 use super::{ChecksumResult, ChecksumValidator};
-use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
+use base64::Engine as _;
 
 /// Validates modern npm access tokens.
 ///

@@ -18,7 +18,7 @@
 use keyhog::daemon::client;
 use keyhog::daemon::frame;
 use keyhog::daemon::protocol::{Request, Response, WIRE_VERSION};
-use keyhog::testing::{API, CliTestApi as _};
+use keyhog::testing::{CliTestApi as _, API};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};

@@ -140,11 +140,9 @@ fn verify_mod_error() {
         service: "unknown".into(),
         ..Default::default()
     };
-    assert!(
-        TestApi
-            .check_url_against_spec("https://evil.example/", &spec)
-            .is_err()
-    );
+    assert!(TestApi
+        .check_url_against_spec("https://evil.example/", &spec)
+        .is_err());
 }
 
 // ── crates/verifier/src/verify/auth.rs ──────────────────────────────────
@@ -205,11 +203,9 @@ fn verify_request_happy() {
         allowed_domains: vec!["example.com".into()],
         ..Default::default()
     };
-    assert!(
-        TestApi
-            .check_url_against_spec("https://example.com/path", &spec)
-            .is_ok()
-    );
+    assert!(TestApi
+        .check_url_against_spec("https://example.com/path", &spec)
+        .is_ok());
 }
 #[test]
 fn verify_request_error() {
@@ -219,11 +215,9 @@ fn verify_request_error() {
         allowed_domains: vec!["example.com".into()],
         ..Default::default()
     };
-    assert!(
-        TestApi
-            .check_url_against_spec("https://other.example/path", &spec)
-            .is_err()
-    );
+    assert!(TestApi
+        .check_url_against_spec("https://other.example/path", &spec)
+        .is_err());
 }
 
 // ── crates/verifier/src/verify/response.rs ──────────────────────────────

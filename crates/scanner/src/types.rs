@@ -63,6 +63,16 @@ pub fn set_regex_dfa_limit(bytes: usize) {
     REGEX_DFA_LIMIT_OVERRIDE.store(bytes, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// The compiled-default per-regex DFA size limit ([`REGEX_SIZE_LIMIT_BYTES`]):
+/// the cap that takes effect when no `--regex-dfa-limit` / `regex_dfa_limit`
+/// override is set. Exposed so `keyhog config --effective` can report the real
+/// active default instead of a misleading "off" - an unset limit is never truly
+/// off, it falls back to this compiled cap.
+#[must_use]
+pub fn regex_dfa_limit_default() -> usize {
+    REGEX_SIZE_LIMIT_BYTES
+}
+
 /// The effective per-regex DFA size limit: the override if set, else the
 /// compiled default [`REGEX_SIZE_LIMIT_BYTES`].
 #[must_use]

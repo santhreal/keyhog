@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use keyhog_core::{
-    MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding, write_report,
+    write_report, MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding,
 };
 
 fn render(finding: &VerifiedFinding) -> String {

@@ -4,7 +4,7 @@ use std::io::Write;
 
 use crate::VerifiedFinding;
 
-use super::{escape::escape_csv, ReportError, Reporter, WriterBackedReporter};
+use super::{escape::escape_csv, impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
 
 /// Tabular CSV output.
 pub(crate) struct CsvReporter<W: Write + Send> {
@@ -70,7 +70,7 @@ impl<W: Write + Send> Reporter for CsvReporter<W> {
             escape_csv(&finding.detector_id),
             escape_csv(&finding.detector_name),
             escape_csv(&finding.service),
-            escape_csv(&finding.severity.to_string()),
+            escape_csv(finding.severity.as_str()),
             escape_csv(&finding.credential_redacted),
             escape_csv(&crate::hex_encode(&finding.credential_hash)),
             escape_csv(&finding.location.source),
@@ -91,10 +91,4 @@ impl<W: Write + Send> Reporter for CsvReporter<W> {
     }
 }
 
-impl<W: Write + Send> WriterBackedReporter for CsvReporter<W> {
-    type Writer = W;
-
-    fn writer_mut(&mut self) -> &mut Self::Writer {
-        &mut self.writer
-    }
-}
+impl_writer_backed!(CsvReporter);

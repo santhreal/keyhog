@@ -1,9 +1,9 @@
-use keyhog_core::{DedupScope, DetectorSpec, MatchLocation, RawMatch, Severity, dedup_matches};
+use keyhog_core::{dedup_matches, DedupScope, DetectorSpec, MatchLocation, RawMatch, Severity};
 use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 use keyhog_verifier::{VerificationEngine, VerifyConfig};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 

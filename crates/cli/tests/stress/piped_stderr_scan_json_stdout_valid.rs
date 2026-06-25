@@ -7,7 +7,14 @@ use std::process::{Command, Stdio};
 fn piped_stderr_scan_json_stdout_valid() {
     let (_dir, path) = write_temp_file("clean.txt", "hello\n");
     let child = Command::new(binary())
-        .args(["scan", "--no-daemon", "--backend", "simd", "--format", "json"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "json",
+        ])
         .arg(&path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

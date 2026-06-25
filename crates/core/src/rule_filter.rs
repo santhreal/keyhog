@@ -42,7 +42,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use serde::Deserialize;
-use vyre_libs::rule::{RuleCondition, RuleEvaluationContext, RuleFormula, evaluate_formula};
+use vyre_libs::rule::{evaluate_formula, RuleCondition, RuleEvaluationContext, RuleFormula};
 
 use crate::{Severity, VerifiedFinding};
 
@@ -155,9 +155,9 @@ impl RuleSuppressor {
         // match, so the finding is LESS likely to be suppressed and MORE likely
         // to be reported. A missing path can never silently drop a real finding.
         let path = finding.location.file_path.as_deref().unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
-        // `Finding.credential_hash` is the raw 32 bytes; rule predicates match
-        // against the hex form (see the module-doc example). Hex-encode into a
-        // local that outlives `ctx`'s borrow below.
+                                                                        // `Finding.credential_hash` is the raw 32 bytes; rule predicates match
+                                                                        // against the hex form (see the module-doc example). Hex-encode into a
+                                                                        // local that outlives `ctx`'s borrow below.
         let credential_hash_hex = crate::finding::hex_encode(&finding.credential_hash);
         let ctx = FindingContext {
             detector_id: finding.detector_id.as_ref(),

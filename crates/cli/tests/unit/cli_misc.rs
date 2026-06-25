@@ -1,4 +1,4 @@
-use keyhog::testing::{API, CliTestApi as _};
+use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use std::sync::Arc;
 

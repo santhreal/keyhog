@@ -5,6 +5,12 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+/// Maximum image-index nesting the OCI reader will follow. One level covers the
+/// common BuildKit layout (index.json → image index → manifests); the bound
+/// stops a maliciously self-referential or pathologically deep image from
+/// driving unbounded blob reads.
+const MAX_OCI_INDEX_DEPTH: u32 = 8;
+
 #[derive(serde::Deserialize)]
 struct OciIndex {
     #[serde(default)]
@@ -14,7 +20,7 @@ struct OciIndex {
 #[derive(Clone, serde::Deserialize)]
 struct OciDescriptor {
     #[serde(rename = "mediaType", default)]
-    _media_type: Option<String>,
+    media_type: Option<String>,
     digest: String,
     #[serde(default)]
     size: Option<u64>,
@@ -136,8 +142,23 @@ fn load_oci_image_manifests(
         )));
     }
 
+    // Each top-level index entry may point either at an image manifest (carries
+    // a `config`) or at a NESTED image index / manifest-list (carries
+    // `manifests`). `docker build` with BuildKit emits the latter for
+    // multi-platform images and for the attestation manifests it attaches, so a
+    // single-platform `FROM scratch` build still nests one level. Follow nested
+    // indexes (bounded depth) down to the real image manifests instead of
+    // mis-parsing an index blob as a manifest and failing with "missing field
+    // config". Entries are processed in their original top-level order.
     let mut manifests = Vec::new();
-    for (idx, descriptor) in index.manifests.into_iter().enumerate() {
+    let mut work: Vec<(u32, usize, OciDescriptor)> = index
+        .manifests
+        .into_iter()
+        .enumerate()
+        .map(|(idx, descriptor)| (0u32, idx, descriptor))
+        .rev()
+        .collect();
+    while let Some((depth, idx, descriptor)) = work.pop() {
         let manifest_path =
             resolve_oci_blob_digest_path(root_path, "manifest", &descriptor, limits)?;
         verify_oci_blob_sha256(&manifest_path, &descriptor.digest)?;
@@ -146,6 +167,26 @@ fn load_oci_image_manifests(
             "OCI image manifest",
             limits.docker_image_config_bytes,
         )?;
+        if descriptor_points_to_index(&descriptor, &manifest_bytes) {
+            if depth >= MAX_OCI_INDEX_DEPTH {
+                return Err(SourceError::Other(format!(
+                    "OCI image index nesting exceeded {MAX_OCI_INDEX_DEPTH} levels at \
+                     entry {idx}; refusing to follow further"
+                )));
+            }
+            let nested: OciIndex = serde_json::from_slice(&manifest_bytes).map_err(|error| {
+                SourceError::Other(format!(
+                    "invalid nested OCI image index '{}' from index entry {idx}: {error}",
+                    descriptor.digest
+                ))
+            })?;
+            // Preserve original order: push reversed so the first nested entry
+            // is popped first.
+            for nested_descriptor in nested.manifests.into_iter().rev() {
+                work.push((depth + 1, idx, nested_descriptor));
+            }
+            continue;
+        }
         let manifest: OciImageManifest =
             serde_json::from_slice(&manifest_bytes).map_err(|error| {
                 SourceError::Other(format!(
@@ -166,6 +207,37 @@ fn load_oci_image_manifests(
         });
     }
     Ok(manifests)
+}
+
+/// Whether an index entry points at a nested image index / manifest-list rather
+/// than an image manifest. The declared `mediaType` is authoritative when
+/// present; otherwise the blob is classified structurally — an image index
+/// carries `manifests` and no `config`, an image manifest the reverse.
+fn descriptor_points_to_index(descriptor: &OciDescriptor, bytes: &[u8]) -> bool {
+    if let Some(media_type) = descriptor.media_type.as_deref() {
+        if media_type.contains("image.index") || media_type.contains("manifest.list") {
+            return true;
+        }
+        if media_type.contains("image.manifest")
+            || media_type.ends_with("distribution.manifest.v2+json")
+        {
+            return false;
+        }
+    }
+    #[derive(serde::Deserialize)]
+    struct Shape {
+        #[serde(default)]
+        manifests: Option<serde_json::Value>,
+        #[serde(default)]
+        config: Option<serde_json::Value>,
+    }
+    match serde_json::from_slice::<Shape>(bytes) {
+        Ok(shape) => shape.config.is_none() && shape.manifests.is_some(),
+        // LAW10: an unparseable blob is classified as not-an-index, so the caller
+        // parses it as an image manifest and surfaces a loud parse error for the
+        // entry — the descriptor is never silently skipped.
+        Err(_) => false,
+    }
 }
 
 fn resolve_oci_blob_digest_path(
@@ -233,4 +305,56 @@ fn verify_oci_blob_sha256(path: &Path, digest: &str) -> Result<(), SourceError> 
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn descriptor(media_type: Option<&str>) -> OciDescriptor {
+        OciDescriptor {
+            media_type: media_type.map(str::to_owned),
+            digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                .to_string(),
+            size: None,
+            annotations: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn classifies_index_vs_manifest_by_declared_media_type() {
+        // Nested image index / manifest-list -> follow it.
+        assert!(descriptor_points_to_index(
+            &descriptor(Some("application/vnd.oci.image.index.v1+json")),
+            b"{}"
+        ));
+        assert!(descriptor_points_to_index(
+            &descriptor(Some(
+                "application/vnd.docker.distribution.manifest.list.v2+json"
+            )),
+            b"{}"
+        ));
+        // Image manifest -> parse `config`.
+        assert!(!descriptor_points_to_index(
+            &descriptor(Some("application/vnd.oci.image.manifest.v1+json")),
+            b"{}"
+        ));
+        assert!(!descriptor_points_to_index(
+            &descriptor(Some("application/vnd.docker.distribution.manifest.v2+json")),
+            b"{}"
+        ));
+    }
+
+    #[test]
+    fn classifies_index_vs_manifest_structurally_when_media_type_absent() {
+        // BuildKit-style layout where the entry omits mediaType: an image index
+        // carries `manifests`, an image manifest carries `config`.
+        let index_bytes = br#"{"manifests":[{"digest":"sha256:1"}]}"#;
+        let manifest_bytes = br#"{"config":{"digest":"sha256:2"},"layers":[]}"#;
+        assert!(descriptor_points_to_index(&descriptor(None), index_bytes));
+        assert!(!descriptor_points_to_index(
+            &descriptor(None),
+            manifest_bytes
+        ));
+    }
 }

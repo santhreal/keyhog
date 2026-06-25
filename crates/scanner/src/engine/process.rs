@@ -5,8 +5,8 @@
 //! heuristic scoring. Outputs either a `Final` finding into `scan_state.matches`
 //! or queues an `MlPendingMatch` for the post-scan ML batch.
 
-use super::CompiledScanner;
 use super::scan_filters::*;
+use super::CompiledScanner;
 use crate::confidence::policy::MlScoreResult;
 use crate::context;
 use crate::pipeline::*;

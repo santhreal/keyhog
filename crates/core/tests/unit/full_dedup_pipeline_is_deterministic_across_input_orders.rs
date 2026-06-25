@@ -1,6 +1,6 @@
 use keyhog_core::{
-    DedupScope, DedupedMatch, MatchLocation, RawMatch, Severity, dedup_cross_detector,
-    dedup_matches,
+    dedup_cross_detector, dedup_matches, DedupScope, DedupedMatch, MatchLocation, RawMatch,
+    Severity,
 };
 use std::collections::HashMap;
 use std::sync::Arc;

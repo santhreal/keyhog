@@ -1,4 +1,4 @@
-use keyhog_core::{MatchLocation, RawMatch, Severity, redact};
+use keyhog_core::{redact, MatchLocation, RawMatch, Severity};
 use std::collections::HashMap;
 
 #[test]

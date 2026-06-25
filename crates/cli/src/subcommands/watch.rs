@@ -18,7 +18,7 @@
 //! they can always invoke `keyhog scan` separately.
 
 use crate::args::WatchArgs;
-use crate::orchestrator::{DefaultScanRuntime, setup_default_scan_runtime};
+use crate::orchestrator::{setup_default_scan_runtime, DefaultScanRuntime};
 use crate::skip_dirs::SkipDirPolicy;
 use crate::style;
 use anyhow::{Context, Result};

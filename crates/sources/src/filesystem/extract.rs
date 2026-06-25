@@ -216,7 +216,7 @@ pub(super) fn process_entry(
         // is only a header sniff.
         let mut buf = [0u8; EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES];
         if let Ok(n) = read::read_file_prefix_safe(&path, &mut buf) {
-            // LAW10: failed prefix probe leaves binary hint false; full safe read path below still surfaces unreadable files.
+            // LAW10: failed prefix probe leaves binary hint false; the full safe read path below is the loud, recall-preserving path that still surfaces unreadable files.
             let head = &buf[..n];
             if read::looks_binary_prefix(head) {
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);

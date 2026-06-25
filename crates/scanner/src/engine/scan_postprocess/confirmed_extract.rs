@@ -4,7 +4,7 @@
 //! Stripe direct-prefix duplicate filter. It stays separate from decode
 //! recursion and ML scoring so the postprocess folder has one owner per job.
 
-use super::{CompiledScanner, scan_postprocess, scan_postprocess_profile};
+use super::{scan_postprocess, scan_postprocess_profile, CompiledScanner};
 use crate::types::{ScanState, ScannerPreprocessedText};
 use keyhog_core::Chunk;
 use std::sync::atomic::Ordering::Relaxed;

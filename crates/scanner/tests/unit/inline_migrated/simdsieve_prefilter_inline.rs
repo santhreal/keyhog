@@ -15,11 +15,11 @@
 
 use keyhog_core::{DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::{
-    CompiledScanner,
     testing::{
-        HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_NAMES, HOT_PATTERNS,
-        hot_pattern_index_at, validate_hot_pattern_runtime_table_lengths,
+        hot_pattern_index_at, validate_hot_pattern_runtime_table_lengths, HOT_PATTERNS,
+        HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_NAMES,
     },
+    CompiledScanner,
 };
 
 #[test]

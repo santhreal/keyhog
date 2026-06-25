@@ -1,6 +1,6 @@
 use crate::support::reporters::{JsonlReporter, SarifReporter, TextReporter};
 use keyhog_core::{
-    MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding, write_report,
+    write_report, MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -63,12 +63,10 @@ fn sarif_reporter_basic_structure() {
     let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
 
     assert_eq!(parsed["version"], "2.1.0");
-    assert!(
-        parsed["$schema"]
-            .as_str()
-            .unwrap()
-            .contains("sarif-schema-2.1.0.json")
-    );
+    assert!(parsed["$schema"]
+        .as_str()
+        .unwrap()
+        .contains("sarif-schema-2.1.0.json"));
 
     let runs = parsed["runs"].as_array().unwrap();
     assert_eq!(runs.len(), 1);
@@ -87,12 +85,10 @@ fn sarif_reporter_basic_structure() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0]["ruleId"], "slack-bot-token");
     assert_eq!(results[0]["level"], "error");
-    assert!(
-        results[0]["message"]["text"]
-            .as_str()
-            .unwrap()
-            .contains("slack")
-    );
+    assert!(results[0]["message"]["text"]
+        .as_str()
+        .unwrap()
+        .contains("slack"));
 
     let location = &results[0]["locations"][0];
     assert_eq!(

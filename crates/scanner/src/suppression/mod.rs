@@ -9,5 +9,5 @@ pub(crate) mod shape;
 pub(crate) mod token_randomness;
 
 pub(crate) use api::{
-    NamedDetectorSuppressionCtx, detector_weak_anchor, suppress_named_detector_finding_stage,
+    detector_weak_anchor, suppress_named_detector_finding_stage, NamedDetectorSuppressionCtx,
 };

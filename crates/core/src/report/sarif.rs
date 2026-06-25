@@ -6,7 +6,7 @@ use std::io::Write;
 
 use crate::{MatchLocation, Severity, VerifiedFinding};
 
-use super::{ReportError, Reporter, WriterBackedReporter};
+use super::{impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
 
 #[path = "sarif_taxonomies.rs"]
 mod sarif_taxonomies;
@@ -264,7 +264,7 @@ impl<W: Write + Send> SarifReporter<W> {
             help_uri,
             properties: Some(SarifRuleProperties {
                 service: finding.service.to_string(),
-                severity: super::style::severity_token(finding.severity).to_string(),
+                severity: finding.severity.as_str().to_string(),
                 security_severity: super::sarif_uri::code_scanning_security_severity(
                     finding.severity,
                 ),
@@ -431,10 +431,4 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
     }
 }
 
-impl<W: Write + Send> WriterBackedReporter for SarifReporter<W> {
-    type Writer = W;
-
-    fn writer_mut(&mut self) -> &mut Self::Writer {
-        &mut self.writer
-    }
-}
+impl_writer_backed!(SarifReporter);

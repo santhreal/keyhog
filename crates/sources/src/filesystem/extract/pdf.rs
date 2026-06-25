@@ -299,7 +299,7 @@ fn decode_stream<'a>(dict: &[u8], stream_bytes: &'a [u8], budget: usize) -> Stre
 }
 
 fn inflate_pdf_stream(stream_bytes: &[u8], budget: usize) -> StreamDecode<'_> {
-    let cap = u64::try_from(budget).unwrap_or(u64::MAX); // LAW10: on wider-than-u64 usize targets, u64::MAX is the largest stream cap the shared reader can represent.
+    let cap = u64::try_from(budget).unwrap_or(u64::MAX); // LAW10: unreachable on real platforms — only a wider-than-u64 usize target takes this arm, where u64::MAX is the largest stream cap the shared reader can represent.
     let decoder = flate2::read::ZlibDecoder::new(stream_bytes);
     let read = crate::capped_read::read_to_cap_preserving_error(decoder, cap, None);
     match read.error {

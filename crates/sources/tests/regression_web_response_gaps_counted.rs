@@ -30,10 +30,7 @@ fn loopback_calibration_source(url: String) -> WebSource {
     TestApi.web_source_with_autoroute_loopback_calibration(vec![url], true)
 }
 
-fn loopback_calibration_source_with_limits(
-    url: String,
-    limits: SourceLimits,
-) -> Box<dyn Source> {
+fn loopback_calibration_source_with_limits(url: String, limits: SourceLimits) -> Box<dyn Source> {
     let params = format!("autoroute_loopback_calibration=true\n{url}");
     create_source_with_http_config_and_limits(
         "web",
@@ -105,13 +102,21 @@ fn compressed_javascript_responses_are_decoded_and_scanned() {
 
     let server = httpmock::MockServer::start();
     let cases = [
-        ("gzip", "/gzip.js", gzip_bytes(b"const gzip_marker = 'web_gzip_secret_marker';\n")),
+        (
+            "gzip",
+            "/gzip.js",
+            gzip_bytes(b"const gzip_marker = 'web_gzip_secret_marker';\n"),
+        ),
         (
             "deflate",
             "/deflate.js",
             deflate_bytes(b"const deflate_marker = 'web_deflate_secret_marker';\n"),
         ),
-        ("br", "/brotli.js", brotli_bytes(b"const br_marker = 'web_brotli_secret_marker';\n")),
+        (
+            "br",
+            "/brotli.js",
+            brotli_bytes(b"const br_marker = 'web_brotli_secret_marker';\n"),
+        ),
     ];
     for (encoding, path, body) in cases {
         let _mock = server.mock(|when, then| {
@@ -162,7 +167,11 @@ fn compressed_web_response_decoded_size_is_capped() {
     let rows: Vec<_> = loopback_calibration_source_with_limits(server.url("/bomb.js"), limits)
         .chunks()
         .collect();
-    assert_eq!(rows.len(), 1, "decoded over-cap response must yield one error");
+    assert_eq!(
+        rows.len(),
+        1,
+        "decoded over-cap response must yield one error"
+    );
     let err = rows[0]
         .as_ref()
         .expect_err("decoded over-cap response must fail closed");

@@ -52,8 +52,12 @@ fn strong_keyword_complete_hex32_and_hex48_are_surfaced() {
     // strong cryptographic-key keywords — real keys on CredData, formerly dropped
     // by the bare-hex-digest gate. These literals match no named service detector
     // (no vendor prefix), so a hit proves the generic keyword-bridge lift fired.
+    // Both must be genuinely non-sequential: the bridge exempts the bare-hex
+    // digest gate ONLY, so a value whose bytes increment arithmetically (the old
+    // `a1b2c3d4e5f6…` hex48 fixture) is still — correctly — caught by the
+    // `algorithmic_placeholder` shape gate and never reaches the lift.
     let hex32 = "3f8a9c2e1b7d4f6a8c0e2d4f6a8b0c1e";
-    let hex48 = "a1b2c3d4e5f60718293a4b5c6d7e8f901a2b3c4d5e6f7081";
+    let hex48 = "9f2c7a14e8b3d05f6a2c91e7b4d83f0a5c6e1b9d7f3a204c";
     assert!(
         caught(&s, &format!("api_key = \"{hex32}\""), hex32),
         "api_key = <random hex32> must surface (KH-L-0110 lift)"

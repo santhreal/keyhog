@@ -8,14 +8,14 @@ use super::path_filter::{
     looks_like_vendored_minified_path,
 };
 use super::shape::{
-    PublicShapeScope, contains_uuid_v4_substring, looks_like_credential_colliding_punctuation,
+    contains_uuid_v4_substring, looks_like_credential_colliding_punctuation,
     looks_like_email_address, looks_like_pure_identifier, looks_like_regex_literal_tail,
     looks_like_scheme_prefixed_uri, looks_like_syntactic_punctuation_marker,
     looks_like_url_or_path_segment, looks_like_word_separated_identifier,
-    public_noncredential_shape_with_randomness,
+    public_noncredential_shape_with_randomness, PublicShapeScope,
 };
 use super::token_randomness::{
-    TokenRandomness, keep_identifier_gate_with_randomness, keep_word_separated_gate_with_randomness,
+    keep_identifier_gate_with_randomness, keep_word_separated_gate_with_randomness, TokenRandomness,
 };
 use crate::context;
 

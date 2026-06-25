@@ -430,7 +430,7 @@ fn trim_ascii_bytes(bytes: &[u8]) -> &[u8] {
     let start = bytes
         .iter()
         .position(|byte| !byte.is_ascii_whitespace())
-        .unwrap_or(bytes.len()); // LAW10: all-whitespace trim starts at end; no context is suppressed from this default
+        .unwrap_or(bytes.len()); // LAW10: no recall impact — all-whitespace trim starts at end; no context is suppressed from this default
     let end = bytes
         .iter()
         .rposition(|byte| !byte.is_ascii_whitespace())

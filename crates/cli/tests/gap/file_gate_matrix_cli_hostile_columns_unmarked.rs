@@ -66,7 +66,9 @@ fn file_gate_matrix_cli_rows_mark_hostile_coverage() {
                 "error = true" => row.error = true,
                 "adversarial = true" => row.adversarial = true,
                 "e2e_linked = true" => row.e2e_linked = true,
-                "boundary = false" | "error = false" | "adversarial = false"
+                "boundary = false"
+                | "error = false"
+                | "adversarial = false"
                 | "e2e_linked = false" => unmarked.push(format!("{}: {}", row.path, line.trim())),
                 _ => {}
             }

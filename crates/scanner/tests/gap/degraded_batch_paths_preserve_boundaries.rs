@@ -37,7 +37,10 @@ fn forced_simd_backend_without_prefilter_is_not_cpu_fallback() {
     let simd_trigger_collector = triggered
         .split("fn collect_triggered_patterns_simd(&self, text: &str) -> Vec<u64> {")
         .nth(1)
-        .and_then(|tail| tail.split("pub(crate) fn collect_triggered_patterns_cpu").next())
+        .and_then(|tail| {
+            tail.split("pub(crate) fn collect_triggered_patterns_cpu")
+                .next()
+        })
         .expect("SIMD trigger collector source extractable");
     let missing_prefilter_branch = simd_trigger_collector
         .split("return triggered_patterns;")

@@ -8,8 +8,8 @@
 //! `is_ok()` / `!is_empty()`.
 
 use keyhog_core::{
-    CredentialHash, DedupScope, MatchLocation, RawMatch, Severity, VerificationResult,
-    VerifiedFinding, dedup_cross_detector, dedup_matches, hex_encode, redact,
+    dedup_cross_detector, dedup_matches, hex_encode, redact, CredentialHash, DedupScope,
+    MatchLocation, RawMatch, Severity, VerificationResult, VerifiedFinding,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -845,10 +845,9 @@ fn hex_encode_is_64_lowercase_chars() {
     assert_eq!(hex.len(), 64);
     assert!(hex.starts_with("ab"));
     assert!(hex.ends_with("cd"));
-    assert!(
-        hex.chars()
-            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
-    );
+    assert!(hex
+        .chars()
+        .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
 }
 
 #[test]

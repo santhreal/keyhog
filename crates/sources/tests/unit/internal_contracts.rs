@@ -509,11 +509,9 @@ fn binary_literal_extraction_contracts() {
 #[cfg(feature = "binary")]
 #[test]
 fn binary_section_extraction_rejects_bad_inputs_without_panic() {
-    assert!(
-        TestApi
-            .extract_sections(&[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc], "junk.bin")
-            .is_none()
-    );
+    assert!(TestApi
+        .extract_sections(&[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc], "junk.bin")
+        .is_none());
     assert!(TestApi.extract_sections(&[], "empty.bin").is_none());
 
     let mut bytes = vec![0x7f, b'E', b'L', b'F', 2, 1, 1, 0];
@@ -998,16 +996,12 @@ fn web_dns_screen_and_proxy_contracts() {
     assert!(addrs.iter().all(|a| !TestApi.is_disallowed_ip(a.ip())));
 
     let cfg = keyhog_sources::http::HttpClientConfig::default();
-    assert!(
-        TestApi
-            .build_web_client(&cfg, "http://127.0.0.1:9/", false, false)
-            .is_err()
-    );
-    assert!(
-        TestApi
-            .build_web_client(&cfg, "http://127.0.0.1:9/", false, true)
-            .is_ok()
-    );
+    assert!(TestApi
+        .build_web_client(&cfg, "http://127.0.0.1:9/", false, false)
+        .is_err());
+    assert!(TestApi
+        .build_web_client(&cfg, "http://127.0.0.1:9/", false, true)
+        .is_ok());
 
     match TestApi.build_web_client(&cfg, "https://example.com/app.js", false, false) {
         Ok(_) => {}

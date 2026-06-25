@@ -108,12 +108,36 @@ pub(super) fn calibrate_fastest_correct_backend(
         gpu_warm_timing,
         gpu_route_ns,
     );
-    if !decision.selected_backend_has_non_overlapping_confidence(best.0) {
+    // Resolve the backend deterministically from the measured evidence: the
+    // provably-fastest route if one is statistically separated, otherwise the
+    // lowest-overhead member of the tied-fastest set. This is the SAME function
+    // `store::validate_decision_route_evidence` re-checks, so calibration never
+    // persists a decision validation would reject — and a fast host where the
+    // routes tie within measurement noise still gets a usable, sound cache
+    // instead of an empty one that hard-errors every auto scan.
+    let Some(resolved) = decision.resolved_routing_backend() else {
         return Err(AutorouteRoutingError::calibration_not_persisted(
-            "selected backend timing evidence is not statistically separated from competing route evidence",
+            "calibration produced no route timing evidence to resolve a backend from",
         ));
+    };
+    if resolved == best.0 {
+        return Ok(decision);
     }
-    Ok(decision)
+    let resolved_margin_ns = selected_backend_margin_ns(resolved, &candidates);
+    Ok(AutorouteDecision::from_timing_evidence(
+        resolved,
+        sample_bytes,
+        sample.len(),
+        correctness_digest,
+        calibrated_at_unix_ms,
+        resolved_margin_ns,
+        decision.simd_timing.clone(),
+        decision.cpu_timing.clone(),
+        decision.gpu_timing.clone(),
+        decision.gpu_cold_ns,
+        decision.gpu_warm_timing.clone(),
+        decision.gpu_route_ns,
+    ))
 }
 
 pub(super) fn calibration_sample_bytes(sample: &[Chunk]) -> Result<u64, AutorouteRoutingError> {

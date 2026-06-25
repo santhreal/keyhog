@@ -2,7 +2,7 @@
 /// companion merge stability, empty input, same-location collapse,
 /// file-scope commit separation, and large batch determinism.
 use keyhog_core::{
-    DedupScope, MatchLocation, RawMatch, Severity, dedup_cross_detector, dedup_matches,
+    dedup_cross_detector, dedup_matches, DedupScope, MatchLocation, RawMatch, Severity,
 };
 use std::collections::HashMap;
 use std::sync::Arc;

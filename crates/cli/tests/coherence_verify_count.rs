@@ -36,12 +36,17 @@ fn scan_clean(extra: &[&str]) -> Option<i32> {
     args.extend_from_slice(extra);
     let p = path.to_string_lossy().into_owned();
     args.push(&p);
-    Command::new(binary())
+    let out = Command::new(binary())
         .args(&args)
         .output()
-        .expect("spawn keyhog")
-        .status
-        .code()
+        .expect("spawn keyhog");
+    let code = out.status.code();
+    if code != Some(0) {
+        eprintln!("Command failed: keyhog scan {extra:?}");
+        eprintln!("STDOUT:\n{}", String::from_utf8_lossy(&out.stdout));
+        eprintln!("STDERR:\n{}", String::from_utf8_lossy(&out.stderr));
+    }
+    code
 }
 
 /// Repo root: `crates/cli/../..`.

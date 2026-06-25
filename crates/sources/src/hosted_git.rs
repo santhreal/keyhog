@@ -645,7 +645,7 @@ pub(crate) fn read_api_json<T: DeserializeOwned>(
 ) -> Result<T, SourceError> {
     let max_response_bytes_u64 = match u64::try_from(max_response_bytes) {
         Ok(value) => value,
-        Err(_) => u64::MAX, // LAW10: on hypothetical usize wider than u64 targets, reqwest content lengths and Read::take caps are u64-bounded, so every representable HTTP body length is still capped.
+        Err(_) => u64::MAX, // LAW10: unreachable on real platforms — only a usize wider than u64 takes this arm, where reqwest content lengths and Read::take caps are u64-bounded, so every representable HTTP body length is still capped.
     };
     if let Some(content_length) = response.content_length() {
         if content_length > max_response_bytes_u64 {
@@ -703,14 +703,14 @@ pub(crate) fn validated_api_endpoint(
 fn api_endpoint_for_error(endpoint: &str) -> String {
     let redacted = crate::url_redaction::redact_url(endpoint);
     if let Ok(mut url) = reqwest::Url::parse(redacted.as_ref()) {
-        // LAW10: malformed endpoint diagnostics fall back to delimiter trimming below; validation still fails closed at the caller
-        let _ = url.set_username(""); // LAW10: diagnostic-only URL sanitization; failure leaves the already-redacted URL without changing scan behavior
-        let _ = url.set_password(None); // LAW10: diagnostic-only URL sanitization; failure leaves the already-redacted URL without changing scan behavior
+        // LAW10: malformed endpoint diagnostics fall back to delimiter trimming below; validation is fail-closed at the caller
+        let _ = url.set_username(""); // LAW10: reporting-only URL sanitization (diagnostic display); failure leaves the already-redacted URL without changing scan behavior
+        let _ = url.set_password(None); // LAW10: reporting-only URL sanitization (diagnostic display); failure leaves the already-redacted URL without changing scan behavior
         url.set_query(None);
         url.set_fragment(None);
         return url.to_string();
     }
-    let cutoff = redacted.find(['?', '#']).unwrap_or(redacted.len()); // LAW10: malformed endpoint diagnostics keep only the non-secret prefix
+    let cutoff = redacted.find(['?', '#']).unwrap_or(redacted.len()); // LAW10: display-only — malformed endpoint diagnostics keep only the non-secret prefix
     redacted[..cutoff].to_string()
 }
 

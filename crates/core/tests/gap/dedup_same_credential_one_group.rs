@@ -1,7 +1,7 @@
 //! Dedup must merge identical `(detector, credential)` pairs into one group
 //! keyed by the SHA-256 credential hash oracle.
 
-use keyhog_core::{CredentialHash, DedupScope, MatchLocation, RawMatch, Severity, dedup_matches};
+use keyhog_core::{dedup_matches, CredentialHash, DedupScope, MatchLocation, RawMatch, Severity};
 use std::collections::HashMap;
 
 const CREDENTIAL: &str = "secret-alpha";

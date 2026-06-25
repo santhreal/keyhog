@@ -28,7 +28,7 @@
 mod support;
 use support::paths::detector_dir;
 
-use keyhog_core::{Chunk, ChunkMetadata, DedupScope, dedup_matches};
+use keyhog_core::{dedup_matches, Chunk, ChunkMetadata, DedupScope};
 use keyhog_scanner::CompiledScanner;
 fn make_chunk(text: &str, path: &str) -> Chunk {
     Chunk {

@@ -62,7 +62,7 @@ fn decompress_to_bytes(
     // Cap the reader at `budget + 1` bytes: one over the budget so the caller
     // can tell "hit the cap" from "exactly fit". Every decoder below streams,
     // so a decompression bomb can never allocate beyond this ceiling.
-    let budget_u64 = u64::try_from(budget).unwrap_or(u64::MAX); // LAW10: on wider-than-u64 usize targets, u64::MAX is the largest stream cap the shared reader can represent.
+    let budget_u64 = u64::try_from(budget).unwrap_or(u64::MAX); // LAW10: unreachable on real platforms — only a wider-than-u64 usize target takes this arm, where u64::MAX is the largest stream cap the shared reader can represent.
     let read_cap = budget_u64.saturating_add(1);
     let read = match format {
         CompressedFormat::Gzip => {

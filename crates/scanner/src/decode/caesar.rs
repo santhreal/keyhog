@@ -1,5 +1,5 @@
-use super::Decoder;
 use super::pipeline::{push_decoded_text_chunk, with_extracted_value_spans};
+use super::Decoder;
 use aho_corasick::AhoCorasick;
 use keyhog_core::Chunk;
 use std::sync::LazyLock;

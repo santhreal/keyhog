@@ -6,7 +6,7 @@ use crate::{MatchLocation, VerificationResult, VerifiedFinding};
 
 use super::escape::sanitize_terminal;
 use super::style as report_style;
-use super::{ReportError, Reporter, WriterBackedReporter};
+use super::{impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
 
 /// Human-readable text output with gradient banner and styled findings.
 ///
@@ -383,13 +383,7 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
     }
 }
 
-impl<W: Write + Send> WriterBackedReporter for TextReporter<W> {
-    type Writer = W;
-
-    fn writer_mut(&mut self) -> &mut Self::Writer {
-        &mut self.writer
-    }
-}
+impl_writer_backed!(TextReporter);
 
 fn format_location(location: &MatchLocation) -> String {
     match (&location.file_path, location.line) {

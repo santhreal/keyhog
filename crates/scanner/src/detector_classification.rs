@@ -109,12 +109,10 @@ mod tests {
 
         assert!(rules.weak_anchor.contains(&flickr_id()));
         assert!(rules.private_key_block.contains("private-key"));
-        assert!(
-            rules
-                .stripe_hot_confirmed_prefix
-                .iter()
-                .any(|prefix| prefix == "sk_live_")
-        );
+        assert!(rules
+            .stripe_hot_confirmed_prefix
+            .iter()
+            .any(|prefix| prefix == "sk_live_"));
     }
 
     #[test]

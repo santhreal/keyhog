@@ -5,7 +5,7 @@ use std::io::Write;
 
 use crate::VerifiedFinding;
 
-use super::{ReportError, Reporter, WriterBackedReporter};
+use super::{impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
 
 /// One JSON object per line (JSONL).
 ///
@@ -51,13 +51,7 @@ impl<W: Write + Send> Reporter for JsonlReporter<W> {
     }
 }
 
-impl<W: Write + Send> WriterBackedReporter for JsonlReporter<W> {
-    type Writer = W;
-
-    fn writer_mut(&mut self) -> &mut Self::Writer {
-        &mut self.writer
-    }
-}
+impl_writer_backed!(JsonlReporter);
 
 /// Full JSON array output.
 ///
@@ -116,10 +110,4 @@ impl<W: Write + Send> Reporter for JsonArrayReporter<W> {
     }
 }
 
-impl<W: Write + Send> WriterBackedReporter for JsonArrayReporter<W> {
-    type Writer = W;
-
-    fn writer_mut(&mut self) -> &mut Self::Writer {
-        &mut self.writer
-    }
-}
+impl_writer_backed!(JsonArrayReporter);

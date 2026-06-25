@@ -54,7 +54,11 @@ fn web_redirect_non_http_scheme_errors() {
     let source =
         TestApi.web_source_with_autoroute_loopback_calibration(vec![server.url("/to-file")], true);
     let results: Vec<_> = source.chunks().collect();
-    assert_eq!(results.len(), 1, "scheme rejection should produce one error");
+    assert_eq!(
+        results.len(),
+        1,
+        "scheme rejection should produce one error"
+    );
     let err = results[0]
         .as_ref()
         .expect_err("file redirect must fail closed")

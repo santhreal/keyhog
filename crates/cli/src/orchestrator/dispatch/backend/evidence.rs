@@ -190,6 +190,62 @@ impl AutorouteDecision {
             .all(|(_, competitor_interval)| selected_interval.high_ns < competitor_interval.low_ns)
     }
 
+    /// The single deterministic source of truth for which backend a persisted
+    /// timing set routes to. Calibration SELECTS this; validation REQUIRES the
+    /// persisted `backend` to equal it. It is a pure function of the measured
+    /// timing evidence (canonical `Gpu` label — this calibration path only ever
+    /// measures `Gpu`), so a cache that names any other backend is rejected as
+    /// tampered or non-deterministic.
+    ///
+    /// Policy:
+    /// - If one backend is provably fastest (its 95% CI lies entirely below
+    ///   every competitor's), that backend wins — the strongest evidence.
+    /// - Otherwise the empirically-fastest backend is statistically TIED with
+    ///   one or more competitors within measurement precision. A tie is itself a
+    ///   *proven* conclusion that the tied-fastest routes are equivalent, so the
+    ///   lowest-overhead member of the tied-fastest set wins (SimdCpu before
+    ///   CpuFallback before Gpu): when GPU only ties, its launch/transfer cost
+    ///   buys nothing, so the CPU/SIMD path is the sound, not the guessed, route.
+    pub(super) fn resolved_routing_backend(&self) -> Option<ScanBackend> {
+        // Lowest-overhead member of the statistically-tied fastest set (SimdCpu <
+        // CpuFallback < Gpu). An empty winner set means no timing evidence, so
+        // `min_by_key` yields `None`, propagated to the caller as "no persisted
+        // route" — never silently defaulted to a backend.
+        self.fastest_winner_set()
+            .into_iter()
+            .min_by_key(|backend| backend_overhead_rank(*backend))
+    }
+
+    /// True iff exactly one route is provably fastest. Equivalently, the
+    /// resolved winner is separated from every competitor — its 95% CI lies
+    /// entirely below theirs. When false, two or more routes tie within
+    /// measurement precision and routing falls to the lowest-overhead tie-break.
+    pub(super) fn has_separated_fastest_route(&self) -> bool {
+        self.resolved_routing_backend()
+            .is_some_and(|winner| self.selected_backend_has_non_overlapping_confidence(winner))
+    }
+
+    /// The set of routes that are NOT provably beaten by any competitor — i.e.
+    /// no other route's 95% CI lies entirely below this route's CI. Routing is
+    /// decided from confidence intervals, never a single `best_ns` trial, so a
+    /// lucky outlier on a noisy backend can never win over a steadily-faster one.
+    ///
+    /// - Exactly one member  → that route is provably fastest.
+    /// - Two or more members → they are mutually non-separated (a tie); the
+    ///   lowest-overhead member is the sound route.
+    fn fastest_winner_set(&self) -> Vec<ScanBackend> {
+        let intervals = self.route_confidence_intervals(ScanBackend::Gpu);
+        intervals
+            .iter()
+            .filter(|(backend, ci)| {
+                !intervals
+                    .iter()
+                    .any(|(other, other_ci)| other != backend && other_ci.high_ns < ci.low_ns)
+            })
+            .map(|(backend, _)| *backend)
+            .collect()
+    }
+
     fn route_confidence_intervals(
         &self,
         selected_backend: ScanBackend,
@@ -251,6 +307,19 @@ fn gpu_evidence_backend(selected_backend: ScanBackend) -> ScanBackend {
     match selected_backend {
         ScanBackend::MegaScan => ScanBackend::MegaScan,
         _ => ScanBackend::Gpu,
+    }
+}
+
+/// Engagement-overhead rank used to break a statistical tie: lower wins. A tie
+/// means the routes are equally fast within measurement precision, so the
+/// cheapest-to-engage route is the sound choice — SimdCpu (reference, always
+/// available, no GPU launch/transfer) before CpuFallback before any GPU route.
+fn backend_overhead_rank(backend: ScanBackend) -> u8 {
+    match backend {
+        ScanBackend::SimdCpu => 0,
+        ScanBackend::CpuFallback => 1,
+        ScanBackend::Gpu | ScanBackend::MegaScan => 2,
+        _ => 3,
     }
 }
 

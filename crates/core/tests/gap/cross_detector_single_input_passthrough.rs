@@ -1,6 +1,6 @@
 //! Single-element cross-detector dedup must pass through unchanged cardinality.
 
-use keyhog_core::{DedupedMatch, MatchLocation, Severity, dedup_cross_detector};
+use keyhog_core::{dedup_cross_detector, DedupedMatch, MatchLocation, Severity};
 use std::collections::HashMap;
 use std::sync::Arc;
 

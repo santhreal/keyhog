@@ -1,5 +1,6 @@
 //! Persistent autoroute calibration cache schema and validation.
 
+use keyhog_scanner::hw_probe::ScanBackend;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Read;
@@ -293,6 +294,17 @@ fn read_autoroute_cache_file(path: &std::path::Path) -> std::io::Result<Vec<u8>>
     Ok(data)
 }
 
+/// Collapse the two GPU labels to one route class for routing-decision
+/// comparison. `Gpu` and `MegaScan` share the same measured GPU timing evidence
+/// and differ only by a config-driven execution label, so they are equivalent
+/// when checking which route the timings selected. SIMD and CPU stay distinct.
+fn normalized_route_class(backend: ScanBackend) -> ScanBackend {
+    match backend {
+        ScanBackend::MegaScan => ScanBackend::Gpu,
+        other => other,
+    }
+}
+
 fn validate_decision_route_evidence(
     decision: &AutorouteDecision,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -347,19 +359,31 @@ fn validate_decision_route_evidence(
         return Err("selected backend timing evidence is invalid".into());
     }
     let candidates = decision.route_candidates_for_selected_backend(selected_backend);
-    let Some((fastest_backend, _)) = candidates.iter().min_by_key(|(_, ns)| *ns).copied() else {
-        return Err("cache decision has no route timing evidence".into());
-    };
-    if fastest_backend != selected_backend {
-        return Err("selected backend is not the fastest persisted timing evidence".into());
-    }
     let expected_margin = selected_backend_margin_ns(selected_backend, &candidates);
     if decision.selected_margin_ns != expected_margin {
         return Err("cache decision has invalid selected backend margin".into());
     }
-    if !decision.selected_backend_has_non_overlapping_confidence(selected_backend) {
+    // Soundness gate. The persisted backend must equal the deterministic
+    // resolution of the persisted timing evidence (`resolved_routing_backend`) —
+    // the SAME confidence-interval logic calibration used to select it — so a
+    // tampered or non-deterministic cache that names any other backend is
+    // rejected. Routing is decided from 95% CIs, never a single `best_ns` trial.
+    let Some(resolved) = decision.resolved_routing_backend() else {
+        return Err("cache decision has no route timing evidence".into());
+    };
+    // Compare by route CLASS: `Gpu` and `MegaScan` are the same physical GPU
+    // route with a config-driven label, not a timing decision, so a MegaScan
+    // decision is consistent with a resolved `Gpu` winner. SIMD/CPU stay
+    // distinct classes.
+    if normalized_route_class(selected_backend) != normalized_route_class(resolved) {
+        if decision.has_separated_fastest_route() {
+            // One route is provably fastest and it is not the selected one.
+            return Err("selected backend is not the fastest persisted timing evidence".into());
+        }
+        // Two or more routes tie within measurement precision; the selected one
+        // is not the deterministic lowest-overhead tie-break among them.
         return Err(
-            "selected backend timing evidence is not statistically separated from competing route evidence"
+            "selected backend is not the deterministic tie-break among statistically tied routes"
                 .into(),
         );
     }

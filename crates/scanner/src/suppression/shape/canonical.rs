@@ -605,9 +605,7 @@ mod tests {
             "JQQJN-VBWHG-XBC8R-2MV9F-CD7P9"
         ));
         assert!(
-            !looks_like_entropy_canonical_non_secret_shape(
-                "jqqjn-vbwhg-xbc8r-2mv9f-cd7p9"
-            ),
+            !looks_like_entropy_canonical_non_secret_shape("jqqjn-vbwhg-xbc8r-2mv9f-cd7p9"),
             "entropy generation intentionally keeps lowercase dashed keys outside the canonical serial decoy set"
         );
     }

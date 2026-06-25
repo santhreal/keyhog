@@ -1,5 +1,5 @@
 use keyhog_core::{DetectorSpec, MatchLocation, PatternSpec, RawMatch, Severity};
-use keyhog_verifier::{DedupScope, VerificationEngine, VerifyConfig, dedup_matches};
+use keyhog_verifier::{dedup_matches, DedupScope, VerificationEngine, VerifyConfig};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), keyhog_verifier::VerifyError> {

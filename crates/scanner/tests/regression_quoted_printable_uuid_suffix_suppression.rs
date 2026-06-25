@@ -64,8 +64,11 @@ fn quoted_printable_uuid_assignment_suffixes_stay_silent() {
 #[test]
 fn quoted_printable_provider_token_still_surfaces() {
     let scanner = scanner();
-    let secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890AB";
-    let body = "X-Token: ghp=5Fabcdefghijklmnopqrstuvwxyz1234567890AB";
+    // A real, checksum-valid github classic PAT (36 chars after `ghp_`). The
+    // `_` is quoted-printable-encoded as `=5F`; QP decode must reconstruct the
+    // exact token so `github-classic-pat` (length + checksum gated) fires.
+    let secret = "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";
+    let body = "X-Token: ghp=5F1234567890123456789012345678902PDSiF";
     let matches = scan(&scanner, body, "/repo/token.txt");
     assert!(
         matches.iter().any(|m| {

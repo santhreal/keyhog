@@ -92,7 +92,7 @@ pub trait CoreTestApi {
     fn allowlist_is_hash_allowed(&self, allowlist: &Allowlist, credential: &str) -> bool;
     fn allowlist_is_raw_hash_ignored(&self, allowlist: &Allowlist, hash_hex: &str) -> bool;
     fn rule_suppressor_parse(&self, toml_text: &str)
-    -> Result<RuleSuppressor, RuleSuppressorError>;
+        -> Result<RuleSuppressor, RuleSuppressorError>;
     fn rule_suppressor_load(&self, path: &Path) -> Result<RuleSuppressor, RuleSuppressorError>;
     fn raw_match_sanitize_floats(&self, raw_match: RawMatch) -> RawMatch;
     fn raw_match_deduplication_key<'a>(&self, raw_match: &'a RawMatch) -> RawMatchDedupKey<'a>;

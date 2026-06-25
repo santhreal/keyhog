@@ -3,9 +3,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use keyhog_core::{
-    MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding,
     testing::{CoreTestApi, TestApi},
-    write_report,
+    write_report, MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding,
 };
 
 const REMEDIATION_DATA: &str = include_str!("../../data/remediation.toml");

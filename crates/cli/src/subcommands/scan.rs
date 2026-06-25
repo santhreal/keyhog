@@ -29,7 +29,7 @@ use crate::daemon::protocol::{Request, Response, SourceCoverageGaps};
 #[cfg(unix)]
 use crate::daemon::server::default_socket_path;
 use crate::orchestrator::ScanOrchestrator;
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 // The daemon-only result-massaging path (unwrap_scan_results,
 // finalize_for_report) is the only consumer of `RawMatch` /
 // `VerifiedFinding` in this file. The in-process orchestrator path

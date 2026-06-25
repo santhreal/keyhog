@@ -72,7 +72,10 @@ jobs:
 #[test]
 fn real_reversed_provider_token_still_surfaces() {
     let scanner = scanner();
-    let secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890AB";
+    // A real, checksum-valid github classic PAT (36 chars after `ghp_`); the
+    // reverse decoder must restore the exact token so `github-classic-pat`
+    // (length + checksum gated) fires rather than a generic entropy match.
+    let secret = "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";
     let reversed: String = secret.chars().rev().collect();
     let body = format!(r#"token = "{reversed}""#);
     let matches = scan(&scanner, &body, "/repo/reversed.txt");

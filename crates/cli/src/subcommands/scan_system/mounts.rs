@@ -220,7 +220,7 @@ fn decode_octal_escapes(s: &str) -> Result<String> {
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
-    use super::{MountFilters, decoded_mount_target_if_included};
+    use super::{decoded_mount_target_if_included, MountFilters};
 
     #[test]
     fn skip_path_prefixes_match_decoded_mount_targets() {
@@ -314,7 +314,7 @@ fn parse_macos_mount_table(
 }
 
 pub(crate) mod testing {
-    use super::{MountFilters, WindowsDriveClass, include_windows_drive, parse_macos_mount_table};
+    use super::{include_windows_drive, parse_macos_mount_table, MountFilters, WindowsDriveClass};
     use std::path::PathBuf;
 
     pub(crate) fn parse_macos_mount_table_for_test(
@@ -325,8 +325,8 @@ pub(crate) mod testing {
         Ok(parse_macos_mount_table(text, include_network, &filters))
     }
 
-    pub(crate) fn windows_drive_filter_decisions_for_test()
-    -> Result<(bool, bool, bool, bool), toml::de::Error> {
+    pub(crate) fn windows_drive_filter_decisions_for_test(
+    ) -> Result<(bool, bool, bool, bool), toml::de::Error> {
         let filters: MountFilters = toml::from_str(super::BUNDLED_MOUNT_FILTERS)?;
         let local_without_network =
             include_windows_drive("C:\\", WindowsDriveClass::Local, false, &filters);
@@ -356,7 +356,7 @@ pub(crate) mod testing {
 #[cfg(target_os = "windows")]
 fn windows_drives(include_network: bool) -> Result<Vec<PathBuf>> {
     use windows_sys::Win32::Storage::FileSystem::{
-        DRIVE_FIXED, DRIVE_RAMDISK, DRIVE_REMOTE, GetDriveTypeW, GetLogicalDrives,
+        GetDriveTypeW, GetLogicalDrives, DRIVE_FIXED, DRIVE_RAMDISK, DRIVE_REMOTE,
     };
 
     let filters = load_mount_filters()?;

@@ -8,6 +8,9 @@ fn min_confidence_one_accepted() {
         min_confidence: 1.0,
         ..Default::default()
     };
-    keyhog_core::testing::CoreTestApi::scan_config_validate(&keyhog_core::testing::TestApi, &config)
-        .expect("min_confidence=1.0 must be accepted");
+    keyhog_core::testing::CoreTestApi::scan_config_validate(
+        &keyhog_core::testing::TestApi,
+        &config,
+    )
+    .expect("min_confidence=1.0 must be accepted");
 }

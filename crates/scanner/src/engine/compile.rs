@@ -520,7 +520,7 @@ fn build_hot_ac_map_index_by_index(
     detectors: &[DetectorSpec],
     ac_map: &[CompiledPattern],
 ) -> Result<Vec<Option<usize>>> {
-    use crate::simdsieve_prefilter::{HOT_PATTERN_DETECTOR_IDS, HOT_PATTERNS};
+    use crate::simdsieve_prefilter::{HOT_PATTERNS, HOT_PATTERN_DETECTOR_IDS};
 
     HOT_PATTERN_DETECTOR_IDS
         .iter()

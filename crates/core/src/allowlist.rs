@@ -25,7 +25,7 @@ use metadata::*;
 // index) is its own subsystem; the `Allowlist` holds a precompiled index and
 // delegates every path decision to it.
 mod glob;
-use glob::{PathGlobIndex, normalize_path};
+use glob::{normalize_path, PathGlobIndex};
 
 /// User-defined suppressions loaded from `.keyhogignore`: credential hashes, detector IDs, and path globs.
 ///

@@ -58,7 +58,8 @@ fn scanner_path_compat_owner_is_declared_and_used() {
     );
     let entropy_gates = src("src/engine/phase2_entropy/gates.rs");
     assert!(
-        entropy_gates.contains("looks_like_entropy_raw_base64_file_path(chunk.metadata.path.as_deref())"),
+        entropy_gates
+            .contains("looks_like_entropy_raw_base64_file_path(chunk.metadata.path.as_deref())"),
         "phase2 entropy gates must delegate raw-base64 path policy to path_filter"
     );
 

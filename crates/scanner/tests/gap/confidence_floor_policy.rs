@@ -15,12 +15,12 @@
 //! `keyhog_scanner::testing::checksum`, which calls the same CRC32/base62 owner
 //! the validators use; this is a round-trip proof, not a magic literal.
 
-use keyhog_scanner::testing::confidence::known_prefix_confidence_floor;
 use keyhog_scanner::testing::checksum::{
     base62_encode_u32, checksum_adjusted_confidence, crc32_base62_suffix,
     github_classic_pat_with_checksum, npm_token_with_checksum, validate_checksum, ChecksumResult,
     CHECKSUM_VALID_FLOOR,
 };
+use keyhog_scanner::testing::confidence::known_prefix_confidence_floor;
 use keyhog_scanner::ScannerConfig;
 
 /// 6-char base62 CRC32 trailer for a given entropy body (the format GitHub

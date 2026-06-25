@@ -4,7 +4,7 @@
 //! Distinct line locations become additional_locations; same-line duplicates
 //! are aliases and intentionally collapse.
 
-use keyhog_core::{DedupScope, MatchLocation, RawMatch, Severity, dedup_matches};
+use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
 use std::collections::HashMap;
 use std::sync::Arc;
 

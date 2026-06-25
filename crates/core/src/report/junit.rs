@@ -6,7 +6,7 @@ use crate::VerifiedFinding;
 
 use super::{
     escape::{escape_cdata, escape_xml_attr},
-    ReportError, Reporter, WriterBackedReporter,
+    impl_writer_backed, ReportError, Reporter, WriterBackedReporter,
 };
 
 /// Structured JUnit XML findings reporter.
@@ -97,7 +97,7 @@ fn write_testcase<W: Write>(writer: &mut W, finding: &VerifiedFinding) -> Result
         writer,
         "      <failure message=\"{}\" type=\"{}\">",
         escape_xml_attr(&failure_msg),
-        escape_xml_attr(&finding.severity.to_string())
+        escape_xml_attr(finding.severity.as_str())
     )?;
 
     writeln!(writer, "        <![CDATA[")?;
@@ -154,10 +154,4 @@ fn write_testcase<W: Write>(writer: &mut W, finding: &VerifiedFinding) -> Result
     Ok(())
 }
 
-impl<W: Write + Send> WriterBackedReporter for JunitReporter<W> {
-    type Writer = W;
-
-    fn writer_mut(&mut self) -> &mut Self::Writer {
-        &mut self.writer
-    }
-}
+impl_writer_backed!(JunitReporter);

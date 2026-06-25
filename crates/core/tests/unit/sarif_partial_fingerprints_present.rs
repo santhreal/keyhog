@@ -20,11 +20,9 @@ fn sarif_partial_fingerprints_present() {
         "the credential hash must be the stable dedup key"
     );
     // An all-zero hash has no stable identity -> no fingerprint (omitted in SARIF).
-    assert!(
-        keyhog_core::testing::CoreTestApi::credential_fingerprints(
-            &keyhog_core::testing::TestApi,
-            [0; 32].into()
-        )
-        .is_none()
-    );
+    assert!(keyhog_core::testing::CoreTestApi::credential_fingerprints(
+        &keyhog_core::testing::TestApi,
+        [0; 32].into()
+    )
+    .is_none());
 }

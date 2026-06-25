@@ -419,7 +419,7 @@ impl CliTestApi for TestApi {
         args: &ScanArgs,
         allowlist_paths: Vec<String>,
     ) -> Vec<String> {
-        let exclude_paths = args.exclude_paths.as_deref().unwrap_or(&[]); // LAW10: test API compatibility default; production source construction consumes ResolvedScanConfig::exclude_paths
+        let exclude_paths = args.exclude_paths.as_deref().unwrap_or(&[]); // LAW10: test API caller defaults to empty; production source construction consumes ResolvedScanConfig::exclude_paths
         crate::sources::merge_scan_ignore_paths(exclude_paths, allowlist_paths)
     }
     fn validate_cli_path_arg(&self, path: &Path, name: &str) -> Result<()> {
@@ -944,7 +944,7 @@ impl CliTestApi for TestApi {
         let guard = match SCAN_RUNTIME_TEST_LOCK.lock() {
             Ok(guard) => guard,
             // LAW10: test-only lock poisoning would cascade unrelated failures;
-            // keep the guard held so shared scan-runtime state remains serialized.
+            // recover the inner guard so shared scan-runtime state remains serialized.
             Err(poisoned) => {
                 SCAN_RUNTIME_TEST_LOCK.clear_poison();
                 poisoned.into_inner()

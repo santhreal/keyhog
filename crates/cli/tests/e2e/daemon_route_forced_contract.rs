@@ -1,8 +1,8 @@
 #![cfg(unix)]
 
-use crate::e2e::support::{DaemonGuard, binary};
+use crate::e2e::support::{binary, DaemonGuard};
 use keyhog::daemon::protocol::{Request, Response};
-use keyhog::testing::{API, CliTestApi as _};
+use keyhog::testing::{CliTestApi as _, API};
 use std::io::Write;
 use std::process::{Command, Stdio};
 use tempfile::TempDir;

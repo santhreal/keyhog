@@ -12,7 +12,10 @@ fn merkle_metadata_unchanged_matches_only_on_exact_pair() {
         p.clone(),
         1_700_000_000_000_000_000,
         4096,
-        keyhog_core::testing::CoreTestApi::merkle_hash_content(&keyhog_core::testing::TestApi, b"x"),
+        keyhog_core::testing::CoreTestApi::merkle_hash_content(
+            &keyhog_core::testing::TestApi,
+            b"x",
+        ),
     );
     assert!(idx.metadata_unchanged(&p, 1_700_000_000_000_000_000, 4096));
     assert!(!idx.metadata_unchanged(&p, 1_700_000_000_000_000_001, 4096));

@@ -499,7 +499,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             return Vec::new();
         }
 
-        let selected_backend = self.resolve_backend_for_scan(backend, chunk.data.len() as u64); // LAW10: automatic CPU-tier choice is relabeled to the backend that actually runs
+        let selected_backend = self.resolve_backend_for_scan(backend, chunk.data.len() as u64); // LAW10: operator-visible — the automatic CPU-tier choice is relabeled to the backend that actually runs; not a silent degrade
         gpu_forced::deny_silent_gpu_degrade(self, selected_backend);
         tracing::trace!(
             target: "keyhog::routing",

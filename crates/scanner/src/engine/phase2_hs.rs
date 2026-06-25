@@ -91,10 +91,17 @@ impl Phase2HsEngine {
             dropped.push((phase2_idx, phase2_patterns[phase2_idx].0.regex.clone()));
         }
         if !dropped.is_empty() {
-            tracing::warn!(
+            // LAW10: NOT a degrade — these patterns run on the regex host path
+            // (see `mark`/`any_match`) with RECALL IDENTICAL to the HS path, so
+            // there is nothing to surface loudly. It is a static capability fact
+            // (the same count every build), so a per-scan WARN was pure stderr
+            // noise that also masked real errors in the installer's first-line
+            // reason capture. Demoted to debug (visible via RUST_LOG); recall is
+            // unaffected and no fallback is hidden.
+            tracing::debug!(
                 target: "keyhog::phase2",
                 count = dropped.len(),
-                "HS prefilter: {} always-active pattern(s) on the loud regex host path (HS-incompatible)",
+                "HS prefilter: {} always-active pattern(s) run on the regex host path (HS-incompatible); recall identical",
                 dropped.len(),
             );
         }

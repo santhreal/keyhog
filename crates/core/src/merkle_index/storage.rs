@@ -13,9 +13,9 @@ use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
 use super::{
+    tmp_hygiene::{sweep_stale_tmp_files, MERKLE_TMP_PREFIX},
     CacheEntry, CacheFileFingerprint, CacheKey, MerkleIndex, MerkleLoadReport, MerkleLoadStatus,
     SCHEMA_VERSION,
-    tmp_hygiene::{MERKLE_TMP_PREFIX, sweep_stale_tmp_files},
 };
 use crate::hex_encode;
 use crate::merkle_spec_hash::hex_to_array;
@@ -382,7 +382,7 @@ impl MerkleIndex {
 
     fn remember_cache_file_fingerprint(&self, path: &Path) {
         if let Ok(fingerprint) = cache_file_fingerprint(path) {
-            // LAW10: failed post-write fingerprint leaves cache untrusted; loader rejects missing fingerprint instead of trusting stale entries.
+            // LAW10: fail-closed — a failed post-write fingerprint leaves the cache untrusted; the loader rejects a missing fingerprint instead of trusting stale entries.
             *self.cache_file_fingerprint.write() = fingerprint;
         }
     }

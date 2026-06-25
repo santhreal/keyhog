@@ -20,6 +20,10 @@ repository collections, S3/GCS/Azure Blob buckets, and running systems for leake
 decode-through (base64/hex/url/protobuf), confidence scoring, SARIF output,
 zero runtime configuration. Default `keyhog scan .` works out of the box.
 
+<p align="center">
+  <img src="demo/keyhog-scan.gif" alt="keyhog scan — boxed findings with severity, confidence, file:line, and remediation, then a results summary and an honest coverage-gap line" width="860" />
+</p>
+
 ### Add it to your CI (one workflow file)
 
 ```yaml
@@ -110,15 +114,37 @@ or `install.ps1 -Calibrate` to replace the persisted calibration. Explicit
 `--backend` overrides are for diagnostics and benchmarking,
 not evidence that autoroute is correct.
 
+The visible calibration phase measures every real workload class on your
+hardware — stdin, small/large files, many-file trees, decode-heavy input, git
+history/blobs/diff, a loopback web URL, and a live container image — timing each
+backend per class and persisting only a route it can prove fastest (or the sound
+lowest-overhead tie-break when two routes are statistically tied). The install
+refuses to finish unless every class calibrates:
+
+<p align="center">
+  <img src="demo/keyhog-calibrate.gif" alt="install.sh --calibrate streaming the 16-probe autoroute sweep — empty/64 KiB stdin, 4/64 KiB and 1/8/32 MiB files, decode-heavy, many-file trees, git history/blobs/diff, web URL, and a live docker image — each workload class measuring every backend and landing PASS, then the persisted decisions summary and 'Autoroute calibration phase complete'" width="860" />
+</p>
+
+`keyhog backend` prints the live decision for this host: the hardware probe and
+the size-keyed routing matrix where small inputs stay on `simd-regex` and large
+chunks cross into `gpu-region-presence` once the per-tier byte thresholds are
+met — a measured, explainable function of host and input size, never a guess.
+
+<p align="center">
+  <img src="demo/keyhog-backend.gif" alt="keyhog backend — hardware probe (RTX 5090, AVX-512, io_uring) and the size-driven autoroute decision matrix: simd-regex for small inputs, gpu-region-presence once per-tier byte thresholds are met" width="860" />
+</p>
+
 The `simdsieve` prefilter is a performance layer, not a separate detector: a
 hit surfaces under its **canonical detector id** (`aws-access-key`,
 `github-classic-pat`, `slack-bot-token`, …) - identical on every platform and
 build, whether the fast path or the full regex engine made the find.
 
-Backend selection is reported on startup:
+Backend selection is reported on startup (the host line also names the GPU and
+`io_uring` when present):
 
 ```
-keyhog v0.5.40 | 16 cores | SIMD: AVX-512 | Hyperscan | 902 detectors
+v0.5.40 · secret scanner · 902 detectors
+⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 902 detectors (6054 patterns) | backend=simd-regex
 ```
 
 **Full documentation:** [santhsecurity.github.io/keyhog](https://santhsecurity.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, exit codes, env vars, contributing. Source under `docs/`.
@@ -216,6 +242,12 @@ keyhog repair                # reinstall a known-good binary if the self-test fa
 keyhog uninstall             # remove the binary (dry run; pass --yes to actually delete)
 ```
 
+`keyhog doctor` — host probe, install/PATH resolution, and a four-way self-test (scan engine end-to-end, GPU scan path, GPU literal set, GPU MoE shader vs CPU reference). It never reports healthy unless the GPU path proves itself on this host:
+
+<p align="center">
+  <img src="demo/keyhog-doctor.gif" alt="keyhog doctor — host probe (RTX 5090, AVX-512, Hyperscan), one keyhog on PATH, 902 embedded detectors, and a four-way self-test (scan engine, GPU scan path, GPU literal set, GPU MoE shader vs CPU reference) all reporting PASS, then 'keyhog is healthy'" width="860" />
+</p>
+
 `keyhog doctor` reuses the scanner's own hardware probe and runs a real
 end-to-end self-test - it plants a synthetic secret and confirms the
 binary detects it - so it is the authoritative "will keyhog work here?"
@@ -262,6 +294,12 @@ keyhog scan . --deep                           # max detection depth
 keyhog scan . --incremental                    # BLAKE3 Merkle skip → 10–100× CI loop
 ```
 
+One scan, every CI/SIEM dialect — `text · json · jsonl · sarif · csv · html · junit · github · gitlab`, all from the same engine:
+
+<p align="center">
+  <img src="demo/keyhog-formats.gif" alt="keyhog emitting the same findings as text, JSON, and SARIF — machine-readable surfaces for pipelines and code scanning" width="860" />
+</p>
+
 Exit codes: `0` clean, `1` findings above the severity floor, `2` user error
 (bad path, bad config, unsupported flag), `3` system error or detector-corpus
 audit failure, `4` `backend --self-test` failed, `10` live credentials found
@@ -299,6 +337,14 @@ Each detector ships as a [TOML file](./detectors/) (data, not code):
 service metadata, regex patterns, keywords, companion fields,
 verification handler. Adding a new detector is 5–10 lines of TOML;
 the [contributor guide](./CONTRIBUTING.md) walks through it.
+
+`keyhog explain <id>` dumps any detector's full spec — patterns, keywords,
+verification endpoint — plus a service-keyed rotation and step-by-step
+remediation guide, so a finding is never a black box:
+
+<p align="center">
+  <img src="demo/keyhog-explain.gif" alt="keyhog explain github-classic-pat — detector spec dump (pattern ghp_[A-Za-z0-9]{36}, keyword, verification URL) followed by the github rotation guide and step-by-step remediation" width="860" />
+</p>
 
 Browse the full catalog at [`/site/detectors.html`](./site/detectors.html) -
 loads all 902 with severity + service + keyword filter.
@@ -629,6 +675,14 @@ Precedence (rightmost wins): compiled defaults → `.keyhog.toml`
 (walked up from the scan path) → CLI flags. The canonical defaults live in
 `ScanConfig::default()` (`crates/core/src/config.rs`). Full reference:
 [`docs/src/reference/configuration.md`](./docs/src/reference/configuration.md).
+
+`keyhog config --effective <path>` prints the exact resolved configuration that
+would reach the scanner — without scanning — so the precedence chain is provable
+(here a CLI `--min-confidence 0.6` overrides the compiled `0.40` default):
+
+<p align="center">
+  <img src="demo/keyhog-config.gif" alt="keyhog config --effective demo --min-confidence 0.6 printing the resolved [effective-config] block: backend, gpu, ml, entropy, decode, and limit knobs, with min_confidence resolved to 0.6 from the CLI override" width="860" />
+</p>
 
 Suppress specific findings (not whole detectors) with a `.keyhogignore`
 file by hash, path glob, or detector id - see

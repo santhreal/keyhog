@@ -80,7 +80,7 @@ pub(crate) fn telemetry_serial_lock() -> MutexGuard<'static, ()> {
     match lock.lock() {
         Ok(guard) => guard,
         // LAW10: testing-only mutex poisoning would cascade unrelated failures;
-        // keep the guard held so process-global telemetry state stays serialized.
+        // recover the inner guard so process-global telemetry state stays serialized.
         Err(poisoned) => {
             lock.clear_poison();
             poisoned.into_inner()

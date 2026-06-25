@@ -207,7 +207,7 @@ pub(crate) fn read_listing_response_body(
 ) -> Result<String, SourceError> {
     let max_response_bytes_u64 = match u64::try_from(max_response_bytes) {
         Ok(value) => value,
-        Err(_) => u64::MAX, // LAW10: on hypothetical usize wider than u64 targets, reqwest content lengths and Read::take caps are u64-bounded, so every representable HTTP body length is still capped.
+        Err(_) => u64::MAX, // LAW10: unreachable on real platforms — only a usize wider than u64 takes this arm, where reqwest content lengths and Read::take caps are u64-bounded, so every representable HTTP body length is still capped.
     };
     if let Some(content_length) = response.content_length() {
         if content_length > max_response_bytes_u64 {

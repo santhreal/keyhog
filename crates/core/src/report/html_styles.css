@@ -236,13 +236,19 @@ header {
 /* ---- 4 · LAYOUT ---------------------------------------------------------- */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 296px 1fr;
+  grid-template-columns: 296px minmax(0, 1fr);
   gap: 22px;
+  align-items: start;
 }
 @media (max-width: 1024px) {
   .dashboard-grid { grid-template-columns: 1fr; }
 }
 .sidebar { display: flex; flex-direction: column; gap: 22px; }
+/* The main column stacks the coverage banner above the findings table and owns
+   the wide track. `min-width: 0` lets the table shrink to the column (so its
+   own `.table-wrapper` handles any overflow) instead of forcing the whole grid
+   wider and pushing the table into a sideways-scrolling sliver. */
+.main-content { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
 
 /* ---- 5 · CARDS ----------------------------------------------------------- */
 .card {
@@ -434,7 +440,15 @@ header {
 /* ---- 9 · TABLE ----------------------------------------------------------- */
 .findings-panel { display: flex; flex-direction: column; gap: 16px; }
 .table-wrapper { overflow-x: auto; width: 100%; }
-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+/* `table-layout: fixed` + explicit column widths: every cell wraps/ellipsizes
+   inside its own track, so columns can never collide or force a sideways scroll
+   at any viewport width. */
+table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; table-layout: fixed; }
+thead th:nth-child(1), tbody td:nth-child(1) { width: 21%; }   /* detector */
+thead th:nth-child(2), tbody td:nth-child(2) { width: 13%; }   /* service */
+thead th:nth-child(3), tbody td:nth-child(3) { width: 34%; }   /* file path */
+thead th:nth-child(4), tbody td:nth-child(4) { width: 11%; }   /* severity */
+thead th:nth-child(5), tbody td:nth-child(5) { width: 21%; }   /* verification */
 
 thead th {
   padding: 10px 16px;
@@ -446,7 +460,37 @@ thead th {
   font-family: var(--font-mono);
   border-bottom: 1px solid var(--border);
 }
-tbody td { padding: 13px 16px; border-bottom: 1px solid var(--border); }
+tbody td {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+/* Only the detector id (long, hyphenated) may break to its own line; everything
+   else either truncates with an ellipsis (path, service) or stays on one line
+   (badges). Short words like "CRITICAL" or "datadog" must never be shattered
+   mid-word, so the global break-anywhere rule is gone. */
+tbody td:nth-child(1) small { overflow-wrap: anywhere; }
+/* Service cell: one tidy line, ellipsis when a service name runs long. */
+.kh-service {
+  display: inline-block; max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  vertical-align: bottom;
+  font-family: var(--font-mono); font-size: 12px;
+}
+
+/* File-path cell: filename first (bold, whole), directory below (dimmed, left
+   truncated to its tail), line number accented. A wall of long absolute paths
+   stays compact and scannable instead of wrapping into tall mid-word blocks. */
+.kh-path { font-family: var(--font-mono); display: flex; flex-direction: column; gap: 1px; min-width: 0; max-width: 100%; }
+.kh-path-file {
+  color: var(--text); font-weight: 600; font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.kh-path-dir {
+  color: var(--text-muted); font-size: 11px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.kh-path-line { color: var(--accent-primary); margin-left: 1px; }
 
 tbody tr.finding-row { cursor: pointer; transition: background 0.12s ease; }
 tbody tr.finding-row:hover { background: var(--bg-inset); }
@@ -464,6 +508,7 @@ tbody tr.finding-row:hover td:first-child { box-shadow: inset 2px 0 0 var(--acce
   font-family: var(--font-mono);
   border: 1px solid currentColor;
   border-radius: var(--radius);
+  white-space: nowrap;
 }
 .badge-critical    { color: var(--badge-critical-ink); background: var(--color-critical); border-color: var(--color-critical); }
 .badge-high        { color: var(--badge-high-ink);     background: var(--color-high);     border-color: var(--color-high); }
@@ -474,11 +519,17 @@ tbody tr.finding-row:hover td:first-child { box-shadow: inset 2px 0 0 var(--acce
 
 .status-badge {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 7px;
   font-family: var(--font-mono);
 }
-.status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+/* Verification reads as a two-line stack — primary verdict on top, the dim
+   qualifier ("skipped", "no verifier", "active") beneath — so it never wraps
+   mid-phrase and mirrors the path cell's filename/dir rhythm. */
+.status-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; line-height: 1.25; }
+.status-primary { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status-qual { font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
 .dot-live         { background: var(--color-live); box-shadow: 0 0 8px var(--color-live); }
 .dot-revoked      { background: var(--color-revoked); }
 .dot-dead         { background: var(--color-dead); }
@@ -496,7 +547,7 @@ tbody tr.finding-row:hover td:first-child { box-shadow: inset 2px 0 0 var(--acce
   width: 8px;
   height: 8px;
 }
-.status-badge--unattempted span:last-child {
+.status-badge--unattempted .status-primary {
   color: var(--text-muted);
   text-decoration: underline dotted var(--border-hi);
   text-underline-offset: 3px;

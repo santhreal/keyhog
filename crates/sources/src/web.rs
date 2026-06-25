@@ -294,8 +294,9 @@ fn web_response_kind_from_content_type(
     let raw = match headers.get(reqwest::header::CONTENT_TYPE)?.to_str() {
         Ok(raw) => raw,
         Err(_error) => {
-            // LAW10: invalid Content-Type is only a routing hint failure; the
-            // URL-extension classifier below still chooses a scannable path.
+            // LAW10: invalid Content-Type is only a routing hint failure;
+            // recall-preserving — the URL-extension classifier below still
+            // chooses a scannable path.
             return None;
         }
     };

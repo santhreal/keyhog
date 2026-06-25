@@ -10,4 +10,6 @@ pub use crate::engine::{
 };
 pub use crate::error::{Result, ScanError};
 pub use crate::hw_probe::{probe_hardware, select_backend, HardwareCaps, ScanBackend};
-pub use crate::types::{set_regex_dfa_limit, ScannerConfig, ScannerTuningConfig};
+pub use crate::types::{
+    regex_dfa_limit_default, set_regex_dfa_limit, ScannerConfig, ScannerTuningConfig,
+};

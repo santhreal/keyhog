@@ -4,8 +4,7 @@ use keyhog_core::decode_standard_base64;
 
 #[test]
 fn encoding_rejects_invalid_alphabet_characters() {
-    let err = decode_standard_base64("SGVsbG8!")
-        .expect_err("bang is outside base64 alphabet");
+    let err = decode_standard_base64("SGVsbG8!").expect_err("bang is outside base64 alphabet");
     assert!(
         err.contains("invalid base64 char"),
         "expected alphabet error, got: {err}"

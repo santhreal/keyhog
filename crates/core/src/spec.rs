@@ -13,8 +13,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-pub use load::{DETECTOR_TOML_FILE_BYTES, SpecError, load_detectors, read_detector_toml_file};
-pub use validate::{QualityIssue, validate_detector};
+pub use load::{load_detectors, read_detector_toml_file, SpecError, DETECTOR_TOML_FILE_BYTES};
+pub use validate::{validate_detector, QualityIssue};
 
 /// Metadata field specification for verification results.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -199,14 +199,14 @@ pub struct OobSpec {
     /// `oob_timeout_max` to bound scan time.
     #[serde(default)]
     pub timeout_secs: Option<u64>,
-    /// Verification policy:
-    /// - `OobAndHttp` (default): both HTTP success criteria *and* OOB
+    /// Verification policy (TOML wire values shown; serde is `snake_case`):
+    /// - `oob_and_http` (default): both HTTP success criteria *and* OOB
     ///   callback must hold. This is the strict mode for webhook-style
     ///   detectors where 200 OK is necessary but not sufficient.
-    /// - `OobOnly`: ignore HTTP success, trust the OOB callback. For
+    /// - `oob_only`: ignore HTTP success, trust the OOB callback. For
     ///   detectors where the API has no useful HTTP response shape but
     ///   provably triggers an outbound request (e.g., one-way push tokens).
-    /// - `OobOptional`: HTTP success alone verifies; OOB just enriches
+    /// - `oob_optional`: HTTP success alone verifies; OOB just enriches
     ///   metadata with `oob_observed=true|false` for the report.
     #[serde(default)]
     pub policy: OobPolicy,

@@ -34,6 +34,35 @@ use crate::hw_probe::ScanBackend;
 
 const GPU_POSITIONED_LITERAL_MAX_MATCHES: u32 = 65_536;
 
+/// Smallest byte window the positioned-literal pager will split to. A window at
+/// or below this size that STILL overflows the match cap is pathologically dense
+/// (more than the cap's worth of literal matches in a few KB), so paging cannot
+/// make progress and the path degrades loudly instead of subdividing forever.
+const MIN_POSITIONED_WINDOW_BYTES: usize = 8 * 1024;
+
+/// Split an over-cap positioned-literal window into two overlapping children, or
+/// `None` when the window is already at the `min_splittable` floor (the caller
+/// then degrades loudly rather than subdividing a pathologically dense window
+/// forever). The left child extends `overlap` bytes past the midpoint, so a
+/// literal of length `overlap + 1` (the longest positioned literal) straddling
+/// the split is still contained whole in the left child; the right child keeps
+/// the parent's right edge. Together the children cover every byte of
+/// `[win_start, win_end)` with no gap, and the overlap-zone duplicates are
+/// collapsed by the per-row sort+dedup downstream.
+fn split_positioned_window(
+    win_start: usize,
+    win_end: usize,
+    overlap: usize,
+    min_splittable: usize,
+) -> Option<((usize, usize), (usize, usize))> {
+    let span = win_end - win_start;
+    if span <= min_splittable {
+        return None;
+    }
+    let mid = win_start + span / 2;
+    Some(((win_start, (mid + overlap).min(win_end)), (mid, win_end)))
+}
+
 struct GpuRegionPresenceEvidence {
     presence: Vec<u32>,
     confirmed_anchor_literal_matches: Option<Vec<Vec<(u32, u32)>>>,
@@ -494,42 +523,6 @@ impl CompiledScanner {
             report_positioned_gpu_candidate_loss(reason);
             return GpuPositionEvidence::default();
         };
-        let matches = match super::gpu_literal_scratch::scan_gpu_literal_matches_with_scratch(
-            matcher,
-            backend,
-            haystack,
-            GPU_POSITIONED_LITERAL_MAX_MATCHES,
-        ) {
-            Ok(matches) => matches,
-            Err(error) => {
-                let reason = error.to_string();
-                let policy_reason = format!("positioned GPU candidate collection failed: {reason}");
-                super::gpu_forced::deny_silent_gpu_degrade_with_reason(
-                    self,
-                    ScanBackend::Gpu,
-                    Some(&policy_reason),
-                );
-                self.record_gpu_degrade(format!(
-                    "positioned GPU candidate collection failed: {reason}"
-                ));
-                report_positioned_gpu_candidate_loss(reason);
-                return GpuPositionEvidence::default();
-            }
-        };
-        if matches.len() >= GPU_POSITIONED_LITERAL_MAX_MATCHES as usize {
-            let reason = format!(
-                "positioned literal scan reached cap {GPU_POSITIONED_LITERAL_MAX_MATCHES}; \
-                 refusing incomplete positioned candidates"
-            );
-            super::gpu_forced::deny_silent_gpu_degrade_with_reason(
-                self,
-                ScanBackend::Gpu,
-                Some(&reason),
-            );
-            self.record_gpu_degrade(reason.clone());
-            report_positioned_gpu_candidate_loss(reason);
-            return GpuPositionEvidence::default();
-        }
         let confirmed_base = 0usize;
         let confirmed_end = confirmed_count;
         let generic_base = confirmed_end;
@@ -537,26 +530,109 @@ impl CompiledScanner {
         let mut confirmed_rows =
             (confirmed_count > 0).then(|| vec![Vec::new(); region_starts.len()]);
         let mut generic_rows = (generic_count > 0).then(|| vec![Vec::new(); region_starts.len()]);
-        for m in matches {
-            let pattern_id = m.pattern_id as usize;
-            let is_confirmed = pattern_id >= confirmed_base && pattern_id < confirmed_end;
-            let is_generic = pattern_id >= generic_base && pattern_id < generic_end;
-            if !is_confirmed && !is_generic {
-                continue;
-            }
-            let Some(region) =
-                super::phase2_gpu_dfa::match_region(region_starts, haystack.len(), m.start, m.end)
-            else {
-                continue;
+
+        // Longest positioned literal. Segment windows overlap by `max_len - 1`
+        // bytes so a literal straddling a split point is still found whole in the
+        // left window; literals never contain the `\0` region separator, so a
+        // match never spans a region boundary, and the per-row sort+dedup below
+        // collapses the duplicate positions the overlap produces. max_literal_len
+        // is 0 only when there are zero positioned literals; then the scan yields
+        // zero matches, so overlap=0 cannot drop a straddling literal.
+        let max_literal_len = self.gpu_position_literals.as_ref().map_or(0, |lits| {
+            // LAW10: recall-preserving — 0 means no literals exist, hence no matches.
+            lits.iter().map(Vec::len).max().unwrap_or(0)
+        });
+        let overlap = max_literal_len.saturating_sub(1);
+        let min_splittable = overlap.saturating_mul(2).max(MIN_POSITIONED_WINDOW_BYTES);
+
+        // Adaptive paging keeps the GPU positioned path COMPLETE at any input
+        // size. The whole haystack is one window — zero overhead for inputs that
+        // already fit under the match cap (the common case, byte-identical to the
+        // old single-dispatch path). A window that overflows the fixed GPU match
+        // buffer is halved (with overlap) until each piece fits, instead of the
+        // old behaviour: degrading the entire scan to CPU/SIMD the moment a large
+        // keyword-dense batch crossed 65 536 positioned matches.
+        let mut windows = vec![(0usize, haystack.len())];
+        while let Some((win_start, win_end)) = windows.pop() {
+            let slice = &haystack[win_start..win_end];
+            let matches = match super::gpu_literal_scratch::scan_gpu_literal_matches_with_scratch(
+                matcher,
+                backend,
+                slice,
+                GPU_POSITIONED_LITERAL_MAX_MATCHES,
+            ) {
+                Ok(matches) => matches,
+                Err(error) => {
+                    let reason = error.to_string();
+                    let policy_reason =
+                        format!("positioned GPU candidate collection failed: {reason}");
+                    super::gpu_forced::deny_silent_gpu_degrade_with_reason(
+                        self,
+                        ScanBackend::Gpu,
+                        Some(&policy_reason),
+                    );
+                    self.record_gpu_degrade(format!(
+                        "positioned GPU candidate collection failed: {reason}"
+                    ));
+                    report_positioned_gpu_candidate_loss(reason);
+                    return GpuPositionEvidence::default();
+                }
             };
-            let region_start = region_starts[region] as usize;
-            let start = m.start as usize;
-            if start < region_start {
+            if matches.len() >= GPU_POSITIONED_LITERAL_MAX_MATCHES as usize {
+                let Some((left, right)) =
+                    split_positioned_window(win_start, win_end, overlap, min_splittable)
+                else {
+                    let span = win_end - win_start;
+                    let reason = format!(
+                        "positioned literal window of {span} bytes still exceeds cap \
+                         {GPU_POSITIONED_LITERAL_MAX_MATCHES}; pathological literal density"
+                    );
+                    super::gpu_forced::deny_silent_gpu_degrade_with_reason(
+                        self,
+                        ScanBackend::Gpu,
+                        Some(&reason),
+                    );
+                    self.record_gpu_degrade(reason.clone());
+                    report_positioned_gpu_candidate_loss(reason);
+                    return GpuPositionEvidence::default();
+                };
+                windows.push(left);
+                windows.push(right);
                 continue;
             }
-            let local_start = start - region_start;
-            if let Ok(local_start) = u32::try_from(local_start) {
-                // LAW10: impossible local offsets outside GPU u32 space are not emitted to GPU row buffers; CPU/SIMD paths retain recall.
+            for m in matches {
+                let pattern_id = m.pattern_id as usize;
+                let is_confirmed = pattern_id >= confirmed_base && pattern_id < confirmed_end;
+                let is_generic = pattern_id >= generic_base && pattern_id < generic_end;
+                if !is_confirmed && !is_generic {
+                    continue;
+                }
+                // Window-relative match offsets map back to absolute haystack
+                // offsets before region resolution.
+                let abs_start = win_start + m.start as usize;
+                let abs_end = win_start + m.end as usize;
+                let (Ok(abs_start_u32), Ok(abs_end_u32)) =
+                    (u32::try_from(abs_start), u32::try_from(abs_end))
+                else {
+                    // LAW10: offsets outside GPU u32 space are not emitted to GPU row buffers; CPU/SIMD paths retain recall.
+                    continue;
+                };
+                let Some(region) = super::phase2_gpu_dfa::match_region(
+                    region_starts,
+                    haystack.len(),
+                    abs_start_u32,
+                    abs_end_u32,
+                ) else {
+                    continue;
+                };
+                let region_start = region_starts[region];
+                if abs_start_u32 < region_start {
+                    continue;
+                }
+                // region_start <= abs_start_u32 <= u32::MAX (abs_start_u32 was
+                // proven to fit u32 above), so the window-local offset is exact
+                // u32 subtraction — no fallible narrowing and no dropped match.
+                let local_start = abs_start_u32 - region_start;
                 if is_confirmed {
                     if let Some(rows) = confirmed_rows.as_mut() {
                         rows[region].push(((pattern_id - confirmed_base) as u32, local_start));
@@ -639,6 +715,59 @@ mod tests {
             Ok(())
         })
         .expect("folded single-chunk batch");
+    }
+
+    #[test]
+    fn positioned_window_split_covers_all_bytes_and_keeps_straddling_literals_whole() {
+        // overlap = longest positioned literal - 1. A literal of length
+        // `overlap + 1` straddling the midpoint must be found whole on the left.
+        let overlap = 31usize;
+        let max_literal_len = overlap + 1;
+        let min_splittable = overlap.saturating_mul(2).max(MIN_POSITIONED_WINDOW_BYTES);
+
+        let win_start = 0usize;
+        let win_end = 1_000_000usize;
+        let (left, right) = split_positioned_window(win_start, win_end, overlap, min_splittable)
+            .expect("a 1 MB window is well above the split floor");
+
+        // Children cover [win_start, win_end) with no uncovered gap: the left
+        // child starts at win_start, the right child ends at win_end, and the
+        // right child begins no later than the left child ends.
+        assert_eq!(left.0, win_start, "left child starts at the parent start");
+        assert_eq!(right.1, win_end, "right child ends at the parent end");
+        assert!(
+            right.0 <= left.1,
+            "no uncovered gap: right child starts at {} but left child ends at {}",
+            right.0,
+            left.1
+        );
+
+        // Every literal of the maximum length that straddles the split point is
+        // fully contained in the left child — the recall-load-bearing invariant.
+        let mid = right.0;
+        for start in (mid - overlap)..mid {
+            let end = start + max_literal_len;
+            if end > mid {
+                assert!(
+                    end <= left.1,
+                    "straddling literal [{start}, {end}) of len {max_literal_len} escapes the \
+                     left child [{}, {}) — a real match would be split and lost",
+                    left.0,
+                    left.1
+                );
+            }
+        }
+
+        // At the floor the window is not splittable, so the caller degrades
+        // loudly instead of looping forever.
+        assert!(
+            split_positioned_window(0, min_splittable, overlap, min_splittable).is_none(),
+            "a window at the split floor must not subdivide"
+        );
+        assert!(
+            split_positioned_window(0, min_splittable + 1, overlap, min_splittable).is_some(),
+            "one byte above the floor is still splittable"
+        );
     }
 
     #[test]

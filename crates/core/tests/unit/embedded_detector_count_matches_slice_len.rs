@@ -1,7 +1,7 @@
 //! Migrated from `src/lib.rs` inline tests.
 
-use keyhog_core::testing::{CoreTestApi, TestApi};
 use keyhog_core::embedded_detector_count;
+use keyhog_core::testing::{CoreTestApi, TestApi};
 
 #[test]
 fn embedded_detector_count_matches_slice_len() {

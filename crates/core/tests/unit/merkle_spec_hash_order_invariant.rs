@@ -4,15 +4,24 @@ use keyhog_core::compute_spec_hash;
 use keyhog_core::{CompanionSpec, DetectorSpec, PatternSpec, Severity};
 
 fn make(id: &str) -> DetectorSpec {
-    DetectorSpec { tests: Vec::new(),
+    DetectorSpec {
+        tests: Vec::new(),
         id: id.to_string(),
         name: id.to_string(),
         service: id.to_string(),
         severity: Severity::Medium,
         keywords: vec![],
         min_confidence: None,
-        patterns: vec![PatternSpec { regex: format!("{id}-[A-Z]+"), ..Default::default() }],
-        companions: vec![CompanionSpec { name: "k".into(), regex: "v=([A-Z]+)".into(), within_lines: 3, required: false }],
+        patterns: vec![PatternSpec {
+            regex: format!("{id}-[A-Z]+"),
+            ..Default::default()
+        }],
+        companions: vec![CompanionSpec {
+            name: "k".into(),
+            regex: "v=([A-Z]+)".into(),
+            within_lines: 3,
+            required: false,
+        }],
         verify: None,
     }
 }

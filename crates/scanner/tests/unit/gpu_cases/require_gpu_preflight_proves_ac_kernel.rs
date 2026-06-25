@@ -1,9 +1,6 @@
 #[test]
 fn require_gpu_preflight_proves_production_ac_kernel() {
-    let source = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/gpu/policy.rs"
-    ));
+    let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu/policy.rs"));
     let preflight = source
         .split("pub fn require_gpu_preflight() -> Result<(), String> {")
         .nth(1)

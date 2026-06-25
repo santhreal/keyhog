@@ -4,7 +4,7 @@ use std::io::Write;
 
 use crate::VerifiedFinding;
 
-use super::{HtmlScanMetadata, ReportError, Reporter, WriterBackedReporter};
+use super::{impl_writer_backed, HtmlScanMetadata, ReportError, Reporter, WriterBackedReporter};
 
 /// Make a serialized JSON string safe to inline inside an HTML `<script>`
 /// element's raw-text content.
@@ -145,10 +145,4 @@ impl<W: Write + Send> Reporter for HtmlReporter<W> {
     }
 }
 
-impl<W: Write + Send> WriterBackedReporter for HtmlReporter<W> {
-    type Writer = W;
-
-    fn writer_mut(&mut self) -> &mut Self::Writer {
-        &mut self.writer
-    }
-}
+impl_writer_backed!(HtmlReporter);

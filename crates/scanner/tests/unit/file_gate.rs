@@ -2,12 +2,12 @@
 
 use base64::Engine;
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
-use keyhog_scanner::checksum::{ChecksumResult, validate_checksum};
-use keyhog_scanner::confidence::{ConfidenceSignals, compute_confidence};
-use keyhog_scanner::context::{CodeContext, infer_context};
+use keyhog_scanner::checksum::{validate_checksum, ChecksumResult};
+use keyhog_scanner::confidence::{compute_confidence, ConfidenceSignals};
+use keyhog_scanner::context::{infer_context, CodeContext};
 use keyhog_scanner::decode::{base64_decode, hex_decode};
 use keyhog_scanner::engine::CompiledScanner;
-use keyhog_scanner::entropy::{HIGH_ENTROPY_THRESHOLD, shannon_entropy};
+use keyhog_scanner::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD};
 use keyhog_scanner::gpu::{batch_ml_inference, gpu_available, gpu_probe};
 use keyhog_scanner::ml_scorer::{
     model_card_json, model_card_summary, model_version, score, score_with_config,
@@ -16,22 +16,22 @@ use keyhog_scanner::resolution::resolve_matches;
 use keyhog_scanner::telemetry::{
     drain_events, enable_dogfood, record_example_suppression, testing::reset,
 };
-use keyhog_scanner::testing::BigramBloom;
 use keyhog_scanner::testing::build_propagation_table;
 use keyhog_scanner::testing::confidence::apply_post_ml_penalties;
 use keyhog_scanner::testing::entropy_fast::shannon_entropy_simd;
 use keyhog_scanner::testing::extract_literal_prefix;
 use keyhog_scanner::testing::fragment_cache::FragmentCache;
 use keyhog_scanner::testing::jwt::{analyze, looks_like_jwt};
-use keyhog_scanner::testing::multiline::{MultilineConfig, preprocess_multiline};
-use keyhog_scanner::testing::segment_attribution::{GlobalMatch, Segment, map_offsets_to_segments};
+use keyhog_scanner::testing::multiline::{preprocess_multiline, MultilineConfig};
+use keyhog_scanner::testing::segment_attribution::{map_offsets_to_segments, GlobalMatch, Segment};
 use keyhog_scanner::testing::unicode_hardening::is_evasion_char;
+use keyhog_scanner::testing::BigramBloom;
 use keyhog_scanner::testing::{
-    AlphabetScreen, compile_state_is_ok, compute_line_offsets, match_entropy, normalize_chunk_data,
+    compile_state_is_ok, compute_line_offsets, match_entropy, normalize_chunk_data, AlphabetScreen,
 };
-use keyhog_scanner::testing::{NUM_FEATURES, compute_features_public};
+use keyhog_scanner::testing::{compute_features_public, NUM_FEATURES};
 use keyhog_scanner::types::ScannerConfig;
-use keyhog_scanner::{ScanError, probe_hardware, select_backend};
+use keyhog_scanner::{probe_hardware, select_backend, ScanError};
 
 fn demo_chunk(data: &str) -> Chunk {
     Chunk {
@@ -729,11 +729,9 @@ fn engine_backend_error() {
         data: String::new().into(),
         metadata: ChunkMetadata::default(),
     };
-    assert!(
-        scanner
-            .scan_with_backend(&chunk, ScanBackend::CpuFallback)
-            .is_empty()
-    );
+    assert!(scanner
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .is_empty());
 }
 
 // ── crates/scanner/src/engine/mod.rs ──────────────────────────────────
@@ -792,12 +790,10 @@ fn engine_phase2_happy() {
     let scanner =
         CompiledScanner::compile(vec![demo_detector(r"ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
-    assert!(
-        scanner
-            .scan(&demo_chunk(&format!("export TOKEN={token}")))
-            .iter()
-            .any(|m| m.credential.as_ref() == token)
-    );
+    assert!(scanner
+        .scan(&demo_chunk(&format!("export TOKEN={token}")))
+        .iter()
+        .any(|m| m.credential.as_ref() == token));
 }
 #[test]
 fn engine_phase2_error() {
@@ -810,23 +806,19 @@ fn engine_phase2_error() {
 #[test]
 fn engine_scan_filters_happy() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    assert!(
-        scanner
-            .scan(&demo_chunk("username = randomuser1234567890"))
-            .is_empty()
-    );
+    assert!(scanner
+        .scan(&demo_chunk("username = randomuser1234567890"))
+        .is_empty());
 }
 #[test]
 fn engine_scan_filters_error() {
     let scanner =
         CompiledScanner::compile(vec![demo_detector(r"ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
-    assert!(
-        scanner
-            .scan(&demo_chunk(&format!("api_key = \"{token}\"")))
-            .iter()
-            .any(|m| m.credential.as_ref() == token)
-    );
+    assert!(scanner
+        .scan(&demo_chunk(&format!("api_key = \"{token}\"")))
+        .iter()
+        .any(|m| m.credential.as_ref() == token));
 }
 
 // ── crates/scanner/src/engine/scan_gpu.rs + hot_patterns.rs ───────────

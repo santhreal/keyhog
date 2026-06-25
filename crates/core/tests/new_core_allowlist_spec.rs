@@ -9,8 +9,8 @@
 
 use keyhog_core::Allowlist;
 use keyhog_core::{
-    CredentialHash, DetectorSpec, MatchLocation, PatternSpec, QualityIssue, Severity,
-    VerificationResult, VerifiedFinding, hex_encode, validate_detector,
+    hex_encode, validate_detector, CredentialHash, DetectorSpec, MatchLocation, PatternSpec,
+    QualityIssue, Severity, VerificationResult, VerifiedFinding,
 };
 use std::collections::HashMap;
 use std::sync::Arc;

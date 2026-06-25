@@ -1,7 +1,8 @@
 use crate::adjudicate::{
-    CandidateMatch, EntropyFallbackSignal, EntropyGenerationSignal, EntropyShapeStage,
-    FinalEmitSignals, GenericBridgeSignal, GenericValueShapeStage, HotPatternSignal, MatchCtx,
-    ProcessCandidateSignals, ReportAdjudicationPolicy, StageId, Verdict, adjudicate_match,
+    adjudicate_match, CandidateMatch, EntropyFallbackSignal, EntropyGenerationSignal,
+    EntropyShapeStage, FinalEmitSignals, GenericBridgeSignal, GenericValueShapeStage,
+    HotPatternSignal, MatchCtx, ProcessCandidateSignals, ReportAdjudicationPolicy, StageId,
+    Verdict,
 };
 use crate::context::CodeContext;
 use crate::suppression::NamedDetectorSuppressionCtx;

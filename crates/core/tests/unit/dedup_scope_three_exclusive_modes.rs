@@ -2,7 +2,7 @@
 //! Contract: For the same input, DedupScope::None, DedupScope::File, and
 //! DedupScope::Credential must produce different (and correct) survivor counts.
 
-use keyhog_core::{DedupScope, MatchLocation, RawMatch, Severity, dedup_matches};
+use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
 use std::collections::HashMap;
 use std::sync::Arc;
 

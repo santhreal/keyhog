@@ -522,6 +522,72 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 }
 
+// F2 regression: on a fast host the routes tie within measurement precision, so
+// no single backend is statistically separated. Calibration must still persist a
+// SOUND decision (route to the lowest-overhead tied backend) instead of failing
+// the whole phase and leaving auto routing with no cache. The selected backend
+// must equal `resolved_routing_backend()`; any other choice is rejected.
+#[test]
+fn tied_calibration_persists_lowest_overhead_backend_not_an_empty_cache() {
+    let dir = tempfile::TempDir::new().expect("tempdir for tie calibration");
+    let path = dir.path().join("tie-autoroute-cache.json");
+    let digest = 0x0FF1_CE00_0FF1_CE00u64;
+    let config_digest = 0xD1CE_D1CE_D1CE_D1CEu64;
+    let host = test_host(Some("NVIDIA GeForce RTX 5090"));
+    let key = test_workload_key();
+
+    // SimdCpu and the GPU route measure identically (20ms) -> overlapping 95%
+    // confidence intervals -> a statistical tie. The lowest-overhead member is
+    // SimdCpu, so that is the only sound persisted choice.
+    let tie_to_simd =
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 20, None, Some(20));
+    assert_eq!(
+        tie_to_simd.resolved_routing_backend(),
+        Some(ScanBackend::SimdCpu),
+        "a SimdCpu/GPU tie must resolve to the lowest-overhead route (SimdCpu)"
+    );
+    let mut decisions = HashMap::new();
+    decisions.insert(key, tie_to_simd);
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &decisions,
+    )
+    .expect("a statistically tied calibration must persist the tie-break, not an empty cache");
+    let loaded =
+        load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host).unwrap();
+    assert_eq!(
+        loaded, decisions,
+        "tied decision must round-trip through the cache"
+    );
+
+    // The SAME tie naming the higher-overhead tied backend (GPU) is NOT the
+    // deterministic tie-break and must be rejected on write — a tampered or
+    // non-deterministic decision cannot pretend a tie favors the GPU.
+    let mut wrong = HashMap::new();
+    wrong.insert(
+        key,
+        AutorouteDecision::new(ScanBackend::Gpu, 8 * 1024 * 1024, 1, 20, None, Some(20)),
+    );
+    let err = save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &wrong,
+    )
+    .expect_err("a tie that names the higher-overhead backend must be rejected")
+    .to_string();
+    assert!(
+        err.contains("deterministic tie-break among statistically tied routes"),
+        "tie-break rejection should name the contract, got {err:?}"
+    );
+}
+
 #[test]
 fn missing_autoroute_cache_does_not_require_gpu_runtime_identity() {
     let dir = tempfile::TempDir::new().expect("tempdir for missing autoroute cache");
@@ -2091,6 +2157,11 @@ fn autoroute_cache_rejects_selected_backend_with_overlapping_confidence() {
         None,
         None,
     );
+    // SIMD has one lucky 10ms trial but a wide CI centred near 30ms; CPU is a
+    // steady 11ms with a tight CI entirely below SIMD's. Routing is decided from
+    // confidence intervals, never the single best trial, so CPU is the provably
+    // fastest route and a SIMD selection must be rejected — a lucky outlier can
+    // never win over a steadily-faster backend.
     write_tampered_decision_cache(
         &path,
         digest,
@@ -2098,15 +2169,15 @@ fn autoroute_cache_rejects_selected_backend_with_overlapping_confidence() {
         &host,
         key,
         bad,
-        "not statistically separated",
+        "selected backend is not the fastest persisted timing evidence",
     );
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
         loaded
-            .expect_err("overlapping timing confidence must be rejected")
+            .expect_err("a lucky-outlier backend must be rejected for the CI-faster route")
             .to_string()
-            .contains("not statistically separated"),
-        "autoroute cache load must not trust a selected backend whose timing interval overlaps a competing route"
+            .contains("selected backend is not the fastest persisted timing evidence"),
+        "autoroute cache load must route by confidence interval, not a single best_ns trial"
     );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant

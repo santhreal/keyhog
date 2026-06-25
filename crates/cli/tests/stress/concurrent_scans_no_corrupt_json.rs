@@ -17,13 +17,23 @@ fn concurrent_scans_no_corrupt_json() {
         handles.push(thread::spawn(move || {
             b.wait();
             let output = Command::new(binary())
-                .args(["scan", "--no-daemon", "--backend", "simd", "--format", "json"])
+                .args([
+                    "scan",
+                    "--no-daemon",
+                    "--backend",
+                    "simd",
+                    "--format",
+                    "json",
+                ])
                 .arg(&path)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
                 .expect("spawn");
-            (output.status.code(), String::from_utf8_lossy(&output.stdout).into_owned())
+            (
+                output.status.code(),
+                String::from_utf8_lossy(&output.stdout).into_owned(),
+            )
         }));
     }
 

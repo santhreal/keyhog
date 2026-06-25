@@ -6,8 +6,8 @@
 
 use keyhog_core::decode_standard_base64;
 use keyhog_core::{
-    Credential, DedupScope, MatchLocation, RawMatch, SensitiveString, Severity, dedup_matches,
-    redact,
+    dedup_matches, redact, Credential, DedupScope, MatchLocation, RawMatch, SensitiveString,
+    Severity,
 };
 use keyhog_core::{finding_metadata, key_id_canary_status};
 use std::collections::HashMap;
@@ -54,13 +54,11 @@ fn credential_from_text_len_and_expose() {
 #[test]
 fn credential_empty_is_empty() {
     let c = Credential::from("");
-    assert!(
-        keyhog_core::testing::CoreTestApi::credential_expose_secret(
-            &keyhog_core::testing::TestApi,
-            &c
-        )
-        .is_empty()
-    );
+    assert!(keyhog_core::testing::CoreTestApi::credential_expose_secret(
+        &keyhog_core::testing::TestApi,
+        &c
+    )
+    .is_empty());
     assert_eq!(
         keyhog_core::testing::CoreTestApi::credential_expose_secret(
             &keyhog_core::testing::TestApi,

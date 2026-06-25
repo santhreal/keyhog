@@ -4,7 +4,7 @@ use std::io::Write;
 
 use crate::{Severity, VerifiedFinding};
 
-use super::{ReportError, Reporter, WriterBackedReporter};
+use super::{impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
 
 /// GitHub Actions workflow command annotations.
 pub(crate) struct GithubAnnotationsReporter<W: Write + Send> {
@@ -48,13 +48,7 @@ impl<W: Write + Send> Reporter for GithubAnnotationsReporter<W> {
     }
 }
 
-impl<W: Write + Send> WriterBackedReporter for GithubAnnotationsReporter<W> {
-    type Writer = W;
-
-    fn writer_mut(&mut self) -> &mut Self::Writer {
-        &mut self.writer
-    }
-}
+impl_writer_backed!(GithubAnnotationsReporter);
 
 fn annotation_level(severity: Severity) -> &'static str {
     match severity {
