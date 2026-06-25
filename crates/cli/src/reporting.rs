@@ -304,27 +304,12 @@ fn push_path_target(targets: &mut Vec<String>, kind: &str, path: Option<&std::pa
     }
 }
 
-fn redact_url_target(raw: &str) -> String {
+// `pub(crate)` so the relocated unit test reaches it through the `crate::testing`
+// facade (the `reporting_no_inline_tests` gate forbids inline test modules here).
+pub(crate) fn redact_url_target(raw: &str) -> String {
     let without_fragment = raw.split_once('#').map_or(raw, |(head, _)| head);
     match without_fragment.split_once('?') {
         Some((head, _)) => format!("{head}?<redacted>"),
         None => without_fragment.to_string(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::redact_url_target;
-
-    #[test]
-    fn url_targets_hide_queries_and_fragments() {
-        assert_eq!(
-            redact_url_target("https://example.com/app.js?token=secret#frag"),
-            "https://example.com/app.js?<redacted>"
-        );
-        assert_eq!(
-            redact_url_target("https://example.com/app.js#frag"),
-            "https://example.com/app.js"
-        );
     }
 }

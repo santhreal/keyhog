@@ -61,7 +61,7 @@ fn planted_secret_emits_github_error_annotation() {
         "annotation must carry a title property: {stdout:?}"
     );
     assert!(
-        stdout.contains("redacted=AKIA...YZBN"),
+        stdout.contains("redacted=AK...BN"),
         "annotation message must carry the redacted credential: {stdout:?}"
     );
     assert!(

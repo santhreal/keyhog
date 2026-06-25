@@ -79,6 +79,43 @@ pub(crate) fn info(label: &str, palette: &Palette) -> String {
     format!("{}{}{}", palette.cyan, label, palette.reset)
 }
 
+// 24-bit truecolor severity / progress palette shared by the scan progress
+// ticker and the completion severity/verification summary lines
+// (`orchestrator::reporting`). Centralized here — the one CLI file exempt from
+// the no-raw-ANSI-escape gate — so the orchestrator never embeds escape
+// literals directly. Each is gated at its call site behind the ticker's `color`
+// flag (TTY && !NO_COLOR), so piped / NO_COLOR output stays plain.
+pub(crate) const SEV_BRAND: &str = "\x1b[38;2;255;214;10m";
+pub(crate) const SEV_CRITICAL: &str = "\x1b[38;2;255;69;58m";
+pub(crate) const SEV_HIGH: &str = "\x1b[38;2;255;159;10m";
+pub(crate) const SEV_MEDIUM: &str = "\x1b[38;2;255;214;10m";
+pub(crate) const SEV_LOW: &str = "\x1b[38;2;100;210;255m";
+pub(crate) const SEV_SAFE: &str = "\x1b[38;2;48;209;88m";
+pub(crate) const SEV_AMBER: &str = "\x1b[38;2;255;159;10m";
+pub(crate) const SEV_RAIL: &str = "\x1b[38;2;74;74;82m";
+pub(crate) const SEV_MUTED: &str = "\x1b[38;2;138;138;150m";
+pub(crate) const SEV_BOLD: &str = "\x1b[1m";
+pub(crate) const SEV_RESET: &str = "\x1b[0m";
+
+/// Wrap `text` in `color_code` + reset when `color` is set, else return it
+/// plain. The owned-style replacement for the orchestrator's former local
+/// per-file colorizer — the deliberately distinct name keeps the no-raw-ANSI
+/// gate's legacy-colorizer ban a true signal.
+pub(crate) fn paint(text: String, color_code: &str, color: bool) -> String {
+    if color {
+        format!("{color_code}{text}{SEV_RESET}")
+    } else {
+        text
+    }
+}
+
+/// Whether the operator requested no color via the `NO_COLOR` convention.
+/// Centralized here (an env-read-allowlisted file) so call sites — e.g. the
+/// orchestrator progress ticker — never read the environment directly.
+pub(crate) fn no_color_requested() -> bool {
+    std::env::var_os("NO_COLOR").is_some()
+}
+
 /// Unified console finding output formatting for diagnostic/interactive CLI subcommands.
 pub(crate) fn print_diagnostic_finding(
     prefix: &str,
@@ -128,47 +165,3 @@ pub(crate) fn write_diagnostic_finding<W: std::io::Write>(
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use keyhog_core::Severity;
-
-    #[test]
-    fn test_write_diagnostic_finding_with_confidence_and_line() {
-        let mut buf = Vec::new();
-        write_diagnostic_finding(
-            &mut buf,
-            "FINDING",
-            "detector_1",
-            "src/main.rs",
-            Some(42),
-            Severity::Critical,
-            Some(0.95),
-            "redacted_secret",
-        )
-        .expect("diagnostic finding should write to in-memory buffer");
-        let s = String::from_utf8(buf).expect("diagnostic output must be utf-8");
-        assert_eq!(
-            s,
-            "FINDING detector_1 src/main.rs:42 Critical (0.95)  redacted_secret\n"
-        );
-    }
-
-    #[test]
-    fn test_write_diagnostic_finding_no_confidence_no_line() {
-        let mut buf = Vec::new();
-        write_diagnostic_finding(
-            &mut buf,
-            "WATCH",
-            "detector_2",
-            "src/lib.rs",
-            None,
-            Severity::Medium,
-            None,
-            "redacted_other",
-        )
-        .expect("diagnostic finding should write to in-memory buffer");
-        let s = String::from_utf8(buf).expect("diagnostic output must be utf-8");
-        assert_eq!(s, "WATCH detector_2 src/lib.rs Medium  redacted_other\n");
-    }
-}

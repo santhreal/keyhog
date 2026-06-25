@@ -7,7 +7,18 @@ use std::process::Command;
 fn scan_dogfood_one_event_per_example_suppression() {
     let (_dir, path) = write_temp_file("demo.env", "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--dogfood", "--format", "text"])
+        // Pin the deterministic CPU-SIMD backend (the e2e convention): this
+        // verifies dogfood-event dedup, not autoroute selection, and an
+        // un-calibrated `auto` scan fails closed by design.
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--no-daemon",
+            "--dogfood",
+            "--format",
+            "text",
+        ])
         .arg(&path)
         .output()
         .expect("spawn");
@@ -23,7 +34,7 @@ fn scan_dogfood_one_event_per_example_suppression() {
     );
     assert_eq!(
         trace["dogfood"]["example_suppressions_total"].as_u64(),
-        Some(6),
+        Some(8),
         "counter still tracks every pipeline-stage suppression; stderr={stderr}"
     );
     assert_eq!(

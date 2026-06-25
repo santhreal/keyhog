@@ -134,11 +134,15 @@ fn windowed_file_reports_absolute_line_numbers() {
             .and_then(|c| c.as_str())
             .unwrap_or("");
         let line = loc.get("line").and_then(|l| l.as_u64());
-        // Redaction is `AKIA...<last4>` (prefix + last 4 chars), so match on
-        // the unique 4-char suffix of each distinct planted key.
+        // Redaction is `<first edge>...<last edge>` where edge =
+        // (len/8).clamp(1,4) (see `core::redact`); these AWS keys are 20 ASCII
+        // chars so edge = 2, i.e. `AK...<last2>`. Build the exact expected form
+        // per key and match on equality so each finding maps unambiguously back
+        // to the line it was planted on.
         for (slot, key) in keys.iter().enumerate() {
-            let tail = &key[key.len() - 4..];
-            if redacted.starts_with("AKIA") && redacted.ends_with(tail) {
+            let edge = (key.len() / 8).clamp(1, 4);
+            let expected = format!("{}...{}", &key[..edge], &key[key.len() - edge..]);
+            if redacted == expected {
                 reported_line[slot] = line;
             }
         }

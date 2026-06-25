@@ -132,7 +132,8 @@ fn run_scenario(path: &Path, daemon_runtime_dir: Option<&Path>) -> Result<(), St
         .iter()
         .map(|a| a.replace("{corpus}", &corpus_dir))
         .collect();
-    if daemon_runtime_dir.is_some() && daemon_eligible_single_file_scan(&args) {
+    let daemon_routed = daemon_runtime_dir.is_some() && daemon_eligible_single_file_scan(&args);
+    if daemon_routed {
         args.insert(1, "--daemon=on".to_string());
     }
 
@@ -142,7 +143,15 @@ fn run_scenario(path: &Path, daemon_runtime_dir: Option<&Path>) -> Result<(), St
         cmd.env("XDG_RUNTIME_DIR", runtime_dir);
     }
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    apply_default_scan_backend(&mut cmd, &arg_refs);
+    if daemon_routed {
+        // The daemon resolves its backend server-side (it is started with
+        // `--backend simd` in `DaemonGuard`); a per-request `--backend` is a
+        // control the daemon protocol forbids (it would exit 2 "cannot be
+        // honored"). Route the scan as-is so the daemon's own simd backend runs.
+        cmd.args(&arg_refs);
+    } else {
+        apply_default_scan_backend(&mut cmd, &arg_refs);
+    }
     let out = cmd
         .current_dir(tmp.path())
         .output()

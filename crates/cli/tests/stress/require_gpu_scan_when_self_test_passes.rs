@@ -9,11 +9,23 @@ fn require_gpu_scan_when_self_test_passes() {
         .args(["backend", "--self-test"])
         .output()
         .expect("backend self-test spawn");
-    if self_test.status.code() != Some(0) {
-        eprintln!(
-            "skip: GPU self-test failed on this host; stderr={}",
-            String::from_utf8_lossy(&self_test.stderr)
-        );
+    // `backend --self-test` exits 0 both when the GPU stack PASSES and when it
+    // SKIPS (no adapter, or a build without the `gpu` feature — e.g. ci-lean).
+    // This test only has a contract when a GPU genuinely PASSED, so skip unless
+    // the self-test ran a real GPU: a SKIP / "no GPU adapter" result means
+    // `--require-gpu` is *correctly* allowed to refuse, and asserting exit 0
+    // here would be a host/build-dependent false failure (Law 8: no usable GPU
+    // is honest, not a bug to paper over).
+    let self_test_report = format!(
+        "{}{}",
+        String::from_utf8_lossy(&self_test.stdout),
+        String::from_utf8_lossy(&self_test.stderr)
+    );
+    let gpu_unavailable = self_test_report.contains("no GPU adapter")
+        || self_test_report.contains("SKIP")
+        || self_test_report.contains("not detected");
+    if self_test.status.code() != Some(0) || gpu_unavailable {
+        eprintln!("skip: GPU self-test did not PASS a real GPU on this host; report={self_test_report}");
         return;
     }
 

@@ -8,7 +8,11 @@ use std::time::Duration;
 #[test]
 fn sigint_mid_scan_exits_130() {
     let child = Command::new(binary())
-        .args(["scan", "--no-daemon"])
+        // Pin the deterministic CPU-SIMD backend so the scan actually RUNS long
+        // enough to be interrupted mid-flight: an un-calibrated `auto` scan
+        // fails closed (exit 2) before the 800 ms SIGINT, which would race the
+        // signal contract this test exists to verify.
+        .args(["scan", "--backend", "simd", "--no-daemon"])
         .arg(workspace_detectors())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())

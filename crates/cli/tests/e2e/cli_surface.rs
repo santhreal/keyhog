@@ -111,8 +111,8 @@ fn scan_text_secret_exit_1_and_redacts() {
     let (so, _se, code) = out(&["scan", "--no-daemon", "--format", "text", &p]);
     assert_eq!(code, Some(1), "a file with a live key must exit 1");
     assert!(
-        so.contains("AKIA"),
-        "text report should show a redacted preview:\n{so}"
+        so.contains("AK...YA"),
+        "text report should show the redacted preview (first2...last2):\n{so}"
     );
 }
 
@@ -240,7 +240,10 @@ fn scan_deep_mode_finds_aws_key() {
     let (_d, p) = tmp_with("c.env", AWS);
     let (so, _se, code) = out(&["scan", "--no-daemon", "--deep", "--format", "json", &p]);
     assert_eq!(code, Some(1));
-    assert!(so.contains("AKIA"), "deep mode missed the AWS key: {so}");
+    assert!(
+        so.contains("aws-access-key"),
+        "deep mode missed the AWS key: {so}"
+    );
 }
 
 #[test]

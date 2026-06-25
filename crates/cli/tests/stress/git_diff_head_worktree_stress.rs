@@ -50,6 +50,10 @@ fn git_diff_head_worktree_secret_exit_one() {
             "HEAD",
             "--format",
             "json",
+            // Deterministic CPU-SIMD backend (e2e convention): this verifies
+            // git-diff recall, not autoroute; un-calibrated `auto` fails closed.
+            "--backend",
+            "simd",
             "--no-suppress-test-fixtures",
         ])
         .current_dir(repo)

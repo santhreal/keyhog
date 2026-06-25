@@ -428,3 +428,35 @@ fn scan_system_output_uses_atomic_file_writer() {
         "shared CLI output writer must write a same-directory temp file, sync it, then persist over the target"
     );
 }
+
+// `/proc/mounts` octal-escape decode + Tier-B skip-prefix matching is Linux-only
+// (relocated out of `mounts.rs` for the no-inline-tests folder gate).
+#[cfg(target_os = "linux")]
+#[test]
+fn skip_path_prefixes_match_decoded_mount_targets() {
+    let skip = vec!["/mnt/my disk/".to_string()];
+    let skipped = API
+        .decoded_mount_target_if_included_for_test("/mnt/my\\040disk/secrets", skip.clone())
+        .expect("valid octal mount target");
+    assert_eq!(
+        skipped, None,
+        "Tier-B skip prefixes must match decoded /proc/mounts targets"
+    );
+    let included = API
+        .decoded_mount_target_if_included_for_test("/mnt/other\\040disk/secrets", skip)
+        .expect("valid octal mount target");
+    assert_eq!(included.as_deref(), Some("/mnt/other disk/secrets"));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn malformed_mount_escape_is_loud() {
+    let err = API
+        .decoded_mount_target_if_included_for_test("/mnt/bad\\999disk", Vec::new())
+        .expect_err("invalid octal mount escape must be an error");
+    assert!(
+        err.to_string().contains("decode /proc/mounts target")
+            && format!("{err:#}").contains("invalid octal mount escape"),
+        "malformed mount escape must include path context and parse cause; got {err:#}"
+    );
+}

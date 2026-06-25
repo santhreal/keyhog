@@ -71,7 +71,31 @@ pub struct FindingSink(crate::subcommands::scan_system::testing::FindingSink);
 /// Opaque orchestrator wrapper.
 pub struct ScanOrchestrator(crate::orchestrator::ScanOrchestrator);
 
+/// Opaque skip-dir policy wrapper for the relocated `skip_dirs` unit tests.
+#[derive(Debug)]
+pub struct SkipDirPolicyView(crate::skip_dirs::SkipDirPolicy);
+
+impl SkipDirPolicyView {
+    pub fn is_watch_component(&self, component: &str) -> bool {
+        self.0.is_watch_component(component)
+    }
+    pub fn is_git_discovery_component(&self, component: &str) -> bool {
+        self.0.is_git_discovery_component(component)
+    }
+}
+
 pub type DownloadFuture<'a> = Pin<Box<dyn Future<Output = Result<Vec<u8>>> + 'a>>;
+
+/// Verification-state tallies exposed to the relocated completion-summary
+/// tests without leaking the crate-internal `VerificationBreakdown` type.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct VerificationTally {
+    pub live: usize,
+    pub inactive: usize,
+    pub skipped: usize,
+    pub unverifiable: usize,
+    pub incomplete: usize,
+}
 
 /// Integration-test operations that would otherwise force implementation
 /// modules into the production public API.
@@ -250,6 +274,12 @@ pub trait CliTestApi {
     ) -> Result<Vec<PathBuf>>;
     fn windows_drive_filter_decisions_for_test(&self) -> Result<(bool, bool, bool, bool)>;
     fn windows_drive_skip_prefix_decisions_for_test(&self) -> (bool, bool);
+    #[cfg(target_os = "linux")]
+    fn decoded_mount_target_if_included_for_test(
+        &self,
+        target: &str,
+        skip_path_prefixes: Vec<String>,
+    ) -> Result<Option<String>>;
     fn scan_system_discover_git_repos_for_test(&self, root: &Path) -> Result<Vec<PathBuf>>;
     fn scan_system_chunk_fits_space_cap(
         &self,
@@ -346,6 +376,58 @@ pub trait CliTestApi {
     fn scan_runtime_snapshot(&self, _guard: &ScanRuntimeGuard) -> ScanRuntimeSnapshot;
     fn scanned_chunks(&self, _guard: &ScanRuntimeGuard) -> usize;
     fn scanner_panicked(&self, _guard: &ScanRuntimeGuard) -> bool;
+
+    // Completion-summary & progress-ticker renderers (pure formatting fns whose
+    // unit tests were relocated out of `orchestrator::reporting` for the
+    // `*_no_inline_tests` folder gates).
+    fn verification_tally(&self, findings: &[VerifiedFinding]) -> VerificationTally;
+    fn render_verification_summary(
+        &self,
+        findings: &[VerifiedFinding],
+        color: bool,
+    ) -> Option<String>;
+    fn render_severity_summary(&self, findings: &[VerifiedFinding], color: bool) -> Option<String>;
+    fn render_progress_bar(&self, frac: f64, width: usize, color: bool) -> String;
+    fn render_scanning_ticker(
+        &self,
+        scanned: usize,
+        total: usize,
+        findings: usize,
+        elapsed: f64,
+        frame: usize,
+        color: bool,
+    ) -> String;
+    fn render_verification_ticker(
+        &self,
+        total: usize,
+        elapsed: f64,
+        frame: usize,
+        color: bool,
+    ) -> String;
+    fn render_reporting_ticker(
+        &self,
+        total: usize,
+        elapsed: f64,
+        frame: usize,
+        color: bool,
+    ) -> String;
+    fn fmt_secs(&self, secs: f64) -> String;
+    fn ticker_guard_spawns_and_joins(&self) -> bool;
+    fn redact_url_target(&self, raw: &str) -> String;
+
+    fn skip_dir_policy_from_toml(
+        &self,
+        toml: &str,
+    ) -> std::result::Result<SkipDirPolicyView, String>;
+    fn skip_dir_policy_from_bundled(&self) -> std::result::Result<SkipDirPolicyView, String>;
+    fn skip_dir_policy_from_bundled_plus_user(
+        &self,
+        user_toml: &str,
+    ) -> std::result::Result<SkipDirPolicyView, String>;
+    fn skip_dir_section_counts(
+        &self,
+        toml: &str,
+    ) -> std::result::Result<(usize, usize, usize), String>;
 }
 
 impl CliTestApi for TestApi {
@@ -747,6 +829,17 @@ impl CliTestApi for TestApi {
     fn windows_drive_skip_prefix_decisions_for_test(&self) -> (bool, bool) {
         crate::subcommands::scan_system::testing::windows_drive_skip_prefix_decisions_for_test()
     }
+    #[cfg(target_os = "linux")]
+    fn decoded_mount_target_if_included_for_test(
+        &self,
+        target: &str,
+        skip_path_prefixes: Vec<String>,
+    ) -> Result<Option<String>> {
+        crate::subcommands::scan_system::testing::decoded_mount_target_if_included_for_test(
+            target,
+            skip_path_prefixes,
+        )
+    }
     fn scan_system_discover_git_repos_for_test(&self, root: &Path) -> Result<Vec<PathBuf>> {
         crate::subcommands::scan_system::testing::git_repos_for_test(root)
     }
@@ -995,6 +1088,101 @@ impl CliTestApi for TestApi {
     }
     fn scanner_panicked(&self, _guard: &ScanRuntimeGuard) -> bool {
         crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn verification_tally(&self, findings: &[VerifiedFinding]) -> VerificationTally {
+        let breakdown = crate::orchestrator::verification_breakdown(findings);
+        VerificationTally {
+            live: breakdown.live,
+            inactive: breakdown.inactive,
+            skipped: breakdown.skipped,
+            unverifiable: breakdown.unverifiable,
+            incomplete: breakdown.incomplete,
+        }
+    }
+    fn render_verification_summary(
+        &self,
+        findings: &[VerifiedFinding],
+        color: bool,
+    ) -> Option<String> {
+        let breakdown = crate::orchestrator::verification_breakdown(findings);
+        crate::orchestrator::render_verification_line(&breakdown, findings.len(), color)
+    }
+    fn render_severity_summary(&self, findings: &[VerifiedFinding], color: bool) -> Option<String> {
+        crate::orchestrator::render_severity_line(findings, color)
+    }
+    fn render_progress_bar(&self, frac: f64, width: usize, color: bool) -> String {
+        crate::orchestrator::render_progress_bar(frac, width, color)
+    }
+    fn render_scanning_ticker(
+        &self,
+        scanned: usize,
+        total: usize,
+        findings: usize,
+        elapsed: f64,
+        frame: usize,
+        color: bool,
+    ) -> String {
+        crate::orchestrator::render_ticker_line(scanned, total, findings, elapsed, frame, color)
+    }
+    fn render_verification_ticker(
+        &self,
+        total: usize,
+        elapsed: f64,
+        frame: usize,
+        color: bool,
+    ) -> String {
+        crate::orchestrator::render_verification_ticker_line(total, elapsed, frame, color)
+    }
+    fn render_reporting_ticker(
+        &self,
+        total: usize,
+        elapsed: f64,
+        frame: usize,
+        color: bool,
+    ) -> String {
+        crate::orchestrator::render_reporting_ticker_line(total, elapsed, frame, color)
+    }
+    fn fmt_secs(&self, secs: f64) -> String {
+        crate::orchestrator::fmt_secs(secs)
+    }
+    fn ticker_guard_spawns_and_joins(&self) -> bool {
+        use std::sync::atomic::Ordering;
+        use std::time::Duration;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let guard = crate::orchestrator::TickerGuard::spawn("test", move |done, _started| {
+            while !done.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            let _ = tx.send(()); // LAW10: test-only ticker notification; receiver timeout below is the observable contract, recall-irrelevant
+        });
+        guard.stop();
+        rx.recv_timeout(Duration::from_secs(1)).is_ok()
+    }
+    fn redact_url_target(&self, raw: &str) -> String {
+        crate::reporting::redact_url_target(raw)
+    }
+
+    fn skip_dir_policy_from_toml(
+        &self,
+        toml: &str,
+    ) -> std::result::Result<SkipDirPolicyView, String> {
+        crate::skip_dirs::testing::policy_from_toml(toml).map(SkipDirPolicyView)
+    }
+    fn skip_dir_policy_from_bundled(&self) -> std::result::Result<SkipDirPolicyView, String> {
+        crate::skip_dirs::testing::policy_from_bundled().map(SkipDirPolicyView)
+    }
+    fn skip_dir_policy_from_bundled_plus_user(
+        &self,
+        user_toml: &str,
+    ) -> std::result::Result<SkipDirPolicyView, String> {
+        crate::skip_dirs::testing::policy_from_bundled_plus_user(user_toml).map(SkipDirPolicyView)
+    }
+    fn skip_dir_section_counts(
+        &self,
+        toml: &str,
+    ) -> std::result::Result<(usize, usize, usize), String> {
+        crate::skip_dirs::testing::section_counts(toml)
     }
 }
 

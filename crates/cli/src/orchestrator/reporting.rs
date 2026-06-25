@@ -112,16 +112,8 @@ pub(crate) fn verification_breakdown(findings: &[VerifiedFinding]) -> Verificati
     b
 }
 
-fn colorize(text: String, color_code: &str, color: bool) -> String {
-    if color {
-        format!("{color_code}{text}{C_RESET}")
-    } else {
-        text
-    }
-}
-
 fn count_token(count: usize, label: &str, color_code: &str, color: bool) -> String {
-    colorize(format!("{count} {label}"), color_code, color)
+    crate::style::paint(format!("{count} {label}"), color_code, color)
 }
 
 fn dot_join(parts: &[String], color: bool) -> String {
@@ -345,26 +337,23 @@ pub(crate) fn report_backend_summary(
     eprintln!("{}INFO{} {line}", palette.cyan, palette.reset);
 }
 
-/// keyhog brand yellow (#ffd60a) and a dimmed rail, as 24-bit truecolor SGR.
-/// Gated behind the ticker's `color` flag (TTY && !NO_COLOR) so piped/`NO_COLOR`
-/// output stays plain. Truecolor degrades gracefully to the nearest colour on
-/// 256/16-colour terminals; the layout is identical with or without colour.
-const C_BRAND: &str = "\x1b[38;2;255;214;10m";
-const C_CRITICAL: &str = "\x1b[38;2;255;69;58m";
-const C_HIGH: &str = "\x1b[38;2;255;159;10m";
-const C_MEDIUM: &str = "\x1b[38;2;255;214;10m";
-const C_LOW: &str = "\x1b[38;2;100;210;255m";
-const C_SAFE: &str = "\x1b[38;2;48;209;88m";
-const C_AMBER: &str = "\x1b[38;2;255;159;10m";
-const C_RAIL: &str = "\x1b[38;2;74;74;82m";
-const C_MUTED: &str = "\x1b[38;2;138;138;150m";
-const C_BOLD: &str = "\x1b[1m";
-const C_RESET: &str = "\x1b[0m";
+// keyhog brand yellow (#ffd60a), severity heat colours and a dimmed rail, as
+// 24-bit truecolor SGR. The escape literals live in `crate::style` (the one CLI
+// file exempt from the no-raw-ANSI gate); imported here under the local `C_*`
+// names the ticker/summary renderers use. Gated behind the ticker's `color`
+// flag (TTY && !NO_COLOR) so piped/`NO_COLOR` output stays plain. Truecolor
+// degrades gracefully to the nearest colour on 256/16-colour terminals; the
+// layout is identical with or without colour.
+use crate::style::{
+    SEV_AMBER as C_AMBER, SEV_BOLD as C_BOLD, SEV_BRAND as C_BRAND, SEV_CRITICAL as C_CRITICAL,
+    SEV_HIGH as C_HIGH, SEV_LOW as C_LOW, SEV_MEDIUM as C_MEDIUM, SEV_MUTED as C_MUTED,
+    SEV_RAIL as C_RAIL, SEV_RESET as C_RESET, SEV_SAFE as C_SAFE,
+};
 
 /// Smooth determinate bar with 1/8-cell resolution: full `█` cells, one partial
 /// glyph for the fractional cell, then a dimmed `░` rail. The partial-block
 /// transition is what makes the fill look continuous rather than steppy.
-fn render_progress_bar(frac: f64, width: usize, color: bool) -> String {
+pub(crate) fn render_progress_bar(frac: f64, width: usize, color: bool) -> String {
     const PARTIALS: [char; 8] = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
     let frac = frac.clamp(0.0, 1.0);
     let eighths = (frac * width as f64 * 8.0).round() as usize;
@@ -419,7 +408,7 @@ fn render_indeterminate_bar(phase: usize, width: usize, color: bool) -> String {
 }
 
 /// Format an elapsed/eta duration compactly: `8.2s`, or `1m04s` past a minute.
-fn fmt_secs(s: f64) -> String {
+pub(crate) fn fmt_secs(s: f64) -> String {
     if s < 59.95 {
         format!("{s:.1}s")
     } else {
@@ -433,7 +422,7 @@ fn fmt_secs(s: f64) -> String {
 /// Build one progress line (without the CR/clear prefix) from a counter
 /// snapshot. Pure — so the exact layout is unit-testable and can be visually
 /// iterated with a frame-dump test, instead of needing a multi-second live scan.
-fn render_ticker_line(
+pub(crate) fn render_ticker_line(
     scanned: usize,
     total: usize,
     findings: usize,
@@ -491,7 +480,7 @@ fn render_ticker_line(
     }
 }
 
-fn render_verification_ticker_line(
+pub(crate) fn render_verification_ticker_line(
     total: usize,
     elapsed: f64,
     frame: usize,
@@ -513,7 +502,12 @@ fn render_verification_ticker_line(
     )
 }
 
-fn render_reporting_ticker_line(total: usize, elapsed: f64, frame: usize, color: bool) -> String {
+pub(crate) fn render_reporting_ticker_line(
+    total: usize,
+    elapsed: f64,
+    frame: usize,
+    color: bool,
+) -> String {
     const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
     const BAR_WIDTH: usize = 22;
     let (brand, muted, bold, reset) = if color {
@@ -531,6 +525,11 @@ fn render_reporting_ticker_line(total: usize, elapsed: f64, frame: usize, color:
 }
 
 /// Drop-guarded lifecycle for phase progress threads.
+///
+/// Cleanup-boundary regression coverage lives in the relocated integration test
+/// `ticker_guard_stop_signals_and_joins_worker`
+/// (crates/cli/tests/unit/orchestrator_reporting_render.rs): it spawns a guard,
+/// lets the worker tick, then asserts `Drop` signals `done` and joins the thread.
 pub(crate) struct TickerGuard {
     done: Arc<AtomicBool>,
     handle: Option<std::thread::JoinHandle<()>>,
@@ -591,7 +590,9 @@ fn terminal_ticker_loop<F>(
     if !std::io::stderr().is_terminal() {
         return;
     }
-    let color = std::env::var_os("NO_COLOR").is_none();
+    // stderr is a TTY here; honour the NO_COLOR convention via the centralized,
+    // env-read-allowlisted helper (the orchestrator must not read env directly).
+    let color = !crate::style::no_color_requested();
     let tick = Duration::from_millis(90);
     let mut frame = 0usize;
     loop {
@@ -925,349 +926,4 @@ pub(crate) fn dump_dogfood_trace() {
         }
     });
     eprintln!("{payload}");
-}
-
-#[cfg(test)]
-mod ticker_tests {
-    use super::{
-        fmt_secs, render_progress_bar, render_reporting_ticker_line, render_severity_line,
-        render_ticker_line, render_verification_line, render_verification_ticker_line,
-        verification_breakdown, TickerGuard,
-    };
-    use std::sync::atomic::Ordering;
-    use std::time::Duration;
-
-    fn finding(v: keyhog_core::VerificationResult) -> keyhog_core::VerifiedFinding {
-        use std::borrow::Cow;
-        use std::sync::Arc;
-        keyhog_core::VerifiedFinding {
-            detector_id: Arc::from("aws-access-key"),
-            detector_name: Arc::from("AWS Key"),
-            service: Arc::from("aws"),
-            severity: keyhog_core::Severity::High,
-            credential_redacted: Cow::Borrowed("AKIA..."),
-            credential_hash: [0u8; 32].into(),
-            location: keyhog_core::MatchLocation {
-                source: Arc::from("filesystem"),
-                file_path: Some(Arc::from("a.txt")),
-                line: Some(1),
-                offset: 0,
-                commit: None,
-                author: None,
-                date: None,
-            },
-            verification: v,
-            metadata: std::collections::HashMap::new(),
-            additional_locations: vec![],
-            confidence: Some(0.9),
-        }
-    }
-
-    fn finding_with(
-        severity: keyhog_core::Severity,
-        v: keyhog_core::VerificationResult,
-    ) -> keyhog_core::VerifiedFinding {
-        let mut finding = finding(v);
-        finding.severity = severity;
-        finding
-    }
-
-    #[test]
-    fn breakdown_tallies_each_verification_state() {
-        use keyhog_core::VerificationResult as V;
-        let findings = vec![
-            finding(V::Live),
-            finding(V::Live),
-            finding(V::Revoked),
-            finding(V::Dead),
-            finding(V::Skipped),
-            finding(V::Unverifiable),
-            finding(V::RateLimited),
-            finding(V::Error("boom".to_string())),
-        ];
-        let b = verification_breakdown(&findings);
-        assert_eq!(b.live, 2);
-        assert_eq!(b.inactive, 2, "revoked + dead");
-        assert_eq!(b.skipped, 1);
-        assert_eq!(b.unverifiable, 1);
-        assert_eq!(b.incomplete, 2, "ratelimited + error");
-    }
-
-    #[test]
-    fn all_skipped_says_verification_did_not_run() {
-        use keyhog_core::VerificationResult as V;
-        let findings = vec![
-            finding(V::Skipped),
-            finding(V::Skipped),
-            finding(V::Skipped),
-        ];
-        let b = verification_breakdown(&findings);
-        let line =
-            render_verification_line(&b, findings.len(), false).expect("line for >0 findings");
-        assert!(
-            line.contains("liveness check did not run"),
-            "honest 'we did not try': {line}"
-        );
-        assert!(
-            line.contains("not checked"),
-            "posture should be explicit: {line}"
-        );
-        assert!(line.contains("--verify"), "points at the flag: {line}");
-        // The all-skipped branch emits the prose message, never a count
-        // breakdown — so it cannot read as "1 live", and carries no `·` separator.
-        assert!(
-            !line.contains('·'),
-            "all-skipped uses the prose message, not a breakdown: {line}"
-        );
-    }
-
-    #[test]
-    fn mixed_states_render_breakdown_omitting_zeros() {
-        use keyhog_core::VerificationResult as V;
-        let findings = vec![finding(V::Live), finding(V::Revoked), finding(V::Skipped)];
-        let b = verification_breakdown(&findings);
-        let line = render_verification_line(&b, findings.len(), false).unwrap();
-        assert!(line.contains("1 live"), "{line}");
-        assert!(line.contains("1 revoked/dead"), "{line}");
-        assert!(line.contains("1 not checked"), "{line}");
-        assert!(line.contains("verification:"), "{line}");
-        assert!(
-            !line.contains("no verifier"),
-            "zero category omitted: {line}"
-        );
-        assert!(
-            !line.contains("inconclusive"),
-            "zero category omitted: {line}"
-        );
-    }
-
-    #[test]
-    fn no_findings_yields_no_verification_line() {
-        let b = verification_breakdown(&[]);
-        assert_eq!(render_verification_line(&b, 0, false), None);
-    }
-
-    #[test]
-    fn severity_summary_is_heat_ordered_and_color_gated() {
-        use keyhog_core::Severity as S;
-        use keyhog_core::VerificationResult as V;
-        let findings = vec![
-            finding_with(S::Low, V::Skipped),
-            finding_with(S::Critical, V::Skipped),
-            finding_with(S::High, V::Skipped),
-            finding_with(S::ClientSafe, V::Skipped),
-            finding_with(S::High, V::Skipped),
-        ];
-        let plain = render_severity_line(&findings, false).unwrap();
-        assert_eq!(
-            plain,
-            "↳ severity: 1 critical · 2 high · 1 low · 1 client-safe"
-        );
-        assert!(!plain.contains('\x1b'), "plain severity line: {plain:?}");
-        let colored = render_severity_line(&findings, true).unwrap();
-        assert!(
-            colored.contains('\x1b'),
-            "colored severity line should use heat SGR codes: {colored:?}"
-        );
-        assert!(colored.contains("1 critical"), "{colored}");
-        assert!(colored.contains("2 high"), "{colored}");
-        assert_eq!(render_severity_line(&[], true), None);
-    }
-
-    #[test]
-    fn verification_summary_colours_posture_without_plain_ansi() {
-        use keyhog_core::VerificationResult as V;
-        let findings = vec![
-            finding(V::Live),
-            finding(V::Skipped),
-            finding(V::Error("e".into())),
-        ];
-        let b = verification_breakdown(&findings);
-        let plain = render_verification_line(&b, findings.len(), false).unwrap();
-        assert_eq!(
-            plain,
-            "↳ verification: 1 live · 1 not checked · 1 inconclusive"
-        );
-        assert!(
-            !plain.contains('\x1b'),
-            "plain verification line: {plain:?}"
-        );
-        let colored = render_verification_line(&b, findings.len(), true).unwrap();
-        assert!(
-            colored.contains('\x1b'),
-            "colored verification line should use posture SGR codes: {colored:?}"
-        );
-        assert!(colored.contains("1 live"), "{colored}");
-        assert!(colored.contains("1 not checked"), "{colored}");
-    }
-
-    #[test]
-    fn verification_line_is_color_gated() {
-        use keyhog_core::VerificationResult as V;
-        let b = verification_breakdown(&[finding(V::Live)]);
-        assert!(
-            !render_verification_line(&b, 1, false)
-                .unwrap()
-                .contains('\x1b'),
-            "plain mode is ansi-free"
-        );
-        assert!(
-            render_verification_line(&b, 1, true)
-                .unwrap()
-                .contains('\x1b'),
-            "color mode carries SGR codes"
-        );
-    }
-
-    #[test]
-    fn progress_bar_endpoints_and_width() {
-        // Empty: all rail, no full blocks; correct cell count.
-        let empty = render_progress_bar(0.0, 22, false);
-        assert_eq!(empty.chars().count(), 22, "bar must be exactly width cells");
-        assert_eq!(empty.chars().filter(|&c| c == '█').count(), 0);
-        assert!(empty.chars().all(|c| c == '░'));
-        // Full: all full blocks.
-        let full = render_progress_bar(1.0, 22, false);
-        assert_eq!(full.chars().filter(|&c| c == '█').count(), 22);
-        assert!(!full.contains('░'));
-        // Half: ~11 full blocks (1/8-cell resolution rounds 0.5*22=11.0).
-        let half = render_progress_bar(0.5, 22, false);
-        assert_eq!(half.chars().filter(|&c| c == '█').count(), 11);
-        // Clamp: out-of-range fractions never panic or overflow the width.
-        assert_eq!(
-            render_progress_bar(2.0, 22, false)
-                .chars()
-                .filter(|&c| c == '█')
-                .count(),
-            22
-        );
-        assert_eq!(render_progress_bar(-1.0, 22, false).chars().count(), 22);
-    }
-
-    #[test]
-    fn scanning_line_carries_pct_counts_findings_and_stage() {
-        let line = render_ticker_line(50, 100, 3, 2.0, 0, false);
-        assert!(line.contains("50%"), "percent: {line}");
-        assert!(line.contains("50/100"), "scanned/total: {line}");
-        assert!(line.contains("3 findings"), "lit findings: {line}");
-        assert!(line.contains("scanning"), "stage label: {line}");
-        // At 100% scanned the stage flips to finalizing and drops the ETA.
-        let done = render_ticker_line(100, 100, 3, 2.0, 0, false);
-        assert!(done.contains("finalizing"), "finalizing at full: {done}");
-        assert!(!done.contains("eta"), "no eta once scanned==total: {done}");
-    }
-
-    #[test]
-    fn preparing_line_used_before_first_chunk() {
-        let line = render_ticker_line(0, 0, 0, 0.4, 0, false);
-        assert!(line.contains("preparing"), "pre-dispatch label: {line}");
-        assert!(line.contains("0 findings"));
-        assert!(
-            !line.contains('%'),
-            "no percent before total is known: {line}"
-        );
-    }
-
-    #[test]
-    fn verification_line_carries_stage_and_candidate_count() {
-        let line = render_verification_ticker_line(3, 1.2, 0, false);
-        assert!(line.contains("verifying"), "stage label: {line}");
-        assert!(
-            line.contains("checking 3 secrets"),
-            "candidate count: {line}"
-        );
-        assert!(
-            !line.contains('%'),
-            "verification is indeterminate until verifier results return: {line}"
-        );
-        let one = render_verification_ticker_line(1, 1.2, 0, false);
-        assert!(one.contains("checking 1 secret"), "singular noun: {one}");
-    }
-
-    #[test]
-    fn reporting_line_carries_stage_and_finding_count() {
-        let line = render_reporting_ticker_line(3, 1.2, 0, false);
-        assert!(line.contains("reporting"), "stage label: {line}");
-        assert!(line.contains("writing 3 findings"), "finding count: {line}");
-        assert!(
-            !line.contains('%'),
-            "reporting is indeterminate while serialization/fsync runs: {line}"
-        );
-        let one = render_reporting_ticker_line(1, 1.2, 0, false);
-        assert!(one.contains("writing 1 finding"), "singular noun: {one}");
-    }
-
-    #[test]
-    fn ticker_guard_stop_signals_and_joins_worker() {
-        let (tx, rx) = std::sync::mpsc::channel();
-        let guard = TickerGuard::spawn("test", move |done, _started| {
-            while !done.load(Ordering::Relaxed) {
-                std::thread::sleep(Duration::from_millis(1));
-            }
-            tx.send(()).expect("test receiver alive");
-        });
-
-        guard.stop();
-        rx.recv_timeout(Duration::from_secs(1))
-            .expect("ticker guard must signal and join promptly");
-    }
-
-    #[test]
-    fn plain_mode_emits_no_ansi_color_mode_does() {
-        let plain = render_ticker_line(50, 100, 3, 2.0, 0, false);
-        assert!(
-            !plain.contains('\x1b'),
-            "NO_COLOR line must be ansi-free: {plain:?}"
-        );
-        let verify_plain = render_verification_ticker_line(3, 1.2, 0, false);
-        assert!(
-            !verify_plain.contains('\x1b'),
-            "plain verification line must be ansi-free: {verify_plain:?}"
-        );
-        let colored = render_ticker_line(50, 100, 3, 2.0, 0, true);
-        assert!(colored.contains('\x1b'), "color line must carry SGR codes");
-        let verify_colored = render_verification_ticker_line(3, 1.2, 0, true);
-        assert!(
-            verify_colored.contains('\x1b'),
-            "color verification line must carry SGR codes"
-        );
-        let report_plain = render_reporting_ticker_line(3, 1.2, 0, false);
-        assert!(
-            !report_plain.contains('\x1b'),
-            "plain reporting line must be ansi-free: {report_plain:?}"
-        );
-        let report_colored = render_reporting_ticker_line(3, 1.2, 0, true);
-        assert!(
-            report_colored.contains('\x1b'),
-            "color reporting line must carry SGR codes"
-        );
-    }
-
-    #[test]
-    fn fmt_secs_switches_to_minutes_past_a_minute() {
-        assert_eq!(fmt_secs(8.25), "8.2s");
-        assert_eq!(fmt_secs(59.94), "59.9s");
-        assert_eq!(fmt_secs(59.95), "1m00s");
-        assert_eq!(fmt_secs(59.96), "1m00s");
-        assert_eq!(fmt_secs(64.0), "1m04s");
-        assert_eq!(fmt_secs(119.6), "2m00s");
-    }
-
-    /// Visual harness: `cargo test -p keyhog dump_ticker_frames -- --ignored --nocapture`
-    /// prints a full color frame sequence so the layout can be eyeballed without
-    /// a multi-second live scan. Ignored by default (it asserts nothing).
-    #[test]
-    #[ignore]
-    fn dump_ticker_frames() {
-        println!("\n--- preparing (indeterminate sweep) ---");
-        for f in [0usize, 3, 6, 9, 12] {
-            println!("{}", render_ticker_line(0, 0, 0, f as f64 * 0.1, f, true));
-        }
-        println!("\n--- scanning (determinate bar) ---");
-        for (s, fnd) in [(0, 0), (550, 0), (1250, 1), (1980, 3), (2503, 3)] {
-            let line = render_ticker_line(s, 2503, fnd, 1.0 + s as f64 / 600.0, s / 90, true);
-            println!("{line}");
-        }
-        println!();
-    }
 }

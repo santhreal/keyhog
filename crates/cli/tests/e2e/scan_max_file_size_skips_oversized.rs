@@ -12,9 +12,18 @@ use json_report_support::parse_json_array;
 #[test]
 fn scan_max_file_size_skips_oversized_file() {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("large.txt");
-    // 64 bytes of payload - above a 32-byte cap.
-    std::fs::write(&path, "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n").unwrap();
+    // A scannable small file PLUS an oversized one: the cap skips only the
+    // large file, so the scan exercises the PARTIAL-coverage path (scanned
+    // some, skipped one) — `[]` findings on stdout + an "input coverage was
+    // incomplete" gap on stderr. (A dir whose ONLY file is skipped instead
+    // hits the stronger "source produced no data" fail-closed, which this test
+    // is not about.)
+    std::fs::write(dir.path().join("small.txt"), "hello world\n").unwrap();
+    std::fs::write(
+        dir.path().join("large.txt"),
+        "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n",
+    )
+    .unwrap();
 
     let output = Command::new(binary())
         .args([
@@ -24,8 +33,10 @@ fn scan_max_file_size_skips_oversized_file() {
             "--no-daemon",
             "--format",
             "json",
+            // 20 bytes: above `small.txt` (12 B, scanned) and below
+            // `large.txt` (43 B, skipped as oversized).
             "--max-file-size",
-            "1B",
+            "20B",
             "--path",
         ])
         .arg(dir.path())

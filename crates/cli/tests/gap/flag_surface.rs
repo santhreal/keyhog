@@ -1151,8 +1151,8 @@ fn hide_client_safe_keeps_non_client_safe_findings() {
 // ============================================================================
 
 /// Default (no `--show-secrets`): the JSON `credential_redacted` field is the
-/// `first4...last4` preview from `keyhog_core::redact`, NOT the plaintext.
-/// For `AKIAQYLPMN5HFIQR7XYA` (20 ASCII chars) redact -> `AKIA...7XYA`.
+/// `first2...last2` preview from `keyhog_core::redact`, NOT the plaintext.
+/// For `AKIAQYLPMN5HFIQR7XYA` (20 ASCII chars) redact -> `AK...YA`.
 #[test]
 fn show_secrets_off_redacts_credential() {
     let (_d, out, err, code) = scan_file("config.txt", AWS_KEY, &[]);
@@ -1164,8 +1164,8 @@ fn show_secrets_off_redacts_credential() {
         .unwrap_or_else(|| panic!("aws finding expected; got {out}"));
     let red = aws["credential_redacted"].as_str().unwrap_or("");
     assert_eq!(
-        red, "AKIA...7XYA",
-        "redacted form must be first4...last4 of the key; got {red:?} in {out}"
+        red, "AK...YA",
+        "redacted form must be first2...last2 of the key; got {red:?} in {out}"
     );
     assert_ne!(
         red, "AKIAQYLPMN5HFIQR7XYA",

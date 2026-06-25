@@ -39,6 +39,18 @@ pub(crate) use postprocess::{
 #[doc(hidden)]
 pub(crate) use dispatch::backend_requires_coalesced_batch_pipeline_for_test;
 
+// Test seam: the completion-summary and progress-ticker renderers are pure
+// formatting functions whose unit tests were relocated out of the `reporting`
+// module (the `*_no_inline_tests` folder gates). They are exercised through the
+// `crate::testing` facade, so re-export them crate-internally here under the
+// established `#[doc(hidden)] pub(crate) use` seam pattern.
+#[doc(hidden)]
+pub(crate) use reporting::{
+    fmt_secs, render_progress_bar, render_reporting_ticker_line, render_severity_line,
+    render_ticker_line, render_verification_line, render_verification_ticker_line,
+    verification_breakdown, TickerGuard,
+};
+
 pub(crate) use dispatch::CachedBackendRouter;
 pub(crate) use streaming::{scan_streaming_source, StreamingSourceEvent};
 

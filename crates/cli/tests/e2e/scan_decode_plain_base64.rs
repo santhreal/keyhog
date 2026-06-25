@@ -24,13 +24,16 @@ fn scan_plain_file_base64_decodes_secret_at_encoded_source_offset() {
         .as_array()
         .expect("array")
         .clone();
+    // `core::redact` shows `<first edge>...<last edge>` where edge =
+    // (len/8).clamp(1,4); this 20-char key redacts to `AK...YA`. Match the
+    // exact redaction so the finding is unambiguously the planted SECRET.
+    let edge = (SECRET.len() / 8).clamp(1, 4);
+    let expected_redacted = format!("{}...{}", &SECRET[..edge], &SECRET[SECRET.len() - edge..]);
     let aws = findings
         .iter()
         .find(|finding| {
             finding["detector_id"] == "aws-access-key"
-                && finding["credential_redacted"]
-                    .as_str()
-                    .is_some_and(|redacted| redacted.contains(&SECRET[..4]))
+                && finding["credential_redacted"].as_str() == Some(expected_redacted.as_str())
         })
         .unwrap_or_else(|| panic!("missing decoded AWS key finding; findings={findings:#?}"));
 

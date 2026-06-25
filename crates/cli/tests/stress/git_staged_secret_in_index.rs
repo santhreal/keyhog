@@ -42,6 +42,10 @@ fn git_staged_secret_in_index_exit_one() {
             "--git-staged",
             "--format",
             "json",
+            // Deterministic CPU-SIMD backend (e2e convention): this verifies
+            // staged-index recall, not autoroute; un-calibrated `auto` fails closed.
+            "--backend",
+            "simd",
             "--no-suppress-test-fixtures",
         ])
         .current_dir(repo)

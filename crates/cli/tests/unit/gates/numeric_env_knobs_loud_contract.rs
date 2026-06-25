@@ -24,7 +24,10 @@ fn numeric_threading_knobs_are_explicit_config() {
 
     let fused = repo_src("crates/cli/src/orchestrator/dispatch/fused.rs");
     let scan_args = repo_src("crates/cli/src/args/scan.rs");
-    let config = repo_src("crates/cli/src/config.rs");
+    // The TOML merge for these knobs lives in the `config/scan.rs` section
+    // submodule; the top-level `config.rs` is a delegating façade after the
+    // per-section split.
+    let config = repo_src("crates/cli/src/config/scan.rs");
     let orchestrator_config = repo_src("crates/cli/src/orchestrator_config.rs");
     let effective = repo_src("crates/cli/src/orchestrator_config/effective.rs");
     assert!(
@@ -42,14 +45,17 @@ fn numeric_threading_knobs_are_explicit_config() {
             && orchestrator_config.contains("reader_threads: Option<usize>")
             && orchestrator_config.contains("fused_batch: usize")
             && orchestrator_config.contains("fused_depth: Option<usize>")
-            && effective.contains("resolved.reader_threads.hash")
-            && effective.contains("resolved.fused_batch.hash")
-            && effective.contains("resolved.fused_depth.hash"),
+            && effective.contains("\"reader_threads\", resolved.reader_threads)")
+            && effective.contains("\"fused_batch\", resolved.fused_batch)")
+            && effective.contains("\"fused_depth\", resolved.fused_depth)"),
         "fused filesystem throughput knobs must be explicit CLI/TOML config and part of autoroute identity"
     );
 
     let daemon = repo_src("crates/cli/src/daemon/server.rs");
-    let daemon_args = repo_src("crates/cli/src/args.rs");
+    // The daemon request-timeout CLI arg and its value parser reference live in
+    // the `args/daemon.rs` subcommand submodule; the top-level `args.rs` only
+    // re-exports the `DaemonArgs` type.
+    let daemon_args = repo_src("crates/cli/src/args/daemon.rs");
     assert!(
         !daemon.contains("KEYHOG_DAEMON_REQUEST_TIMEOUT_SECS")
             && daemon.contains("request_read_timeout")

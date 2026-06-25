@@ -31,12 +31,21 @@ pub(crate) async fn run(args: UpdateArgs) -> Result<ExitCode> {
     .await?;
     let latest = release.tag_name.clone();
 
-    let asset = installer::select_asset(&release, want_cuda)?;
+    // Asset selection is a DOWNLOAD-time concern. `--check` (and the
+    // already-current short-circuit) report version availability and must NOT
+    // hard-fail just because this host's variant asset (e.g. a CUDA build) is
+    // missing from the release — a CUDA-host user checking for updates still
+    // needs to learn an update exists. Only the install path below requires a
+    // resolved asset (`asset?`).
+    let asset = installer::select_asset(&release, want_cuda);
 
     println!("{bold}keyhog update{reset}");
     println!("  current        v{current}");
     println!("  latest         {latest}");
-    println!("  asset          {}", asset.name);
+    match &asset {
+        Ok(asset) => println!("  asset          {}", asset.name),
+        Err(error) => println!("  asset          (unresolved for this variant: {error:#})"),
+    }
 
     let newer = installer::is_newer(current, &latest);
     // A pinned --version always proceeds (downgrade/pin is intentional);
@@ -57,6 +66,7 @@ pub(crate) async fn run(args: UpdateArgs) -> Result<ExitCode> {
         return Ok(ExitCode::from(EXIT_UPDATE_AVAILABLE));
     }
 
+    let asset = asset?;
     println!("\n  downloading    {}", asset.browser_download_url);
     let bytes = installer::download_verified_asset(&client, asset).await?;
     let exe = installer::current_binary()?;

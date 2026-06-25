@@ -44,7 +44,15 @@ fn env_call_name(line: &str) -> Option<Option<String>> {
 
 fn allowed_env_read(rel: &str, name: &str) -> bool {
     match name {
-        "PATH" => rel == "crates/cli/src/subcommands/doctor.rs",
+        // `PATH`: doctor health check (locate the keyhog binary) and the
+        // installer's CUDA-toolkit probe (find `nvcc` to pick the cuda asset).
+        "PATH" => matches!(
+            rel,
+            "crates/cli/src/subcommands/doctor.rs" | "crates/cli/src/installer/variant.rs"
+        ),
+        // `CUDA_HOME`: installer/update CUDA-variant detection (an environment
+        // *discovery* probe, not a keyhog behavior knob).
+        "CUDA_HOME" => rel == "crates/cli/src/installer/variant.rs",
         "NO_COLOR" => matches!(
             rel,
             "crates/cli/src/lib.rs"
@@ -61,6 +69,16 @@ fn allowed_env_read(rel: &str, name: &str) -> bool {
         "GOOGLE_OAUTH_ACCESS_TOKEN" | "GCS_BEARER_TOKEN" => rel == "crates/sources/src/gcs.rs",
         _ => false,
     }
+}
+
+/// Files where reading an env var through a *variable* name (rather than a
+/// string literal) is justified: cloud credential discovery iterates a fixed,
+/// provider-standard set of env var names (`AWS_*`, GCS bearer tokens) through
+/// one small helper, so the name reaches `var_os`/`var` as a parameter. Those
+/// names are themselves on the static allowlist above; the dynamic form is a
+/// code-structure detail, not an unaudited behavior knob.
+fn allowed_dynamic_env_read(rel: &str) -> bool {
+    rel.starts_with("crates/sources/src/s3/") || rel == "crates/sources/src/gcs.rs"
 }
 
 #[test]
@@ -131,13 +149,44 @@ fn production_env_reads_stay_on_the_allowlist() {
             .replace('\\', "/");
         let src = fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("read production source {}: {error}", path.display()));
+        // This gate audits PRODUCTION env reads, so `#[cfg(test)]` items (e.g.
+        // git child-process test seams gated on `KEYHOG_TEST_*`) are skipped:
+        // they never compile into the shipped binary.
+        let mut test_block_depth: Option<i32> = None;
+        let mut pending_cfg_test = false;
         for (line_no, line) in src.lines().enumerate() {
+            let trimmed = line.trim();
+            if let Some(depth) = test_block_depth.as_mut() {
+                *depth += brace_delta(line);
+                if *depth <= 0 {
+                    test_block_depth = None;
+                }
+                continue;
+            }
+            if trimmed == "#[cfg(test)]" {
+                pending_cfg_test = true;
+                continue;
+            }
+            if pending_cfg_test {
+                // Stay pending across stacked attributes (e.g. `#[cfg(test)]`
+                // then `#[test]`); the first non-attribute line is the item.
+                if trimmed.starts_with("#[") {
+                    continue;
+                }
+                pending_cfg_test = false;
+                if line.contains('{') {
+                    test_block_depth = Some(brace_delta(line));
+                }
+                continue;
+            }
+
             let Some(call) = env_call_name(line) else {
                 continue;
             };
             match call {
                 Some(name) if allowed_env_read(&rel_path, &name) => {}
                 Some(name) => offenders.push(format!("{rel_path}:{} reads {name}", line_no + 1)),
+                None if allowed_dynamic_env_read(&rel_path) => {}
                 None => offenders.push(format!(
                     "{rel_path}:{} reads a dynamic env var: {}",
                     line_no + 1,
@@ -253,4 +302,12 @@ fn docker_surfaces_do_not_reintroduce_retired_detector_env() {
             && scenarios.contains("--precision"),
         "docker scenario matrix must keep explicit CLI profile coverage"
     );
+}
+
+fn brace_delta(line: &str) -> i32 {
+    line.chars().fold(0, |depth, ch| match ch {
+        '{' => depth + 1,
+        '}' => depth - 1,
+        _ => depth,
+    })
 }

@@ -341,8 +341,14 @@ impl BackendTimingEvidence {
 
     #[cfg(test)]
     pub(super) fn constant_ms(ms: u128, trials: usize) -> Self {
-        Self::from_trial_ns(vec![ms.saturating_mul(1_000_000); trials])
-            .expect("test timing evidence must contain at least one trial")
+        let trials_ns = vec![ms.saturating_mul(1_000_000); trials.max(1)];
+        match Self::from_trial_ns(trials_ns) {
+            Some(evidence) => evidence,
+            // `trials.max(1) >= 1` makes the trial set non-empty, so
+            // `from_trial_ns` (which only returns `None` for an empty set)
+            // cannot fail here.
+            None => unreachable!("a non-empty trial set always yields timing evidence"),
+        }
     }
 
     pub(super) fn from_trial_ns(trials_ns: Vec<u128>) -> Option<Self> {

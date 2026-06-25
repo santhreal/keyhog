@@ -8,6 +8,7 @@ mod style;
 
 use style::{
     fail, for_stderr, for_stdout, info, pass, terminal_clear_line_prefix, terminal_palette, warn,
+    write_diagnostic_finding,
 };
 
 fn repo_root() -> PathBuf {
@@ -82,6 +83,45 @@ fn stdout_and_stderr_palette_helpers_are_callable() {
             "palette helper returned an unexpected reset sequence"
         );
     }
+}
+
+#[test]
+fn write_diagnostic_finding_with_confidence_and_line() {
+    let mut buf = Vec::new();
+    write_diagnostic_finding(
+        &mut buf,
+        "FINDING",
+        "detector_1",
+        "src/main.rs",
+        Some(42),
+        keyhog_core::Severity::Critical,
+        Some(0.95),
+        "redacted_secret",
+    )
+    .expect("diagnostic finding should write to in-memory buffer");
+    let s = String::from_utf8(buf).expect("diagnostic output must be utf-8");
+    assert_eq!(
+        s,
+        "FINDING detector_1 src/main.rs:42 Critical (0.95)  redacted_secret\n"
+    );
+}
+
+#[test]
+fn write_diagnostic_finding_no_confidence_no_line() {
+    let mut buf = Vec::new();
+    write_diagnostic_finding(
+        &mut buf,
+        "WATCH",
+        "detector_2",
+        "src/lib.rs",
+        None,
+        keyhog_core::Severity::Medium,
+        None,
+        "redacted_other",
+    )
+    .expect("diagnostic finding should write to in-memory buffer");
+    let s = String::from_utf8(buf).expect("diagnostic output must be utf-8");
+    assert_eq!(s, "WATCH detector_2 src/lib.rs Medium  redacted_other\n");
 }
 
 #[test]

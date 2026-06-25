@@ -505,10 +505,17 @@ pub(crate) fn finalize_report_candidate(
 
 fn record_suppression_telemetry(path: Option<&str>, credential: &str, stage_id: StageId) {
     let reason = stage_id.as_str();
-    crate::telemetry::record_shape_suppression(path, credential, reason);
     if reason == "contains_EXAMPLE_token" {
+        // The example-token gate is the MOST informative reason for a placeholder
+        // drop ("this is a known EXAMPLE token"). Record it as an EXAMPLE
+        // suppression (kind `example_suppressed`) so it claims the per-credential
+        // dogfood-event dedup slot first — NOT a generic shape event. Recording a
+        // shape event here too would claim the slot first and dedup the example
+        // event away, leaving the trace mislabeled `shape_suppressed` (KH-GAP-091).
         record_example_suppression("pipeline", path, credential, reason);
+        return;
     }
+    crate::telemetry::record_shape_suppression(path, credential, reason);
 }
 
 pub(crate) fn finalize_report_raw_match(

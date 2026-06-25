@@ -218,42 +218,6 @@ fn decode_octal_escapes(s: &str) -> Result<String> {
     Ok(out)
 }
 
-#[cfg(all(test, target_os = "linux"))]
-mod tests {
-    use super::{decoded_mount_target_if_included, MountFilters};
-
-    #[test]
-    fn skip_path_prefixes_match_decoded_mount_targets() {
-        let filters = MountFilters {
-            skip_path_prefixes: vec!["/mnt/my disk/".to_string()],
-            ..MountFilters::default()
-        };
-
-        let skipped = decoded_mount_target_if_included("/mnt/my\\040disk/secrets", &filters)
-            .expect("valid octal mount target");
-        assert_eq!(
-            skipped, None,
-            "Tier-B skip prefixes must match decoded /proc/mounts targets"
-        );
-        let included = decoded_mount_target_if_included("/mnt/other\\040disk/secrets", &filters)
-            .expect("valid octal mount target");
-        assert_eq!(included.as_deref(), Some("/mnt/other disk/secrets"));
-    }
-
-    #[test]
-    fn malformed_mount_escape_is_loud() {
-        let filters = MountFilters::default();
-
-        let err = decoded_mount_target_if_included("/mnt/bad\\999disk", &filters)
-            .expect_err("invalid octal mount escape must be an error");
-        assert!(
-            err.to_string().contains("decode /proc/mounts target")
-                && format!("{err:#}").contains("invalid octal mount escape"),
-            "malformed mount escape must include path context and parse cause; got {err:#}"
-        );
-    }
-}
-
 #[cfg(target_os = "macos")]
 fn macos_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
     let filters = load_mount_filters()?;
@@ -350,6 +314,22 @@ pub(crate) mod testing {
             super::windows_root_matches_any_skip_prefix("Z:\\", &prefixes),
             super::windows_root_matches_any_skip_prefix("C:\\", &prefixes),
         )
+    }
+
+    /// Decode a `/proc/mounts` octal-escaped target and apply Tier-B skip
+    /// prefixes, returning `Ok(None)` when the decoded path is skipped and
+    /// `Err` on a malformed octal escape. Linux-only (the underlying
+    /// `decoded_mount_target_if_included` is `#[cfg(target_os = "linux")]`).
+    #[cfg(target_os = "linux")]
+    pub(crate) fn decoded_mount_target_if_included_for_test(
+        target: &str,
+        skip_path_prefixes: Vec<String>,
+    ) -> anyhow::Result<Option<String>> {
+        let filters = MountFilters {
+            skip_path_prefixes,
+            ..MountFilters::default()
+        };
+        super::decoded_mount_target_if_included(target, &filters)
     }
 }
 

@@ -175,6 +175,14 @@ pub(crate) mod testing {
         super::mounts::testing::windows_drive_skip_prefix_decisions_for_test()
     }
 
+    #[cfg(target_os = "linux")]
+    pub(crate) fn decoded_mount_target_if_included_for_test(
+        target: &str,
+        skip_path_prefixes: Vec<String>,
+    ) -> anyhow::Result<Option<String>> {
+        super::mounts::testing::decoded_mount_target_if_included_for_test(target, skip_path_prefixes)
+    }
+
     pub(crate) fn git_repos_for_test(
         root: &std::path::Path,
     ) -> anyhow::Result<Vec<std::path::PathBuf>> {

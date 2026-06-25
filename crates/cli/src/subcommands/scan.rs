@@ -255,13 +255,6 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         return DaemonRoute::Forbidden;
     }
 
-    if let Some(reason) = daemon_incompatible_scan_options(&policy.effective_args) {
-        if let Some(route) = reject_forced_daemon(forced_on, reason) {
-            return route;
-        }
-        return DaemonRoute::Forbidden;
-    }
-
     // The daemon's client-side finalize mirrors allowlist/rule suppression,
     // inline suppression, match resolution, and dedup for daemon-eligible scans.
     // It still does NOT run live verification or enforce the policy/security
@@ -272,6 +265,13 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     // merely because a daemon socket exists. Force the in-process path whenever
     // such policy is in play, so behavior never depends on whether a daemon
     // happens to be running.
+    //
+    // This SECURITY-policy check runs BEFORE the generic backend/GPU/batch
+    // operational-controls check below: when a scan requests BOTH a fail-closed
+    // security control (lockdown, secret-output) AND an operational control
+    // (e.g. `--backend`), the refusal must name the security policy that cannot
+    // be enforced, not merely the operational knob — the operator needs to know
+    // their lockdown / secret-output intent is what the daemon can't honor.
     //
     // Critically, the floor / lockdown-require / show_secrets / severity checks
     // read the EFFECTIVE post-`.keyhog.toml`-merge policy, not just the raw CLI
@@ -295,6 +295,13 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
             forced_on,
             "this scan requests filtering, lockdown, secret-output, AWS canary config, allowlist governance, or config policy the daemon cannot enforce",
         ) {
+            return route;
+        }
+        return DaemonRoute::Forbidden;
+    }
+
+    if let Some(reason) = daemon_incompatible_scan_options(&policy.effective_args) {
+        if let Some(route) = reject_forced_daemon(forced_on, reason) {
             return route;
         }
         return DaemonRoute::Forbidden;

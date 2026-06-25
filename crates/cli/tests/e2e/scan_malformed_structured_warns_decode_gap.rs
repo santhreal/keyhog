@@ -64,9 +64,16 @@ fn scan_malformed_k8s_secret_sarif_reports_lost_decode_through() {
         .output()
         .expect("spawn");
 
-    assert!(
-        output.status.success(),
-        "malformed k8s Secret raw-text scan should complete cleanly; status={:?} stderr={}",
+    // The malformed Secret's base64 `data:` values can't be decoded, so the
+    // scan's structured decode-through coverage is incomplete: it fails closed
+    // with exit 13 (incomplete coverage) rather than reporting "clean". The
+    // SARIF report is STILL emitted on stdout (raw text was scanned), carrying
+    // the toolExecutionNotifications gap asserted below.
+    assert_eq!(
+        output.status.code(),
+        Some(13),
+        "malformed k8s Secret raw-text scan must fail closed on incomplete \
+         decode-through coverage (exit 13); status={:?} stderr={}",
         output.status.code(),
         String::from_utf8_lossy(&output.stderr)
     );

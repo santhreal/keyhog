@@ -67,6 +67,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "batch-pipeline",
     "benchmark",
     "cache-dir",
+    "calibration-cache",
     "config",
     "create-baseline",
     "daemon",
@@ -194,6 +195,19 @@ fn expected_scan_long_flags() -> BTreeSet<String> {
         add("s3-bucket");
         add("s3-endpoint");
         add("s3-prefix");
+    }
+    // `--limit-cloud-max-objects` caps object enumeration across ALL cloud
+    // object stores, so it compiles in whenever ANY of s3/gcs/azure is active
+    // (mirrors the `#[cfg(any(...))]` on the `limit_cloud_max_objects` arg).
+    #[cfg(any(feature = "s3", feature = "gcs", feature = "azure"))]
+    {
+        add("limit-cloud-max-objects");
+    }
+    // `--limit-hosted-git-pages` caps API pagination across ALL hosted-git
+    // providers, compiled in whenever ANY of github/gitlab/bitbucket is active.
+    #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
+    {
+        add("limit-hosted-git-pages");
     }
     #[cfg(feature = "docker")]
     {

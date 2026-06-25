@@ -294,7 +294,7 @@ fn json_unverified_finding_serializes_skipped() {
 
 /// Redaction contract: with no `--show-secrets`, credential_redacted is
 /// `redact(cred)` = first4 + "..." + last4 for a >8-char ASCII credential.
-/// The AKIA key is `AKIAQYLPMN5HFIQR7XYA` (20 chars) -> `AKIA...7XYA`.
+/// The AKIA key is `AKIAQYLPMN5HFIQR7XYA` (20 chars) -> `AK...YA`.
 #[test]
 fn json_credential_is_redacted_not_plaintext() {
     let (stdout, _stderr, _code) = scan_with_format(AWS_KEY_FIXTURE, "json");
@@ -314,8 +314,8 @@ fn json_credential_is_redacted_not_plaintext() {
         .and_then(|v| v.as_str())
         .expect("credential_redacted string");
     assert_eq!(
-        red, "AKIA...7XYA",
-        "redact() of the 20-char AKIA key must be first4...last4; got {red:?}"
+        red, "AK...YA",
+        "redact() of the 20-char AKIA key must be first2...last2; got {red:?}"
     );
     // The full plaintext key body must never appear.
     assert!(
@@ -629,7 +629,7 @@ fn csv_data_row_carries_aws_detector_and_redacted_credential() {
         .expect("a CSV data row for the AWS detection");
     let cols: Vec<&str> = row.split(',').collect();
     assert_eq!(
-        cols[4], "AKIA...7XYA",
+        cols[4], "AK...YA",
         "credential_redacted column must be the redacted key; row={row:?}"
     );
     // verification column (index 13) must be the unverified discriminant.
@@ -840,7 +840,7 @@ fn junit_failure_body_carries_detection_metadata() {
     );
     // Redacted credential, not plaintext.
     assert!(
-        stdout.contains("Redacted:      AKIA...7XYA"),
+        stdout.contains("Redacted:      AK...YA"),
         "JUnit body must show the redacted credential; got {stdout}"
     );
     assert!(
@@ -890,7 +890,7 @@ fn github_annotations_planted_finding_has_error_command() {
         "annotation must include file, line, and title properties; got {stdout:?}"
     );
     assert!(
-        stdout.contains("redacted=AKIA...7XYA"),
+        stdout.contains("redacted=AK...YA"),
         "annotation must include the redacted credential; got {stdout:?}"
     );
     assert!(
@@ -949,7 +949,7 @@ fn gitlab_sast_planted_finding_has_vulnerability() {
     assert_eq!(vuln["category"], "sast");
     assert_eq!(vuln["location"]["start_line"], 1);
     assert_eq!(vuln["identifiers"][0]["type"], "keyhog_rule");
-    assert_eq!(vuln["details"]["credential"]["value"], "AKIA...7XYA");
+    assert_eq!(vuln["details"]["credential"]["value"], "AK...YA");
 }
 
 // ---------------------------------------------------------------------------
@@ -1009,12 +1009,12 @@ fn text_planted_finding_prints_results_summary() {
 }
 
 /// Text mode redacts by default: the bordered finding box shows
-/// `Secret:    AKIA...7XYA`, never the plaintext key.
+/// `Secret:    AK...YA`, never the plaintext key.
 #[test]
 fn text_planted_finding_is_redacted() {
     let (stdout, _stderr, _code) = scan_with_format(AWS_KEY_FIXTURE, "text");
     assert!(
-        stdout.contains("AKIA...7XYA"),
+        stdout.contains("AK...YA"),
         "text finding box must show the redacted credential; got {stdout}"
     );
     assert!(

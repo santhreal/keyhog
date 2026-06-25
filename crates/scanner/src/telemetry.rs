@@ -317,10 +317,10 @@ fn record_example_suppression_in(
     }
 
     let credential_hash = keyhog_core::hex_encode(&keyhog_core::sha256_hash(credential));
-    // One EVENT per credential+path across all stages (KH-GAP-091): if a later
+    // One EVENT per credential across all stages (KH-GAP-091): if a later
     // shape gate already recorded this same credential, or vice-versa, don't emit
     // a duplicate. First stage to reach it wins.
-    if !mark_suppression_event_emitted(emitted_suppression_events, path, &credential_hash) {
+    if !mark_suppression_event_emitted(emitted_suppression_events, &credential_hash) {
         return;
     }
 
@@ -339,20 +339,23 @@ fn record_example_suppression_in(
     }
 }
 
-/// Insert `path\0credential_hash` into the shared emitted-event set, returning
-/// `true` only the FIRST time a given credential+path is seen. Both suppression
-/// recorders gate their `events.push` on this so the `--dogfood` trace carries
-/// one event per logical suppression rather than one per pipeline stage. A
+/// Insert `credential_hash` into the shared emitted-event set, returning `true`
+/// only the FIRST time a given credential VALUE is seen this scan. Both
+/// suppression recorders gate their `events.push` on this so the `--dogfood`
+/// trace carries one event per logical suppression rather than one per pipeline
+/// stage. The key is the credential hash ALONE — not `path\0hash` — because one
+/// logical drop of a credential can be recorded by several stages with
+/// INCONSISTENT path context (an early gate knows the file; a later
+/// entropy/fallback stage records `path=None`); keying on path would let those
+/// re-emit as duplicate events for the same logical suppression (KH-GAP-091). A
 /// poisoned lock fails OPEN (returns `true`) — an extra event is a far smaller
 /// sin than silently dropping the trace (Law 10).
 fn mark_suppression_event_emitted(
     emitted_suppression_events: &Mutex<HashSet<String>>,
-    path: Option<&str>,
     credential_hash: &str,
 ) -> bool {
-    let key = format!("{}\0{}", path.unwrap_or(""), credential_hash); // LAW10: absent path/field => display placeholder; reporting-only, recall-safe
     match emitted_suppression_events.lock() {
-        Ok(mut emitted) => emitted.insert(key),
+        Ok(mut emitted) => emitted.insert(credential_hash.to_string()),
         Err(_) => true, // LAW10: poisoned lock => emit the telemetry event anyway (fail-toward-visible); recall-irrelevant suppression-event dedup
     }
 }
@@ -399,13 +402,13 @@ fn record_shape_suppression_in(
     reason: &'static str,
 ) {
     let credential_hash = keyhog_core::hex_encode(&keyhog_core::sha256_hash(credential));
-    // One EVENT per credential+path across ALL stages (KH-GAP-091): a credential
+    // One EVENT per credential across ALL stages (KH-GAP-091): a credential
     // the example-token gate already recorded (e.g. `AKIA…EXAMPLE`, which is also
     // a weak-anchor shape) must not emit a second shape event for the same
     // logical drop. The shared emitted-set also collapses the same shape gate
     // firing twice for one credential, so this fully replaces the old
     // reason-keyed dedup.
-    if !mark_suppression_event_emitted(emitted_suppression_events, path, &credential_hash) {
+    if !mark_suppression_event_emitted(emitted_suppression_events, &credential_hash) {
         return;
     }
     let redacted = keyhog_core::redact(credential).into_owned();

@@ -118,6 +118,22 @@ pub(crate) fn record_scanner_panic() -> RecordedScanFailureEvent {
     record_scan_failure(ScanFailureEvent::ScannerPanicked)
 }
 
+/// Async-signal-safe snapshot of scan progress for the unix SIGINT handler:
+/// `(scanned_chunks, total_chunks, findings)`. Each field is a single relaxed
+/// atomic LOAD — no lock, no allocation — so this is safe to call from inside
+/// a signal handler (see `main.rs`'s `handle_sigint`). The binary installs a
+/// synchronous OS handler rather than a `tokio::signal::ctrl_c` task because
+/// the CLI runs on a `current_thread` runtime: a long synchronous scan starves
+/// the runtime, so the ctrl_c task would never register and SIGINT would fall
+/// through to the default disposition (signal death, no exit-130 contract).
+pub fn interrupt_counts() -> (usize, usize, usize) {
+    (
+        SCANNED_CHUNKS.load(Ordering::Relaxed),
+        TOTAL_CHUNKS.load(Ordering::Relaxed),
+        FINDINGS_COUNT.load(Ordering::Relaxed),
+    )
+}
+
 pub(crate) fn reset_scan_runtime_state() {
     SCANNED_CHUNKS.store(0, Ordering::Relaxed);
     TOTAL_CHUNKS.store(0, Ordering::Relaxed);
@@ -205,12 +221,16 @@ pub async fn cli_main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    // Unix installs a synchronous OS SIGINT handler in `main()` (before the
+    // runtime starts) instead — a `tokio::signal::ctrl_c` task never registers
+    // on the `current_thread` runtime once a synchronous scan is in flight, so
+    // it cannot honor the exit-130 contract. Non-unix (Windows) has no such
+    // synchronous handler path here, so keep the async ctrl_c task there.
+    #[cfg(not(unix))]
     tokio::spawn(async move {
         if let Ok(()) = tokio::signal::ctrl_c().await {
             // LAW10: no recall impact — a failed signal hook only loses graceful Ctrl-C handling; scan/report exit semantics stay owned by the main task.
-            let scanned = SCANNED_CHUNKS.load(Ordering::SeqCst);
-            let total = TOTAL_CHUNKS.load(Ordering::SeqCst);
-            let findings = FINDINGS_COUNT.load(Ordering::SeqCst);
+            let (scanned, total, findings) = interrupt_counts();
             eprintln!("\nScan interrupted. {scanned}/{total} files scanned. {findings} findings.");
             std::process::exit(i32::from(exit_codes::EXIT_INTERRUPTED));
         }

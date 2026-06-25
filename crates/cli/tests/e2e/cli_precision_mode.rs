@@ -144,12 +144,17 @@ fn precision_mode_enforces_0_85_floor_on_weak_credentials() {
     let def_findings: serde_json::Value =
         serde_json::from_str(&def_out).expect("default stdout is JSON");
     let def_arr = def_findings.as_array().expect("array");
+    // The weak low-entropy password `admin123` is surfaced by default as a
+    // generic-service finding. Which generic detector claims it (the
+    // keyword `generic-secret` gate or the `entropy-password` entropy gate)
+    // is an internal detail; the contract under test is that SOME weak
+    // generic finding clears the 0.40 default floor and will be dropped by the
+    // 0.85 precision floor below.
     assert!(
-        def_arr.iter().any(
-            |finding| finding.get("detector_id").and_then(|value| value.as_str())
-                == Some("generic-secret")
-        ),
-        "default must surface the generic-secret finding; got {def_out}"
+        def_arr.iter().any(|finding| {
+            finding.get("service").and_then(|value| value.as_str()) == Some("generic")
+        }),
+        "default must surface the weak generic finding; got {def_out}"
     );
 
     // Precision mode: the same weak generic secret must be dropped.

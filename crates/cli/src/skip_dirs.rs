@@ -213,114 +213,42 @@ fn reject_duplicates(name: &str, values: &[String]) -> std::result::Result<(), S
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
+/// Test seam: the skip-dir policy parse/merge/validate path has unit tests
+/// relocated to `crates/cli/tests/unit/` (the `no_inline_tests_in_src` gate
+/// forbids inline `#[cfg(test)]`). These thin wrappers drive the otherwise
+/// module-private `parse_section`/`merge_user_section`/`from_section` through
+/// the `crate::testing` facade. Always compiled (referenced by `pub mod
+/// testing`), so they never go stale.
+pub(crate) mod testing {
     use super::{merge_user_section, parse_section, SkipDirPolicy, BUNDLED_SKIP_DIRS};
 
-    #[test]
-    fn bundled_policy_contains_consumer_specific_components() {
-        let section = parse_section(BUNDLED_SKIP_DIRS).expect("bundled TOML parses");
-        let policy = SkipDirPolicy::from_section(section).expect("bundled skip-dir policy loads");
-
-        assert!(policy.is_watch_component(".GIT"));
-        assert!(policy.is_watch_component("NODE_MODULES"));
-        assert!(policy.is_watch_component(".cache"));
-        assert!(policy.is_watch_component("vendor"));
-        assert!(policy.is_watch_component(".nuxt"));
-        assert!(policy.is_git_discovery_component("node_modules"));
-        assert!(policy.is_git_discovery_component(".cache"));
-        assert!(policy.is_git_discovery_component("vendor"));
-        assert!(policy.is_git_discovery_component(".nuxt"));
-        assert!(policy.is_git_discovery_component("system volume information"));
-        assert!(!policy.is_git_discovery_component(".git"));
+    pub(crate) fn policy_from_toml(toml: &str) -> std::result::Result<SkipDirPolicy, String> {
+        SkipDirPolicy::from_section(parse_section(toml)?)
     }
 
-    #[test]
-    fn policy_validation_rejects_path_components_with_separators() {
-        let raw = r#"
-            [skip_dirs]
-            base = ["node_modules/inner"]
-            watch_extra = [".git"]
-            git_discovery_extra = ["Library"]
-        "#;
-
-        let section = parse_section(raw).expect("TOML shape parses");
-        let error = SkipDirPolicy::from_section(section).expect_err("separator must be rejected");
-        assert!(
-            error.contains("single path component"),
-            "unexpected validation error: {error}"
-        );
+    pub(crate) fn policy_from_bundled() -> std::result::Result<SkipDirPolicy, String> {
+        SkipDirPolicy::from_section(parse_section(BUNDLED_SKIP_DIRS)?)
     }
 
-    #[test]
-    fn empty_user_policy_parses_as_noop_section() {
-        let section = parse_section("").expect("empty user TOML is a no-op policy section");
-
-        assert!(section.base.is_empty());
-        assert!(section.watch_extra.is_empty());
-        assert!(section.git_discovery_extra.is_empty());
+    pub(crate) fn policy_from_bundled_plus_user(
+        user_toml: &str,
+    ) -> std::result::Result<SkipDirPolicy, String> {
+        let mut bundled = parse_section(BUNDLED_SKIP_DIRS)?;
+        let user = parse_section(user_toml)?;
+        merge_user_section(&mut bundled, user)?;
+        SkipDirPolicy::from_section(bundled)
     }
 
-    #[test]
-    fn policy_merge_tolerates_source_default_duplicates() {
-        let raw = r#"
-            [skip_dirs]
-            base = ["node_modules", ".cargo"]
-            watch_extra = [".git", ".turbo"]
-            git_discovery_extra = ["System Volume Information"]
-        "#;
-
-        let section = parse_section(raw).expect("TOML shape parses");
-        let policy =
-            SkipDirPolicy::from_section(section).expect("source-default duplicates are benign");
-
-        assert!(policy.is_watch_component("node_modules"));
-        assert!(policy.is_watch_component(".git"));
-        assert!(policy.is_watch_component(".cargo"));
-        assert!(policy.is_git_discovery_component("node_modules"));
-        assert!(policy.is_git_discovery_component(".cargo"));
-        assert!(!policy.is_git_discovery_component(".git"));
-    }
-
-    #[test]
-    fn user_policy_merge_tolerates_bundled_duplicates() {
-        let mut bundled = parse_section(BUNDLED_SKIP_DIRS).expect("bundled TOML parses");
-        let user = parse_section(
-            r#"
-            [skip_dirs]
-            base = [".cargo", "node_modules"]
-            watch_extra = [".svn", ".git"]
-            git_discovery_extra = ["System Volume Information"]
-        "#,
-        )
-        .expect("user TOML shape parses");
-
-        merge_user_section(&mut bundled, user).expect("overlap with bundled/source dirs is benign");
-        let policy = SkipDirPolicy::from_section(bundled).expect("merged policy loads");
-
-        assert!(policy.is_watch_component(".cargo"));
-        assert!(policy.is_watch_component("node_modules"));
-        assert!(policy.is_watch_component(".svn"));
-        assert!(policy.is_git_discovery_component("system volume information"));
-        assert!(!policy.is_git_discovery_component(".git"));
-    }
-
-    #[test]
-    fn user_policy_merge_rejects_internal_duplicates() {
-        let mut bundled = parse_section(BUNDLED_SKIP_DIRS).expect("bundled TOML parses");
-        let user = parse_section(
-            r#"
-            [skip_dirs]
-            base = ["custom", "CUSTOM"]
-        "#,
-        )
-        .expect("user TOML shape parses");
-
-        let error = merge_user_section(&mut bundled, user)
-            .expect_err("duplicates inside a user list must stay invalid");
-        assert!(
-            error.contains("duplicate component"),
-            "unexpected validation error: {error}"
-        );
+    /// `(base, watch_extra, git_discovery_extra)` element counts for a parsed
+    /// section — proves an empty user TOML is a no-op section.
+    pub(crate) fn section_counts(
+        toml: &str,
+    ) -> std::result::Result<(usize, usize, usize), String> {
+        let section = parse_section(toml)?;
+        Ok((
+            section.base.len(),
+            section.watch_extra.len(),
+            section.git_discovery_extra.len(),
+        ))
     }
 }

@@ -49,6 +49,11 @@ fn git_history_committed_secret_exit_one() {
             ".",
             "--format",
             "json",
+            // Pin a deterministic CPU-SIMD backend (the 128-file e2e convention):
+            // these tests verify git-source recall, not autoroute backend
+            // selection, and an un-calibrated `auto` scan fails closed by design.
+            "--backend",
+            "simd",
             "--no-suppress-test-fixtures",
         ])
         .current_dir(repo)

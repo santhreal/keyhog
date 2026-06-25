@@ -73,5 +73,5 @@ fn planted_secret_emits_gitlab_sast_vulnerability() {
     assert_eq!(vuln["severity"], "Critical");
     assert_eq!(vuln["location"]["start_line"], 2);
     assert_eq!(vuln["identifiers"][0]["type"], "keyhog_rule");
-    assert_eq!(vuln["details"]["credential"]["value"], "AKIA...YZBN");
+    assert_eq!(vuln["details"]["credential"]["value"], "AK...BN");
 }

@@ -42,8 +42,89 @@ fn reset_sigpipe() {
 #[cfg(not(unix))]
 fn reset_sigpipe() {}
 
+/// Synchronous, async-signal-safe SIGINT handling for the scan lifecycle.
+///
+/// The CLI runs on a `current_thread` tokio runtime. A long synchronous scan
+/// (`subcommands::scan::run`) blocks that single-threaded runtime, so a
+/// `tokio::signal::ctrl_c` task spawned at startup never gets polled — its
+/// signal handler is never registered, SIGINT falls through to the DEFAULT
+/// disposition, and the process dies by signal (status code `None`) with no
+/// "Scan interrupted" message instead of the documented exit 130. Installing a
+/// real OS handler synchronously in `main` (before the runtime starts) fixes
+/// this: it fires regardless of runtime scheduling.
+///
+/// The handler touches only async-signal-safe operations: relaxed atomic LOADS
+/// (via [`keyhog::interrupt_counts`]), stack-buffer integer formatting (no
+/// allocation, no locks), `write(2)`, and `_exit` — so it is safe even if
+/// SIGINT lands while the progress ticker holds the stderr lock (an
+/// `eprintln!`-based handler could deadlock there).
+#[cfg(unix)]
+mod interrupt {
+    fn append(buf: &mut [u8; 96], len: &mut usize, src: &[u8]) {
+        for &byte in src {
+            if *len < buf.len() {
+                buf[*len] = byte;
+                *len += 1;
+            }
+        }
+    }
+
+    fn append_usize(buf: &mut [u8; 96], len: &mut usize, mut value: usize) {
+        if value == 0 {
+            append(buf, len, b"0");
+            return;
+        }
+        let mut digits = [0u8; 20];
+        let mut count = 0;
+        while value > 0 {
+            digits[count] = b'0' + (value % 10) as u8;
+            value /= 10;
+            count += 1;
+        }
+        while count > 0 {
+            count -= 1;
+            let digit = digits[count];
+            append(buf, len, &[digit]);
+        }
+    }
+
+    extern "C" fn handle_sigint(_signum: libc::c_int) {
+        let (scanned, total, findings) = keyhog::interrupt_counts();
+        let mut buf = [0u8; 96];
+        let mut len = 0;
+        append(&mut buf, &mut len, b"\nScan interrupted. ");
+        append_usize(&mut buf, &mut len, scanned);
+        append(&mut buf, &mut len, b"/");
+        append_usize(&mut buf, &mut len, total);
+        append(&mut buf, &mut len, b" files scanned. ");
+        append_usize(&mut buf, &mut len, findings);
+        append(&mut buf, &mut len, b" findings.\n");
+        // SAFETY: async-signal-safe primitives only — `write(2)` over a valid
+        // stack buffer + length, then `_exit` with the documented interrupt
+        // code (128 + SIGINT). No allocation, no locks, no Rust Drop glue.
+        unsafe {
+            libc::write(2, buf.as_ptr().cast(), len);
+            libc::_exit(130);
+        }
+    }
+
+    pub(super) fn install() {
+        // SAFETY: registering a process-wide handler before the runtime and any
+        // worker/reader threads start; `handle_sigint` is async-signal-safe.
+        unsafe {
+            libc::signal(libc::SIGINT, handle_sigint as libc::sighandler_t);
+        }
+    }
+}
+
+#[cfg(not(unix))]
+mod interrupt {
+    pub(super) fn install() {}
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     reset_sigpipe();
+    interrupt::install();
     keyhog::cli_main().await
 }

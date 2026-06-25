@@ -74,9 +74,17 @@ url = "https://api.example.com/{{companion.shop}}"
 #[test]
 fn embedded_detector_loading_uses_core_fail_closed_loader() {
     let src = include_str!("../../src/subcommands/detectors.rs");
+    // The subcommand must load detectors through the shared
+    // `load_detectors_or_embedded` helper, whose embedded branch delegates to
+    // `keyhog_core::load_embedded_detectors_or_fail()` and fails closed on a
+    // malformed compiled-in corpus (orchestrator_config/detectors.rs). The
+    // 2026-05 dedup consolidated every subcommand onto that one wrapper instead
+    // of each shipping its own load+fallback copy, so the fail-closed contract
+    // is asserted via the shared entry point, not a re-pasted core call.
     assert!(
-        src.contains("keyhog_core::load_embedded_detectors_or_fail()"),
-        "detectors subcommand must share the core fail-closed embedded detector loader"
+        src.contains("load_detectors_or_embedded"),
+        "detectors subcommand must load via the shared fail-closed \
+         `load_detectors_or_embedded` helper, not a bespoke loader"
     );
     assert!(
         !src.contains("failed to parse embedded detector"),
