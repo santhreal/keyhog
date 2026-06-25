@@ -565,11 +565,24 @@ pub struct ScanArgs {
     pub source: Option<Vec<String>>,
 
     /// Fast mode: pattern matching only. No decode, no entropy. Maximum speed.
-    /// A preset is a BASE: it seeds defaults, then any explicit knob you pass
-    /// overrides it (e.g. `--fast --decode-depth 2` re-enables shallow decode on
-    /// top of the fast base). `--no-decode`/`--no-entropy` conflict with presets
-    /// (already implied here) and are rejected together.
-    #[arg(long, conflicts_with_all = ["deep", "precision", "no_decode", "no_entropy"])]
+    /// A preset is a BASE: it seeds defaults, then compatible explicit knobs
+    /// override it (e.g. `--fast --decode-depth 2` re-enables shallow decode on
+    /// top of the fast base). Entropy-only knobs conflict because fast mode
+    /// disables entropy, so accepting them would create a no-op flag.
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "deep",
+            "precision",
+            "no_decode",
+            "no_entropy",
+            "no_entropy_ml_scoring",
+            "no_keyword_low_entropy",
+            "entropy_threshold",
+            "entropy_source_files",
+            "min_secret_len"
+        ]
+    )]
     pub fast: bool,
 
     /// Deep mode: all features enabled. A preset is a BASE: it seeds defaults
@@ -584,8 +597,23 @@ pub struct ScanArgs {
     /// raises the confidence floor to 0.85 (so checksum-failing and weak-signal
     /// matches are suppressed), and uses shallow decode. Stays fully offline
     /// and fast. Use when triaging false positives across a huge corpus is
-    /// expensive. `--min-confidence` still overrides the floor on top.
-    #[arg(long, conflicts_with_all = ["fast", "deep", "no_decode", "no_entropy"])]
+    /// expensive. `--min-confidence` still overrides the floor on top. Entropy-
+    /// only knobs conflict because precision mode disables entropy, so accepting
+    /// them would create a no-op flag.
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "fast",
+            "deep",
+            "no_decode",
+            "no_entropy",
+            "no_entropy_ml_scoring",
+            "no_keyword_low_entropy",
+            "entropy_threshold",
+            "entropy_source_files",
+            "min_secret_len"
+        ]
+    )]
     pub precision: bool,
 
     /// Lockdown mode: maximum security at the cost of throughput. Enables

@@ -173,34 +173,22 @@ fn precision_mode_effective_config_shows_0_85_floor() {
     );
 }
 
-/// Precision mode with `--entropy-threshold` override is silently ignored at the
-/// clap layer because the flag conflicts with the preset. This test ensures that
-/// if someone tries to pass both, clap rejects it.
+/// Precision mode disables entropy, so entropy-only knobs must be rejected at
+/// the clap layer instead of being accepted and ignored.
 #[test]
 fn precision_mode_rejects_entropy_threshold_override_at_clap_level() {
     let (_out, err, code) =
         scan_with_args("content\n", &["--precision", "--entropy-threshold", "5.0"]);
 
-    // This should fail at the clap layer if entropy_threshold conflicts with the preset.
-    // If it doesn't conflict, the test documents that entropy_threshold is accepted
-    // alongside --precision (it just has no effect because entropy is off).
-    if code == Some(2) {
-        // Clap rejected it as conflicting.
-        assert!(
-            err.to_lowercase().contains("conflict")
-                || err.to_lowercase().contains("cannot be used"),
-            "clap error must name the conflict; stderr={err}"
-        );
-    } else {
-        // It was accepted. In this case, --entropy-threshold is ignored
-        // because entropy_enabled=false under precision. The command succeeds
-        // but entropy is still disabled.
-        assert_eq!(
-            code,
-            Some(0),
-            "scan must succeed (entropy_threshold has no effect)"
-        );
-    }
+    assert_eq!(
+        code,
+        Some(2),
+        "entropy-only threshold must conflict with --precision; stderr={err}"
+    );
+    assert!(
+        err.to_lowercase().contains("conflict") || err.to_lowercase().contains("cannot be used"),
+        "clap error must name the conflict; stderr={err}"
+    );
 }
 
 /// Precision mode enforces the floor even on detectors with no per-detector override.

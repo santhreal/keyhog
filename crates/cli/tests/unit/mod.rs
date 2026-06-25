@@ -1,4 +1,5 @@
 pub mod args_parse_space_bytes;
+pub mod args_scan_conflicts;
 pub mod autoroute_cache_path;
 pub mod baseline;
 pub mod cli_misc;
