@@ -108,7 +108,7 @@ pub enum OobObservation {
     /// Timed out before any matching interaction arrived.
     NotObserved,
     /// OOB session is unavailable (register failed, poller died). The verifier
-    /// degrades to HTTP-only success criteria for this finding.
+    /// fails closed with a verification error for this finding.
     Disabled(String),
 }
 

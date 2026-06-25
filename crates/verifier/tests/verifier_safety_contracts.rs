@@ -1383,6 +1383,11 @@ fn enable_oob_uses_engine_network_policy_for_collector_client() {
 fn oob_session_docs_match_fail_closed_runtime_contract() {
     let lib = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))
         .expect("verifier lib.rs must be readable");
+    let docs = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/OOB.md"))
+        .expect("docs/OOB.md must be readable");
+    let session =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/oob/session.rs"))
+            .expect("oob/session.rs must be readable");
     let normalized_lib = lib
         .lines()
         .map(|line| line.trim_start().trim_start_matches("///").trim())
@@ -1399,7 +1404,15 @@ fn oob_session_docs_match_fail_closed_runtime_contract() {
         "VerificationEngine::oob_session docs must state the no-session fail-closed contract"
     );
     assert!(
-        !normalized_lib.contains("fall through to HTTP-only success criteria"),
+        !normalized_lib.contains("fall through to HTTP-only success criteria")
+            && !docs.contains("tokens resolve to\n  empty strings; HTTP-only verification proceeds")
+            && !session.contains("degrades to HTTP-only success criteria"),
         "OOB-required detectors must not be documented as silently falling through to HTTP-only verification"
+    );
+    assert!(
+        docs.contains("OOB-required detectors fail closed before sending any HTTP probe")
+            && docs.contains("oob_disabled = \"no active OOB session\"")
+            && session.contains("fails closed with a verification error for this finding"),
+        "user-facing and developer OOB docs must describe fail-closed required-OOB behavior"
     );
 }

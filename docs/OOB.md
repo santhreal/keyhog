@@ -128,22 +128,27 @@ Verified findings produced under OOB verification carry:
 - `oob_protocol` - `"Dns"`, `"Http"`, `"Smtp"`, `"Other"` (when observed).
 - `oob_remote_address` - IP that called back (when observed).
 - `oob_timestamp` - collector timestamp (when observed).
-- `oob_disabled` - reason string (only when the session degraded mid-scan).
+- `oob_disabled` - reason string when an OOB-required verifier cannot use an
+  active session.
 
 These propagate to every output format (JSON, JSONL, SARIF, plain-text).
 
 ## Failure modes
 
-OOB infrastructure failures are non-fatal. Specifically:
+OOB infrastructure failures are non-fatal for detectors that do not require
+OOB. Detectors with `[detector.verify.oob]` fail closed when the required OOB
+session is unavailable.
 
 - **Collector unreachable at startup**: the engine logs a warning and
-  continues with HTTP-only verification. The scan completes normally.
+  continues without an OOB session. HTTP-only detectors still run normally;
+  OOB-required detectors fail closed before sending any HTTP probe.
 - **Collector goes silent mid-scan**: the poller backs off (1s → 32s),
-  in-flight waits time out as `NotObserved`, downstream verdicts fall back
-  to HTTP-only. The next successful poll resumes normal operation.
-- **OOB session not enabled but detector requests it**: tokens resolve to
-  empty strings; HTTP-only verification proceeds. The finding metadata
-  carries no `oob_*` keys, signaling the dimension wasn't measured.
+  in-flight waits time out as `NotObserved`, and policy evaluation continues
+  from that observation. If the session is disabled during callback wait, the
+  finding fails closed with `VerificationResult::Error` and `oob_disabled`.
+- **OOB session not enabled but detector requests it**: verification fails
+  closed before sending any HTTP probe. The finding metadata carries
+  `oob_disabled = "no active OOB session"`.
 
 ## Performance
 
