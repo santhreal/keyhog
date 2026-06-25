@@ -811,8 +811,14 @@ fn load_manifest_entries(
     limits: crate::SourceLimits,
 ) -> Result<Vec<DockerArchiveManifestEntry>, SourceError> {
     let manifest_path = root_path.join("manifest.json");
-    if !manifest_path.is_file() {
+    if !manifest_path.exists() {
         return Ok(Vec::new());
+    }
+    if !manifest_path.is_file() {
+        return Err(SourceError::Other(format!(
+            "docker manifest.json at '{}' is not a regular file; docker image metadata was not scanned",
+            manifest_path.display()
+        )));
     }
     let manifest = read_capped_file(
         &manifest_path,
@@ -885,7 +891,105 @@ fn find_manifest_config_chunks(
         });
     }
     chunks.extend(find_oci_config_chunks(root_path, image, limits)?);
+    if chunks.is_empty() {
+        chunks.extend(find_fallback_config_chunks(root_path, image, limits)?);
+    }
     Ok(chunks)
+}
+
+fn find_fallback_config_chunks(
+    root_path: &Path,
+    image: &str,
+    limits: crate::SourceLimits,
+) -> Result<Vec<Chunk>, SourceError> {
+    let mut config_paths = Vec::new();
+    let walker = CodeWalker::new(
+        root_path,
+        WalkConfig::default()
+            .follow_symlinks(false)
+            .respect_gitignore(false)
+            .skip_hidden(false)
+            .skip_binary(false)
+            .max_file_size(0),
+    );
+
+    for entry in walker.walk_iter() {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                return Err(SourceError::Other(format!(
+                    "failed to inspect docker image archive while discovering metadata-less config JSON: {error}; docker image metadata was not fully scanned"
+                )));
+            }
+        };
+        if is_fallback_config_path(&entry.path) {
+            config_paths.push(entry.path);
+        }
+    }
+    config_paths.sort();
+    config_paths.dedup();
+
+    let mut chunks = Vec::new();
+    for (idx, config_path) in config_paths.into_iter().enumerate() {
+        let bytes = read_capped_file(
+            &config_path,
+            "metadata-less docker image config",
+            limits.docker_image_config_bytes,
+        )?;
+        let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
+            SourceError::Other(format!(
+                "invalid metadata-less docker image config '{}': {error}",
+                config_path.display()
+            ))
+        })?;
+        let data = serde_json::to_string_pretty(&value).map_err(|error| {
+            SourceError::Other(format!(
+                "failed to serialize metadata-less docker image config '{}' for scanning: {error}",
+                config_path.display()
+            ))
+        })?;
+        let label = config_path.strip_prefix(root_path).map_err(|error| {
+            SourceError::Other(format!(
+                "metadata-less docker image config '{}' is outside docker archive root '{}': {error}; docker image metadata was not fully scanned",
+                config_path.display(),
+                root_path.display()
+            ))
+        })?;
+        chunks.push(Chunk {
+            metadata: ChunkMetadata {
+                base_offset: 0,
+                base_line: 0,
+                source_type: "docker".into(),
+                path: Some(format!(
+                    "{image}:fallback-config[{idx}]:{}",
+                    label.display()
+                )),
+                commit: None,
+                author: None,
+                date: None,
+                mtime_ns: None,
+                size_bytes: Some(data.len() as u64),
+                decoded_span: None,
+            },
+            data: data.into(),
+        });
+    }
+    Ok(chunks)
+}
+
+fn is_fallback_config_path(path: &Path) -> bool {
+    if !path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+    {
+        return false;
+    }
+    !matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some("manifest.json" | "index.json")
+    )
 }
 
 fn find_manifest_layer_archives(

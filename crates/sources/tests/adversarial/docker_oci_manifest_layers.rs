@@ -516,6 +516,65 @@ fn docker_manifest_config_yields_metadata_chunks() {
 
 #[cfg(feature = "docker")]
 #[test]
+fn docker_metadata_less_config_json_yields_metadata_chunks() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(root.join("metadata")).expect("mkdir metadata");
+    std::fs::write(
+        root.join("metadata").join("config.json"),
+        r#"{
+          "config": {
+            "Env": ["AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"],
+            "Labels": {"com.example.token": "ghp_fallbackConfigToken00000000000001"}
+          },
+          "history": [
+            {"created_by": "/bin/sh -c export STRIPE_SECRET_KEY=sk_live_fallbackHistory000000000000000"}
+          ]
+        }"#,
+    )
+    .expect("write metadata-less config");
+
+    let chunks = TestApi
+        .docker_manifest_config_chunks(&root, "keyhog:test")
+        .unwrap();
+    assert_eq!(chunks.len(), 1);
+    let chunk = &chunks[0];
+    assert_eq!(chunk.metadata.source_type, "docker");
+    assert!(
+        chunk.metadata.path.as_deref().is_some_and(
+            |path| path.contains("keyhog:test:fallback-config[0]:metadata/config.json")
+        ),
+        "fallback config chunk path must identify the image and config source: {:?}",
+        chunk.metadata.path
+    );
+    assert!(
+        chunk.data.contains("AWS_SECRET_ACCESS_KEY")
+            && chunk.data.contains("ghp_fallbackConfigToken")
+            && chunk.data.contains("STRIPE_SECRET_KEY"),
+        "metadata-less Docker config ENV, labels, and history must be scanned as source text: {}",
+        chunk.data
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
+fn docker_manifest_directory_fails_loud() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(root.join("manifest.json")).expect("mkdir manifest path");
+
+    let err = TestApi.docker_manifest_layer_archives(&root).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("manifest.json")
+            && msg.contains("not a regular file")
+            && msg.contains("metadata was not scanned"),
+        "manifest.json directory must fail loud, got {msg:?}"
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
 fn docker_manifest_missing_config_fails_loud() {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().join("root");
@@ -806,6 +865,12 @@ fn docker_manifest_gzip_layer_yields_chunks() {
 
 #[cfg(not(feature = "docker"))]
 #[test]
+fn docker_fallback_layer_discovery_finds_compressed_layers() {
+    assert!(!cfg!(feature = "docker"));
+}
+
+#[cfg(not(feature = "docker"))]
+#[test]
 fn docker_manifest_rejects_parent_layer_path() {
     assert!(!cfg!(feature = "docker"));
 }
@@ -819,6 +884,18 @@ fn docker_manifest_deduplicates_repeated_layer_content() {
 #[cfg(not(feature = "docker"))]
 #[test]
 fn docker_manifest_config_yields_metadata_chunks() {
+    assert!(!cfg!(feature = "docker"));
+}
+
+#[cfg(not(feature = "docker"))]
+#[test]
+fn docker_metadata_less_config_json_yields_metadata_chunks() {
+    assert!(!cfg!(feature = "docker"));
+}
+
+#[cfg(not(feature = "docker"))]
+#[test]
+fn docker_manifest_directory_fails_loud() {
     assert!(!cfg!(feature = "docker"));
 }
 
