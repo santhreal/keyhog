@@ -1,24 +1,21 @@
-#[cfg(feature = "binary")]
+#![cfg(feature = "binary")]
+
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 
-#[cfg(feature = "binary")]
 fn push_u32(bytes: &mut Vec<u8>, value: u32) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
-#[cfg(feature = "binary")]
 fn push_u64(bytes: &mut Vec<u8>, value: u64) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
-#[cfg(feature = "binary")]
 fn push_name<const N: usize>(bytes: &mut Vec<u8>, name: &[u8]) {
     let mut field = [0u8; N];
     field[..name.len()].copy_from_slice(name);
     bytes.extend_from_slice(&field);
 }
 
-#[cfg(feature = "binary")]
 fn minimal_macho64_with_cstring(secret: &[u8]) -> Vec<u8> {
     const MACH_HEADER_64_BYTES: usize = 32;
     const SEGMENT_COMMAND_64_BYTES: usize = 72;
@@ -72,30 +69,39 @@ fn minimal_macho64_with_cstring(secret: &[u8]) -> Vec<u8> {
     bytes
 }
 
-#[cfg(feature = "binary")]
-fn universal_macho_with_single_arch(arch_bytes: &[u8]) -> Vec<u8> {
-    const FAT_ARCH_OFFSET: u32 = 28;
+fn universal_macho_with_arches(arches: &[&[u8]]) -> Vec<u8> {
+    const FAT_HEADER_BYTES: u32 = 8;
+    const FAT_ARCH_BYTES: u32 = 20;
     const CPU_TYPE_X86_64: u32 = 0x0100_0007;
     const CPU_SUBTYPE_X86_64_ALL: u32 = 3;
 
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&0xcafe_babe_u32.to_be_bytes());
-    bytes.extend_from_slice(&1_u32.to_be_bytes());
-    bytes.extend_from_slice(&CPU_TYPE_X86_64.to_be_bytes());
-    bytes.extend_from_slice(&CPU_SUBTYPE_X86_64_ALL.to_be_bytes());
-    bytes.extend_from_slice(&FAT_ARCH_OFFSET.to_be_bytes());
-    bytes.extend_from_slice(&(arch_bytes.len() as u32).to_be_bytes());
-    bytes.extend_from_slice(&0_u32.to_be_bytes());
-    assert_eq!(bytes.len(), FAT_ARCH_OFFSET as usize);
-    bytes.extend_from_slice(arch_bytes);
+    bytes.extend_from_slice(&(arches.len() as u32).to_be_bytes());
+    let mut next_offset = FAT_HEADER_BYTES + FAT_ARCH_BYTES * arches.len() as u32;
+    for arch in arches {
+        bytes.extend_from_slice(&CPU_TYPE_X86_64.to_be_bytes());
+        bytes.extend_from_slice(&CPU_SUBTYPE_X86_64_ALL.to_be_bytes());
+        bytes.extend_from_slice(&next_offset.to_be_bytes());
+        bytes.extend_from_slice(&(arch.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(&0_u32.to_be_bytes());
+        next_offset += arch.len() as u32;
+    }
+    assert_eq!(
+        bytes.len(),
+        (FAT_HEADER_BYTES + FAT_ARCH_BYTES * arches.len() as u32) as usize
+    );
+    for arch in arches {
+        bytes.extend_from_slice(arch);
+    }
     bytes
 }
 
-#[cfg(feature = "binary")]
 #[test]
 fn fat_macho_section_extraction_preserves_arch_section_chunks() {
-    let macho = minimal_macho64_with_cstring(b"SANTH_FAT_MACHO_SECRET");
-    let universal = universal_macho_with_single_arch(&macho);
+    let first = minimal_macho64_with_cstring(b"SANTH_FAT_MACHO_SECRET_ONE");
+    let second = minimal_macho64_with_cstring(b"SANTH_FAT_MACHO_SECRET_TWO");
+    let universal = universal_macho_with_arches(&[&first, &second]);
 
     let chunks = TestApi
         .extract_sections(&universal, "fat-macho")
@@ -104,8 +110,15 @@ fn fat_macho_section_extraction_preserves_arch_section_chunks() {
     assert!(
         chunks.iter().any(|chunk| {
             chunk.metadata.source_type == "binary:macho:__cstring"
-                && chunk.data.contains("SANTH_FAT_MACHO_SECRET")
+                && chunk.data.contains("SANTH_FAT_MACHO_SECRET_ONE")
         }),
-        "Fat Mach-O must parse nested architecture sections instead of falling through to strings-only extraction: {chunks:?}"
+        "Fat Mach-O must parse the first nested architecture section instead of falling through to strings-only extraction: {chunks:?}"
+    );
+    assert!(
+        chunks.iter().any(|chunk| {
+            chunk.metadata.source_type == "binary:macho:__cstring"
+                && chunk.data.contains("SANTH_FAT_MACHO_SECRET_TWO")
+        }),
+        "Fat Mach-O must continue across later nested architecture sections: {chunks:?}"
     );
 }

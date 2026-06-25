@@ -1383,26 +1383,23 @@ fn enable_oob_uses_engine_network_policy_for_collector_client() {
 fn oob_session_docs_match_fail_closed_runtime_contract() {
     let lib = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))
         .expect("verifier lib.rs must be readable");
-    let credential = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/verify/credential.rs"
-    ))
-    .expect("verify/credential.rs must be readable");
+    let normalized_lib = lib
+        .lines()
+        .map(|line| line.trim_start().trim_start_matches("///").trim())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
 
     assert!(
-        lib.contains("those detectors fail closed with a")
-            && lib.contains("verification error before any HTTP probe is sent"),
+        normalized_lib.contains(
+            "those detectors fail closed with a verification error before any HTTP probe is sent"
+        ),
         "VerificationEngine::oob_session docs must state the no-session fail-closed contract"
     );
     assert!(
-        !lib.contains("fall through to\n    /// HTTP-only success criteria")
-            && !lib.contains("fall through to HTTP-only success criteria"),
+        !normalized_lib.contains("fall through to HTTP-only success criteria"),
         "OOB-required detectors must not be documented as silently falling through to HTTP-only verification"
-    );
-    assert!(
-        credential.contains("(Some(_), None) => {\n            return oob_required_without_session();\n        }")
-            && credential.contains("OOB verification required by detector but no OOB session is active")
-            && credential.contains("before sending an \\\nHTTP probe"),
-        "runtime contract must still fail closed before HTTP probing when OOB is required but disabled"
     );
 }

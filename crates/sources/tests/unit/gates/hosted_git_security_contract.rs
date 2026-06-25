@@ -8,6 +8,14 @@ fn source(path: impl AsRef<Path>) -> String {
         .unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
 }
 
+fn without_line_comments(source: &str) -> String {
+    source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[test]
 fn hosted_git_windows_askpass_does_not_expand_raw_prompt_with_percent_vars() {
     let hosted_git = source("src/hosted_git.rs");
@@ -87,12 +95,17 @@ fn hosted_git_scan_orchestrator_keeps_single_repo_worker_boundary() {
     let worker_start = hosted_git
         .find("fn scan_single_hosted_repo(")
         .expect("single hosted repo worker present");
-    let scan_block = &hosted_git[scan_start..worker_start];
     assert!(
-        scan_block.contains("tempfile::tempdir()")
-            && scan_block.contains("bounded_fetch_pool(")
-            && scan_block.contains("scan_single_hosted_repo(")
-            && scan_block.contains("merge_hosted_repo_results("),
+        scan_start < worker_start,
+        "scan_hosted_repos must appear before scan_single_hosted_repo for this bounded source contract"
+    );
+    let scan_block = &hosted_git[scan_start..worker_start];
+    let scan_code = without_line_comments(scan_block);
+    assert!(
+        scan_code.contains("tempfile::tempdir()")
+            && scan_code.contains("bounded_fetch_pool(")
+            && scan_code.contains("scan_single_hosted_repo(")
+            && scan_code.contains("merge_hosted_repo_results("),
         "scan_hosted_repos should own temp-root setup, bounded fanout, worker dispatch, and merge only"
     );
     for forbidden in [
@@ -103,7 +116,7 @@ fn hosted_git_scan_orchestrator_keeps_single_repo_worker_boundary() {
         "scan_repo(",
     ] {
         assert!(
-            !scan_block.contains(forbidden),
+            !scan_code.contains(forbidden),
             "scan_hosted_repos must not inline single-repo pipeline step {forbidden}"
         );
     }
@@ -111,7 +124,12 @@ fn hosted_git_scan_orchestrator_keeps_single_repo_worker_boundary() {
     let merge_start = hosted_git
         .find("fn merge_hosted_repo_results(")
         .expect("merge_hosted_repo_results present");
+    assert!(
+        worker_start < merge_start,
+        "scan_single_hosted_repo must appear before merge_hosted_repo_results for this bounded source contract"
+    );
     let worker_block = &hosted_git[worker_start..merge_start];
+    let worker_code = without_line_comments(worker_block);
     for required in [
         "validate_repo_name(",
         "validate_display_path(",
@@ -120,7 +138,7 @@ fn hosted_git_scan_orchestrator_keeps_single_repo_worker_boundary() {
         "scan_repo(",
     ] {
         assert!(
-            worker_block.contains(required),
+            worker_code.contains(required),
             "single hosted repo worker must own pipeline step {required}"
         );
     }
