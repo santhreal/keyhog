@@ -9,9 +9,9 @@ credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7
 reason = "AWS session token env-var (80 base64-like alnum)."
 
 [[positive]]
-text = "aws_session_token=FQoGZXIvYXdzEJr//////////wEaDHRlc3QtZGl2ZXJzZSIqA4b9Kx2mP7qRs8Tn5Uv1Wx3Yz6Za0Bc9De2Fg4Hi7Jk8Lm9No0Pq1Rs2Tu3Vw4Xy5Z"
-credential = "FQoGZXIvYXdzEJr//////////wEaDHRlc3QtZGl2ZXJzZSIqA4b9Kx2mP7qRs8Tn5Uv1Wx3Yz6Za0Bc9De2Fg4Hi7Jk8Lm9No0Pq1Rs2Tu3Vw4Xy5Z"
-reason = "Lowercase aws_session_token env-var."
+text = "aws_session_token=FQoGZXIvYXdzEPyiJu10Gz6QRoapmFgi7e0zFNqfjj7YX/c0yAMklxpSkrQibFx13XqY53hz7bCVKGj9IDCvfBHYwuKWKTCN2w9znmKiL4J9cwmcIFcsw10k"
+credential = "FQoGZXIvYXdzEPyiJu10Gz6QRoapmFgi7e0zFNqfjj7YX/c0yAMklxpSkrQibFx13XqY53hz7bCVKGj9IDCvfBHYwuKWKTCN2w9znmKiL4J9cwmcIFcsw10k"
+reason = "Lowercase aws_session_token env-var (realistic STS marker prefix + random base64 body; no English substring decodes to a placeholder word)."
 
 [[negative]]
 text = "AWS_SESSION_TOKEN=short"
