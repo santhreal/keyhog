@@ -274,8 +274,8 @@ fn binary_git_history_patch_is_counted_binary() {
 }
 
 /// A true-binary untracked worktree file included by `--git-diff HEAD`
-/// semantics is dropped from the diff scan and counted as binary, never a
-/// silent `continue`.
+/// semantics is dropped from the diff scan, counted as binary, and surfaced as
+/// an unscanned source error, never a silent `continue`.
 #[test]
 fn binary_untracked_git_diff_file_is_counted_binary() {
     let _guard = counter_guard();
@@ -293,13 +293,25 @@ fn binary_untracked_git_diff_file_is_counted_binary() {
     elf.extend_from_slice(&[0u8; 512]);
     std::fs::write(repo.join("untracked.bin"), &elf).expect("write untracked binary");
 
-    let chunks: Vec<_> = GitDiffSource::new(repo.to_path_buf(), "HEAD")
+    let rows: Vec<_> = GitDiffSource::new(repo.to_path_buf(), "HEAD")
         .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+        .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
     assert!(
         chunks.is_empty(),
         "binary-only untracked git-diff input yields no scannable chunks"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "binary-only untracked git-diff input must surface one SourceError"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("untracked.bin")
+            && err.contains("binary/non-text")
+            && err.contains("path was not scanned"),
+        "untracked binary SourceError must name the unscanned file and reason, got {err}"
     );
 
     let after = skip_counts();

@@ -685,7 +685,10 @@ fn read_untracked_worktree_chunk(
             rel
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-        return Ok(None);
+        return Err(SourceError::Git(format!(
+            "git-diff untracked path '{}' decoded as binary/non-text; path was not scanned",
+            rel
+        )));
     };
     if text.trim().is_empty() {
         return Ok(None);
