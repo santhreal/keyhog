@@ -107,10 +107,14 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
     assert!(
         filesystem.contains("EXPANDABLE_SYMLINK_EXTS")
             && filesystem.contains("ext.eq_ignore_ascii_case(candidate)")
-            && filesystem.contains("is_expandable_path(p) || is_expandable_path(&target)")
+            && filesystem.contains("path_is_expandable || is_expandable_path(&target)")
             && filesystem.contains("target = %target.display()")
+            && filesystem.contains("fn symlink_target_classification_error(")
+            && filesystem.contains("symlink target was not classified")
+            && !filesystem.contains("unwrap_or_else(|| path.clone())")
+            && !filesystem.contains("unwrap_or_else(|| root.to_path_buf())")
             && !filesystem.contains(".to_ascii_lowercase();"),
-        "filesystem include-symlink archive extension checks must cover link and resolved target paths allocation-free and ASCII-case-insensitively"
+        "filesystem include-symlink/archive symlink checks must cover link and resolved target paths, and unreadable target classification must surface visibly"
     );
     assert!(
         archive.contains("const OPENPACK_EXTS")

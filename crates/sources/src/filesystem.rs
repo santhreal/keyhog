@@ -158,20 +158,23 @@ fn is_expandable_path(path: &Path) -> bool {
         })
 }
 
-fn resolved_link_target_for_classification(path: &Path) -> Option<PathBuf> {
-    let target = match std::fs::read_link(path) {
-        Ok(target) => target,
-        Err(_error) => return None, // LAW10: unreadable link target falls back to link-name classification; expandable link names are still refused; recall-preserving
-    };
+fn resolved_link_target_for_classification(path: &Path) -> Result<PathBuf, std::io::Error> {
+    let target = std::fs::read_link(path)?;
     if target.is_absolute() {
-        Some(target)
+        Ok(target)
     } else {
-        Some(
-            path.parent()
-                .unwrap_or_else(|| Path::new("")) // LAW10: parentless relative target classification never opens or follows the link target; recall-safe
-                .join(target),
-        )
+        Ok(path
+            .parent()
+            .unwrap_or_else(|| Path::new("")) // LAW10: parentless relative target classification never opens or follows the link target; recall-safe
+            .join(target))
     }
+}
+
+fn symlink_target_classification_error(path: &Path, error: &std::io::Error) -> SourceError {
+    SourceError::Other(format!(
+        "failed to inspect symlink target '{}': {error}; symlink target was not classified",
+        display_path(path)
+    ))
 }
 
 fn archive_symlink_error(path: &Path) -> SourceError {
@@ -204,9 +207,29 @@ fn collect_walk_archive_symlink_errors(
         Ok(metadata) => {
             let file_type = metadata.file_type();
             if file_type.is_symlink() {
-                let target = resolved_link_target_for_classification(root)
-                    .unwrap_or_else(|| root.to_path_buf()); // LAW10: target read failure keeps link-name classification and still refuses expandable link names; recall-preserving
-                if is_expandable_path(root) || is_expandable_path(&target) {
+                let root_is_expandable = is_expandable_path(root);
+                let target = match resolved_link_target_for_classification(root) {
+                    Ok(target) => target,
+                    Err(error) if root_is_expandable => {
+                        tracing::warn!(
+                            path = %root.display(),
+                            %error,
+                            "failed to inspect archive symlink target; refusing by link name"
+                        );
+                        root.to_path_buf()
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            path = %root.display(),
+                            %error,
+                            "failed to inspect symlink target during archive-symlink audit"
+                        );
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                        errors.push(symlink_target_classification_error(root, &error));
+                        return errors;
+                    }
+                };
+                if root_is_expandable || is_expandable_path(&target) {
                     tracing::warn!(
                         path = %root.display(),
                         target = %target.display(),
@@ -300,9 +323,29 @@ fn collect_walk_archive_symlink_errors(
             };
             let file_type = metadata.file_type();
             if file_type.is_symlink() {
-                let target =
-                    resolved_link_target_for_classification(&path).unwrap_or_else(|| path.clone()); // LAW10: target read failure keeps link-name classification and still refuses expandable link names; recall-preserving
-                if is_expandable_path(&path) || is_expandable_path(&target) {
+                let path_is_expandable = is_expandable_path(&path);
+                let target = match resolved_link_target_for_classification(&path) {
+                    Ok(target) => target,
+                    Err(error) if path_is_expandable => {
+                        tracing::warn!(
+                            path = %path.display(),
+                            %error,
+                            "failed to inspect archive symlink target; refusing by link name"
+                        );
+                        path.clone()
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            path = %path.display(),
+                            %error,
+                            "failed to inspect symlink target during archive-symlink audit"
+                        );
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                        errors.push(symlink_target_classification_error(&path, &error));
+                        continue;
+                    }
+                };
+                if path_is_expandable || is_expandable_path(&target) {
                     tracing::warn!(
                         path = %path.display(),
                         target = %target.display(),
@@ -638,8 +681,29 @@ impl Source for FilesystemSource {
                     allowed.push(p.canonicalize().unwrap_or_else(|_| p.clone())); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
                     continue;
                 }
-                let target = p.canonicalize().unwrap_or_else(|_| p.clone()); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
-                if is_expandable_path(p) || is_expandable_path(&target) {
+                let path_is_expandable = is_expandable_path(p);
+                let target = match p.canonicalize() {
+                    Ok(target) => target,
+                    Err(error) if path_is_expandable => {
+                        tracing::warn!(
+                            path = %p.display(),
+                            %error,
+                            "failed to canonicalize archive symlink target; refusing by link name"
+                        );
+                        p.clone()
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            path = %p.display(),
+                            %error,
+                            "failed to canonicalize symlink include target"
+                        );
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                        source_errors.push(symlink_target_classification_error(p, &error));
+                        continue;
+                    }
+                };
+                if path_is_expandable || is_expandable_path(&target) {
                     tracing::warn!(
                         path = %p.display(),
                         target = %target.display(),
