@@ -1,7 +1,8 @@
 //! RAR archives are source containers and must be unpacked.
 
-use crate::support::collect_chunks;
+use crate::support::split_chunk_results;
 use base64::Engine;
+use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 
 const VERSION_RAR_BASE64: &str =
@@ -16,9 +17,14 @@ fn version_rar_bytes() -> Vec<u8> {
 fn scan_file(name: &str, bytes: Vec<u8>) -> Vec<keyhog_core::Chunk> {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join(name), bytes).expect("write RAR fixture");
-    collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
-        .into_iter()
-        .collect()
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "valid RAR fixture must not emit SourceError rows, got {errors:?}"
+    );
+    chunks.into_iter().cloned().collect()
 }
 
 #[test]

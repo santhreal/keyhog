@@ -1,18 +1,24 @@
 //! xz and bzip2 are compressed source containers, not binary skip extensions.
 
 use crate::support::archive::{encode_xz, tar_with_file};
-use crate::support::collect_chunks;
+use crate::support::split_chunk_results;
 use bzip2::write::BzEncoder;
 use bzip2::Compression;
+use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use std::io::Write;
 
 fn scan_file(name: &str, bytes: Vec<u8>) -> Vec<keyhog_core::Chunk> {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join(name), bytes).expect("write compressed fixture");
-    collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
-        .into_iter()
-        .collect()
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "valid compressed fixture must not emit SourceError rows, got {errors:?}"
+    );
+    chunks.into_iter().cloned().collect()
 }
 
 fn encode_bzip2(plaintext: &[u8]) -> Vec<u8> {

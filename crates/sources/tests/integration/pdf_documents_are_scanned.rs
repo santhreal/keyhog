@@ -2,9 +2,10 @@
 //! dedicated PDF route extracts real PDF text streams while keeping provenance
 //! distinct from the plain filesystem decoder.
 
-use crate::support::collect_chunks;
+use crate::support::split_chunk_results;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use std::io::Write;
 
@@ -12,9 +13,14 @@ fn scan_pdf(bytes: Vec<u8>) -> Vec<keyhog_core::Chunk> {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("document.pdf");
     std::fs::write(&path, bytes).expect("write pdf");
-    collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
-        .into_iter()
-        .collect()
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "valid PDF fixture must not emit SourceError rows, got {errors:?}"
+    );
+    chunks.into_iter().cloned().collect()
 }
 
 #[test]

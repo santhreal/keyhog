@@ -11,7 +11,8 @@
 //! member XML and assert the secret's bytes surface as an extracted chunk
 //! (Law 6: assert the real credential, not `!is_empty`).
 
-use crate::support::collect_chunks;
+use crate::support::split_chunk_results;
+use keyhog_core::{Chunk, Source};
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use zip::write::SimpleFileOptions;
@@ -32,11 +33,15 @@ fn write_zip(path: &std::path::Path, members: &[(&str, String)]) {
     zip.finish().expect("finish zip");
 }
 
-fn extracted_bodies(dir: &std::path::Path) -> Vec<String> {
-    collect_chunks(&FilesystemSource::new(dir.to_path_buf()))
-        .into_iter()
-        .map(|c| c.data.to_string())
-        .collect()
+fn extracted_chunks(dir: &std::path::Path) -> Vec<Chunk> {
+    let source = FilesystemSource::new(dir.to_path_buf());
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "valid office-document fixture must not emit SourceError rows, got {errors:?}"
+    );
+    chunks.into_iter().cloned().collect()
 }
 
 #[test]
@@ -58,10 +63,18 @@ fn xlsx_shared_strings_secret_is_scanned() {
         ],
     );
 
-    let bodies = extracted_bodies(dir.path());
+    let chunks = extracted_chunks(dir.path());
     assert!(
-        bodies.iter().any(|b| b.contains(SECRET)),
-        "the xlsx sharedStrings secret must be extracted and scannable; got {bodies:?}"
+        chunks.iter().any(|chunk| {
+            chunk.metadata.source_type == "filesystem/archive"
+                && chunk
+                    .metadata
+                    .path
+                    .as_deref()
+                    .is_some_and(|path| path.ends_with("budget.xlsx//xl/sharedStrings.xml"))
+                && chunk.data.contains(SECRET)
+        }),
+        "the xlsx sharedStrings secret must be extracted and scannable; got {chunks:?}"
     );
 }
 
@@ -84,10 +97,18 @@ fn docx_document_xml_secret_is_scanned() {
         ],
     );
 
-    let bodies = extracted_bodies(dir.path());
+    let chunks = extracted_chunks(dir.path());
     assert!(
-        bodies.iter().any(|b| b.contains(SECRET)),
-        "the docx document.xml secret must be extracted and scannable; got {bodies:?}"
+        chunks.iter().any(|chunk| {
+            chunk.metadata.source_type == "filesystem/archive"
+                && chunk
+                    .metadata
+                    .path
+                    .as_deref()
+                    .is_some_and(|path| path.ends_with("notes.docx//word/document.xml"))
+                && chunk.data.contains(SECRET)
+        }),
+        "the docx document.xml secret must be extracted and scannable; got {chunks:?}"
     );
 }
 
@@ -106,9 +127,17 @@ fn ods_content_xml_secret_is_scanned() {
         ],
     );
 
-    let bodies = extracted_bodies(dir.path());
+    let chunks = extracted_chunks(dir.path());
     assert!(
-        bodies.iter().any(|b| b.contains(SECRET)),
-        "the ods content.xml secret must be extracted and scannable; got {bodies:?}"
+        chunks.iter().any(|chunk| {
+            chunk.metadata.source_type == "filesystem/archive"
+                && chunk
+                    .metadata
+                    .path
+                    .as_deref()
+                    .is_some_and(|path| path.ends_with("sheet.ods//content.xml"))
+                && chunk.data.contains(SECRET)
+        }),
+        "the ods content.xml secret must be extracted and scannable; got {chunks:?}"
     );
 }
