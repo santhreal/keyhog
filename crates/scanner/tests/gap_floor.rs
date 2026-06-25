@@ -28,6 +28,8 @@ mod csr_hot_maps_adopted;
 mod decode_pipeline_exceeds_modularity_cap;
 #[path = "gap/detector_contract_coverage_100pct.rs"]
 mod detector_contract_coverage_100pct;
+#[path = "gap/detector_recall_prefixes.rs"]
+mod detector_recall_prefixes;
 #[path = "gap/docs_megakernel_env_claim_matches_engine.rs"]
 mod docs_megakernel_env_claim_matches_engine;
 #[path = "gap/engine_backend_parity.rs"]
@@ -81,6 +83,10 @@ mod r5_decode_hostile_adversarial_floor_15;
 mod r5_decode_hostile_not_only_engine_cases;
 #[path = "gap/r5_gap_expansion_total_floor_55.rs"]
 mod r5_gap_expansion_total_floor_55;
+#[path = "gap/r5_adversarial_expansion_total_floor_155.rs"]
+mod r5_adversarial_expansion_total_floor_155;
+#[path = "gap/r5_adversarial_one_test_per_file.rs"]
+mod r5_adversarial_one_test_per_file;
 #[path = "gap/r5_handwritten_twin_gap_vs_detector_load.rs"]
 mod r5_handwritten_twin_gap_vs_detector_load;
 #[path = "gap/r5_homoglyph_adversarial_floor_7.rs"]
