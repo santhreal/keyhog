@@ -19,10 +19,11 @@ fn subcommands_explain_non_empty() {
         "subcommands::explain: todo!/unimplemented! forbidden in non-test source"
     );
     assert!(
-        prod.contains("fn contains_ignore_ascii_case(")
+        prod.contains("use keyhog_core::{contains_ignore_ascii_case, DetectorSpec};")
             && prod.contains("fn strip_prefix_ignore_ascii_case")
+            && !prod.contains("fn contains_ignore_ascii_case(")
             && !prod.contains(".to_lowercase()")
             && !prod.contains(".to_ascii_lowercase()"),
-        "subcommands::explain must keep detector/service matching allocation-free and ASCII-case-insensitive"
+        "subcommands::explain must use the shared core ASCII-ci primitive without local duplicate helpers or allocating casefolds"
     );
 }

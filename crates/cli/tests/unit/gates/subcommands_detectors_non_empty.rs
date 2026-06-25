@@ -24,4 +24,11 @@ fn subcommands_detectors_non_empty() {
             && !src.contains("fn load_embedded_or_bail("),
         "subcommands::detectors must use the canonical detector directory-or-embedded loader instead of owning divergent load/fallback branches"
     );
+    assert!(
+        prod.contains("contains_bytes_ignore_ascii_case")
+            && !prod.contains("fn contains_ci(")
+            && !prod.contains(".to_lowercase()")
+            && !prod.contains(".to_ascii_lowercase()"),
+        "subcommands::detectors search must use the shared core ASCII-ci primitive without local duplicate helpers or allocating casefolds"
+    );
 }

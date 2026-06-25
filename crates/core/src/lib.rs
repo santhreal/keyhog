@@ -29,6 +29,7 @@
 //! Core types shared across all KeyHog crates.
 mod allowlist;
 mod api;
+mod ascii_ci;
 /// Offline AWS account-ID decode + canary-token classification (single source
 /// of truth shared by the scanner's finding metadata and the verifier's
 /// suppress-live-verification-for-canaries gate).
@@ -57,9 +58,12 @@ use std::borrow::Cow;
 mod registry;
 
 pub use api::*;
+pub use ascii_ci::{
+    contains_bytes_ignore_ascii_case, contains_ignore_ascii_case, starts_with_ignore_ascii_case,
+};
 pub use hyperscan_cache::{
-    HYPERSCAN_CACHE_FILE_BYTES, HYPERSCAN_CACHE_HEADER_LEN, HYPERSCAN_CACHE_MAGIC,
-    HYPERSCAN_CACHE_VERSION, hyperscan_cache_header_is_valid, write_hyperscan_cache_header,
+    hyperscan_cache_header_is_valid, write_hyperscan_cache_header, HYPERSCAN_CACHE_FILE_BYTES,
+    HYPERSCAN_CACHE_HEADER_LEN, HYPERSCAN_CACHE_MAGIC, HYPERSCAN_CACHE_VERSION,
 };
 /// Auto-fix suggestion logic for SARIF output.
 mod auto_fix;

@@ -6,7 +6,7 @@
 
 use crate::args::ExplainArgs;
 use anyhow::Result;
-use keyhog_core::DetectorSpec;
+use keyhog_core::{contains_ignore_ascii_case, DetectorSpec};
 
 pub(crate) fn run(args: ExplainArgs) -> Result<()> {
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
@@ -203,24 +203,32 @@ fn rotation_guide(service: &str) -> Option<&'static str> {
         s if contains_ignore_ascii_case(s, "slack") => {
             Some("https://api.slack.com/legacy/oauth-scopes#auth.revoke")
         }
-        s if contains_ignore_ascii_case(s, "openai") => Some("https://platform.openai.com/api-keys"),
+        s if contains_ignore_ascii_case(s, "openai") => {
+            Some("https://platform.openai.com/api-keys")
+        }
         s if contains_ignore_ascii_case(s, "anthropic") => {
             Some("https://console.anthropic.com/settings/keys")
         }
-        s if contains_ignore_ascii_case(s, "stripe") => Some("https://dashboard.stripe.com/apikeys"),
+        s if contains_ignore_ascii_case(s, "stripe") => {
+            Some("https://dashboard.stripe.com/apikeys")
+        }
         s if contains_ignore_ascii_case(s, "twilio") => {
             Some("https://www.twilio.com/docs/iam/access-tokens#rotate-keys")
         }
         s if contains_ignore_ascii_case(s, "sendgrid") => {
             Some("https://docs.sendgrid.com/ui/account-and-settings/api-keys")
         }
-        s if contains_ignore_ascii_case(s, "google") || contains_ignore_ascii_case(s, "gcp") => Some(
-            "https://cloud.google.com/iam/docs/creating-managing-service-account-keys#rotating",
-        ),
+        s if contains_ignore_ascii_case(s, "google") || contains_ignore_ascii_case(s, "gcp") => {
+            Some(
+                "https://cloud.google.com/iam/docs/creating-managing-service-account-keys#rotating",
+            )
+        }
         s if contains_ignore_ascii_case(s, "azure") => Some(
             "https://learn.microsoft.com/en-us/azure/active-directory/develop/howto-create-service-principal-portal#authentication-two-options",
         ),
-        s if contains_ignore_ascii_case(s, "npm") => Some("https://docs.npmjs.com/revoking-access-tokens"),
+        s if contains_ignore_ascii_case(s, "npm") => {
+            Some("https://docs.npmjs.com/revoking-access-tokens")
+        }
         s if contains_ignore_ascii_case(s, "pypi") => Some("https://pypi.org/help/#apitoken"),
         s if contains_ignore_ascii_case(s, "docker") => {
             Some("https://docs.docker.com/security/for-developers/access-tokens/")
@@ -241,15 +249,4 @@ fn strip_prefix_ignore_ascii_case<'a>(value: &'a str, prefix: &str) -> Option<&'
         .get(..prefix.len())
         .filter(|head| head.eq_ignore_ascii_case(prefix.as_bytes()))
         .map(|_| &value[prefix.len()..])
-}
-
-fn contains_ignore_ascii_case(value: &str, needle: &str) -> bool {
-    let needle = needle.as_bytes();
-    if needle.is_empty() {
-        return true;
-    }
-    value
-        .as_bytes()
-        .windows(needle.len())
-        .any(|window| window.eq_ignore_ascii_case(needle))
 }

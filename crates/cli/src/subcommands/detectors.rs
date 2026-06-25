@@ -10,7 +10,9 @@ use crate::args::DetectorArgs;
 use crate::exit_codes::EXIT_DETECTOR_AUDIT_FAILED;
 use crate::style;
 use anyhow::{Context, Result};
-use keyhog_core::{validate_detector, DetectorFile, DetectorSpec, QualityIssue};
+use keyhog_core::{
+    contains_bytes_ignore_ascii_case, validate_detector, DetectorFile, DetectorSpec, QualityIssue,
+};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -48,25 +50,18 @@ fn run_list(args: DetectorArgs) -> Result<()> {
     // Apply --search filter case-insensitively against the four most useful
     // fields. The full embedded corpus is otherwise hard to navigate by eye -
     // `keyhog detectors --search aws` should beat `grep -r aws detectors/`.
-    fn contains_ci(haystack: &str, needle: &[u8]) -> bool {
-        if needle.is_empty() || needle.len() > haystack.len() {
-            return needle.is_empty();
-        }
-        haystack
-            .as_bytes()
-            .windows(needle.len())
-            .any(|w| w.eq_ignore_ascii_case(needle))
-    }
     let needle: Option<Vec<u8>> = args.search.as_ref().map(|s| s.as_bytes().to_vec());
     let filtered: Vec<&DetectorSpec> = detectors
         .iter()
         .filter(|d| match needle.as_deref() {
             None => true,
             Some(q) => {
-                contains_ci(&d.id, q)
-                    || contains_ci(&d.name, q)
-                    || contains_ci(&d.service, q)
-                    || d.keywords.iter().any(|k| contains_ci(k, q))
+                contains_bytes_ignore_ascii_case(&d.id, q)
+                    || contains_bytes_ignore_ascii_case(&d.name, q)
+                    || contains_bytes_ignore_ascii_case(&d.service, q)
+                    || d.keywords
+                        .iter()
+                        .any(|k| contains_bytes_ignore_ascii_case(k, q))
             }
         })
         .collect();

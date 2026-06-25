@@ -145,18 +145,21 @@ struct RemediationFile {
     severity: Vec<SeverityRemediationEntry>,
 }
 
-static REMEDIATION_MAP: LazyLock<RemediationFile> = LazyLock::new(|| match parse_remediation_file(
-    include_str!("../data/remediation.toml"),
-    "<embedded data/remediation.toml>",
-) {
-    Ok(parsed) => parsed,
-    Err(error) => {
-        panic!(
+static REMEDIATION_MAP: LazyLock<RemediationFile> =
+    LazyLock::new(|| {
+        match parse_remediation_file(
+            include_str!("../data/remediation.toml"),
+            "<embedded data/remediation.toml>",
+        ) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                panic!(
             "keyhog: remediation map '<embedded data/remediation.toml>' is invalid: {error}. \
                  Fix: correct crates/core/data/remediation.toml and rebuild"
         );
-    }
-});
+            }
+        }
+    });
 
 /// Parse one `service-env-vars.toml` document into its entries. On a parse
 /// error we surface the failure LOUDLY (Law 10: no silent fallback) and return
@@ -455,26 +458,8 @@ pub(crate) fn remediation_for(detector_id: &str, service: &str, severity: Severi
 
 fn service_entry_matches(service: &str, needle: &str, prefix: bool) -> bool {
     if prefix {
-        starts_with_ignore_ascii_case(service, needle)
+        crate::starts_with_ignore_ascii_case(service, needle)
     } else {
-        contains_ignore_ascii_case(service, needle)
+        crate::contains_ignore_ascii_case(service, needle)
     }
-}
-
-fn starts_with_ignore_ascii_case(value: &str, prefix: &str) -> bool {
-    value
-        .as_bytes()
-        .get(..prefix.len())
-        .is_some_and(|head| head.eq_ignore_ascii_case(prefix.as_bytes()))
-}
-
-fn contains_ignore_ascii_case(value: &str, needle: &str) -> bool {
-    let needle = needle.as_bytes();
-    if needle.is_empty() {
-        return true;
-    }
-    value
-        .as_bytes()
-        .windows(needle.len())
-        .any(|window| window.eq_ignore_ascii_case(needle))
 }
