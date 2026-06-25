@@ -453,6 +453,31 @@ fn relative_system_trusted_bin_dir_is_config_error() {
 }
 
 #[test]
+fn toml_fast_and_no_entropy_combination_is_config_error() {
+    let _guard = global_config_state_lock();
+    let dir = TempDir::new().expect("tempdir");
+    std::fs::write(
+        dir.path().join(".keyhog.toml"),
+        "fast = true\nno_entropy = true\n",
+    )
+    .expect("write config");
+
+    let path = dir.path().to_string_lossy().to_string();
+    let mut args = ScanArgs::try_parse_from(["scan", "--path", &path]).expect("parse scan args");
+    let error = API
+        .resolve_scan_config(&mut args)
+        .expect_err("TOML fast + no_entropy must fail closed");
+    let message = error.to_string();
+
+    assert!(
+        message.contains("no_entropy")
+            && message.contains("fast = true")
+            && message.contains("fast mode disables entropy/decode"),
+        "TOML preset/no_entropy conflict must be actionable, got: {message}"
+    );
+}
+
+#[test]
 fn relative_system_cache_dir_is_config_error() {
     let _guard = global_config_state_lock();
     let dir = TempDir::new().expect("tempdir");
