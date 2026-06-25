@@ -1,6 +1,7 @@
 //! Zero-byte text files must not panic and must not emit bogus chunks.
 
-use super::support::collect_chunks;
+use crate::support::split_chunk_results;
+use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 
 #[test]
@@ -9,9 +10,13 @@ fn zero_byte_plain_file_handled() {
     std::fs::write(dir.path().join("empty.txt"), b"").expect("write empty");
     std::fs::write(dir.path().join("marker.txt"), "MARKER=visible\n").expect("write marker");
 
-    let chunks: Vec<_> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
-        .into_iter()
-        .collect();
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "zero-byte plain file skip should not emit SourceError rows: {errors:?}"
+    );
 
     assert!(
         chunks.iter().any(|c| c.data.contains("MARKER=visible")),

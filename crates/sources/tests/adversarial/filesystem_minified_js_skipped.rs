@@ -1,6 +1,7 @@
 //! Minified bundle filenames must be excluded from scanning.
 
-use super::support::collect_chunks;
+use crate::support::split_chunk_results;
+use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 
 #[test]
@@ -18,18 +19,26 @@ fn filesystem_minified_js_skipped() {
     )
     .expect("write");
 
-    let bodies: Vec<String> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
-        .into_iter()
-        .map(|c| c.data.to_string())
-        .collect();
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
     assert!(
-        bodies.iter().any(|b| b.contains("scan-me")),
-        "non-minified file must scan"
+        errors.is_empty(),
+        "minified filename exclusion should not emit SourceError rows: {errors:?}"
     );
     assert!(
-        !bodies
+        chunks.iter().any(|chunk| chunk.data.contains("scan-me")
+            && chunk
+                .metadata
+                .path
+                .as_deref()
+                .is_some_and(|path| path.ends_with("real.env"))),
+        "non-minified file must scan with path metadata; chunks={chunks:?}"
+    );
+    assert!(
+        !chunks
             .iter()
-            .any(|b| b.contains("ghp_shouldNotScanMinifiedBundle")),
+            .any(|chunk| chunk.data.contains("ghp_shouldNotScanMinifiedBundle")),
         "minified bundle must be skipped"
     );
 }
