@@ -622,7 +622,7 @@ fn handle_wasm(
         let safe_url = redact_url(url);
         tracing::warn!(url = %safe_url, "not a valid WASM file; body was NOT scanned as WebAssembly strings");
         return vec![Err(web_unreadable_error(format!(
-            "failed to scan {safe_url}: URL ended with .wasm but response did not start with WASM magic bytes"
+            "failed to scan {safe_url}: response was classified as WebAssembly but did not start with WASM magic bytes"
         )))];
     }
 
