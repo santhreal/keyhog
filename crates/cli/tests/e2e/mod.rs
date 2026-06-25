@@ -7,6 +7,7 @@ pub mod cli_precision_engine_config;
 pub mod cli_precision_mode;
 pub mod cli_surface;
 pub mod daemon_route_forced_contract;
+pub mod daemon_route_verify_config;
 pub mod daemon_scan_path_utf16;
 pub mod daemon_status_no_running_daemon;
 pub mod detectors_fix_invalid_rewrite;

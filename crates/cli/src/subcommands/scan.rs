@@ -29,7 +29,7 @@ use crate::daemon::protocol::{Request, Response, SourceCoverageGaps};
 #[cfg(unix)]
 use crate::daemon::server::default_socket_path;
 use crate::orchestrator::ScanOrchestrator;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 // The daemon-only result-massaging path (unwrap_scan_results,
 // finalize_for_report) is the only consumer of `RawMatch` /
 // `VerifiedFinding` in this file. The in-process orchestrator path
@@ -132,6 +132,10 @@ struct EffectivePolicy {
     /// finalize redacts unconditionally, so a config-driven value would render
     /// credentials differently by route.
     show_secrets: bool,
+    /// Live verification after the merge (CLI flag OR `.keyhog.toml`). The
+    /// daemon returns scanner matches only, so a config-driven verify request
+    /// must route in-process exactly like `--verify`.
+    verify: bool,
     /// Minimum-severity filter after the merge (CLI flag OR `.keyhog.toml`).
     severity: bool,
     /// `[lockdown] require = true` from `.keyhog.toml`: a fail-closed control
@@ -171,11 +175,16 @@ impl EffectivePolicy {
         let outcome = crate::config::apply_config_file_quiet(&mut probe);
         let min_confidence = probe.min_confidence;
         let show_secrets = probe.show_secrets;
+        #[cfg(feature = "verify")]
+        let verify = probe.verify;
+        #[cfg(not(feature = "verify"))]
+        let verify = false;
         let severity = probe.severity.is_some();
         EffectivePolicy {
             effective_args: probe,
             min_confidence,
             show_secrets,
+            verify,
             severity,
             require_lockdown: outcome.require_lockdown,
             has_config_errors: !outcome.config_errors.is_empty(),
@@ -196,16 +205,16 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     }
     let forced_on = mode == DaemonMode::On;
 
-    // Daemon path doesn't run verification - the daemon process
-    // holds a scanner but not the verifier engine. Trying to honour
-    // `--verify` over a daemon-only result set would silently drop
-    // every API-call-backed live-credential check; the orchestrator
-    // is the only honest answer.
+    // Daemon path doesn't run verification - the daemon process holds a
+    // scanner but not the verifier engine. Trying to honour `--verify` or
+    // config `verify = true` over a daemon-only result set would silently drop
+    // every API-call-backed live-credential check; the orchestrator is the
+    // only honest answer.
     #[cfg(feature = "verify")]
-    if args.verify {
+    if policy.verify {
         if let Some(route) = reject_forced_daemon(
             forced_on,
-            "--verify requires the in-process verifier; the daemon only returns scanner matches",
+            "verification requires the in-process verifier; the daemon only returns scanner matches",
         ) {
             return route;
         }
