@@ -123,31 +123,34 @@ pub(crate) fn match_heuristic_confidence(policy: MatchHeuristicConfidencePolicy)
 pub(crate) const NAMED_DETECTOR_ANCHOR_FLOOR: f64 = 0.55;
 
 /// Lift the heuristic confidence of a service-anchored detector match to
-/// [`NAMED_DETECTOR_ANCHOR_FLOOR`] when the detector's regex required a context
-/// anchor (a keyword capture group rather than a bare-value literal).
+/// [`NAMED_DETECTOR_ANCHOR_FLOOR`] when the match carried a strong anchor — a
+/// required keyword **context anchor** (capture group) OR a distinctive
+/// **literal prefix** (`cs_`, `pl_`, `tk_`, `sk-`, `ghp_`).
 ///
 /// `compute_confidence` is a *normalized* weighted sum: it divides the earned
-/// signal weight by the full signal set (literal prefix, sensitive file,
-/// companion, keyword-nearby, …). A keyword-anchored service detector
-/// (`CROWDIN_API_TOKEN = <40hex>`, `Splunk=<uuid>`) earns the context-anchor
-/// weight but structurally cannot earn the others, so its normalized score lands
-/// below the `0.40` floor and the match is dropped as `below_min_confidence` —
-/// even though the match *only fired because the service-specific keyword was
-/// present next to a value of the contracted shape*, which is itself positive
-/// evidence. This is the single trust signal that the previously-scattered
-/// shape / entropy / confidence gates each failed to credit consistently.
+/// signal weight by the full signal set (literal prefix, context anchor,
+/// entropy, sensitive file, companion, keyword-nearby). A service detector that
+/// earns ONLY the anchor weight — `CROWDIN_API_TOKEN = <40hex>` (context anchor)
+/// or a bare `cs_<34 alnum>` cloudsmith token (literal prefix) — structurally
+/// cannot earn the others, so its normalized score lands below the `0.40` floor
+/// and the match is dropped as `below_min_confidence`, even though the match
+/// *only fired because the service-specific anchor was present next to a value
+/// of the contracted shape*. That anchor is itself positive evidence. This is
+/// the single trust signal the previously-scattered shape / entropy / confidence
+/// gates each failed to credit consistently.
 ///
 /// FP-safe by construction: `is_named_detector` is `is_service_anchored_detector
 /// && !weak_anchor`, so generic, entropy, private-key-fallback, and
 /// collision-prone weak-anchor detectors are excluded upstream and keep the full
-/// gate stack. The lift is a floor (`max`), never a cap, so stronger matches
-/// keep their higher score.
+/// gate stack; `has_anchor` requires a real keyword group or an extractable
+/// literal prefix (not a bare-value match). The lift is a floor (`max`), never a
+/// cap, so stronger matches keep their higher score.
 pub(crate) fn apply_named_detector_anchor_floor(
     confidence: f64,
     is_named_detector: bool,
-    has_context_anchor: bool,
+    has_anchor: bool,
 ) -> f64 {
-    if is_named_detector && has_context_anchor {
+    if is_named_detector && has_anchor {
         confidence.max(NAMED_DETECTOR_ANCHOR_FLOOR)
     } else {
         confidence
@@ -168,15 +171,18 @@ pub(crate) fn candidate_match_score<'a>(
         code_context: policy.code_context,
         penalize_test_paths: policy.penalize_test_paths,
     });
-    // A keyword-anchored service detector match is positive evidence the
-    // normalized signal sum structurally under-credits; lift it to clear the
-    // floor. Applied before the ML branch so it propagates through both the
-    // heuristic-only `Final` path and the `Pending` path (whose
-    // `ml_pending_confidence` takes `max(heuristic, model)`).
+    // An anchored service-detector match is positive evidence the normalized
+    // signal sum structurally under-credits; lift it to clear the floor. The
+    // anchor is EITHER a required keyword group (`has_context_anchor`) OR a
+    // distinctive literal prefix (`has_literal_prefix` — `cs_`, `pl_`, `tk_`,
+    // bare service tokens with no surrounding keyword). Applied before the ML
+    // branch so it propagates through both the heuristic-only `Final` path and
+    // the `Pending` path (whose `ml_pending_confidence` takes
+    // `max(heuristic, model)`).
     let heuristic_conf = apply_named_detector_anchor_floor(
         heuristic_conf,
         policy.is_named_detector,
-        policy.has_context_anchor,
+        policy.has_context_anchor || policy.has_literal_prefix,
     );
 
     #[cfg(not(feature = "ml"))]

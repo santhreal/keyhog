@@ -327,21 +327,26 @@ impl LazyRegex {
         &self.src
     }
 
-    /// Whether this pattern has an extractable literal prefix
-    /// (`extract_literal_prefix(self.as_str()).is_some()`), memoized.
+    /// Whether this pattern is anchored by a distinctive literal prefix,
+    /// memoized.
     ///
     /// This is the `ConfidenceSignals.has_literal_prefix` input the per-match
-    /// scoring path consumes. It is a pure function of the regex SOURCE, so
-    /// the result is cached the first time scoring touches this pattern and
-    /// reused for every subsequent match — the prior inline call re-parsed
-    /// (and re-allocated) the prefix on each surviving candidate. The value
-    /// is byte-for-byte identical to the inline computation it replaces
-    /// (same `extract_literal_prefix`, same `.is_some()`), so findings are
-    /// unchanged; only the redundant work is removed.
+    /// scoring path consumes. It delegates to the SAME extractor the routing
+    /// prefilter uses (`extract_literal_prefixes`, the plural), so confidence
+    /// and routing agree on what counts as a literal anchor: it strips a leading
+    /// inline-flag group (`(?-i)cs_…`), strips a boundary guard
+    /// (`(?:^|[^…])(sk-…)`), and — crucially — recognizes a leading literal
+    /// ALTERNATION where the branches diverge (`(?:test_|live_)…` lob,
+    /// `(?:hanko_|corbado1_)…` hanko). The earlier `extract_literal_prefix`
+    /// (singular) returned only the single COMMON prefix, which is empty when
+    /// the branches share no head, so every multi-prefix detector was silently
+    /// denied its literal-prefix confidence weight and scored below the floor.
+    ///
+    /// Pure function of the regex SOURCE, cached on first touch.
     #[must_use]
     pub(crate) fn has_literal_prefix(&self) -> bool {
         *self.has_literal_prefix.get_or_init(|| {
-            crate::compiler::compiler_prefix::extract_literal_prefix(&self.src).is_some()
+            !crate::compiler::compiler_prefix::extract_literal_prefixes(&self.src).is_empty()
         })
     }
 

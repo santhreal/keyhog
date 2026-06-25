@@ -228,6 +228,16 @@ pub(crate) fn strip_leading_inline_flags(pattern: &str) -> &str {
 }
 
 pub(crate) fn extract_literal_prefix(pattern: &str) -> Option<String> {
+    // Strip a leading bare inline-flag group — `(?i)`, `(?-i)`, `(?im)` — which
+    // sets match modes but consumes no input, so the literal that follows
+    // (`(?-i)cs_…` → `cs_…`) is reachable. This is the SAME normalization the
+    // routing extractor `extract_literal_prefixes` already applies; the singular
+    // form (which feeds `has_literal_prefix` → the confidence `literal_prefix`
+    // weight) previously skipped it, so the 62 detectors whose regex opens with
+    // `(?-i)`/`(?i)` (cloudsmith `cs_`, promptlayer `pl_`, ntfy `tk_`, …) were
+    // denied their literal-prefix credit and scored below the floor. A scoped
+    // group `(?-i:…)` keeps its `:` and is left intact for the main parser.
+    let pattern = strip_leading_inline_flags(pattern);
     let mut prefix = String::new();
     let mut chars = pattern.chars().peekable();
     while let Some(ch) = chars.next() {

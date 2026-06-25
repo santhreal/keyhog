@@ -590,15 +590,16 @@ pub fn normalize_chunk_data(data: &str) -> std::borrow::Cow<'_, str> {
 pub const NAMED_DETECTOR_ANCHOR_FLOOR: f64 = crate::confidence::policy::NAMED_DETECTOR_ANCHOR_FLOOR;
 
 /// Test seam for [`crate::confidence::policy::apply_named_detector_anchor_floor`].
+/// `has_anchor` is `has_context_anchor || has_literal_prefix` at the call site.
 pub fn apply_named_detector_anchor_floor(
     confidence: f64,
     is_named_detector: bool,
-    has_context_anchor: bool,
+    has_anchor: bool,
 ) -> f64 {
     crate::confidence::policy::apply_named_detector_anchor_floor(
         confidence,
         is_named_detector,
-        has_context_anchor,
+        has_anchor,
     )
 }
 

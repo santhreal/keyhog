@@ -1,20 +1,23 @@
-//! Regression: a service-anchored ("named") detector whose regex required a
-//! context anchor (a service-specific keyword next to a value of the contracted
-//! shape) must clear the `min_confidence` floor on the strength of that anchor
-//! alone.
+//! Regression: a service-anchored ("named") detector match carrying a strong
+//! anchor — a required keyword **context anchor** (`Splunk=<uuid>`) OR a
+//! distinctive **literal prefix** (`cs_…` cloudsmith, `pl_…` promptlayer) — must
+//! clear the `min_confidence` floor on the strength of that anchor alone.
 //!
 //! `compute_confidence` is a normalized signal sum: it divides earned weight by
-//! the full signal set (literal prefix, sensitive file, companion, ...). A
-//! keyword-anchored service detector earns the context-anchor weight but
-//! structurally cannot earn the others, so a real `Splunk=<uuid>` match landed
-//! below the default `0.40` floor and was dropped as `below_min_confidence` —
-//! the dominant cause of 538 contract-positive misses (recovered 467 here).
+//! the full signal set (literal prefix, context anchor, entropy, sensitive file,
+//! companion, ...). A match that earns ONLY the anchor weight structurally
+//! cannot earn the others, so a real `Splunk=<uuid>` or a bare `cs_<34 alnum>`
+//! token landed below the default `0.40` floor and was dropped as
+//! `below_min_confidence` — the dominant cause of the strict contract-positive
+//! misses.
 //!
-//! The fix lifts such matches to [`NAMED_DETECTOR_ANCHOR_FLOOR`]; it is FP-safe
-//! because generic / entropy / private-key-fallback / weak-anchor detectors are
-//! excluded upstream (`is_named_detector == is_service_anchored_detector &&
-//! !weak_anchor`) and keep the full gate stack. Negative twins below pin that
-//! the lift requires the service-anchored match (not the bare value shape).
+//! The fix lifts such matches to [`NAMED_DETECTOR_ANCHOR_FLOOR`] when
+//! `is_named_detector && (has_context_anchor || has_literal_prefix)`; it is
+//! FP-safe because generic / entropy / private-key-fallback / weak-anchor
+//! detectors are excluded upstream (`is_named_detector ==
+//! is_service_anchored_detector && !weak_anchor`) and keep the full gate stack.
+//! Negative twins below pin that the lift requires the service-anchored match
+//! (the keyword or the literal prefix), not the bare value shape.
 
 mod support;
 use support::paths::detector_dir;
@@ -61,13 +64,16 @@ fn detector_fired(matches: &[(String, String)], detector_id: &str) -> bool {
 }
 
 #[test]
-fn named_detector_anchor_floor_lifts_only_named_context_anchored_matches() {
-    // Named + context anchor: lifted to the floor (the keyword-required regex
-    // match is positive evidence the normalized signal sum under-credits).
+fn named_detector_anchor_floor_lifts_only_named_anchored_matches() {
+    // Named + anchor (context keyword group OR distinctive literal prefix):
+    // lifted to the floor. The caller passes `has_anchor = has_context_anchor
+    // || has_literal_prefix`; the required-keyword match and the bare
+    // literal-prefix token (`cs_…`, `pl_…`) are both positive evidence the
+    // normalized signal sum under-credits.
     assert_eq!(
         apply_named_detector_anchor_floor(0.30, true, true),
         NAMED_DETECTOR_ANCHOR_FLOOR,
-        "named + context-anchored match must lift to the floor"
+        "named + anchored match must lift to the floor"
     );
     // Not named (generic / entropy / weak-anchor): unchanged — the collision-
     // prone shapes keep the full gate stack.
@@ -76,11 +82,12 @@ fn named_detector_anchor_floor_lifts_only_named_context_anchored_matches() {
         0.30,
         "non-named detector must not be lifted"
     );
-    // Named but no context anchor (bare-value literal pattern): unchanged.
+    // Named but no anchor at all (bare-value match, no keyword, no literal
+    // prefix): unchanged.
     assert_eq!(
         apply_named_detector_anchor_floor(0.30, true, false),
         0.30,
-        "named detector without a context anchor must not be lifted"
+        "named detector without any anchor must not be lifted"
     );
     // Floor, never a cap: a stronger match keeps its higher score.
     assert_eq!(
@@ -91,6 +98,61 @@ fn named_detector_anchor_floor_lifts_only_named_context_anchored_matches() {
     assert!(
         NAMED_DETECTOR_ANCHOR_FLOOR > 0.40,
         "floor must clear the default 0.40 min_confidence with headroom"
+    );
+}
+
+#[test]
+fn literal_prefix_bare_service_token_surfaces() {
+    // cloudsmith-api-key: `(?-i)cs_[a-zA-Z0-9]{32,48}`. A bare token with NO
+    // surrounding keyword has `has_context_anchor = false`; the distinctive
+    // `cs_` literal prefix is the anchor that lifts it past the 0.40 floor
+    // (pre-fix it dropped as `below_min_confidence`).
+    let matches = matches_for("cs_AbCdEfGhIjKlMnOpQrStUvWxYz01234567");
+    assert!(
+        surfaced(
+            &matches,
+            "cloudsmith-api-key",
+            "cs_AbCdEfGhIjKlMnOpQrStUvWxYz01234567"
+        ),
+        "bare cs_-prefixed cloudsmith token must surface on the literal prefix; matches={matches:?}"
+    );
+
+    // promptlayer-api-key: bare `pl_` token, same mechanism.
+    let matches = matches_for("pl_OhX5esA2JNCvMTNpyfUbF1xLPsfJUnON");
+    assert!(
+        surfaced(
+            &matches,
+            "promptlayer-api-key",
+            "pl_OhX5esA2JNCvMTNpyfUbF1xLPsfJUnON"
+        ),
+        "bare pl_-prefixed promptlayer token must surface on the literal prefix; matches={matches:?}"
+    );
+
+    // hanko-passkey-credentials: `(?:hanko_|corbado1_)[a-zA-Z0-9_-]{20,}`. The
+    // branches share NO common head, so the single-prefix extractor returned
+    // nothing and `has_literal_prefix` was false; the routing (plural) extractor
+    // returns BOTH branch prefixes, so confidence now agrees that `hanko_` is a
+    // distinctive anchor. Pins the multi-prefix-alternation recall.
+    let matches = matches_for("hanko_w5rqbu3NdOSohlPl0gstZPf_n6SdF");
+    assert!(
+        surfaced(
+            &matches,
+            "hanko-passkey-credentials",
+            "hanko_w5rqbu3NdOSohlPl0gstZPf_n6SdF"
+        ),
+        "bare hanko_-prefixed token (multi-prefix alternation) must surface; matches={matches:?}"
+    );
+}
+
+#[test]
+fn unprefixed_random_token_does_not_claim_a_literal_prefix_detector() {
+    // The lift rides on the detector's literal prefix: a random token with no
+    // `cs_` prefix does not match the cloudsmith regex, so the detector must
+    // not fire (no prefix → no match → no claim).
+    let matches = matches_for("AbCdEfGhIjKlMnOpQrStUvWxYz01234567");
+    assert!(
+        !matches.iter().any(|(id, _)| id == "cloudsmith-api-key"),
+        "an unprefixed random token must not fire cloudsmith-api-key; matches={matches:?}"
     );
 }
 
