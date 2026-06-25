@@ -8,7 +8,7 @@ use super::support;
 use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata, MatchLocation, RawMatch, Severity};
-use keyhog_scanner::testing::scan_state_drain;
+use keyhog_scanner::testing::{scan_state_drain, scan_state_lazy_duplicate_probe_for_test};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -200,5 +200,63 @@ fn push_match_eviction_keeps_highest_confidence_when_capped() {
         kept,
         ["high", "mid"],
         "bounded heap must evict the lowest-confidence finding, not the highest"
+    );
+}
+
+#[test]
+fn push_match_duplicate_identity_keeps_best_single_slot() {
+    const LIMIT: usize = 2;
+
+    let mut duplicate_low = tied_match(7);
+    duplicate_low.credential = keyhog_core::SensitiveString::from("duplicate");
+    duplicate_low.confidence = Some(0.10);
+
+    let mut filler = tied_match(14);
+    filler.credential = keyhog_core::SensitiveString::from("filler");
+    filler.confidence = Some(0.50);
+
+    let mut duplicate_high = tied_match(7);
+    duplicate_high.credential = keyhog_core::SensitiveString::from("duplicate");
+    duplicate_high.confidence = Some(0.90);
+
+    let kept = scan_state_drain(vec![duplicate_low, filler, duplicate_high], LIMIT);
+
+    assert_eq!(
+        kept.len(),
+        LIMIT,
+        "duplicate identities must use one heap slot so another finding can survive: {kept:?}"
+    );
+    let duplicate = kept
+        .iter()
+        .find(|m| m.credential.as_ref() == "duplicate")
+        .expect("duplicate identity retained");
+    assert_eq!(
+        duplicate.confidence,
+        Some(0.90),
+        "a later duplicate with better ordering must replace the retained identity"
+    );
+    assert!(
+        kept.iter().any(|m| m.credential.as_ref() == "filler"),
+        "the second heap slot must remain available for a distinct finding: {kept:?}"
+    );
+}
+
+#[test]
+fn push_match_lazy_duplicate_identity_skips_worse_build_and_replaces_better() {
+    let (worse_built, better_built, kept) = scan_state_lazy_duplicate_probe_for_test();
+    assert!(
+        !worse_built,
+        "lazy duplicate below the retained identity must not build an owned RawMatch"
+    );
+    assert!(
+        better_built,
+        "lazy duplicate above the retained identity must build so it can replace"
+    );
+
+    assert_eq!(kept.len(), 1, "duplicate identity must keep one slot");
+    assert_eq!(
+        kept[0].confidence,
+        Some(0.90),
+        "lazy duplicate replacement must keep the best candidate"
     );
 }

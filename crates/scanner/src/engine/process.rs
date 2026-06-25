@@ -268,14 +268,9 @@ impl CompiledScanner {
                     scan_state,
                     entry.client_safe,
                 );
-                if !scan_state.claim_stripe_secret_key_offset(
-                    raw_match.detector_id.as_ref(),
-                    raw_match.location.offset,
-                ) {
-                    return;
+                if scan_state.push_match(raw_match, self.config.max_matches_per_chunk) {
+                    crate::telemetry::record_match_found();
                 }
-                scan_state.push_match(raw_match, self.config.max_matches_per_chunk);
-                crate::telemetry::record_match_found();
             }
             #[cfg(feature = "ml")]
             MlScoreResult::Pending {
@@ -303,12 +298,6 @@ impl CompiledScanner {
                     scan_state,
                     entry.client_safe,
                 );
-                if !scan_state.claim_stripe_secret_key_offset(
-                    raw_match.detector_id.as_ref(),
-                    raw_match.location.offset,
-                ) {
-                    return;
-                }
                 scan_state.push_detector_ml_pending(
                     raw_match,
                     heuristic_conf,

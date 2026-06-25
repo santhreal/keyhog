@@ -72,18 +72,19 @@ fn stripe_direct_prefix_duplicates_are_owned_by_scan_state() {
         .expect("hot_patterns source readable");
 
     assert!(
-        scan_state.contains("stripe_secret_key_offsets: HashSet<usize>")
-            && scan_state.contains("fn claim_stripe_secret_key_offset(")
-            && scan_state.contains("crate::detector_ids::STRIPE_SECRET_KEY")
-            && scan_state.contains("self.stripe_secret_key_offsets.insert(absolute_offset)"),
-        "ScanState must own Stripe same-start suppression state instead of path-local filters"
+        scan_state.contains("claimed_match_identities: HashSet<OwnedMatchIdentity>")
+            && scan_state.contains("struct OwnedMatchIdentity")
+            && scan_state.contains("fn push_match(")
+            && scan_state.contains("fn replace_claimed_match_if_better(")
+            && scan_state.contains("OwnedMatchIdentity::from(&m)")
+            && scan_state.contains("self.claimed_match_identities.remove(&displaced)")
+            && scan_state.contains("self.claimed_match_identities.insert(identity)"),
+        "ScanState must own canonical same-identity suppression state instead of detector-local filters"
     );
     assert!(
-        process.contains("claim_stripe_secret_key_offset(")
-            && process.contains("raw_match.detector_id.as_ref()")
-            && process.contains("raw_match.location.offset")
-            && process.contains("return;"),
-        "process_match must claim Stripe absolute offsets at the shared emission bottleneck"
+        process.contains("scan_state.push_match(raw_match, self.config.max_matches_per_chunk)")
+            && process.contains("crate::telemetry::record_match_found();"),
+        "process_match must claim canonical match identities at the shared emission bottleneck"
     );
     assert!(
         !hot_patterns.contains("chunk.metadata.base_offset,\n                    keyword_nearby")

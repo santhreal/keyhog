@@ -163,6 +163,34 @@ impl<'a> From<&'a keyhog_core::RawMatch> for MatchIdentity<'a> {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct OwnedMatchIdentity {
+    detector_id: Arc<str>,
+    credential: SensitiveString,
+    offset: usize,
+}
+
+impl From<&keyhog_core::RawMatch> for OwnedMatchIdentity {
+    fn from(raw_match: &keyhog_core::RawMatch) -> Self {
+        Self {
+            detector_id: raw_match.detector_id.clone(),
+            credential: raw_match.credential.clone(),
+            offset: raw_match.location.offset,
+        }
+    }
+}
+
+#[cfg(any(feature = "entropy", feature = "simdsieve"))]
+impl OwnedMatchIdentity {
+    fn from_priority(priority: &RawMatchPriority<'_>) -> Self {
+        Self {
+            detector_id: Arc::from(priority.detector_id),
+            credential: SensitiveString::from(priority.credential),
+            offset: priority.offset,
+        }
+    }
+}
+
 /// Internal state for a single scan operation.
 #[derive(Default)]
 pub(crate) struct ScanState {
@@ -185,12 +213,12 @@ pub(crate) struct ScanState {
     /// `(detector_id, detector_name, service, source_type)` lookup
     /// without per-scan allocation.
     pub(crate) metadata_interner: HashSet<Arc<str>>,
-    /// Absolute file offsets already claimed by the Stripe secret-key detector
-    /// in this scan state. The simdsieve hot-prefix lane and confirmed regex
-    /// lane can both prove the same `sk_live_` start; the first accepted
-    /// canonical detector candidate owns that start so fallback verifier walks
-    /// cannot re-emit an overlapping Stripe finding at the same byte.
-    pub(crate) stripe_secret_key_offsets: HashSet<usize>,
+    /// Finding identities already accepted in this scan state. The simdsieve
+    /// hot-prefix lane and confirmed regex lane can both prove the same
+    /// canonical detector candidate; the first accepted identity owns the heap
+    /// slot so duplicates cannot consume `max_matches_per_chunk` capacity before
+    /// final output deduplication runs.
+    claimed_match_identities: HashSet<OwnedMatchIdentity>,
     /// Optional reference to the scanner's frozen static-string
     /// interner. When `Some`, `intern_metadata` checks here first
     /// before falling through to the per-scan `metadata_interner`.
@@ -234,17 +262,6 @@ impl ScanState {
         let shared: Arc<str> = Arc::from(s);
         self.metadata_interner.insert(shared.clone());
         shared
-    }
-
-    pub(crate) fn claim_stripe_secret_key_offset(
-        &mut self,
-        detector_id: &str,
-        absolute_offset: usize,
-    ) -> bool {
-        if detector_id != crate::detector_ids::STRIPE_SECRET_KEY {
-            return true;
-        }
-        self.stripe_secret_key_offsets.insert(absolute_offset)
     }
 
     /// Construct a `ScanState` that consults the scanner-wide static
@@ -322,14 +339,64 @@ impl ScanState {
 
     /// Push a match to the state, maintaining priority and capacity.
     /// High-confidence secrets will displace lower-confidence findings.
-    pub(crate) fn push_match(&mut self, m: keyhog_core::RawMatch, limit: usize) {
+    pub(crate) fn push_match(&mut self, m: keyhog_core::RawMatch, limit: usize) -> bool {
+        let identity = OwnedMatchIdentity::from(&m);
+        if self.claimed_match_identities.contains(&identity) {
+            return self.replace_claimed_match_if_better(&identity, m);
+        }
+
         if self.matches.len() < limit {
+            self.claimed_match_identities.insert(identity);
             self.matches.push(m);
-        } else if let Some(mut worst) = self.matches.peek_mut() {
+            return true;
+        }
+
+        if let Some(mut worst) = self.matches.peek_mut() {
             if m < *worst {
+                let displaced = OwnedMatchIdentity::from(&*worst);
                 *worst = m;
+                drop(worst);
+                self.claimed_match_identities.remove(&displaced);
+                self.claimed_match_identities.insert(identity);
+                return true;
             }
         }
+
+        false
+    }
+
+    fn replace_claimed_match_if_better(
+        &mut self,
+        identity: &OwnedMatchIdentity,
+        candidate: keyhog_core::RawMatch,
+    ) -> bool {
+        let mut matches = std::mem::take(&mut self.matches).into_vec();
+        let mut replaced = false;
+
+        for existing in &mut matches {
+            if OwnedMatchIdentity::from(&*existing) == *identity {
+                if candidate < *existing {
+                    *existing = candidate;
+                    replaced = true;
+                }
+                break;
+            }
+        }
+
+        self.matches = BinaryHeap::from(matches);
+        replaced
+    }
+
+    #[cfg(any(feature = "entropy", feature = "simdsieve"))]
+    fn claimed_priority_would_replace(
+        &self,
+        identity: &OwnedMatchIdentity,
+        priority: &RawMatchPriority<'_>,
+    ) -> bool {
+        self.matches
+            .iter()
+            .find(|existing| OwnedMatchIdentity::from(*existing) == *identity)
+            .is_none_or(|existing| priority.cmp_raw_match(existing).is_lt())
     }
 
     #[cfg(any(feature = "entropy", feature = "simdsieve"))]
@@ -341,8 +408,19 @@ impl ScanState {
     ) where
         F: FnOnce(&mut Self) -> keyhog_core::RawMatch,
     {
+        let identity = OwnedMatchIdentity::from_priority(&priority);
+        if self.claimed_match_identities.contains(&identity) {
+            if !self.claimed_priority_would_replace(&identity, &priority) {
+                return;
+            }
+            let m = build(self);
+            self.replace_claimed_match_if_better(&identity, m);
+            return;
+        }
+
         if self.matches.len() < limit {
             let m = build(self);
+            self.claimed_match_identities.insert(identity);
             self.matches.push(m);
             return;
         }
@@ -354,7 +432,11 @@ impl ScanState {
         if admit {
             let m = build(self);
             if let Some(mut worst) = self.matches.peek_mut() {
+                let displaced = OwnedMatchIdentity::from(&*worst);
                 *worst = m;
+                drop(worst);
+                self.claimed_match_identities.remove(&displaced);
+                self.claimed_match_identities.insert(identity);
             }
         }
     }
