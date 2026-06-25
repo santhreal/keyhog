@@ -67,7 +67,8 @@ IDIOMS = [
 # debug log "then continue to a weaker path" is invisible at default verbosity,
 # so it is a silent fallback. We can't parse control flow with a regex, so we
 # flag debug/trace lines whose MESSAGE carries degrade-language (fallback / skip
-# / ignore / degrade / disabled / using default / unavailable / failed / dropped)
+# / ignore / degrade / disabled / using default / unavailable / failed / dropped
+# / reroute / truncate / exhausted)
 # — the lines most likely to be masking a degrade. A benign diagnostic
 # ("scanning X", "loaded Y") does not match. Each hit is triaged like any other:
 # upgrade to warn!/eprintln! + a counter if it is a real degrade, or annotate
@@ -78,7 +79,7 @@ DEGRADE_LOG = re.compile(r"tracing::(?:debug|trace)!")
 # dropped/drops/dropping, degrad -> degraded/degrades, disabl -> disabled.
 DEGRADE_WORDS = re.compile(
     r"(?i)\b(?:fall ?back|degrad|skip|ignor|disabl|using default|unavailabl|"
-    r"gave up|swallow|drop|recall)"
+    r"gave up|swallow|drop|recall|rerout|truncat|exhaust)"
 )
 EXEMPT = re.compile(r"//\s*LAW10:")
 WS = re.compile(r"\s+")
@@ -225,6 +226,9 @@ def self_test() -> int:
         'tracing::trace!("AC build failed; skipping the fast gate");': True,
         'tracing::debug!("degraded to host path");': True,
         'tracing::debug!("ignored stale cache entry");': True,
+        'tracing::debug!("pattern rejected; caller reroutes it");': True,
+        'tracing::debug!("decode caller deadline exhausted; stopping decode-through");': True,
+        'tracing::debug!("decode cap reached: chunk truncated to limit");': True,
         # benign / exempt / wrong-level / comment -> must NOT flag
         'tracing::debug!("scanning {n} chunks");': False,
         'tracing::info!("falling back to CPU");': False,

@@ -71,6 +71,10 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         "Hyperscan shard cache loads must be capped before reading cache bytes"
     );
     assert!(
+        backend.contains("HS shard cache header is invalid or truncated; compiling from patterns"),
+        "present but invalid Hyperscan cache artifacts must be operator-visible before recompilation"
+    );
+    assert!(
         engine_backend_prepared
             .contains("HS compile returned unsupported pattern id outside the deduped AC table")
             && engine_backend_prepared.contains("compiled scanner invariant violation")

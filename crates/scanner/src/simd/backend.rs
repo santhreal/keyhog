@@ -386,12 +386,12 @@ impl HsScanner {
                 }
                 PrepResult::Unsupported { index } => unsupported.push(index),
                 PrepResult::Rejected { index, error } => {
+                    // LAW10: unsupported HS pattern id is returned to the caller and rerouted through the phase-2 keyword lane.
                     tracing::debug!(
                         error,
                         pattern_index = index,
                         "pattern rejected by hyperscan; caller reroutes it through keyword phase-2 path"
                     );
-                    // Law 10: unsupported HS pattern id is returned to the caller and rerouted through the phase-2 keyword lane.
                     unsupported.push(index);
                 }
             }
@@ -621,6 +621,13 @@ impl HsScanner {
                             );
                         }
                     }
+                } else {
+                    tracing::warn!(
+                        cache = %cache_path.display(),
+                        shard = shard_idx,
+                        bytes = bytes.len(),
+                        "HS shard cache header is invalid or truncated; compiling from patterns"
+                    );
                 }
             }
             Ok(None) => {}

@@ -44,6 +44,7 @@ pub(crate) fn decode_chunk(
 
     while let Some((current, depth)) = queue.pop_front() {
         if crate::deadline::expired(deadline) {
+            // LAW10: deadline truncation is counted as a typed scanner coverage gap and reported by CLI/reporting surfaces.
             tracing::debug!(
                 path = ?chunk.metadata.path,
                 "decode caller deadline exhausted; stopping decode-through"
@@ -69,6 +70,7 @@ pub(crate) fn decode_chunk(
             // the matching check inside the inner loop below stops us
             // consuming the CURRENT decoder's (un-bounded) output.
             if crate::deadline::expired(deadline) {
+                // LAW10: deadline truncation is counted as a typed scanner coverage gap and reported by CLI/reporting surfaces.
                 tracing::debug!(
                     path = ?chunk.metadata.path,
                     "decode caller deadline exhausted mid-fan-out; stopping decode-through"
@@ -97,6 +99,7 @@ pub(crate) fn decode_chunk(
                 // post-deadline overrun to one decoder's fan-out at most -
                 // and stops the (dominant) per-result processing cost dead.
                 if crate::deadline::expired(deadline) {
+                    // LAW10: deadline truncation is counted as a typed scanner coverage gap and reported by CLI/reporting surfaces.
                     tracing::debug!(
                         path = ?chunk.metadata.path,
                         "decode caller deadline exhausted while consuming decoder output; \
@@ -140,6 +143,7 @@ pub(crate) fn decode_chunk(
                         // routine output (e.g. `keyhog scan ~/.config`)
                         // look like the scanner was failing. Real
                         // scanner failures use `warn!`/`error!`.
+                        // LAW10: cap truncation is counted as a typed scanner coverage gap and reported by CLI/reporting surfaces.
                         tracing::debug!(
                             path = ?chunk.metadata.path,
                             "decode depth/size cap reached: chunk truncated to limit"
