@@ -1015,15 +1015,13 @@ fn find_fallback_config_chunks(
                 root_path.display()
             ))
         })?;
+        let label = docker_relative_path_label(label);
         chunks.push(Chunk {
             metadata: ChunkMetadata {
                 base_offset: 0,
                 base_line: 0,
                 source_type: "docker".into(),
-                path: Some(format!(
-                    "{image}:fallback-config[{idx}]:{}",
-                    label.display()
-                )),
+                path: Some(format!("{image}:fallback-config[{idx}]:{label}")),
                 commit: None,
                 author: None,
                 date: None,
@@ -1035,6 +1033,13 @@ fn find_fallback_config_chunks(
         });
     }
     Ok(chunks)
+}
+
+fn docker_relative_path_label(path: &Path) -> String {
+    path.components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn is_fallback_config_path(path: &Path) -> bool {
