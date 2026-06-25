@@ -14,7 +14,7 @@ mod support;
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
-use support::collect_chunks;
+use support::split_chunk_results;
 
 #[test]
 fn explicitly_included_unreadable_path_is_counted_not_silently_dropped() {
@@ -31,14 +31,17 @@ fn explicitly_included_unreadable_path_is_counted_not_silently_dropped() {
         .with_include_paths(vec![missing])
         .chunks()
         .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
     assert_eq!(
-        rows.len(),
+        errors.len(),
         1,
         "a nonexistent include path must yield one visible source error"
     );
-    let err = rows[0]
-        .as_ref()
-        .expect_err("a nonexistent include path must be an error row");
+    assert!(
+        chunks.is_empty(),
+        "a nonexistent include path must not yield clean chunks, got {chunks:?}"
+    );
+    let err = errors[0];
     assert!(
         err.to_string().contains("explicitly included path")
             && err.to_string().contains("not scanned"),
@@ -57,12 +60,22 @@ fn explicitly_included_unreadable_path_is_counted_not_silently_dropped() {
     TestApi.reset_skip_counters();
     let real = dir.path().join("real.env");
     std::fs::write(&real, b"AWS=AKIAQYLPMN5HFIQR7XYA\n").expect("write");
-    let bodies: Vec<String> = collect_chunks(
-        &FilesystemSource::new(dir.path().to_path_buf()).with_include_paths(vec![real]),
-    )
-    .into_iter()
-    .map(|c| c.data.to_string())
-    .collect();
+    let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
+        .with_include_paths(vec![real])
+        .chunks()
+        .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "readable explicit include must not emit SourceError rows, got {errors:?}"
+    );
+    assert_eq!(
+        chunks.len(),
+        1,
+        "single readable explicit include should emit one chunk, got {chunks:?}"
+    );
+    assert_eq!(chunks[0].metadata.source_type, "filesystem");
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
     assert!(
         bodies.iter().any(|b| b.contains("AKIAQYLPMN5HFIQR7XYA")),
         "a real included file must still be scanned; got {bodies:?}"
