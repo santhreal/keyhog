@@ -6,8 +6,18 @@ mod analyze_keyword_only_must_assert;
 mod checksum_github;
 #[path = "gap/checksum_gitlab_npm_slack_stripe.rs"]
 mod checksum_gitlab_npm_slack_stripe;
+#[path = "gap/compiler_inline_tests_in_src.rs"]
+mod compiler_inline_tests_in_src;
+#[path = "gap/compiler_prefix_inline_tests_in_src.rs"]
+mod compiler_prefix_inline_tests_in_src;
 #[path = "gap/confidence_floor_policy.rs"]
 mod confidence_floor_policy;
+#[path = "gap/confidence_penalties_inline_tests_in_src.rs"]
+mod confidence_penalties_inline_tests_in_src;
+#[path = "gap/context_false_positive_inline_tests_in_src.rs"]
+mod context_false_positive_inline_tests_in_src;
+#[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
+mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_tokio_async_fn_test_body_is_test_code.rs"]
 mod context_tokio_async_fn_test_body_is_test_code;
 #[path = "gap/cross_platform_cfg_gates_absent.rs"]
@@ -24,6 +34,8 @@ mod docs_megakernel_env_claim_matches_engine;
 mod engine_backend_parity;
 #[path = "gap/entropy_keyword_only_requires_keyword_line.rs"]
 mod entropy_keyword_only_requires_keyword_line;
+#[path = "gap/entropy_keywords_inline_tests_in_src.rs"]
+mod entropy_keywords_inline_tests_in_src;
 #[path = "gap/file_gate_matrix_scanner_adversarial_unmarked.rs"]
 mod file_gate_matrix_scanner_adversarial_unmarked;
 #[path = "gap/file_gate_matrix_scanner_missing_submodule_rows.rs"]
