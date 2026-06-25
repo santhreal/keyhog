@@ -51,8 +51,64 @@ fn slack_transport_error_is_counted_unreadable() {
     );
 }
 
+#[cfg(feature = "slack")]
+#[test]
+fn slack_api_error_is_counted_unreadable() {
+    use keyhog_core::Source;
+    use keyhog_sources::skip_counts;
+    use keyhog_sources::testing::{SourceTestApi, TestApi};
+
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.list")
+            .query_param("types", "public_channel,private_channel")
+            .query_param("limit", "1000");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"ok":false,"error":"not_authed"}"#);
+    });
+
+    let rows: Vec<_> = TestApi
+        .slack_source_with_endpoint("xoxb-test-token", server.url(""))
+        .chunks()
+        .collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "Slack semantic API failure must produce one visible source error"
+    );
+    let error = rows[0]
+        .as_ref()
+        .expect_err("Slack semantic API failure must be an error row");
+    assert!(
+        error
+            .to_string()
+            .contains("Slack API conversations.list error: not_authed"),
+        "error should preserve Slack API endpoint and code, got {error}"
+    );
+    assert_eq!(list.calls(), 1, "Slack channel list request count");
+
+    let after = skip_counts();
+    assert_eq!(
+        after.unreadable - before.unreadable,
+        1,
+        "Slack semantic API failures must bump SKIPPED_UNREADABLE"
+    );
+}
+
 #[cfg(not(feature = "slack"))]
 #[test]
 fn slack_transport_error_is_counted_unreadable() {
+    assert!(!cfg!(feature = "slack"));
+}
+
+#[cfg(not(feature = "slack"))]
+#[test]
+fn slack_api_error_is_counted_unreadable() {
     assert!(!cfg!(feature = "slack"));
 }

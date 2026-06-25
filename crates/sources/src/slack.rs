@@ -175,6 +175,14 @@ fn slack_unreadable_error(message: String) -> SourceError {
     SourceError::Other(message)
 }
 
+fn slack_payload_error(message: String, record_skip: bool) -> SourceError {
+    if record_skip {
+        slack_unreadable_error(message)
+    } else {
+        SourceError::Other(message)
+    }
+}
+
 fn slack_next_cursor(metadata: Option<ResponseMetadata>) -> Option<String> {
     metadata
         .and_then(|metadata| metadata.next_cursor)
@@ -184,37 +192,46 @@ fn slack_next_cursor(metadata: Option<ResponseMetadata>) -> Option<String> {
 
 fn channels_page_from_response(
     resp: SlackResponse<ConversationsList>,
+    record_skip: bool,
 ) -> Result<(Vec<Channel>, Option<String>), SourceError> {
     if !resp.ok {
-        return Err(SourceError::Other(format!(
-            "Slack API {CONVERSATIONS_LIST} error: {}",
-            slack_error_code(resp.error.as_deref())
-        )));
+        return Err(slack_payload_error(
+            format!(
+                "Slack API {CONVERSATIONS_LIST} error: {}",
+                slack_error_code(resp.error.as_deref())
+            ),
+            record_skip,
+        ));
     }
     let next_cursor = slack_next_cursor(resp.data.response_metadata);
     match resp.data.channels {
         Some(channels) => Ok((channels, next_cursor)),
-        None => Err(SourceError::Other(format!(
-            "Slack API {CONVERSATIONS_LIST} ok response missing channels"
-        ))),
+        None => Err(slack_payload_error(
+            format!("Slack API {CONVERSATIONS_LIST} ok response missing channels"),
+            record_skip,
+        )),
     }
 }
 
 fn channels_from_response(
     resp: SlackResponse<ConversationsList>,
 ) -> Result<Vec<Channel>, SourceError> {
-    channels_page_from_response(resp).map(|(channels, _next_cursor)| channels)
+    channels_page_from_response(resp, false).map(|(channels, _next_cursor)| channels)
 }
 
 fn messages_page_from_response(
     resp: SlackResponse<History>,
     channel_id: &str,
+    record_skip: bool,
 ) -> Result<(Vec<Message>, Option<String>, bool), SourceError> {
     if !resp.ok {
-        return Err(SourceError::Other(format!(
-            "Slack API {CONVERSATIONS_HISTORY} error for channel {channel_id}: {}",
-            slack_error_code(resp.error.as_deref())
-        )));
+        return Err(slack_payload_error(
+            format!(
+                "Slack API {CONVERSATIONS_HISTORY} error for channel {channel_id}: {}",
+                slack_error_code(resp.error.as_deref())
+            ),
+            record_skip,
+        ));
     }
     let has_more = match resp.data.has_more {
         Some(has_more) => has_more,
@@ -223,9 +240,12 @@ fn messages_page_from_response(
     let next_cursor = slack_next_cursor(resp.data.response_metadata);
     match resp.data.messages {
         Some(messages) => Ok((messages, next_cursor, has_more)),
-        None => Err(SourceError::Other(format!(
-            "Slack API {CONVERSATIONS_HISTORY} ok response for channel {channel_id} missing messages"
-        ))),
+        None => Err(slack_payload_error(
+            format!(
+                "Slack API {CONVERSATIONS_HISTORY} ok response for channel {channel_id} missing messages"
+            ),
+            record_skip,
+        )),
     }
 }
 
@@ -233,7 +253,7 @@ fn messages_from_response(
     resp: SlackResponse<History>,
     channel_id: &str,
 ) -> Result<Vec<Message>, SourceError> {
-    messages_page_from_response(resp, channel_id)
+    messages_page_from_response(resp, channel_id, false)
         .map(|(messages, _next_cursor, _has_more)| messages)
 }
 
@@ -251,7 +271,7 @@ pub(crate) fn conversations_list_next_cursor_for_test(
     body: &str,
 ) -> Result<Option<String>, SourceError> {
     let resp = parse_slack_response::<ConversationsList>(CONVERSATIONS_LIST, body)?;
-    channels_page_from_response(resp).map(|(_channels, next_cursor)| next_cursor)
+    channels_page_from_response(resp, false).map(|(_channels, next_cursor)| next_cursor)
 }
 
 pub(crate) fn history_next_cursor_for_test(
@@ -259,7 +279,7 @@ pub(crate) fn history_next_cursor_for_test(
     channel_id: &str,
 ) -> Result<Option<String>, SourceError> {
     let resp = parse_slack_response::<History>(CONVERSATIONS_HISTORY, body)?;
-    messages_page_from_response(resp, channel_id)
+    messages_page_from_response(resp, channel_id, false)
         .map(|(_messages, next_cursor, _has_more)| next_cursor)
 }
 
@@ -362,7 +382,7 @@ impl SlackSource {
                 ))
             })?;
             let resp = read_slack_response(CONVERSATIONS_LIST, resp)?;
-            let (page_channels, next_cursor) = channels_page_from_response(resp)?;
+            let (page_channels, next_cursor) = channels_page_from_response(resp, true)?;
             channels.extend(page_channels);
             let Some(next_cursor) = next_cursor else {
                 return Ok(channels);
@@ -399,7 +419,7 @@ impl SlackSource {
             })?;
             let resp = read_slack_response(CONVERSATIONS_HISTORY, resp)?;
             let (page_messages, next_cursor, has_more) =
-                messages_page_from_response(resp, channel_id)?;
+                messages_page_from_response(resp, channel_id, true)?;
             messages.extend(page_messages);
             match next_cursor {
                 Some(next_cursor) => cursor = Some(next_cursor),
