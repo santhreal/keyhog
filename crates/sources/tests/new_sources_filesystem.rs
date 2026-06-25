@@ -14,10 +14,22 @@ use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource, SkipCounts};
 use std::fs;
 use std::path::Path;
-use support::collect_chunks;
+use support::split_chunk_results;
 
 fn collect(src: &FilesystemSource) -> Vec<Chunk> {
-    collect_chunks(src)
+    let mut chunks = Vec::new();
+    let mut errors = Vec::new();
+    for row in src.chunks() {
+        match row {
+            Ok(chunk) => chunks.push(chunk),
+            Err(error) => errors.push(error),
+        }
+    }
+    assert!(
+        errors.is_empty(),
+        "FilesystemSource emitted unexpected SourceError rows: {errors:?}"
+    );
+    chunks
 }
 
 fn body_contains(chunks: &[Chunk], needle: &str) -> bool {
@@ -141,14 +153,31 @@ fn max_file_size_skips_oversize_file_and_bumps_counter() {
     fs::write(dir.path().join("small.txt"), "small_sentinel_value\n").unwrap();
 
     let src = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(100);
-    let chunks = collect(&src);
+    let rows: Vec<_> = src.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
     assert!(
-        body_contains(&chunks, "small_sentinel_value"),
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("small_sentinel_value")),
         "under-cap file must still be scanned"
     );
     assert!(
-        !body_contains(&chunks, "sentinel_over_cap"),
+        !chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("sentinel_over_cap")),
         "over-cap file content must not reach a chunk"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "over-cap file must emit one visible SourceError row"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("big.txt")
+            && error.contains("exceeds --max-file-size cap 100")
+            && error.contains("file was not scanned"),
+        "over-cap SourceError must name the skipped file and cap, got {error}"
     );
     assert!(
         skip_counts().over_max_size >= 1,
