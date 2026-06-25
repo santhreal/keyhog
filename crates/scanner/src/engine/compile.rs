@@ -324,15 +324,16 @@ impl CompiledScanner {
             })
             .collect();
 
-        // Pre-resolve the per-detector weak-anchor classification once, indexed
-        // by detector_index. `detector_weak_anchor` runs a regex-string scan
-        // (`has_broad_identifier_capture`) over the detector's patterns; the
-        // result depends ONLY on the spec, so the per-match path in
-        // `process_match` would otherwise recompute it for every surviving
-        // candidate. Built here (before `detectors` is moved into the struct).
-        let detector_weak_anchor_by_index: Vec<bool> = detectors
+        // Pre-resolve the per-detector weak-anchor BASE classification once,
+        // indexed by detector_index. The detector-wide half (residual pure-hex
+        // list, generic/private-key carve-out, explicit min_confidence) depends
+        // ONLY on the spec and is resolved here; the per-PATTERN broad-identifier
+        // half is resolved in `process_match` against the matched `entry.regex`
+        // (memoized on the `LazyRegex`), so a strong pattern in a multi-pattern
+        // detector keeps its anchor. Built before `detectors` is moved.
+        let detector_weak_anchor_base_by_index: Vec<crate::suppression::WeakAnchorBase> = detectors
             .iter()
-            .map(crate::suppression::detector_weak_anchor)
+            .map(crate::suppression::detector_weak_anchor_base)
             .collect::<std::result::Result<_, _>>()
             .map_err(crate::error::ScanError::Config)?;
         let generic_named_assignment_keywords =
@@ -419,7 +420,7 @@ impl CompiledScanner {
             gpu_degrade_count: std::sync::atomic::AtomicU64::new(0),
             static_intern,
             metadata_by_index,
-            detector_weak_anchor_by_index,
+            detector_weak_anchor_base_by_index,
             generic_named_assignment_keywords,
             #[cfg(feature = "gpu")]
             ac_match_upper_bounds,

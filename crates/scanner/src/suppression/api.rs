@@ -429,22 +429,76 @@ fn is_generic_or_entropy(detector_id: &str, weak_anchor: bool) -> bool {
 /// pure-hex class, which is shape-indistinguishable from real hex keys,
 /// stays in `rules/detector-classification.toml`.
 pub(crate) fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> Result<bool, String> {
+    Ok(match detector_weak_anchor_base(spec)? {
+        WeakAnchorBase::Always => true,
+        WeakAnchorBase::Never => false,
+        // Detector-level back-compat: weak iff ANY pattern is broad-identifier.
+        // The per-PATTERN resolution (`WeakAnchorBase::resolve`) is what the scan
+        // path uses so a strong pattern in an otherwise-weak detector is not
+        // dragged down by a sibling username/password pattern.
+        WeakAnchorBase::PerPattern => spec
+            .patterns
+            .iter()
+            .any(|p| has_broad_identifier_capture(&p.regex)),
+    })
+}
+
+/// Per-DETECTOR portion of the weak-anchor decision, separated from the
+/// per-PATTERN broad-identifier check so the latter can be resolved against the
+/// specific pattern that matched.
+///
+/// `weak_anchor` keeps the Tier-B shape gates engaged for collision-prone
+/// captures. The residual (`rules/detector-classification.toml`) pure-hex class,
+/// the generic/entropy/private-key carve-outs, and a detector-level explicit
+/// `min_confidence` are all DETECTOR-wide. Only the broad-identifier class is
+/// inherently per-pattern: a detector like `servicenow-api-key` mixes a strong
+/// `instance=(…\.service-now\.com)` pattern with a weak `user=([\w-]+)` pattern,
+/// and the strong one should not inherit the weak one's gates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WeakAnchorBase {
+    /// Always weak regardless of which pattern matched (residual pure-hex list).
+    Always,
+    /// Never weak (generic/entropy/private-key fallback, or an explicit
+    /// detector-level `min_confidence` already tunes the bar).
+    Never,
+    /// Weak iff the MATCHED pattern has a broad-identifier capture.
+    PerPattern,
+}
+
+impl WeakAnchorBase {
+    /// Resolve to the effective weak-anchor for one matched pattern regex.
+    pub(crate) fn resolve(self, matched_pattern_regex: &str) -> bool {
+        match self {
+            WeakAnchorBase::Always => true,
+            WeakAnchorBase::Never => false,
+            WeakAnchorBase::PerPattern => has_broad_identifier_capture(matched_pattern_regex),
+        }
+    }
+}
+
+pub(crate) fn detector_weak_anchor_base(
+    spec: &keyhog_core::DetectorSpec,
+) -> Result<WeakAnchorBase, String> {
     let id = spec.id.as_str();
     if crate::detector_ids::is_generic_or_entropy_detector(id)
         || crate::detector_ids::is_private_key_fallback(id)
     {
-        return Ok(false);
+        return Ok(WeakAnchorBase::Never);
     }
     if crate::detector_classification::is_residual_weak_anchor(id)? {
-        return Ok(true);
+        return Ok(WeakAnchorBase::Always);
     }
     if spec.min_confidence.is_some() {
-        return Ok(false);
+        return Ok(WeakAnchorBase::Never);
     }
-    Ok(spec
-        .patterns
-        .iter()
-        .any(|p| has_broad_identifier_capture(&p.regex)))
+    Ok(WeakAnchorBase::PerPattern)
+}
+
+/// True iff `regex` carries a broad-identifier capture (the per-pattern half of
+/// the weak-anchor decision). Public to the crate so the scan path can resolve
+/// [`WeakAnchorBase::PerPattern`] against the pattern that actually matched.
+pub(crate) fn pattern_has_broad_identifier_capture(regex: &str) -> bool {
+    has_broad_identifier_capture(regex)
 }
 
 /// True if `regex` contains a capture group whose entire body is a single

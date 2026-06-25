@@ -207,12 +207,13 @@ pub struct CompiledScanner {
     /// pattern for a broad-identifier capture), so it is constant across every
     /// candidate that detector produces. `process_match` used to recompute it
     /// per surviving candidate — on a hot detector firing thousands of matches
-    /// per chunk that re-ran `has_broad_identifier_capture` (a per-pattern regex
-    /// string walk) thousands of times for an unchanging value. Resolved ONCE at
-    /// construction; the per-match path indexes by `entry.detector_index`. Same
-    /// pattern as `metadata_by_index`. Byte-identical to
-    /// `crate::suppression::detector_weak_anchor(&detectors[i])`.
-    pub(crate) detector_weak_anchor_by_index: Vec<bool>,
+    /// per chunk that re-ran the classification thousands of times for an
+    /// unchanging value. Resolved ONCE at construction; the per-match path
+    /// indexes by `entry.detector_index` and then resolves the per-PATTERN
+    /// broad-identifier half against the matched `entry.regex` (memoized on the
+    /// `LazyRegex`). This keeps a strong pattern (`servicenow instance=…`) from
+    /// inheriting a weak sibling pattern's (`servicenow user=…`) shape gates.
+    pub(crate) detector_weak_anchor_base_by_index: Vec<crate::suppression::WeakAnchorBase>,
     /// Normalized assignment-key names owned by service-specific named
     /// detectors, e.g. `segment_write_key`. The generic assignment bridge uses
     /// this to avoid emitting a weaker generic finding for an LHS that a loaded

@@ -120,15 +120,25 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         (Arc::clone(id), Arc::clone(name), Arc::clone(service))
     }
 
-    /// Precomputed weak-anchor classification for `detector_index`.
+    /// Effective weak-anchor for the matched pattern `entry`.
     ///
-    /// The vector is built from the same detector list that creates every
-    /// `CompiledPattern::detector_index`. Index directly, like
-    /// `interned_detector_metadata`, so an index-parallel construction bug is
-    /// loud instead of recomputing a policy value on the hot path.
+    /// Combines the precomputed per-detector [`crate::suppression::WeakAnchorBase`]
+    /// (indexed by `entry.detector_index`, built from the same detector list that
+    /// creates every `CompiledPattern::detector_index`) with the per-PATTERN
+    /// broad-identifier check resolved against `entry.regex` (memoized on the
+    /// `LazyRegex`). Index directly so an index-parallel construction bug is loud.
     #[inline]
-    pub(crate) fn detector_weak_anchor_by_detector_index(&self, detector_index: usize) -> bool {
-        self.detector_weak_anchor_by_index[detector_index]
+    pub(crate) fn detector_pattern_weak_anchor(
+        &self,
+        entry: &crate::types::CompiledPattern,
+    ) -> bool {
+        match self.detector_weak_anchor_base_by_index[entry.detector_index] {
+            crate::suppression::WeakAnchorBase::Always => true,
+            crate::suppression::WeakAnchorBase::Never => false,
+            crate::suppression::WeakAnchorBase::PerPattern => {
+                entry.regex.has_broad_identifier_capture()
+            }
+        }
     }
 
     /// Total number of patterns (AC + phase-2 capture).

@@ -116,11 +116,11 @@ impl CompiledScanner {
             chunk.metadata.path.as_deref(),
             documentation_lines,
         );
-        // Per-detector constant, resolved once at scanner construction.
-        // `CompiledPattern::detector_index` and the weak-anchor cache are
-        // index-parallel with `detectors`; a mismatch is an internal
-        // construction bug and must be loud instead of recomputing policy here.
-        let weak_anchor = self.detector_weak_anchor_by_detector_index(entry.detector_index);
+        // Per-pattern weak-anchor: the per-detector base class (resolved once at
+        // construction, index-parallel with `detectors`) combined with the
+        // matched pattern's memoized broad-identifier check. A mismatch in the
+        // index-parallel base vector is an internal construction bug and is loud.
+        let weak_anchor = self.detector_pattern_weak_anchor(entry);
         let named_suppression_ctx =
             crate::suppression::NamedDetectorSuppressionCtx::with_weak_anchor(
                 chunk.metadata.path.as_deref(),

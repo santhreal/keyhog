@@ -283,6 +283,14 @@ jobs:
       # an all-zero placeholder stays suppressed (decoy gates still run).
       - name: named-detector canonical-hex-key recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_named_canonical_hex_key_recall
+      # Per-pattern weak-anchor recall contract. The weak_anchor classification
+      # (which keeps the Tier-B shape gates engaged for collision-prone captures)
+      # is resolved per MATCHED PATTERN, not per detector: a strong pattern
+      # (servicenow `instance=…\.service-now\.com`) must not inherit a sibling
+      # broad-identifier pattern's (`user=([\w-]+)`) gates. This pins the strong
+      # pattern surfaces and the bare-host precision twin (no keyword → no claim).
+      - name: per-pattern weak-anchor recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_per_pattern_weak_anchor_recall
       - name: RawMatch total-order gate
         run: cargo test -p keyhog-core --test new_core_finding_dedup --profile release-fast
 
