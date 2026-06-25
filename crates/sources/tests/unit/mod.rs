@@ -6,6 +6,7 @@ mod a5_lr2_http_proxy_off_preserved;
 mod a5_lr2_read_safe_cap_refuses_huge;
 pub mod basic_sources;
 pub mod binary;
+pub mod binary_sections_fat_macho;
 #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
 pub mod cloud;
 pub mod file_gate;

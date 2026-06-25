@@ -1,3 +1,4 @@
+use goblin::mach::{MachO, SingleArch};
 use keyhog_core::{Chunk, ChunkMetadata};
 
 /// Resolve an ELF section name from a `shdr_strtab.get_at(..)` result.
@@ -143,63 +144,38 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
             }
         }
         Object::Mach(goblin::mach::Mach::Binary(macho)) => {
-            for seg in &macho.segments {
-                // Law 10: a corrupt Mach-O segment whose section list cannot be
-                // parsed bumps the partial-parse counter (loud), then yields an
-                // empty section iterator — we do NOT silently treat the whole
-                // segment as section-free, which would hide a `__cstring`/`__data`
-                // section holding embedded secrets.
-                let sections = match seg.sections() {
-                    Ok(s) => s,
+            append_macho_sections(&mut chunks, &macho, bytes, path, target_sections);
+        }
+        Object::Mach(goblin::mach::Mach::Fat(fat)) => {
+            let arches = match fat.arches() {
+                Ok(arches) => arches,
+                Err(_error) => {
+                    let _event = crate::record_skip_event(
+                        crate::SourceSkipEvent::BinarySectionNameUnresolved,
+                    );
+                    Vec::new()
+                }
+            };
+            for (index, arch) in arches.iter().enumerate() {
+                let Some(arch_bytes) = checked_fat_arch_slice(bytes, arch.offset, arch.size) else {
+                    let _event = crate::record_skip_event(
+                        crate::SourceSkipEvent::BinarySectionNameUnresolved,
+                    );
+                    continue;
+                };
+                match fat.get(index) {
+                    Ok(SingleArch::MachO(macho)) => append_macho_sections(
+                        &mut chunks,
+                        &macho,
+                        arch_bytes,
+                        path,
+                        target_sections,
+                    ),
+                    Ok(SingleArch::Archive(_)) => {}
                     Err(_error) => {
-                        // Law 10: loud — bumps BINARY_SECTION_NAME_UNRESOLVED, never a silent drop
                         let _event = crate::record_skip_event(
                             crate::SourceSkipEvent::BinarySectionNameUnresolved,
                         );
-                        Vec::new()
-                    }
-                };
-                for (section, _) in sections {
-                    let name = match section.name() {
-                        Ok(n) => n,
-                        Err(_error) => {
-                            // Law 10: loud — bumps BINARY_SECTION_NAME_UNRESOLVED, never a silent drop
-                            let _event = crate::record_skip_event(
-                                crate::SourceSkipEvent::BinarySectionNameUnresolved,
-                            );
-                            ""
-                        }
-                    };
-                    if target_sections.contains(&name) {
-                        let start = section.offset as usize;
-                        // saturating_add: a malformed Mach-O section can claim
-                        // an offset/size that overflows usize and would panic
-                        // the `start + size` add in debug builds. Clamp instead.
-                        let end = start.saturating_add(section.size as usize).min(bytes.len());
-                        if start < end {
-                            let section_bytes = &bytes[start..end];
-                            let strings = crate::binary::extract_printable_strings(
-                                section_bytes,
-                                crate::binary::MIN_STRING_LEN,
-                            );
-                            if !strings.is_empty() {
-                                chunks.push(Chunk {
-                                    data: crate::strings::join_sensitive_strings(&strings, "\n"),
-                                    metadata: ChunkMetadata {
-                                        base_offset: 0,
-                                        base_line: 0,
-                                        source_type: format!("binary:macho:{name}"),
-                                        path: Some(path.to_string()),
-                                        commit: None,
-                                        author: None,
-                                        date: None,
-                                        mtime_ns: None,
-                                        size_bytes: None,
-                                        decoded_span: None,
-                                    },
-                                });
-                            }
-                        }
                     }
                 }
             }
@@ -212,4 +188,75 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
     } else {
         Some(chunks)
     }
+}
+
+fn append_macho_sections(
+    chunks: &mut Vec<Chunk>,
+    macho: &MachO<'_>,
+    bytes: &[u8],
+    path: &str,
+    target_sections: &[&str],
+) {
+    for seg in &macho.segments {
+        // Law 10: a corrupt Mach-O segment whose section list cannot be
+        // parsed bumps the partial-parse counter (loud), then yields an
+        // empty section iterator. This avoids silently treating the whole
+        // segment as section-free when it may hold embedded secrets.
+        let sections = match seg.sections() {
+            Ok(s) => s,
+            Err(_error) => {
+                let _event =
+                    crate::record_skip_event(crate::SourceSkipEvent::BinarySectionNameUnresolved);
+                Vec::new()
+            }
+        };
+        for (section, _) in sections {
+            let name = match section.name() {
+                Ok(n) => n,
+                Err(_error) => {
+                    let _event = crate::record_skip_event(
+                        crate::SourceSkipEvent::BinarySectionNameUnresolved,
+                    );
+                    ""
+                }
+            };
+            if target_sections.contains(&name) {
+                let start = section.offset as usize;
+                // saturating_add: a malformed Mach-O section can claim an
+                // offset/size that overflows usize and would panic the scan.
+                let end = start.saturating_add(section.size as usize).min(bytes.len());
+                if start < end {
+                    let section_bytes = &bytes[start..end];
+                    let strings = crate::binary::extract_printable_strings(
+                        section_bytes,
+                        crate::binary::MIN_STRING_LEN,
+                    );
+                    if !strings.is_empty() {
+                        chunks.push(Chunk {
+                            data: crate::strings::join_sensitive_strings(&strings, "\n"),
+                            metadata: ChunkMetadata {
+                                base_offset: 0,
+                                base_line: 0,
+                                source_type: format!("binary:macho:{name}"),
+                                path: Some(path.to_string()),
+                                commit: None,
+                                author: None,
+                                date: None,
+                                mtime_ns: None,
+                                size_bytes: None,
+                                decoded_span: None,
+                            },
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn checked_fat_arch_slice(bytes: &[u8], offset: u32, size: u32) -> Option<&[u8]> {
+    let start = offset as usize;
+    start
+        .checked_add(size as usize)
+        .and_then(|end| bytes.get(start..end))
 }
