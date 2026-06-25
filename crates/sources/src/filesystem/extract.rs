@@ -234,7 +234,7 @@ pub(super) fn process_entry(
         rar::extract_rar_chunks(&path, max_size, emit);
         return;
     } else if archive::is_openpack_archive_ext(ext) {
-        archive::extract_openpack_archive(&path, max_size, emit);
+        archive::extract_openpack_archive(&path, ext, max_size, emit);
         return;
     } else if ext.eq_ignore_ascii_case("tar") {
         // Bare (uncompressed) `.tar`: unpack per-entry exactly as the zip
@@ -298,7 +298,7 @@ pub(super) fn process_entry(
         // decompressed stream is a tar container, else scan the real
         // decompressed bytes. These extensions are removed from SKIP_EXTENSIONS
         // so they reach this branch.
-        compressed::extract_compressed_chunks(&path, max_size, emit);
+        compressed::extract_compressed_chunks(&path, ext, max_size, emit);
         return;
     } else if ext.eq_ignore_ascii_case("har") {
         // Route the HAR read through the same no-follow-symlink guard

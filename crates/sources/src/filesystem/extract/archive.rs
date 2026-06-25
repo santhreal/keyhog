@@ -49,6 +49,7 @@ pub(super) fn is_openpack_archive_ext(ext: &str) -> bool {
 
 pub(super) fn extract_openpack_archive(
     path: &Path,
+    ext: &str,
     max_size: u64,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
@@ -75,10 +76,7 @@ pub(super) fn extract_openpack_archive(
     // aggregate bomb ceiling instead of letting the budget collapse to 0.
     let per_entry_cap: u64 = if max_size == 0 { u64::MAX } else { max_size };
     let total_budget: u64 = extraction_total_budget(max_size);
-    let is_crx = path
-        .extension()
-        .and_then(|s| s.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("crx"));
+    let is_crx = ext.eq_ignore_ascii_case("crx");
     if !is_crx {
         zip_scan::extract_zip_archive(path, &archive_display, per_entry_cap, total_budget, emit);
         return;

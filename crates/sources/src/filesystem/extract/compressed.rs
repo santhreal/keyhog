@@ -406,6 +406,7 @@ fn emit_tar_entry_error(
 /// decompressed file.
 pub(super) fn extract_compressed_chunks(
     path: &Path,
+    ext: &str,
     max_size: u64,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
@@ -427,7 +428,6 @@ pub(super) fn extract_compressed_chunks(
         return;
     }
 
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
     let Some(format) = CompressedFormat::from_ext(ext) else {
         let path_display = display_path(path);
         if !emit(Err(SourceError::Other(format!(
