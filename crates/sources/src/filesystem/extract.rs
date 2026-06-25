@@ -383,44 +383,48 @@ pub(super) fn process_entry(
     if file_size > window_size as u64 {
         let display = display_path(&path);
         let mut consumer_stopped = false;
-        if read::for_each_file_windowed_mmap(&path, window_size, window_overlap, |row| match row {
-            Ok(w) => {
-                let chunk = Ok(Chunk {
-                    data: w.text.into(),
-                    metadata: ChunkMetadata {
-                        source_type: "filesystem/windowed".to_string(),
-                        path: Some(display.clone()),
-                        base_offset: w.offset,
-                        base_line: w.base_line,
-                        mtime_ns: live_mtime_ns,
-                        size_bytes: Some(file_size),
-                        decoded_span: None,
-                        ..Default::default()
-                    },
-                });
-                if !emit(chunk) {
-                    consumer_stopped = true;
-                    return false;
+        let windowed_mmap_outcome = read::for_each_file_windowed_mmap(
+            &path,
+            window_size,
+            window_overlap,
+            |row| match row {
+                Ok(w) => {
+                    let chunk = Ok(Chunk {
+                        data: w.text.into(),
+                        metadata: ChunkMetadata {
+                            source_type: "filesystem/windowed".to_string(),
+                            path: Some(display.clone()),
+                            base_offset: w.offset,
+                            base_line: w.base_line,
+                            mtime_ns: live_mtime_ns,
+                            size_bytes: Some(file_size),
+                            decoded_span: None,
+                            ..Default::default()
+                        },
+                    });
+                    if !emit(chunk) {
+                        consumer_stopped = true;
+                        return false;
+                    }
+                    true
                 }
-                true
-            }
-            Err(error) => {
-                if !emit(Err(error)) {
-                    consumer_stopped = true;
-                    return false;
+                Err(error) => {
+                    if !emit(Err(error)) {
+                        consumer_stopped = true;
+                        return false;
+                    }
+                    true
                 }
-                true
-            }
-        })
-        .is_some()
-        {
-            if consumer_stopped {
+            },
+        );
+        match windowed_mmap_outcome {
+            read::WindowedMmapOutcome::Consumed => {
+                if consumer_stopped {
+                    return;
+                }
                 return;
             }
-            return;
-        }
-        match read::open_file_safe(&path) {
-            Ok(mut file) => {
+            read::WindowedMmapOutcome::Fallback(mut file) => {
                 match file.metadata() {
                     Ok(meta) if meta.len() > read::MMAP_TOCTOU_SANITY_CAP_BYTES => {
                         tracing::warn!(
@@ -454,7 +458,6 @@ pub(super) fn process_entry(
                         return;
                     }
                 }
-
                 #[cfg(unix)]
                 {
                     use std::os::unix::io::AsRawFd;
@@ -564,15 +567,6 @@ pub(super) fn process_entry(
                         }
                     }
                 }
-            }
-            Err(error) => {
-                tracing::warn!(
-                    path = %path.display(),
-                    %error,
-                    "cannot open large file; skipping"
-                );
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                let _ = emit(Err(keyhog_core::SourceError::Io(error))); // LAW10: unused-binding marker; no runtime effect, not a fallback
             }
         }
         return;

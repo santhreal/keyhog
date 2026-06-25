@@ -518,7 +518,10 @@ fn for_each_file_windowed_mmap_stops_on_consumer_backpressure() {
         }
     });
 
-    assert!(mapped.is_some(), "mmap path should own this file");
+    assert!(
+        matches!(mapped, super::window::WindowedMmapOutcome::Consumed),
+        "mmap path should own this file"
+    );
     assert_eq!(seen.len(), 1, "consumer stop must halt window emission");
     assert!(
         errors.is_empty(),
@@ -544,8 +547,8 @@ fn windowed_mmap_failure_fallback_is_operator_visible() {
         .nth(1)
         .expect("windowed mmap fallback warning must be present");
     assert!(
-        fallback.contains("return None;"),
-        "windowed mmap failure should still hand off to the buffered window path after warning"
+        fallback.contains("return WindowedMmapOutcome::Fallback(file);"),
+        "windowed mmap failure should hand the already-open descriptor to the buffered window path after warning"
     );
 }
 

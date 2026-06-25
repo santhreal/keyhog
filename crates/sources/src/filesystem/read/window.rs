@@ -5,6 +5,7 @@
 
 use keyhog_core::SourceError;
 use memmap2::MmapOptions;
+use std::fs::File;
 use std::path::Path;
 
 use super::raw::open_file_safe;
@@ -23,6 +24,11 @@ pub(in crate::filesystem) struct FileWindow {
     /// line, not the per-window one (the line analog of `offset`).
     pub base_line: usize,
     pub text: String,
+}
+
+pub(in crate::filesystem) enum WindowedMmapOutcome {
+    Consumed,
+    Fallback(File),
 }
 
 /// Memory-map `path` and slice it into overlapping `window_size`-byte
@@ -49,7 +55,7 @@ pub(in crate::filesystem) fn read_file_windowed_mmap(
 ) -> Option<Vec<FileWindow>> {
     let mut windows = Vec::new();
     let mut terminal_error = false;
-    for_each_file_windowed_mmap(path, window_size, overlap, |row| match row {
+    match for_each_file_windowed_mmap(path, window_size, overlap, |row| match row {
         Ok(window) => {
             windows.push(window);
             true
@@ -58,7 +64,10 @@ pub(in crate::filesystem) fn read_file_windowed_mmap(
             terminal_error = true;
             true
         }
-    })?;
+    }) {
+        WindowedMmapOutcome::Consumed => {}
+        WindowedMmapOutcome::Fallback(_) => return None,
+    }
     if terminal_error {
         return Some(Vec::new());
     }
@@ -76,7 +85,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
     window_size: usize,
     overlap: usize,
     mut emit: impl FnMut(Result<FileWindow, SourceError>) -> bool,
-) -> Option<()> {
+) -> WindowedMmapOutcome {
     debug_assert!(window_size > overlap, "window must exceed overlap");
     let file = match open_file_safe(path) {
         Ok(file) => file,
@@ -91,7 +100,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
                 path,
                 format!("cannot open large file for windowed mmap ({error})"),
             )));
-            return Some(());
+            return WindowedMmapOutcome::Consumed;
         }
     };
 
@@ -114,7 +123,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
                 path,
                 format!("cannot stat opened large file for windowed mmap ({error})"),
             )));
-            return Some(());
+            return WindowedMmapOutcome::Consumed;
         }
     };
     if meta.len() > MMAP_TOCTOU_SANITY_CAP_BYTES {
@@ -133,7 +142,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
                 MMAP_TOCTOU_SANITY_CAP_BYTES
             ),
         )));
-        return Some(());
+        return WindowedMmapOutcome::Consumed;
     }
 
     #[cfg(unix)]
@@ -153,7 +162,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
                 path,
                 "large file is locked by another process",
             )));
-            return Some(());
+            return WindowedMmapOutcome::Consumed;
         }
     }
 
@@ -168,15 +177,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
                 %error,
                 "cannot windowed-mmap file; falling back to buffered read"
             );
-            #[cfg(unix)]
-            {
-                use std::os::unix::io::AsRawFd;
-                // SAFETY: `file` is still a valid open `File`;
-                // `LOCK_UN` releases the advisory shared lock taken
-                // above before bailing out of the windowed-mmap path.
-                unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
-            }
-            return None;
+            return WindowedMmapOutcome::Fallback(file);
         }
     };
 
@@ -203,7 +204,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
         // SAFETY: Simple advisory unlock FFI call.
         unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
     }
-    Some(())
+    WindowedMmapOutcome::Consumed
 }
 
 fn windowed_mmap_error(path: &Path, reason: impl std::fmt::Display) -> SourceError {

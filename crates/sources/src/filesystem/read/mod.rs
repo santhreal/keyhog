@@ -28,7 +28,7 @@ pub(crate) use raw::open_file_safe;
 pub(super) use raw::{
     read_file_buffered, read_file_mmap, read_file_prefix_safe, read_file_safe, BufferedFileRead,
 };
-pub(super) use window::for_each_file_windowed_mmap;
+pub(super) use window::{for_each_file_windowed_mmap, WindowedMmapOutcome};
 
 /// Cap on any mmap-based read. The walker already enforces the user's
 /// `max_file_size` based on a stat before scheduling; this is the
