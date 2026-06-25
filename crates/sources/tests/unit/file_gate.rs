@@ -60,8 +60,11 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
 
     assert!(
         filter.contains("pub(super) fn is_skip_extension(ext: &str)")
+            && filter.contains("let mut folded = [0u8; 32]")
+            && filter.contains("byte.to_ascii_lowercase()")
+            && filter.contains("skip_extensions().contains(folded)")
             && filter.contains("ext.eq_ignore_ascii_case(skip)"),
-        "filesystem extension skipping must compare ASCII-case-insensitively without allocating a lowercase extension"
+        "filesystem extension skipping must use a stack-folded HashSet lookup for ordinary extensions and keep only the long-extension case-insensitive scan"
     );
     assert!(
         extract.contains("is_skip_extension(ext)")

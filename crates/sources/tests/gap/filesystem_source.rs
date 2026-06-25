@@ -589,7 +589,7 @@ fn binary_extension_png_skipped_via_include_path() {
 
 #[test]
 fn binary_extension_match_is_case_insensitive() {
-    // process_entry lowercases the extension before the SKIP_EXTENSIONS
+    // process_entry ASCII-folds the extension before the skip-extension
     // lookup, so `.PNG` (uppercase) is treated identically to `.png`.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("IMAGE.PNG");

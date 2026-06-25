@@ -27,6 +27,21 @@ pub(super) fn skip_extensions() -> &'static HashSet<&'static str> {
 }
 
 pub(super) fn is_skip_extension(ext: &str) -> bool {
+    let bytes = ext.as_bytes();
+    let mut folded = [0u8; 32];
+    if bytes.len() <= folded.len() {
+        for (idx, byte) in bytes.iter().enumerate() {
+            folded[idx] = byte.to_ascii_lowercase();
+        }
+        let folded = match std::str::from_utf8(&folded[..bytes.len()]) {
+            Ok(folded) => folded,
+            Err(error) => {
+                panic!("ASCII extension folding produced invalid UTF-8 from valid input: {error}")
+            }
+        };
+        return skip_extensions().contains(folded);
+    }
+
     skip_extensions()
         .iter()
         .any(|skip| ext.eq_ignore_ascii_case(skip))
