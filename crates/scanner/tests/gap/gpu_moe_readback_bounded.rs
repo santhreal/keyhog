@@ -28,18 +28,26 @@ fn gpu_moe_readback_uses_bounded_polling() {
     );
     assert!(
         backend.contains("wgpu::PollType::Poll"),
-        "GPU MoE readback must poll with a deadline instead of blocking wait"
+        "GPU MoE readback must poll with a caller-owned deadline instead of blocking a scan worker"
     );
     assert!(
         backend.contains("TryRecvError::Empty"),
         "GPU MoE readback must use nonblocking channel checks inside the deadline loop"
     );
     assert!(
-        !backend.contains("wgpu::PollType::Wait"),
-        "GPU MoE readback must not use unbounded device.poll(Wait)"
+        !backend.contains("wgpu::PollType::Wait")
+            && !backend.contains("PollType::WaitForSubmissionIndex"),
+        "GPU MoE readback must not use device.poll(Wait*) inside the timeout loop"
     );
     assert!(
         !backend.contains("receiver.recv()"),
         "GPU MoE readback must not use unbounded receiver.recv()"
+    );
+    assert!(
+        backend.contains("let params_buf = device.create_buffer_init")
+            && backend.contains("resource: params_buf.as_entire_binding()")
+            && !backend.contains("params_buf: wgpu::Buffer")
+            && !backend.contains("resource: gpu.params_buf.as_entire_binding()"),
+        "GPU MoE params must be owned per dispatch so concurrent batches cannot race batch_size"
     );
 }

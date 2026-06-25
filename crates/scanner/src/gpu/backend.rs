@@ -535,7 +535,7 @@ fn dispatch_moe_batch(
     }
 
     encoder.copy_buffer_to_buffer(&output_buf, 0, &staging_buf, 0, output_size);
-    let submission = queue.submit(std::iter::once(encoder.finish()));
+    queue.submit(std::iter::once(encoder.finish()));
 
     // Read back results
     let slice = staging_buf.slice(..);
@@ -568,24 +568,12 @@ fn dispatch_moe_batch(
             return None;
         }
 
-        // Block until THIS submission (the MoE compute dispatch AND the
-        // output->staging copy) has fully completed and its map-async callback
-        // has been invoked. The prior `PollType::Poll` was NON-BLOCKING and the
-        // loop broke as soon as the map callback arrived; on the NVIDIA Vulkan
-        // backend that callback could be delivered while one workgroup's storage
-        // writes were not yet visible to the transfer copy, so the staging
-        // buffer intermittently came back with exactly one workgroup (64
-        // candidates) of 0.0 scores. Those zeros dropped real findings below the
-        // confidence floor and made autoroute calibration's reference backend
-        // non-reproducible (a floor-straddling entropy candidate flipped
-        // present/absent between trials, aborting `install.sh --calibrate`).
-        // `WaitForSubmissionIndex` guarantees this exact submission has finished
-        // and its callbacks have run before it returns, so the buffer is fully
-        // written when mapped — correct even when other chunks dispatch their MoE
-        // batches concurrently.
-        if let Err(error) =
-            device.poll(wgpu::PollType::WaitForSubmissionIndex(submission.clone()))
-        {
+        // Drive map_async progress without parking this scan worker past the
+        // caller's readback deadline. The old zero-tail failures came from a
+        // shared params buffer race across concurrent MoE batches; correctness is
+        // provided by per-dispatch buffers above, while the timeout contract stays
+        // bounded here.
+        if let Err(error) = device.poll(wgpu::PollType::Poll) {
             tracing::warn!(
                 ?error,
                 "GPU MoE device.poll() failed; GPU MoE disabled and scoring uses CPU MoE for this scan"

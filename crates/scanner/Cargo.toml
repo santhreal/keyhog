@@ -196,6 +196,10 @@ name = "gap_no_inline_tests_in_src"
 path = "tests/gap/no_inline_tests_in_src.rs"
 
 [[test]]
+name = "gap_gpu_moe_readback_bounded"
+path = "tests/gap/gpu_moe_readback_bounded.rs"
+
+[[test]]
 name = "gap_no_inline_tests_in_a3_slice"
 path = "tests/gap/no_inline_tests_in_a3_slice.rs"
 
