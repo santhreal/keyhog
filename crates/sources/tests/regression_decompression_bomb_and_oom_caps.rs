@@ -20,7 +20,7 @@ use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
 use std::io::Write as _;
 use std::sync::Mutex;
-use support::{collect_chunks, split_chunk_results};
+use support::split_chunk_results;
 
 /// Serialises the process-global skip-counter assertions in THIS binary.
 static COUNTER_LOCK: Mutex<()> = Mutex::new(());
@@ -118,10 +118,18 @@ fn healthy_zip_is_not_counted_as_truncated() {
 
     TestApi.reset_skip_counters();
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(1024 * 1024);
-    let bodies: Vec<String> = collect_chunks(&source)
-        .into_iter()
-        .map(|c| c.data.to_string())
-        .collect();
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "healthy in-budget zip must not emit SourceError rows, got {errors:?}"
+    );
+    assert_eq!(
+        chunks.len(),
+        1,
+        "single-entry healthy zip should emit one archive chunk, got {chunks:?}"
+    );
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
     assert_eq!(
         skip_counts().archive_truncated,
         0,
@@ -161,10 +169,18 @@ fn zip_with_unlimited_max_file_size_is_fully_extracted() {
     TestApi.reset_skip_counters();
     // max_file_size = 0 => unlimited per-file cap.
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(0);
-    let bodies: Vec<String> = collect_chunks(&source)
-        .into_iter()
-        .map(|c| c.data.to_string())
-        .collect();
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "unlimited healthy zip must not emit SourceError rows, got {errors:?}"
+    );
+    assert_eq!(
+        chunks.len(),
+        2,
+        "two-entry unlimited zip should emit two archive chunks, got {chunks:?}"
+    );
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
 
     assert_eq!(
         skip_counts().archive_truncated,
@@ -211,10 +227,19 @@ fn symlinked_archive_in_tree_is_not_expanded_and_is_counted() {
 
     TestApi.reset_skip_counters();
     let source = FilesystemSource::new(walked.path().to_path_buf());
-    let bodies: Vec<String> = collect_chunks(&source)
-        .into_iter()
-        .map(|c| c.data.to_string())
-        .collect();
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert_eq!(
+        errors.len(),
+        1,
+        "refused archive symlink must emit one visible SourceError, got {errors:?}"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("refusing to scan archive symlink") && err.contains("link-swap exfiltration"),
+        "refused archive symlink error must name the blocked coverage gap, got {err}"
+    );
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
 
     assert!(
         !bodies.iter().any(|b| b.contains("AKIAQYLPMN5HFIQR7XYA")),

@@ -5,7 +5,7 @@
 
 mod support;
 
-use keyhog_core::Chunk;
+use keyhog_core::{Chunk, Source};
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
 use rars::{rar15_40, ArchiveVersion, FeatureSet};
@@ -15,7 +15,7 @@ use support::archive::{
     build_seven_zip, crx_with_zip_payload, stored_zip_with_duplicate_names, tar_with_entries,
     zip_with_entries,
 };
-use support::collect_chunks;
+use support::split_chunk_results;
 
 static SKIP_COUNTER_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -26,11 +26,15 @@ fn counter_guard() -> std::sync::MutexGuard<'static, ()> {
 }
 
 fn scan_dir(dir: &std::path::Path, respect_default_excludes: bool) -> Vec<Chunk> {
-    collect_chunks(
-        &FilesystemSource::new(dir.to_path_buf()).with_default_excludes(respect_default_excludes),
-    )
-    .into_iter()
-    .collect()
+    let source =
+        FilesystemSource::new(dir.to_path_buf()).with_default_excludes(respect_default_excludes);
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "default-excludes fixture must not emit SourceError rows, got {errors:?}"
+    );
+    chunks.into_iter().cloned().collect()
 }
 
 fn body_contains(chunks: &[Chunk], needle: &str) -> bool {
@@ -252,9 +256,13 @@ fn run_git(repo: &std::path::Path, args: &[&str]) {
 
 #[cfg(feature = "git")]
 fn git_body_contains<S: keyhog_core::Source + ?Sized>(source: &S, needle: &str) -> bool {
-    collect_chunks(source)
-        .into_iter()
-        .any(|chunk| chunk.data.contains(needle))
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "git default-excludes fixture must not emit SourceError rows, got {errors:?}"
+    );
+    chunks.iter().any(|chunk| chunk.data.contains(needle))
 }
 
 #[test]
@@ -311,11 +319,15 @@ fn default_excludes_apply_to_direct_include_paths_by_relative_path() {
     fs::write(&secret, format!("TOKEN={SENTINEL}\n")).unwrap();
 
     TestApi.reset_skip_counters();
-    let skipped = collect_chunks(
-        &FilesystemSource::new(dir.path().to_path_buf()).with_include_paths(vec![secret.clone()]),
-    )
-    .into_iter()
-    .collect::<Vec<_>>();
+    let skipped_source =
+        FilesystemSource::new(dir.path().to_path_buf()).with_include_paths(vec![secret.clone()]);
+    let skipped_rows: Vec<_> = skipped_source.chunks().collect();
+    let (skipped_chunks, skipped_errors) = split_chunk_results(&skipped_rows);
+    assert!(
+        skipped_errors.is_empty(),
+        "default-excluded direct include must not emit SourceError rows, got {skipped_errors:?}"
+    );
+    let skipped = skipped_chunks.into_iter().cloned().collect::<Vec<_>>();
     assert!(
         !body_contains(&skipped, SENTINEL),
         "source-owned default excludes must classify direct include paths by relative path"
@@ -327,13 +339,16 @@ fn default_excludes_apply_to_direct_include_paths_by_relative_path() {
     );
 
     TestApi.reset_skip_counters();
-    let included = collect_chunks(
-        &FilesystemSource::new(dir.path().to_path_buf())
-            .with_include_paths(vec![secret])
-            .with_default_excludes(false),
-    )
-    .into_iter()
-    .collect::<Vec<_>>();
+    let included_source = FilesystemSource::new(dir.path().to_path_buf())
+        .with_include_paths(vec![secret])
+        .with_default_excludes(false);
+    let included_rows: Vec<_> = included_source.chunks().collect();
+    let (included_chunks, included_errors) = split_chunk_results(&included_rows);
+    assert!(
+        included_errors.is_empty(),
+        "included direct path must not emit SourceError rows, got {included_errors:?}"
+    );
+    let included = included_chunks.into_iter().cloned().collect::<Vec<_>>();
     assert!(
         body_contains(&included, SENTINEL),
         "--no-default-excludes must scan the direct include path"
