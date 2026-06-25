@@ -70,6 +70,31 @@ fn write_tar_with_symlink_entry(root: &std::path::Path) -> std::path::PathBuf {
     tar_path
 }
 
+fn write_tar_with_malformed_size_entry(root: &std::path::Path) -> std::path::PathBuf {
+    let tar_path = root.join("malformed-size.tgz");
+    let mut tar_bytes = vec![0u8; 1024];
+    let header = &mut tar_bytes[..512];
+    header[..10].copy_from_slice(b"broken.env");
+    header[100..108].copy_from_slice(b"0000644\0");
+    header[108..116].copy_from_slice(b"0000000\0");
+    header[116..124].copy_from_slice(b"0000000\0");
+    header[124..136].copy_from_slice(b"not-octal\0\0\0");
+    header[136..148].copy_from_slice(b"00000000000\0");
+    header[148..156].fill(b' ');
+    header[156] = b'0';
+    header[257..263].copy_from_slice(b"ustar\0");
+    header[263..265].copy_from_slice(b"00");
+    let checksum: u32 = header.iter().map(|byte| u32::from(*byte)).sum();
+    let checksum_field = format!("{checksum:06o}\0 ");
+    header[148..156].copy_from_slice(checksum_field.as_bytes());
+
+    let file = std::fs::File::create(&tar_path).expect("create tgz");
+    let mut gzip = flate2::write::GzEncoder::new(file, flate2::Compression::best());
+    gzip.write_all(&tar_bytes).expect("write tgz");
+    gzip.finish().expect("finish tgz");
+    tar_path
+}
+
 #[test]
 fn tar_over_cap_entry_emits_source_error_and_keeps_safe_sibling() {
     let _guard = TestApi.skip_counter_guard();
@@ -103,6 +128,41 @@ fn tar_over_cap_entry_emits_source_error_and_keeps_safe_sibling() {
         skip_counts().over_max_size,
         1,
         "the over-cap tar entry must also count as a coverage gap"
+    );
+}
+
+#[test]
+fn tar_malformed_size_header_emits_source_error_and_counts_unreadable() {
+    let _guard = TestApi.skip_counter_guard();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let _tar = write_tar_with_malformed_size_entry(dir.path());
+
+    TestApi.reset_skip_counters();
+    let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(2048);
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+
+    assert!(
+        chunks.is_empty(),
+        "malformed-size tar entry body must not be treated as clean scanned content; chunks={chunks:?}"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "the malformed tar size header must emit exactly one SourceError row"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("failed to scan tar entry")
+            && error.contains("malformed-size.tgz//<tar-entry>")
+            && error.contains("cannot read tar entry header")
+            && error.contains("not-octal"),
+        "tar SourceError must identify the malformed-size entry gap, got {error:?}"
+    );
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "the malformed tar size header must count as an unreadable coverage gap"
     );
 }
 
