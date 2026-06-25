@@ -18,7 +18,7 @@
 //! they can always invoke `keyhog scan` separately.
 
 use crate::args::WatchArgs;
-use crate::orchestrator::{setup_default_scan_runtime, DefaultScanRuntime};
+use crate::orchestrator::{DefaultScanRuntime, setup_default_scan_runtime};
 use crate::skip_dirs::SkipDirPolicy;
 use crate::style;
 use anyhow::{Context, Result};
@@ -26,7 +26,8 @@ use keyhog_core::{Chunk, ChunkMetadata};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::mpsc::channel;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc::channel};
 use std::time::{Duration, Instant};
 
 /// Within this window, a repeat event for the *same path and same content*
@@ -68,12 +69,25 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
     }
 
     let (tx, rx) = channel::<notify::Result<Event>>();
+    let notify_channel_closed_for_callback = Arc::new(AtomicBool::new(false));
+    let watch_root_for_callback = watch_root.clone();
 
     // Hold the watcher for the duration of the daemon. The `notify` crate
     // requires us to keep the handle alive; dropping it stops the watcher.
     let mut watcher = notify::recommended_watcher(move |res| {
         // notify hands events on its own thread; forward to the main loop.
-        let _ = tx.send(res); // LAW10: unused-binding marker; no runtime effect, not a fallback
+        if tx.send(res).is_err()
+            && !notify_channel_closed_for_callback.swap(true, Ordering::Relaxed)
+        {
+            let palette = style::for_stderr();
+            eprintln!(
+                "{} keyhog watch: internal watcher event channel closed; a filesystem \
+                 event could not be delivered and the changed path was NOT re-scanned. \
+                 Restart watch, or run `keyhog scan {}` for a full one-shot rescan.",
+                style::warn("WARN", &palette),
+                watch_root_for_callback.display()
+            );
+        }
     })
     .map_err(|e| {
         anyhow::anyhow!(
