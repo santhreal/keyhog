@@ -17,6 +17,8 @@
 #![cfg(unix)]
 
 use keyhog_core::Source;
+use keyhog_sources::skip_counts;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::FilesystemSource;
 use std::fs;
 use std::os::unix::fs::symlink;
@@ -62,6 +64,8 @@ const SENTINEL: &str = "LEAKED_HAR_SENTINEL_TOKEN_8f3a91";
 /// read.
 #[test]
 fn har_symlink_target_is_not_followed_via_include() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().unwrap();
 
     // The "sensitive target" lives OUTSIDE any directory we walk; it is
@@ -92,10 +96,17 @@ fn har_symlink_target_is_not_followed_via_include() {
         err.to_string().contains("archive symlink") && err.to_string().contains("refusing to scan"),
         "error should name the refused archive symlink include, got {err}"
     );
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "refused .har symlink include must count one unreadable coverage gap"
+    );
 }
 
 #[test]
 fn plain_named_symlink_to_har_target_is_refused_via_include() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
     let target_dir = tempfile::tempdir().unwrap();
     let scan_dir = tempfile::tempdir().unwrap();
 
@@ -120,11 +131,18 @@ fn plain_named_symlink_to_har_target_is_refused_via_include() {
         err.to_string().contains("archive symlink") && err.to_string().contains("refusing to scan"),
         "error should name the refused archive symlink include, got {err}"
     );
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "refused plain-named symlink include must count one unreadable coverage gap"
+    );
 }
 
 #[test]
 fn expandable_symlink_extensions_are_refused_via_include() {
+    let _guard = TestApi.skip_counter_guard();
     for ext in ["7z", "rar", "pdf", "bz2", "xz"] {
+        TestApi.reset_skip_counters();
         let target_dir = tempfile::tempdir().unwrap();
         let scan_dir = tempfile::tempdir().unwrap();
         let target = target_dir.path().join("victim_credentials");
@@ -148,6 +166,11 @@ fn expandable_symlink_extensions_are_refused_via_include() {
             err.to_string().contains("archive symlink")
                 && err.to_string().contains("refusing to scan"),
             ".{ext} error should name the refused archive symlink include, got {err}"
+        );
+        assert_eq!(
+            skip_counts().unreadable,
+            1,
+            ".{ext} archive symlink refusal must count one unreadable coverage gap"
         );
     }
 }
