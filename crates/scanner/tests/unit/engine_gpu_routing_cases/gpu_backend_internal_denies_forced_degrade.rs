@@ -24,7 +24,8 @@ fn gpu_backend_internal_denies_forced_degrade() {
     let gpu_dispatch = std::fs::read_to_string(format!("{engine}gpu_region_dispatch.rs"))
         .expect("gpu_region_dispatch.rs readable");
     assert!(
-        gpu_dispatch.contains("gpu_forced::deny_silent_gpu_degrade(self, ScanBackend::Gpu)"),
-        "coalesced GPU fallback must hit the loud degrade guard before CPU routing"
+        gpu_dispatch.contains("deny_silent_gpu_degrade_with_reason(\n                self,\n                ScanBackend::Gpu,\n                Some(&reason),")
+            && gpu_dispatch.matches("deny_silent_gpu_degrade_with_reason(\n").count() >= 4,
+        "coalesced GPU fallback and GPU auxiliary dispatch losses must pass concrete reasons to the loud degrade guard"
     );
 }

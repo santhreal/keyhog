@@ -73,7 +73,11 @@ impl CompiledScanner {
         }
 
         let degrade = |reason: String| -> Vec<Vec<keyhog_core::RawMatch>> {
-            super::gpu_forced::deny_silent_gpu_degrade(self, ScanBackend::Gpu);
+            super::gpu_forced::deny_silent_gpu_degrade_with_reason(
+                self,
+                ScanBackend::Gpu,
+                Some(&reason),
+            );
             // Degrade to the backend that is ACTUALLY live, not a hardcoded
             // `SimdCpu`: with the `simd` feature compiled but no Hyperscan
             // prefilter built (`simd_prefilter == None`), routing through
@@ -333,6 +337,13 @@ impl CompiledScanner {
                             match catalog.scan_admission_chunks(&**backend, gpu_chunks) {
                                 Ok(admission) => Some(admission),
                                 Err(error) => {
+                                    let reason =
+                                        format!("phase-2 GPU admission dispatch failed: {error}");
+                                    super::gpu_forced::deny_silent_gpu_degrade_with_reason(
+                                        self,
+                                        ScanBackend::Gpu,
+                                        Some(&reason),
+                                    );
                                     report_phase2_gpu_admission_loss(error);
                                     None
                                 }
@@ -352,6 +363,13 @@ impl CompiledScanner {
                                 Some(expand_phase2_gpu_admission(admission, &indices, full_len))
                             }
                             Err(error) => {
+                                let reason =
+                                    format!("phase-2 GPU admission dispatch failed: {error}");
+                                super::gpu_forced::deny_silent_gpu_degrade_with_reason(
+                                    self,
+                                    ScanBackend::Gpu,
+                                    Some(&reason),
+                                );
                                 report_phase2_gpu_admission_loss(error);
                                 None
                             }
@@ -467,6 +485,11 @@ impl CompiledScanner {
         }
         let Some(matcher) = self.gpu_position_matcher() else {
             let reason = "positioned literal matcher not built for this scanner";
+            super::gpu_forced::deny_silent_gpu_degrade_with_reason(
+                self,
+                ScanBackend::Gpu,
+                Some(reason),
+            );
             self.record_gpu_degrade(reason);
             report_positioned_gpu_candidate_loss(reason);
             return GpuPositionEvidence::default();
@@ -480,6 +503,12 @@ impl CompiledScanner {
             Ok(matches) => matches,
             Err(error) => {
                 let reason = error.to_string();
+                let policy_reason = format!("positioned GPU candidate collection failed: {reason}");
+                super::gpu_forced::deny_silent_gpu_degrade_with_reason(
+                    self,
+                    ScanBackend::Gpu,
+                    Some(&policy_reason),
+                );
                 self.record_gpu_degrade(format!(
                     "positioned GPU candidate collection failed: {reason}"
                 ));
@@ -491,6 +520,11 @@ impl CompiledScanner {
             let reason = format!(
                 "positioned literal scan reached cap {GPU_POSITIONED_LITERAL_MAX_MATCHES}; \
                  refusing incomplete positioned candidates"
+            );
+            super::gpu_forced::deny_silent_gpu_degrade_with_reason(
+                self,
+                ScanBackend::Gpu,
+                Some(&reason),
             );
             self.record_gpu_degrade(reason.clone());
             report_positioned_gpu_candidate_loss(reason);

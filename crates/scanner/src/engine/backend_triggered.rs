@@ -344,8 +344,11 @@ impl CompiledScanner {
             return triggered_patterns;
         }
 
-        self.warn_simd_auto_degrade("SimdCpu trigger collection reached without a live prefilter");
-        self.collect_triggered_patterns_cpu(text)
+        crate::process_exit::backend_unavailable(
+            "simd-regex trigger collection reached without a live SIMD/Hyperscan prefilter; \
+silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or choose \
+`--backend cpu-fallback` explicitly.",
+        )
     }
 
     pub(crate) fn collect_triggered_patterns_cpu(&self, text: &str) -> Vec<u64> {

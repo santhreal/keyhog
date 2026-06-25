@@ -388,6 +388,9 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         if crate::deadline::expired(deadline) {
             return Vec::new();
         }
+        if let Some(selected_backend) = backend {
+            self.deny_silent_selected_backend_degrade(selected_backend);
+        }
         // Direct-match prefilters: skip chunks that carry none of any
         // detector's literal bytes (`AlphabetScreen`) or bigrams (bloom). A
         // FULLY-ENCODED secret carries none of those - its plaintext prefix

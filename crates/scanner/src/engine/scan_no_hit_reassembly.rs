@@ -63,7 +63,7 @@ impl CompiledScanner {
                 data: synthetic_data.into(),
                 metadata: synthetic_metadata,
             };
-            let backend = crate::hw_probe::ScanBackend::SimdCpu;
+            let backend = self.live_cpu_backend();
             let mut reassembled_matches = self.scan_inner(&synthetic_chunk, backend, None);
             for raw_match in &mut reassembled_matches {
                 raw_match.location.line = Some(candidate.line);
