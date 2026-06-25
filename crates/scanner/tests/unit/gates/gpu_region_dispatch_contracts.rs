@@ -20,6 +20,11 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "/src/engine/gpu_lazy.rs"
     ))
     .expect("gpu lazy matcher owner readable");
+    let gpu_lazy_helpers_src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/gpu_lazy_helpers.rs"
+    ))
+    .expect("gpu lazy helper owner readable");
     let gpu_dfa_batch_src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/engine/phase2_gpu_dfa/batch.rs"
@@ -84,10 +89,11 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
             && dispatch_src.contains("let confirmed_base = 0usize")
             && gpu_lazy_src.contains("pub(crate) fn gpu_position_matcher")
             && gpu_lazy_src.contains("compile_gpu_literal_set(literals, \"pos-lit\")")
-            && gpu_lazy_src.contains("catch_unwind")
-            && gpu_lazy_src.contains("GPU literal-set compile panicked")
-            && gpu_lazy_src.contains("report_gpu_matcher_unavailable(&error, \"positioned literal\")")
-            && gpu_lazy_src.contains("GPU {matcher_kind} matcher unavailable"),
+            && gpu_lazy_helpers_src.contains("catch_unwind")
+            && gpu_lazy_helpers_src.contains("GPU literal-set compile panicked")
+            && gpu_lazy_src
+                .contains("report_gpu_matcher_unavailable(&error, \"positioned literal\")")
+            && gpu_lazy_helpers_src.contains("GPU {matcher_kind} matcher unavailable"),
         "positioned confirmed-anchor/generic candidates must use the smaller positioned matcher, not appended rows in the region-presence bitset"
     );
     let helper_src = std::fs::read_to_string(concat!(

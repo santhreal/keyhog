@@ -5,11 +5,14 @@
 /// `src/engine/`-relative files that together form the GPU phase-2 scan path.
 const GPU_SCAN_SRCS: &[&str] = &[
     "gpu_forced.rs",
+    "gpu_forced_helpers.rs",
     "gpu_lazy.rs",
+    "gpu_lazy_helpers.rs",
     "gpu_literal_scratch.rs",
     "gpu_cache.rs",
     "gpu_region_batch.rs",
     "gpu_region_dispatch.rs",
+    "gpu_region_dispatch_helpers.rs",
 ];
 
 const INLINE_TEST_ALLOWLIST: &[&str] = &["gpu_region_dispatch.rs"];

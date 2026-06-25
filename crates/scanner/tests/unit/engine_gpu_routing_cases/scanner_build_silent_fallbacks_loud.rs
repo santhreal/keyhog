@@ -77,11 +77,13 @@ fn phase2_prefilter_compile_failures_warn() {
 #[test]
 fn compiled_pattern_detector_indices_fail_before_scan_runtime() {
     let compile = engine_src("compile.rs");
+    let compile_helpers = engine_src("compile_helpers.rs");
     assert!(
-        compile.contains("fn validate_compiled_pattern_detector_indices")
-            && compile.contains("compiled scanner invariant violation")
-            && compile.contains("\"ac_map\"")
-            && compile.contains("\"phase2_patterns\""),
+        compile.contains("validate_compiled_pattern_detector_indices(")
+            && compile_helpers.contains("fn validate_compiled_pattern_detector_indices")
+            && compile_helpers.contains("compiled scanner invariant violation")
+            && compile_helpers.contains("\"ac_map\"")
+            && compile_helpers.contains("\"phase2_patterns\""),
         "compiled pattern detector_index values must be validated during scanner construction"
     );
 
@@ -173,16 +175,19 @@ fn phase2_gpu_catalog_loss_is_operator_visible() {
 #[test]
 fn gpu_matcher_loss_is_operator_visible() {
     let src = engine_src("gpu_lazy.rs");
+    let helpers = engine_src("gpu_lazy_helpers.rs");
     assert!(
-        src.contains("fn report_gpu_matcher_unavailable")
-            && src.contains("GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED")
-            && src.contains("GPU_POSITION_MATCHER_UNAVAILABLE_WARNED")
-            && src.contains("eprintln!(")
-            && src.contains("Use --require-gpu when GPU acceleration is mandatory"),
+        helpers.contains("fn report_gpu_matcher_unavailable")
+            && helpers.contains("GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED")
+            && helpers.contains("GPU_POSITION_MATCHER_UNAVAILABLE_WARNED")
+            && helpers.contains("eprintln!(")
+            && helpers.contains("Use --require-gpu when GPU acceleration is mandatory"),
         "GPU matcher compile loss must be visible to normal CLI stderr, with independent guards per matcher kind"
     );
     assert!(
-        src.matches("report_gpu_matcher_unavailable(&error,").count() >= 2,
+        src.matches("report_gpu_matcher_unavailable(&error,")
+            .count()
+            >= 2,
         "both literal and positioned-literal matcher compile failures must route through the visible reporter"
     );
 }

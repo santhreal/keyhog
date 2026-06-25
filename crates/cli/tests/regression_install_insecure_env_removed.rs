@@ -3,21 +3,59 @@
 use keyhog::testing::{API, CliTestApi as _};
 use std::collections::BTreeSet;
 
-fn keyhog_env_tokens(script: &str) -> BTreeSet<&str> {
+fn keyhog_env_tokens(script: &str) -> BTreeSet<String> {
     let mut tokens = BTreeSet::new();
+    collect_env_tokens_after_prefix(script, "$env:", &mut tokens);
+    collect_env_tokens_after_prefix(script, "${env:", &mut tokens);
+    collect_env_tokens_after_prefix(script, "${", &mut tokens);
+    collect_env_tokens_after_prefix(script, "$", &mut tokens);
+    collect_standalone_uppercase_env_tokens(script, &mut tokens);
+    tokens
+}
+
+fn collect_env_tokens_after_prefix(script: &str, prefix: &str, tokens: &mut BTreeSet<String>) {
+    let normalized = script.to_ascii_uppercase();
+    let prefix = prefix.to_ascii_uppercase();
+    for (prefix_start, _) in normalized.match_indices(&prefix) {
+        let token_start = prefix_start + prefix.len();
+        let tail = &normalized[token_start..];
+        if !tail.starts_with("KEYHOG_") {
+            continue;
+        }
+        let end = token_end(tail);
+        tokens.insert(tail[..end].to_owned());
+    }
+}
+
+fn collect_standalone_uppercase_env_tokens(script: &str, tokens: &mut BTreeSet<String>) {
     for (start, _) in script.match_indices("KEYHOG_") {
         let tail = &script[start..];
-        let end = tail
-            .find(|ch: char| !(ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_'))
-            .unwrap_or(tail.len());
-        tokens.insert(&tail[..end]);
+        let end = token_end(tail);
+        tokens.insert(tail[..end].to_owned());
     }
-    tokens
+}
+
+fn token_end(tail: &str) -> usize {
+    tail.find(|ch: char| !(ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_'))
+        .unwrap_or(tail.len())
+}
+
+#[test]
+fn keyhog_env_token_inventory_normalizes_case_for_power_shell() {
+    assert_eq!(
+        keyhog_env_tokens(
+            "$env:KeyHog_Insecure_Install = 1; ${env:KEYHOG_VERSION}; run_keyhog_calibration_scan"
+        ),
+        BTreeSet::from([
+            "KEYHOG_INSECURE_INSTALL".to_owned(),
+            "KEYHOG_VERSION".to_owned()
+        ])
+    );
 }
 
 #[test]
 fn installer_keyhog_env_surface_is_exactly_the_install_pin() {
-    let allowed = BTreeSet::from(["KEYHOG_VERSION"]);
+    let allowed = BTreeSet::from(["KEYHOG_VERSION".to_owned()]);
     for (name, script) in [
         ("install.sh", include_str!("../../../install.sh")),
         ("install.ps1", include_str!("../../../install.ps1")),

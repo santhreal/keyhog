@@ -7,11 +7,14 @@
 /// (region-presence dispatch + GPU stack setup / degrade / cache).
 const GPU_SCAN_SRCS: &[&str] = &[
     "gpu_forced.rs",
+    "gpu_forced_helpers.rs",
     "gpu_lazy.rs",
+    "gpu_lazy_helpers.rs",
     "gpu_literal_scratch.rs",
     "gpu_cache.rs",
     "gpu_region_batch.rs",
     "gpu_region_dispatch.rs",
+    "gpu_region_dispatch_helpers.rs",
 ];
 
 /// Files permitted to contain a co-located `#[cfg(test)]` (or

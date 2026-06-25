@@ -31,6 +31,7 @@ fn canonical_hot_patterns_delegate_to_process_match() {
     let src = scanner_src();
     let hot_patterns = uncommented_code(&read(&src.join("engine/hot_patterns.rs")));
     let compile = uncommented_code(&read(&src.join("engine/compile.rs")));
+    let compile_helpers = uncommented_code(&read(&src.join("engine/compile_helpers.rs")));
     let backend_triggered = uncommented_code(&read(&src.join("engine/backend_triggered.rs")));
 
     assert!(
@@ -59,8 +60,10 @@ fn canonical_hot_patterns_delegate_to_process_match() {
         "hot-pattern runtime tables must be construction-validated and indexed directly, not silently treated as missing slots"
     );
     assert!(
-        compile.contains("fn build_hot_ac_map_index_by_index(")
-            && compile.contains("crate::compiler::compiler_prefix::extract_literal_prefixes("),
+        compile.contains("build_hot_ac_map_index_by_index(")
+            && compile_helpers.contains("fn build_hot_ac_map_index_by_index(")
+            && compile_helpers
+                .contains("crate::compiler::compiler_prefix::extract_literal_prefixes("),
         "compile must build hot-slot to canonical ac_map entries from existing compiler prefix extraction"
     );
     assert!(

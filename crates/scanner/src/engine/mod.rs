@@ -58,6 +58,7 @@ mod boundary;
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries as scan_chunk_boundaries_for_test;
 mod compile;
+mod compile_helpers;
 mod compiled_api;
 mod csr;
 pub(crate) use csr::CsrU32;
@@ -67,7 +68,9 @@ mod gpu_cache;
 pub(crate) use gpu_cache::gpu_matcher_cache_dir_from_base;
 mod gpu_artifacts;
 mod gpu_forced;
+mod gpu_forced_helpers;
 mod gpu_lazy;
+mod gpu_lazy_helpers;
 mod gpu_literal_scratch;
 #[cfg(feature = "gpu")]
 mod gpu_region_batch;
@@ -137,7 +140,7 @@ pub use gpu_artifacts::{
     GpuLiteralArtifacts,
 };
 #[cfg(test)]
-pub(crate) use gpu_forced::gpu_forced_unavailable_message;
+pub(crate) use gpu_forced_helpers::gpu_forced_unavailable_message;
 #[cfg(test)]
 pub(crate) use phase2::{phase2_gate_stats_dump, phase2_mark_stats, phase2_mark_stats_reset};
 pub use profile::{

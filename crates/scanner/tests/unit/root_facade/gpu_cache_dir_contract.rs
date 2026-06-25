@@ -33,20 +33,25 @@ fn gpu_lazy_cache_failure_compiles_uncached_instead_of_disabling_matcher() {
         "/src/engine/gpu_lazy.rs"
     ))
     .expect("gpu lazy source");
+    let helpers = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/gpu_lazy_helpers.rs"
+    ))
+    .expect("gpu lazy helper source");
 
     assert!(
         !src.contains("gpu_matcher_cache_dir()?"),
         "cache-dir failure must not return None from gpu_matcher()"
     );
     assert!(
-        src.contains("GPU matcher disk cache unavailable")
-            && src.contains("GpuLiteralSet::compile(&literal_refs)"),
+        helpers.contains("GPU matcher disk cache unavailable")
+            && helpers.contains("GpuLiteralSet::compile(&literal_refs)"),
         "cache-dir failure must compile the GPU literal set without disk cache"
     );
     assert!(
-        src.contains("fn report_gpu_matcher_cache_unavailable")
-            && src.contains("GPU_MATCHER_CACHE_UNAVAILABLE_WARNED")
-            && src.contains("eprintln!("),
+        helpers.contains("fn report_gpu_matcher_cache_unavailable")
+            && helpers.contains("GPU_MATCHER_CACHE_UNAVAILABLE_WARNED")
+            && helpers.contains("eprintln!("),
         "cache-dir failure must be visible on normal stderr, not only tracing"
     );
 }

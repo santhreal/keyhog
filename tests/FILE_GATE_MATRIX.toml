@@ -928,6 +928,11 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/scanner/src/engine/compile_helpers.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/engine/extract.rs"
 error = true
 adversarial = true
@@ -968,7 +973,17 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/scanner/src/engine/gpu_forced_helpers.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/engine/gpu_lazy.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_lazy_helpers.rs"
 error = true
 adversarial = true
 
