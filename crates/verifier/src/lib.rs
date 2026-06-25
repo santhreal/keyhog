@@ -88,8 +88,9 @@ pub struct VerificationEngine {
     pub(crate) allow_script_verify: bool,
     /// Optional OOB session. When `Some`, detectors with `[detector.verify.oob]`
     /// receive a per-finding callback URL and the engine waits for the
-    /// service to call back. When `None`, those detectors fall through to
-    /// HTTP-only success criteria. Set via [`VerificationEngine::enable_oob`].
+    /// service to call back. When `None`, those detectors fail closed with a
+    /// verification error before any HTTP probe is sent. Set via
+    /// [`VerificationEngine::enable_oob`].
     pub(crate) oob_session: Option<Arc<oob::OobSession>>,
 }
 
