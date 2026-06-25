@@ -31,6 +31,7 @@ pub(super) fn extract_zip_archive(
     archive_display: &str,
     per_entry_cap: u64,
     total_budget: u64,
+    respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
     match duplicates::duplicate_central_zip_entries(path) {
@@ -40,6 +41,7 @@ pub(super) fn extract_zip_archive(
                 archive_display,
                 per_entry_cap,
                 total_budget,
+                respect_default_excludes,
                 emit,
                 entries,
             );
@@ -123,6 +125,7 @@ pub(super) fn extract_zip_archive(
         total_budget,
         &mut total_uncompressed,
         0,
+        respect_default_excludes,
         emit,
     ) {
         return;
@@ -136,6 +139,7 @@ pub(super) fn extract_embedded_zip_archive(
     total_budget: u64,
     total_uncompressed: &mut u64,
     nested_depth: usize,
+    respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
     let archive = match zip::ZipArchive::new(Cursor::new(content)) {
@@ -160,6 +164,7 @@ pub(super) fn extract_embedded_zip_archive(
         total_budget,
         total_uncompressed,
         nested_depth,
+        respect_default_excludes,
         emit,
     )
 }
@@ -171,6 +176,7 @@ fn extract_zip_archive_entries<R: Read + Seek>(
     total_budget: u64,
     total_uncompressed: &mut u64,
     nested_depth: usize,
+    respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
     for index in 0..archive.len() {
@@ -196,7 +202,7 @@ fn extract_zip_archive_entries<R: Read + Seek>(
         if entry.is_dir() {
             continue;
         }
-        if filter::is_default_excluded(&entry_name) {
+        if respect_default_excludes && filter::is_default_excluded(&entry_name) {
             super::super::record_default_excluded_archive_entry(archive_display, &entry_name);
             continue;
         }
@@ -359,6 +365,7 @@ fn extract_zip_archive_entries<R: Read + Seek>(
             per_entry_cap,
             total_budget,
             total_uncompressed,
+            respect_default_excludes,
             nested_depth,
             emit,
         ) {

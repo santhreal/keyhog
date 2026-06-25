@@ -144,6 +144,7 @@ pub(super) fn emit_tar_entries(
     tar_bytes: &[u8],
     container_display: &str,
     max_size: u64,
+    respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
     let mut total_uncompressed: u64 = 0;
@@ -153,6 +154,7 @@ pub(super) fn emit_tar_entries(
         max_size,
         &mut total_uncompressed,
         0,
+        respect_default_excludes,
         emit,
     );
 }
@@ -163,6 +165,7 @@ fn emit_tar_entries_with_state(
     max_size: u64,
     total_uncompressed: &mut u64,
     nested_depth: usize,
+    respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
     const MAX_EMBEDDED_TAR_DEPTH: usize = 8;
@@ -261,7 +264,7 @@ fn emit_tar_entries_with_state(
             }
             continue;
         }
-        if super::super::filter::is_default_excluded(&entry_name) {
+        if respect_default_excludes && super::super::filter::is_default_excluded(&entry_name) {
             record_default_excluded_archive_entry(container_display, &entry_name);
             continue;
         }
@@ -364,6 +367,7 @@ fn emit_tar_entries_with_state(
                 max_size,
                 total_uncompressed,
                 nested_depth + 1,
+                respect_default_excludes,
                 emit,
             );
             continue;
@@ -432,6 +436,7 @@ pub(super) fn extract_compressed_chunks(
     path: &Path,
     ext: &str,
     max_size: u64,
+    respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
     // Refuse to open a compressed container that is itself a symlink - same
@@ -512,7 +517,13 @@ pub(super) fn extract_compressed_chunks(
     // `.tgz` is unconditionally a tarball; for the other extensions sniff the
     // decompressed bytes (a `foo.tar.gz` arrives as ext `gz`).
     if is_tgz_ext(ext) || looks_like_tar(&decompressed) {
-        emit_tar_entries(&decompressed, &path_display, max_size, emit);
+        emit_tar_entries(
+            &decompressed,
+            &path_display,
+            max_size,
+            respect_default_excludes,
+            emit,
+        );
         return;
     }
 

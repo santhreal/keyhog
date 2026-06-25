@@ -18,6 +18,7 @@ const READ_CAPACITY_HINT: u64 = 64 * 1024;
 pub(super) fn extract_seven_zip_chunks(
     path: &Path,
     max_size: u64,
+    respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
     if is_symlink(path) {
@@ -147,7 +148,7 @@ pub(super) fn extract_seven_zip_chunks(
             }
             return Ok(true);
         }
-        if super::super::filter::is_default_excluded(&entry_name) {
+        if respect_default_excludes && super::super::filter::is_default_excluded(&entry_name) {
             record_default_excluded_archive_entry(&archive_display, &entry_name);
             if !drain_skipped_entry_if_needed(
                 archive_requires_skip_drain,

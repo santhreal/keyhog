@@ -9,9 +9,19 @@ use keyhog_core::Chunk;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
 use std::fs;
+use std::io::Write;
+use support::archive::{
+    build_seven_zip, stored_zip_with_duplicate_names, tar_with_entries, zip_with_entries,
+};
 use support::collect_chunks;
 
 static SKIP_COUNTER_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn counter_guard() -> std::sync::MutexGuard<'static, ()> {
+    SKIP_COUNTER_GUARD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 fn scan_dir(dir: &std::path::Path, respect_default_excludes: bool) -> Vec<Chunk> {
     collect_chunks(
@@ -51,9 +61,134 @@ fn make_corpus() -> tempfile::TempDir {
     dir
 }
 
+fn write_zip_with_default_excluded_entry(path: &std::path::Path) {
+    fs::write(
+        path,
+        zip_with_entries(&[
+            (
+                "package-lock.json",
+                format!("{{ \"token\": \"{SENTINEL}\" }}\n").as_bytes(),
+            ),
+            (
+                "config.env",
+                b"API=archive_normal_always_scanned_marker\n".as_slice(),
+            ),
+        ]),
+    )
+    .unwrap();
+}
+
+fn zip_bytes_with_default_excluded_entry() -> Vec<u8> {
+    zip_with_entries(&[
+        (
+            "package-lock.json",
+            format!("{{ \"token\": \"{SENTINEL}\" }}\n").as_bytes(),
+        ),
+        (
+            "config.env",
+            b"API=nested_archive_normal_always_scanned_marker\n".as_slice(),
+        ),
+    ])
+}
+
+fn write_nested_zip_with_default_excluded_entry(path: &std::path::Path) {
+    fs::write(
+        path,
+        zip_with_entries(&[
+            ("inner.zip", &zip_bytes_with_default_excluded_entry()),
+            (
+                "outer.env",
+                b"API=outer_archive_normal_always_scanned_marker\n".as_slice(),
+            ),
+        ]),
+    )
+    .unwrap();
+}
+
+fn write_duplicate_zip_with_default_excluded_entries(path: &std::path::Path) {
+    fs::write(
+        path,
+        stored_zip_with_duplicate_names(&[
+            (
+                "package-lock.json",
+                format!("{{ \"token\": \"{SENTINEL}_one\" }}\n").as_bytes(),
+            ),
+            (
+                "package-lock.json",
+                format!("{{ \"token\": \"{SENTINEL}_two\" }}\n").as_bytes(),
+            ),
+            (
+                "config.env",
+                b"API=duplicate_zip_normal_always_scanned_marker\n".as_slice(),
+            ),
+        ]),
+    )
+    .unwrap();
+}
+
+fn tar_bytes_with_default_excluded_entry() -> Vec<u8> {
+    tar_with_entries(&[
+        (
+            "package-lock.json",
+            format!("{{ \"token\": \"{SENTINEL}\" }}\n").as_bytes(),
+        ),
+        (
+            "config.env",
+            b"API=tar_normal_always_scanned_marker\n".as_slice(),
+        ),
+    ])
+}
+
+fn write_tar_with_default_excluded_entry(path: &std::path::Path) {
+    fs::write(path, tar_bytes_with_default_excluded_entry()).unwrap();
+}
+
+fn write_nested_tar_with_default_excluded_entry(path: &std::path::Path) {
+    let inner = tar_bytes_with_default_excluded_entry();
+    fs::write(
+        path,
+        tar_with_entries(&[
+            ("inner.tar", inner.as_slice()),
+            (
+                "outer.env",
+                b"API=outer_tar_normal_always_scanned_marker\n".as_slice(),
+            ),
+        ]),
+    )
+    .unwrap();
+}
+
+fn write_tgz_with_default_excluded_entry(path: &std::path::Path) {
+    let mut encoder = flate2::write::GzEncoder::new(
+        fs::File::create(path).unwrap(),
+        flate2::Compression::default(),
+    );
+    encoder
+        .write_all(&tar_bytes_with_default_excluded_entry())
+        .unwrap();
+    encoder.finish().unwrap();
+}
+
+fn write_seven_zip_with_default_excluded_entry(path: &std::path::Path) {
+    fs::write(
+        path,
+        build_seven_zip(&[
+            (
+                "package-lock.json",
+                format!("{{ \"token\": \"{SENTINEL}\" }}\n").as_bytes(),
+            ),
+            (
+                "config.env",
+                b"API=seven_zip_normal_always_scanned_marker\n".as_slice(),
+            ),
+        ]),
+    )
+    .unwrap();
+}
+
 #[test]
 fn default_excludes_drop_lockfiles_then_flag_includes_them() {
-    let _guard = SKIP_COUNTER_GUARD.lock().expect("counter guard");
+    let _guard = counter_guard();
     let dir = make_corpus();
 
     TestApi.reset_skip_counters();
@@ -97,7 +232,7 @@ fn default_excludes_drop_lockfiles_then_flag_includes_them() {
 
 #[test]
 fn default_excludes_apply_to_direct_include_paths_by_relative_path() {
-    let _guard = SKIP_COUNTER_GUARD.lock().expect("counter guard");
+    let _guard = counter_guard();
     let dir = tempfile::tempdir().unwrap();
     let excluded = dir.path().join("node_modules").join("pkg");
     fs::create_dir_all(&excluded).unwrap();
@@ -141,7 +276,7 @@ fn default_excludes_apply_to_direct_include_paths_by_relative_path() {
 
 #[test]
 fn default_excludes_apply_to_cache_directories() {
-    let _guard = SKIP_COUNTER_GUARD.lock().expect("counter guard");
+    let _guard = counter_guard();
     let dir = tempfile::tempdir().unwrap();
     let excluded = dir.path().join(".cache");
     fs::create_dir_all(&excluded).unwrap();
@@ -171,4 +306,244 @@ fn default_excludes_apply_to_cache_directories() {
         0,
         "--no-default-excludes must not count the .cache file as excluded"
     );
+}
+
+#[test]
+fn default_excludes_apply_inside_zip_archives() {
+    let _guard = counter_guard();
+    let dir = tempfile::tempdir().unwrap();
+    write_zip_with_default_excluded_entry(&dir.path().join("fixture.zip"));
+
+    TestApi.reset_skip_counters();
+    let skipped = scan_dir(dir.path(), true);
+    assert!(
+        body_contains(&skipped, "archive_normal_always_scanned_marker"),
+        "control ZIP entry must be scanned when archive default excludes are enabled"
+    );
+    assert!(
+        !body_contains(&skipped, SENTINEL),
+        "default-excluded ZIP entries must not leak into chunks by default"
+    );
+    assert_eq!(
+        skip_counts().excluded,
+        1,
+        "default-excluded ZIP entries must increment the typed excluded counter"
+    );
+
+    TestApi.reset_skip_counters();
+    let included = scan_dir(dir.path(), false);
+    assert!(
+        body_contains(&included, "archive_normal_always_scanned_marker"),
+        "control ZIP entry must still be scanned with --no-default-excludes"
+    );
+    assert!(
+        body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan default-excluded entries inside ZIP archives"
+    );
+    assert_eq!(
+        skip_counts().excluded,
+        0,
+        "--no-default-excludes must not count ZIP entries as default-excluded"
+    );
+}
+
+#[test]
+fn default_excludes_apply_inside_openpack_zip_archives() {
+    let _guard = counter_guard();
+    let dir = tempfile::tempdir().unwrap();
+    write_zip_with_default_excluded_entry(&dir.path().join("fixture.jar"));
+
+    TestApi.reset_skip_counters();
+    let skipped = scan_dir(dir.path(), true);
+    assert!(
+        body_contains(&skipped, "archive_normal_always_scanned_marker"),
+        "control JAR entry must be scanned when archive default excludes are enabled"
+    );
+    assert!(
+        !body_contains(&skipped, SENTINEL),
+        "default-excluded JAR entries must not leak into chunks by default"
+    );
+    assert_eq!(skip_counts().excluded, 1);
+
+    TestApi.reset_skip_counters();
+    let included = scan_dir(dir.path(), false);
+    assert!(
+        body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan default-excluded entries inside OpenPack ZIP archives"
+    );
+    assert_eq!(skip_counts().excluded, 0);
+}
+
+#[test]
+fn default_excludes_apply_inside_duplicate_zip_central_directory_archives() {
+    let _guard = counter_guard();
+    let dir = tempfile::tempdir().unwrap();
+    write_duplicate_zip_with_default_excluded_entries(&dir.path().join("duplicate.zip"));
+
+    TestApi.reset_skip_counters();
+    let skipped = scan_dir(dir.path(), true);
+    assert!(
+        body_contains(&skipped, "duplicate_zip_normal_always_scanned_marker"),
+        "control duplicate-ZIP entry must be scanned when archive default excludes are enabled"
+    );
+    assert!(
+        !body_contains(&skipped, SENTINEL),
+        "default-excluded duplicate-ZIP entries must not leak into chunks by default"
+    );
+    assert_eq!(
+        skip_counts().excluded,
+        2,
+        "both duplicated package-lock entries must increment the typed excluded counter"
+    );
+
+    TestApi.reset_skip_counters();
+    let included = scan_dir(dir.path(), false);
+    assert!(
+        body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan default-excluded entries in duplicate-ZIP mode"
+    );
+    assert_eq!(skip_counts().excluded, 0);
+}
+
+#[test]
+fn default_excludes_apply_inside_nested_zip_archives() {
+    let _guard = counter_guard();
+    let dir = tempfile::tempdir().unwrap();
+    write_nested_zip_with_default_excluded_entry(&dir.path().join("outer.zip"));
+
+    TestApi.reset_skip_counters();
+    let skipped = scan_dir(dir.path(), true);
+    assert!(
+        body_contains(&skipped, "nested_archive_normal_always_scanned_marker"),
+        "control nested ZIP entry must be scanned when archive default excludes are enabled"
+    );
+    assert!(
+        body_contains(&skipped, "outer_archive_normal_always_scanned_marker"),
+        "outer ZIP control entry must still be scanned"
+    );
+    assert!(
+        !body_contains(&skipped, SENTINEL),
+        "default-excluded nested ZIP entries must not leak into chunks by default"
+    );
+    assert_eq!(skip_counts().excluded, 1);
+
+    TestApi.reset_skip_counters();
+    let included = scan_dir(dir.path(), false);
+    assert!(
+        body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan default-excluded entries inside nested ZIP archives"
+    );
+    assert_eq!(skip_counts().excluded, 0);
+}
+
+#[test]
+fn default_excludes_apply_inside_raw_tar_archives() {
+    let _guard = counter_guard();
+    let dir = tempfile::tempdir().unwrap();
+    write_tar_with_default_excluded_entry(&dir.path().join("fixture.tar"));
+
+    TestApi.reset_skip_counters();
+    let skipped = scan_dir(dir.path(), true);
+    assert!(
+        body_contains(&skipped, "tar_normal_always_scanned_marker"),
+        "control TAR entry must be scanned when archive default excludes are enabled"
+    );
+    assert!(
+        !body_contains(&skipped, SENTINEL),
+        "default-excluded TAR entries must not leak into chunks by default"
+    );
+    assert_eq!(skip_counts().excluded, 1);
+
+    TestApi.reset_skip_counters();
+    let included = scan_dir(dir.path(), false);
+    assert!(
+        body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan default-excluded entries inside raw TAR archives"
+    );
+    assert_eq!(skip_counts().excluded, 0);
+}
+
+#[test]
+fn default_excludes_apply_inside_nested_tar_archives() {
+    let _guard = counter_guard();
+    let dir = tempfile::tempdir().unwrap();
+    write_nested_tar_with_default_excluded_entry(&dir.path().join("outer.tar"));
+
+    TestApi.reset_skip_counters();
+    let skipped = scan_dir(dir.path(), true);
+    assert!(
+        body_contains(&skipped, "tar_normal_always_scanned_marker"),
+        "control nested TAR entry must be scanned when archive default excludes are enabled"
+    );
+    assert!(
+        body_contains(&skipped, "outer_tar_normal_always_scanned_marker"),
+        "outer TAR control entry must still be scanned"
+    );
+    assert!(
+        !body_contains(&skipped, SENTINEL),
+        "default-excluded nested TAR entries must not leak into chunks by default"
+    );
+    assert_eq!(skip_counts().excluded, 1);
+
+    TestApi.reset_skip_counters();
+    let included = scan_dir(dir.path(), false);
+    assert!(
+        body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan default-excluded entries inside nested TAR archives"
+    );
+    assert_eq!(skip_counts().excluded, 0);
+}
+
+#[test]
+fn default_excludes_apply_inside_compressed_tar_archives() {
+    let _guard = counter_guard();
+    let dir = tempfile::tempdir().unwrap();
+    write_tgz_with_default_excluded_entry(&dir.path().join("fixture.tgz"));
+
+    TestApi.reset_skip_counters();
+    let skipped = scan_dir(dir.path(), true);
+    assert!(
+        body_contains(&skipped, "tar_normal_always_scanned_marker"),
+        "control compressed-TAR entry must be scanned when archive default excludes are enabled"
+    );
+    assert!(
+        !body_contains(&skipped, SENTINEL),
+        "default-excluded compressed-TAR entries must not leak into chunks by default"
+    );
+    assert_eq!(skip_counts().excluded, 1);
+
+    TestApi.reset_skip_counters();
+    let included = scan_dir(dir.path(), false);
+    assert!(
+        body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan default-excluded entries inside compressed TAR archives"
+    );
+    assert_eq!(skip_counts().excluded, 0);
+}
+
+#[test]
+fn default_excludes_apply_inside_seven_zip_archives() {
+    let _guard = counter_guard();
+    let dir = tempfile::tempdir().unwrap();
+    write_seven_zip_with_default_excluded_entry(&dir.path().join("fixture.7z"));
+
+    TestApi.reset_skip_counters();
+    let skipped = scan_dir(dir.path(), true);
+    assert!(
+        body_contains(&skipped, "seven_zip_normal_always_scanned_marker"),
+        "control 7z entry must be scanned when archive default excludes are enabled"
+    );
+    assert!(
+        !body_contains(&skipped, SENTINEL),
+        "default-excluded 7z entries must not leak into chunks by default"
+    );
+    assert_eq!(skip_counts().excluded, 1);
+
+    TestApi.reset_skip_counters();
+    let included = scan_dir(dir.path(), false);
+    assert!(
+        body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan default-excluded entries inside 7z archives"
+    );
+    assert_eq!(skip_counts().excluded, 0);
 }

@@ -51,6 +51,7 @@ pub(super) fn extract_openpack_archive(
     path: &Path,
     ext: &str,
     max_size: u64,
+    respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
     if is_symlink(path) {
@@ -78,7 +79,14 @@ pub(super) fn extract_openpack_archive(
     let total_budget: u64 = extraction_total_budget(max_size);
     let is_crx = ext.eq_ignore_ascii_case("crx");
     if !is_crx {
-        zip_scan::extract_zip_archive(path, &archive_display, per_entry_cap, total_budget, emit);
+        zip_scan::extract_zip_archive(
+            path,
+            &archive_display,
+            per_entry_cap,
+            total_budget,
+            respect_default_excludes,
+            emit,
+        );
         return;
     }
 
@@ -113,7 +121,9 @@ pub(super) fn extract_openpack_archive(
                         }
                         continue;
                     }
-                    if super::super::filter::is_default_excluded(&archive_entry.name) {
+                    if respect_default_excludes
+                        && super::super::filter::is_default_excluded(&archive_entry.name)
+                    {
                         record_default_excluded_archive_entry(
                             &archive_display,
                             &archive_entry.name,
@@ -385,6 +395,7 @@ pub(super) fn emit_archive_content(
     per_entry_cap: u64,
     total_budget: u64,
     total_uncompressed: &mut u64,
+    respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
     emit_archive_content_with_depth(
@@ -394,6 +405,7 @@ pub(super) fn emit_archive_content(
         per_entry_cap,
         total_budget,
         total_uncompressed,
+        respect_default_excludes,
         0,
         emit,
     )
@@ -406,6 +418,7 @@ pub(super) fn emit_archive_content_with_depth(
     per_entry_cap: u64,
     total_budget: u64,
     total_uncompressed: &mut u64,
+    respect_default_excludes: bool,
     nested_depth: usize,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
@@ -426,6 +439,7 @@ pub(super) fn emit_archive_content_with_depth(
             total_budget,
             total_uncompressed,
             nested_depth + 1,
+            respect_default_excludes,
             emit,
         );
     }

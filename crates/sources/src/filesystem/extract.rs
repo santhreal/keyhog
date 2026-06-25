@@ -229,13 +229,13 @@ pub(super) fn process_entry(
         pdf::extract_pdf_chunks(&path, file_size, live_mtime_ns, max_size, emit);
         return;
     } else if ext.eq_ignore_ascii_case("7z") {
-        seven_zip::extract_seven_zip_chunks(&path, max_size, emit);
+        seven_zip::extract_seven_zip_chunks(&path, max_size, respect_default_excludes, emit);
         return;
     } else if ext.eq_ignore_ascii_case("rar") {
-        rar::extract_rar_chunks(&path, max_size, emit);
+        rar::extract_rar_chunks(&path, max_size, respect_default_excludes, emit);
         return;
     } else if archive::is_openpack_archive_ext(ext) {
-        archive::extract_openpack_archive(&path, ext, max_size, emit);
+        archive::extract_openpack_archive(&path, ext, max_size, respect_default_excludes, emit);
         return;
     } else if ext.eq_ignore_ascii_case("tar") {
         // Bare (uncompressed) `.tar`: unpack per-entry exactly as the zip
@@ -269,7 +269,13 @@ pub(super) fn process_entry(
                 // when the ustar/GNU magic is actually present, otherwise fall
                 // through to the normal scan path so the bytes are still examined.
                 if compressed::looks_like_tar(&bytes) {
-                    compressed::emit_tar_entries(&bytes, &display_path(&path), max_size, emit);
+                    compressed::emit_tar_entries(
+                        &bytes,
+                        &display_path(&path),
+                        max_size,
+                        respect_default_excludes,
+                        emit,
+                    );
                     return;
                 }
                 tracing::info!(
@@ -299,7 +305,7 @@ pub(super) fn process_entry(
         // decompressed stream is a tar container, else scan the real
         // decompressed bytes. These extensions are removed from SKIP_EXTENSIONS
         // so they reach this branch.
-        compressed::extract_compressed_chunks(&path, ext, max_size, emit);
+        compressed::extract_compressed_chunks(&path, ext, max_size, respect_default_excludes, emit);
         return;
     } else if ext.eq_ignore_ascii_case("har") {
         // Route the HAR read through the same no-follow-symlink guard

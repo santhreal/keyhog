@@ -121,7 +121,9 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
             && archive.contains("ext.eq_ignore_ascii_case(candidate)")
             && archive.contains("ext.eq_ignore_ascii_case(\"crx\")")
             && archive.contains("extract_openpack_archive(\n    path: &Path,\n    ext: &str,")
-            && extract.contains("archive::extract_openpack_archive(&path, ext, max_size, emit)")
+            && extract.contains(
+                "archive::extract_openpack_archive(&path, ext, max_size, respect_default_excludes, emit)"
+            )
             && !archive.contains("let is_crx = path")
             && !archive.contains("to_ascii_lowercase()"),
         "archive extension routing must stay allocation-free and ASCII-case-insensitive"
@@ -130,7 +132,9 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
         compressed.contains("pub(super) fn is_compressed_ext(ext: &str)")
             && compressed.contains("CompressedFormat::from_ext(ext).is_some()")
             && compressed.contains("extract_compressed_chunks(\n    path: &Path,\n    ext: &str,")
-            && extract.contains("compressed::extract_compressed_chunks(&path, ext, max_size, emit)")
+            && extract.contains(
+                "compressed::extract_compressed_chunks(&path, ext, max_size, respect_default_excludes, emit)"
+            )
             && !compressed.contains("let ext = path.extension()")
             && compressed.contains("fn is_tgz_ext(ext: &str)")
             && !compressed.contains("const COMPRESSED_EXTS")

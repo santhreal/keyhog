@@ -41,6 +41,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
     archive_display: &str,
     per_entry_cap: u64,
     total_budget: u64,
+    respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
     entries: Vec<CentralZipEntry>,
 ) {
@@ -80,7 +81,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
         if entry.name.ends_with('/') {
             continue;
         }
-        if filter::is_default_excluded(&entry.name) {
+        if respect_default_excludes && filter::is_default_excluded(&entry.name) {
             super::super::super::record_default_excluded_archive_entry(
                 archive_display,
                 &entry.name,
@@ -327,6 +328,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
             per_entry_cap,
             total_budget,
             &mut total_uncompressed,
+            respect_default_excludes,
             emit,
         ) {
             return;
@@ -628,6 +630,7 @@ pub(crate) fn duplicate_zip_reopen_error_for_test(path: &Path) -> Option<String>
         &path.display().to_string(),
         u64::MAX,
         u64::MAX,
+        true,
         &mut |row| {
             if let Err(error) = row {
                 errors.push(error.to_string());

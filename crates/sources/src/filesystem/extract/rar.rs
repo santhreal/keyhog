@@ -18,6 +18,7 @@ use std::rc::Rc;
 pub(super) fn extract_rar_chunks(
     path: &Path,
     max_size: u64,
+    respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
     if is_symlink(path) {
@@ -60,7 +61,7 @@ pub(super) fn extract_rar_chunks(
         }
     };
 
-    let mut state = RarExtractionState::new(path, max_size);
+    let mut state = RarExtractionState::new(path, max_size, respect_default_excludes);
     match &archive {
         Archive::Rar13(archive) => {
             for entry in &archive.entries {
@@ -479,10 +480,11 @@ struct RarExtractionState<'a> {
     total_uncompressed: u64,
     consumer_stopped: bool,
     archive_truncated: bool,
+    respect_default_excludes: bool,
 }
 
 impl<'a> RarExtractionState<'a> {
-    fn new(archive_path: &'a Path, max_size: u64) -> Self {
+    fn new(archive_path: &'a Path, max_size: u64, respect_default_excludes: bool) -> Self {
         Self {
             archive_path,
             archive_display: display_path(archive_path),
@@ -491,6 +493,7 @@ impl<'a> RarExtractionState<'a> {
             total_uncompressed: 0,
             consumer_stopped: false,
             archive_truncated: false,
+            respect_default_excludes,
         }
     }
 
@@ -504,7 +507,7 @@ impl<'a> RarExtractionState<'a> {
         if is_directory {
             return false;
         }
-        if super::super::filter::is_default_excluded(entry_name) {
+        if self.respect_default_excludes && super::super::filter::is_default_excluded(entry_name) {
             record_default_excluded_archive_entry(&self.archive_display, entry_name);
             return false;
         }
@@ -552,7 +555,7 @@ impl<'a> RarExtractionState<'a> {
         if is_directory {
             return Some(SolidRarEntryAction::Drain { cap: 0 });
         }
-        if super::super::filter::is_default_excluded(entry_name) {
+        if self.respect_default_excludes && super::super::filter::is_default_excluded(entry_name) {
             record_default_excluded_archive_entry(&self.archive_display, entry_name);
             return Some(SolidRarEntryAction::Drain {
                 cap: self.solid_drain_cap(entry_size),
