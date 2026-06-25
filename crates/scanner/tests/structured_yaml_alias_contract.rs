@@ -27,32 +27,41 @@ fn scan(scanner: &CompiledScanner, body: &str, path: &str) -> Vec<RawMatch> {
         .collect()
 }
 
-#[test]
-fn docker_compose_cyclic_alias_yaml_is_bounded() {
+fn assert_alias_yaml_is_bounded_and_visible(
+    scanner: &CompiledScanner,
+    body: &str,
+    path: &str,
+    description: &str,
+) {
     reset_for_scan();
+    let matches = scan(scanner, body, path);
+    assert!(
+        matches.is_empty(),
+        "{description} must fail closed without findings"
+    );
+    assert!(
+        structured_parse_failure_count() > 0,
+        "{description} rejection must be operator-visible as a structured parse failure"
+    );
+}
+
+#[test]
+fn structured_yaml_alias_rejections_are_bounded_and_visible() {
     let scanner = scanner();
-    let text = "\
+    let compose_cycle = "\
 services:
   web:
     environment: &env_anchor
       - *env_anchor
 ";
-    let matches = scan(&scanner, text, "/repo/docker-compose.yaml");
-    assert!(
-        matches.is_empty(),
-        "cyclic compose YAML aliases must fail closed without findings"
+    assert_alias_yaml_is_bounded_and_visible(
+        &scanner,
+        compose_cycle,
+        "/repo/docker-compose.yaml",
+        "cyclic compose YAML aliases",
     );
-    assert!(
-        structured_parse_failure_count() > 0,
-        "cyclic compose YAML rejection must be operator-visible as a structured parse failure"
-    );
-}
 
-#[test]
-fn docker_compose_alias_expansion_yaml_is_bounded() {
-    reset_for_scan();
-    let scanner = scanner();
-    let text = "\
+    let compose_expansion = "\
 services:
   web:
     x0: &x0 [lol,lol,lol,lol,lol,lol,lol,lol,lol]
@@ -62,34 +71,23 @@ services:
     x4: &x4 [*x3,*x3,*x3,*x3,*x3,*x3,*x3,*x3,*x3]
     environment: *x4
 ";
-    let matches = scan(&scanner, text, "/repo/docker-compose.yaml");
-    assert!(
-        matches.is_empty(),
-        "alias-expanded compose YAML must not exhaust parser traversal"
+    assert_alias_yaml_is_bounded_and_visible(
+        &scanner,
+        compose_expansion,
+        "/repo/docker-compose.yaml",
+        "alias-expanded compose YAML",
     );
-    assert!(
-        structured_parse_failure_count() > 0,
-        "alias expansion rejection must be operator-visible as a structured parse failure"
-    );
-}
 
-#[test]
-fn k8s_secret_cyclic_alias_yaml_is_bounded() {
-    reset_for_scan();
-    let scanner = scanner();
-    let text = "\
+    let k8s_cycle = "\
 apiVersion: v1
 kind: Secret
 data: &data_anchor
   token: *data_anchor
 ";
-    let matches = scan(&scanner, text, "/repo/secret.yaml");
-    assert!(
-        matches.is_empty(),
-        "cyclic k8s Secret YAML aliases must fail closed without findings"
-    );
-    assert!(
-        structured_parse_failure_count() > 0,
-        "cyclic k8s Secret YAML rejection must be operator-visible as a structured parse failure"
+    assert_alias_yaml_is_bounded_and_visible(
+        &scanner,
+        k8s_cycle,
+        "/repo/secret.yaml",
+        "cyclic k8s Secret YAML aliases",
     );
 }
