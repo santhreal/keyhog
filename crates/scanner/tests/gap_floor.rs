@@ -2,10 +2,20 @@
 
 #[path = "gap/csr_hot_maps_adopted.rs"]
 mod csr_hot_maps_adopted;
+#[path = "gap/detector_contract_coverage_100pct.rs"]
+mod detector_contract_coverage_100pct;
 #[path = "gap/docs_megakernel_env_claim_matches_engine.rs"]
 mod docs_megakernel_env_claim_matches_engine;
+#[path = "gap/findings_registry_integrity.rs"]
+mod findings_registry_integrity;
 #[path = "gap/inline_migrated_tests_not_wired.rs"]
 mod inline_migrated_tests_not_wired;
+#[path = "gap/nightly_exports_all_strict_env_vars.rs"]
+mod nightly_exports_all_strict_env_vars;
+#[path = "gap/nightly_matrix_has_fourteen_runner_binaries.rs"]
+mod nightly_matrix_has_fourteen_runner_binaries;
+#[path = "gap/orphan_github_pat_contract.rs"]
+mod orphan_github_pat_contract;
 #[path = "gap/phase2_always_active_sparse.rs"]
 mod phase2_always_active_sparse;
 #[path = "gap/r5_chunk_boundary_adversarial_floor_12.rs"]
@@ -38,6 +48,8 @@ mod r5_reverse_beyond_unit_misc;
 mod r5_top50_near_miss_wired_in_adversarial_mod;
 #[path = "gap/santh_contract_dir_exists.rs"]
 mod santh_contract_dir_exists;
+#[path = "gap/scanner_src_files_exceed_standard_500_loc.rs"]
+mod scanner_src_files_exceed_standard_500_loc;
 #[path = "gap/simd_no_hit_multiline_fast_path.rs"]
 mod simd_no_hit_multiline_fast_path;
 #[path = "gap/single_line_implicit_concat_not_appended.rs"]
