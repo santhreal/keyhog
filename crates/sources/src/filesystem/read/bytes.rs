@@ -5,23 +5,27 @@
 //! the decompressor ever started.
 
 use memmap2::MmapOptions;
+use std::fs::File;
 use std::path::Path;
 
 use super::raw::open_file_safe;
 
 /// Buffered read bounded at `cap` bytes, routed through the same
-/// `open_file_safe` (`O_NOFOLLOW` / Windows symlink refusal) the primary
-/// path uses. Replaces the bare whole-file `fs` read fallbacks, which (a)
-/// FOLLOWED symlinks — re-opening the path with the libc default, undoing
-/// the no-follow guard the mmap open just applied — and (b) were UNBOUNDED,
-/// so a compressed file grown past its stat between the size check and the
-/// fallback read (a TOCTOU race) was slurped whole into a `Vec`. `.take(cap)`
-/// caps the allocation at the same ceiling the mmap path already enforces.
-/// (KH-GAP-OOM-compressed-fallback)
-fn read_capped_no_follow(path: &Path, cap: u64) -> std::io::Result<Vec<u8>> {
-    let file = open_file_safe(path)?;
-    let metadata = file.metadata()?;
-    if metadata.len() > cap {
+/// already-open descriptor the mmap attempt used. Replaces the bare whole-file
+/// `fs` read fallbacks, which (a) FOLLOWED symlinks — re-opening the path with
+/// the libc default, undoing the no-follow guard the mmap open just applied —
+/// and (b) were UNBOUNDED, so a compressed file grown past its stat between the
+/// size check and the fallback read (a TOCTOU race) was slurped whole into a
+/// `Vec`. Reading the existing descriptor preserves the no-follow open and
+/// advisory lock; `.take(cap)` caps the allocation at the same ceiling the mmap
+/// path already enforces. (KH-GAP-OOM-compressed-fallback)
+fn read_capped_open_file(
+    file: File,
+    path: &Path,
+    cap: u64,
+    live_size: u64,
+) -> std::io::Result<Vec<u8>> {
+    if live_size > cap {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!(
@@ -31,7 +35,7 @@ fn read_capped_no_follow(path: &Path, cap: u64) -> std::io::Result<Vec<u8>> {
             ),
         ));
     }
-    let read = crate::capped_read::read_to_cap(file, cap, Some(metadata.len()))?;
+    let read = crate::capped_read::read_to_cap(file, cap, Some(live_size))?;
     if read.truncated {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -186,20 +190,12 @@ pub(in crate::filesystem) fn read_file_for_compressed_input(
                 %error,
                 "cannot mmap compressed file; falling back to buffered read"
             );
-            #[cfg(unix)]
-            {
-                use std::os::unix::io::AsRawFd;
-                // SAFETY: `file` is still a valid open `File` (mmap
-                // failed but the fd is intact); `LOCK_UN` releases
-                // the advisory shared lock taken above.
-                unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
-            }
             // Law 10: recall-safe + bounded/no-follow. The bare `std::fs::read`
             // here was both unbounded (OOM on a TOCTOU-grown compressed file)
-            // and symlink-following; `read_capped_no_follow` fixes both while
+            // and symlink-following; the open-file fallback fixes both while
             // refusing a TOCTOU-grown over-cap prefix instead of silently
             // treating truncated compressed bytes as a complete file.
-            match read_capped_no_follow(path, effective_size_cap) {
+            match read_capped_open_file(file, path, effective_size_cap, metadata.len()) {
                 Ok(bytes) => Some(FileBytes::Owned(bytes)),
                 Err(error) => {
                     tracing::warn!(

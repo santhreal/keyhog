@@ -86,24 +86,18 @@ fn compressed_fallback_read_is_bounded_and_no_follow() {
          FOLLOWS symlinks (undoing the O_NOFOLLOW guard) and is UNBOUNDED (OOM on a \
          TOCTOU-grown compressed file). Use the bounded no-follow helper instead."
     );
-    // The bounded, no-follow helper must exist and remain used for the
-    // mmap-failure fallback.
     assert!(
-        bytes.contains("fn read_capped_no_follow"),
-        "the bounded no-follow read helper must exist"
-    );
-    assert!(
-        bytes.contains("open_file_safe(path)")
+        bytes.contains("fn read_capped_open_file")
             && bytes.contains("crate::capped_read::read_to_cap")
             && bytes.contains("read.truncated")
             && bytes.contains("SourceSkipEvent::OverMaxSize"),
-        "read_capped_no_follow must open via open_file_safe, use the shared capped-read owner, and count over-cap growth"
+        "the compressed mmap-failure fallback must use the shared capped-read owner on the already-open file and count over-cap growth"
     );
-    let used = bytes.matches("read_capped_no_follow(path,").count();
     assert!(
-        used >= 1,
-        "the mmap-failure fallback must route through \
-         read_capped_no_follow (found {used} use(s), expected >= 1)"
+        bytes.contains("read_capped_open_file(file, path, effective_size_cap, metadata.len())")
+            && !bytes.contains("read_capped_no_follow")
+            && !bytes.contains("open_file_safe(path)?;"),
+        "the compressed mmap-failure fallback must not reopen the path after the initial no-follow open; it must consume the existing descriptor"
     );
     assert!(
         !bytes.contains("compressed file is locked; falling back to buffered read"),
