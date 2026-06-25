@@ -125,6 +125,11 @@ struct Message {
     ts: String,
 }
 
+struct ChannelListFetch {
+    channels: Vec<Channel>,
+    error: Option<SourceError>,
+}
+
 struct HistoryFetch {
     messages: Vec<Message>,
     error: Option<SourceError>,
@@ -133,6 +138,7 @@ struct HistoryFetch {
 const CONVERSATIONS_LIST: &str = "conversations.list";
 const CONVERSATIONS_HISTORY: &str = "conversations.history";
 const SLACK_HISTORY_PAGE_LIMIT: usize = 1000;
+type SourceTruncatedReported = std::sync::atomic::AtomicBool;
 
 fn slack_error_code(error: Option<&str>) -> &str {
     match error {
@@ -296,6 +302,9 @@ pub(crate) fn history_next_cursor_for_test(
 
 impl SlackSource {
     fn collect_chunks(&self) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
+        if self.lookback_messages == 0 {
+            return Ok(Vec::new());
+        }
         let http = if self.http.timeout.is_none() {
             let mut h = self.http.clone();
             h.timeout = Some(crate::timeouts::HTTP_REQUEST);
@@ -308,7 +317,8 @@ impl SlackSource {
             .build()
             .map_err(|e| SourceError::Other(format!("failed to build Slack client: {e}")))?;
 
-        let channels = self.list_channels(&client)?;
+        let source_truncated_reported = SourceTruncatedReported::new(false);
+        let channel_list = self.list_channels(&client, &source_truncated_reported);
 
         // Concurrent per-channel history fetch. Slack's tier-2 rate limit is
         // 20+ requests/minute; cap parallelism at 8 to leave headroom for the
@@ -319,10 +329,12 @@ impl SlackSource {
             crate::parallel_fetch::REMOTE_API_FETCH_THREADS,
         )?;
         let per_channel: Vec<Vec<Result<Chunk, SourceError>>> = pool.install(|| {
-            channels
+            channel_list
+                .channels
                 .par_iter()
                 .map(|channel| -> Vec<Result<Chunk, SourceError>> {
-                    let history = self.fetch_history(&client, &channel.id);
+                    let history =
+                        self.fetch_history(&client, &channel.id, &source_truncated_reported);
                     let mut rows: Vec<Result<Chunk, SourceError>> =
                         slack_channel_chunks(channel, history.messages)
                             .into_iter()
@@ -340,6 +352,9 @@ impl SlackSource {
         for channel_chunks in per_channel {
             chunks.extend(channel_chunks);
         }
+        if let Some(error) = channel_list.error {
+            chunks.push(Err(error));
+        }
         Ok(chunks)
     }
 
@@ -347,7 +362,11 @@ impl SlackSource {
         format!("{}/{}", self.endpoint.trim_end_matches('/'), method)
     }
 
-    fn list_channels(&self, client: &Client) -> Result<Vec<Channel>, SourceError> {
+    fn list_channels(
+        &self,
+        client: &Client,
+        source_truncated_reported: &SourceTruncatedReported,
+    ) -> ChannelListFetch {
         let mut channels = Vec::new();
         let mut cursor = None::<String>;
         for _page in 1..=self.limits.hosted_git_pages {
@@ -361,43 +380,65 @@ impl SlackSource {
             if let Some(cursor) = cursor.as_deref() {
                 request = request.query(&[("cursor", cursor)]);
             }
-            let resp = request.send().map_err(|error| {
-                slack_unreadable_error(format!(
-                    "Slack API {CONVERSATIONS_LIST} request failed: {error}"
-                ))
-            })?;
-            let resp = read_slack_response(CONVERSATIONS_LIST, resp)?;
-            let (page_channels, next_cursor) = channels_page_from_response(resp, true)?;
+            let resp = match request.send() {
+                Ok(resp) => resp,
+                Err(error) => {
+                    return ChannelListFetch {
+                        channels,
+                        error: Some(slack_unreadable_error(format!(
+                            "Slack API {CONVERSATIONS_LIST} request failed: {error}"
+                        ))),
+                    };
+                }
+            };
+            let resp = match read_slack_response(CONVERSATIONS_LIST, resp) {
+                Ok(resp) => resp,
+                Err(error) => {
+                    return ChannelListFetch {
+                        channels,
+                        error: Some(error),
+                    };
+                }
+            };
+            let (page_channels, next_cursor) = match channels_page_from_response(resp, true) {
+                Ok(page) => page,
+                Err(error) => {
+                    return ChannelListFetch {
+                        channels,
+                        error: Some(error),
+                    };
+                }
+            };
             channels.extend(page_channels);
             let Some(next_cursor) = next_cursor else {
-                return Ok(channels);
+                return ChannelListFetch {
+                    channels,
+                    error: None,
+                };
             };
             cursor = Some(next_cursor);
         }
-        Err(slack_truncated_error(
-            CONVERSATIONS_LIST,
-            "channel listing",
-            self.limits.hosted_git_pages,
-        ))
+        ChannelListFetch {
+            channels,
+            error: Some(slack_truncated_error(
+                CONVERSATIONS_LIST,
+                "channel listing",
+                self.limits.hosted_git_pages,
+                source_truncated_reported,
+            )),
+        }
     }
 
-    fn fetch_history(&self, client: &Client, channel_id: &str) -> HistoryFetch {
+    fn fetch_history(
+        &self,
+        client: &Client,
+        channel_id: &str,
+        source_truncated_reported: &SourceTruncatedReported,
+    ) -> HistoryFetch {
         let mut messages = Vec::new();
-        if self.lookback_messages == 0 {
-            return HistoryFetch {
-                messages,
-                error: None,
-            };
-        }
         let mut cursor = None::<String>;
         for _page in 1..=self.limits.hosted_git_pages {
             let remaining = self.lookback_messages.saturating_sub(messages.len());
-            if remaining == 0 {
-                return HistoryFetch {
-                    messages,
-                    error: None,
-                };
-            }
             let limit = remaining.min(SLACK_HISTORY_PAGE_LIMIT).to_string();
             let mut request = client
                 .get(self.api_url(CONVERSATIONS_HISTORY))
@@ -436,29 +477,37 @@ impl SlackSource {
                         };
                     }
                 };
+            let page_exceeded_remaining = page_messages.len() > remaining;
             messages.extend(page_messages.into_iter().take(remaining));
             if messages.len() >= self.lookback_messages {
-                return HistoryFetch {
-                    messages,
-                    error: None,
+                let error = if has_more || page_exceeded_remaining {
+                    Some(slack_lookback_truncated_error(
+                        CONVERSATIONS_HISTORY,
+                        &format!("history for channel {channel_id}"),
+                        self.lookback_messages,
+                        source_truncated_reported,
+                    ))
+                } else {
+                    None
                 };
+                return HistoryFetch { messages, error };
             }
-            match next_cursor {
-                Some(next_cursor) => cursor = Some(next_cursor),
-                None if has_more => {
-                    return HistoryFetch {
-                        messages,
-                        error: Some(slack_truncated_error(
-                            CONVERSATIONS_HISTORY,
-                            &format!("history for channel {channel_id}"),
-                            self.limits.hosted_git_pages,
-                        )),
-                    };
-                }
-                None => {
+            match (next_cursor, has_more) {
+                (Some(next_cursor), true) => cursor = Some(next_cursor),
+                (Some(_), false) | (None, false) => {
                     return HistoryFetch {
                         messages,
                         error: None,
+                    };
+                }
+                (None, true) => {
+                    return HistoryFetch {
+                        messages,
+                        error: Some(slack_missing_cursor_error(
+                            CONVERSATIONS_HISTORY,
+                            &format!("history for channel {channel_id}"),
+                            source_truncated_reported,
+                        )),
                     };
                 }
             }
@@ -469,6 +518,7 @@ impl SlackSource {
                 CONVERSATIONS_HISTORY,
                 &format!("history for channel {channel_id}"),
                 self.limits.hosted_git_pages,
+                source_truncated_reported,
             )),
         }
     }
@@ -511,9 +561,43 @@ fn slack_channel_chunks(channel: &Channel, messages: Vec<Message>) -> Vec<Chunk>
     channel_chunks
 }
 
-fn slack_truncated_error(endpoint: &str, item: &str, max_pages: usize) -> SourceError {
-    let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
+fn record_slack_source_truncated_once(source_truncated_reported: &SourceTruncatedReported) {
+    if !source_truncated_reported.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
+    }
+}
+
+fn slack_truncated_error(
+    endpoint: &str,
+    item: &str,
+    max_pages: usize,
+    source_truncated_reported: &SourceTruncatedReported,
+) -> SourceError {
+    record_slack_source_truncated_once(source_truncated_reported);
     SourceError::Other(format!(
         "Slack API {endpoint} {item} exceeded {max_pages} pages; remaining Slack data was not scanned"
+    ))
+}
+
+fn slack_missing_cursor_error(
+    endpoint: &str,
+    item: &str,
+    source_truncated_reported: &SourceTruncatedReported,
+) -> SourceError {
+    record_slack_source_truncated_once(source_truncated_reported);
+    SourceError::Other(format!(
+        "Slack API {endpoint} {item} indicated more pages without a next cursor; remaining Slack data was not scanned"
+    ))
+}
+
+fn slack_lookback_truncated_error(
+    endpoint: &str,
+    item: &str,
+    lookback_messages: usize,
+    source_truncated_reported: &SourceTruncatedReported,
+) -> SourceError {
+    record_slack_source_truncated_once(source_truncated_reported);
+    SourceError::Other(format!(
+        "Slack API {endpoint} {item} reached the {lookback_messages}-message lookback cap; remaining Slack data was not scanned"
     ))
 }

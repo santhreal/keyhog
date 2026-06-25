@@ -104,6 +104,10 @@ fn slack_channel_and_history_cursors_are_scanned() {
 #[cfg(feature = "slack")]
 #[test]
 fn slack_history_lookback_is_total_cap() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
     let server = httpmock::MockServer::start();
 
     let list_page = server.mock(|when, then| {
@@ -152,13 +156,13 @@ fn slack_history_lookback_is_total_cap() {
             );
     });
 
-    let chunks = TestApi
+    let rows: Vec<_> = TestApi
         .slack_source_with_endpoint_and_lookback("xoxb-test-token", server.url(""), 3)
         .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .expect("mock Slack lookback scan");
-    let body = chunks
+        .collect();
+    let body = rows
         .iter()
+        .filter_map(|row| row.as_ref().ok())
         .map(|chunk| chunk.data.as_ref())
         .collect::<Vec<_>>()
         .join("\n");
@@ -191,6 +195,21 @@ fn slack_history_lookback_is_total_cap() {
         history_page_3.calls(),
         0,
         "history pagination must stop at the total lookback cap"
+    );
+    assert!(
+        rows.iter().any(|row| row.as_ref().is_err_and(|error| {
+            error
+                .to_string()
+                .contains("Slack API conversations.history history for channel C1 reached the 3-message lookback cap")
+        })),
+        "lookback cap must surface an explicit source-truncation row: {rows:?}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.source_truncated - before.source_truncated,
+        1,
+        "Slack lookback cap with remaining history must bump SOURCE_TRUNCATED once"
     );
 }
 
@@ -230,7 +249,11 @@ fn slack_history_zero_lookback_skips_history_requests() {
         chunks.is_empty(),
         "zero lookback should not emit Slack history chunks, got {chunks:?}"
     );
-    assert_eq!(list_page.calls(), 1, "channel list page");
+    assert_eq!(
+        list_page.calls(),
+        0,
+        "zero lookback must not list Slack channels"
+    );
     assert_eq!(
         history_page.calls(),
         0,
@@ -261,11 +284,13 @@ fn slack_channel_list_page_cap_is_counted_source_truncated() {
     let history_page = server.mock(|when, then| {
         when.method(httpmock::Method::GET)
             .path("/conversations.history")
-            .query_param("channel", "C1");
+            .query_param("channel", "C1")
+            .query_param("limit", "1000")
+            .query_param_missing("cursor");
         then.status(200)
             .header("content-type", "application/json")
             .body(
-                r#"{"ok":true,"messages":[{"user":"U1","text":"list cap must not scan history","ts":"1.0"}],"has_more":false}"#,
+                r#"{"ok":true,"messages":[{"user":"U1","text":"list cap preserves listed channel ghp_slackListCapToken1234567890","ts":"1.0"}],"has_more":false}"#,
             );
     });
     let limits = SourceLimits {
@@ -279,24 +304,26 @@ fn slack_channel_list_page_cap_is_counted_source_truncated() {
         .collect();
 
     assert_eq!(list_page.calls(), 1, "first channel list page");
+    assert_eq!(history_page.calls(), 1, "listed channel history page");
     assert_eq!(
-        history_page.calls(),
-        0,
-        "truncated channel listing must not scan an incomplete channel set"
-    );
-    assert_eq!(
-        rows.len(),
+        rows.iter().filter(|row| row.is_err()).count(),
         1,
-        "truncated channel listing must produce one visible error row"
+        "truncated channel listing must produce one visible error row: {rows:?}"
     );
-    let error = rows[0]
-        .as_ref()
-        .expect_err("truncated channel listing must be an error row");
     assert!(
-        error
-            .to_string()
-            .contains("Slack API conversations.list channel listing exceeded 1 pages"),
-        "error must describe Slack channel listing truncation, got {error}"
+        rows.iter().any(|row| row.as_ref().is_ok_and(|chunk| {
+            chunk.data.contains("ghp_slackListCapToken1234567890")
+                && chunk.metadata.path.as_deref() == Some("slack://#alpha")
+        })),
+        "first listed channel must remain scan-visible when listing is truncated: {rows:?}"
+    );
+    assert!(
+        rows.iter().any(|row| row.as_ref().is_err_and(|error| {
+            error
+                .to_string()
+                .contains("Slack API conversations.list channel listing exceeded 1 pages")
+        })),
+        "error must describe Slack channel listing truncation: {rows:?}"
     );
 
     let after = skip_counts();
@@ -388,6 +415,221 @@ fn slack_history_page_cap_preserves_page_and_counts_source_truncated() {
     );
 }
 
+#[cfg(feature = "slack")]
+#[test]
+fn slack_history_cursor_with_has_more_false_stops_without_extra_request() {
+    let server = httpmock::MockServer::start();
+
+    let list_page = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.list")
+            .query_param("types", "public_channel,private_channel")
+            .query_param("limit", "1000")
+            .query_param_missing("cursor");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"ok":true,"channels":[{"id":"C1","name":"alpha"}]}"#);
+    });
+    let history_page = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.history")
+            .query_param("channel", "C1")
+            .query_param("limit", "1000")
+            .query_param_missing("cursor");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{"ok":true,"messages":[{"user":"U1","text":"cursor false stop ghp_slackCursorFalseToken1234567890","ts":"1.0"}],"has_more":false,"response_metadata":{"next_cursor":"ignored-cursor"}}"#,
+            );
+    });
+    let redundant_history_page = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.history")
+            .query_param("channel", "C1")
+            .query_param("cursor", "ignored-cursor");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{"ok":true,"messages":[{"user":"U2","text":"has_more false cursor must not be requested","ts":"2.0"}],"has_more":false}"#,
+            );
+    });
+
+    let rows: Vec<_> = TestApi
+        .slack_source_with_endpoint("xoxb-test-token", server.url(""))
+        .chunks()
+        .collect();
+
+    assert_eq!(list_page.calls(), 1, "channel list page");
+    assert_eq!(history_page.calls(), 1, "first history page");
+    assert_eq!(
+        redundant_history_page.calls(),
+        0,
+        "has_more=false must stop history pagination even if Slack sends a cursor"
+    );
+    assert!(
+        rows.iter().all(Result::is_ok),
+        "has_more=false with a cursor must not emit an error row: {rows:?}"
+    );
+    assert!(
+        rows.iter().any(|row| row.as_ref().is_ok_and(|chunk| {
+            chunk.data.contains("ghp_slackCursorFalseToken1234567890")
+                && chunk.metadata.path.as_deref() == Some("slack://#alpha")
+        })),
+        "first page must remain scan-visible: {rows:?}"
+    );
+}
+
+#[cfg(feature = "slack")]
+#[test]
+fn slack_history_has_more_without_cursor_preserves_page_and_counts_source_truncated() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let list_page = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.list")
+            .query_param("types", "public_channel,private_channel")
+            .query_param("limit", "1000")
+            .query_param_missing("cursor");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"ok":true,"channels":[{"id":"C1","name":"alpha"}]}"#);
+    });
+    let history_page = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.history")
+            .query_param("channel", "C1")
+            .query_param("limit", "1000")
+            .query_param_missing("cursor");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{"ok":true,"messages":[{"user":"U1","text":"missing cursor keeps page ghp_slackMissingCursorToken1234567890","ts":"1.0"}],"has_more":true}"#,
+            );
+    });
+
+    let rows: Vec<_> = TestApi
+        .slack_source_with_endpoint("xoxb-test-token", server.url(""))
+        .chunks()
+        .collect();
+
+    assert_eq!(list_page.calls(), 1, "channel list page");
+    assert_eq!(history_page.calls(), 1, "history page");
+    assert!(
+        rows.iter().any(|row| row.as_ref().is_ok_and(|chunk| {
+            chunk.data.contains("ghp_slackMissingCursorToken1234567890")
+                && chunk.metadata.path.as_deref() == Some("slack://#alpha")
+        })),
+        "history page must remain scan-visible when Slack omits the next cursor: {rows:?}"
+    );
+    assert!(
+        rows.iter().any(|row| row.as_ref().is_err_and(|error| {
+            error.to_string().contains(
+                "Slack API conversations.history history for channel C1 indicated more pages without a next cursor",
+            )
+        })),
+        "missing cursor must emit the specific truncation error: {rows:?}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.source_truncated - before.source_truncated,
+        1,
+        "missing Slack history cursor must bump SOURCE_TRUNCATED once"
+    );
+}
+
+#[cfg(feature = "slack")]
+#[test]
+fn slack_multiple_history_truncations_count_source_truncated_once() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let list_page = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.list")
+            .query_param("types", "public_channel,private_channel")
+            .query_param("limit", "1000")
+            .query_param_missing("cursor");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{"ok":true,"channels":[{"id":"C1","name":"alpha"},{"id":"C2","name":"beta"}]}"#,
+            );
+    });
+    let alpha_history = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.history")
+            .query_param("channel", "C1")
+            .query_param("limit", "1000")
+            .query_param_missing("cursor");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{"ok":true,"messages":[{"user":"U1","text":"alpha truncated ghp_slackAlphaTruncatedToken1234567890","ts":"1.0"}],"has_more":true}"#,
+            );
+    });
+    let beta_history = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.history")
+            .query_param("channel", "C2")
+            .query_param("limit", "1000")
+            .query_param_missing("cursor");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{"ok":true,"messages":[{"user":"U2","text":"beta truncated ghp_slackBetaTruncatedToken1234567890","ts":"2.0"}],"has_more":true}"#,
+            );
+    });
+
+    let rows: Vec<_> = TestApi
+        .slack_source_with_endpoint("xoxb-test-token", server.url(""))
+        .chunks()
+        .collect();
+
+    assert_eq!(list_page.calls(), 1, "channel list page");
+    assert_eq!(alpha_history.calls(), 1, "alpha history page");
+    assert_eq!(beta_history.calls(), 1, "beta history page");
+    assert!(
+        rows.iter().any(|row| row.as_ref().is_ok_and(|chunk| {
+            chunk
+                .data
+                .contains("ghp_slackAlphaTruncatedToken1234567890")
+                && chunk.metadata.path.as_deref() == Some("slack://#alpha")
+        })),
+        "alpha partial page must remain scan-visible: {rows:?}"
+    );
+    assert!(
+        rows.iter().any(|row| row.as_ref().is_ok_and(|chunk| {
+            chunk.data.contains("ghp_slackBetaTruncatedToken1234567890")
+                && chunk.metadata.path.as_deref() == Some("slack://#beta")
+        })),
+        "beta partial page must remain scan-visible: {rows:?}"
+    );
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row.as_ref().is_err_and(|error| {
+                error
+                    .to_string()
+                    .contains("indicated more pages without a next cursor")
+            }))
+            .count(),
+        2,
+        "each truncated channel must keep its own visible error row: {rows:?}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.source_truncated - before.source_truncated,
+        1,
+        "multiple Slack history truncations in one source must bump SOURCE_TRUNCATED once"
+    );
+}
+
 #[cfg(not(feature = "slack"))]
 #[test]
 fn slack_channel_and_history_cursors_are_scanned() {
@@ -415,5 +657,23 @@ fn slack_channel_list_page_cap_is_counted_source_truncated() {
 #[cfg(not(feature = "slack"))]
 #[test]
 fn slack_history_page_cap_preserves_page_and_counts_source_truncated() {
+    assert!(!cfg!(feature = "slack"));
+}
+
+#[cfg(not(feature = "slack"))]
+#[test]
+fn slack_history_cursor_with_has_more_false_stops_without_extra_request() {
+    assert!(!cfg!(feature = "slack"));
+}
+
+#[cfg(not(feature = "slack"))]
+#[test]
+fn slack_history_has_more_without_cursor_preserves_page_and_counts_source_truncated() {
+    assert!(!cfg!(feature = "slack"));
+}
+
+#[cfg(not(feature = "slack"))]
+#[test]
+fn slack_multiple_history_truncations_count_source_truncated_once() {
     assert!(!cfg!(feature = "slack"));
 }

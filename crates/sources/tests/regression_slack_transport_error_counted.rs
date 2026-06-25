@@ -242,9 +242,10 @@ fn slack_late_history_failure_preserves_prior_channel_chunks() {
         "failing channel history page request count"
     );
     assert!(
-        rows.iter().any(|row| row
-            .as_ref()
-            .is_ok_and(|chunk| { chunk.data.contains("ghp_slackLateFailureToken1234567890") })),
+        rows.iter().any(|row| row.as_ref().is_ok_and(|chunk| {
+            chunk.data.contains("ghp_slackLateFailureToken1234567890")
+                && chunk.metadata.path.as_deref() == Some("slack://#alpha")
+        })),
         "messages fetched before a later page failure must still be scanned: {rows:?}"
     );
     assert!(
