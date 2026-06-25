@@ -27,7 +27,7 @@ use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, mpsc::channel};
+use std::sync::mpsc::channel;
 use std::time::{Duration, Instant};
 
 /// Within this window, a repeat event for the *same path and same content*
@@ -69,7 +69,7 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
     }
 
     let (tx, rx) = channel::<notify::Result<Event>>();
-    let notify_channel_closed_for_callback = Arc::new(AtomicBool::new(false));
+    let notify_channel_closed_for_callback = AtomicBool::new(false);
     let watch_root_for_callback = watch_root.clone();
 
     // Hold the watcher for the duration of the daemon. The `notify` crate
