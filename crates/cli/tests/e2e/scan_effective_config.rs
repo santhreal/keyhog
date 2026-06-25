@@ -788,6 +788,23 @@ fn config_effective_fast_disables_decode_entropy_and_ml() {
 }
 
 #[test]
+fn config_effective_toml_precision_enables_precision_preset() {
+    let (stdout, stderr, code) = effective_config_with_toml("precision = true\n");
+
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    for required in [
+        "min_confidence = 0.85",
+        "entropy_enabled = false",
+        "max_decode_depth = 1",
+    ] {
+        assert!(
+            stdout.contains(required),
+            "TOML precision preset missing `{required}`; stdout={stdout}"
+        );
+    }
+}
+
+#[test]
 fn config_effective_rejects_fast_with_entropy_only_toml_knobs() {
     let (stdout, stderr, code) = effective_config_with_toml(
         "fast = true\n\
@@ -825,10 +842,48 @@ fn config_effective_rejects_fast_with_entropy_only_toml_knobs() {
 }
 
 #[test]
+fn config_effective_rejects_precision_with_entropy_only_toml_knobs() {
+    let (stdout, stderr, code) = effective_config_with_toml(
+        "precision = true\n\
+         no_decode = true\n\
+         no_entropy = true\n\
+         entropy_source_files = true\n\
+         entropy_threshold = 5.0\n\
+         min_secret_len = 24\n\
+         generic_keyword_low_entropy = false\n\
+         [scan]\n\
+         min_secret_len = 32\n",
+    );
+
+    assert_eq!(code, Some(2), "stdout={stdout}\nstderr={stderr}");
+    assert!(
+        stdout.is_empty(),
+        "invalid config must not print config: {stdout}"
+    );
+    for required in [
+        "invalid .keyhog.toml configuration",
+        "no_decode",
+        "no_entropy",
+        "entropy_source_files",
+        "entropy_threshold",
+        "min_secret_len",
+        "generic_keyword_low_entropy = false",
+        "[scan].min_secret_len",
+        "precision mode disables entropy/decode",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing `{required}`; stderr={stderr}"
+        );
+    }
+}
+
+#[test]
 fn config_effective_rejects_multiple_toml_scan_presets() {
     let (stdout, stderr, code) = effective_config_with_toml(
         "fast = true\n\
-         deep = true\n",
+         deep = true\n\
+         precision = true\n",
     );
 
     assert_eq!(code, Some(2), "stdout={stdout}\nstderr={stderr}");
@@ -837,7 +892,7 @@ fn config_effective_rejects_multiple_toml_scan_presets() {
         "invalid config must not print config: {stdout}"
     );
     assert!(
-        stderr.contains("choose only one scan preset"),
+        stderr.contains("fast/deep/precision: choose only one scan preset"),
         "stderr must explain the preset conflict; stderr={stderr}"
     );
 }

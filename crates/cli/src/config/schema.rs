@@ -15,6 +15,8 @@ pub(super) struct ConfigFile {
     pub fast: Option<bool>,
     /// Enable deep mode (all features).
     pub deep: Option<bool>,
+    /// Enable high-precision mass-scan mode.
+    pub precision: Option<bool>,
     /// Skip decode-through scanning.
     pub no_decode: Option<bool>,
     /// Skip entropy-based detection.

@@ -73,17 +73,50 @@ pub(super) fn validate_scan_preset_conflicts(
     // did exactly what "CLI wins" promises. This validation rejects only same-
     // file TOML contradictions that would otherwise be accepted and then ignored
     // by the effective fast preset.
-    if args.fast || args.deep || args.precision || config.fast != Some(true) {
+    if args.fast || args.deep || args.precision {
         return;
     }
 
-    if config.deep == Some(true) {
-        config_errors.push("- fast/deep: choose only one scan preset in .keyhog.toml".to_string());
+    let toml_fast = config.fast == Some(true);
+    let toml_deep = config.deep == Some(true);
+    let toml_precision = config.precision == Some(true);
+    if !(toml_fast || toml_deep || toml_precision) {
+        return;
     }
+
+    let presets = [
+        ("fast", toml_fast),
+        ("deep", toml_deep),
+        ("precision", toml_precision),
+    ];
+    let selected: Vec<_> = presets
+        .into_iter()
+        .filter_map(|(name, enabled)| enabled.then_some(name))
+        .collect();
+    if selected.len() > 1 {
+        config_errors.push(format!(
+            "- {}: choose only one scan preset in .keyhog.toml",
+            selected.join("/")
+        ));
+    }
+
+    if !(toml_fast || toml_precision) {
+        return;
+    }
+    let preset = if toml_fast {
+        "fast = true"
+    } else {
+        "precision = true"
+    };
+    let mode = if toml_fast {
+        "fast mode"
+    } else {
+        "precision mode"
+    };
 
     for field in config_fast_noop_fields(config) {
         config_errors.push(format!(
-            "- {field}: cannot be combined with fast = true because fast mode disables entropy/decode for that knob"
+            "- {field}: cannot be combined with {preset} because {mode} disables entropy/decode for that knob"
         ));
     }
 }
@@ -322,6 +355,12 @@ pub(super) fn apply_top_level_scan_fields(
     if let Some(deep) = config.deep {
         if !args.fast && !args.deep && !args.precision {
             args.deep = deep;
+        }
+    }
+
+    if let Some(precision) = config.precision {
+        if !args.fast && !args.deep && !args.precision {
+            args.precision = precision;
         }
     }
 
