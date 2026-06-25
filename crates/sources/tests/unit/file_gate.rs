@@ -497,7 +497,7 @@ fn git_blob_batch_non_blob_mismatches_are_counted() {
     assert!(
         source.contains("GitBlobSkip::NonBlob")
             && source.contains("git tree entry resolved to a non-blob object; blob NOT scanned")
-            && source.contains("SourceSkipEvent::GitObjectUnreadable")
+            && source.contains("record_git_object_unreadable")
             && !source
                 .contains("if header.kind() != Kind::Blob {\n            continue;\n        }"),
         "git blob batch must count non-blob object mismatches instead of silently continuing"
@@ -512,7 +512,7 @@ fn git_diff_waits_for_diff_child_before_untracked_chunks() {
     assert!(
         source.contains("wait_after_final_chunk")
             && source.contains("UntrackedWorktreeChunks::new")
-            && source.contains("scanner.next_chunk(")
+            && source.contains("scanner.next_row(")
             && source.contains(
                 "super::wait_for_git_child(&mut child, \"git diff\", \"enumerating changed lines\")"
             )
