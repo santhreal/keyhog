@@ -384,6 +384,60 @@ fn jupyter_joins_array_source_lines() {
 }
 
 #[test]
+fn jupyter_extracts_stream_output_text() {
+    let text = r#"{"cells":[
+  {
+    "cell_type":"code",
+    "source":"print(token)",
+    "outputs":[
+      {"output_type":"stream","name":"stdout","text":["token = 'ghp_abcdefghij0123456789'\n"]}
+    ]
+  }
+]}"#;
+    let pairs = parse_jupyter(text);
+    assert_eq!(
+        value_of!(pairs, "jupyter-cell-0-output-0"),
+        Some("token = 'ghp_abcdefghij0123456789'\n")
+    );
+    assert_eq!(line_of!(pairs, "jupyter-cell-0-output-0"), Some(6));
+}
+
+#[test]
+fn jupyter_extracts_text_plain_output_data() {
+    let text = r#"{"cells":[
+  {
+    "cell_type":"code",
+    "source":"token",
+    "outputs":[
+      {"output_type":"execute_result","data":{"text/plain":"client_secret = \"ghp_abcdefghij0123456789\""}}
+    ]
+  }
+]}"#;
+    let pairs = parse_jupyter(text);
+    assert_eq!(
+        value_of!(pairs, "jupyter-cell-0-output-0.text/plain"),
+        Some("client_secret = \"ghp_abcdefghij0123456789\"")
+    );
+}
+
+#[test]
+fn jupyter_extracts_error_traceback_output() {
+    let text = r#"{"cells":[
+  {
+    "cell_type":"code",
+    "outputs":[
+      {"output_type":"error","traceback":["RuntimeError: token ghp_abcdefghij0123456789\n"]}
+    ]
+  }
+]}"#;
+    let pairs = parse_jupyter(text);
+    assert_eq!(
+        value_of!(pairs, "jupyter-cell-0-output-0.traceback"),
+        Some("RuntimeError: token ghp_abcdefghij0123456789\n")
+    );
+}
+
+#[test]
 fn jupyter_no_cells_yields_empty() {
     assert!(parse_jupyter(r#"{"metadata":{}}"#).is_empty());
 }

@@ -286,63 +286,170 @@ pub(crate) fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
         if cell_type != "code" {
             continue;
         }
-        let source = match cell.get("source") {
-            Some(v) => v,
-            None => continue,
-        };
-        match source {
-            serde_json::Value::String(s) => {
-                if !s.trim().is_empty() {
-                    pending.push(PendingExtractedPair::value_anchor(
-                        format!("jupyter-cell-{idx}"),
-                        s.clone(),
-                    ));
-                }
+        if let Some(source) = cell.get("source") {
+            extract_jupyter_source(source, idx, &mut pending);
+        }
+        extract_jupyter_outputs(cell, idx, &mut pending);
+    }
+    finalize_pending_pairs(text, pending)
+}
+
+fn extract_jupyter_source(
+    source: &serde_json::Value,
+    idx: usize,
+    pending: &mut Vec<PendingExtractedPair>,
+) {
+    match source {
+        serde_json::Value::String(s) => {
+            if !s.trim().is_empty() {
+                pending.push(PendingExtractedPair::value_anchor(
+                    format!("jupyter-cell-{idx}"),
+                    s.clone(),
+                ));
             }
-            serde_json::Value::Array(arr) => {
-                let mut malformed_source_fragment = false;
-                let mut parts = Vec::with_capacity(arr.len());
-                for fragment in arr {
-                    match fragment.as_str() {
-                        Some(text) => parts.push(text.to_string()),
-                        None => malformed_source_fragment = true,
-                    }
-                }
-                if malformed_source_fragment {
-                    crate::telemetry::record_structured_parse_failure();
-                    tracing::warn!(
-                        target: "keyhog::structured",
-                        cell = idx,
-                        "Jupyter notebook code cell source array contains a non-string fragment; valid fragments will be decoded-through"
-                    );
-                }
-                let joined = parts.join("");
-                if !joined.trim().is_empty() {
-                    match first_nonempty_fragment_anchor(&parts) {
-                        Some(anchor) => pending.push(PendingExtractedPair::owned_anchor(
-                            format!("jupyter-cell-{idx}"),
-                            joined,
-                            anchor,
-                        )),
-                        None => pending.push(PendingExtractedPair::value_anchor(
-                            format!("jupyter-cell-{idx}"),
-                            joined,
-                        )),
-                    }
-                }
-            }
-            _ => {
+        }
+        serde_json::Value::Array(arr) => {
+            let (joined, anchor, malformed) = jupyter_join_text_fragments(arr);
+            if malformed {
                 crate::telemetry::record_structured_parse_failure();
                 tracing::warn!(
                     target: "keyhog::structured",
                     cell = idx,
-                    "Jupyter notebook code cell source has unsupported shape; code cell will not be decoded-through"
+                    "Jupyter notebook code cell source array contains a non-string fragment; valid fragments will be decoded-through"
                 );
-                continue;
             }
-        };
+            push_jupyter_text_pair(pending, format!("jupyter-cell-{idx}"), joined, anchor);
+        }
+        _ => {
+            crate::telemetry::record_structured_parse_failure();
+            tracing::warn!(
+                target: "keyhog::structured",
+                cell = idx,
+                "Jupyter notebook code cell source has unsupported shape; code cell will not be decoded-through"
+            );
+        }
     }
-    finalize_pending_pairs(text, pending)
+}
+
+fn extract_jupyter_outputs(
+    cell: &serde_json::Value,
+    idx: usize,
+    pending: &mut Vec<PendingExtractedPair>,
+) {
+    let Some(outputs) = cell.get("outputs") else {
+        return;
+    };
+    let serde_json::Value::Array(outputs) = outputs else {
+        crate::telemetry::record_structured_parse_failure();
+        tracing::warn!(
+            target: "keyhog::structured",
+            cell = idx,
+            "Jupyter notebook code cell outputs field has unsupported shape; outputs will not be decoded-through"
+        );
+        return;
+    };
+    for (output_idx, output) in outputs.iter().enumerate() {
+        extract_jupyter_output(output, idx, output_idx, pending);
+    }
+}
+
+fn extract_jupyter_output(
+    output: &serde_json::Value,
+    cell_idx: usize,
+    output_idx: usize,
+    pending: &mut Vec<PendingExtractedPair>,
+) {
+    let context = format!("jupyter-cell-{cell_idx}-output-{output_idx}");
+    if let Some(text) = output.get("text") {
+        extract_jupyter_output_text(text, &context, pending, cell_idx, output_idx, "text");
+    }
+    if let Some(text_plain) = output.get("data").and_then(|data| data.get("text/plain")) {
+        extract_jupyter_output_text(
+            text_plain,
+            &format!("{context}.text/plain"),
+            pending,
+            cell_idx,
+            output_idx,
+            "text/plain",
+        );
+    }
+    if let Some(traceback) = output.get("traceback") {
+        extract_jupyter_output_text(
+            traceback,
+            &format!("{context}.traceback"),
+            pending,
+            cell_idx,
+            output_idx,
+            "traceback",
+        );
+    }
+}
+
+fn extract_jupyter_output_text(
+    value: &serde_json::Value,
+    context: &str,
+    pending: &mut Vec<PendingExtractedPair>,
+    cell_idx: usize,
+    output_idx: usize,
+    surface: &'static str,
+) {
+    match value {
+        serde_json::Value::String(s) => {
+            push_jupyter_text_pair(pending, context.to_string(), s.clone(), None);
+        }
+        serde_json::Value::Array(arr) => {
+            let (joined, anchor, malformed) = jupyter_join_text_fragments(arr);
+            if malformed {
+                crate::telemetry::record_structured_parse_failure();
+                tracing::warn!(
+                    target: "keyhog::structured",
+                    cell = cell_idx,
+                    output = output_idx,
+                    surface,
+                    "Jupyter notebook output text array contains a non-string fragment; valid fragments will be decoded-through"
+                );
+            }
+            push_jupyter_text_pair(pending, context.to_string(), joined, anchor);
+        }
+        _ => {
+            crate::telemetry::record_structured_parse_failure();
+            tracing::warn!(
+                target: "keyhog::structured",
+                cell = cell_idx,
+                output = output_idx,
+                surface,
+                "Jupyter notebook output text has unsupported shape; output will not be decoded-through"
+            );
+        }
+    }
+}
+
+fn jupyter_join_text_fragments(arr: &[serde_json::Value]) -> (String, Option<String>, bool) {
+    let mut malformed = false;
+    let mut parts = Vec::with_capacity(arr.len());
+    for fragment in arr {
+        match fragment.as_str() {
+            Some(text) => parts.push(text.to_string()),
+            None => malformed = true,
+        }
+    }
+    let anchor = first_nonempty_fragment_anchor(&parts);
+    (parts.join(""), anchor, malformed)
+}
+
+fn push_jupyter_text_pair(
+    pending: &mut Vec<PendingExtractedPair>,
+    context: String,
+    value: String,
+    anchor: Option<String>,
+) {
+    if value.trim().is_empty() {
+        return;
+    }
+    match anchor {
+        Some(anchor) => pending.push(PendingExtractedPair::owned_anchor(context, value, anchor)),
+        None => pending.push(PendingExtractedPair::value_anchor(context, value)),
+    }
 }
 
 fn scalar_value_text(value: &serde_json::Value) -> Option<String> {
