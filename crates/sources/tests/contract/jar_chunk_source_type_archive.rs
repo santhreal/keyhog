@@ -1,6 +1,7 @@
 //! Jar text entries must use filesystem/archive source_type.
 
-use crate::support::collect_chunks;
+use crate::support::split_chunk_results;
+use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use std::io::Write;
@@ -21,12 +22,28 @@ fn jar_chunk_source_type_archive() {
     .expect("write");
     zip.finish().expect("finish");
 
-    let types: Vec<String> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
-        .into_iter()
-        .map(|c| c.metadata.source_type.clone())
-        .collect();
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
     assert!(
-        types.iter().any(|t| t == "filesystem/archive"),
-        "expected filesystem/archive; got {types:?}"
+        errors.is_empty(),
+        "valid JAR fixture must not emit SourceError rows, got {errors:?}"
     );
+    assert_eq!(
+        chunks.len(),
+        1,
+        "single JAR text entry must emit exactly one chunk, got {chunks:?}"
+    );
+    let chunk = chunks[0];
+    assert_eq!(chunk.metadata.source_type, "filesystem/archive");
+    assert!(
+        chunk
+            .metadata
+            .path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("app.jar//META-INF/env")),
+        "JAR chunk path must identify archive and entry, got {:?}",
+        chunk.metadata.path
+    );
+    assert!(chunk.data.contains("K=1"));
 }
