@@ -26,7 +26,6 @@ const KEYWORD_FREE_LABEL: &str = "none (high-entropy)";
 /// canonical-shape tests in `tests/unit/inline_migrated/` can build the same
 /// context the scanner uses, without leaking the private length constant.
 #[doc(hidden)]
-#[cfg(test)]
 pub(crate) fn credential_keyword_context(keyword: &str) -> KeywordContext {
     credential_keyword_context_with_lift(keyword, false)
 }
@@ -37,7 +36,6 @@ pub(crate) fn credential_keyword_context(keyword: &str) -> KeywordContext {
 /// so the CredData recall-lane unit tests can drive `candidate_is_plausible`
 /// through both the strict gate and the model-arbitrated lift.
 #[doc(hidden)]
-#[cfg(test)]
 pub(crate) fn credential_keyword_context_with_lift(
     keyword: &str,
     allow_canonical_lift: bool,

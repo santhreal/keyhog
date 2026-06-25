@@ -11,11 +11,9 @@
 
 use std::collections::BTreeSet;
 
-#[cfg(test)]
 use unicode_normalization::UnicodeNormalization;
 
 /// Types of Unicode evasion attacks detected
-#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum EvasionKind {
     /// Cyrillic characters that look like Latin (homoglyphs)
@@ -35,7 +33,6 @@ pub(crate) enum EvasionKind {
 }
 
 /// Detected Unicode evasion attempt
-#[cfg(test)]
 #[derive(Debug, Clone)]
 pub(crate) struct EvasionMatch {
     /// Byte position in original text
@@ -49,7 +46,6 @@ pub(crate) struct EvasionMatch {
 }
 
 /// Detect Unicode evasion attempts in text
-#[cfg(test)]
 pub(crate) fn detect_unicode_attacks(text: &str) -> Vec<EvasionMatch> {
     let mut matches = Vec::new();
 
@@ -230,7 +226,6 @@ fn ascii_normalization_scan(bytes: &[u8]) -> AsciiNormalizationScan {
 }
 
 /// Full Unicode normalization (NFC + homoglyph replacement)
-#[cfg(test)]
 pub(crate) fn full_normalize(text: &str) -> String {
     let nfc: String = text.nfc().collect();
     normalize_homoglyphs(&nfc).into_owned()

@@ -90,18 +90,7 @@ fn no_new_unreachable_gap_rs_files() {
     let mut executable = manifest_test_paths(&manifest);
     executable.extend(path_attrs_from_top_level_tests(&tests_dir));
 
-    let allowed_unreachable: BTreeSet<&'static str> = [
-        "tests/gap/adversarial_bulk_lacks_per_detector_hostile_twins.rs",
-        "tests/gap/backend_worst_case_parity_sample_only.rs",
-        "tests/gap/confidence_calibration_uncalibrated_passthrough.rs",
-        "tests/gap/context_sequential_placeholder_strips_prefix.rs",
-        "tests/gap/detector_precision_decoys.rs",
-        "tests/gap/r5_checksum_invalid_drops_named_service_match.rs",
-        "tests/gap/scan_filters_grouped.rs",
-        "tests/gap/unicode_homoglyph_matrix.rs",
-    ]
-    .into_iter()
-    .collect();
+    let allowed_unreachable: BTreeSet<&'static str> = BTreeSet::new();
 
     let unreachable: BTreeSet<String> = gap_rs_files(&gap_dir)
         .into_iter()

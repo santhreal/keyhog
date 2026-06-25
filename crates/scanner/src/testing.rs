@@ -149,8 +149,7 @@ pub mod confidence {
         crate::confidence::penalties::contains_placeholder_word(credential)
     }
 
-    #[cfg(test)]
-    pub(crate) fn placeholder_words() -> Vec<String> {
+    pub fn placeholder_words() -> Vec<String> {
         crate::placeholder_words::words()
             .iter()
             .map(|word| word.lower().to_string())
@@ -184,8 +183,7 @@ pub mod confidence {
         )
     }
 
-    #[cfg(test)]
-    pub(crate) fn apply_calibration_multiplier(score: f64, detector_id: &str) -> f64 {
+    pub fn apply_calibration_multiplier(score: f64, detector_id: &str) -> f64 {
         crate::confidence::penalties::apply_calibration_multiplier(score, detector_id, None)
     }
 
@@ -311,12 +309,12 @@ pub mod entropy_fast {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod context {
+pub mod context {
     pub fn documentation_line_flags(lines: &[&str]) -> Vec<bool> {
         crate::context::documentation_line_flags(lines)
     }
 
+    #[cfg(test)]
     pub(crate) fn is_false_positive_match_context(
         text: &str,
         match_start: usize,
@@ -325,6 +323,7 @@ pub(crate) mod context {
         crate::context::is_false_positive_match_context(text, match_start, file_path)
     }
 
+    #[cfg(test)]
     pub(crate) fn is_false_positive_context(
         lines: &[&str],
         line_idx: usize,
@@ -333,10 +332,12 @@ pub(crate) mod context {
         crate::context::is_false_positive_context(lines, line_idx, file_path)
     }
 
+    #[cfg(test)]
     pub(crate) fn parse_disclaimer_phrases_for_test(raw: &str) -> Result<Vec<String>, String> {
         crate::context::parse_disclaimer_phrases(raw)
     }
 
+    #[cfg(test)]
     pub(crate) fn parse_test_path_rules_for_test(
         raw: &str,
     ) -> Result<(Vec<String>, Vec<String>, Vec<String>), String> {
@@ -348,10 +349,11 @@ pub(crate) mod context {
         ))
     }
 
-    pub(crate) fn is_known_example_credential(credential: &str) -> bool {
+    pub fn is_known_example_credential(credential: &str) -> bool {
         crate::context::is_known_example_credential(credential)
     }
 
+    #[cfg(test)]
     pub(crate) fn is_sequential_placeholder(credential: &str) -> bool {
         crate::context::is_sequential_placeholder(credential)
     }
@@ -998,11 +1000,10 @@ pub(crate) fn looks_like_program_identifier(value: &str) -> bool {
 /// canonical-shape unit tests migrated out of `src/entropy/scanner.rs`
 /// (KH-GAP-004). `credential_keyword_context` builds the production
 /// credential anchor so tests need not know the private tuning constants.
-#[cfg(test)]
-pub(crate) mod entropy_scanner {
-    pub(crate) struct KeywordContext {
+pub mod entropy_scanner {
+    pub struct KeywordContext {
         inner: crate::entropy::keywords::KeywordContext,
-        pub(crate) threshold: f64,
+        pub threshold: f64,
     }
 
     impl KeywordContext {
@@ -1014,10 +1015,11 @@ pub(crate) mod entropy_scanner {
         }
     }
 
-    pub(crate) fn credential_keyword_context(keyword: &str) -> KeywordContext {
+    pub fn credential_keyword_context(keyword: &str) -> KeywordContext {
         KeywordContext::from_inner(crate::entropy::scanner::credential_keyword_context(keyword))
     }
 
+    #[cfg(test)]
     pub(crate) fn credential_keyword_context_with_lift(
         keyword: &str,
         allow_canonical_lift: bool,
@@ -1030,7 +1032,7 @@ pub(crate) mod entropy_scanner {
         )
     }
 
-    pub(crate) fn candidate_is_plausible(
+    pub fn candidate_is_plausible(
         candidate: &str,
         entropy: f64,
         context: &KeywordContext,
@@ -1044,6 +1046,7 @@ pub(crate) mod entropy_scanner {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn candidate_plausibility_rejection_reason(
         candidate: &str,
         entropy: f64,
@@ -1059,36 +1062,36 @@ pub(crate) mod entropy_scanner {
         .map(|stage| stage.as_str())
     }
 
-    pub(crate) fn is_canonical_non_secret_shape(value: &str) -> bool {
+    pub fn is_canonical_non_secret_shape(value: &str) -> bool {
         crate::entropy::scanner::is_canonical_non_secret_shape(value)
     }
 }
 
 /// Entropy plausibility and shape predicates exposed for unit tests migrated
 /// out of their original inline homes (KH-GAP-004).
-#[cfg(test)]
-pub(crate) mod entropy_keywords {
+pub mod entropy_keywords {
     pub(crate) use crate::entropy::plausibility::PlausibilityContext;
 
-    pub(crate) fn looks_like_english_prose(value: &str) -> bool {
+    pub fn looks_like_english_prose(value: &str) -> bool {
         crate::suppression::shape::looks_like_english_prose(value)
     }
 
-    pub(crate) fn entropy_value_looks_like_prose(value: &str) -> bool {
+    pub fn entropy_value_looks_like_prose(value: &str) -> bool {
         crate::suppression::shape::looks_like_english_prose(value)
     }
 
-    pub(crate) fn passes_secret_strength_checks(value: &str, is_credential_context: bool) -> bool {
+    pub fn passes_secret_strength_checks(value: &str, is_credential_context: bool) -> bool {
         crate::entropy::plausibility::passes_secret_strength_checks(
             value,
             PlausibilityContext::new(is_credential_context, false),
         )
     }
 
-    pub(crate) fn is_dash_segmented_alnum_decoy(value: &str) -> bool {
+    pub fn is_dash_segmented_alnum_decoy(value: &str) -> bool {
         crate::suppression::shape::is_dash_segmented_alnum_decoy(value)
     }
 
+    #[cfg(test)]
     pub(crate) fn is_candidate_plausible(value: &str, placeholder_keywords: &[String]) -> bool {
         crate::entropy::plausibility::is_candidate_plausible(
             value,
@@ -1105,6 +1108,7 @@ pub(crate) mod entropy_keywords {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn is_candidate_plausible_in_context(
         value: &str,
         placeholder_keywords: &[String],
@@ -1113,6 +1117,7 @@ pub(crate) mod entropy_keywords {
         crate::entropy::plausibility::is_candidate_plausible(value, placeholder_keywords, context)
     }
 
+    #[cfg(test)]
     pub(crate) fn is_secret_plausible_in_context(
         value: &str,
         placeholder_keywords: &[String],
@@ -1452,12 +1457,11 @@ pub fn ml_score(text: &str, context: &str) -> f64 {
     crate::ml_scorer::score(text, context)
 }
 
-#[cfg(test)]
-pub(crate) mod unicode_hardening {
+pub mod unicode_hardening {
     use std::borrow::Cow;
 
     #[derive(Debug, Clone, Copy, PartialEq)]
-    pub(crate) enum EvasionKind {
+    pub enum EvasionKind {
         CyrillicHomoglyph,
         GreekHomoglyph,
         Fullwidth,
@@ -1468,7 +1472,7 @@ pub(crate) mod unicode_hardening {
     }
 
     impl EvasionKind {
-        pub(crate) fn description(&self) -> &'static str {
+        pub fn description(&self) -> &'static str {
             match self {
                 Self::CyrillicHomoglyph => "Cyrillic lookalike character",
                 Self::GreekHomoglyph => "Greek lookalike character",
@@ -1482,11 +1486,11 @@ pub(crate) mod unicode_hardening {
     }
 
     #[derive(Debug, Clone, PartialEq)]
-    pub(crate) struct EvasionMatch {
-        pub(crate) position: usize,
-        pub(crate) kind: EvasionKind,
-        pub(crate) char: char,
-        pub(crate) replacement: Option<char>,
+    pub struct EvasionMatch {
+        pub position: usize,
+        pub kind: EvasionKind,
+        pub char: char,
+        pub replacement: Option<char>,
     }
 
     fn kind(kind: crate::unicode_hardening::EvasionKind) -> EvasionKind {
@@ -1503,7 +1507,7 @@ pub(crate) mod unicode_hardening {
         }
     }
 
-    pub(crate) fn detect_unicode_attacks(text: &str) -> Vec<EvasionMatch> {
+    pub fn detect_unicode_attacks(text: &str) -> Vec<EvasionMatch> {
         crate::unicode_hardening::detect_unicode_attacks(text)
             .into_iter()
             .map(|m| EvasionMatch {
@@ -1515,27 +1519,28 @@ pub(crate) mod unicode_hardening {
             .collect()
     }
 
-    pub(crate) fn normalize_homoglyphs(text: &str) -> Cow<'_, str> {
+    pub fn normalize_homoglyphs(text: &str) -> Cow<'_, str> {
         crate::unicode_hardening::normalize_homoglyphs(text)
     }
 
-    pub(crate) fn full_normalize(text: &str) -> String {
+    pub fn full_normalize(text: &str) -> String {
         crate::unicode_hardening::full_normalize(text)
     }
 
-    pub(crate) fn strip_interior_evasion_controls(text: &str) -> Cow<'_, str> {
+    pub fn strip_interior_evasion_controls(text: &str) -> Cow<'_, str> {
         crate::unicode_hardening::strip_interior_evasion_controls(text)
     }
 
+    #[cfg(test)]
     pub(crate) fn parse_evasion_anchors_for_test(raw: &str) -> Result<Vec<String>, String> {
         crate::unicode_hardening::parse_evasion_anchors(raw)
     }
 
-    pub(crate) fn contains_evasion(text: &str) -> bool {
+    pub fn contains_evasion(text: &str) -> bool {
         crate::unicode_hardening::contains_evasion(text)
     }
 
-    pub(crate) fn is_evasion_char(ch: char) -> bool {
+    pub fn is_evasion_char(ch: char) -> bool {
         crate::unicode_hardening::is_evasion_char(ch)
     }
 }
@@ -1585,8 +1590,7 @@ impl BigramBloom {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn looks_like_standard_base64_blob(credential: &str) -> bool {
+pub fn looks_like_standard_base64_blob(credential: &str) -> bool {
     crate::suppression::shape::looks_like_standard_base64_blob(credential)
 }
 
@@ -1643,9 +1647,8 @@ pub(crate) mod ascii_ci {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod shape {
-    pub(crate) fn looks_like_credential_colliding_punctuation(credential: &str) -> bool {
+pub mod shape {
+    pub fn looks_like_credential_colliding_punctuation(credential: &str) -> bool {
         crate::suppression::shape::looks_like_credential_colliding_punctuation(credential)
     }
 
@@ -1653,22 +1656,26 @@ pub(crate) mod shape {
         crate::suppression::shape::looks_like_punctuation_decorated_identifier(credential)
     }
 
-    pub(crate) fn looks_like_syntactic_punctuation_marker(credential: &str) -> bool {
+    pub fn looks_like_syntactic_punctuation_marker(credential: &str) -> bool {
         crate::suppression::shape::looks_like_syntactic_punctuation_marker(credential)
     }
 
+    #[cfg(test)]
     pub(crate) fn looks_like_train_case_prose_identifier(credential: &str) -> bool {
         crate::suppression::shape::looks_like_train_case_prose_identifier(credential)
     }
 
+    #[cfg(test)]
     pub(crate) fn looks_like_filename_reference(credential: &str) -> bool {
         crate::suppression::shape::looks_like_filename_reference(credential)
     }
 
+    #[cfg(test)]
     pub(crate) fn looks_like_kebab_config_identifier(credential: &str) -> bool {
         crate::suppression::shape::looks_like_kebab_config_identifier(credential)
     }
 
+    #[cfg(test)]
     pub(crate) fn looks_like_generic_random_base64_blob_decoy(
         credential: &str,
         entropy: f64,
@@ -1676,10 +1683,12 @@ pub(crate) mod shape {
         crate::suppression::shape::looks_like_generic_random_base64_blob_decoy(credential, entropy)
     }
 
+    #[cfg(test)]
     pub(crate) fn generic_base64_candidate_is_ambiguous(credential: &str, entropy: f64) -> bool {
         crate::suppression::shape::generic_base64_candidate_is_ambiguous(credential, entropy)
     }
 
+    #[cfg(test)]
     pub(crate) fn public_noncredential_shape_full(credential: &str) -> Option<&'static str> {
         crate::suppression::shape::public_noncredential_shape(
             credential,
@@ -1687,6 +1696,7 @@ pub(crate) mod shape {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn public_noncredential_shape_weak_anchor(credential: &str) -> Option<&'static str> {
         crate::suppression::shape::public_noncredential_shape(
             credential,
