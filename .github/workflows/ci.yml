@@ -299,6 +299,14 @@ jobs:
       # tokens surface and the faithful-expansion twin (non-member `ddz_` → no claim).
       - name: char-class prefix expansion recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_charclass_prefix_expansion_recall
+      # Leading-construct prefix recall contract. A leading zero-width assertion
+      # (`\bser\.…`, flagsmith) and a leading short-literal alternation extended
+      # by a trailing literal (`(?:pk|sk)\.…`, locationiq) previously defeated
+      # prefix extraction; the assertion is stripped and the post-group literal
+      # is carried onto each branch. Pins both surface plus the precision twins
+      # (word-internal `ser.` and a too-short locationiq body → no claim).
+      - name: leading-construct prefix recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_leading_assertion_and_alternation_prefix_recall
       - name: RawMatch total-order gate
         run: cargo test -p keyhog-core --test new_core_finding_dedup --profile release-fast
 

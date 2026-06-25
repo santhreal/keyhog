@@ -7,6 +7,13 @@ pub(crate) fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
     // These set regex modes but don't consume input.
     let pattern = strip_leading_inline_flags(pattern);
 
+    // Strip leading zero-width assertions (`\b`, `\B`, `\A`, `^`). They anchor
+    // the match position but consume no input, so the literal that follows
+    // (`\bser\.` → `ser\.`) is the real prefix. Without this the leading `\b`
+    // broke extraction at the first byte and the detector carried no AC trigger
+    // / literal-prefix anchor (contracts_runner: flagsmith MISSED).
+    let pattern = strip_leading_zero_width_assertions(pattern);
+
     // Boundary-guard idiom: `(?:^|[^...])(LITERAL...)`. Secret detectors
     // prefix the real token with a zero-/one-width boundary guard so the
     // match requires start-of-line or a non-word char before the token
@@ -112,7 +119,90 @@ pub(crate) fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
         return expanded;
     }
 
+    // Fallback: a leading alternation of SHORT pure literals that only clear the
+    // floor once extended with the literal following the group (`(?:pk|sk)\.` →
+    // `pk.`/`sk.`). The per-branch alternation path above expands `pk`/`sk` but
+    // each is sub-floor on its own, so it declined; carrying the trailing `\.`
+    // discriminator onto every branch recovers them (contracts_runner:
+    // locationiq MISSED).
+    if let Some(expanded) = expand_leading_literal_alternation_with_tail(pattern) {
+        return expanded;
+    }
+
     Vec::new()
+}
+
+/// The leading run of literal characters of `s`, unescaping simple escaped
+/// literals (`\.` → `.`, `\-` → `-`) and stopping at the first metacharacter,
+/// quantifier, group, or class. Unlike [`extract_literal_prefix`] this applies
+/// no length floor and does not expand groups: it is the raw literal head used
+/// to extend an expanded prefix past the construct that produced it (a char
+/// class or a literal alternation) to its next break. A bare `.` is the
+/// any-char metacharacter and stops the run, exactly as `extract_literal_prefix`
+/// treats it; only the escaped `\.` contributes a literal dot.
+fn leading_literal_run(s: &str) -> String {
+    let mut out = String::new();
+    let mut chars = s.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' => match chars.next() {
+                Some(next) if is_escaped_literal(next) => out.push(next),
+                _ => break,
+            },
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | ':' | '=' => out.push(ch),
+            _ => break,
+        }
+    }
+    out
+}
+
+/// Expand a leading alternation whose every branch is a pure literal, extending
+/// each branch with the literal that follows the group.
+///
+/// `(?:pk|sk)\.[a-f0-9]{32,}` splits into `pk`/`sk` — both below the 3-char
+/// floor, so the per-branch alternation path declines and the detector carries
+/// no prefix anchor (contracts_runner: locationiq MISSED). The literal `\.`
+/// after the group applies to EVERY branch, so carrying it on yields the real
+/// discriminating prefixes `pk.`/`sk.`.
+///
+/// Conservative by construction: the leading group must be a top-level
+/// alternation of pure literal runs (a structured branch — nested group, class,
+/// quantifier — is declined, since the post-group tail would not abut its
+/// literal head), there must be a non-empty trailing literal to add, and EVERY
+/// branch must clear [`MIN_LITERAL_PREFIX_CHARS`] (partial coverage refused).
+fn expand_leading_literal_alternation_with_tail(pattern: &str) -> Option<Vec<String>> {
+    let after_paren = pattern.strip_prefix('(')?;
+    let (inner, tail_src) = leading_group_parts(after_paren)?;
+    let inner = strip_group_prefix(inner);
+    if !has_top_level_alternation(inner) {
+        return None;
+    }
+
+    let tail = leading_literal_run(tail_src);
+    if tail.is_empty() {
+        // No trailing literal to add ⇒ nothing this fallback can recover that
+        // the per-branch path did not already try.
+        return None;
+    }
+
+    let parts = split_top_level_alternatives(inner);
+    let mut out = Vec::with_capacity(parts.len());
+    for part in &parts {
+        let head = leading_literal_run(part);
+        // The branch must be a PURE literal run: if the literal head does not
+        // consume the whole branch, a nested construct sits between it and the
+        // group close, so the tail does not abut the branch's literal.
+        if head.len() != part.len() {
+            return None;
+        }
+        let mut full = head;
+        full.push_str(&tail);
+        if full.len() < MIN_LITERAL_PREFIX_CHARS {
+            return None;
+        }
+        out.push(full);
+    }
+    (!out.is_empty()).then_some(out)
 }
 
 /// Upper bound on how many members a leading character class may have before
@@ -208,8 +298,9 @@ fn expand_leading_charclass_prefixes(pattern: &str) -> Option<Vec<String>> {
     }
 
     // 3. Literal head of what follows the class (`_` in `_[a-f0-9]{64}`), so the
-    //    concrete prefix extends past the class to its next break.
-    let tail = literal_head(&pattern[j + 1..]).unwrap_or_default();
+    //    concrete prefix extends past the class to its next break. Uses the
+    //    unescaping `leading_literal_run` so an escaped tail (`\.`) also counts.
+    let tail = leading_literal_run(&pattern[j + 1..]);
 
     let mut out = Vec::with_capacity(members.len());
     for m in members {
@@ -354,6 +445,27 @@ pub(crate) fn strip_leading_inline_flags(pattern: &str) -> &str {
     }
 }
 
+/// Strip a leading run of zero-width assertions — `^`, `\A`, `\b`, `\B` — that
+/// anchor the match position but consume no input. The literal that follows
+/// (`\bser\.` → `ser\.`, `^AKIA…` → `AKIA…`) is the detector's real prefix, so
+/// without this the leading assertion broke prefix extraction at the first byte
+/// and the detector carried no AC trigger / literal-prefix anchor. Idempotent
+/// and order-free across the four forms; anything else is left untouched.
+pub(crate) fn strip_leading_zero_width_assertions(pattern: &str) -> &str {
+    let mut p = pattern;
+    loop {
+        let next = p
+            .strip_prefix('^')
+            .or_else(|| p.strip_prefix(r"\A"))
+            .or_else(|| p.strip_prefix(r"\b"))
+            .or_else(|| p.strip_prefix(r"\B"));
+        match next {
+            Some(rest) => p = rest,
+            None => return p,
+        }
+    }
+}
+
 pub(crate) fn extract_literal_prefix(pattern: &str) -> Option<String> {
     // Strip a leading bare inline-flag group — `(?i)`, `(?-i)`, `(?im)` — which
     // sets match modes but consumes no input, so the literal that follows
@@ -365,6 +477,11 @@ pub(crate) fn extract_literal_prefix(pattern: &str) -> Option<String> {
     // denied their literal-prefix credit and scored below the floor. A scoped
     // group `(?-i:…)` keeps its `:` and is left intact for the main parser.
     let pattern = strip_leading_inline_flags(pattern);
+    // Same idea for leading zero-width assertions (`\b`, `\B`, `\A`, `^`): they
+    // anchor position but consume no input, so the literal after them is the
+    // real prefix (`\bser\.` → `ser\.`). Keeps the singular form (which feeds
+    // `has_literal_prefix`) in agreement with the plural routing extractor.
+    let pattern = strip_leading_zero_width_assertions(pattern);
     let mut prefix = String::new();
     let mut chars = pattern.chars().peekable();
     while let Some(ch) = chars.next() {
@@ -789,5 +906,105 @@ mod charclass_prefix_expansion_tests {
             got,
             Some(vec!["sk_live".to_string(), "skxlive".to_string()])
         );
+    }
+}
+
+#[cfg(test)]
+mod zero_width_assertion_strip_tests {
+    use super::*;
+
+    #[test]
+    fn leading_word_boundary_is_stripped() {
+        assert_eq!(strip_leading_zero_width_assertions(r"\bser\.x"), r"ser\.x");
+        assert_eq!(strip_leading_zero_width_assertions(r"\BAKIA"), "AKIA");
+        assert_eq!(strip_leading_zero_width_assertions(r"\Atoken"), "token");
+        assert_eq!(strip_leading_zero_width_assertions("^AKIA"), "AKIA");
+    }
+
+    #[test]
+    fn multiple_assertions_are_all_stripped_order_free() {
+        assert_eq!(strip_leading_zero_width_assertions(r"^\bAKIA"), "AKIA");
+        assert_eq!(strip_leading_zero_width_assertions(r"\b\BAKIA"), "AKIA");
+    }
+
+    #[test]
+    fn non_assertion_is_untouched() {
+        assert_eq!(strip_leading_zero_width_assertions(r"\d{4}"), r"\d{4}");
+        assert_eq!(strip_leading_zero_width_assertions("AKIA"), "AKIA");
+    }
+
+    #[test]
+    fn flagsmith_word_boundary_prefix_is_recovered() {
+        // `\bser\.[a-zA-Z0-9]{40,}` — the leading `\b` previously broke
+        // extraction at the first byte; now `ser.` is the recovered prefix.
+        assert_eq!(
+            extract_literal_prefixes(r"\bser\.[a-zA-Z0-9]{40,}"),
+            vec!["ser.".to_string()]
+        );
+        // Singular form must agree (it feeds `has_literal_prefix`).
+        assert_eq!(
+            extract_literal_prefix(r"\bser\.[a-zA-Z0-9]{40,}"),
+            Some("ser.".to_string())
+        );
+    }
+}
+
+#[cfg(test)]
+mod literal_alternation_tail_tests {
+    use super::*;
+
+    #[test]
+    fn locationiq_alternation_carries_the_trailing_dot() {
+        // `(?:pk|sk)\.[a-f0-9]{32,}` — `pk`/`sk` are sub-floor alone; carrying
+        // the post-group `\.` recovers the real `pk.`/`sk.` discriminators.
+        assert_eq!(
+            extract_literal_prefixes(r"(?:pk|sk)\.[a-f0-9]{32,}"),
+            vec!["pk.".to_string(), "sk.".to_string()]
+        );
+    }
+
+    #[test]
+    fn capturing_group_alternation_also_extends() {
+        assert_eq!(
+            expand_leading_literal_alternation_with_tail(r"(pk|sk)\.[a-f0-9]{8}"),
+            Some(vec!["pk.".to_string(), "sk.".to_string()])
+        );
+    }
+
+    #[test]
+    fn no_trailing_literal_is_declined() {
+        // Nothing to carry past the group ⇒ this fallback adds nothing.
+        assert_eq!(
+            expand_leading_literal_alternation_with_tail("(?:pk|sk)[a-f0-9]{8}"),
+            None
+        );
+    }
+
+    #[test]
+    fn structured_branch_is_declined() {
+        // A branch with a nested construct (`ab[0-9]`) is not a pure literal
+        // run, so the post-group tail would not abut its literal head.
+        assert_eq!(
+            expand_leading_literal_alternation_with_tail(r"(?:ab[0-9]|cd)\.x"),
+            None
+        );
+    }
+
+    #[test]
+    fn already_sufficient_alternation_keeps_the_existing_path() {
+        // `(AKIA|ASIA)` branches already clear the floor, so the per-branch
+        // alternation path handles them and the tail fallback is never reached.
+        assert_eq!(
+            extract_literal_prefixes("(AKIA|ASIA)[0-9]{12}"),
+            vec!["AKIA".to_string(), "ASIA".to_string()]
+        );
+    }
+
+    #[test]
+    fn leading_literal_run_unescapes_dot_and_stops_at_class() {
+        assert_eq!(leading_literal_run(r"\.[a-f0-9]"), ".");
+        assert_eq!(leading_literal_run("_x[0-9]"), "_x");
+        // A bare `.` is the any-char metachar and stops the run.
+        assert_eq!(leading_literal_run(".abc"), "");
     }
 }
