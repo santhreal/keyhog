@@ -28,14 +28,11 @@ pub(crate) fn is_false_positive_match_context_with_path(
     // bytes when a candidate first-byte is actually present.
     let window = surrounding_line_window(text, match_start, 1);
     let bytes = window.as_bytes();
-    let configmap_window = surrounding_line_window(text, match_start, 8);
-    let configmap_bytes = configmap_window.as_bytes();
     let current_line = surrounding_line_window(text, match_start, 0);
     let current_line_bytes = current_line.as_bytes();
 
     is_go_sum_checksum_bytes(bytes, path_lower)
-        || is_integrity_hash_bytes(bytes)
-        || is_configmap_binary_data_match_context(configmap_bytes, current_line_bytes)
+        || is_integrity_hash_bytes(current_line_bytes)
         || is_git_lfs_pointer_context_bytes(bytes)
         || is_renovate_digest_context_bytes(bytes)
         || is_cors_header_bytes(current_line_bytes)
@@ -235,47 +232,47 @@ fn count_ascii_fields(bytes: &[u8]) -> usize {
     count
 }
 
-fn is_integrity_hash_context(lines: &[&str], line_idx: usize, line_bytes: &[u8]) -> bool {
+fn is_integrity_hash_context(_lines: &[&str], _line_idx: usize, line_bytes: &[u8]) -> bool {
     is_integrity_hash_bytes(line_bytes)
-        || surrounding_lines_contain(lines, line_idx, 2, |candidate| {
-            is_integrity_hash_bytes(candidate.as_bytes())
-        })
 }
 
 fn is_integrity_hash_bytes(bytes: &[u8]) -> bool {
-    ci_find(bytes, b"integrity") && (ci_find(bytes, b"sha256-") || ci_find(bytes, b"sha512-"))
+    ci_find(bytes, b"integrity")
+        && (contains_sri_hash_value(bytes, b"sha256-")
+            || contains_sri_hash_value(bytes, b"sha512-"))
+}
+
+fn contains_sri_hash_value(bytes: &[u8], prefix: &[u8]) -> bool {
+    let Some((&first, _)) = prefix.split_first() else {
+        return false;
+    };
+    let first_upper = first.to_ascii_uppercase();
+    for start in memchr::memchr2_iter(first, first_upper, bytes) {
+        let Some(candidate_prefix) = bytes.get(start..start + prefix.len()) else {
+            break;
+        };
+        if !candidate_prefix.eq_ignore_ascii_case(prefix) {
+            continue;
+        }
+        let value_start = start + prefix.len();
+        let mut value_end = value_start;
+        while let Some(byte) = bytes.get(value_end) {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=') {
+                value_end += 1;
+            } else {
+                break;
+            }
+        }
+        if is_base64_scalar(&bytes[value_start..value_end]) {
+            return true;
+        }
+    }
+    false
 }
 
 fn is_configmap_binary_data_context(lines: &[&str], line_idx: usize, line_bytes: &[u8]) -> bool {
     is_configmap_binary_data_value_line(line_bytes)
         && is_inside_configmap_binary_data_block(lines, line_idx)
-}
-
-fn is_configmap_binary_data_match_context(window_bytes: &[u8], current_line: &[u8]) -> bool {
-    if !is_configmap_binary_data_value_line(current_line) {
-        return false;
-    }
-    let current_trimmed = trim_ascii_bytes(current_line);
-    let mut binary_data_indent = None;
-    for line in window_bytes.split(|byte| matches!(byte, b'\n' | b'\r')) {
-        let trimmed = trim_ascii_bytes(line);
-        if trimmed.is_empty() {
-            continue;
-        }
-        if is_configmap_binary_data_header(trimmed) {
-            binary_data_indent = Some(leading_ascii_space_count(line));
-            continue;
-        }
-        if let Some(header_indent) = binary_data_indent {
-            let line_indent = leading_ascii_space_count(line);
-            if line_indent <= header_indent {
-                binary_data_indent = None;
-            } else if trimmed == current_trimmed {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 fn is_inside_configmap_binary_data_block(lines: &[&str], line_idx: usize) -> bool {

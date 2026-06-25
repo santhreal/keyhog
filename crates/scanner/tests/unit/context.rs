@@ -124,14 +124,17 @@ fn false_positive_context_detects_configmap_binary_data_block() {
 }
 
 #[test]
-fn false_positive_match_context_detects_configmap_binary_data_block() {
+fn false_positive_match_context_does_not_suppress_configmap_without_line_scope() {
     let text = "kind: ConfigMap\nbinaryData:\n  cert-fingerprint-sha256: Z2hwX2FiYw==\n";
     let offset = text.find("Z2hw").expect("fixture contains base64 value");
-    assert!(is_false_positive_match_context(text, offset, None));
+    assert!(
+        !is_false_positive_match_context(text, offset, None),
+        "ConfigMap binaryData suppression requires line-indexed YAML block ownership"
+    );
 }
 
 #[test]
-fn false_positive_match_context_detects_later_configmap_binary_data_value() {
+fn false_positive_context_detects_later_configmap_binary_data_value() {
     let text = concat!(
         "kind: ConfigMap\n",
         "binaryData:\n",
@@ -139,10 +142,8 @@ fn false_positive_match_context_detects_later_configmap_binary_data_value() {
         "  second.bin: SElKS0xNTg==\n",
         "  third.bin: T1BRUlNUVQ==\n",
     );
-    let offset = text
-        .find("T1BR")
-        .expect("fixture contains later base64 value");
-    assert!(is_false_positive_match_context(text, offset, None));
+    let lines: Vec<_> = text.lines().collect();
+    assert!(is_false_positive_context(&lines, 4, None));
 }
 
 #[test]
@@ -261,8 +262,46 @@ fn false_positive_context_does_not_suppress_malformed_git_lfs_oid() {
 
 #[test]
 fn false_positive_context_detects_integrity_hash() {
-    let lines = vec!["integrity sha512-sk-proj-abcdefghijklmnopqrstuvwxyz123456"];
+    let lines = vec!["integrity sha512-Z2hwX2FiYw=="];
     assert!(is_false_positive_context(&lines, 0, None));
+}
+
+#[test]
+fn false_positive_match_context_detects_integrity_hash() {
+    let text = r#"<script integrity="sha256-Z2hwX2FiYw=="></script>"#;
+    let offset = text.find("Z2hw").expect("fixture contains sri hash");
+    assert!(is_false_positive_match_context(text, offset, None));
+}
+
+#[test]
+fn false_positive_context_does_not_suppress_adjacent_integrity_prose() {
+    let lines = vec![
+        "# integrity check uses sha256-digest metadata",
+        "api_key = sk-proj-abcdefghijklmnopqrstuvwxyz123456",
+    ];
+    assert!(
+        !is_false_positive_context(&lines, 1, None),
+        "integrity prose on an adjacent line is not an SRI hash for the secret line"
+    );
+}
+
+#[test]
+fn false_positive_match_context_does_not_suppress_adjacent_integrity_prose() {
+    let text = "# integrity check uses sha256-digest metadata\napi_key = sk-proj-abcdefghijklmnopqrstuvwxyz123456\n";
+    let offset = text.find("sk-proj").expect("fixture contains secret");
+    assert!(
+        !is_false_positive_match_context(text, offset, None),
+        "match-window integrity checks must not let adjacent prose hide the current secret line"
+    );
+}
+
+#[test]
+fn false_positive_context_does_not_suppress_integrity_key_secret_value() {
+    let lines = vec!["integrity: sk-proj-abcdefghijklmnopqrstuvwxyz123456"];
+    assert!(
+        !is_false_positive_context(&lines, 0, None),
+        "an integrity-named config key holding a secret-shaped value must surface"
+    );
 }
 
 #[test]
