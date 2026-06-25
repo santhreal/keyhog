@@ -28,9 +28,9 @@ fn zip_not_in_skip_extensions() {
     let extract = read("src/filesystem/extract.rs");
     let archive = read("src/filesystem/extract/archive.rs");
     assert!(
-        extract.contains("archive::is_openpack_archive_ext(&ext)")
+        extract.contains("archive::is_openpack_archive_ext(ext)")
             && extract.contains("archive::extract_openpack_archive")
-            && archive.contains("\"zip\" | \"apk\" | \"ipa\" | \"crx\" | \"jar\""),
+            && archive.contains("\"zip\", \"apk\", \"ipa\", \"crx\", \"jar\""),
         "filesystem extract/archive owners must keep zip archive routing"
     );
 }

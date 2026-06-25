@@ -6,6 +6,9 @@ use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, SourceLimits};
 
 #[cfg(feature = "slack")]
+mod support;
+
+#[cfg(feature = "slack")]
 #[test]
 fn slack_channel_and_history_cursors_are_scanned() {
     let server = httpmock::MockServer::start();
@@ -160,9 +163,9 @@ fn slack_history_lookback_is_total_cap() {
         .slack_source_with_endpoint_and_lookback("xoxb-test-token", server.url(""), 3)
         .chunks()
         .collect();
-    let body = rows
+    let (chunks, _errors) = support::split_chunk_results(&rows);
+    let body = chunks
         .iter()
-        .filter_map(|row| row.as_ref().ok())
         .map(|chunk| chunk.data.as_ref())
         .collect::<Vec<_>>()
         .join("\n");

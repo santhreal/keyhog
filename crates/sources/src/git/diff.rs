@@ -86,16 +86,18 @@ impl Source for GitDiffSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        match stream_added_lines(
-            &self.repo_path,
-            &self.base_ref,
-            self.head_ref.as_deref(),
-            self.limits,
-            self.respect_default_excludes,
-        ) {
-            Ok(iter) => Box::new(iter),
-            Err(e) => Box::new(std::iter::once(Err(e))),
-        }
+        crate::gate_scan(|| {
+            match stream_added_lines(
+                &self.repo_path,
+                &self.base_ref,
+                self.head_ref.as_deref(),
+                self.limits,
+                self.respect_default_excludes,
+            ) {
+                Ok(iter) => Box::new(iter),
+                Err(e) => Box::new(std::iter::once(Err(e))),
+            }
+        })
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self

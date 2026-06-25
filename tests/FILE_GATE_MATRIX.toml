@@ -498,6 +498,11 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/core/src/ascii_ci.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/core/src/auto_fix.rs"
 error = true
 adversarial = true
@@ -1992,5 +1997,178 @@ adversarial = true
 
 [[module]]
 path = "crates/scanner/src/bin/keyhog-scanner-artifacts.rs"
+error = true
+adversarial = true
+
+
+[[module]]
+path = "crates/cli/src/args/calibrate.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/args/config.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/args/daemon.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/args/detectors.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/args/diff.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/args/explain.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/args/hook.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/args/maintenance.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/args/scan_system.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/args/watch.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/config/policy.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/config/scan.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/config/sections.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/installer/variant.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/orchestrator_config/calibration.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/orchestrator_config/policy.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/orchestrator_config/scanner.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/orchestrator/dispatch/pipeline.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/orchestrator/streaming.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/skip_dirs.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/stable_hash.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/sources/src/docker/archive.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/sources/src/docker/file_read.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/sources/src/docker/layer.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/sources/src/docker/metadata.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/sources/src/docker/oci.rs"
 error = true
 adversarial = true

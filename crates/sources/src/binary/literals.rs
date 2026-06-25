@@ -67,21 +67,29 @@ pub(crate) fn unescape_c_string(s: &str) -> String {
 }
 
 fn take_hex_byte_escape(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<u8> {
-    let first = chars.next_if(|ch| ch.is_ascii_hexdigit())?;
-    let mut value = first.to_digit(16).expect("ASCII hex digit") as u8;
-    if let Some(second) = chars.next_if(|ch| ch.is_ascii_hexdigit()) {
-        value = (value << 4) | second.to_digit(16).expect("ASCII hex digit") as u8;
+    // Peek-and-convert in one step: `to_digit(16)` IS the hex-digit test, so a
+    // non-hex char yields `None` and is left unconsumed — no separate
+    // `is_ascii_hexdigit` predicate that could disagree with the conversion and
+    // force an infallible `.expect()`.
+    let first = chars.peek().and_then(|ch| ch.to_digit(16))?;
+    chars.next();
+    let mut value = first as u8;
+    if let Some(second) = chars.peek().and_then(|ch| ch.to_digit(16)) {
+        chars.next();
+        value = (value << 4) | second as u8;
     }
     Some(value)
 }
 
 fn take_octal_byte_escape(first: char, chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> u8 {
-    let mut value = first.to_digit(8).expect("ASCII octal digit") as u8;
+    // `first` and every `next` are matched against `'0'..='7'`, so each maps to
+    // its value by ASCII offset — total arithmetic, no fallible `to_digit`.
+    let mut value = (first as u8) - b'0';
     for _ in 0..2 {
         let Some(next) = chars.next_if(|ch| matches!(ch, '0'..='7')) else {
             break;
         };
-        value = (value << 3) | next.to_digit(8).expect("ASCII octal digit") as u8;
+        value = (value << 3) | ((next as u8) - b'0');
     }
     value
 }

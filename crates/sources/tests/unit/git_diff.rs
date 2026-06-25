@@ -240,8 +240,7 @@ fn git_diff_source_honors_aggregate_chunk_cap() {
         .with_limits(limits)
         .chunks()
         .collect();
-    let ok_chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
-    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    let (ok_chunks, errors) = crate::support::split_chunk_results(&rows);
 
     assert_eq!(
         ok_chunks.len(),
@@ -288,8 +287,7 @@ fn git_diff_source_honors_aggregate_byte_cap() {
         .with_limits(limits)
         .chunks()
         .collect();
-    let ok_chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
-    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    let (ok_chunks, errors) = crate::support::split_chunk_results(&rows);
 
     assert_eq!(
         ok_chunks.len(),
@@ -329,8 +327,7 @@ fn git_diff_untracked_worktree_chunks_share_aggregate_cap() {
         .with_limits(limits)
         .chunks()
         .collect();
-    let ok_chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
-    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    let (ok_chunks, errors) = crate::support::split_chunk_results(&rows);
 
     assert_eq!(
         ok_chunks.len(),

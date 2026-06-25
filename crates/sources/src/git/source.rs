@@ -205,15 +205,17 @@ impl Source for GitSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        match stream_git_blobs(
-            &self.repo_path,
-            self.max_commits,
-            self.limits,
-            self.respect_default_excludes,
-        ) {
-            Ok(iter) => Box::new(iter),
-            Err(e) => Box::new(std::iter::once(Err(e))),
-        }
+        crate::gate_scan(|| {
+            match stream_git_blobs(
+                &self.repo_path,
+                self.max_commits,
+                self.limits,
+                self.respect_default_excludes,
+            ) {
+                Ok(iter) => Box::new(iter),
+                Err(e) => Box::new(std::iter::once(Err(e))),
+            }
+        })
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self

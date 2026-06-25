@@ -205,3 +205,8 @@ required-features = ["git"]
 name = "regression_binary_unreadable_counted"
 path = "tests/regression_binary_unreadable_counted.rs"
 required-features = ["binary"]
+
+[[test]]
+name = "docker_oci_classification"
+path = "tests/docker_oci_classification.rs"
+required-features = ["docker"]

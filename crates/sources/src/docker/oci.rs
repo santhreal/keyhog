@@ -307,54 +307,19 @@ fn verify_oci_blob_sha256(path: &Path, digest: &str) -> Result<(), SourceError> 
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn descriptor(media_type: Option<&str>) -> OciDescriptor {
-        OciDescriptor {
+/// Test accessor: classify a descriptor with the given media type + body
+/// exactly as the extractor does, without exposing the private `OciDescriptor`.
+/// Drives the integration coverage in `tests/` so the Santh "no inline tests"
+/// contract for `src/docker/**` holds.
+pub(crate) fn descriptor_points_to_index_for_test(media_type: Option<&str>, body: &[u8]) -> bool {
+    descriptor_points_to_index(
+        &OciDescriptor {
             media_type: media_type.map(str::to_owned),
             digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
                 .to_string(),
             size: None,
             annotations: BTreeMap::new(),
-        }
-    }
-
-    #[test]
-    fn classifies_index_vs_manifest_by_declared_media_type() {
-        // Nested image index / manifest-list -> follow it.
-        assert!(descriptor_points_to_index(
-            &descriptor(Some("application/vnd.oci.image.index.v1+json")),
-            b"{}"
-        ));
-        assert!(descriptor_points_to_index(
-            &descriptor(Some(
-                "application/vnd.docker.distribution.manifest.list.v2+json"
-            )),
-            b"{}"
-        ));
-        // Image manifest -> parse `config`.
-        assert!(!descriptor_points_to_index(
-            &descriptor(Some("application/vnd.oci.image.manifest.v1+json")),
-            b"{}"
-        ));
-        assert!(!descriptor_points_to_index(
-            &descriptor(Some("application/vnd.docker.distribution.manifest.v2+json")),
-            b"{}"
-        ));
-    }
-
-    #[test]
-    fn classifies_index_vs_manifest_structurally_when_media_type_absent() {
-        // BuildKit-style layout where the entry omits mediaType: an image index
-        // carries `manifests`, an image manifest carries `config`.
-        let index_bytes = br#"{"manifests":[{"digest":"sha256:1"}]}"#;
-        let manifest_bytes = br#"{"config":{"digest":"sha256:2"},"layers":[]}"#;
-        assert!(descriptor_points_to_index(&descriptor(None), index_bytes));
-        assert!(!descriptor_points_to_index(
-            &descriptor(None),
-            manifest_bytes
-        ));
-    }
+        },
+        body,
+    )
 }

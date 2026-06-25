@@ -1,4 +1,5 @@
-use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// How many files the filesystem walker skipped because they exceeded
 /// the active `--max-file-size` cap. Bumped once per skipped entry
@@ -215,6 +216,136 @@ pub(crate) fn reset_skip_counters() {
 /// all, not just the size counter.
 pub fn reset_skipped_over_max_size() {
     reset_skip_counters();
+}
+
+// ---------------------------------------------------------------------------
+// Scan serialization gate (test isolation for the process-global counters).
+//
+// The skip counters above are process-global atomics. In production that is
+// exactly right: a keyhog process runs ONE scan and reads the counters once at
+// end-of-scan. But the integration test binary runs hundreds of scans
+// concurrently in a single process, so a counter-asserting test
+// (`reset → scan → read skip_counts()`) can observe increments from another
+// test's scan running on a different thread — a false failure that has nothing
+// to do with the code under test.
+//
+// The gate makes the asserting window EXCLUSIVE without changing the counters'
+// production semantics or weakening any assertion:
+//   * A counter-asserting test takes `enter_exclusive_scan_scope()` (a write
+//     lease) for the whole reset→scan→read window; while it is held no other
+//     scan may record.
+//   * Every source's `chunks()` takes a read lease for the scan's lifetime via
+//     `gate_scan` / `acquire_scan_read_lease`, so concurrent scans serialize
+//     behind an active asserting test instead of polluting its counters.
+//
+// The gate is ARMED only when the test harness first enters an exclusive scope.
+// A production scan never arms it, so `scan_gate_read_lease` returns after a
+// single relaxed atomic-bool load and never touches the lock — zero production
+// cost (Law 7). The asserting test's OWN scan bypasses the read lease via a
+// thread-local flag, so its reader-pool workers (which never touch the gate)
+// run freely under the held write lease without self-deadlock.
+static SCAN_GATE: RwLock<()> = RwLock::new(());
+static SCAN_GATE_ARMED: AtomicBool = AtomicBool::new(false);
+thread_local! {
+    static IN_EXCLUSIVE_SCAN_SCOPE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Exclusive scan scope held by a counter-asserting test for its whole
+/// reset→scan→read window. Serializes against every other gated scan and
+/// against other exclusive scopes. Dropping it releases the scan gate.
+pub struct ScanCounterScope {
+    // Field order matters: `Drop for ScanCounterScope` runs first (clearing the
+    // thread-local), then this field drops, releasing the write lock.
+    _write: RwLockWriteGuard<'static, ()>,
+}
+
+impl Drop for ScanCounterScope {
+    fn drop(&mut self) {
+        IN_EXCLUSIVE_SCAN_SCOPE.with(|in_scope| in_scope.set(false));
+    }
+}
+
+/// Enter an exclusive scan scope. Arms the gate (so subsequent scans take read
+/// leases), then blocks until every in-flight gated scan has finished and no
+/// other exclusive scope is held. Recovers the inner guard on poison so one
+/// panicking test does not cascade.
+pub(crate) fn enter_exclusive_scan_scope() -> ScanCounterScope {
+    SCAN_GATE_ARMED.store(true, Relaxed);
+    let write = SCAN_GATE
+        .write()
+        // LAW10: recover the inner guard — test-only scan gate, never armed in
+        // production; a recovered guard still serializes the asserting test.
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    IN_EXCLUSIVE_SCAN_SCOPE.with(|in_scope| in_scope.set(true));
+    ScanCounterScope { _write: write }
+}
+
+/// Read lease held for the lifetime of one scan. `None` inside when the gate is
+/// unarmed (production) or the current thread already holds the exclusive scope
+/// (the asserting test's own scan must not block on its own write lease).
+pub(crate) struct ScanReadLease {
+    _lease: Option<RwLockReadGuard<'static, ()>>,
+}
+
+/// Acquire a scan read lease. Must be taken BEFORE any recording work (eager
+/// walk errors, reader-pool spawn) so a concurrent scan blocks here — behind an
+/// active exclusive scope — instead of recording into the counters an asserting
+/// test is about to read. Returns immediately in production (gate unarmed).
+pub(crate) fn acquire_scan_read_lease() -> ScanReadLease {
+    if !SCAN_GATE_ARMED.load(Relaxed) {
+        return ScanReadLease { _lease: None };
+    }
+    if IN_EXCLUSIVE_SCAN_SCOPE.with(|in_scope| in_scope.get()) {
+        return ScanReadLease { _lease: None };
+    }
+    ScanReadLease {
+        _lease: Some(
+            SCAN_GATE
+                .read()
+                // LAW10: recover the inner guard — test-only scan gate, never
+                // armed in production; a recovered guard still serializes scans.
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        ),
+    }
+}
+
+struct LeasedScanIter<'a, T> {
+    _lease: ScanReadLease,
+    inner: Box<dyn Iterator<Item = T> + 'a>,
+}
+
+impl<T> Iterator for LeasedScanIter<'_, T> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        self.inner.next()
+    }
+}
+
+/// Bind an already-acquired lease to a built iterator so the lease lives for the
+/// whole scan (covers lazy reader-pool recording during iteration).
+pub(crate) fn attach_scan_lease<'a, T: 'a>(
+    lease: ScanReadLease,
+    inner: Box<dyn Iterator<Item = T> + 'a>,
+) -> Box<dyn Iterator<Item = T> + 'a> {
+    if lease._lease.is_some() {
+        Box::new(LeasedScanIter {
+            _lease: lease,
+            inner,
+        })
+    } else {
+        inner
+    }
+}
+
+/// Acquire a lease, run an (often eager) iterator builder under it, then keep
+/// the lease bound to the result. The single-call form for sources whose
+/// `chunks()` body is one expression. A no-op in production.
+pub(crate) fn gate_scan<'a, T: 'a>(
+    build: impl FnOnce() -> Box<dyn Iterator<Item = T> + 'a>,
+) -> Box<dyn Iterator<Item = T> + 'a> {
+    let lease = acquire_scan_read_lease();
+    let inner = build();
+    attach_scan_lease(lease, inner)
 }
 
 pub(crate) fn set_skip_counts_for_test(counts: SkipCounts) {

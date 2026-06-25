@@ -12,7 +12,9 @@ mod archive;
 mod file_read;
 mod layer;
 mod metadata;
-mod oci;
+// `pub(crate)` so the testing facade can reach `oci::descriptor_points_to_index_for_test`
+// from the crate root (the OCI classification coverage lives in `tests/`).
+pub(crate) mod oci;
 use metadata::{
     archive_metadata_chunks as find_archive_metadata_chunks,
     manifest_config_chunks as find_manifest_config_chunks,

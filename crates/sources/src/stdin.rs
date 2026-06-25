@@ -56,26 +56,27 @@ impl Source for ConfiguredStdinSource {
 }
 
 fn chunks_with_limit(max_bytes: usize) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>>> {
-    let stdin_read = read_stdin_limited(max_bytes);
-
-    Box::new(std::iter::once(match stdin_read {
-        Ok(data) => Ok(Chunk {
-            data: data.into(),
-            metadata: ChunkMetadata {
-                base_offset: 0,
-                base_line: 0,
-                source_type: "stdin".into(),
-                path: None,
-                commit: None,
-                author: None,
-                date: None,
-                mtime_ns: None,
-                size_bytes: None,
-                decoded_span: None,
-            },
-        }),
-        Err(e) => Err(SourceError::Io(e)),
-    }))
+    crate::gate_scan(|| {
+        let stdin_read = read_stdin_limited(max_bytes);
+        Box::new(std::iter::once(match stdin_read {
+            Ok(data) => Ok(Chunk {
+                data: data.into(),
+                metadata: ChunkMetadata {
+                    base_offset: 0,
+                    base_line: 0,
+                    source_type: "stdin".into(),
+                    path: None,
+                    commit: None,
+                    author: None,
+                    date: None,
+                    mtime_ns: None,
+                    size_bytes: None,
+                    decoded_span: None,
+                },
+            }),
+            Err(e) => Err(SourceError::Io(e)),
+        }))
+    })
 }
 
 fn read_stdin_limited(max_bytes: usize) -> std::io::Result<String> {

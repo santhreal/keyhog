@@ -580,6 +580,11 @@ impl Source for FilesystemSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
+        // Taken before any walk-error recording or reader-pool spawn so a
+        // concurrent scan blocks here behind an active counter-asserting test
+        // instead of polluting the process-global skip counters. No-op in
+        // production (the gate is never armed). See `skip::gate_scan`.
+        let scan_lease = crate::acquire_scan_read_lease();
         let max_size = self.max_file_size;
         let mut config = walker_config(
             self.max_file_size,
@@ -817,7 +822,10 @@ impl Source for FilesystemSource {
             respect_default_excludes,
             reader_threads,
         );
-        Box::new(source_errors.into_iter().map(Err).chain(rx))
+        crate::attach_scan_lease(
+            scan_lease,
+            Box::new(source_errors.into_iter().map(Err).chain(rx)),
+        )
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

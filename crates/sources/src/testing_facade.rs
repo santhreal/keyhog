@@ -1,14 +1,21 @@
 //! Hidden test facade for source crate internals.
 
 pub mod testing {
-    use std::sync::{Mutex, MutexGuard};
-
-    static SKIP_COUNTER_TEST_LOCK: Mutex<()> = Mutex::new(());
+    pub use crate::ScanCounterScope;
 
     pub struct TestApi;
 
     pub trait SourceTestApi {
-        fn skip_counter_guard(&self) -> MutexGuard<'static, ()>;
+        /// Enter an exclusive scan scope for a counter-asserting test. Held for
+        /// the whole `reset → scan → read skip_counts()` window, it serializes
+        /// against every other gated scan so concurrent tests cannot pollute the
+        /// process-global skip counters this test is about to assert on.
+        fn skip_counter_guard(&self) -> ScanCounterScope;
+        /// OCI/Docker manifest-vs-index classification (test accessor so the
+        /// `src/docker/**` no-inline-tests contract holds; coverage lives in
+        /// `tests/docker_oci_classification.rs`).
+        #[cfg(feature = "docker")]
+        fn oci_descriptor_points_to_index(&self, media_type: Option<&str>, body: &[u8]) -> bool;
         fn set_skip_counts(&self, counts: crate::SkipCounts);
         fn reset_skip_counters(&self);
         fn bump_skipped_over_max_size(&self, delta: usize);
@@ -484,10 +491,13 @@ pub mod testing {
     }
 
     impl SourceTestApi for TestApi {
-        fn skip_counter_guard(&self) -> MutexGuard<'static, ()> {
-            SKIP_COUNTER_TEST_LOCK
-                .lock()
-                .expect("sources skip-counter test guard poisoned")
+        fn skip_counter_guard(&self) -> ScanCounterScope {
+            crate::enter_exclusive_scan_scope()
+        }
+
+        #[cfg(feature = "docker")]
+        fn oci_descriptor_points_to_index(&self, media_type: Option<&str>, body: &[u8]) -> bool {
+            crate::docker::oci::descriptor_points_to_index_for_test(media_type, body)
         }
 
         fn set_skip_counts(&self, counts: crate::SkipCounts) {

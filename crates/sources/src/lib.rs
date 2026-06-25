@@ -85,9 +85,12 @@ pub use factory::{
     create_source_with_http_config_limits_and_policy,
 };
 pub use limits::{SourceLimits, DEFAULT_SOURCE_LIMITS};
-pub use skip::{git_object_unreadable, reset_skipped_over_max_size, skip_counts, SkipCounts};
 pub(crate) use skip::{
+    acquire_scan_read_lease, attach_scan_lease, enter_exclusive_scan_scope, gate_scan,
     record_skip_event, record_skip_events, reset_skip_counters, SourceSkipEvent,
+};
+pub use skip::{
+    git_object_unreadable, reset_skipped_over_max_size, skip_counts, ScanCounterScope, SkipCounts,
 };
 
 /// Directory path components owned by the source default-exclude policy.
