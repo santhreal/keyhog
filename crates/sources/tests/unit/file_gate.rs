@@ -79,7 +79,7 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
             && extract.contains("let mut buf = [0u8; EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES]")
             && extract.contains("read::read_file_prefix_safe(&path, &mut buf)")
             && extract.contains("read::looks_binary_prefix(head)")
-            && extract.contains("match read::open_file_safe(&path)")
+            && extract.contains("WindowedMmapOutcome::Fallback(mut file)")
             && extract.contains("libc::LOCK_SH | libc::LOCK_NB")
             && extract.contains("skipping buffered fallback to avoid scanning a torn write")
             && !extract.contains("std::fs::File::open(&path)"),

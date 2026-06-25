@@ -144,27 +144,6 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
         )));
         return WindowedMmapOutcome::Consumed;
     }
-    let mmap_len = match usize::try_from(meta.len()) {
-        Ok(len) => len,
-        Err(error) => {
-            tracing::warn!(
-                path = %path.display(),
-                live_size = meta.len(),
-                %error,
-                "cannot address windowed mmap length after sanity-cap check; skipping"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            let _continue_scan = emit(Err(windowed_mmap_error(
-                path,
-                format!(
-                    "live size {} is not addressable for windowed mmap",
-                    meta.len()
-                ),
-            )));
-            return WindowedMmapOutcome::Consumed;
-        }
-    };
-
     #[cfg(unix)]
     {
         use std::os::unix::io::AsRawFd;
@@ -188,8 +167,11 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
 
     // SAFETY: the mapping is read-only, the `File` lives through the
     // mapping call, and we drop the mmap before this function returns
-    // (the windows we hand back are owned `String` copies).
-    let mmap = match unsafe { MmapOptions::new().len(mmap_len).map(&file) } {
+    // (the windows we hand back are owned `String` copies). Do not pass the
+    // earlier stat length into mmap: a shrink between stat and map can make an
+    // explicit length extend past live EOF. Map the current kernel length, then
+    // enforce the hard cap before touching bytes.
+    let mmap = match unsafe { MmapOptions::new().map(&file) } {
         Ok(m) => m,
         Err(error) => {
             tracing::warn!(
@@ -200,6 +182,41 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
             return WindowedMmapOutcome::Fallback(file);
         }
     };
+    let mapped_len = match u64::try_from(mmap.len()) {
+        Ok(len) => len,
+        Err(error) => {
+            tracing::warn!(
+                path = %path.display(),
+                mapped_len = mmap.len(),
+                %error,
+                "cannot represent mapped length for windowed mmap sanity cap; skipping"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            let _continue_scan = emit(Err(windowed_mmap_error(
+                path,
+                "mapped length is not representable for windowed mmap",
+            )));
+            return WindowedMmapOutcome::Consumed;
+        }
+    };
+    if mapped_len > MMAP_TOCTOU_SANITY_CAP_BYTES {
+        tracing::warn!(
+            path = %path.display(),
+            live_size = mapped_len,
+            cap = MMAP_TOCTOU_SANITY_CAP_BYTES,
+            "refusing windowed mmap: mapped length exceeds sanity cap"
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+        let _continue_scan = emit(Err(windowed_mmap_error(
+            path,
+            format!(
+                "mapped length {} exceeds the {}-byte windowed mmap sanity cap; file was not scanned",
+                mapped_len,
+                MMAP_TOCTOU_SANITY_CAP_BYTES
+            ),
+        )));
+        return WindowedMmapOutcome::Consumed;
+    }
 
     #[cfg(unix)]
     {

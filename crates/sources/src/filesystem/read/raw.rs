@@ -285,20 +285,6 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileR
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return None;
     }
-    let mmap_len = match usize::try_from(meta.len()) {
-        Ok(len) => len,
-        Err(error) => {
-            tracing::warn!(
-                path = %path.display(),
-                live_size = meta.len(),
-                %error,
-                "cannot address mmap length after sanity-cap check; skipping"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            return None;
-        }
-    };
-
     #[cfg(unix)]
     {
         use std::os::unix::io::AsRawFd;
@@ -316,8 +302,11 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileR
 
     // SAFETY: the mapping is read-only, the `File` lives through the mapping
     // call, and we decode the bytes immediately without storing the mmap past
-    // this function.
-    let mmap = match unsafe { MmapOptions::new().len(mmap_len).map(&file) } {
+    // this function. Do not pass the earlier stat length into mmap: if the file
+    // shrank between stat and map, a stale explicit length can create a range
+    // past live EOF and SIGBUS when read. Map the kernel's current file length,
+    // then enforce the hard cap before touching bytes.
+    let mmap = match unsafe { MmapOptions::new().map(&file) } {
         Ok(m) => m,
         Err(error) => {
             tracing::warn!(
@@ -361,6 +350,29 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileR
             }
         }
     };
+    let mapped_len = match u64::try_from(mmap.len()) {
+        Ok(len) => len,
+        Err(error) => {
+            tracing::warn!(
+                path = %path.display(),
+                mapped_len = mmap.len(),
+                %error,
+                "cannot represent mapped file length for mmap sanity cap; skipping"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            return None;
+        }
+    };
+    if mapped_len > MMAP_TOCTOU_SANITY_CAP_BYTES {
+        tracing::warn!(
+            path = %path.display(),
+            live_size = mapped_len,
+            cap = MMAP_TOCTOU_SANITY_CAP_BYTES,
+            "refusing to mmap file: mapped length exceeds sanity cap (likely TOCTOU growth)"
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+        return None;
+    }
 
     // Tell the kernel we will read this mmap sequentially front-to-back,
     // not randomly. madvise(SEQUENTIAL) disables LRU protection on the
