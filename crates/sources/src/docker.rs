@@ -32,6 +32,7 @@ use metadata::{
 pub struct DockerImageSource {
     image: String,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
 }
 
 impl DockerImageSource {
@@ -50,11 +51,17 @@ impl DockerImageSource {
         Self {
             image: image.into(),
             limits: crate::SourceLimits::default(),
+            respect_default_excludes: true,
         }
     }
 
     pub(crate) fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
         self.limits = limits;
+        self
+    }
+
+    pub(crate) fn with_default_excludes(mut self, respect_default_excludes: bool) -> Self {
+        self.respect_default_excludes = respect_default_excludes;
         self
     }
 }
@@ -65,7 +72,7 @@ impl Source for DockerImageSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        match collect_docker_chunks(&self.image, self.limits) {
+        match collect_docker_chunks(&self.image, self.limits, self.respect_default_excludes) {
             Ok(rows) => Box::new(rows.into_iter()),
             Err(error) => Box::new(std::iter::once(Err(error))),
         }
@@ -78,6 +85,7 @@ impl Source for DockerImageSource {
 fn collect_docker_chunks(
     image: &str,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     let image = validate_image_name(image)?;
     let workspace = DockerScanWorkspace::new()?;
@@ -96,7 +104,9 @@ fn collect_docker_chunks(
         Ok(chunks) => rows.extend(chunks.into_iter().map(Ok)),
         Err(error) => error_rows.push(Err(error)),
     }
-    for row in layer::collect_docker_layer_chunks(&workspace, &image, limits) {
+    for row in
+        layer::collect_docker_layer_chunks(&workspace, &image, limits, respect_default_excludes)
+    {
         match row {
             Ok(chunk) => rows.push(Ok(chunk)),
             Err(error) => error_rows.push(Err(error)),

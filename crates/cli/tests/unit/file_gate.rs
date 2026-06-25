@@ -576,6 +576,7 @@ fn sources_wires_no_default_excludes_into_git_sources() {
         "\"github-org\"",
         "\"gitlab-group\"",
         "\"bitbucket-workspace\"",
+        "\"docker\"",
         "source_name",
     ] {
         let start = sources.find(source_name).unwrap_or_else(|| {

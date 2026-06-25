@@ -213,6 +213,40 @@ fn hosted_git_sources_thread_default_exclude_policy() {
 }
 
 #[test]
+fn docker_source_threads_default_exclude_policy() {
+    let factory = include_str!("../../src/factory.rs");
+    let docker = include_str!("../../src/docker.rs");
+    let layer = include_str!("../../src/docker/layer.rs");
+
+    assert!(
+        factory.contains(
+            "crate::docker::DockerImageSource::new(image)\n                        .with_limits(limits)\n                        .with_default_excludes(respect_default_excludes)"
+        ),
+        "source factory must pass the source default-exclude policy into DockerImageSource"
+    );
+    assert!(
+        docker.contains("respect_default_excludes: bool")
+            && docker.contains("respect_default_excludes: true")
+            && docker.contains(
+                "pub(crate) fn with_default_excludes(mut self, respect_default_excludes: bool) -> Self"
+            )
+            && docker.contains(
+                "collect_docker_chunks(&self.image, self.limits, self.respect_default_excludes)"
+            )
+            && docker.contains(
+                "layer::collect_docker_layer_chunks(&workspace, &image, limits, respect_default_excludes)"
+            ),
+        "DockerImageSource must store and forward the default-exclude policy"
+    );
+    assert!(
+        layer.contains("respect_default_excludes: bool")
+            && layer.contains(".with_default_excludes(respect_default_excludes)")
+            && layer.contains("FilesystemSource::new(layer_dir.clone())"),
+        "docker layer filesystem scans must honor the source default-exclude policy"
+    );
+}
+
+#[test]
 fn source_extract_pdf_and_binary_hot_paths_are_bounded() {
     let binary = include_str!("../../src/binary/mod.rs");
     let capped_read = include_str!("../../src/capped_read.rs");

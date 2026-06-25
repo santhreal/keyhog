@@ -70,7 +70,9 @@ pub fn create_source_with_http_config_limits_and_policy(
             if let Some(image) = params {
                 #[cfg(feature = "docker")]
                 return Ok(Box::new(
-                    crate::docker::DockerImageSource::new(image).with_limits(limits),
+                    crate::docker::DockerImageSource::new(image)
+                        .with_limits(limits)
+                        .with_default_excludes(respect_default_excludes),
                 ));
                 #[cfg(not(feature = "docker"))]
                 {

@@ -11,6 +11,7 @@ pub(super) fn collect_docker_layer_chunks(
     workspace: &DockerScanWorkspace,
     image: &str,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
 ) -> Vec<Result<Chunk, SourceError>> {
     let layer_archives = match find_layer_archives(workspace.root_path(), limits) {
         Ok(layer_archives) => layer_archives,
@@ -18,7 +19,13 @@ pub(super) fn collect_docker_layer_chunks(
     };
     let mut rows = Vec::new();
     for layer_tar in layer_archives {
-        match scan_docker_layer(workspace, image, &layer_tar, limits) {
+        match scan_docker_layer(
+            workspace,
+            image,
+            &layer_tar,
+            limits,
+            respect_default_excludes,
+        ) {
             Ok(layer_rows) => rows.extend(layer_rows),
             Err(error) => rows.push(Err(error)),
         }
@@ -97,6 +104,7 @@ fn scan_docker_layer(
     image: &str,
     layer_tar: &Path,
     limits: crate::SourceLimits,
+    respect_default_excludes: bool,
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     let layer_name = docker_layer_name(layer_tar, workspace.root_path());
     let layer_dir = workspace.layer_dir(&layer_name);
@@ -105,7 +113,9 @@ fn scan_docker_layer(
     let mut rows = Vec::new();
 
     match rewrite_layer_chunks(
-        FilesystemSource::new(layer_dir.clone()).chunks(),
+        FilesystemSource::new(layer_dir.clone())
+            .with_default_excludes(respect_default_excludes)
+            .chunks(),
         image,
         &layer_dir,
         &layer_name,
