@@ -7,8 +7,9 @@ use std::collections::BTreeSet;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::evidence::{
-    canonical_match_digest, canonical_matches, gpu_cold_warm_route_evidence,
-    selected_backend_margin_ns, AutorouteDecision, BackendTimingEvidence,
+    canonical_match_digest, canonical_matches, canonical_matches_equal_reference,
+    gpu_cold_warm_route_evidence, selected_backend_margin_ns, AutorouteDecision,
+    BackendTimingEvidence,
 };
 use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS};
 
@@ -139,7 +140,7 @@ fn measure_reference_simd(
         scanner.clear_fragment_cache();
         let (matches, dur) =
             timed(|| scanner.scan_coalesced_with_backend(sample, ScanBackend::SimdCpu));
-        if canonical_matches(&matches) != reference_key {
+        if !canonical_matches_equal_reference(&matches, &reference_key) {
             let reference_set = calibration_match_identity_set(&reference);
             let trial_set = calibration_match_identity_set(&matches);
             let only_in_reference: Vec<&String> = reference_set.difference(&trial_set).collect();
@@ -233,7 +234,7 @@ fn measure_candidate_backend(
                 ));
             }
         }
-        if canonical_matches(&matches) != reference_key {
+        if !canonical_matches_equal_reference(&matches, &reference_key) {
             tracing::error!(
                 target: "keyhog::routing",
                 backend = backend.label(),

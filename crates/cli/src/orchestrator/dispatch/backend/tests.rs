@@ -1,5 +1,6 @@
 use super::evidence::{
-    route_candidates, selected_backend_margin_ns, AutorouteDecision, BackendTimingEvidence,
+    canonical_matches, canonical_matches_equal_reference, route_candidates,
+    selected_backend_margin_ns, AutorouteDecision, BackendTimingEvidence,
 };
 use super::host::AutorouteHostProfile;
 use super::store::{
@@ -1787,6 +1788,12 @@ fn autoroute_reference_inconsistency_aborts_calibration_contract() {
         "autoroute calibration must not label the default coalesced route as explicit SIMD"
     );
     assert!(
+        calibration.contains("canonical_matches_equal_reference(&matches, &reference_key)")
+            && !calibration.contains("canonical_matches(&matches) != reference_key"),
+        "autoroute calibration trial loops must compare against the reference without rebuilding \
+         a sorted canonical Vec on every trial"
+    );
+    assert!(
         !calibration.contains("reference backend produced inconsistent calibration results\"\\n            );\\n            continue;"),
         "old warn-and-continue reference mismatch path must not return"
     );
@@ -1834,6 +1841,91 @@ fn autoroute_reference_mismatch_evidence_names_divergent_records() {
         !rendered.contains("AKIAIOSFODNN7EXAMPLE"),
         "autoroute mismatch diagnostics must not log plaintext credentials: {rendered}"
     );
+}
+
+fn canonical_test_match(
+    detector_id: &str,
+    hash_byte: u8,
+    file_path: Option<&str>,
+    line: Option<usize>,
+    offset: usize,
+) -> keyhog_core::RawMatch {
+    keyhog_core::RawMatch {
+        detector_id: detector_id.into(),
+        detector_name: detector_id.into(),
+        service: "test".into(),
+        severity: keyhog_core::Severity::High,
+        credential: format!("{detector_id}-{offset}").into(),
+        credential_hash: [hash_byte; 32].into(),
+        companions: std::collections::HashMap::new(),
+        location: keyhog_core::MatchLocation {
+            source: "filesystem".into(),
+            file_path: file_path.map(Into::into),
+            line,
+            offset,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: Some(4.2),
+        confidence: Some(0.99),
+    }
+}
+
+fn assert_canonical_reference_parity(
+    reference: &[Vec<keyhog_core::RawMatch>],
+    trial: &[Vec<keyhog_core::RawMatch>],
+) {
+    let reference_key = canonical_matches(reference);
+    assert_eq!(
+        canonical_matches_equal_reference(trial, &reference_key),
+        canonical_matches(trial) == reference_key,
+        "borrowed autoroute parity check must match canonical sorted-vector equality"
+    );
+}
+
+#[test]
+fn canonical_matches_equal_reference_preserves_duplicate_multiset_semantics() {
+    let a = canonical_test_match("detector-a", 0xA1, Some("src/a.rs"), Some(10), 100);
+    let duplicate_a = a.clone();
+    let b = canonical_test_match("detector-b", 0xB2, Some("src/b.rs"), Some(20), 200);
+    let wrong_line = canonical_test_match("detector-a", 0xA1, Some("src/a.rs"), Some(11), 100);
+    let reference = vec![vec![a.clone(), duplicate_a.clone(), b.clone()]];
+
+    assert_canonical_reference_parity(&[], &[]);
+    assert!(canonical_matches_equal_reference(
+        &[],
+        &canonical_matches(&[])
+    ));
+    assert_canonical_reference_parity(
+        &reference,
+        &[vec![b.clone(), duplicate_a.clone(), a.clone()]],
+    );
+    assert!(canonical_matches_equal_reference(
+        &[vec![b.clone(), duplicate_a.clone(), a.clone()]],
+        &canonical_matches(&reference)
+    ));
+    assert_canonical_reference_parity(&reference, &[vec![a.clone(), b.clone()]]);
+    assert!(!canonical_matches_equal_reference(
+        &[vec![a.clone(), b.clone()]],
+        &canonical_matches(&reference)
+    ));
+    assert_canonical_reference_parity(
+        &reference,
+        &[vec![a.clone(), duplicate_a.clone(), b.clone(), b.clone()]],
+    );
+    assert!(!canonical_matches_equal_reference(
+        &[vec![a.clone(), duplicate_a.clone(), b.clone(), b.clone()]],
+        &canonical_matches(&reference)
+    ));
+    assert_canonical_reference_parity(
+        &reference,
+        &[vec![wrong_line, duplicate_a.clone(), b.clone()]],
+    );
+    assert!(!canonical_matches_equal_reference(
+        &[vec![a.clone()], vec![duplicate_a, b]],
+        &canonical_matches(&reference)
+    ));
 }
 
 #[test]

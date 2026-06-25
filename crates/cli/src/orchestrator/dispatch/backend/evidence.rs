@@ -403,21 +403,69 @@ pub(super) type CanonicalMatch<'a> = (
 );
 
 pub(super) fn canonical_matches(matches: &[Vec<RawMatch>]) -> Vec<CanonicalMatch<'_>> {
-    let mut out = Vec::new();
+    let mut out = Vec::with_capacity(canonical_match_count(matches));
     for (chunk_idx, chunk_matches) in matches.iter().enumerate() {
         for m in chunk_matches {
-            out.push((
-                chunk_idx,
-                m.detector_id.as_ref(),
-                m.credential_hash,
-                m.location.file_path.as_deref(),
-                m.location.line,
-                m.location.offset,
-            ));
+            out.push(canonical_match(chunk_idx, m));
         }
     }
     out.sort_unstable();
     out
+}
+
+pub(super) fn canonical_matches_equal_reference(
+    matches: &[Vec<RawMatch>],
+    reference: &[CanonicalMatch<'_>],
+) -> bool {
+    let match_count = canonical_match_count(matches);
+    if match_count != reference.len() {
+        return false;
+    }
+    if match_count == 0 {
+        return true;
+    }
+    if match_count > 256 {
+        return canonical_matches(matches) == reference;
+    }
+
+    let mut matched = [false; 256];
+    for (chunk_idx, chunk_matches) in matches.iter().enumerate() {
+        for m in chunk_matches {
+            let canonical = canonical_match(chunk_idx, m);
+            let Ok(mut idx) = reference.binary_search(&canonical) else {
+                return false;
+            };
+            while idx > 0 && reference[idx - 1] == canonical {
+                idx -= 1;
+            }
+            while idx < reference.len() && reference[idx] == canonical {
+                if !matched[idx] {
+                    matched[idx] = true;
+                    break;
+                }
+                idx += 1;
+            }
+            if idx == reference.len() || reference[idx] != canonical {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn canonical_match_count(matches: &[Vec<RawMatch>]) -> usize {
+    matches.iter().map(Vec::len).sum()
+}
+
+fn canonical_match(chunk_idx: usize, m: &RawMatch) -> CanonicalMatch<'_> {
+    (
+        chunk_idx,
+        m.detector_id.as_ref(),
+        m.credential_hash,
+        m.location.file_path.as_deref(),
+        m.location.line,
+        m.location.offset,
+    )
 }
 
 pub(super) fn canonical_match_digest(matches: &[CanonicalMatch<'_>]) -> u64 {
