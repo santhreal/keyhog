@@ -222,16 +222,12 @@ fn has_binary_magic(bytes: &[u8]) -> bool {
     if has_bmp_header(bytes) || has_pe_header(bytes) || has_bzip2_header(bytes) {
         return true;
     }
-    crate::magic::UNAMBIGUOUS_BINARY_PREFIXES
-        .iter()
-        .chain([b"\x80\x02" as &[u8]].iter()) // Python pickle protocol 2+ is full-file only.
-        .any(|header| bytes.starts_with(header))
+    crate::magic::has_unambiguous_binary_prefix(bytes)
+        || crate::magic::starts_with_python_pickle_protocol2(bytes)
 }
 
 fn has_unambiguous_prefix_magic(bytes: &[u8]) -> bool {
-    crate::magic::UNAMBIGUOUS_BINARY_PREFIXES
-        .iter()
-        .any(|header| bytes.starts_with(header))
+    crate::magic::has_unambiguous_binary_prefix(bytes)
 }
 
 fn has_bmp_header(bytes: &[u8]) -> bool {

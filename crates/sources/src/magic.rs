@@ -5,6 +5,7 @@
 //! Docker layer extraction routes them to the matching decompressor.
 
 pub(crate) const GZIP_PREFIX: &[u8] = b"\x1f\x8b";
+pub(crate) const PYTHON_PICKLE_PROTOCOL2_PREFIX: &[u8] = b"\x80\x02";
 pub(crate) const ZSTD_FRAME_MAGIC: &[u8] = b"\x28\xb5\x2f\xfd";
 pub(crate) const WASM_MAGIC: &[u8; 4] = b"\x00asm";
 
@@ -32,6 +33,18 @@ pub(crate) const UNAMBIGUOUS_BINARY_PREFIXES: &[&[u8]] = &[
     WASM_MAGIC,            // WebAssembly module
     b"!<arch>\n",          // Unix `ar` archives (.a, .deb)
 ];
+
+#[inline]
+pub(crate) fn has_unambiguous_binary_prefix(bytes: &[u8]) -> bool {
+    UNAMBIGUOUS_BINARY_PREFIXES
+        .iter()
+        .any(|header| bytes.starts_with(header))
+}
+
+#[inline]
+pub(crate) fn starts_with_python_pickle_protocol2(bytes: &[u8]) -> bool {
+    bytes.starts_with(PYTHON_PICKLE_PROTOCOL2_PREFIX)
+}
 
 #[inline]
 #[cfg(feature = "docker")]

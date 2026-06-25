@@ -35,8 +35,16 @@ fn binary_magic_bytes_have_one_sources_owner() {
 
     let decode = source("src/filesystem/read/decode.rs");
     assert!(
-        decode.contains("crate::magic::UNAMBIGUOUS_BINARY_PREFIXES"),
-        "filesystem text decode must consume the shared binary magic table"
+        decode.contains("crate::magic::has_unambiguous_binary_prefix"),
+        "filesystem text decode must consume the shared binary magic predicate"
+    );
+    assert!(
+        !decode.contains("UNAMBIGUOUS_BINARY_PREFIXES"),
+        "filesystem text decode must not iterate the shared binary magic table directly"
+    );
+    assert!(
+        decode.contains("crate::magic::starts_with_python_pickle_protocol2"),
+        "filesystem full-file binary detection must consume the shared pickle magic predicate"
     );
 
     let docker = source("src/docker.rs");
