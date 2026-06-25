@@ -3,7 +3,8 @@ use super::{
     ExtractedPair,
 };
 
-/// Parse Terraform state JSON and recursively extract `value` fields.
+/// Parse Terraform state JSON and recursively extract output `value` fields and
+/// resource instance attributes.
 pub(crate) fn parse_tfstate(text: &str) -> Vec<ExtractedPair> {
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
@@ -19,6 +20,7 @@ pub(crate) fn parse_tfstate(text: &str) -> Vec<ExtractedPair> {
     };
     let mut pending = Vec::new();
     extract_tfstate_values(&value, &mut pending, 0);
+    extract_tfstate_resource_attributes(&value, &mut pending, 0);
     finalize_pending_pairs(text, pending)
 }
 
@@ -51,6 +53,134 @@ fn extract_tfstate_values(
             }
         }
         _ => {}
+    }
+}
+
+fn extract_tfstate_resource_attributes(
+    value: &serde_json::Value,
+    pending: &mut Vec<PendingExtractedPair>,
+    depth: usize,
+) {
+    if depth >= MAX_TFSTATE_DEPTH {
+        return;
+    }
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(serde_json::Value::Array(resources)) = map.get("resources") {
+                for resource in resources {
+                    extract_tfstate_resource(resource, pending);
+                }
+            }
+            for v in map.values() {
+                extract_tfstate_resource_attributes(v, pending, depth + 1);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                extract_tfstate_resource_attributes(v, pending, depth + 1);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn extract_tfstate_resource(resource: &serde_json::Value, pending: &mut Vec<PendingExtractedPair>) {
+    let serde_json::Value::Object(map) = resource else {
+        return;
+    };
+    let resource_type = map
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.is_empty());
+    let resource_name = map
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.is_empty());
+    let base_context = match (resource_type, resource_name) {
+        (Some(resource_type), Some(resource_name)) => format!("{resource_type}.{resource_name}"),
+        (Some(resource_type), None) => resource_type.to_string(),
+        (None, Some(resource_name)) => resource_name.to_string(),
+        (None, None) => "tfstate-resource".to_string(),
+    };
+    let Some(instances) = map.get("instances").and_then(serde_json::Value::as_array) else {
+        return;
+    };
+    let include_index = instances.len() > 1;
+    for (idx, instance) in instances.iter().enumerate() {
+        let instance_context = if include_index {
+            format!("{base_context}[{idx}]")
+        } else {
+            base_context.clone()
+        };
+        if let Some(attributes) = instance.get("attributes") {
+            extract_tfstate_attribute_scalars(attributes, pending, &instance_context, "", None, 0);
+        }
+    }
+}
+
+fn extract_tfstate_attribute_scalars(
+    value: &serde_json::Value,
+    pending: &mut Vec<PendingExtractedPair>,
+    context_prefix: &str,
+    attribute_path: &str,
+    anchor_key: Option<&str>,
+    depth: usize,
+) {
+    if depth >= MAX_TFSTATE_DEPTH {
+        return;
+    }
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, child) in map {
+                let next_path = if attribute_path.is_empty() {
+                    key.to_string()
+                } else {
+                    format!("{attribute_path}.{key}")
+                };
+                extract_tfstate_attribute_scalars(
+                    child,
+                    pending,
+                    context_prefix,
+                    &next_path,
+                    Some(key),
+                    depth + 1,
+                );
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for (idx, child) in arr.iter().enumerate() {
+                let next_path = format!("{attribute_path}[{idx}]");
+                extract_tfstate_attribute_scalars(
+                    child,
+                    pending,
+                    context_prefix,
+                    &next_path,
+                    None,
+                    depth + 1,
+                );
+            }
+        }
+        _ => {
+            let Some(val_str) = scalar_value_text(value) else {
+                return;
+            };
+            let context = if attribute_path.is_empty() {
+                context_prefix.to_string()
+            } else {
+                format!("{context_prefix}.{attribute_path}")
+            };
+            match anchor_key.and_then(|key| json_mapping_anchors(key, value)) {
+                Some((line_anchor, fallback_anchor)) => {
+                    pending.push(PendingExtractedPair::owned_anchor_with_fallback(
+                        context,
+                        val_str,
+                        line_anchor,
+                        fallback_anchor,
+                    ));
+                }
+                None => pending.push(PendingExtractedPair::value_anchor(context, val_str)),
+            }
+        }
     }
 }
 
@@ -146,6 +276,28 @@ fn scalar_value_text(value: &serde_json::Value) -> Option<String> {
         serde_json::Value::Bool(b) => Some(b.to_string()),
         _ => None,
     }
+}
+
+fn json_mapping_anchors(key: &str, value: &serde_json::Value) -> Option<(String, String)> {
+    let key_literal = json_string_literal(key);
+    let value_literal = json_scalar_literal(value)?;
+    Some((
+        format!("{key_literal}: {value_literal}"),
+        format!("{key_literal}:"),
+    ))
+}
+
+fn json_scalar_literal(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(s) => Some(json_string_literal(s)),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
+fn json_string_literal(s: &str) -> String {
+    serde_json::Value::String(s.to_string()).to_string()
 }
 
 fn first_nonempty_fragment_anchor(parts: &[String]) -> Option<String> {

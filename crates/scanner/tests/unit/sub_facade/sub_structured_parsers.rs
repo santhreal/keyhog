@@ -23,6 +23,12 @@ macro_rules! value_of {
     };
 }
 
+macro_rules! line_of {
+    ($pairs:expr, $ctx:expr) => {
+        $pairs.iter().find(|p| p.context == $ctx).map(|p| p.line)
+    };
+}
+
 // ---------------------------------------------------------------------------
 // parse_env
 // ---------------------------------------------------------------------------
@@ -192,6 +198,72 @@ fn tfstate_stringifies_numeric_value() {
     let pairs = parse_tfstate(text);
     assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0].value, "12345");
+}
+
+#[test]
+fn tfstate_extracts_resource_instance_attributes_with_resource_context() {
+    let text = r#"{
+  "resources": [
+    {
+      "type": "aws_db_instance",
+      "name": "main",
+      "instances": [
+        {
+          "attributes": {
+            "username": "admin",
+            "password": "ghp_abcdefghij0123456789",
+            "connection": {
+              "private_key": "-----BEGIN PRIVATE KEY-----"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}"#;
+    let pairs = parse_tfstate(text);
+    assert_eq!(
+        value_of!(pairs, "aws_db_instance.main.username"),
+        Some("admin")
+    );
+    assert_eq!(
+        value_of!(pairs, "aws_db_instance.main.password"),
+        Some("ghp_abcdefghij0123456789")
+    );
+    assert_eq!(
+        value_of!(pairs, "aws_db_instance.main.connection.private_key"),
+        Some("-----BEGIN PRIVATE KEY-----")
+    );
+    assert_eq!(line_of!(pairs, "aws_db_instance.main.password"), Some(10));
+    assert_eq!(
+        line_of!(pairs, "aws_db_instance.main.connection.private_key"),
+        Some(12)
+    );
+}
+
+#[test]
+fn tfstate_indexes_repeated_resource_instances() {
+    let text = r#"{
+  "resources": [
+    {
+      "type": "aws_iam_access_key",
+      "name": "deploy",
+      "instances": [
+        {"attributes": {"secret": "first-secret"}},
+        {"attributes": {"secret": "second-secret"}}
+      ]
+    }
+  ]
+}"#;
+    let pairs = parse_tfstate(text);
+    assert_eq!(
+        value_of!(pairs, "aws_iam_access_key.deploy[0].secret"),
+        Some("first-secret")
+    );
+    assert_eq!(
+        value_of!(pairs, "aws_iam_access_key.deploy[1].secret"),
+        Some("second-secret")
+    );
 }
 
 // ---------------------------------------------------------------------------
