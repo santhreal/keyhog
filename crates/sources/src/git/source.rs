@@ -103,10 +103,12 @@ enum GitBlobSkip {
     },
     NonBlob {
         oid: gix::ObjectId,
+        filepath: Vec<u8>,
         kind: String,
     },
     OverMaxSize {
         oid: gix::ObjectId,
+        filepath: Vec<u8>,
         size: u64,
         cap: u64,
     },
@@ -120,7 +122,10 @@ enum GitBlobSkip {
         filepath: Vec<u8>,
         error: String,
     },
-    Binary,
+    Binary {
+        oid: gix::ObjectId,
+        filepath: Vec<u8>,
+    },
 }
 
 /// Scans git blobs reachable from refs, reflogs, stashes, dangling commits,
@@ -776,6 +781,7 @@ fn next_git_blob_batch(
         if header.kind() != Kind::Blob {
             batch.push(GitBlobBatchItem::Skip(GitBlobSkip::NonBlob {
                 oid,
+                filepath,
                 kind: format!("{:?}", header.kind()),
             }));
             continue;
@@ -785,6 +791,7 @@ fn next_git_blob_batch(
         if size_bytes > limits.git_blob_bytes {
             batch.push(GitBlobBatchItem::Skip(GitBlobSkip::OverMaxSize {
                 oid,
+                filepath,
                 size: size_bytes,
                 cap: limits.git_blob_bytes,
             }));
@@ -839,7 +846,10 @@ fn decode_git_blob_candidate(
     };
 
     let Some(file_text) = decode_git_blob(&obj.data) else {
-        return GitBlobDecodeOutcome::Skip(GitBlobSkip::Binary);
+        return GitBlobDecodeOutcome::Skip(GitBlobSkip::Binary {
+            oid: candidate.oid,
+            filepath: candidate.filepath,
+        });
     };
 
     GitBlobDecodeOutcome::Decoded(DecodedGitBlob {
@@ -869,15 +879,28 @@ fn record_git_blob_skip(skip: GitBlobSkip, pending_errors: &mut VecDeque<SourceE
                 git_blob_path_display(&filepath)
             )));
         }
-        GitBlobSkip::NonBlob { oid, kind } => {
+        GitBlobSkip::NonBlob {
+            oid,
+            filepath,
+            kind,
+        } => {
             tracing::warn!(
                 %oid,
                 kind,
                 "git tree entry resolved to a non-blob object; blob NOT scanned"
             );
             record_git_object_unreadable();
+            pending_errors.push_back(git_unscanned_object_error(format!(
+                "git blob {oid} at {} resolved to non-blob object kind {kind}; blob was not scanned",
+                git_blob_path_display(&filepath)
+            )));
         }
-        GitBlobSkip::OverMaxSize { oid, size, cap } => {
+        GitBlobSkip::OverMaxSize {
+            oid,
+            filepath,
+            size,
+            cap,
+        } => {
             tracing::warn!(
                 %oid,
                 size,
@@ -885,6 +908,10 @@ fn record_git_blob_skip(skip: GitBlobSkip, pending_errors: &mut VecDeque<SourceE
                 "git blob exceeds the per-blob size cap; NOT scanned"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            pending_errors.push_back(git_unscanned_object_error(format!(
+                "git blob {oid} at {} exceeds per-blob size cap ({size} bytes > {cap} bytes); blob was not scanned",
+                git_blob_path_display(&filepath)
+            )));
         }
         GitBlobSkip::RepositoryOpen {
             oid,
@@ -916,8 +943,12 @@ fn record_git_blob_skip(skip: GitBlobSkip, pending_errors: &mut VecDeque<SourceE
                 git_blob_path_display(&filepath)
             )));
         }
-        GitBlobSkip::Binary => {
+        GitBlobSkip::Binary { oid, filepath } => {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+            pending_errors.push_back(git_unscanned_object_error(format!(
+                "git blob {oid} at {} is binary and was not decoded as text; blob was not scanned",
+                git_blob_path_display(&filepath)
+            )));
         }
     }
 }

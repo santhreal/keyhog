@@ -9,11 +9,11 @@
 //!     `continue` (no counter), and
 //!   * a binary blob (`decode_git_blob -> None`) with a bare `continue`,
 //! so both vanished from coverage with no operator-visible signal. The fix
-//! routes the over-cap drop to `SKIPPED_OVER_MAX_SIZE` and the binary drop to
-//! `SKIPPED_BINARY` (the same CLI-surfaced categories the filesystem walker
-//! uses) and logs each at `warn!`. This test pins the exact counter deltas by
-//! driving the REAL `GitSource::chunks()` production path over a git repo built
-//! with the system `git` binary.
+//! routes the over-cap drop to `SKIPPED_OVER_MAX_SIZE`, the binary drop to
+//! `SKIPPED_BINARY`, and emits `SourceError` rows for the skipped blobs. This
+//! test pins the counter deltas and visible rows by driving the REAL
+//! `GitSource::chunks()` production path over a git repo built with the system
+//! `git` binary.
 //!
 //! Own test binary: the `SKIPPED_*` counters are process-global atomics, so a
 //! dedicated binary keeps the baseline isolated from the filesystem tests that
@@ -97,10 +97,9 @@ fn oversized_git_blob_is_counted_over_max_size() {
     git(repo, &["add", "."]);
     git(repo, &["commit", "-m", "small text + over-cap text blob"]);
 
-    let chunks: Vec<String> = GitSource::new(repo.to_path_buf())
-        .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap()
+    let rows: Vec<_> = GitSource::new(repo.to_path_buf()).chunks().collect();
+    let (ok, errors) = split_chunk_results(&rows);
+    let chunks: Vec<String> = ok
         .into_iter()
         .map(|c| c.data.as_ref().to_string())
         .collect();
@@ -114,6 +113,18 @@ fn oversized_git_blob_is_counted_over_max_size() {
         with_key, 1,
         "only the small blob (one occurrence of the key) must be scanned; the \
          over-cap blob's identical leading key must NOT appear. got chunks: {chunks:?}"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "the over-cap git blob must surface one SourceError row"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("huge.txt")
+            && err.contains("exceeds per-blob size cap")
+            && err.contains("blob was not scanned"),
+        "SourceError must name the over-cap git blob and coverage loss, got {err}"
     );
 
     let after = skip_counts();
@@ -149,10 +160,20 @@ fn binary_git_blob_is_counted_binary() {
     git(repo, &["add", "."]);
     git(repo, &["commit", "-m", "binary + text"]);
 
-    let _chunks: Vec<_> = GitSource::new(repo.to_path_buf())
-        .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+    let rows: Vec<_> = GitSource::new(repo.to_path_buf()).chunks().collect();
+    let (_ok, errors) = split_chunk_results(&rows);
+    assert_eq!(
+        errors.len(),
+        1,
+        "the binary git blob must surface one SourceError row"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("app.bin")
+            && err.contains("is binary")
+            && err.contains("blob was not scanned"),
+        "SourceError must name the binary git blob and coverage loss, got {err}"
+    );
 
     let after = skip_counts();
     assert_eq!(
