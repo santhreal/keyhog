@@ -131,6 +131,7 @@ fn scan_system_git_discovery_continues_inside_worktrees_for_nested_repos() {
     assert!(
         s.contains("entry")
             && s.contains(".file_name()")
+            && s.contains(r#"name.eq_ignore_ascii_case(".git")"#)
             && s.contains("skip_dirs.is_git_discovery_component(name)"),
         "repo discovery must skip child .git/admin directories before descending, \
          so continuing inside worktrees does not double-count the parent .git dir"

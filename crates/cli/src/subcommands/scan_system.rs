@@ -175,6 +175,19 @@ pub(crate) mod testing {
         super::mounts::testing::windows_drive_skip_prefix_decisions_for_test()
     }
 
+    pub(crate) fn git_repos_for_test(
+        root: &std::path::Path,
+    ) -> anyhow::Result<Vec<std::path::PathBuf>> {
+        let skip_dirs = crate::skip_dirs::SkipDirPolicy::load()?;
+        let mut repos = Vec::new();
+        let gaps = super::discover_git_repos(root, &mut repos, &skip_dirs);
+        if gaps != 0 {
+            anyhow::bail!("git discovery reported {gaps} coverage gap(s)");
+        }
+        repos.sort();
+        Ok(repos)
+    }
+
     pub(crate) struct FindingSink {
         inner: super::FindingSink,
     }
@@ -364,7 +377,7 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     }
 
     // Then walk every git history.
-    if !args.no_git_history {
+    if !args.no_git_history && bytes_scanned.load(Ordering::Relaxed) < space_cap {
         for repo in &git_repos {
             if bytes_scanned.load(Ordering::Relaxed) >= space_cap {
                 record_space_cap_gap(&mut sink, space_cap, "skipping remaining git histories");
@@ -543,11 +556,10 @@ fn discover_git_repos(
                         }
                     };
                     if file_type.is_dir() {
-                        if entry
-                            .file_name()
-                            .to_str()
-                            .is_some_and(|name| skip_dirs.is_git_discovery_component(name))
-                        {
+                        if entry.file_name().to_str().is_some_and(|name| {
+                            name.eq_ignore_ascii_case(".git")
+                                || skip_dirs.is_git_discovery_component(name)
+                        }) {
                             continue;
                         }
                         match fs::canonicalize(entry.path()) {

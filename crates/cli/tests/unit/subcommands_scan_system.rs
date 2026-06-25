@@ -1,5 +1,6 @@
-use keyhog::testing::{API, CliTestApi as _};
+use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
+use std::path::Path;
 use std::sync::Arc;
 
 fn raw_match(i: usize) -> RawMatch {
@@ -115,6 +116,56 @@ fn space_cap_policy_refuses_first_over_cap_chunk_before_absorb() {
     );
 }
 
+fn write_git_marker(repo: &Path) {
+    let git_dir = repo.join(".git");
+    std::fs::create_dir_all(git_dir.join("objects")).expect("create .git objects");
+    std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").expect("write .git HEAD");
+}
+
+fn write_bare_git_marker(repo: &Path) {
+    std::fs::create_dir_all(repo.join("objects")).expect("create bare objects");
+    std::fs::write(repo.join("HEAD"), "ref: refs/heads/main\n").expect("write bare HEAD");
+}
+
+#[test]
+fn git_repo_discovery_dedupes_worktree_admin_dir_but_keeps_nested_and_bare_repos() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let worktree = temp.path().join("worktree");
+    let nested = worktree.join("nested");
+    let bare = temp.path().join("bare.git");
+
+    std::fs::create_dir_all(&worktree).expect("create worktree");
+    std::fs::create_dir_all(&nested).expect("create nested repo");
+    std::fs::create_dir_all(&bare).expect("create bare repo");
+    write_git_marker(&worktree);
+    write_git_marker(&nested);
+    write_bare_git_marker(&bare);
+
+    let repos = API
+        .scan_system_discover_git_repos_for_test(temp.path())
+        .expect("discover git repos");
+    let worktree = std::fs::canonicalize(&worktree).expect("canonical worktree");
+    let nested = std::fs::canonicalize(&nested).expect("canonical nested");
+    let bare = std::fs::canonicalize(&bare).expect("canonical bare");
+    let worktree_admin = std::fs::canonicalize(worktree.join(".git")).expect("canonical .git");
+
+    assert_eq!(
+        repos.len(),
+        3,
+        "worktree, nested repo, and bare repo should each be discovered once: {repos:?}"
+    );
+    assert!(
+        repos.contains(&worktree),
+        "missing worktree repo: {repos:?}"
+    );
+    assert!(repos.contains(&nested), "missing nested repo: {repos:?}");
+    assert!(repos.contains(&bare), "missing bare repo: {repos:?}");
+    assert!(
+        !repos.contains(&worktree_admin),
+        "worktree admin .git dir must not be treated as a second repo: {repos:?}"
+    );
+}
+
 #[test]
 fn skipped_chunks_start_at_zero_and_accumulate() {
     // Law 10: an unreadable source chunk (corrupt git object, perm-denied path)
@@ -181,6 +232,25 @@ fn git_repo_discovery_does_not_flatten_read_dir_errors() {
     assert!(
         !discovery_fn.contains("space_cap"),
         "scan-system repo discovery must not advertise a fake space-cap traversal contract"
+    );
+}
+
+#[test]
+fn scan_system_does_not_double_count_space_cap_before_git_history_loop() {
+    let src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/subcommands/scan_system.rs"
+    ))
+    .expect("scan-system source readable");
+    let git_history_loop = src
+        .split("// Then walk every git history.")
+        .nth(1)
+        .expect("scan-system must have a git-history loop marker");
+    assert!(
+        git_history_loop.contains(
+            "if !args.no_git_history && bytes_scanned.load(Ordering::Relaxed) < space_cap"
+        ),
+        "scan-system must not enter the git-history loop only to record a second space-cap gap after the filesystem walk already reached --space"
     );
 }
 
