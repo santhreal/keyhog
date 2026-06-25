@@ -91,8 +91,8 @@ pub fn gpu_required_by_policy() -> bool {
 /// first.
 ///
 /// Returns `Err(diagnostic)` when a GPU is required but the host has no
-/// non-software adapter, or the GPU self-test (adapter init + one real MoE
-/// compute dispatch) fails. The caller (CLI run loop) maps that to the
+/// non-software adapter, the MoE GPU self-test, or the production AC-kernel
+/// scan-path self-test fails. The caller (CLI run loop) maps that to the
 /// documented exit code 12. Returning an `Err` here - rather than calling
 /// `std::process::exit` from the library - keeps embedders alive (finding
 /// M12).
@@ -117,13 +117,21 @@ pub fn require_gpu_preflight() -> Result<(), String> {
         ));
     }
 
-    // A non-software adapter is reported. Prove it can actually run a
-    // production-sized MoE dispatch before declaring the requirement met -
-    // a present-but-broken GPU (driver mismatch, dispatch reject) is exactly
-    // the regression the flag is meant to catch on self-hosted runners.
+    // A non-software adapter is reported. Prove it can run both GPU paths
+    // that matter before declaring the requirement met: the MoE scoring
+    // shader and the production AC scan kernel. A present-but-broken GPU
+    // (driver mismatch, shader lowering failure, dispatch reject) is exactly
+    // the regression this flag is meant to catch on self-hosted runners.
     if let Err(reason) = super::gpu_self_test() {
         return Err(format!(
-            "--require-gpu requested but the GPU self-test failed ({reason}); \
+            "--require-gpu requested but the GPU MoE self-test failed ({reason}); \
+             refusing to run on CPU. Fix the GPU stack or run without \
+             --require-gpu."
+        ));
+    }
+    if let Err(reason) = super::vyre_ac_kernel_self_test() {
+        return Err(format!(
+            "--require-gpu requested but the GPU AC kernel self-test failed ({reason}); \
              refusing to run on CPU. Fix the GPU stack or run without \
              --require-gpu."
         ));
