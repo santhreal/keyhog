@@ -19,11 +19,6 @@ description = "DeepL API key with context anchor (free/pro format)"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:DEEPL_API_KEY|DEEPL_AUTH_KEY|DEEPL.KEY|deepl.api.key)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
-description = "DeepL API key with context anchor (standard format)"
-group = 1
-
-[[detector.patterns]]
 regex = "DeepL-Auth-Key\\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(?::fx)?)"
 description = "DeepL API key in Authorization header"
 group = 1

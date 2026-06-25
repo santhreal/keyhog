@@ -660,6 +660,7 @@ fn org_run_all_references_org_audit_and_named_gates() {
     let run_all = read(&root.join("scripts/gates/run_all.sh"));
     let required = [
         "scripts/org_audit.py",
+        "scripts.tests.test_org_audit",
         "no_silent_fallbacks.py",
         "law10_semantics.py",
         "surface_coverage.py",

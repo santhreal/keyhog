@@ -32,7 +32,7 @@ GENERATED_CACHE_GLOBS = (
 
 
 def rel(path: pathlib.Path) -> str:
-    return path.relative_to(ROOT).as_posix()
+    return path.resolve().relative_to(ROOT).as_posix()
 
 
 def text(path: str) -> str:
@@ -43,11 +43,43 @@ def fail(violations: list[str], msg: str) -> None:
     violations.append(msg)
 
 
+def markdown_fence_marker(raw_line: str) -> str | None:
+    stripped = raw_line.lstrip()
+    for marker_char in ("`", "~"):
+        marker = marker_char * 3
+        if stripped.startswith(marker):
+            run_len = 0
+            for ch in stripped:
+                if ch != marker_char:
+                    break
+                run_len += 1
+            return marker_char * run_len
+    return None
+
+
 def scan_commands_under_environment_variables(path: pathlib.Path, src: str) -> list[str]:
+    if path.suffix.casefold() != ".md":
+        return []
+
     violations: list[str] = []
     in_environment_section = False
     environment_heading_level = 0
+    fence_marker: str | None = None
     for line_number, raw_line in enumerate(src.splitlines(), start=1):
+        marker = markdown_fence_marker(raw_line)
+        if marker is not None:
+            if fence_marker is None:
+                fence_marker = marker
+            elif marker.startswith(fence_marker):
+                fence_marker = None
+            continue
+        if fence_marker is not None:
+            if in_environment_section and re.search(r"\bkeyhog\s+scan\b", raw_line, re.IGNORECASE):
+                violations.append(
+                    f"CLI reference labels scan command controls as environment variables: {rel(path)}:{line_number}"
+                )
+            continue
+
         heading = re.match(r"^(#+)\s+(.*)$", raw_line)
         if heading:
             level = len(heading.group(1))
