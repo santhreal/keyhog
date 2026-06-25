@@ -37,6 +37,7 @@ pub fn window_chunk(chunk: &Chunk, start: usize, end: usize) -> Chunk {
 pub fn record_window_match(
     line_offsets: &[usize],
     source_base_offset: usize,
+    source_base_line: usize,
     window_offset: usize,
     window_len: usize,
     m: &mut RawMatch,
@@ -58,7 +59,11 @@ pub fn record_window_match(
         // number - identical to counting newlines before `offset` and adding 1
         // (what `line_number_for_offset` does the slow way), but O(log L) per
         // match instead of O(offset).
-        m.location.line = Some(line_offsets.partition_point(|&lo| lo <= m.location.offset));
+        let chunk_local_offset = window_offset.saturating_add(window_local_offset);
+        m.location.line = Some(
+            source_base_line
+                .saturating_add(line_offsets.partition_point(|&lo| lo <= chunk_local_offset)),
+        );
     }
 
     let key = (

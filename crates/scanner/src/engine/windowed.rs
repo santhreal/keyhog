@@ -42,6 +42,7 @@ impl CompiledScanner {
                 if record_window_match(
                     &line_offsets,
                     chunk.metadata.base_offset,
+                    chunk.metadata.base_line,
                     offset,
                     end - offset,
                     &mut raw_match,
@@ -141,6 +142,7 @@ impl CompiledScanner {
                 if record_window_match(
                     &line_offsets,
                     chunk.metadata.base_offset,
+                    chunk.metadata.base_line,
                     offset,
                     window_len,
                     &mut raw_match,

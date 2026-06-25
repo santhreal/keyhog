@@ -38,6 +38,7 @@ fn record_window_match_dedups() {
         &line_offsets,
         0,
         0,
+        0,
         text.len(),
         &mut m,
         &mut seen,
@@ -46,6 +47,7 @@ fn record_window_match_dedups() {
     let mut m2 = demo_match(0);
     assert!(!record_window_match(
         &line_offsets,
+        0,
         0,
         0,
         text.len(),

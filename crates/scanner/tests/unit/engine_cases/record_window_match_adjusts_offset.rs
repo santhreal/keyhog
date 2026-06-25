@@ -33,6 +33,7 @@ fn record_window_match_adjusts_offset() {
     assert!(record_window_match(
         &line_offsets,
         0,
+        0,
         3,
         text.len(),
         &mut m,
@@ -40,6 +41,53 @@ fn record_window_match_adjusts_offset() {
         &mut order
     ));
     assert_eq!(m.location.offset, 4);
+}
+
+#[test]
+fn record_window_match_adjusts_line_for_chunk_base_and_window_offset() {
+    let text = "line0\nline1\nline2\nline3\n";
+    let source_base_offset = 10_000;
+    let source_base_line = 200;
+    let window_offset = "line0\nline1\n".len();
+    let window_local_offset = "line2\n".len();
+    let mut seen = HashSet::new();
+    let mut order = VecDeque::new();
+    let mut m = RawMatch {
+        detector_id: Arc::from("demo"),
+        detector_name: Arc::from("demo"),
+        service: Arc::from("test"),
+        severity: Severity::Low,
+        credential: keyhog_core::SensitiveString::from("line3"),
+        credential_hash: [5u8; 32].into(),
+        companions: std::collections::HashMap::new(),
+        location: MatchLocation {
+            source: Arc::from("test"),
+            file_path: None,
+            line: Some(1),
+            offset: source_base_offset + window_local_offset,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: None,
+        confidence: None,
+    };
+    let line_offsets = compute_line_offsets(text);
+    assert!(record_window_match(
+        &line_offsets,
+        source_base_offset,
+        source_base_line,
+        window_offset,
+        text.len() - window_offset,
+        &mut m,
+        &mut seen,
+        &mut order
+    ));
+    assert_eq!(
+        m.location.offset,
+        source_base_offset + window_offset + window_local_offset
+    );
+    assert_eq!(m.location.line, Some(source_base_line + 4));
 }
 
 #[test]
@@ -70,6 +118,7 @@ fn record_window_match_rejects_synthesized_offsets_outside_window() {
     let line_offsets = compute_line_offsets(text);
     assert!(!record_window_match(
         &line_offsets,
+        0,
         0,
         3,
         text.len(),
