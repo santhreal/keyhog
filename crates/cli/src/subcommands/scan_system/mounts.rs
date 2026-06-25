@@ -44,7 +44,6 @@ pub(super) fn enumerate_mounts(_include_network: bool) -> Result<Vec<PathBuf>> {
 }
 
 /// Scan-system mount filters loaded from Tier-B data.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[derive(Debug, Default, serde::Deserialize)]
 struct MountFilters {
     #[serde(default)]
@@ -56,7 +55,6 @@ struct MountFilters {
 }
 
 /// Compiled-in Tier-B baseline. Always applied.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 const BUNDLED_MOUNT_FILTERS: &str = include_str!("../../../data/scan_system/mount_filters.toml");
 
 /// Load scan-system mount filters: the embedded baseline UNIONED with an
@@ -128,11 +126,13 @@ fn linux_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
             roots.push(PathBuf::from(decoded));
         }
     }
-    // kimi-wave2 §High: sort ASCENDING (shortest path first) so the dedup
-    // loop below catches subpaths of an already-included root. The prior
-    // descending sort made dedup a no-op (every `starts_with` check fired
-    // against a *longer* candidate), causing `/` and `/home` to both end
-    // up in the result and every file under `/home` to be scanned twice.
+    Ok(dedupe_mount_roots(roots))
+}
+
+fn dedupe_mount_roots(mut roots: Vec<PathBuf>) -> Vec<PathBuf> {
+    // Sort ASCENDING (shortest path first) so the loop below catches subpaths of
+    // an already-included root. The prior descending Linux sort made dedup a
+    // no-op, causing `/` and `/home` to both be scanned.
     roots.sort_by_key(|p| p.as_os_str().len());
     let mut deduped: Vec<PathBuf> = Vec::new();
     for r in roots {
@@ -141,7 +141,7 @@ fn linux_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
             deduped.push(r);
         }
     }
-    Ok(deduped)
+    deduped
 }
 
 #[cfg(target_os = "linux")]
@@ -196,7 +196,7 @@ fn decode_octal_escapes(s: &str) -> Result<String> {
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
-    use super::{decoded_mount_target_if_included, MountFilters};
+    use super::{MountFilters, decoded_mount_target_if_included};
 
     #[test]
     fn skip_path_prefixes_match_decoded_mount_targets() {
@@ -233,13 +233,6 @@ mod tests {
 #[cfg(target_os = "macos")]
 fn macos_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
     let filters = load_mount_filters()?;
-    let skip_fs_types: std::collections::HashSet<&str> =
-        filters.skip_fs_types.iter().map(String::as_str).collect();
-    let network_fs_types: std::collections::HashSet<&str> = filters
-        .network_fs_types
-        .iter()
-        .map(String::as_str)
-        .collect();
     // SECURITY (kimi-wave1 audit 3.PATH-mount): use a trusted absolute path.
     // `scan-system` is an operator-visible audit surface; do not execute an
     // arbitrary PATH `mount` binary if the safe resolver misses.
@@ -253,11 +246,26 @@ fn macos_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
         .output()
         .context("run mount(8)")?;
     let text = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_macos_mount_table(&text, include_network, &filters))
+}
+
+fn parse_macos_mount_table(
+    text: &str,
+    include_network: bool,
+    filters: &MountFilters,
+) -> Vec<PathBuf> {
+    let skip_fs_types: std::collections::HashSet<&str> =
+        filters.skip_fs_types.iter().map(String::as_str).collect();
+    let network_fs_types: std::collections::HashSet<&str> = filters
+        .network_fs_types
+        .iter()
+        .map(String::as_str)
+        .collect();
     let mut roots = Vec::new();
     for line in text.lines() {
-        if let Some(on_idx) = line.find(" on ") {
+        if let Some(on_idx) = line.rfind(" on ") {
             let rest = &line[on_idx + 4..];
-            if let Some(paren_idx) = rest.find(" (") {
+            if let Some(paren_idx) = rest.rfind(" (") {
                 let path = &rest[..paren_idx];
                 let fs_info = &rest[paren_idx + 2..];
                 let fstype = fs_info.split(',').next().unwrap_or("").trim(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
@@ -278,7 +286,20 @@ fn macos_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
             }
         }
     }
-    Ok(roots)
+    dedupe_mount_roots(roots)
+}
+
+pub(crate) mod testing {
+    use super::{MountFilters, parse_macos_mount_table};
+    use std::path::PathBuf;
+
+    pub(crate) fn parse_macos_mount_table_for_test(
+        text: &str,
+        include_network: bool,
+    ) -> Result<Vec<PathBuf>, toml::de::Error> {
+        let filters: MountFilters = toml::from_str(super::BUNDLED_MOUNT_FILTERS)?;
+        Ok(parse_macos_mount_table(text, include_network, &filters))
+    }
 }
 
 #[cfg(target_os = "windows")]

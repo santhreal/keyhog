@@ -1,4 +1,4 @@
-use keyhog::testing::{CliTestApi as _, API};
+use keyhog::testing::{API, CliTestApi as _};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use std::sync::Arc;
 
@@ -260,6 +260,37 @@ fn linux_mount_filters_are_tier_b_and_match_decoded_targets() {
     assert!(
         !src.contains("target.starts_with"),
         "raw /proc/mounts targets contain octal escapes, so skip_path_prefixes must not match raw targets"
+    );
+}
+
+#[test]
+fn macos_mount_parser_filters_network_and_dedupes_nested_roots() {
+    let mount_output = "\
+/dev/disk4s1 on /Volumes/Data (apfs, local, journaled)
+/dev/disk4s2 on /Volumes/Data/projects (apfs, local, journaled)
+device name with on token on /Volumes/Remote (smbfs, nodev, nosuid, mounted by user)
+devfs on /dev (devfs, local, nobrowse)
+";
+
+    let without_network = API
+        .parse_macos_mount_table_for_test(mount_output, false)
+        .expect("bundled mount filters parse");
+    assert_eq!(
+        without_network,
+        vec![std::path::PathBuf::from("/Volumes/Data")],
+        "macOS parser must skip Tier-B network/devfs mounts and dedupe nested local roots"
+    );
+
+    let with_network = API
+        .parse_macos_mount_table_for_test(mount_output, true)
+        .expect("bundled mount filters parse");
+    assert_eq!(
+        with_network,
+        vec![
+            std::path::PathBuf::from("/Volumes/Data"),
+            std::path::PathBuf::from("/Volumes/Remote"),
+        ],
+        "--include-network must restore network roots while preserving nested-root dedupe"
     );
 }
 

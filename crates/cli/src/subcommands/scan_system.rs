@@ -16,14 +16,14 @@ mod mounts;
 use crate::args::ScanSystemArgs;
 use crate::exit_codes::{EXIT_FINDINGS, EXIT_SOURCE_FAILED};
 use crate::format::format_bytes;
-use crate::orchestrator::{setup_default_scan_runtime, DefaultScanRuntime, StreamingSourceEvent};
+use crate::orchestrator::{DefaultScanRuntime, StreamingSourceEvent, setup_default_scan_runtime};
 use crate::style;
 use anyhow::{Context, Result};
 use mounts::enumerate_mounts;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Hard ceiling on resident findings held in memory during a system scan.
 ///
@@ -157,6 +157,13 @@ pub(crate) mod testing {
         space_cap: u64,
     ) -> bool {
         super::chunk_fits_space_cap(bytes_scanned, chunk_len, space_cap)
+    }
+
+    pub(crate) fn parse_macos_mount_table_for_test(
+        text: &str,
+        include_network: bool,
+    ) -> Result<Vec<std::path::PathBuf>, toml::de::Error> {
+        super::mounts::testing::parse_macos_mount_table_for_test(text, include_network)
     }
 
     pub(crate) struct FindingSink {

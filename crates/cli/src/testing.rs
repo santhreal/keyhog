@@ -235,6 +235,11 @@ pub trait CliTestApi {
     fn watch_content_hash(&self, data: &[u8]) -> u64;
 
     fn max_resident_findings(&self) -> usize;
+    fn parse_macos_mount_table_for_test(
+        &self,
+        text: &str,
+        include_network: bool,
+    ) -> Result<Vec<PathBuf>>;
     fn scan_system_chunk_fits_space_cap(
         &self,
         bytes_scanned: u64,
@@ -700,6 +705,17 @@ impl CliTestApi for TestApi {
 
     fn max_resident_findings(&self) -> usize {
         crate::subcommands::scan_system::testing::MAX_RESIDENT_FINDINGS
+    }
+    fn parse_macos_mount_table_for_test(
+        &self,
+        text: &str,
+        include_network: bool,
+    ) -> Result<Vec<PathBuf>> {
+        crate::subcommands::scan_system::testing::parse_macos_mount_table_for_test(
+            text,
+            include_network,
+        )
+        .map_err(anyhow::Error::from)
     }
     fn scan_system_chunk_fits_space_cap(
         &self,
