@@ -30,11 +30,12 @@ pub(crate) fn is_false_positive_match_context_with_path(
     let bytes = window.as_bytes();
     let current_line = surrounding_line_window(text, match_start, 0);
     let current_line_bytes = current_line.as_bytes();
+    let (current_match_line, current_match_offset) = line_at_offset(text, match_start);
 
     is_go_sum_checksum_bytes(bytes, path_lower)
         || is_integrity_hash_bytes(current_line_bytes)
         || is_git_lfs_pointer_context_bytes(bytes)
-        || is_renovate_digest_context_bytes(bytes)
+        || is_renovate_digest_match_context(current_match_line.as_bytes(), current_match_offset)
         || is_cors_header_bytes(current_line_bytes)
         || is_http_cache_header_bytes(current_line_bytes)
         || has_disclaimer_comment_bytes(bytes)
@@ -410,18 +411,67 @@ fn trim_ascii_bytes(bytes: &[u8]) -> &[u8] {
 }
 
 fn is_renovate_digest_context_with_lines(
-    lines: &[&str],
-    line_idx: usize,
-    line_bytes: &[u8],
+    _lines: &[&str],
+    _line_idx: usize,
+    _line_bytes: &[u8],
 ) -> bool {
-    is_renovate_digest_context_bytes(line_bytes)
-        || surrounding_lines_contain(lines, line_idx, 2, |candidate| {
-            is_renovate_digest_context_bytes(candidate.as_bytes())
-        })
+    false
 }
 
-fn is_renovate_digest_context_bytes(bytes: &[u8]) -> bool {
-    ci_find(bytes, b"renovate/") && contains_hex_sequence_bytes(bytes)
+fn is_renovate_digest_match_context(bytes: &[u8], match_offset: usize) -> bool {
+    let Some(start) = ci_find_index(bytes, b"renovate/") else {
+        return false;
+    };
+    let branch_start = start + b"renovate/".len();
+    let mut branch_end = branch_start;
+    while let Some(byte) = bytes.get(branch_end) {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'/') {
+            branch_end += 1;
+        } else {
+            break;
+        }
+    }
+    let match_offset = match_offset.min(bytes.len());
+    match_offset >= start
+        && match_offset < branch_end
+        && branch_end > branch_start
+        && contains_hex_sequence_bytes(&bytes[branch_start..branch_end])
+}
+
+fn ci_find_index(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    let (&first, _) = needle.split_first()?;
+    let first_upper = first.to_ascii_uppercase();
+    for start in memchr::memchr2_iter(first, first_upper, haystack) {
+        let Some(candidate) = haystack.get(start..start + needle.len()) else {
+            break;
+        };
+        if candidate.eq_ignore_ascii_case(needle) {
+            return Some(start);
+        }
+    }
+    None
+}
+
+fn line_at_offset(text: &str, offset: usize) -> (&str, usize) {
+    let bytes = text.as_bytes();
+    let safe_offset = offset.min(bytes.len());
+    let line_start = bytes[..safe_offset]
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .map_or(0, |idx| idx + 1);
+    let line_end = bytes[safe_offset..]
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .map_or(bytes.len(), |idx| safe_offset + idx);
+    let line_start = crate::engine::ceil_char_boundary(text, line_start);
+    let mut line_end = crate::engine::floor_char_boundary(text, line_end);
+    if line_end < line_start {
+        line_end = line_start;
+    }
+    let relative = safe_offset
+        .saturating_sub(line_start)
+        .min(line_end - line_start);
+    (&text[line_start..line_end], relative)
 }
 
 fn is_cors_header_bytes(bytes: &[u8]) -> bool {
@@ -494,17 +544,6 @@ fn nearby_lines_contain(
         .skip(start)
         .copied()
         .any(predicate)
-}
-
-fn surrounding_lines_contain(
-    lines: &[&str],
-    line_idx: usize,
-    radius: usize,
-    predicate: impl Fn(&str) -> bool,
-) -> bool {
-    let start = line_idx.saturating_sub(radius);
-    let end = (line_idx + radius + 1).min(lines.len());
-    lines[start..end].iter().copied().any(predicate)
 }
 
 fn following_lines_contain(

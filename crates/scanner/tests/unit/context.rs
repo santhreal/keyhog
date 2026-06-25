@@ -314,9 +314,68 @@ fn false_positive_context_detects_sum_file_path() {
 }
 
 #[test]
-fn false_positive_context_detects_renovate_digest() {
+fn false_positive_context_does_not_suppress_renovate_digest_without_match_offset() {
     let lines = vec![r#""branchName": "renovate/node-8f3a9b2c1d4e5f60""#];
-    assert!(is_false_positive_context(&lines, 0, None));
+    assert!(
+        !is_false_positive_context(&lines, 0, None),
+        "Renovate suppression requires the match offset so same-line credentials are not hidden"
+    );
+}
+
+#[test]
+fn false_positive_match_context_detects_renovate_digest() {
+    let text = r#""branchName": "renovate/node-8f3a9b2c1d4e5f60""#;
+    let offset = text.find("8f3a").expect("fixture contains digest");
+    assert!(is_false_positive_match_context(text, offset, None));
+}
+
+#[test]
+fn false_positive_context_does_not_suppress_adjacent_renovate_branch() {
+    let lines = vec![
+        r#""branchName": "renovate/node-8f3a9b2c1d4e5f60","#,
+        r#""renovate_token": "ghp_abcdefghijklmnopqrstuvwxyz123456""#,
+    ];
+    assert!(
+        !is_false_positive_context(&lines, 1, None),
+        "a Renovate branch on an adjacent line is not context for suppressing a real token"
+    );
+}
+
+#[test]
+fn false_positive_match_context_does_not_suppress_adjacent_renovate_branch() {
+    let text = concat!(
+        r#""branchName": "renovate/node-8f3a9b2c1d4e5f60","#,
+        "\n",
+        r#""renovate_token": "ghp_abcdefghijklmnopqrstuvwxyz123456""#,
+        "\n",
+    );
+    let offset = text.find("ghp_").expect("fixture contains token");
+    assert!(
+        !is_false_positive_match_context(text, offset, None),
+        "match-window Renovate suppression must not leak to adjacent token lines"
+    );
+}
+
+#[test]
+fn false_positive_context_does_not_suppress_renovate_token_value() {
+    let lines = vec![r#""renovate_token": "renovate/ghp_abcdefghijklmnopqrstuvwxyz123456""#];
+    assert!(
+        !is_false_positive_context(&lines, 0, None),
+        "a secret value containing renovate/ is not a Renovate branch digest"
+    );
+}
+
+#[test]
+fn false_positive_match_context_does_not_suppress_same_line_renovate_branch_neighbor() {
+    let text = concat!(
+        r#""branchName": "renovate/node-8f3a9b2c1d4e5f60", "#,
+        r#""renovate_token": "ghp_abcdefghijklmnopqrstuvwxyz123456""#,
+    );
+    let offset = text.find("ghp_").expect("fixture contains token");
+    assert!(
+        !is_false_positive_match_context(text, offset, None),
+        "Renovate suppression must apply to the matched branch token, not any other token on the same line"
+    );
 }
 
 #[test]
