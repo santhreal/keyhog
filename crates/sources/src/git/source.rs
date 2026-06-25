@@ -1282,8 +1282,7 @@ struct HistoricalBlobCollector<'a> {
 
 impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
     fn accept_path(&mut self, filepath: &[u8]) -> Result<bool, SourceError> {
-        let default_exclude_path = String::from_utf8_lossy(filepath);
-        if crate::filesystem::is_default_excluded_path(default_exclude_path.as_ref()) {
+        if crate::filesystem::is_default_excluded_path_bytes(filepath) {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
             return Ok(false);
         }

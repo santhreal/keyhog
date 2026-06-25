@@ -48,4 +48,15 @@ fn git_tree_walk_uses_shared_visitor_boundary() {
         !historical_body.contains("tree.iter()"),
         "collect_tree_blobs_metadata must not re-own recursive tree iteration"
     );
+
+    let accept_path = source
+        .split("fn accept_path(&mut self, filepath: &[u8])")
+        .nth(1)
+        .and_then(|tail| tail.split("fn visit_blob(").next())
+        .expect("historical blob collector accept_path body");
+    assert!(
+        accept_path.contains("crate::filesystem::is_default_excluded_path_bytes(filepath)")
+            && !accept_path.contains("String::from_utf8_lossy(filepath)"),
+        "historical git tree walk must use byte-slice filesystem default excludes without lossy UTF-8 allocation"
+    );
 }

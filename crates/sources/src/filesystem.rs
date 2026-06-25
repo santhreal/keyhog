@@ -30,6 +30,11 @@ pub(crate) fn is_default_excluded_path(path: &str) -> bool {
     filter::is_default_excluded(path)
 }
 
+#[cfg(feature = "git")]
+pub(crate) fn is_default_excluded_path_bytes(path: &[u8]) -> bool {
+    filter::is_default_excluded_bytes(path)
+}
+
 #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
 pub(crate) fn is_default_skip_extension(ext: &str) -> bool {
     filter::is_skip_extension(ext)

@@ -222,8 +222,11 @@ fn normalize_prefix_suffix_rules(
 /// file on the walker hot path and (b) silently failed to exclude
 /// `\node_modules\`, `\vendor\`, etc. on Windows checkouts.
 pub(super) fn is_default_excluded(path: &str) -> bool {
+    is_default_excluded_bytes(path.as_bytes())
+}
+
+pub(super) fn is_default_excluded_bytes(bytes: &[u8]) -> bool {
     let rules = default_excludes();
-    let bytes = path.as_bytes();
     let ends_ci = |suffix: &[u8]| -> bool {
         bytes.len() >= suffix.len()
             && bytes[bytes.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
@@ -238,13 +241,12 @@ pub(super) fn is_default_excluded(path: &str) -> bool {
     }
 
     let mut filename: &[u8] = bytes;
-    for segment in path.split(['/', '\\']) {
-        let seg_bytes = segment.as_bytes();
-        if is_default_excluded_segment(seg_bytes) {
+    for segment in bytes.split(|byte| *byte == b'/' || *byte == b'\\') {
+        if is_default_excluded_segment(segment) {
             return true;
         }
-        if !seg_bytes.is_empty() {
-            filename = seg_bytes;
+        if !segment.is_empty() {
+            filename = segment;
         }
     }
 

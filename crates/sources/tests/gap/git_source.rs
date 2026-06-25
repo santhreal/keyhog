@@ -1654,7 +1654,7 @@ fn git_source_uses_filesystem_default_exclude_owner() {
             .expect("git source readable");
 
     assert!(
-        source.contains("crate::filesystem::is_default_excluded_path"),
+        source.contains("crate::filesystem::is_default_excluded_path_bytes"),
         "GitSource must consume the filesystem default-exclude owner"
     );
     assert!(
