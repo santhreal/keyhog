@@ -77,3 +77,51 @@ fn hosted_git_clone_origin_and_wait_cleanup_contracts_stay_wired() {
         "hosted Git clone wait must not return directly from try_wait errors before child cleanup"
     );
 }
+
+#[test]
+fn hosted_git_scan_orchestrator_keeps_single_repo_worker_boundary() {
+    let hosted_git = source("src/hosted_git.rs");
+    let scan_start = hosted_git
+        .find("pub(crate) fn scan_hosted_repos(")
+        .expect("scan_hosted_repos present");
+    let worker_start = hosted_git
+        .find("fn scan_single_hosted_repo(")
+        .expect("single hosted repo worker present");
+    let scan_block = &hosted_git[scan_start..worker_start];
+    assert!(
+        scan_block.contains("tempfile::tempdir()")
+            && scan_block.contains("bounded_fetch_pool(")
+            && scan_block.contains("scan_single_hosted_repo(")
+            && scan_block.contains("merge_hosted_repo_results("),
+        "scan_hosted_repos should own temp-root setup, bounded fanout, worker dispatch, and merge only"
+    );
+    for forbidden in [
+        "validate_repo_name(",
+        "validate_display_path(",
+        "validate_clone_url_for_origin(",
+        "clone_repo(",
+        "scan_repo(",
+    ] {
+        assert!(
+            !scan_block.contains(forbidden),
+            "scan_hosted_repos must not inline single-repo pipeline step {forbidden}"
+        );
+    }
+
+    let merge_start = hosted_git
+        .find("fn merge_hosted_repo_results(")
+        .expect("merge_hosted_repo_results present");
+    let worker_block = &hosted_git[worker_start..merge_start];
+    for required in [
+        "validate_repo_name(",
+        "validate_display_path(",
+        "validate_clone_url_for_origin(",
+        "clone_repo(",
+        "scan_repo(",
+    ] {
+        assert!(
+            worker_block.contains(required),
+            "single hosted repo worker must own pipeline step {required}"
+        );
+    }
+}

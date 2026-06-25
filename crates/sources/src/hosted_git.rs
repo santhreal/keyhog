@@ -88,25 +88,16 @@ pub(crate) fn scan_hosted_repos(
     let per_repo: Vec<Result<Vec<Chunk>, SourceError>> = pool.install(|| {
         repos
             .par_iter()
-            .map(|repo| -> Result<Vec<Chunk>, SourceError> {
-                validate_repo_name(platform, &repo.clone_dir_name)?;
-                validate_display_path(platform, &repo.display_path)?;
-                validate_clone_url_for_origin(platform, &repo.clone_url, expected_clone_origin)?;
-                let clone_path = temp_root.join(&repo.clone_dir_name);
-                clone_repo(
-                    platform,
-                    &repo.display_path,
-                    &repo.clone_url,
-                    token_username,
-                    token_secret,
-                    &clone_path,
-                )?;
-                scan_repo(
+            .map(|repo| {
+                scan_single_hosted_repo(
                     platform,
                     source_type,
                     namespace,
-                    &repo.display_path,
-                    &clone_path,
+                    token_username,
+                    token_secret,
+                    expected_clone_origin,
+                    repo,
+                    &temp_root,
                     limits,
                 )
             })
@@ -114,6 +105,39 @@ pub(crate) fn scan_hosted_repos(
     });
 
     Ok(merge_hosted_repo_results(platform, repos, per_repo))
+}
+
+fn scan_single_hosted_repo(
+    platform: &str,
+    source_type: &str,
+    namespace: Option<&str>,
+    token_username: &str,
+    token_secret: &str,
+    expected_clone_origin: &ExpectedCloneOrigin,
+    repo: &HostedRepo,
+    temp_root: &Path,
+    limits: crate::SourceLimits,
+) -> Result<Vec<Chunk>, SourceError> {
+    validate_repo_name(platform, &repo.clone_dir_name)?;
+    validate_display_path(platform, &repo.display_path)?;
+    validate_clone_url_for_origin(platform, &repo.clone_url, expected_clone_origin)?;
+    let clone_path = temp_root.join(&repo.clone_dir_name);
+    clone_repo(
+        platform,
+        &repo.display_path,
+        &repo.clone_url,
+        token_username,
+        token_secret,
+        &clone_path,
+    )?;
+    scan_repo(
+        platform,
+        source_type,
+        namespace,
+        &repo.display_path,
+        &clone_path,
+        limits,
+    )
 }
 
 fn merge_hosted_repo_results(
