@@ -12,10 +12,11 @@ fn unix_open_no_follow_in_read() {
         "open_file_safe must set O_NOFOLLOW on unix"
     );
     assert!(
-        src.contains("let meta = std::fs::symlink_metadata(path).map_err(|error|")
-            && src.contains("cannot classify path before Windows no-follow open")
+        src.contains("#[cfg(windows)]")
+            && src.contains("let meta = std::fs::symlink_metadata(path)?;")
             && src.contains("refusing to follow symlink (Windows safety guard)")
+            && !src.contains("cannot classify path before Windows no-follow open")
             && !src.contains("if let Ok(meta) = std::fs::symlink_metadata(path)"),
-        "Windows open_file_safe must fail closed when symlink_metadata cannot classify the path before the normal open"
+        "Windows open_file_safe must fail closed while preserving symlink_metadata's original io::Error before the normal open"
     );
 }

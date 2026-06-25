@@ -25,6 +25,7 @@ fn mmap_toctou_sanity_cap_in_read() {
     assert!(
         raw_src.contains("let meta = match file.metadata()")
             && raw_src.contains("cannot stat opened file for mmap sanity cap; skipping")
+            && raw_src.contains("MmapOptions::new().len(mmap_len).map(&file)")
             && raw_src.contains("SourceSkipEvent::Unreadable"),
         "whole-file mmap must fail closed when the post-open stat fails; without a live stat, the hard mmap sanity cap is unproven"
     );
@@ -32,6 +33,7 @@ fn mmap_toctou_sanity_cap_in_read() {
         window_src.contains("let meta = match file.metadata()")
             && window_src
                 .contains("cannot stat opened large file for windowed mmap sanity cap; skipping")
+            && window_src.contains("MmapOptions::new().len(mmap_len).map(&file)")
             && window_src.contains("cannot stat opened large file for windowed mmap")
             && window_src.contains("SourceSkipEvent::Unreadable"),
         "windowed mmap must consume post-open stat failures as visible unreadable skips instead of falling through to an unproven fallback"

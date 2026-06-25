@@ -144,6 +144,26 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
         )));
         return WindowedMmapOutcome::Consumed;
     }
+    let mmap_len = match usize::try_from(meta.len()) {
+        Ok(len) => len,
+        Err(error) => {
+            tracing::warn!(
+                path = %path.display(),
+                live_size = meta.len(),
+                %error,
+                "cannot address windowed mmap length after sanity-cap check; skipping"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            let _continue_scan = emit(Err(windowed_mmap_error(
+                path,
+                format!(
+                    "live size {} is not addressable for windowed mmap",
+                    meta.len()
+                ),
+            )));
+            return WindowedMmapOutcome::Consumed;
+        }
+    };
 
     #[cfg(unix)]
     {
@@ -169,7 +189,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
     // SAFETY: the mapping is read-only, the `File` lives through the
     // mapping call, and we drop the mmap before this function returns
     // (the windows we hand back are owned `String` copies).
-    let mmap = match unsafe { MmapOptions::new().map(&file) } {
+    let mmap = match unsafe { MmapOptions::new().len(mmap_len).map(&file) } {
         Ok(m) => m,
         Err(error) => {
             tracing::warn!(

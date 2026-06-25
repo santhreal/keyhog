@@ -91,12 +91,7 @@ pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
     // opening it through the cross-platform standard-library path.
     #[cfg(windows)]
     {
-        let meta = std::fs::symlink_metadata(path).map_err(|error| {
-            std::io::Error::new(
-                error.kind(),
-                format!("cannot classify path before Windows no-follow open: {error}"),
-            )
-        })?;
+        let meta = std::fs::symlink_metadata(path)?;
         if meta.file_type().is_symlink() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
@@ -290,6 +285,19 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileR
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return None;
     }
+    let mmap_len = match usize::try_from(meta.len()) {
+        Ok(len) => len,
+        Err(error) => {
+            tracing::warn!(
+                path = %path.display(),
+                live_size = meta.len(),
+                %error,
+                "cannot address mmap length after sanity-cap check; skipping"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            return None;
+        }
+    };
 
     #[cfg(unix)]
     {
@@ -309,7 +317,7 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileR
     // SAFETY: the mapping is read-only, the `File` lives through the mapping
     // call, and we decode the bytes immediately without storing the mmap past
     // this function.
-    let mmap = match unsafe { MmapOptions::new().map(&file) } {
+    let mmap = match unsafe { MmapOptions::new().len(mmap_len).map(&file) } {
         Ok(m) => m,
         Err(error) => {
             tracing::warn!(
