@@ -29,6 +29,7 @@ pub mod git_tree_walk_shared_contract;
 pub mod github_org_no_inline_tests;
 pub mod github_org_no_unwrap_expect;
 pub mod github_org_non_empty;
+pub mod har_no_inline_tests;
 pub mod hosted_git_security_contract;
 pub mod http_no_inline_tests;
 pub mod http_no_unwrap_expect;

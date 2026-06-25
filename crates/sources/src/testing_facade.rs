@@ -18,6 +18,13 @@ pub mod testing {
             input: &[u8],
             max_bytes: usize,
         ) -> std::io::Result<String>;
+        fn expand_har(
+            &self,
+            bytes: &[u8],
+            path_str: &str,
+            max_size: u64,
+        ) -> Option<Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>>;
+        fn compact_har_base64_text(&self, text: &str) -> String;
         fn reader_pool_thread_count(&self, scanner_threads: usize) -> usize;
         fn reader_panic_rows(&self) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>;
         fn reader_process_entry_panic_rows(
@@ -471,6 +478,19 @@ pub mod testing {
         ) -> std::io::Result<String> {
             let mut reader = std::io::Cursor::new(input);
             crate::stdin::read_to_string_limited(&mut reader, max_bytes)
+        }
+
+        fn expand_har(
+            &self,
+            bytes: &[u8],
+            path_str: &str,
+            max_size: u64,
+        ) -> Option<Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>> {
+            crate::har::try_expand_har(bytes, path_str, max_size)
+        }
+
+        fn compact_har_base64_text(&self, text: &str) -> String {
+            crate::har::compact_base64_text(text).into_owned()
         }
 
         fn reader_pool_thread_count(&self, scanner_threads: usize) -> usize {

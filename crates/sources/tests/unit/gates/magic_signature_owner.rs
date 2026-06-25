@@ -113,6 +113,7 @@ fn binary_magic_bytes_have_one_sources_owner() {
             (r#"\x28\xb5\x2f\xfd"#, "zstd frame"),
             (r#"%PDF-"#, "PDF"),
             (r#"PK\x03\x04"#, "ZIP"),
+            (r#"PK\x05\x06"#, "ZIP end of central directory"),
             (r#"\x89PNG\r\n\x1a\n"#, "PNG"),
             (r#"\x7fELF"#, "ELF"),
             (r#"\x00asm"#, "WASM"),
