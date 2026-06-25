@@ -80,9 +80,12 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
             && backend.contains("self.save_cache()")
             && dispatch.contains("self.router.commit()?")
             && fused.contains("guard.commit()")
+            && dispatch.contains("fn batch_has_no_scan_bytes(batch: &[Chunk]) -> bool")
+            && dispatch.contains("if batch_has_no_scan_bytes(batch)")
+            && fused.contains("if super::batch_has_no_scan_bytes(&batch)")
             && !backend.contains("self.save_cache()?;\n        Ok(backend)")
             && !calibration.contains("sampling_closed"),
-        "autoroute must probe missing buckets only in calibration mode, reject parity-divergent candidates, and persist measured decisions only after the whole scan succeeds"
+        "autoroute must probe missing buckets only in calibration mode, reject parity-divergent candidates, skip zero-byte no-op batches before routing, and persist measured decisions only after the whole scan succeeds"
     );
     assert!(
         !calibration.contains("gpu_could_engage")

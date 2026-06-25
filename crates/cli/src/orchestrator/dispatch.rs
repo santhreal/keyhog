@@ -143,6 +143,10 @@ impl CoalescedScannerWorker {
     ) -> std::result::Result<std::time::Duration, AutorouteRoutingError> {
         let scan_start = std::time::Instant::now();
         let scanned_count = batch.len();
+        if batch_has_no_scan_bytes(batch) {
+            crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+            return Ok(scan_start.elapsed());
+        }
         let chosen_backend = self.router.choose(self.scanner.as_ref(), batch)?;
         let ran_on_gpu = matches!(chosen_backend, ScanBackend::Gpu | ScanBackend::MegaScan);
         let per_chunk = match chosen_backend {
@@ -193,6 +197,10 @@ impl CoalescedScannerWorker {
             100.0 * recv_dur.as_secs_f64() / wall,
         );
     }
+}
+
+fn batch_has_no_scan_bytes(batch: &[Chunk]) -> bool {
+    batch.iter().all(|chunk| chunk.data.is_empty())
 }
 
 fn append_scanned_batch_findings(

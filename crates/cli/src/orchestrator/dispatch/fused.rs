@@ -265,8 +265,11 @@ impl ScanOrchestrator {
                 if batch.is_empty() {
                     return Vec::new();
                 }
-
                 crate::TOTAL_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
+                if super::batch_has_no_scan_bytes(&batch) {
+                    crate::SCANNED_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
+                    return Vec::new();
+                }
 
                 // Normal fused filesystem scanning is cache-only: no probes,
                 // no guesses. In explicit calibration mode it uses the measured
