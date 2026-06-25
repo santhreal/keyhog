@@ -259,10 +259,10 @@ pub(crate) struct HsScanner {
     /// Distinct id for this scanner instance, used to key the thread-local
     /// per-shard scratch cache so two scanners never share scratches.
     scanner_id: u64,
-    /// Liveness token for thread-local scratch entries. Drop broadcasts purge
-    /// current/Rayon workers immediately; other persistent worker threads prune
-    /// stale scratches on their next Hyperscan cache touch without evicting
-    /// live scanners that are interleaved on the same thread.
+    /// Liveness token for thread-local scratch entries. Drop purges scratches
+    /// on the current thread; Rayon and other persistent worker threads prune
+    /// stale entries on later Hyperscan cache touches without evicting live
+    /// scanners that are interleaved on the same thread.
     scratch_owner: Arc<()>,
 }
 
