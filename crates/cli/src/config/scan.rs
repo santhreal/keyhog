@@ -63,6 +63,61 @@ fn parse_config_ml_threshold(errors: &mut Vec<String>, field: &str, threshold: f
     }
 }
 
+pub(super) fn validate_scan_preset_conflicts(
+    args: &ScanArgs,
+    config_errors: &mut Vec<String>,
+    config: &ConfigFile,
+) {
+    // CLI presets are the highest-precedence layer. A lower-precedence config
+    // key shadowed by a CLI preset is not a config-file contradiction; the CLI
+    // did exactly what "CLI wins" promises. This validation rejects only same-
+    // file TOML contradictions that would otherwise be accepted and then ignored
+    // by the effective fast preset.
+    if args.fast || args.deep || args.precision || config.fast != Some(true) {
+        return;
+    }
+
+    if config.deep == Some(true) {
+        config_errors.push("- fast/deep: choose only one scan preset in .keyhog.toml".to_string());
+    }
+
+    for field in config_fast_noop_fields(config) {
+        config_errors.push(format!(
+            "- {field}: cannot be combined with fast = true because fast mode disables entropy/decode for that knob"
+        ));
+    }
+}
+
+fn config_fast_noop_fields(config: &ConfigFile) -> Vec<&'static str> {
+    let mut fields = Vec::new();
+    if config.no_decode == Some(true) {
+        fields.push("no_decode");
+    }
+    if config.no_entropy == Some(true) {
+        fields.push("no_entropy");
+    }
+    if config.entropy_source_files == Some(true) {
+        fields.push("entropy_source_files");
+    }
+    if config.entropy_threshold.is_some() {
+        fields.push("entropy_threshold");
+    }
+    if config.min_secret_len.is_some() {
+        fields.push("min_secret_len");
+    }
+    if config.generic_keyword_low_entropy == Some(false) {
+        fields.push("generic_keyword_low_entropy = false");
+    }
+    if config
+        .scan
+        .as_ref()
+        .is_some_and(|scan| scan.min_secret_len.is_some())
+    {
+        fields.push("[scan].min_secret_len");
+    }
+    fields
+}
+
 pub(super) fn apply_scan_section(
     args: &mut ScanArgs,
     config_errors: &mut Vec<String>,

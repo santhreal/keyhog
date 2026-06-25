@@ -11,7 +11,7 @@ mod sections;
 
 pub(crate) use policy::ConfigOutcome;
 use policy::{config_file_error, resolve_policy_outcome, shipped_config_outcome};
-use scan::{apply_scan_section, apply_top_level_scan_fields};
+use scan::{apply_scan_section, apply_top_level_scan_fields, validate_scan_preset_conflicts};
 use schema::ConfigFile;
 use sections::{
     apply_allowlist_section, apply_aws_section, apply_http_section, apply_system_section,
@@ -170,6 +170,7 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         &mut scanner_tuning,
         config.tuning.as_ref(),
     );
+    validate_scan_preset_conflicts(args, &mut config_errors, &config);
     #[cfg(any(
         feature = "web",
         feature = "github",
