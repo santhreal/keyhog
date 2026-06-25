@@ -36,6 +36,13 @@ use std::time::{Duration, Instant};
 /// not one per inotify event. A genuine later edit (different content) is
 /// always re-scanned because the content hash changes.
 const DEDUP_WINDOW: Duration = Duration::from_millis(750);
+const DEDUP_PRUNE_INTERVAL: usize = 128;
+
+#[derive(Default)]
+struct WatchDedupeState {
+    entries: HashMap<PathBuf, (Instant, u64)>,
+    scans_since_prune: usize,
+}
 
 pub(crate) fn run(args: WatchArgs) -> Result<()> {
     let watch_root = std::fs::canonicalize(&args.path)
@@ -114,7 +121,7 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
     // Per-path dedupe state: last (scan time, content hash) seen for a path.
     // notify fires Create then Modify for a single new-file write, which
     // without this would print every finding twice (KH-GAP-109).
-    let mut recently_scanned: HashMap<PathBuf, (Instant, u64)> = HashMap::new();
+    let mut recently_scanned = WatchDedupeState::default();
     let skip_dirs = SkipDirPolicy::load()?;
 
     for event in rx {
@@ -175,7 +182,7 @@ fn content_hash(data: &[u8]) -> u64 {
 fn scan_file(
     scan_runtime: &DefaultScanRuntime,
     path: &std::path::Path,
-    recently_scanned: &mut HashMap<PathBuf, (Instant, u64)>,
+    recently_scanned: &mut WatchDedupeState,
 ) -> Result<()> {
     // Read BYTES (not `read_to_string`) and decode through the SAME path the
     // `keyhog scan` walker uses. `read_to_string` failed on the first non-UTF-8
@@ -202,6 +209,15 @@ fn scan_file(
             return Ok(());
         }
     };
+
+    // Dedupe the Create+Modify burst by raw bytes before decoding. Duplicate
+    // filesystem notifications should not pay decode cost, while a real byte
+    // edit must always be re-scanned even if lossy UTF-8 maps both versions to
+    // the same string.
+    if suppress_duplicate_event(path, &bytes, Instant::now(), recently_scanned) {
+        return Ok(());
+    }
+
     // `None` => the bytes are binary (no text to scan): an intentional,
     // documented skip that matches the scan walker's binary policy, not a
     // failure — so no warning, consistent with `keyhog scan`.
@@ -211,21 +227,6 @@ fn scan_file(
     if data.is_empty() {
         return Ok(());
     }
-
-    // Dedupe the Create+Modify burst by raw bytes: lossy text decoding can map
-    // distinct invalid UTF-8 byte edits to the same string, but a real byte edit
-    // must always be re-scanned.
-    let now = Instant::now();
-    let hash = content_hash(&bytes);
-    if let Some((last, last_hash)) = recently_scanned.get(path) {
-        if *last_hash == hash && now.duration_since(*last) < DEDUP_WINDOW {
-            return Ok(());
-        }
-    }
-    recently_scanned.insert(path.to_path_buf(), (now, hash));
-    // Evict stale entries so the map can't grow without bound on a
-    // long-lived daemon watching a churning tree.
-    recently_scanned.retain(|_, (last, _)| now.duration_since(*last) < DEDUP_WINDOW);
 
     let chunk = Chunk {
         data: data.into(),
@@ -265,9 +266,55 @@ fn scan_file(
     Ok(())
 }
 
+fn suppress_duplicate_event(
+    path: &std::path::Path,
+    bytes: &[u8],
+    now: Instant,
+    recently_scanned: &mut WatchDedupeState,
+) -> bool {
+    let hash = content_hash(bytes);
+    if let Some((last, last_hash)) = recently_scanned.entries.get(path) {
+        if *last_hash == hash && now.saturating_duration_since(*last) < DEDUP_WINDOW {
+            return true;
+        }
+    }
+    recently_scanned
+        .entries
+        .insert(path.to_path_buf(), (now, hash));
+    recently_scanned.scans_since_prune = recently_scanned.scans_since_prune.saturating_add(1);
+    if recently_scanned.scans_since_prune >= DEDUP_PRUNE_INTERVAL {
+        // Evict stale entries periodically so the map cannot grow without
+        // bound, without making every event pay an O(active_paths) scan.
+        recently_scanned.scans_since_prune = 0;
+        recently_scanned
+            .entries
+            .retain(|_, (last, _)| now.saturating_duration_since(*last) < DEDUP_WINDOW);
+    }
+    false
+}
+
 pub(crate) mod testing {
+    use std::path::Path;
+    use std::time::{Duration, Instant};
+
     pub(crate) fn content_hash(data: &[u8]) -> u64 {
         super::content_hash(data)
+    }
+
+    pub(crate) fn duplicate_event_decisions(
+        first: &[u8],
+        second: &[u8],
+        elapsed: Duration,
+    ) -> (bool, bool) {
+        let mut recently_scanned = super::WatchDedupeState::default();
+        let path = Path::new("watched-file.txt");
+        let first_at = Instant::now();
+        let second_at = first_at + elapsed;
+        let first_suppressed =
+            super::suppress_duplicate_event(path, first, first_at, &mut recently_scanned);
+        let second_suppressed =
+            super::suppress_duplicate_event(path, second, second_at, &mut recently_scanned);
+        (first_suppressed, second_suppressed)
     }
 }
 

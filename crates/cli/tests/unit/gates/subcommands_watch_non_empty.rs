@@ -1,6 +1,7 @@
 //! Gate `subcommands::watch`: substantive source, no todo!/unimplemented! in prod paths.
 
 use keyhog::testing::{API, CliTestApi as _};
+use std::time::Duration;
 
 #[test]
 fn subcommands_watch_non_empty() {
@@ -36,6 +37,21 @@ fn watch_dedupe_hashes_raw_bytes_not_lossy_text() {
         API.watch_content_hash(first),
         API.watch_content_hash(second),
         "watch dedupe must key on raw bytes so a real invalid-UTF-8 edit is re-scanned"
+    );
+    assert_eq!(
+        API.watch_duplicate_event_decisions(first, first, Duration::from_millis(1)),
+        (false, true),
+        "same-path same-byte notify bursts inside the dedupe window must suppress the second scan"
+    );
+    assert_eq!(
+        API.watch_duplicate_event_decisions(first, second, Duration::from_millis(1)),
+        (false, false),
+        "byte-distinct edits inside the dedupe window must still be re-scanned even when lossy text is identical"
+    );
+    assert_eq!(
+        API.watch_duplicate_event_decisions(first, first, Duration::from_secs(2)),
+        (false, false),
+        "same-byte events after the dedupe window are fresh scans, not permanent suppression"
     );
 }
 

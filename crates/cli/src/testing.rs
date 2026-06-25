@@ -233,6 +233,12 @@ pub trait CliTestApi {
     fn canonical_scan_args(&self) -> &'static str;
     fn hook_content(&self) -> &'static str;
     fn watch_content_hash(&self, data: &[u8]) -> u64;
+    fn watch_duplicate_event_decisions(
+        &self,
+        first: &[u8],
+        second: &[u8],
+        elapsed: std::time::Duration,
+    ) -> (bool, bool);
 
     fn max_resident_findings(&self) -> usize;
     fn parse_macos_mount_table_for_test(
@@ -701,6 +707,14 @@ impl CliTestApi for TestApi {
     }
     fn watch_content_hash(&self, data: &[u8]) -> u64 {
         crate::subcommands::watch::testing::content_hash(data)
+    }
+    fn watch_duplicate_event_decisions(
+        &self,
+        first: &[u8],
+        second: &[u8],
+        elapsed: std::time::Duration,
+    ) -> (bool, bool) {
+        crate::subcommands::watch::testing::duplicate_event_decisions(first, second, elapsed)
     }
 
     fn max_resident_findings(&self) -> usize {
