@@ -29,10 +29,6 @@ description = "Google Cloud Functions API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "AIza[0-9A-Za-z_-]{35}"
-description = "Google Cloud Translation API key (AIza prefix)"
-
-[[detector.patterns]]
 regex = "(?:GOOGLE_TRANSLATE_API_KEY|GOOGLE_CLOUD_TRANSLATION_API_KEY|GOOGLE_API_KEY)[=:\\s\"'']+(AIza[0-9A-Za-z_-]{35})"
 description = "Google Cloud Translation API key with context anchor"
 group = 1
