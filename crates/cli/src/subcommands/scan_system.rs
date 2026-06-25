@@ -166,6 +166,11 @@ pub(crate) mod testing {
         super::mounts::testing::parse_macos_mount_table_for_test(text, include_network)
     }
 
+    pub(crate) fn windows_drive_filter_decisions_for_test()
+    -> Result<(bool, bool, bool, bool), toml::de::Error> {
+        super::mounts::testing::windows_drive_filter_decisions_for_test()
+    }
+
     pub(crate) struct FindingSink {
         inner: super::FindingSink,
     }

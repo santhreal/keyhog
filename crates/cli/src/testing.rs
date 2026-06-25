@@ -246,6 +246,7 @@ pub trait CliTestApi {
         text: &str,
         include_network: bool,
     ) -> Result<Vec<PathBuf>>;
+    fn windows_drive_filter_decisions_for_test(&self) -> Result<(bool, bool, bool, bool)>;
     fn scan_system_chunk_fits_space_cap(
         &self,
         bytes_scanned: u64,
@@ -730,6 +731,10 @@ impl CliTestApi for TestApi {
             include_network,
         )
         .map_err(anyhow::Error::from)
+    }
+    fn windows_drive_filter_decisions_for_test(&self) -> Result<(bool, bool, bool, bool)> {
+        crate::subcommands::scan_system::testing::windows_drive_filter_decisions_for_test()
+            .map_err(anyhow::Error::from)
     }
     fn scan_system_chunk_fits_space_cap(
         &self,

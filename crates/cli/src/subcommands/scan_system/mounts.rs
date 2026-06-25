@@ -7,35 +7,27 @@
 //! sshfs / 9p / ceph) so a `scan-system` run can't accidentally walk
 //! other tenants' data.
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-use anyhow::Context;
-use anyhow::Result;
-#[cfg(target_os = "windows")]
-use std::path::Path;
+use anyhow::{Context, Result};
 use std::path::PathBuf;
 
 /// Enumerate mounted filesystems on the current OS, filtering pseudo-FS
 /// and (optionally) network mounts. Returns root paths.
 ///
-/// `include_network` is honored on Linux and macOS where we walk
-/// `/proc/mounts` / `getmntinfo` and can filter NFS/SMB. Windows drive
-/// enumeration via `GetLogicalDrives` doesn't distinguish network from
-/// local at the API level (the user already chose to include them by
-/// running `scan-system` with the flag), so the parameter is unused on
-/// Windows - silenced with a leading underscore rather than a stray
-/// `let _ =` for symmetry with the other platform paths.
-pub(super) fn enumerate_mounts(_include_network: bool) -> Result<Vec<PathBuf>> {
+/// `include_network` is honored on Linux, macOS, and Windows. Missing or
+/// malformed platform mount evidence is an error; substituting a different
+/// root set would make the system scan coverage dishonest.
+pub(super) fn enumerate_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
     #[cfg(target_os = "linux")]
     {
-        linux_mounts(_include_network)
+        linux_mounts(include_network)
     }
     #[cfg(target_os = "macos")]
     {
-        macos_mounts(_include_network)
+        macos_mounts(include_network)
     }
     #[cfg(target_os = "windows")]
     {
-        windows_drives()
+        windows_drives(include_network)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
@@ -54,6 +46,13 @@ struct MountFilters {
     network_fs_types: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WindowsDriveClass {
+    Local,
+    Network,
+    Unsupported,
+}
+
 /// Compiled-in Tier-B baseline. Always applied.
 const BUNDLED_MOUNT_FILTERS: &str = include_str!("../../../data/scan_system/mount_filters.toml");
 
@@ -66,7 +65,6 @@ const BUNDLED_MOUNT_FILTERS: &str = include_str!("../../../data/scan_system/moun
 /// test), and a user file that EXISTS but is unreadable or unparseable is a hard
 /// error. Only the ordinary "no user file present" case uses the baseline alone,
 /// which is the intended default — not a degraded fallback.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn load_mount_filters() -> Result<MountFilters> {
     let mut filters: MountFilters = toml::from_str(BUNDLED_MOUNT_FILTERS)
         .context("parse bundled scan_system/mount_filters.toml (build bug)")?;
@@ -85,6 +83,26 @@ fn load_mount_filters() -> Result<MountFilters> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(filters),
         Err(error) => Err(anyhow::Error::new(error))
             .with_context(|| format!("read mount filters {}", user_path.display())),
+    }
+}
+
+fn include_windows_drive(
+    root: &str,
+    drive_class: WindowsDriveClass,
+    include_network: bool,
+    filters: &MountFilters,
+) -> bool {
+    if filters
+        .skip_path_prefixes
+        .iter()
+        .any(|prefix| root.starts_with(prefix))
+    {
+        return false;
+    }
+    match drive_class {
+        WindowsDriveClass::Local => true,
+        WindowsDriveClass::Network => include_network,
+        WindowsDriveClass::Unsupported => false,
     }
 }
 
@@ -290,7 +308,7 @@ fn parse_macos_mount_table(
 }
 
 pub(crate) mod testing {
-    use super::{MountFilters, parse_macos_mount_table};
+    use super::{MountFilters, WindowsDriveClass, include_windows_drive, parse_macos_mount_table};
     use std::path::PathBuf;
 
     pub(crate) fn parse_macos_mount_table_for_test(
@@ -300,16 +318,55 @@ pub(crate) mod testing {
         let filters: MountFilters = toml::from_str(super::BUNDLED_MOUNT_FILTERS)?;
         Ok(parse_macos_mount_table(text, include_network, &filters))
     }
+
+    pub(crate) fn windows_drive_filter_decisions_for_test()
+    -> Result<(bool, bool, bool, bool), toml::de::Error> {
+        let filters: MountFilters = toml::from_str(super::BUNDLED_MOUNT_FILTERS)?;
+        let local_without_network =
+            include_windows_drive("C:\\", WindowsDriveClass::Local, false, &filters);
+        let remote_without_network =
+            include_windows_drive("Z:\\", WindowsDriveClass::Network, false, &filters);
+        let remote_with_network =
+            include_windows_drive("Z:\\", WindowsDriveClass::Network, true, &filters);
+        let unsupported =
+            include_windows_drive("Q:\\", WindowsDriveClass::Unsupported, true, &filters);
+        Ok((
+            local_without_network,
+            remote_without_network,
+            remote_with_network,
+            unsupported,
+        ))
+    }
 }
 
 #[cfg(target_os = "windows")]
-fn windows_drives() -> Result<Vec<PathBuf>> {
+fn windows_drives(include_network: bool) -> Result<Vec<PathBuf>> {
+    use windows_sys::Win32::Storage::FileSystem::{
+        DRIVE_CDROM, DRIVE_FIXED, DRIVE_RAMDISK, DRIVE_REMOTE, DRIVE_REMOVABLE, GetDriveTypeW,
+        GetLogicalDrives,
+    };
+
+    let filters = load_mount_filters()?;
+    let mask = unsafe { GetLogicalDrives() };
+    if mask == 0 {
+        return Err(std::io::Error::last_os_error()).context("enumerate Windows logical drives");
+    }
+
     let mut drives = Vec::new();
-    for letter in b'A'..=b'Z' {
+    for (idx, letter) in (b'A'..=b'Z').enumerate() {
+        if (mask & (1 << idx)) == 0 {
+            continue;
+        }
         let root = format!("{}:\\", letter as char);
-        if Path::new(&root).exists() {
+        let wide: Vec<u16> = root.encode_utf16().chain(std::iter::once(0)).collect();
+        let drive_class = match unsafe { GetDriveTypeW(wide.as_ptr()) } {
+            DRIVE_FIXED | DRIVE_REMOVABLE | DRIVE_CDROM | DRIVE_RAMDISK => WindowsDriveClass::Local,
+            DRIVE_REMOTE => WindowsDriveClass::Network,
+            _ => WindowsDriveClass::Unsupported,
+        };
+        if include_windows_drive(&root, drive_class, include_network, &filters) {
             drives.push(PathBuf::from(root));
         }
     }
-    Ok(drives)
+    Ok(dedupe_mount_roots(drives))
 }

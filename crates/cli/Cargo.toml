@@ -182,6 +182,9 @@ minisign-verify = { workspace = true }
 # downstream consumer closes its end of the pipe.
 libc = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
+
 [dev-dependencies]
 keyhog-core = { workspace = true }
 keyhog-scanner = { workspace = true, default-features = false }

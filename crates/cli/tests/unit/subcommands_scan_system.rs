@@ -295,6 +295,30 @@ devfs on /dev (devfs, local, nobrowse)
 }
 
 #[test]
+fn windows_drive_filter_respects_network_flag() {
+    let (local_without_network, remote_without_network, remote_with_network, unsupported) = API
+        .windows_drive_filter_decisions_for_test()
+        .expect("bundled mount filters parse");
+
+    assert!(
+        local_without_network,
+        "Windows local drives must remain eligible for default scan-system"
+    );
+    assert!(
+        !remote_without_network,
+        "Windows remote drives must be excluded unless --include-network is set"
+    );
+    assert!(
+        remote_with_network,
+        "--include-network must explicitly opt Windows remote drives back in"
+    );
+    assert!(
+        !unsupported,
+        "Windows drive types without trustworthy coverage semantics must not be scanned"
+    );
+}
+
+#[test]
 fn scan_system_output_uses_atomic_file_writer() {
     let scan_system = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
