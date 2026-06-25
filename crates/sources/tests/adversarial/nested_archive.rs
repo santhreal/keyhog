@@ -3,7 +3,6 @@
 //! Archive extraction must surface inner text while preserving the path of the
 //! archive entry that carried the secret.
 
-use super::support::collect_chunks;
 use crate::support::split_chunk_results;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -33,7 +32,12 @@ fn zip_archive_inner_text_is_scanned_in_default_filesystem_walk() {
     zip.finish().unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf());
-    let chunks = collect_chunks(&source);
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        ".zip archive payload should not emit SourceError rows: {errors:?}"
+    );
     assert!(
         chunks.iter().any(|c| c
             .data
@@ -56,15 +60,25 @@ fn gzip_member_secret_is_decompressed_to_chunk() {
     write_gzip(&dir.path().join("secrets.env.gz"), secret);
 
     let source = FilesystemSource::new(dir.path().to_path_buf());
-    let bodies: Vec<String> = collect_chunks(&source)
-        .into_iter()
-        .map(|c| c.data.to_string())
-        .collect();
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
     assert!(
-        bodies
+        errors.is_empty(),
+        "gzip payload should not emit SourceError rows: {errors:?}"
+    );
+    assert!(
+        chunks
             .iter()
-            .any(|b| b.contains(concat!("AK", "IAR7VXNPLMQ3HSKWJT"))),
-        "gzip payload must decompress to scannable text; got {bodies:?}"
+            .any(|chunk| chunk.data.contains(concat!("AK", "IAR7VXNPLMQ3HSKWJT"))),
+        "gzip payload must decompress to scannable text; got {chunks:?}"
+    );
+    assert!(
+        chunks.iter().any(|chunk| chunk
+            .metadata
+            .path
+            .as_deref()
+            .is_some_and(|path| path.contains("secrets.env.gz"))),
+        "gzip payload path must identify the compressed source; got {chunks:?}"
     );
 }
 
@@ -81,7 +95,12 @@ fn jar_archive_inner_text_is_scanned() {
     zip.finish().unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf());
-    let chunks = collect_chunks(&source);
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        ".jar archive payload should not emit SourceError rows: {errors:?}"
+    );
     let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
     assert!(
         bodies
@@ -89,13 +108,13 @@ fn jar_archive_inner_text_is_scanned() {
             .any(|b| b.contains(concat!("xox", "b-1234567890"))),
         ".jar archives must unpack inner text; got {bodies:?}"
     );
-    let paths: Vec<_> = chunks
-        .into_iter()
-        .filter_map(|c| c.metadata.path.clone())
-        .collect();
     assert!(
-        paths.iter().any(|p| p.contains("config.env")),
-        "archive entry path must be surfaced; got {paths:?}"
+        chunks.iter().any(|chunk| chunk
+            .metadata
+            .path
+            .as_deref()
+            .is_some_and(|path| path.contains("app.jar//META-INF/config.env"))),
+        "archive entry path must be surfaced; got {chunks:?}"
     );
 }
 
@@ -116,11 +135,20 @@ fn jar_binary_entry_extracts_printable_strings() {
     zip.finish().unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf());
-    let chunks = collect_chunks(&source);
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "binary archive entry should not emit SourceError rows: {errors:?}"
+    );
     assert!(
         chunks.iter().any(|c| {
             c.metadata.source_type == "filesystem/archive-binary"
                 && c.data.contains(concat!("AK", "IAIOSFODNN7EXAMPLE"))
+                && c.metadata
+                    .path
+                    .as_deref()
+                    .is_some_and(|path| path.contains("binary.jar//classes/Secret.class"))
         }),
         "binary archive entries must run printable-string extraction; got {chunks:?}"
     );
