@@ -52,6 +52,11 @@ impl SlackSource {
         self.endpoint = endpoint.into();
         self
     }
+
+    pub(crate) fn with_lookback_messages(mut self, lookback_messages: usize) -> Self {
+        self.lookback_messages = lookback_messages;
+        self
+    }
 }
 
 impl Source for SlackSource {
@@ -120,8 +125,14 @@ struct Message {
     ts: String,
 }
 
+struct HistoryFetch {
+    messages: Vec<Message>,
+    error: Option<SourceError>,
+}
+
 const CONVERSATIONS_LIST: &str = "conversations.list";
 const CONVERSATIONS_HISTORY: &str = "conversations.history";
+const SLACK_HISTORY_PAGE_LIMIT: usize = 1000;
 
 fn slack_error_code(error: Option<&str>) -> &str {
     match error {
@@ -311,13 +322,16 @@ impl SlackSource {
             channels
                 .par_iter()
                 .map(|channel| -> Vec<Result<Chunk, SourceError>> {
-                    match self.fetch_history(&client, &channel.id) {
-                        Ok(messages) => slack_channel_chunks(channel, messages)
+                    let history = self.fetch_history(&client, &channel.id);
+                    let mut rows: Vec<Result<Chunk, SourceError>> =
+                        slack_channel_chunks(channel, history.messages)
                             .into_iter()
                             .map(Ok)
-                            .collect(),
-                        Err(error) => vec![Err(error)],
+                            .collect();
+                    if let Some(error) = history.error {
+                        rows.push(Err(error));
                     }
+                    rows
                 })
                 .collect()
         });
@@ -367,15 +381,24 @@ impl SlackSource {
         ))
     }
 
-    fn fetch_history(
-        &self,
-        client: &Client,
-        channel_id: &str,
-    ) -> Result<Vec<Message>, SourceError> {
+    fn fetch_history(&self, client: &Client, channel_id: &str) -> HistoryFetch {
         let mut messages = Vec::new();
+        if self.lookback_messages == 0 {
+            return HistoryFetch {
+                messages,
+                error: None,
+            };
+        }
         let mut cursor = None::<String>;
-        let limit = self.lookback_messages.to_string();
         for _page in 1..=self.limits.hosted_git_pages {
+            let remaining = self.lookback_messages.saturating_sub(messages.len());
+            if remaining == 0 {
+                return HistoryFetch {
+                    messages,
+                    error: None,
+                };
+            }
+            let limit = remaining.min(SLACK_HISTORY_PAGE_LIMIT).to_string();
             let mut request = client
                 .get(self.api_url(CONVERSATIONS_HISTORY))
                 .bearer_auth(&self.token)
@@ -383,32 +406,71 @@ impl SlackSource {
             if let Some(cursor) = cursor.as_deref() {
                 request = request.query(&[("cursor", cursor)]);
             }
-            let resp = request.send().map_err(|error| {
-                slack_unreadable_error(format!(
+            let resp = match request.send() {
+                Ok(resp) => resp,
+                Err(error) => {
+                    return HistoryFetch {
+                        messages,
+                        error: Some(slack_unreadable_error(format!(
                     "Slack API {CONVERSATIONS_HISTORY} request failed for channel {channel_id}: {error}"
-                ))
-            })?;
-            let resp = read_slack_response(CONVERSATIONS_HISTORY, resp)?;
+                ))),
+                    };
+                }
+            };
+            let resp = match read_slack_response(CONVERSATIONS_HISTORY, resp) {
+                Ok(resp) => resp,
+                Err(error) => {
+                    return HistoryFetch {
+                        messages,
+                        error: Some(error),
+                    };
+                }
+            };
             let (page_messages, next_cursor, has_more) =
-                messages_page_from_response(resp, channel_id, true)?;
-            messages.extend(page_messages);
+                match messages_page_from_response(resp, channel_id, true) {
+                    Ok(page) => page,
+                    Err(error) => {
+                        return HistoryFetch {
+                            messages,
+                            error: Some(error),
+                        };
+                    }
+                };
+            messages.extend(page_messages.into_iter().take(remaining));
+            if messages.len() >= self.lookback_messages {
+                return HistoryFetch {
+                    messages,
+                    error: None,
+                };
+            }
             match next_cursor {
                 Some(next_cursor) => cursor = Some(next_cursor),
                 None if has_more => {
-                    return Err(slack_truncated_error(
-                        CONVERSATIONS_HISTORY,
-                        &format!("history for channel {channel_id}"),
-                        self.limits.hosted_git_pages,
-                    ));
+                    return HistoryFetch {
+                        messages,
+                        error: Some(slack_truncated_error(
+                            CONVERSATIONS_HISTORY,
+                            &format!("history for channel {channel_id}"),
+                            self.limits.hosted_git_pages,
+                        )),
+                    };
                 }
-                None => return Ok(messages),
+                None => {
+                    return HistoryFetch {
+                        messages,
+                        error: None,
+                    };
+                }
             }
         }
-        Err(slack_truncated_error(
-            CONVERSATIONS_HISTORY,
-            &format!("history for channel {channel_id}"),
-            self.limits.hosted_git_pages,
-        ))
+        HistoryFetch {
+            messages,
+            error: Some(slack_truncated_error(
+                CONVERSATIONS_HISTORY,
+                &format!("history for channel {channel_id}"),
+                self.limits.hosted_git_pages,
+            )),
+        }
     }
 }
 

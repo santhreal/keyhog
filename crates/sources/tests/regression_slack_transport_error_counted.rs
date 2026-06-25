@@ -181,6 +181,87 @@ fn slack_channel_failure_preserves_sibling_chunks() {
     );
 }
 
+#[cfg(feature = "slack")]
+#[test]
+fn slack_late_history_failure_preserves_prior_channel_chunks() {
+    use keyhog_core::Source;
+    use keyhog_sources::skip_counts;
+    use keyhog_sources::testing::{SourceTestApi, TestApi};
+
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.list")
+            .query_param("types", "public_channel,private_channel")
+            .query_param("limit", "1000");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"ok":true,"channels":[{"id":"C1","name":"alpha"}]}"#);
+    });
+    let first_history_page = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.history")
+            .query_param("channel", "C1")
+            .query_param("limit", "3")
+            .query_param_missing("cursor");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{"ok":true,"messages":[{"user":"U1","text":"alpha first page ghp_slackLateFailureToken1234567890","ts":"1.0"}],"has_more":true,"response_metadata":{"next_cursor":"hist-c1-2"}}"#,
+            );
+    });
+    let failing_history_page = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.history")
+            .query_param("channel", "C1")
+            .query_param("limit", "2")
+            .query_param("cursor", "hist-c1-2");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"ok":false,"error":"ratelimited"}"#);
+    });
+
+    let rows: Vec<_> = TestApi
+        .slack_source_with_endpoint_and_lookback("xoxb-test-token", server.url(""), 3)
+        .chunks()
+        .collect();
+
+    assert_eq!(list.calls(), 1, "Slack channel list request count");
+    assert_eq!(
+        first_history_page.calls(),
+        1,
+        "first channel history page request count"
+    );
+    assert_eq!(
+        failing_history_page.calls(),
+        1,
+        "failing channel history page request count"
+    );
+    assert!(
+        rows.iter().any(|row| row
+            .as_ref()
+            .is_ok_and(|chunk| { chunk.data.contains("ghp_slackLateFailureToken1234567890") })),
+        "messages fetched before a later page failure must still be scanned: {rows:?}"
+    );
+    assert!(
+        rows.iter().any(|row| row
+            .as_ref()
+            .is_err_and(|error| error.to_string().contains("ratelimited"))),
+        "late history failure must remain visible as an error row: {rows:?}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.unreadable - before.unreadable,
+        1,
+        "one late Slack history failure must bump SKIPPED_UNREADABLE once"
+    );
+}
+
 #[cfg(not(feature = "slack"))]
 #[test]
 fn slack_transport_error_is_counted_unreadable() {
@@ -196,5 +277,11 @@ fn slack_api_error_is_counted_unreadable() {
 #[cfg(not(feature = "slack"))]
 #[test]
 fn slack_channel_failure_preserves_sibling_chunks() {
+    assert!(!cfg!(feature = "slack"));
+}
+
+#[cfg(not(feature = "slack"))]
+#[test]
+fn slack_late_history_failure_preserves_prior_channel_chunks() {
     assert!(!cfg!(feature = "slack"));
 }

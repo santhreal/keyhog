@@ -418,6 +418,16 @@ pub mod testing {
         where
             T: Into<String>,
             E: Into<String>;
+        #[cfg(feature = "slack")]
+        fn slack_source_with_endpoint_and_lookback<T, E>(
+            &self,
+            token: T,
+            endpoint: E,
+            lookback_messages: usize,
+        ) -> crate::SlackSource
+        where
+            T: Into<String>,
+            E: Into<String>;
     }
 
     impl SourceTestApi for TestApi {
@@ -1147,6 +1157,22 @@ pub mod testing {
             E: Into<String>,
         {
             crate::SlackSource::new(token).with_endpoint(endpoint)
+        }
+
+        #[cfg(feature = "slack")]
+        fn slack_source_with_endpoint_and_lookback<T, E>(
+            &self,
+            token: T,
+            endpoint: E,
+            lookback_messages: usize,
+        ) -> crate::SlackSource
+        where
+            T: Into<String>,
+            E: Into<String>,
+        {
+            crate::SlackSource::new(token)
+                .with_endpoint(endpoint)
+                .with_lookback_messages(lookback_messages)
         }
     }
 }
