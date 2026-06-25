@@ -8,10 +8,10 @@
 //! the no-silent-fallback rule, the user needs to know the scan
 //! didn't actually use the GPU they thought was active.
 
-use super::CompiledScanner;
 pub(crate) use super::gpu_forced_helpers::{
     deny_silent_gpu_degrade, deny_silent_gpu_degrade_with_reason,
 };
+use super::CompiledScanner;
 
 impl CompiledScanner {
     pub(super) fn record_gpu_degrade(&self, reason: impl Into<String>) {

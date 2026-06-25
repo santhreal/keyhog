@@ -1,6 +1,6 @@
 //! Install integrity bypasses must be explicit flags, never ambient env.
 
-use keyhog::testing::{API, CliTestApi as _};
+use keyhog::testing::{CliTestApi as _, API};
 use std::collections::BTreeSet;
 
 fn keyhog_env_tokens(script: &str) -> BTreeSet<String> {
