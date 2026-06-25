@@ -432,11 +432,13 @@ impl ScanState {
         if admit {
             let m = build(self);
             if let Some(mut worst) = self.matches.peek_mut() {
-                let displaced = OwnedMatchIdentity::from(&*worst);
-                *worst = m;
-                drop(worst);
-                self.claimed_match_identities.remove(&displaced);
-                self.claimed_match_identities.insert(identity);
+                if m < *worst {
+                    let displaced = OwnedMatchIdentity::from(&*worst);
+                    *worst = m;
+                    drop(worst);
+                    self.claimed_match_identities.remove(&displaced);
+                    self.claimed_match_identities.insert(identity);
+                }
             }
         }
     }

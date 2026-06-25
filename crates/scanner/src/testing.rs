@@ -751,26 +751,7 @@ pub fn scan_state_drain(
 #[cfg(any(feature = "entropy", feature = "simdsieve"))]
 pub fn scan_state_lazy_duplicate_probe_for_test() -> (bool, bool, Vec<keyhog_core::RawMatch>) {
     fn raw_match(confidence: f64) -> keyhog_core::RawMatch {
-        keyhog_core::RawMatch {
-            detector_id: std::sync::Arc::from("gate"),
-            detector_name: std::sync::Arc::from("Gate"),
-            service: std::sync::Arc::from("test"),
-            severity: keyhog_core::Severity::High,
-            credential: keyhog_core::SensitiveString::from("duplicate"),
-            credential_hash: [0u8; 32].into(),
-            companions: std::collections::HashMap::new(),
-            location: keyhog_core::MatchLocation {
-                source: std::sync::Arc::from("unit"),
-                file_path: Some(std::sync::Arc::from("unit.env")),
-                line: Some(8),
-                offset: 7,
-                commit: None,
-                author: None,
-                date: None,
-            },
-            entropy: None,
-            confidence: Some(confidence),
-        }
+        scan_state_probe_match("duplicate", 7, confidence)
     }
 
     const LIMIT: usize = 2;
@@ -812,6 +793,61 @@ pub fn scan_state_lazy_duplicate_probe_for_test() -> (bool, bool, Vec<keyhog_cor
     );
 
     (worse_built, better_built, state.into_matches())
+}
+
+#[cfg(any(feature = "entropy", feature = "simdsieve"))]
+pub fn scan_state_lazy_overestimated_priority_probe_for_test() -> (bool, Vec<keyhog_core::RawMatch>)
+{
+    const LIMIT: usize = 1;
+    let mut state = crate::scan_state::ScanState::default();
+    state.push_match(scan_state_probe_match("retained", 7, 0.90), LIMIT);
+
+    let mut built = false;
+    state.push_match_lazy(
+        crate::scan_state::RawMatchPriority {
+            confidence: Some(0.99),
+            severity: keyhog_core::Severity::High,
+            detector_id: "gate",
+            credential: "overestimated",
+            offset: 14,
+            line: Some(15),
+        },
+        LIMIT,
+        |_| {
+            built = true;
+            scan_state_probe_match("overestimated", 14, 0.10)
+        },
+    );
+
+    (built, state.into_matches())
+}
+
+#[cfg(any(feature = "entropy", feature = "simdsieve"))]
+fn scan_state_probe_match(
+    credential: &'static str,
+    offset: usize,
+    confidence: f64,
+) -> keyhog_core::RawMatch {
+    keyhog_core::RawMatch {
+        detector_id: std::sync::Arc::from("gate"),
+        detector_name: std::sync::Arc::from("Gate"),
+        service: std::sync::Arc::from("test"),
+        severity: keyhog_core::Severity::High,
+        credential: keyhog_core::SensitiveString::from(credential),
+        credential_hash: [0u8; 32].into(),
+        companions: std::collections::HashMap::new(),
+        location: keyhog_core::MatchLocation {
+            source: std::sync::Arc::from("unit"),
+            file_path: Some(std::sync::Arc::from("unit.env")),
+            line: Some(offset + 1),
+            offset,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: None,
+        confidence: Some(confidence),
+    }
 }
 
 #[cfg(test)]

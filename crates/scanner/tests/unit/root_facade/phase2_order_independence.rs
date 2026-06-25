@@ -8,7 +8,10 @@ use super::support;
 use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata, MatchLocation, RawMatch, Severity};
-use keyhog_scanner::testing::{scan_state_drain, scan_state_lazy_duplicate_probe_for_test};
+use keyhog_scanner::testing::{
+    scan_state_drain, scan_state_lazy_duplicate_probe_for_test,
+    scan_state_lazy_overestimated_priority_probe_for_test,
+};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -258,5 +261,20 @@ fn push_match_lazy_duplicate_identity_skips_worse_build_and_replaces_better() {
         kept[0].confidence,
         Some(0.90),
         "lazy duplicate replacement must keep the best candidate"
+    );
+}
+
+#[test]
+fn push_match_lazy_rechecks_built_match_before_replacing_worst() {
+    let (built, kept) = scan_state_lazy_overestimated_priority_probe_for_test();
+    assert!(
+        built,
+        "an overestimated lazy priority can require building before final ordering is known"
+    );
+    assert_eq!(kept.len(), 1, "cap-one heap must still retain one finding");
+    assert_eq!(
+        kept[0].credential.as_ref(),
+        "retained",
+        "lazy candidate whose built RawMatch is worse than the heap worst must not replace it"
     );
 }
