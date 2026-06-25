@@ -175,6 +175,7 @@ fn collect_org_chunks(
         token,
         &hosted_git::ExpectedCloneOrigin::host("github.com"),
         &repos,
+        limits,
     )
 }
 

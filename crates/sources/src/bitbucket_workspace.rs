@@ -135,6 +135,7 @@ fn collect_workspace_chunks(
         token,
         &expected_clone_origin,
         &repos,
+        limits,
     )?;
     rows.extend(listing_errors.into_iter().map(Err));
     Ok(rows)

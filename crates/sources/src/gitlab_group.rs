@@ -112,6 +112,7 @@ fn collect_group_chunks(
         token,
         &expected_clone_origin,
         &repos,
+        limits,
     )
 }
 

@@ -73,6 +73,7 @@ pub(crate) fn scan_hosted_repos(
     token_secret: &str,
     expected_clone_origin: &ExpectedCloneOrigin,
     repos: &[HostedRepo],
+    limits: crate::SourceLimits,
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     use rayon::prelude::*;
 
@@ -106,6 +107,7 @@ pub(crate) fn scan_hosted_repos(
                     namespace,
                     &repo.display_path,
                     &clone_path,
+                    limits,
                 )
             })
             .collect()
@@ -728,8 +730,10 @@ fn scan_repo(
     namespace: Option<&str>,
     repo_display_path: &str,
     clone_path: &Path,
+    limits: crate::SourceLimits,
 ) -> Result<Vec<Chunk>, SourceError> {
-    let source = FilesystemSource::new(clone_path.to_path_buf());
+    let source =
+        FilesystemSource::new(clone_path.to_path_buf()).with_max_file_size(limits.git_blob_bytes);
     scan_repo_chunks(
         source.chunks(),
         platform,

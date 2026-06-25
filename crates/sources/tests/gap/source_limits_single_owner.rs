@@ -69,5 +69,16 @@ fn source_byte_caps_have_single_owner() {
             source.contains("hosted_git_pages") && source.contains("with_limits"),
             "{rel} must resolve API pagination limits from SourceLimits"
         );
+        assert!(
+            source.contains("&repos,\n        limits,"),
+            "{rel} must pass resolved SourceLimits into the shared hosted-git clone scanner"
+        );
     }
+
+    let hosted_git = std::fs::read_to_string(root.join("hosted_git.rs")).expect("hosted_git.rs");
+    assert!(
+        hosted_git.contains("repos: &[HostedRepo],\n    limits: crate::SourceLimits,")
+            && hosted_git.contains(".with_max_file_size(limits.git_blob_bytes)"),
+        "hosted git clone scans must carry resolved SourceLimits into FilesystemSource"
+    );
 }
