@@ -141,3 +141,43 @@ EOF
         "heredoc value must map to the content line, not the marker line"
     );
 }
+
+#[test]
+fn inline_default_equals_without_space_extracts_variable_context() {
+    let text = r#"variable "api_key" { default="nospace-secret-value" }
+"#;
+    let pairs = hcl_contract::parse_hcl(text);
+    assert_eq!(value_of(&pairs, "api_key"), Some("nospace-secret-value"));
+    assert_eq!(line_of(&pairs, "api_key"), Some(1));
+}
+
+#[test]
+fn keyword_named_assignment_is_not_dropped_as_block_header() {
+    let text = r#"provider = "provider-secret-value"
+"#;
+    let pairs = hcl_contract::parse_hcl(text);
+    assert_eq!(value_of(&pairs, "provider"), Some("provider-secret-value"));
+    assert_eq!(line_of(&pairs, "provider"), Some(1));
+}
+
+#[test]
+fn long_heredoc_inside_default_map_does_not_end_variable_scan() {
+    let heredoc_body = (0..24)
+        .map(|idx| format!("certificate-line-{idx}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let text = format!(
+        "variable \"api_credentials\" {{\n  default = {{\n    cert = <<EOF\n{heredoc_body}\nEOF\n    password = \"after-long-heredoc-secret\"\n  }}\n}}\n"
+    );
+    let pairs = hcl_contract::parse_hcl(&text);
+    assert_eq!(
+        value_of(&pairs, "api_credentials.password"),
+        Some("after-long-heredoc-secret"),
+        "heredoc payload lines must not consume the variable-block structural lookahead budget"
+    );
+    assert_eq!(
+        value_of(&pairs, "password"),
+        None,
+        "post-heredoc map entries must keep variable default-map context"
+    );
+}

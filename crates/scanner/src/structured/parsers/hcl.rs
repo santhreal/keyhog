@@ -31,7 +31,8 @@ pub(crate) fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
                 continue;
             }
             let mut offset = 1usize;
-            while offset < MAX_VARIABLE_BLOCK_LINES && index + offset < lines.len() {
+            let mut structural_lines = 0usize;
+            while structural_lines < MAX_VARIABLE_BLOCK_LINES && index + offset < lines.len() {
                 let line_index = index + offset;
                 let inner = lines[line_index];
                 let inner_code = strip_hcl_comments(inner, &mut in_block_comment);
@@ -61,7 +62,7 @@ pub(crate) fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
                                     });
                                 }
                                 consumed = next_index.saturating_sub(index);
-                                offset = consumed;
+                                offset = next_index.saturating_sub(index);
                                 continue;
                             }
                         }
@@ -93,7 +94,7 @@ pub(crate) fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
                                         });
                                     }
                                     consumed = next_index.saturating_sub(index);
-                                    offset = consumed;
+                                    offset = next_index.saturating_sub(index);
                                     continue;
                                 }
                             }
@@ -115,6 +116,7 @@ pub(crate) fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
                 if depth == 0 {
                     break;
                 }
+                structural_lines += 1;
                 offset += 1;
             }
             index += consumed;
@@ -222,7 +224,7 @@ fn parse_hcl_default_in_fragment(fragment: &str) -> Option<HclValue> {
         let after_ok = after
             .chars()
             .next()
-            .is_some_and(|c| c.is_ascii_whitespace());
+            .is_some_and(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '-');
         if before_ok && after_ok {
             if let Some(value) = parse_hcl_default(&fragment[pos..]) {
                 return Some(value);
@@ -238,36 +240,19 @@ fn parse_hcl_assignment(line: &str) -> Option<(String, HclValue)> {
     if line.starts_with('#') || line.starts_with("//") || !line.contains('=') {
         return None;
     }
-    for kw in [
-        "variable",
-        "locals",
-        "resource",
-        "module",
-        "provider",
-        "data",
-        "output",
-        "terraform",
-    ] {
-        if line.starts_with(kw)
-            && line[kw.len()..]
+    if let Some((name_part, value_part)) = line.split_once('=') {
+        let name = name_part.trim();
+        if name.is_empty()
+            || !name
                 .chars()
-                .next()
-                .is_some_and(|c| c.is_ascii_whitespace() || c == '{')
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
         {
             return None;
         }
+        let value = parse_hcl_value(value_part.trim_start())?;
+        return Some((name.to_string(), value));
     }
-    let (name_part, value_part) = line.split_once('=')?;
-    let name = name_part.trim();
-    if name.is_empty()
-        || !name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-    {
-        return None;
-    }
-    let value = parse_hcl_value(value_part.trim_start())?;
-    Some((name.to_string(), value))
+    None
 }
 
 fn parse_hcl_value(s: &str) -> Option<HclValue> {
