@@ -273,6 +273,16 @@ jobs:
       # the source, never to weaken.
       - name: named-detector anchor-floor recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_named_detector_anchor_floor_recall
+      # Canonical-hex service-key recall contract. A weak_anchor service detector
+      # (alchemy/datadog/crowdin/…) whose regex REQUIRED its service keyword and
+      # captured canonical-length pure hex (32/40/48/64) had the value dropped by
+      # the bare-hex-digest shape gate BEFORE confidence — defeating its own
+      # min_confidence=0.2. The KH-L-0110 allow_canonical_hex_key escape hatch is
+      # now keyed on the service anchor; this pins a keyword-anchored hex key
+      # surfaces, a bare hex without the keyword does not claim the detector, and
+      # an all-zero placeholder stays suppressed (decoy gates still run).
+      - name: named-detector canonical-hex-key recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_named_canonical_hex_key_recall
       - name: RawMatch total-order gate
         run: cargo test -p keyhog-core --test new_core_finding_dedup --profile release-fast
 

@@ -12,7 +12,7 @@ mod source;
 
 pub(crate) use canonical::{
     generic_base64_candidate_is_ambiguous, has_n_or_more_consecutive_identical,
-    has_repeated_block_mask, has_three_or_more_consecutive_identical,
+    has_repeated_block_mask, has_three_or_more_consecutive_identical, is_canonical_service_hex_key,
     is_dash_segmented_alnum_decoy, is_structured_dotted_token, is_uuid_v4_shape,
     looks_like_aws_iam_arn, looks_like_bare_hex_digest, looks_like_dashed_serial_key,
     looks_like_entropy_canonical_hex_digest, looks_like_entropy_canonical_non_secret_shape,

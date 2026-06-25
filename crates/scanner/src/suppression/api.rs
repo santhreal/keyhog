@@ -376,6 +376,17 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // bypass shape gates to prevent false positive traps from triggering.
     let bypass_shape_gates =
         crate::detector_ids::is_service_anchored_detector(detector_id) && !weak_anchor;
+    // A service-anchored detector's regex REQUIRED its service-specific keyword
+    // to match (`ALCHEMY_API_KEY=`, `CROWDIN_API_TOKEN=`, `DATADOG_API_KEY:`),
+    // so a complete canonical-length pure-hex capture is a real key, not a
+    // coincidental digest. Exempt it from the bare-hex-digest / algorithmic-
+    // placeholder arms only (every decoy gate still runs). Strong-anchor
+    // detectors already skip those via `bypass_shape_gates`; this is the
+    // weak_anchor pure-hex case (alchemy / datadog / crowdin / …) whose
+    // `min_confidence = 0.2` already declares the keyword anchor authoritative —
+    // the shape gate firing ahead of confidence was defeating that intent.
+    let allow_canonical_hex_key = crate::detector_ids::is_service_anchored_detector(detector_id)
+        && super::shape::is_canonical_service_hex_key(credential);
     let allow_encoded_text_secret = crate::detector_ids::is_generic_detector(detector_id)
         && crate::decode_structure::decodes_to_printable_text(credential);
     suppression_stage_inner(
@@ -386,7 +397,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
         false,
         bypass_shape_gates,
         None,
-        false,
+        allow_canonical_hex_key,
         false,
         allow_encoded_text_secret,
     )

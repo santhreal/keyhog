@@ -601,6 +601,13 @@ pub fn apply_named_detector_anchor_floor(
         has_context_anchor,
     )
 }
+
+/// Test seam for [`crate::suppression::shape::is_canonical_service_hex_key`]: the
+/// predicate that exempts a service-anchored detector's canonical-length pure-hex
+/// capture from the bare-hex-digest shape gate.
+pub fn is_canonical_service_hex_key(credential: &str) -> bool {
+    crate::suppression::shape::is_canonical_service_hex_key(credential)
+}
 pub fn normalize_scannable_chunk<'a>(
     chunk: &'a keyhog_core::Chunk,
     owned: &'a mut Option<keyhog_core::Chunk>,

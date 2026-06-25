@@ -161,6 +161,29 @@ pub(crate) fn looks_like_bare_hex_digest(credential: &str) -> bool {
     matches!(credential.len(), 32 | 40 | 48 | 56 | 64 | 72 | 128) && is_uniform_hex(credential)
 }
 
+/// True for a complete, uniform-case pure-hex value of a canonical service-key
+/// length (32 / 40 / 48 / 64). A *service-anchored* detector's regex required
+/// its service-specific keyword to match (`ALCHEMY_API_KEY=`, `CROWDIN_API_TOKEN=`,
+/// `DATADOG_API_KEY:`), so a capture of this shape is a real key — not a
+/// coincidental git-SHA / MD5 / SHA-1 digest sitting next to that exact keyword.
+///
+/// Callers gate this on [`crate::detector_ids::is_service_anchored_detector`] and
+/// pass it as `allow_canonical_hex_key` into [`super::super::decision::suppression_stage_inner`],
+/// which exempts the value from the bare-hex-digest and algorithmic-placeholder
+/// arms ONLY: every decoy gate (repetitive runs, fake sequences, prefixed-hash
+/// labels, UUID, dashed serials) still runs, so explicit placeholder hex
+/// (`0000…`, `…ABCDEFGH…`-dominated) is still suppressed. This is the same
+/// KH-L-0110 escape hatch the generic bridge applies via
+/// [`crate::engine::phase2_generic::is_strong_keyword_anchored_hex_key`], keyed
+/// here on the detector's own service anchor rather than a captured keyword.
+///
+/// The 56/72/128 lengths the bare-hex-digest gate also catches are deliberately
+/// excluded: those are SHA-224/384/512 digest lengths that no service detector
+/// requests as a key body, so they stay suppressed even under a service anchor.
+pub(crate) fn is_canonical_service_hex_key(credential: &str) -> bool {
+    matches!(credential.len(), 32 | 40 | 48 | 64) && is_uniform_hex(credential)
+}
+
 pub(crate) fn looks_like_aws_iam_arn(value: &str) -> bool {
     let Some(body) = ["arn:aws:iam::", "arn:aws-cn:iam::", "arn:aws-us-gov:iam::"]
         .iter()
