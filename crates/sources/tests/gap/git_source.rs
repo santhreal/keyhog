@@ -147,14 +147,48 @@ fn loose_object_path(repo: &Path, oid: &str) -> PathBuf {
     repo.join(".git").join("objects").join(fanout).join(rest)
 }
 
-/// Drain `GitSource` over `repo` into a Vec of successful chunks (panicking on
-/// any error, so a regression that turns a chunk into an error is loud).
-fn collect_chunks(repo: &Path, max_commits: usize) -> Vec<Chunk> {
-    GitSource::new(repo.to_path_buf())
+/// Drain `GitSource` over `repo` into successful chunks and prove the source row
+/// stream did not contain hidden errors.
+fn collect_git_chunks_without_source_errors(repo: &Path, max_commits: usize) -> Vec<Chunk> {
+    let (chunks, errors) = collect_git_chunks_and_source_errors(repo, max_commits);
+    assert!(
+        errors.is_empty(),
+        "GitSource emitted unexpected SourceError rows: {errors:?}"
+    );
+    chunks
+}
+
+/// Drain `GitSource` over `repo` into explicit chunk and SourceError rows.
+fn collect_git_chunks_and_source_errors(
+    repo: &Path,
+    max_commits: usize,
+) -> (Vec<Chunk>, Vec<SourceError>) {
+    let rows: Vec<_> = GitSource::new(repo.to_path_buf())
         .with_max_commits(max_commits)
         .chunks()
-        .map(|r| r.expect("git chunk should not error"))
-        .collect()
+        .collect();
+    let mut chunks = Vec::new();
+    let mut errors = Vec::new();
+    for row in rows {
+        match row {
+            Ok(chunk) => chunks.push(chunk),
+            Err(error) => errors.push(error),
+        }
+    }
+    (chunks, errors)
+}
+
+fn assert_one_git_blob_skip_error(errors: &[SourceError], path: &str, reason: &str) {
+    assert_eq!(
+        errors.len(),
+        1,
+        "expected one visible GitSource error for {path}, got {errors:?}"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains(path) && error.contains(reason) && error.contains("blob was not scanned"),
+        "GitSource error must name the skipped blob, reason, and coverage loss; got {error:?}"
+    );
 }
 
 /// Find the chunk whose `path` ends with `suffix`.
@@ -227,7 +261,7 @@ fn non_utf8_blob_is_scanned_lossily_not_dropped() {
     );
     commit_file(&repo, "cfg.ini", &bytes, "non-utf8 config");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "cfg.ini").expect("cfg.ini chunk present");
     assert!(
         c.data.contains("AKIAIOSFODNN7EXAMPLE"),
@@ -259,7 +293,7 @@ fn latin1_high_bytes_decoded_lossily() {
     assert!(std::str::from_utf8(&bytes).is_err());
     commit_file(&repo, "notes.txt", &bytes, "latin1");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "notes.txt").expect("notes.txt present");
     assert!(c.data.contains("ghp_latin1Survives0000000000001"));
 }
@@ -274,7 +308,7 @@ fn utf16_bom_blob_is_scanned_like_filesystem_text() {
     }
     commit_file(&repo, "utf16.env", &bytes, "utf16 bom config");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "utf16.env").expect("UTF-16 BOM git blob must be decoded");
     assert!(
         c.data.contains("ghp_utf16BomSurvives0000000000001"),
@@ -292,7 +326,7 @@ fn empty_blob_emits_empty_chunk_with_zero_size() {
     let (_t, repo) = init_repo();
     commit_file(&repo, "empty.txt", b"", "empty file");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "empty.txt").expect("empty.txt chunk emitted");
     assert_eq!(c.data.len(), 0, "empty blob -> empty data");
     assert_eq!(c.data.to_string(), "");
@@ -322,7 +356,8 @@ fn pure_binary_blob_is_skipped_not_emitted() {
         "text",
     );
 
-    let chunks = collect_chunks(&repo, 5);
+    let (chunks, errors) = collect_git_chunks_and_source_errors(&repo, 5);
+    assert_one_git_blob_skip_error(&errors, "a.out", "is binary");
     assert!(
         chunk_for(&chunks, "a.out").is_none(),
         "binary blob (ELF magic) must be skipped entirely"
@@ -342,7 +377,8 @@ fn png_magic_blob_is_skipped() {
     commit_file(&repo, "img.png", &png, "png");
     commit_file(&repo, "keep.txt", b"x=1\n", "keep");
 
-    let chunks = collect_chunks(&repo, 5);
+    let (chunks, errors) = collect_git_chunks_and_source_errors(&repo, 5);
+    assert_one_git_blob_skip_error(&errors, "img.png", "is binary");
     assert!(
         chunk_for(&chunks, "img.png").is_none(),
         "PNG magic -> skipped"
@@ -362,7 +398,7 @@ fn single_nul_text_blob_is_kept_like_filesystem_text() {
     commit_file(&repo, "blob.dat", &bytes, "single nul");
     commit_file(&repo, "ok.txt", b"y=2\n", "ok");
 
-    let chunks = collect_chunks(&repo, 5);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 5);
     let c = chunk_for(&chunks, "blob.dat").expect("single-NUL text blob must be kept");
     assert!(c.data.contains("AKIAIOSFODNN7EXAMPLE"));
     assert!(chunk_for(&chunks, "ok.txt").is_some());
@@ -389,7 +425,8 @@ fn high_c0_control_density_marks_binary() {
     commit_file(&repo, "dense.bin", &bytes, "dense controls");
     commit_file(&repo, "plain.txt", b"z=3\n", "plain");
 
-    let chunks = collect_chunks(&repo, 5);
+    let (chunks, errors) = collect_git_chunks_and_source_errors(&repo, 5);
+    assert_one_git_blob_skip_error(&errors, "dense.bin", "is binary");
     assert!(
         chunk_for(&chunks, "dense.bin").is_none(),
         ">5% C0-control density -> binary -> skipped"
@@ -412,7 +449,7 @@ fn low_c0_control_density_below_threshold_is_kept() {
     assert!(std::str::from_utf8(&bytes).is_err());
     commit_file(&repo, "sparse.txt", &bytes, "sparse control");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "sparse.txt").expect("sparse.txt kept");
     assert!(
         c.data.contains("AKIAIOSFODNN7EXAMPLE"),
@@ -429,7 +466,7 @@ fn valid_utf8_blob_kept_byte_for_byte() {
     let content = "user=café\nGITHUB=ghp_validUtf8Multibyte000000000001\n";
     commit_file(&repo, "u.txt", content.as_bytes(), "utf8");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "u.txt").expect("u.txt present");
     assert_eq!(c.data.to_string(), content, "valid UTF-8 must be verbatim");
     assert!(
@@ -454,7 +491,7 @@ fn head_blob_is_labelled_git_head() {
         "live",
     );
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "live.env").expect("live.env present");
     assert_eq!(
         c.metadata.source_type, "git/head",
@@ -476,7 +513,7 @@ fn removed_blob_is_labelled_git_history() {
     );
     commit_file(&repo, "rot.env", b"OLD=redacted\n", "scrub secret");
 
-    let chunks = collect_chunks(&repo, 5);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 5);
     // The historical blob carries the removed secret and must be git/history.
     let hist = chunks
         .iter()
@@ -499,7 +536,7 @@ fn commit_hash_attribution_is_full_40_hex() {
     let (_t, repo) = init_repo();
     let hash = commit_file(&repo, "c.txt", b"v=1\n", "attrib");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "c.txt").expect("c.txt present");
     let got = c.metadata.commit.as_deref().expect("commit set");
     assert_eq!(got, hash, "chunk commit must equal the actual HEAD hash");
@@ -513,7 +550,7 @@ fn author_attribution_matches_commit_author_name() {
     let (_t, repo) = init_repo();
     commit_file(&repo, "a.txt", b"v=1\n", "author");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "a.txt").expect("a.txt present");
     assert_eq!(
         c.metadata.author.as_deref(),
@@ -530,7 +567,7 @@ fn author_with_internal_space_is_preserved_by_splitn() {
     git(&repo, &["config", "user.name", "Ada B. Lovelace"]);
     commit_file(&repo, "ada.txt", b"v=1\n", "multi-word author");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "ada.txt").expect("ada.txt present");
     assert_eq!(
         c.metadata.author.as_deref(),
@@ -547,7 +584,7 @@ fn size_bytes_equals_raw_blob_byte_length() {
     let content = b"FOO=barbaz\n"; // 11 bytes
     commit_file(&repo, "s.txt", content, "size");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "s.txt").expect("s.txt present");
     assert_eq!(
         c.metadata.size_bytes,
@@ -568,7 +605,7 @@ fn size_bytes_counts_bytes_not_chars_for_non_utf8() {
     let raw_len = bytes.len() as u64; // 5
     commit_file(&repo, "nb.txt", &bytes, "bytes");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "nb.txt").expect("nb.txt present");
     assert_eq!(
         c.metadata.size_bytes,
@@ -589,7 +626,7 @@ fn date_metadata_is_always_none_for_git_source() {
     let (_t, repo) = init_repo();
     commit_file(&repo, "d.txt", b"v=1\n", "date");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     for c in &chunks {
         assert_eq!(
             c.metadata.date, None,
@@ -605,7 +642,7 @@ fn base_offset_and_mtime_are_zero_and_none() {
     let (_t, repo) = init_repo();
     commit_file(&repo, "m.txt", b"v=1\n", "meta");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "m.txt").expect("m.txt present");
     assert_eq!(c.metadata.base_offset, 0);
     assert_eq!(c.metadata.mtime_ns, None);
@@ -623,7 +660,7 @@ fn nested_path_is_slash_joined_under_prefix() {
         "nested",
     );
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunks
         .iter()
         .find(|c| c.data.contains("ghp_nestedPath00000000000000000001"))
@@ -692,7 +729,7 @@ fn gitignore_file_itself_is_scanned() {
     let (_t, repo) = init_repo();
     commit_file(&repo, ".gitignore", b"*.log\nsecrets.txt\n", "add ignore");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, ".gitignore").expect(".gitignore must be scanned");
     assert!(
         c.data.contains("*.log"),
@@ -714,7 +751,7 @@ fn untracked_ignored_file_is_not_in_any_tree() {
     )
     .expect("write ignored");
 
-    let chunks = collect_chunks(&repo, 5);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 5);
     assert!(
         chunk_for(&chunks, "ignored.env").is_none(),
         "an untracked, ignored file is in no commit tree -> never scanned"
@@ -742,7 +779,7 @@ fn force_added_ignored_file_is_still_scanned() {
     git(&repo, &["add", "-f", "forced.env"]);
     commit_only(&repo, "force add ignored file");
 
-    let chunks = collect_chunks(&repo, 5);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 5);
     let c = chunk_for(&chunks, "forced.env").expect("force-added file must be scanned");
     assert!(
         c.data.contains("ghp_forceAddedSecret00000001"),
@@ -770,7 +807,7 @@ fn node_modules_subtree_is_skipped() {
         "app secret",
     );
 
-    let chunks = collect_chunks(&repo, 5);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 5);
     assert!(
         chunk_for(&chunks, "node_modules/pkg/leak.env").is_none(),
         "node_modules subtree must be skipped by name"
@@ -822,7 +859,7 @@ fn each_excluded_dir_name_is_skipped() {
             "keep",
         );
 
-        let chunks = collect_chunks(&repo, 5);
+        let chunks = collect_git_chunks_without_source_errors(&repo, 5);
         assert!(
             chunk_for(&chunks, &rel).is_none(),
             "{dirname}/ subtree must be skipped"
@@ -859,7 +896,7 @@ fn excluded_name_match_is_exact_not_prefix() {
         "buildtools",
     );
 
-    let chunks = collect_chunks(&repo, 5);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 5);
     assert!(
         chunks
             .iter()
@@ -899,7 +936,7 @@ fn excluded_name_also_skips_plain_files_not_just_dirs() {
     );
     commit_file(&repo, "real.txt", b"ok=1\n", "real");
 
-    let chunks = collect_chunks(&repo, 5);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 5);
     assert!(
         !chunks
             .iter()
@@ -949,7 +986,7 @@ fn default_excluded_filenames_and_suffixes_are_skipped_by_git_source() {
         "keep",
     );
 
-    let chunks = collect_chunks(&repo, 10);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 10);
     assert!(chunk_for(&chunks, "src/keep.env").is_some());
     for secret in [
         "ghp_lockfileShouldSkip000001",
@@ -986,7 +1023,8 @@ fn blob_over_10_mib_is_skipped() {
         "small",
     );
 
-    let chunks = collect_chunks(&repo, 5);
+    let (chunks, errors) = collect_git_chunks_and_source_errors(&repo, 5);
+    assert_one_git_blob_skip_error(&errors, "huge.txt", "exceeds per-blob size cap");
     assert!(
         chunk_for(&chunks, "huge.txt").is_none(),
         "a blob larger than 10 MiB must be skipped (header.size() > MAX_GIT_BLOB_BYTES)"
@@ -1016,7 +1054,7 @@ fn blob_just_under_10_mib_is_scanned() {
     assert!((blob.len() as u64) < 10 * 1024 * 1024);
     commit_file(&repo, "near.txt", &blob, "near cap");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "near.txt").expect("near-cap blob must be scanned");
     assert!(
         c.data.contains("ghp_underCapBlobScanned0001"),
@@ -1045,7 +1083,7 @@ fn identical_blob_content_is_emitted_once_per_path() {
     git(&repo, &["add", "first.env", "second.env"]);
     commit_only(&repo, "two files identical content");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let paths = chunks
         .iter()
         .filter(|c| c.data.contains("ghp_sameContentTwoFiles01"))
@@ -1077,7 +1115,7 @@ fn renamed_blob_keeps_head_and_history_path_identity() {
     git(&repo, &["mv", "old.env", "new.env"]);
     commit_only(&repo, "rename same blob");
 
-    let chunks = collect_chunks(&repo, 5);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 5);
     let paths = chunks
         .iter()
         .filter(|c| c.data.contains("ghp_renamePathIdentity00000001"))
@@ -1116,7 +1154,7 @@ fn distinct_content_same_basename_in_different_dirs_both_emitted() {
         "b",
     );
 
-    let chunks = collect_chunks(&repo, 5);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 5);
     assert!(chunks
         .iter()
         .any(|c| c.data.contains("ghp_distinctA0000000000000000001")));
@@ -1145,7 +1183,7 @@ fn secret_only_on_feature_branch_is_found_via_all_refs() {
     // Return to main so HEAD does NOT contain the feature blob.
     git(&repo, &["checkout", "main"]);
 
-    let chunks = collect_chunks(&repo, 50);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 50);
     let c = chunks
         .iter()
         .find(|c| c.data.contains("ghp_onlyOnFeatureBranch00000001"))
@@ -1166,7 +1204,7 @@ fn secret_only_on_tag_is_found() {
     // Move HEAD forward, dropping the v1 blob from HEAD's tree.
     commit_file(&repo, "v1.env", b"K=scrubbed\n", "scrub for v2");
 
-    let chunks = collect_chunks(&repo, 50);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 50);
     assert!(
         chunks
             .iter()
@@ -1190,7 +1228,7 @@ fn secret_only_in_annotated_tag_message_is_found() {
         ],
     );
 
-    let chunks = collect_chunks(&repo, 50);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 50);
     let c = chunks
         .iter()
         .find(|c| c.data.contains("ghp_annotatedTagMessageSecret00001"))
@@ -1234,7 +1272,7 @@ fn secret_only_in_unreachable_annotated_tag_message_is_found() {
         .to_string();
     git(&repo, &["tag", "-d", "deleted-tag-with-secret"]);
 
-    let chunks = collect_chunks(&repo, 50);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 50);
     let c = chunks
         .iter()
         .find(|c| c.data.contains("ghp_unreachableTagMessageSecret0001"))
@@ -1412,7 +1450,7 @@ fn secret_only_in_deleted_branch_reflog_is_found() {
     git(&repo, &["checkout", "main"]);
     git(&repo, &["branch", "-D", "short_lived"]);
 
-    let chunks = collect_chunks(&repo, 50);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 50);
     let c = chunks
         .iter()
         .find(|c| c.data.contains("ghp_deletedBranchReflogSecret0001"))
@@ -1437,7 +1475,7 @@ fn secret_only_in_stash_is_found() {
         &["stash", "push", "--include-untracked", "-m", "secret stash"],
     );
 
-    let chunks = collect_chunks(&repo, 50);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 50);
     assert!(
         chunks
             .iter()
@@ -1463,7 +1501,7 @@ fn secret_only_in_unreachable_commit_is_found() {
     let _ = std::fs::remove_file(repo.join(".git/logs/HEAD"));
     let _ = std::fs::remove_file(repo.join(".git/logs/refs/heads/main"));
 
-    let chunks = collect_chunks(&repo, 100);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 100);
     assert!(
         chunks
             .iter()
@@ -1479,7 +1517,7 @@ fn secret_only_in_unreachable_loose_blob_is_found() {
 
     let oid = write_loose_blob(&repo, b"K=ghp_unreachableLooseBlobSecret0001\n");
 
-    let chunks = collect_chunks(&repo, 100);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 100);
     let c = chunks
         .iter()
         .find(|c| c.data.contains("ghp_unreachableLooseBlobSecret0001"))
@@ -1556,7 +1594,7 @@ fn secret_in_unreachable_tree_keeps_tree_relative_path() {
         .trim()
         .to_string();
 
-    let chunks = collect_chunks(&repo, 100);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 100);
     let c = chunks
         .iter()
         .find(|c| {
@@ -1682,7 +1720,7 @@ fn max_commits_one_limits_history_walk() {
     );
     commit_file(&repo, "f.env", b"OLD=current\n", "new");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     assert!(
         !chunks
             .iter()
@@ -1729,7 +1767,7 @@ fn parallel_blob_decode_preserves_tree_order_and_metadata() {
     git(&repo, &["add", "."]);
     let commit = commit_only(&repo, "many ordered blobs");
 
-    let chunks = collect_chunks(&repo, 1);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let actual_paths = chunks
         .iter()
         .filter_map(|chunk| chunk.metadata.path.as_deref())
@@ -1859,7 +1897,7 @@ fn every_emitted_chunk_carries_path_and_commit() {
     commit_file(&repo, "p1.txt", b"a=1\n", "c1");
     commit_file(&repo, "p2.txt", b"b=2\n", "c2");
 
-    let chunks = collect_chunks(&repo, 5);
+    let chunks = collect_git_chunks_without_source_errors(&repo, 5);
     assert!(!chunks.is_empty());
     for c in &chunks {
         assert!(c.metadata.path.is_some(), "every git chunk has a path");
