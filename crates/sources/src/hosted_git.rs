@@ -304,15 +304,44 @@ mod tests {
         super::drain_hosted_git_stdout(&payload[..]).expect("stdout drain");
     }
 
+    #[test]
+    fn hosted_git_error_suffix_redacts_captured_stderr_credentials() {
+        let secret = format!("ghp_{}", "a".repeat(36));
+        let stderr = format!(
+            "fatal: unable to access https://alice:{secret}@github.com/o/r.git/\nAuthorization: Bearer {secret}"
+        );
+        let suffix = super::hosted_git_stderr_suffix(&stderr);
+        assert!(
+            suffix.contains("; git stderr:"),
+            "non-empty stderr should be surfaced with context, got {suffix:?}"
+        );
+        assert!(
+            suffix.contains("<redacted>") || suffix.contains("<redacted-token>"),
+            "credential-bearing stderr should show redaction markers, got {suffix:?}"
+        );
+        for leaked in [&secret, "alice:"] {
+            assert!(
+                !suffix.contains(leaked),
+                "hosted Git stderr suffix leaked {leaked:?}: {suffix:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn hosted_git_error_suffix_omits_empty_captured_stderr() {
+        assert_eq!(super::hosted_git_stderr_suffix(" \n\t "), "");
+    }
+
     #[cfg(unix)]
     #[test]
-    fn askpass_refuses_prompts_outside_expected_origin_without_printing_secret() {
+    fn askpass_refuses_prompts_outside_expected_origin_without_printing_secret_or_path_tools() {
         let auth =
             super::GitAskpassAuth::create("github", "x-access-token", "SECRET_TOKEN", "github.com")
                 .expect("askpass auth");
 
         let allowed = std::process::Command::new(&auth.askpass_path)
             .arg("Password for 'https://x-access-token@github.com':")
+            .env("PATH", "/keyhog/path/must/not/be/used")
             .output()
             .expect("run allowed askpass");
         assert!(
@@ -326,6 +355,7 @@ mod tests {
 
         let blocked = std::process::Command::new(&auth.askpass_path)
             .arg("Password for 'https://attacker.example':")
+            .env("PATH", "/keyhog/path/must/not/be/used")
             .output()
             .expect("run blocked askpass");
         assert!(
@@ -850,12 +880,7 @@ fn wait_for_command_with_timeout(
                     Err(error) => format!("; stdout cleanup failed: {error}"),
                 };
                 let stderr = join_hosted_git_stderr(stderr_drain.take());
-                let stderr = stderr.trim();
-                let stderr_suffix = if stderr.is_empty() {
-                    String::new()
-                } else {
-                    format!("; git stderr: {stderr}")
-                };
+                let stderr_suffix = hosted_git_stderr_suffix(&stderr);
                 return Err(format!(
                     "git clone status check failed: {error}; child was killed and reaped{stdout_cleanup}{stderr_suffix}"
                 ));
@@ -865,15 +890,13 @@ fn wait_for_command_with_timeout(
         if start.elapsed() >= timeout {
             kill_and_reap_child(&mut child)?;
             let stderr = join_hosted_git_stderr(stderr_drain.take());
-            join_hosted_git_stdout(stdout_drain.take())?;
-            let stderr = stderr.trim();
-            let stderr_suffix = if stderr.is_empty() {
-                String::new()
-            } else {
-                format!("; git stderr: {stderr}")
+            let stderr_suffix = hosted_git_stderr_suffix(&stderr);
+            let stdout_cleanup = match join_hosted_git_stdout(stdout_drain.take()) {
+                Ok(()) => String::new(),
+                Err(error) => format!("; stdout cleanup failed: {error}"),
             };
             return Err(format!(
-                "git clone timed out after {}s{stderr_suffix}",
+                "git clone timed out after {}s{stdout_cleanup}{stderr_suffix}",
                 timeout.as_secs()
             ));
         }
@@ -887,11 +910,10 @@ fn finish_hosted_git_child(
     stdout_drain: Option<thread::JoinHandle<Result<(), String>>>,
     stderr_drain: Option<thread::JoinHandle<String>>,
 ) -> Result<HostedGitCommandOutput, String> {
-    join_hosted_git_stdout(stdout_drain)?;
-    Ok(HostedGitCommandOutput {
-        status,
-        stderr: join_hosted_git_stderr(stderr_drain),
-    })
+    let stdout_result = join_hosted_git_stdout(stdout_drain);
+    let stderr = join_hosted_git_stderr(stderr_drain);
+    stdout_result?;
+    Ok(HostedGitCommandOutput { status, stderr })
 }
 
 fn join_hosted_git_stdout(
@@ -913,6 +935,15 @@ fn join_hosted_git_stderr(stderr_drain: Option<thread::JoinHandle<String>>) -> S
             Err(_panic_payload) => "stderr unavailable: git clone stderr reader panicked".into(),
         },
         None => "stderr unavailable: git clone stderr was not captured".into(),
+    }
+}
+
+fn hosted_git_stderr_suffix(stderr: &str) -> String {
+    let stderr = sanitize_git_error_message(stderr);
+    if stderr.is_empty() {
+        String::new()
+    } else {
+        format!("; git stderr: {stderr}")
     }
 }
 
@@ -997,7 +1028,7 @@ impl GitAskpassAuth {
             let path = dir.path().join("askpass.sh");
             write_askpass_file(
                 &path,
-                b"#!/bin/sh\nset -eu\nDIR=\"$(dirname \"$0\")\"\nORIGIN=\"$(cat -- \"$DIR/origin-host\")\"\ncase \"${1-}\" in\n*\"$ORIGIN\"*) ;;\n*) echo \"keyhog: refusing git credential prompt outside expected origin\" >&2; exit 1 ;;\nesac\ncase \"${1-}\" in\n*Username*) exec cat -- \"$DIR/username\" ;;\n*) exec cat -- \"$DIR/token\" ;;\nesac\n",
+                b"#!/bin/sh\nset -eu\nDIR=${0%/*}\n[ \"$DIR\" != \"$0\" ] || DIR=.\nread_one() {\n  IFS= read -r line < \"$1\" || [ -n \"${line-}\" ] || exit 1\n  printf '%s\\n' \"$line\"\n}\nORIGIN=$(read_one \"$DIR/origin-host\")\ncase \"${1-}\" in\n*\"$ORIGIN\"*) ;;\n*) printf '%s\\n' \"keyhog: refusing git credential prompt outside expected origin\" >&2; exit 1 ;;\nesac\ncase \"${1-}\" in\n*Username*) read_one \"$DIR/username\" ;;\n*) read_one \"$DIR/token\" ;;\nesac\n",
             )?;
             path
         } else {
