@@ -260,7 +260,7 @@ pub mod testing {
     use std::time::Duration;
 
     pub use crate::oob::redact_interactsh_error;
-    pub use crate::verify::{drain_join_set, tracked_join_error_preservation_for_test};
+    pub use crate::verify::tracked_join_error_preservation_for_test;
 
     pub struct TestApi;
 

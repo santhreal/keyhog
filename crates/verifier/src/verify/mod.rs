@@ -147,52 +147,6 @@ async fn verify_group_task_safe(shared: VerifyTaskShared, group: DedupedMatch) -
     }
 }
 
-/// Drain every task from `join_set`, and after each completion pull the next
-/// task (if any) from `next` and spawn it, until the set is empty. Returns the
-/// collected outputs in completion order.
-///
-/// A `JoinError` (the task was cancelled, or the runtime is shutting down) is
-/// surfaced via `tracing::error!` and SKIPPED — the drain CONTINUES rather than
-/// breaking, so one lost task never truncates the still-pending work. Callers'
-/// per-task bodies catch their own panics (`verify_group_task_safe`), so in
-/// normal operation the error arm is unreachable; it exists to fail
-/// loud-and-complete, never silent-and-truncated, on abnormal termination. The
-/// loop is generic so it is unit-testable with controllable tasks (an aborted
-/// task must not drop the others) — see `drain_join_set_continues_past_cancel`.
-// `pub` only so the `#[doc(hidden)] crate::testing` facade can re-export it for
-// the tests/ drain-continuation gate (verifier src forbids inline test modules,
-// KH-GAP-004); `mod verify` is private, so it is not otherwise reachable — same
-// pattern as `format_sigv4_timestamps`.
-pub async fn drain_join_set<T, F, Fut>(
-    mut join_set: JoinSet<T>,
-    capacity: usize,
-    mut next: F,
-) -> Vec<T>
-where
-    T: Send + 'static,
-    F: FnMut() -> Option<Fut>,
-    Fut: std::future::Future<Output = T> + Send + 'static,
-{
-    let mut out = Vec::with_capacity(capacity);
-    while let Some(result) = join_set.join_next().await {
-        match result {
-            Ok(value) => out.push(value),
-            Err(join_error) => {
-                tracing::error!(
-                    %join_error,
-                    "a verification task failed to join (cancelled or runtime \
-                     shutting down); continuing the drain so the remaining tasks \
-                     still complete"
-                );
-            }
-        }
-        if let Some(fut) = next() {
-            join_set.spawn(fut);
-        }
-    }
-    out
-}
-
 fn spawn_tracked_verify_task(
     join_set: &mut JoinSet<VerifiedFinding>,
     task_groups: &mut HashMap<TaskId, DedupedMatch>,

@@ -4,7 +4,6 @@ mod common;
 
 pub mod adversarial;
 pub mod boundary;
-pub mod concurrent;
 pub mod contract;
 pub mod error_path;
 pub mod gap;
