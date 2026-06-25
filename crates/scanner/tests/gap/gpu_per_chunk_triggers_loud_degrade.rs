@@ -33,9 +33,8 @@ fn per_chunk_gpu_degrade_is_loud_and_reason_carrying() {
 
     // The concrete cause must be recorded for machine-readable self-test output.
     assert!(
-        src.contains("*slot = Some(reason.clone());")
-            && src.contains("gpu_last_degrade_reason.lock()"),
-        "the degrade must record gpu_last_degrade_reason so health probes don't scrape stderr"
+        src.contains("self.record_gpu_degrade(reason.clone());"),
+        "the degrade must record the reason through the shared GPU degrade owner so health probes don't scrape stderr"
     );
 
     // Each distinct off-GPU cause must carry its own operator-visible reason.

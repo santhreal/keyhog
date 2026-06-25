@@ -82,12 +82,12 @@ fn gpu_dispatch_failures_preserve_operator_visible_reasons() {
     }
     // Both degrade closures funnel the reason into the recorded slot.
     assert!(
-        dispatch.contains("gpu_last_degrade_reason"),
-        "coalesced GPU degrade must record the reason into gpu_last_degrade_reason"
+        dispatch.contains("self.record_gpu_degrade(reason.clone())"),
+        "coalesced GPU degrade must record the reason through the shared GPU degrade owner"
     );
     assert!(
-        trigger.contains("gpu_last_degrade_reason"),
-        "per-chunk GPU degrade must record the reason into gpu_last_degrade_reason"
+        trigger.contains("self.record_gpu_degrade(reason.clone())"),
+        "per-chunk GPU degrade must record the reason through the shared GPU degrade owner"
     );
 }
 

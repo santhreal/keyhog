@@ -192,6 +192,38 @@ name = "gpu_tests_fail_not_skip"
 path = "tests/gap/gpu_tests_fail_not_skip.rs"
 
 [[test]]
+name = "gap_gpu_ac_degenerate_triples_degrade"
+path = "tests/gap/gpu_ac_degenerate_triples_degrade.rs"
+
+[[test]]
+name = "gap_gpu_forced_backend_no_silent_degrade"
+path = "tests/gap/gpu_forced_backend_no_silent_degrade.rs"
+
+[[test]]
+name = "gap_gpu_no_hit_phase2_admission"
+path = "tests/gap/gpu_no_hit_phase2_admission.rs"
+
+[[test]]
+name = "gap_gpu_per_chunk_triggers_loud_degrade"
+path = "tests/gap/gpu_per_chunk_triggers_loud_degrade.rs"
+
+[[test]]
+name = "gap_gpu_phase2_empty_hit_fast_path"
+path = "tests/gap/gpu_phase2_empty_hit_fast_path.rs"
+
+[[test]]
+name = "gap_gpu_phase2_unions_cpu_ac_roots"
+path = "tests/gap/gpu_phase2_unions_cpu_ac_roots.rs"
+
+[[test]]
+name = "gap_gpu_require_policy_fails_not_skips"
+path = "tests/gap/gpu_require_policy_fails_not_skips.rs"
+
+[[test]]
+name = "gap_gpu_shader_sigmoid_contract"
+path = "tests/gap/gpu_shader_sigmoid_contract.rs"
+
+[[test]]
 name = "gap_no_inline_tests_in_src"
 path = "tests/gap/no_inline_tests_in_src.rs"
 
