@@ -2,10 +2,42 @@
 
 #[cfg(feature = "docker")]
 use keyhog_sources::testing::{SourceTestApi, TestApi};
+
+#[cfg(feature = "docker")]
+fn tar_layer_bytes(path: &str, payload: &[u8]) -> Vec<u8> {
+    let mut builder = tar::Builder::new(Vec::new());
+    let mut header = tar::Header::new_gnu();
+    header.set_path(path).expect("set layer path");
+    header.set_size(payload.len() as u64);
+    header.set_entry_type(tar::EntryType::Regular);
+    header.set_cksum();
+    builder
+        .append(&header, payload)
+        .expect("append layer payload");
+    builder.finish().expect("finish tar");
+    builder.into_inner().expect("tar bytes")
+}
+
+#[cfg(feature = "docker")]
+fn gzip_tar_layer_bytes(path: &str, payload: &[u8]) -> Vec<u8> {
+    use flate2::{write::GzEncoder, Compression};
+    use std::io::Write;
+
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder
+        .write_all(&tar_layer_bytes(path, payload))
+        .expect("write gzip tar bytes");
+    encoder.finish().expect("finish gzip")
+}
+
+#[cfg(feature = "docker")]
+fn zstd_tar_layer_bytes(path: &str, payload: &[u8]) -> Vec<u8> {
+    zstd::stream::encode_all(tar_layer_bytes(path, payload).as_slice(), 3).expect("zstd encode")
+}
+
 #[cfg(feature = "docker")]
 #[test]
 fn docker_manifest_gzip_layer_yields_chunks() {
-    use flate2::{write::GzEncoder, Compression};
     use keyhog_core::Source;
     use keyhog_sources::FilesystemSource;
 
@@ -15,22 +47,12 @@ fn docker_manifest_gzip_layer_yields_chunks() {
     std::fs::create_dir_all(&blobs).expect("mkdir blobs");
     let layer_path = blobs.join("a063ccef06db3ade9b9cd4bbd9467dcdcc807ff3150ff1af58317341f108c85c");
 
-    let layer_file = std::fs::File::create(&layer_path).expect("create layer");
-    let encoder = GzEncoder::new(layer_file, Compression::default());
-    let mut builder = tar::Builder::new(encoder);
     let payload = b"SECRET=AKIAIOSFODNN7EXAMPLE\n";
-    let mut header = tar::Header::new_gnu();
-    header
-        .set_path("keyhog-autoroute-probe.txt")
-        .expect("set layer path");
-    header.set_size(payload.len() as u64);
-    header.set_entry_type(tar::EntryType::Regular);
-    header.set_cksum();
-    builder
-        .append(&header, payload.as_slice())
-        .expect("append payload");
-    let encoder = builder.into_inner().expect("finish tar");
-    encoder.finish().expect("finish gzip");
+    std::fs::write(
+        &layer_path,
+        gzip_tar_layer_bytes("keyhog-autoroute-probe.txt", payload),
+    )
+    .expect("write gzip layer");
 
     std::fs::write(
         root.join("manifest.json"),
@@ -58,6 +80,78 @@ fn docker_manifest_gzip_layer_yields_chunks() {
         "OCI gzip layer payload must reach filesystem chunks; chunks={}",
         chunks.len()
     );
+}
+
+#[cfg(feature = "docker")]
+#[test]
+fn docker_fallback_layer_discovery_finds_compressed_layers() {
+    use keyhog_core::Source;
+    use keyhog_sources::FilesystemSource;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("root");
+    let fixtures = [
+        (
+            "gzip/layer.tar.gz",
+            gzip_tar_layer_bytes(
+                "metadata-less-gzip.env",
+                b"SECRET=AKIAFALLBACKGZIP7EXAMPLE\n",
+            ),
+            "AKIAFALLBACKGZIP7EXAMPLE",
+        ),
+        (
+            "tgz/layer.tgz",
+            gzip_tar_layer_bytes("metadata-less-tgz.env", b"SECRET=AKIAFALLBACKTGZ7EXAMPLE\n"),
+            "AKIAFALLBACKTGZ7EXAMPLE",
+        ),
+        (
+            "zstd/layer.tar.zst",
+            zstd_tar_layer_bytes(
+                "metadata-less-zstd.env",
+                b"SECRET=AKIAFALLBACKZSTD7EXAMPLE\n",
+            ),
+            "AKIAFALLBACKZSTD7EXAMPLE",
+        ),
+        (
+            "zstd-long/layer.tar.zstd",
+            zstd_tar_layer_bytes(
+                "metadata-less-zstd-long.env",
+                b"SECRET=AKIAFALLBACKZSTDLEXAMPLE\n",
+            ),
+            "AKIAFALLBACKZSTDLEXAMPLE",
+        ),
+    ];
+    let mut expected_layers = Vec::new();
+    for (relative_path, bytes, _) in &fixtures {
+        let layer_path = root.join(relative_path);
+        std::fs::create_dir_all(layer_path.parent().expect("layer parent")).expect("mkdir layer");
+        std::fs::write(&layer_path, bytes).expect("write metadata-less compressed layer");
+        expected_layers.push(layer_path);
+    }
+
+    let layers = TestApi.docker_manifest_layer_archives(&root).unwrap();
+    assert_eq!(
+        layers, expected_layers,
+        "metadata-less compressed Docker layers must not disappear during fallback discovery"
+    );
+
+    for (idx, (relative_path, _, needle)) in fixtures.iter().enumerate() {
+        let layer_path = root.join(relative_path);
+        let unpacked = dir.path().join(format!("unpacked-fallback-{idx}"));
+        std::fs::create_dir(&unpacked).expect("mkdir unpacked");
+        TestApi
+            .unpack_docker_layer_archive(&layer_path, &unpacked)
+            .unwrap();
+        let chunks: Vec<_> = FilesystemSource::new(unpacked)
+            .chunks()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("fallback compressed layer filesystem chunks must drain without source errors");
+        assert!(
+            chunks.iter().any(|chunk| chunk.data.contains(needle)),
+            "fallback-discovered compressed layer payload must reach scan chunks for {relative_path}; chunks={}",
+            chunks.len()
+        );
+    }
 }
 
 #[cfg(feature = "docker")]
@@ -481,7 +575,6 @@ fn docker_manifest_empty_entries_fail_loud() {
 #[cfg(feature = "docker")]
 #[test]
 fn oci_image_layout_yields_config_and_layer_chunks() {
-    use flate2::{write::GzEncoder, Compression};
     use keyhog_core::Source;
     use keyhog_sources::FilesystemSource;
     use sha2::{Digest, Sha256};
@@ -500,22 +593,6 @@ fn oci_image_layout_yields_config_and_layer_chunks() {
         (format!("sha256:{hex}"), path)
     }
 
-    fn gzip_tar_payload() -> Vec<u8> {
-        let encoder = GzEncoder::new(Vec::new(), Compression::default());
-        let mut builder = tar::Builder::new(encoder);
-        let payload = b"SECRET=AKIAOCIIMAGE7EXAMPLE\n";
-        let mut header = tar::Header::new_gnu();
-        header.set_path("oci-secret.env").expect("set path");
-        header.set_size(payload.len() as u64);
-        header.set_entry_type(tar::EntryType::Regular);
-        header.set_cksum();
-        builder
-            .append(&header, payload.as_slice())
-            .expect("append payload");
-        let encoder = builder.into_inner().expect("finish tar");
-        encoder.finish().expect("finish gzip")
-    }
-
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().join("root");
     std::fs::create_dir_all(root.join("blobs").join("sha256")).expect("mkdir blobs");
@@ -532,7 +609,7 @@ fn oci_image_layout_yields_config_and_layer_chunks() {
       ]
     }"#;
     let (config_digest, _) = write_blob(&root, config);
-    let layer_bytes = gzip_tar_payload();
+    let layer_bytes = gzip_tar_layer_bytes("oci-secret.env", b"SECRET=AKIAOCIIMAGE7EXAMPLE\n");
     let (layer_digest, layer_path) = write_blob(&root, &layer_bytes);
     let manifest = format!(
         r#"{{

@@ -735,11 +735,20 @@ fn find_layer_archives(
                 )));
             }
         };
-        if entry.path.file_name().and_then(|name| name.to_str()) == Some("layer.tar") {
+        if is_fallback_layer_archive_path(&entry.path) {
             layers.push(entry.path);
         }
     }
+    layers.sort();
+    layers.dedup();
     dedup_layer_archives_by_content(layers)
+}
+
+fn is_fallback_layer_archive_path(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some("layer.tar" | "layer.tar.gz" | "layer.tgz" | "layer.tar.zst" | "layer.tar.zstd")
+    )
 }
 
 #[derive(serde::Deserialize)]
