@@ -103,7 +103,8 @@ fn false_positive_context_does_not_suppress_bare_h1_outside_go_sum() {
 
 #[test]
 fn false_positive_context_detects_strict_go_sum_checksum_without_path() {
-    let lines = vec!["github.com/example/module v1.0.0 h1:Fr1vK8xdpbQ5OCaCB3ABAfRtq5B4JZc0jRUXPv7Q3k0="];
+    let lines =
+        vec!["github.com/example/module v1.0.0 h1:Fr1vK8xdpbQ5OCaCB3ABAfRtq5B4JZc0jRUXPv7Q3k0="];
     assert!(
         is_false_positive_context(&lines, 0, None),
         "pathless go.sum-shaped h1 checksums should still suppress when the checksum token shape is strict"
@@ -124,9 +125,35 @@ fn false_positive_context_detects_configmap_binary_data_block() {
 fn false_positive_context_detects_git_lfs_pointer() {
     let lines = vec![
         "version https://git-lfs.github.com/spec/v1",
-        "oid sha256:sk-proj-abcdefghijklmnopqrstuvwxyz123456",
+        "oid sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "size 12345",
     ];
     assert!(is_false_positive_context(&lines, 1, None));
+}
+
+#[test]
+fn false_positive_context_does_not_suppress_nearby_git_lfs_prose() {
+    let lines = vec![
+        "# git-lfs stores large binaries out of band",
+        "OPENAI_API_KEY = sk-proj-abcdefghijklmnopqrstuvwxyz123456",
+    ];
+    assert!(
+        !is_false_positive_context(&lines, 1, None),
+        "a nearby git-lfs mention is not a Git LFS pointer and must not hide a real credential"
+    );
+}
+
+#[test]
+fn false_positive_context_does_not_suppress_malformed_git_lfs_oid() {
+    let lines = vec![
+        "version https://git-lfs.github.com/spec/v1",
+        "oid sha256:sk-proj-abcdefghijklmnopqrstuvwxyz123456",
+        "size 12345",
+    ];
+    assert!(
+        !is_false_positive_context(&lines, 1, None),
+        "Git LFS suppression requires a 64-hex object id, not any oid sha256 line"
+    );
 }
 
 #[test]

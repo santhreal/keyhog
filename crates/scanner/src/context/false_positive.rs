@@ -209,7 +209,9 @@ fn has_strict_go_sum_checksum_shape(bytes: &[u8], h1_pos: usize) -> bool {
     let Some(digest) = bytes.get(digest_start..digest_start + 44) else {
         return false;
     };
-    digest.iter().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
+    digest
+        .iter()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
         && bytes
             .get(digest_start + 44)
             .is_none_or(u8::is_ascii_whitespace)
@@ -256,14 +258,60 @@ fn is_git_lfs_pointer_context_with_lines(
     line_idx: usize,
     line_bytes: &[u8],
 ) -> bool {
-    is_git_lfs_pointer_context_bytes(line_bytes)
-        || nearby_lines_contain(lines, line_idx, 3, |candidate| {
-            is_git_lfs_pointer_context_bytes(candidate.as_bytes())
+    is_git_lfs_oid_line(line_bytes)
+        && nearby_lines_contain(lines, line_idx, 3, |candidate| {
+            is_git_lfs_version_line(candidate.as_bytes())
+        })
+        && surrounding_lines_contain(lines, line_idx, 3, |candidate| {
+            is_git_lfs_size_line(candidate.as_bytes())
         })
 }
 
 fn is_git_lfs_pointer_context_bytes(bytes: &[u8]) -> bool {
-    ci_find(bytes, b"oid sha256:") || ci_find(bytes, b"git-lfs")
+    let mut has_version = false;
+    let mut has_oid = false;
+    let mut has_size = false;
+    for line in bytes.split(|byte| matches!(byte, b'\n' | b'\r')) {
+        has_version |= is_git_lfs_version_line(line);
+        has_oid |= is_git_lfs_oid_line(line);
+        has_size |= is_git_lfs_size_line(line);
+        if has_version && has_oid && has_size {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_git_lfs_version_line(bytes: &[u8]) -> bool {
+    trim_ascii_bytes(bytes).eq_ignore_ascii_case(b"version https://git-lfs.github.com/spec/v1")
+}
+
+fn is_git_lfs_oid_line(bytes: &[u8]) -> bool {
+    let trimmed = trim_ascii_bytes(bytes);
+    let Some(rest) = trimmed.strip_prefix(b"oid sha256:") else {
+        return false;
+    };
+    rest.len() == 64 && rest.iter().all(u8::is_ascii_hexdigit)
+}
+
+fn is_git_lfs_size_line(bytes: &[u8]) -> bool {
+    let trimmed = trim_ascii_bytes(bytes);
+    let Some(rest) = trimmed.strip_prefix(b"size ") else {
+        return false;
+    };
+    !rest.is_empty() && rest.iter().all(u8::is_ascii_digit)
+}
+
+fn trim_ascii_bytes(bytes: &[u8]) -> &[u8] {
+    let start = bytes
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .unwrap_or(bytes.len()); // LAW10: all-whitespace trim starts at end; no context is suppressed from this default
+    let end = bytes
+        .iter()
+        .rposition(|byte| !byte.is_ascii_whitespace())
+        .map_or(start, |idx| idx + 1);
+    &bytes[start..end]
 }
 
 fn is_renovate_digest_context_with_lines(
