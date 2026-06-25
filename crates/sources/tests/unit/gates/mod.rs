@@ -26,6 +26,7 @@ pub mod git_source_no_inline_tests;
 pub mod git_source_no_unwrap_expect;
 pub mod git_source_non_empty;
 pub mod git_tree_walk_shared_contract;
+pub mod github_org_api_response_cap_contract;
 pub mod github_org_no_inline_tests;
 pub mod github_org_no_unwrap_expect;
 pub mod github_org_non_empty;
