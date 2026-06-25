@@ -25,7 +25,7 @@ fn gpu_not_selected_automatically() {
     assert_eq!(select_backend(&hw, 100, 50), ScanBackend::CpuFallback);
 
     hw.has_avx2 = true;
-    assert_eq!(select_backend(&hw, 1000, 1000), ScanBackend::SimdCpu);
+    assert_eq!(select_backend(&hw, 1000, 1000), ScanBackend::CpuFallback);
 }
 
 #[test]
@@ -38,10 +38,10 @@ fn software_gpu_rejected() {
 }
 
 #[test]
-fn simd_when_no_hyperscan() {
+fn cpu_fallback_when_no_hyperscan_even_with_cpu_simd() {
     let mut hw = caps();
     hw.has_avx2 = true;
-    assert_eq!(select_backend(&hw, 0, 10), ScanBackend::SimdCpu);
+    assert_eq!(select_backend(&hw, 0, 10), ScanBackend::CpuFallback);
 }
 
 #[test]

@@ -18,6 +18,16 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         "/src/engine/scan_coalesced.rs"
     ))
     .expect("engine coalesced scan source readable");
+    let compiled_api = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/compiled_api.rs"
+    ))
+    .expect("engine compiled_api source readable");
+    let hw_select = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/hw_probe/select.rs"
+    ))
+    .expect("hardware backend selector source readable");
     let triggered = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/engine/backend_triggered.rs"
@@ -111,5 +121,24 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
             && engine_scan.contains("collect_triggered_patterns_for_backend(")
             && engine_scan.contains("ScanBackend::SimdCpu"),
         "shared coalesced phase-2 must normalize trigger rows before zipping, so cardinality drift cannot silently truncate scanned chunks"
+    );
+    assert!(
+        hw_select.contains("if caps.hyperscan_available {\n        ScanBackend::SimdCpu")
+            && !hw_select.contains(
+                "caps.hyperscan_available || caps.has_avx512 || caps.has_avx2 || caps.has_neon"
+            ),
+        "CPU-tier routing must not label AVX/NEON-only hosts as simd-regex when no live Hyperscan/Vectorscan prefilter exists"
+    );
+    let selected_simd_guard = compiled_api
+        .split("if selected_backend == ScanBackend::SimdCpu && !self.simd_backend_usable()")
+        .nth(1)
+        .and_then(|tail| tail.split("selected_backend\n    }").next())
+        .expect("selected SimdCpu unavailable guard extractable");
+    assert!(
+        selected_simd_guard.contains("crate::process_exit::backend_unavailable(")
+            && selected_simd_guard.contains("silent cpu-fallback execution is forbidden")
+            && !selected_simd_guard.contains("warn_simd_auto_degrade")
+            && !selected_simd_guard.contains("return ScanBackend::CpuFallback"),
+        "selected simd-regex without a live prefilter must fail closed, not warn and reroute to cpu-fallback"
     );
 }

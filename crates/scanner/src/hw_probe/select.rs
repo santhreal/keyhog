@@ -26,17 +26,18 @@ pub(crate) fn clear_test_backend_override() {
     });
 }
 
-/// The CPU-only backend tier for this hardware: `SimdCpu` when Hyperscan is
-/// compiled in OR the CPU has an accelerated SIMD ISA (AVX-512 / AVX2 / NEON),
-/// else the pure-scalar `CpuFallback`. This is the SINGLE source of truth for
-/// the "no GPU in play" decision — every router that needs a non-GPU backend
-/// (`select_backend`, `select_backend_for_file`, `select_backend_for_batch`,
-/// and the CLI's measured
-/// autoroute default) routes through here so the four-way ladder can never
-/// drift between sites.
+/// The CPU-only backend tier for this hardware: `SimdCpu` only when the
+/// Hyperscan/Vectorscan prefilter is compiled in and live, otherwise the
+/// pure-scalar `CpuFallback`. CPU ISA flags are reported for operator
+/// visibility, but they do not by themselves prove the `simd-regex` backend
+/// exists. This is the SINGLE source of truth for the "no GPU in play"
+/// decision - every router that needs a non-GPU backend (`select_backend`,
+/// `select_backend_for_file`, `select_backend_for_batch`, and the CLI's
+/// measured autoroute default) routes through here so the four-way ladder can
+/// never drift between sites.
 #[must_use]
 pub(crate) fn cpu_tier_backend(caps: &HardwareCaps) -> ScanBackend {
-    if caps.hyperscan_available || caps.has_avx512 || caps.has_avx2 || caps.has_neon {
+    if caps.hyperscan_available {
         ScanBackend::SimdCpu
     } else {
         ScanBackend::CpuFallback
@@ -271,11 +272,9 @@ fn select_backend_for_workload(
 ///    enough patterns to benefit from massively-parallel literal matching, OR
 ///    a single very large file at or above the tier solo cap where one device
 ///    dispatch can beat saturating one CPU core with Hyperscan.
-/// 2. **SimdCpu** - Hyperscan is compiled in and CPU has SIMD (AVX-512/AVX2/
-///    NEON). This is the default high-throughput path for most deployments.
-/// 3. **SimdCpu (no-Hyperscan)** - bare SIMD prefilter without Hyperscan when
-///    SIMD CPU features exist but the Hyperscan crate failed to load.
-/// 4. **CpuFallback** - pure scalar AC + regex. Works everywhere.
+/// 2. **SimdCpu** - Hyperscan/Vectorscan is compiled in and live. This is the
+///    default high-throughput path for most deployments.
+/// 3. **CpuFallback** - pure scalar AC + regex. Works everywhere.
 ///
 /// The crossover thresholds were tuned against the standard corpus (Django +
 /// kubernetes/kubernetes + linux/linux). See [`super::thresholds`].

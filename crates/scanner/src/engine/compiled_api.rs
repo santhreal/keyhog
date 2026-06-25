@@ -60,15 +60,11 @@ Forced --backend simd is rejected instead of silently running another backend."
             None => self.select_backend_for_file(chunk_bytes),
         };
         if selected_backend == ScanBackend::SimdCpu && !self.simd_backend_usable() {
-            if requested_backend.is_some() {
-                crate::process_exit::backend_unavailable(
-                    "simd-regex selected but the SIMD/Hyperscan prefilter is unavailable; \
+            crate::process_exit::backend_unavailable(
+                "simd-regex selected but the SIMD/Hyperscan prefilter is unavailable; \
 silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or choose \
 `--backend cpu-fallback` explicitly.",
-                );
-            }
-            self.warn_simd_auto_degrade("autoroute selected simd-regex without a live prefilter");
-            return ScanBackend::CpuFallback;
+            );
         }
         selected_backend
     }
