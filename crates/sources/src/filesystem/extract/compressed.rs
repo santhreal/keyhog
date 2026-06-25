@@ -158,8 +158,6 @@ fn emit_tar_entries_with_state(
     nested_depth: usize,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
-    use std::io::Read as _;
-
     const MAX_EMBEDDED_TAR_DEPTH: usize = 8;
 
     let mut archive = tar::Archive::new(std::io::Cursor::new(tar_bytes));
@@ -299,29 +297,48 @@ fn emit_tar_entries_with_state(
             break;
         }
 
-        let mut content: Vec<u8> = Vec::with_capacity(entry_size.min(max_size.max(1)) as usize);
-        // Bound the read at the per-file cap even if the header lies about size.
         let read_cap = if max_size > 0 { max_size } else { u64::MAX };
-        if entry
-            .by_ref()
-            .take(read_cap)
-            .read_to_end(&mut content)
-            .is_err()
-        {
-            // Law 10: a tar entry whose body could not be read is an UNKNOWN
-            // dropped from the scan — count it.
-            tracing::warn!(archive = %container_display, entry = %entry_name, "failed to read tar entry body");
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        let read = match crate::capped_read::read_to_cap(&mut entry, read_cap, Some(entry_size)) {
+            Ok(read) => read,
+            Err(error) => {
+                // Law 10: a tar entry whose body could not be read is an UNKNOWN
+                // dropped from the scan — count it.
+                tracing::warn!(archive = %container_display, entry = %entry_name, %error, "failed to read tar entry body");
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit_tar_entry_error(
+                    emit,
+                    container_display,
+                    &entry_name,
+                    format!("cannot read entry body ({error}); entry was not scanned"),
+                ) {
+                    return;
+                }
+                continue;
+            }
+        };
+        if read.truncated {
+            let observed_size = read_cap.saturating_add(1);
+            tracing::warn!(
+                archive = %container_display,
+                entry = %entry_name,
+                size = observed_size,
+                cap = max_size,
+                "skipping tar entry: decoded size exceeds per-file cap"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             if !emit_tar_entry_error(
                 emit,
                 container_display,
                 &entry_name,
-                "cannot read entry body; entry was not scanned",
+                format!(
+                    "decoded size {observed_size} exceeds per-file cap {max_size}; entry was not scanned"
+                ),
             ) {
                 return;
             }
             continue;
         }
+        let content = read.bytes;
 
         if entry_is_embedded_tar(&entry_name, &content) {
             let nested_display = format!("{container_display}//{entry_name}");

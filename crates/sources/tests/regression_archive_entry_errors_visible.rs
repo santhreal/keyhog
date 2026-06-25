@@ -161,4 +161,9 @@ fn tar_entry_failures_emit_source_errors() {
         compressed.contains("fn emit_tar_entry_error("),
         "tar entry error formatting must have one helper owner"
     );
+    assert!(
+        compressed.contains("crate::capped_read::read_to_cap(&mut entry")
+            && !compressed.contains(".by_ref()\n            .take(read_cap)\n            .read_to_end"),
+        "tar entry body reads must use the shared cap helper, not a silent truncating take/read_to_end loop"
+    );
 }
