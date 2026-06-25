@@ -38,7 +38,7 @@ pub(crate) fn is_false_positive_match_context_with_path(
         || is_renovate_digest_match_context(current_match_line.as_bytes(), current_match_offset)
         || is_cors_header_bytes(current_line_bytes)
         || is_http_cache_header_bytes(current_line_bytes)
-        || has_disclaimer_comment_bytes(bytes)
+        || has_disclaimer_comment_bytes(current_line_bytes)
 }
 
 /// Detect trailing/leading comment disclaimers like `// not a real key`,
