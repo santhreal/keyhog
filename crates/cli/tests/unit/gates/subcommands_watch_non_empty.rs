@@ -1,5 +1,7 @@
 //! Gate `subcommands::watch`: substantive source, no todo!/unimplemented! in prod paths.
 
+use keyhog::testing::{API, CliTestApi as _};
+
 #[test]
 fn subcommands_watch_non_empty() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/subcommands/watch.rs");
@@ -17,6 +19,23 @@ fn subcommands_watch_non_empty() {
     assert!(
         !prod.contains("todo!()") && !prod.contains("unimplemented!()"),
         "subcommands::watch: todo!/unimplemented! forbidden in non-test source"
+    );
+}
+
+#[test]
+fn watch_dedupe_hashes_raw_bytes_not_lossy_text() {
+    let first = b"API_KEY=abc\x80def\n";
+    let second = b"API_KEY=abc\x81def\n";
+
+    assert_eq!(
+        String::from_utf8_lossy(first),
+        String::from_utf8_lossy(second),
+        "test fixture must prove two byte-distinct edits collapse to the same lossy text"
+    );
+    assert_ne!(
+        API.watch_content_hash(first),
+        API.watch_content_hash(second),
+        "watch dedupe must key on raw bytes so a real invalid-UTF-8 edit is re-scanned"
     );
 }
 

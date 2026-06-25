@@ -102,7 +102,7 @@ pub trait CliTestApi {
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
     ) -> Result<Vec<Box<dyn Source>>>;
     fn merge_scan_ignore_paths(&self, args: &ScanArgs, allowlist_paths: Vec<String>)
-        -> Vec<String>;
+    -> Vec<String>;
     fn validate_cli_path_arg(&self, path: &Path, name: &str) -> Result<()>;
     fn report_findings(
         &self,
@@ -232,6 +232,7 @@ pub trait CliTestApi {
     fn doctor_canonicalize_for_shadow_check(&self, path: PathBuf) -> PathBuf;
     fn canonical_scan_args(&self) -> &'static str;
     fn hook_content(&self) -> &'static str;
+    fn watch_content_hash(&self, data: &[u8]) -> u64;
 
     fn max_resident_findings(&self) -> usize;
     fn scan_system_chunk_fits_space_cap(
@@ -692,6 +693,9 @@ impl CliTestApi for TestApi {
     }
     fn hook_content(&self) -> &'static str {
         crate::subcommands::hook::testing::HOOK_CONTENT
+    }
+    fn watch_content_hash(&self, data: &[u8]) -> u64 {
+        crate::subcommands::watch::testing::content_hash(data)
     }
 
     fn max_resident_findings(&self) -> usize {

@@ -163,9 +163,9 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
 /// enough to tell "same bytes as the event we just scanned" from a real
 /// edit - we only need to suppress the duplicate inotify event, not to
 /// resist collisions.
-fn content_hash(data: &str) -> u64 {
+fn content_hash(data: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in data.as_bytes() {
+    for b in data {
         h ^= *b as u64;
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
@@ -212,11 +212,11 @@ fn scan_file(
         return Ok(());
     }
 
-    // Dedupe the Create+Modify burst: if we scanned this exact content for
-    // this path within DEDUP_WINDOW, skip - notify already gave us a finding
-    // for it. A real edit changes the hash and is always re-scanned.
+    // Dedupe the Create+Modify burst by raw bytes: lossy text decoding can map
+    // distinct invalid UTF-8 byte edits to the same string, but a real byte edit
+    // must always be re-scanned.
     let now = Instant::now();
-    let hash = content_hash(&data);
+    let hash = content_hash(&bytes);
     if let Some((last, last_hash)) = recently_scanned.get(path) {
         if *last_hash == hash && now.duration_since(*last) < DEDUP_WINDOW {
             return Ok(());
@@ -263,6 +263,12 @@ fn scan_file(
         .with_context(|| format!("write watch finding for {}", path.display()))?;
     }
     Ok(())
+}
+
+pub(crate) mod testing {
+    pub(crate) fn content_hash(data: &[u8]) -> u64 {
+        super::content_hash(data)
+    }
 }
 
 fn should_skip(path: &std::path::Path, skip_dirs: &SkipDirPolicy) -> bool {
