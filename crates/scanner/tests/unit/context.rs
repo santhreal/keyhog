@@ -330,6 +330,26 @@ fn false_positive_match_context_detects_renovate_digest() {
 }
 
 #[test]
+fn false_positive_match_context_detects_second_renovate_digest_on_line() {
+    let text = r#""branches": ["renovate/no-digest", "renovate/node-8f3a9b2c1d4e5f60"]"#;
+    let offset = text.find("8f3a").expect("fixture contains second digest");
+    assert!(
+        is_false_positive_match_context(text, offset, None),
+        "Renovate suppression must inspect every renovate/ token on the line"
+    );
+}
+
+#[test]
+fn false_positive_match_context_does_not_suppress_renovate_branch_prefix() {
+    let text = r#""branchName": "renovate/node-8f3a9b2c1d4e5f60""#;
+    let offset = text.find("node").expect("fixture contains branch prefix");
+    assert!(
+        !is_false_positive_match_context(text, offset, None),
+        "Renovate suppression must overlap the digest run, not any byte inside the branch name"
+    );
+}
+
+#[test]
 fn false_positive_context_does_not_suppress_adjacent_renovate_branch() {
     let lines = vec![
         r#""branchName": "renovate/node-8f3a9b2c1d4e5f60","#,
@@ -362,6 +382,16 @@ fn false_positive_context_does_not_suppress_renovate_token_value() {
     assert!(
         !is_false_positive_context(&lines, 0, None),
         "a secret value containing renovate/ is not a Renovate branch digest"
+    );
+}
+
+#[test]
+fn false_positive_match_context_does_not_suppress_renovate_token_value() {
+    let text = r#""renovate_token": "renovate/ghp_abcdefghijklmnopqrstuvwxyz123456""#;
+    let offset = text.find("ghp_").expect("fixture contains token");
+    assert!(
+        !is_false_positive_match_context(text, offset, None),
+        "offset-aware Renovate suppression must not hide secret values containing renovate/"
     );
 }
 

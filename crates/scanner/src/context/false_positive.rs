@@ -419,23 +419,32 @@ fn is_renovate_digest_context_with_lines(
 }
 
 fn is_renovate_digest_match_context(bytes: &[u8], match_offset: usize) -> bool {
-    let Some(start) = ci_find_index(bytes, b"renovate/") else {
-        return false;
-    };
-    let branch_start = start + b"renovate/".len();
-    let mut branch_end = branch_start;
-    while let Some(byte) = bytes.get(branch_end) {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'/') {
-            branch_end += 1;
-        } else {
-            break;
-        }
-    }
     let match_offset = match_offset.min(bytes.len());
-    match_offset >= start
-        && match_offset < branch_end
-        && branch_end > branch_start
-        && contains_hex_sequence_bytes(&bytes[branch_start..branch_end])
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        let Some(relative_start) = ci_find_index(&bytes[cursor..], b"renovate/") else {
+            return false;
+        };
+        let start = cursor + relative_start;
+        let branch_start = start + b"renovate/".len();
+        let mut branch_end = branch_start;
+        while let Some(byte) = bytes.get(branch_end) {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.') {
+                branch_end += 1;
+            } else {
+                break;
+            }
+        }
+        if branch_end > branch_start
+            && match_offset >= branch_start
+            && match_offset < branch_end
+            && hex_run_contains_offset(bytes, branch_start, branch_end, match_offset)
+        {
+            return true;
+        }
+        cursor = branch_end.max(start + 1);
+    }
+    false
 }
 
 fn ci_find_index(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -450,6 +459,25 @@ fn ci_find_index(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         }
     }
     None
+}
+
+fn hex_run_contains_offset(bytes: &[u8], start: usize, end: usize, offset: usize) -> bool {
+    let mut run_start = start;
+    let mut run_len = 0usize;
+    for idx in start..end {
+        if bytes[idx].is_ascii_hexdigit() {
+            if run_len == 0 {
+                run_start = idx;
+            }
+            run_len += 1;
+            continue;
+        }
+        if run_len >= 8 && offset >= run_start && offset < idx {
+            return true;
+        }
+        run_len = 0;
+    }
+    run_len >= 8 && offset >= run_start && offset < end
 }
 
 fn line_at_offset(text: &str, offset: usize) -> (&str, usize) {
@@ -514,21 +542,6 @@ fn header_name_matches(bytes: &[u8], allowed: &[&[u8]]) -> bool {
     allowed
         .iter()
         .any(|candidate| name.eq_ignore_ascii_case(candidate))
-}
-
-fn contains_hex_sequence_bytes(bytes: &[u8]) -> bool {
-    let mut run = 0usize;
-    for &b in bytes {
-        if b.is_ascii_hexdigit() {
-            run += 1;
-            if run >= 8 {
-                return true;
-            }
-        } else {
-            run = 0;
-        }
-    }
-    false
 }
 
 fn nearby_lines_contain(
