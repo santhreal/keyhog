@@ -14,8 +14,6 @@ use wait_timeout::ChildExt;
 
 use crate::FilesystemSource;
 
-const DOCKER_STDERR_EXCERPT_BYTES: usize = 64 * 1024;
-
 /// Scan a Docker image by saving it as a tar archive and unpacking each layer.
 ///
 /// # Examples
@@ -250,7 +248,7 @@ fn export_docker_image_archive(
     let stderr = child
         .stderr
         .take()
-        .map(|pipe| std::thread::spawn(move || drain_docker_stderr_excerpt(pipe)));
+        .map(|pipe| std::thread::spawn(move || crate::process_excerpt::drain_stderr_excerpt(pipe)));
     let timeout = crate::timeouts::DOCKER_EXPORT;
     let status = match child.wait_timeout(timeout) {
         Ok(Some(status)) => status,
@@ -342,35 +340,6 @@ fn docker_stderr_suffix(stderr: &str) -> String {
     } else {
         format!(": {stderr}")
     }
-}
-
-fn drain_docker_stderr_excerpt(mut stderr_pipe: impl Read) -> String {
-    let mut excerpt = Vec::new();
-    let mut buffer = [0_u8; 8192];
-    let mut truncated = false;
-    loop {
-        match stderr_pipe.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(read) => {
-                if excerpt.len() < DOCKER_STDERR_EXCERPT_BYTES {
-                    let keep = read.min(DOCKER_STDERR_EXCERPT_BYTES - excerpt.len());
-                    excerpt.extend_from_slice(&buffer[..keep]);
-                    if keep < read {
-                        truncated = true;
-                    }
-                } else {
-                    truncated = true;
-                }
-            }
-            Err(error) => return format!("stderr unavailable: {error}"),
-        }
-    }
-
-    let mut text = String::from_utf8_lossy(&excerpt).into_owned();
-    if truncated {
-        text.push_str("\n[stderr truncated after 65536 bytes]");
-    }
-    text
 }
 
 fn validate_image_name(image: &str) -> Result<String, SourceError> {

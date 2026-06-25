@@ -12,8 +12,6 @@ use crate::FilesystemSource;
 mod sanitize;
 use sanitize::sanitize_git_error_message;
 
-const HOSTED_GIT_STDERR_EXCERPT_BYTES: usize = 64 * 1024;
-
 #[derive(Debug, Clone)]
 pub(crate) struct HostedRepo {
     pub(crate) clone_dir_name: String,
@@ -285,10 +283,10 @@ mod tests {
 
     #[test]
     fn hosted_git_stderr_drain_is_bounded_and_marks_truncation() {
-        let payload = vec![b'E'; super::HOSTED_GIT_STDERR_EXCERPT_BYTES * 2];
-        let excerpt = super::drain_hosted_git_stderr_excerpt(&payload[..]);
+        let payload = vec![b'E'; crate::process_excerpt::STDERR_EXCERPT_BYTES * 2];
+        let excerpt = crate::process_excerpt::drain_stderr_excerpt(&payload[..]);
         assert!(
-            excerpt.len() <= super::HOSTED_GIT_STDERR_EXCERPT_BYTES + 64,
+            excerpt.len() <= crate::process_excerpt::STDERR_EXCERPT_BYTES + 64,
             "stderr excerpt must remain bounded, got {} bytes",
             excerpt.len()
         );
@@ -300,7 +298,7 @@ mod tests {
 
     #[test]
     fn hosted_git_stdout_drain_consumes_large_output_without_buffering() {
-        let payload = vec![b'O'; super::HOSTED_GIT_STDERR_EXCERPT_BYTES * 2];
+        let payload = vec![b'O'; crate::process_excerpt::STDERR_EXCERPT_BYTES * 2];
         super::drain_hosted_git_stdout(&payload[..]).expect("stdout drain");
     }
 
@@ -758,7 +756,7 @@ fn clone_repo(
     let stderr_drain = child
         .stderr
         .take()
-        .map(|pipe| thread::spawn(move || drain_hosted_git_stderr_excerpt(pipe)));
+        .map(|pipe| thread::spawn(move || crate::process_excerpt::drain_stderr_excerpt(pipe)));
 
     let output = wait_for_command_with_timeout(
         child,
@@ -961,35 +959,6 @@ fn drain_hosted_git_stdout(mut stdout_pipe: impl std::io::Read) -> Result<(), St
             Err(error) => return Err(format!("stdout unavailable: {error}")),
         }
     }
-}
-
-fn drain_hosted_git_stderr_excerpt(mut stderr_pipe: impl std::io::Read) -> String {
-    let mut excerpt = Vec::new();
-    let mut buffer = [0_u8; 8192];
-    let mut truncated = false;
-    loop {
-        match std::io::Read::read(&mut stderr_pipe, &mut buffer) {
-            Ok(0) => break,
-            Ok(read) => {
-                if excerpt.len() < HOSTED_GIT_STDERR_EXCERPT_BYTES {
-                    let keep = read.min(HOSTED_GIT_STDERR_EXCERPT_BYTES - excerpt.len());
-                    excerpt.extend_from_slice(&buffer[..keep]);
-                    if keep < read {
-                        truncated = true;
-                    }
-                } else {
-                    truncated = true;
-                }
-            }
-            Err(error) => return format!("stderr unavailable: {error}"),
-        }
-    }
-
-    let mut text = String::from_utf8_lossy(&excerpt).into_owned();
-    if truncated {
-        text.push_str("\n[stderr truncated after 65536 bytes]");
-    }
-    text
 }
 
 fn kill_and_reap_child(child: &mut std::process::Child) -> Result<(), String> {

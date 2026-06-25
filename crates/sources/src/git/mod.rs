@@ -1,9 +1,8 @@
 //! Shared git utilities.
 
 use keyhog_core::SourceError;
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStderr, ChildStdout, Command};
+use std::process::{Child, ChildStdout, Command};
 use std::thread::JoinHandle;
 
 mod diff;
@@ -152,8 +151,6 @@ pub(crate) fn drain_trimmed_hunk(buffer: &mut Vec<u8>) -> Option<String> {
     Some(chunk)
 }
 
-const GIT_STDERR_EXCERPT_BYTES: usize = 64 * 1024;
-
 pub(crate) struct GitChild {
     child: Child,
     stderr: Option<JoinHandle<String>>,
@@ -165,7 +162,7 @@ pub(crate) fn spawn_git_child(mut command: Command) -> Result<GitChild, SourceEr
     let stderr = child
         .stderr
         .take()
-        .map(|pipe| std::thread::spawn(move || drain_stderr_excerpt(pipe)));
+        .map(|pipe| std::thread::spawn(move || crate::process_excerpt::drain_stderr_excerpt(pipe)));
     Ok(GitChild {
         child,
         stderr,
@@ -243,35 +240,6 @@ impl Drop for GitChild {
             }
         }
     }
-}
-
-fn drain_stderr_excerpt(mut stderr_pipe: ChildStderr) -> String {
-    let mut excerpt = Vec::new();
-    let mut buffer = [0_u8; 8192];
-    let mut truncated = false;
-    loop {
-        match stderr_pipe.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(read) => {
-                if excerpt.len() < GIT_STDERR_EXCERPT_BYTES {
-                    let keep = read.min(GIT_STDERR_EXCERPT_BYTES - excerpt.len());
-                    excerpt.extend_from_slice(&buffer[..keep]);
-                    if keep < read {
-                        truncated = true;
-                    }
-                } else {
-                    truncated = true;
-                }
-            }
-            Err(error) => return format!("stderr unavailable: {error}"),
-        }
-    }
-
-    let mut text = String::from_utf8_lossy(&excerpt).into_owned();
-    if truncated {
-        text.push_str("\n[stderr truncated after 65536 bytes]");
-    }
-    text
 }
 
 /// Read one line (through the trailing `\n`) into `buf`, capping buffered bytes
@@ -461,7 +429,7 @@ mod capped_line_tests {
 
 #[cfg(test)]
 mod git_child_tests {
-    use super::{spawn_git_child, wait_for_git_child, GIT_STDERR_EXCERPT_BYTES};
+    use super::{spawn_git_child, wait_for_git_child};
     use std::io::{Read, Write};
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
@@ -472,7 +440,7 @@ mod git_child_tests {
     #[test]
     fn streamed_git_child_drains_large_stderr_before_wait() {
         if std::env::var_os(SPAM_STDERR_ENV).is_some() {
-            let payload = vec![b'E'; GIT_STDERR_EXCERPT_BYTES * 4];
+            let payload = vec![b'E'; crate::process_excerpt::STDERR_EXCERPT_BYTES * 4];
             std::io::stderr()
                 .write_all(&payload)
                 .expect("child writes stderr payload");

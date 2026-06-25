@@ -24,6 +24,7 @@ mod magic;
     feature = "bitbucket"
 ))]
 mod parallel_fetch;
+mod process_excerpt;
 mod skip;
 pub(crate) mod timeouts;
 #[cfg(any(

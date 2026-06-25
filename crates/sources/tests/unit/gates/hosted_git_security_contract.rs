@@ -40,7 +40,7 @@ fn hosted_git_clone_origin_and_wait_cleanup_contracts_stay_wired() {
         hosted_git.contains(".stdout(Stdio::piped())")
             && hosted_git.contains(".stderr(Stdio::piped())")
             && hosted_git.contains("drain_hosted_git_stdout")
-            && hosted_git.contains("drain_hosted_git_stderr_excerpt")
+            && hosted_git.contains("crate::process_excerpt::drain_stderr_excerpt(pipe)")
             && hosted_git.contains("hosted_git_stderr_suffix(&stderr)")
             && hosted_git.contains("sanitize_git_error_message(&output.stderr)"),
         "hosted Git clone must capture and drain child output so diagnostics are sanitized instead of inherited"

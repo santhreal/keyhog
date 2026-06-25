@@ -34,6 +34,7 @@ pub mod http_no_inline_tests;
 pub mod http_no_unwrap_expect;
 pub mod http_non_empty;
 pub mod magic_signature_owner;
+pub mod process_stderr_excerpt_owner;
 pub mod s3_auth_no_inline_tests;
 pub mod s3_auth_no_unwrap_expect;
 pub mod s3_auth_non_empty;
