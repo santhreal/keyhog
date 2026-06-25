@@ -58,7 +58,7 @@ fn detector_hits<'a>(
 
 #[test]
 fn hcl_variable_default_generic_secret_surfaces_with_source_line_and_offset() {
-    let secret = "a1b2c3d4e5f60718293a4b5c6d7e8f901a2b3c4d5e6f7081";
+    let secret = "f1e2d3c4b5a69788776655443322110fedcba9876543210a";
     let body =
         format!("variable \"api_key\" {{\n  type    = string\n  default = \"{secret}\"\n}}\n");
     let scanner = scanner_with_floor(0.40);
