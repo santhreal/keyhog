@@ -3,7 +3,7 @@
 //! Split out of `args.rs` because the scan subcommand has the largest flag
 //! surface and needs its own validation boundary.
 
-use clap::{Parser, ValueEnum};
+use clap::{parser::ValueSource, Parser, ValueEnum};
 use keyhog_core::DedupScope;
 use std::path::PathBuf;
 
@@ -85,6 +85,8 @@ pub struct ScanArgs {
     /// Detector TOML directory
     #[arg(short, long, default_value = "detectors")]
     pub detectors: PathBuf,
+    #[arg(skip)]
+    pub(crate) detectors_cli_explicit: bool,
 
     /// Positional shorthand for `--path`
     #[arg(value_name = "PATH", conflicts_with = "path")]
@@ -387,6 +389,8 @@ pub struct ScanArgs {
     /// Output format
     #[arg(long, default_value = "text", value_enum)]
     pub format: OutputFormat,
+    #[arg(skip)]
+    pub(crate) format_cli_explicit: bool,
 
     /// Show progress bar
     #[arg(long)]
@@ -692,6 +696,8 @@ pub struct ScanArgs {
     /// Deduplication scope for findings.
     #[arg(long, default_value = "credential", value_enum)]
     pub dedup: CliDedupScope,
+    #[arg(skip)]
+    pub(crate) dedup_cli_explicit: bool,
 
     /// Load configuration from a specific file path.
     #[arg(long, value_name = "PATH")]
@@ -831,6 +837,15 @@ pub struct ScanArgs {
     /// Placeholder keywords (internal use for config merge)
     #[arg(skip)]
     pub placeholder_keywords: Vec<String>,
+}
+
+impl ScanArgs {
+    pub(crate) fn mark_cli_value_sources(&mut self, matches: &clap::ArgMatches) {
+        self.detectors_cli_explicit =
+            matches.value_source("detectors") == Some(ValueSource::CommandLine);
+        self.format_cli_explicit = matches.value_source("format") == Some(ValueSource::CommandLine);
+        self.dedup_cli_explicit = matches.value_source("dedup") == Some(ValueSource::CommandLine);
+    }
 }
 
 impl ScanArgs {

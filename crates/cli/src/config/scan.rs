@@ -203,7 +203,7 @@ pub(super) fn apply_scan_section(
         } else if args.min_secret_len.is_none() {
             args.min_secret_len = scan.min_secret_len;
         }
-        if matches!(args.format, crate::args::OutputFormat::Text) {
+        if !args.format_cli_explicit && matches!(args.format, crate::args::OutputFormat::Text) {
             if let Some(ref f) = scan.format {
                 match parse_output_format(f) {
                     Some(fmt) => args.format = fmt,
@@ -259,7 +259,8 @@ pub(super) fn apply_scan_section(
                 args.per_chunk_timeout_ms = Some(timeout_ms);
             }
         }
-        if matches!(args.dedup, crate::args::CliDedupScope::Credential) {
+        if !args.dedup_cli_explicit && matches!(args.dedup, crate::args::CliDedupScope::Credential)
+        {
             if let Some(ref d) = scan.dedup {
                 match parse_dedup_scope(d) {
                     Some(scope) => args.dedup = scope,
@@ -298,7 +299,7 @@ pub(super) fn apply_top_level_scan_fields(
     // Apply config values only when no explicit CLI flag was given.
     let cli_preset_selected = args.fast || args.deep || args.precision;
     if let Some(ref detectors_str) = config.detectors {
-        if args.detectors == PathBuf::from("detectors") {
+        if !args.detectors_cli_explicit && args.detectors == PathBuf::from("detectors") {
             args.detectors = PathBuf::from(detectors_str);
         }
     }
@@ -307,7 +308,9 @@ pub(super) fn apply_top_level_scan_fields(
         match parse_output_format(format_str) {
             Some(fmt) => {
                 // Only override if the user didn't set --format (defaults to Text).
-                if matches!(args.format, crate::args::OutputFormat::Text) {
+                if !args.format_cli_explicit
+                    && matches!(args.format, crate::args::OutputFormat::Text)
+                {
                     args.format = fmt;
                 }
             }
@@ -415,7 +418,9 @@ pub(super) fn apply_top_level_scan_fields(
         match parse_dedup_scope(dedup_str) {
             Some(scope) => {
                 // credential is the clap default
-                if matches!(args.dedup, crate::args::CliDedupScope::Credential) {
+                if !args.dedup_cli_explicit
+                    && matches!(args.dedup, crate::args::CliDedupScope::Credential)
+                {
                     args.dedup = scope;
                 }
             }

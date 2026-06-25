@@ -28,7 +28,8 @@ pub use scan::{CliDedupScope, DaemonMode, OutputFormat, ScanArgs, SeverityFilter
 pub use scan_system::{parse_space_bytes, ScanSystemArgs};
 pub use watch::WatchArgs;
 
-use clap::Parser;
+use clap::{FromArgMatches, Parser};
+use std::ffi::OsString;
 
 #[derive(Parser)]
 #[command(
@@ -154,12 +155,43 @@ pub fn command() -> clap::Command {
 /// rendered `--help` carries the live detector count and the full exit-code
 /// contract. Mirrors `Cli::parse()` but with the runtime help wiring.
 pub fn parse() -> Cli {
-    use clap::FromArgMatches;
     let matches = command().get_matches();
-    match Cli::from_arg_matches(&matches) {
+    match cli_from_matches(&matches) {
         Ok(cli) => cli,
-        // clap's own error rendering already exited for parse failures; this
-        // branch only triggers on a derive/runtime mismatch, which is a bug.
+        // LAW10: clap has already rendered and exited for user parse errors; a
+        // remaining `FromArgMatches` error means the derive shape and runtime
+        // command builder disagree, so exiting with clap's diagnostic is loud.
         Err(err) => err.exit(),
+    }
+}
+
+/// Parse a top-level CLI argument vector while preserving clap value-source
+/// metadata used by the config merge. This is the production parse path with
+/// explicit input, kept public so integration tests prove the same behavior the
+/// binary uses instead of constructing partially marked `ScanArgs` by hand.
+pub fn try_parse_from<I, T>(args: I) -> Result<Cli, clap::Error>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
+    let matches = command().try_get_matches_from(args)?;
+    cli_from_matches(&matches)
+}
+
+fn cli_from_matches(matches: &clap::ArgMatches) -> Result<Cli, clap::Error> {
+    let mut cli = Cli::from_arg_matches(matches)?;
+    mark_scan_value_sources(&mut cli, matches);
+    Ok(cli)
+}
+
+fn mark_scan_value_sources(cli: &mut Cli, matches: &clap::ArgMatches) {
+    match (&mut cli.command, matches.subcommand()) {
+        (Some(Command::Scan(args)), Some(("scan", subcommand_matches))) => {
+            args.mark_cli_value_sources(subcommand_matches);
+        }
+        (Some(Command::Config(args)), Some(("config", subcommand_matches))) => {
+            args.scan.mark_cli_value_sources(subcommand_matches);
+        }
+        _ => {}
     }
 }

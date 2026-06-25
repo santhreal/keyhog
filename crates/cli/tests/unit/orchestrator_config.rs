@@ -1,5 +1,5 @@
 use clap::Parser;
-use keyhog::args::ScanArgs;
+use keyhog::args::{CliDedupScope, Command, OutputFormat, ScanArgs};
 use keyhog::testing::{CliTestApi as _, API};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 use tempfile::TempDir;
@@ -19,9 +19,18 @@ fn args_for_config_with_extra(contents: &str, extra_args: &[&str]) -> ScanArgs {
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(dir.path().join(".keyhog.toml"), contents).expect("write config");
     let path = dir.path().to_string_lossy().to_string();
-    let mut argv = vec!["scan".to_string(), "--path".to_string(), path];
+    let mut argv = vec![
+        "keyhog".to_string(),
+        "scan".to_string(),
+        "--path".to_string(),
+        path,
+    ];
     argv.extend(extra_args.iter().copied().map(String::from));
-    let mut args = ScanArgs::try_parse_from(argv).unwrap();
+    let cli = keyhog::args::try_parse_from(argv).unwrap();
+    let mut args = match cli.command {
+        Some(Command::Scan(args)) => *args,
+        _ => panic!("expected scan command"),
+    };
     API.apply_config_file_quiet(&mut args);
     args
 }
@@ -186,6 +195,52 @@ fn explicit_cli_default_values_win_over_config_sentinels() {
         args.max_commits,
         Some(1000),
         "explicit --max-commits 1000 must not be overwritten by TOML"
+    );
+}
+
+#[test]
+fn explicit_cli_default_format_wins_over_toml() {
+    let args = args_for_config_with_extra(
+        "format = \"json\"\n\
+         [scan]\n\
+         format = \"sarif\"\n",
+        &["--format", "text"],
+    );
+
+    assert_eq!(
+        args.format,
+        OutputFormat::Text,
+        "explicit --format text must not be overwritten by TOML"
+    );
+}
+
+#[test]
+fn explicit_cli_default_dedup_wins_over_toml() {
+    let args = args_for_config_with_extra(
+        "dedup = \"file\"\n\
+         [scan]\n\
+         dedup = \"none\"\n",
+        &["--dedup", "credential"],
+    );
+
+    assert_eq!(
+        args.dedup,
+        CliDedupScope::Credential,
+        "explicit --dedup credential must not be overwritten by TOML"
+    );
+}
+
+#[test]
+fn explicit_cli_default_detectors_wins_over_toml() {
+    let args = args_for_config_with_extra(
+        "detectors = \"custom_detectors\"\n",
+        &["--detectors", "detectors"],
+    );
+
+    assert_eq!(
+        args.detectors,
+        std::path::PathBuf::from("detectors"),
+        "explicit --detectors detectors must not be overwritten by TOML"
     );
 }
 
