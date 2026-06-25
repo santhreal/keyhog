@@ -129,8 +129,15 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
                 .contains("HS always-active prefilter failed; using RegexSet path for this chunk")
             && phase2_prefilter.contains(
                 "HS always-active admission gate failed; using RegexSet path for this chunk"
+            )
+            && triggered.contains(
+                "hyperscan confirmed-trigger scan failed; over-marking SIMD-covered patterns for this chunk"
+            )
+            && triggered.contains("for hs_id in 0..scanner.pattern_count()")
+            && engine_scan.contains(
+                "hyperscan coalesced phase-1 scan failed; over-marking SIMD-covered patterns for this chunk"
             ),
-        "production engine callers must use fallible SIMD helpers and route failures to conservative explicit paths"
+        "production engine callers must use fallible SIMD helpers and route failures to conservative explicit paths that warn before over-marking"
     );
     assert!(
         scan.contains("fn scan_matches_result(")
