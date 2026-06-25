@@ -37,21 +37,40 @@ pub(crate) fn parse_env(text: &str) -> Vec<ExtractedPair> {
     pairs
 }
 
-/// Strip surrounding ASCII quotes (`"`, `'`, or `` ` ``) when both ends
-/// match; otherwise drop any trailing inline `# comment ...` segment and
-/// return the trimmed remainder.
+/// Strip surrounding ASCII quotes (`"`, `'`, or `` ` ``) when the closing quote
+/// is followed only by whitespace or an inline `# comment ...`; otherwise drop
+/// any trailing inline comment segment and return the trimmed remainder.
 fn unquote_env_value(s: &str) -> String {
-    if s.len() >= 2 {
-        let first = s.as_bytes()[0];
-        let last = s.as_bytes()[s.len() - 1];
-        if matches!(first, b'"' | b'\'' | b'`') && first == last {
-            return s[1..s.len() - 1].to_string();
+    if let Some((&quote, _)) = s.as_bytes().split_first() {
+        if matches!(quote, b'"' | b'\'' | b'`') {
+            if let Some(closing_idx) = closing_quote_idx(s, quote) {
+                let trailing = s[closing_idx + 1..].trim_start();
+                if trailing.is_empty() || trailing.starts_with('#') {
+                    return s[1..closing_idx].to_string();
+                }
+            }
         }
     }
     if let Some(hash_idx) = find_inline_comment(s) {
         return s[..hash_idx].trim_end().to_string();
     }
     s.to_string()
+}
+
+fn closing_quote_idx(s: &str, quote: u8) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut idx = 1;
+    while idx < bytes.len() {
+        if bytes[idx] == b'\\' {
+            idx += 2;
+            continue;
+        }
+        if bytes[idx] == quote {
+            return Some(idx);
+        }
+        idx += 1;
+    }
+    None
 }
 
 /// Return the byte offset of an inline `# comment` start, when the `#`

@@ -58,6 +58,36 @@ fn env_keeps_hash_inside_quoted_value() {
 }
 
 #[test]
+fn env_strips_trailing_comment_after_quoted_value() {
+    let text = "DB_PASS=\"p4ss # w0rd\" # rotate quarterly\n";
+    let pairs = parse_env(text);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].context, "DB_PASS");
+    assert_eq!(pairs[0].value, "p4ss # w0rd");
+    assert_eq!(pairs[0].line, 1);
+}
+
+#[test]
+fn env_strips_trailing_comment_after_single_and_backtick_quotes() {
+    let text = "SINGLE='one#two' # keep literal hash\nBACKTICK=`three#four` # comment\n";
+    let pairs = parse_env(text);
+    assert_eq!(pairs.len(), 2);
+    assert_eq!(pairs[0].context, "SINGLE");
+    assert_eq!(pairs[0].value, "one#two");
+    assert_eq!(pairs[1].context, "BACKTICK");
+    assert_eq!(pairs[1].value, "three#four");
+}
+
+#[test]
+fn env_trailing_text_after_quote_is_not_silently_normalized() {
+    let text = "TOKEN=\"abc\"suffix # comment\n";
+    let pairs = parse_env(text);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].context, "TOKEN");
+    assert_eq!(pairs[0].value, "\"abc\"suffix");
+}
+
+#[test]
 fn env_skips_comments_and_blank_lines() {
     let text = "# header comment\n\nKEY=val\n";
     let pairs = parse_env(text);
