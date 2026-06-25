@@ -25,7 +25,7 @@ use metadata::*;
 // index) is its own subsystem; the `Allowlist` holds a precompiled index and
 // delegates every path decision to it.
 mod glob;
-use glob::{normalize_path, PathGlobIndex};
+use glob::{PathGlobIndex, normalize_path};
 
 /// User-defined suppressions loaded from `.keyhogignore`: credential hashes, detector IDs, and path globs.
 ///
@@ -345,6 +345,13 @@ impl Allowlist {
                 }
                 al.credential_hashes.insert(bytes);
                 log_metadata_audit("hash", entry, &parsed_meta);
+            } else if let Some((field, detail)) = invalid_bare_entry(entry) {
+                al.push_invalid_entry_violation(line_number + 1, entry, field, detail);
+                tracing::warn!(
+                    "invalid allowlist entry at line {}: '{}'",
+                    line_number + 1,
+                    entry
+                );
             } else {
                 // Bare path glob (gitignore-style). Anything that didn't
                 // match an explicit `hash:` / `detector:` / `path:` prefix
@@ -658,6 +665,29 @@ impl Default for Allowlist {
 
 fn parse_sha256_hex(input: &str) -> Option<CredentialHash> {
     hex_to_array(input.trim()).map(CredentialHash::from_bytes)
+}
+
+fn invalid_bare_entry(entry: &str) -> Option<(&'static str, &'static str)> {
+    if entry.contains(':') {
+        return Some((
+            "entry",
+            "entry contains `:` but does not start with a valid prefix (`hash:`, `detector:`, or `path:`); use `path:` for literal path globs containing `:`",
+        ));
+    }
+    let bytes = entry.as_bytes();
+    if bytes.len() == 64 {
+        return Some((
+            "hash",
+            "bare 64-byte entry must be a valid SHA-256 hex digest; use `path:` for a literal 64-byte path glob",
+        ));
+    }
+    if bytes.len() >= 32 && bytes.iter().all(u8::is_ascii_hexdigit) {
+        return Some((
+            "hash",
+            "hex-like bare entry must be exactly a 64-character SHA-256 digest; use `path:` for a literal hex path glob",
+        ));
+    }
+    None
 }
 
 pub(crate) fn allowlist_days_since_epoch_for_test(

@@ -13,7 +13,7 @@ fn raw_hash_lookup_with_non_ascii_64_bytes_returns_false_not_panic() {
     // 62 ASCII hex chars + one 2-byte UTF-8 char 'é' = 64 bytes, 63 chars.
     // Odd-offset multibyte boundary is exactly the panic trigger.
     let needle = format!("{}{}", "a".repeat(61), "é"); // 61 + 2 bytes = 63... extend.
-                                                       // Build a value that is exactly 64 bytes long and not pure-ASCII.
+    // Build a value that is exactly 64 bytes long and not pure-ASCII.
     let value = format!("{}é", "b".repeat(62)); // 62 + 2 = 64 bytes.
     assert_eq!(value.len(), 64, "test fixture must be 64 bytes");
     assert!(
@@ -48,9 +48,10 @@ fn raw_hash_lookup_with_non_ascii_64_bytes_returns_false_not_panic() {
 }
 
 #[test]
-fn bare_non_ascii_64_byte_line_is_treated_as_path_not_hash() {
-    // A 64-byte line that fails hash parsing falls through to the bare-path
-    // glob branch. The parse must complete without panicking.
+fn bare_non_ascii_64_byte_line_is_rejected_as_ambiguous_hash_not_path() {
+    // A 64-byte line that fails hash parsing is ambiguous with the bare-hash
+    // shortcut. It must not fall through to the bare-path glob branch unless
+    // the operator writes `path:` explicitly.
     let line = format!("{}é", "c".repeat(62));
     assert_eq!(line.len(), 64);
     let allowlist =
@@ -60,8 +61,10 @@ fn bare_non_ascii_64_byte_line_is_treated_as_path_not_hash() {
         allowlist.credential_hashes.is_empty(),
         "non-hex 64-byte line must not be parsed as a credential hash"
     );
-    // It lands in ignored_paths (gitignore-style fallback).
-    assert_eq!(allowlist.ignored_paths.len(), 1);
+    assert!(
+        allowlist.ignored_paths.is_empty(),
+        "ambiguous 64-byte non-hex line must not become an ignored path glob"
+    );
 }
 
 #[test]
