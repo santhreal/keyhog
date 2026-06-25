@@ -29,6 +29,8 @@ fn binary_magic_bytes_have_one_sources_owner() {
             && magic.contains(r#"b"%PDF-""#)
             && magic.contains("ZIP_LOCAL_FILE_PREFIX")
             && magic.contains(r#"b"PK\x03\x04""#)
+            && magic.contains("ZIP_END_OF_CENTRAL_DIRECTORY_PREFIX")
+            && magic.contains(r#"b"PK\x05\x06""#)
             && magic.contains(r#"b"\x89PNG\r\n\x1a\n""#)
             && magic.contains(r#"b"\x7fELF""#)
             && magic.contains("WASM_MAGIC"),
@@ -47,6 +49,21 @@ fn binary_magic_bytes_have_one_sources_owner() {
     assert!(
         decode.contains("crate::magic::starts_with_python_pickle_protocol2"),
         "filesystem full-file binary detection must consume the shared pickle magic predicate"
+    );
+    assert!(
+        magic.contains("fn has_bmp_header(")
+            && magic.contains("fn has_pe_header(")
+            && magic.contains("fn has_bzip2_header("),
+        "structural BMP/PE/BZip2 signatures must be owned by src/magic.rs"
+    );
+    assert!(
+        decode.contains("crate::magic::has_bmp_header")
+            && decode.contains("crate::magic::has_pe_header")
+            && decode.contains("crate::magic::has_bzip2_header")
+            && !decode.contains("fn has_bmp_header(")
+            && !decode.contains("fn has_pe_header(")
+            && !decode.contains("fn has_bzip2_header("),
+        "filesystem text decode must consume shared structural magic predicates instead of owning local copies"
     );
 
     let docker = source("src/docker.rs");

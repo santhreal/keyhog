@@ -196,9 +196,9 @@ pub(in crate::filesystem::read) fn looks_binary(bytes: &[u8]) -> bool {
 
 pub(in crate::filesystem) fn looks_binary_prefix(bytes: &[u8]) -> bool {
     has_unambiguous_prefix_magic(bytes)
-        || has_bmp_header(bytes)
-        || has_pe_header(bytes)
-        || has_bzip2_header(bytes)
+        || crate::magic::has_bmp_header(bytes)
+        || crate::magic::has_pe_header(bytes)
+        || crate::magic::has_bzip2_header(bytes)
         || has_repeated_nul_run(bytes)
 }
 
@@ -218,7 +218,10 @@ fn has_binary_magic(bytes: &[u8]) -> bool {
     // O(n) controls-density scan for files that already declare what
     // they are. Adding new magics here is cheap; removing them is the
     // dangerous direction.
-    if has_bmp_header(bytes) || has_pe_header(bytes) || has_bzip2_header(bytes) {
+    if crate::magic::has_bmp_header(bytes)
+        || crate::magic::has_pe_header(bytes)
+        || crate::magic::has_bzip2_header(bytes)
+    {
         return true;
     }
     crate::magic::has_unambiguous_binary_prefix(bytes)
@@ -227,28 +230,6 @@ fn has_binary_magic(bytes: &[u8]) -> bool {
 
 fn has_unambiguous_prefix_magic(bytes: &[u8]) -> bool {
     crate::magic::has_unambiguous_binary_prefix(bytes)
-}
-
-fn has_bmp_header(bytes: &[u8]) -> bool {
-    bytes.len() >= 14
-        && bytes.starts_with(b"BM")
-        && bytes[6..10] == [0, 0, 0, 0]
-        && u32::from_le_bytes([bytes[10], bytes[11], bytes[12], bytes[13]]) >= 14
-}
-
-fn has_pe_header(bytes: &[u8]) -> bool {
-    if bytes.len() < 64 || !bytes.starts_with(b"MZ") {
-        return false;
-    }
-    let pe_offset = u32::from_le_bytes([bytes[60], bytes[61], bytes[62], bytes[63]]) as usize;
-    pe_offset >= 64
-        && pe_offset
-            .checked_add(4)
-            .is_some_and(|end| end <= bytes.len() && &bytes[pe_offset..end] == b"PE\0\0")
-}
-
-fn has_bzip2_header(bytes: &[u8]) -> bool {
-    bytes.len() >= 4 && bytes.starts_with(b"BZh") && matches!(bytes[3], b'1'..=b'9')
 }
 
 fn has_utf16_nul_pattern(bytes: &[u8]) -> bool {
