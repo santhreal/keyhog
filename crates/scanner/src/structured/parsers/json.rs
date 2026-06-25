@@ -19,8 +19,8 @@ pub(crate) fn parse_tfstate(text: &str) -> Vec<ExtractedPair> {
         }
     };
     let mut pending = Vec::new();
-    extract_tfstate_values(&value, &mut pending, 0);
-    extract_tfstate_resource_attributes(&value, &mut pending, 0);
+    extract_tfstate_outputs(&value, &mut pending, 0);
+    extract_tfstate_resource_collections(&value, &mut pending, 0);
     finalize_pending_pairs(text, pending)
 }
 
@@ -28,7 +28,26 @@ pub(crate) fn parse_tfstate(text: &str) -> Vec<ExtractedPair> {
 /// can exceed the default thread stack; 256 is beyond real Terraform state.
 const MAX_TFSTATE_DEPTH: usize = 256;
 
-fn extract_tfstate_values(
+fn extract_tfstate_outputs(
+    value: &serde_json::Value,
+    pending: &mut Vec<PendingExtractedPair>,
+    depth: usize,
+) {
+    if depth >= MAX_TFSTATE_DEPTH {
+        return;
+    }
+    let serde_json::Value::Object(map) = value else {
+        return;
+    };
+    if let Some(outputs) = map.get("outputs") {
+        extract_tfstate_output_values(outputs, pending, depth + 1);
+    }
+    if let Some(values) = map.get("values") {
+        extract_tfstate_outputs(values, pending, depth + 1);
+    }
+}
+
+fn extract_tfstate_output_values(
     value: &serde_json::Value,
     pending: &mut Vec<PendingExtractedPair>,
     depth: usize,
@@ -38,25 +57,37 @@ fn extract_tfstate_values(
     }
     match value {
         serde_json::Value::Object(map) => {
-            for (k, v) in map {
-                if k == "value" {
-                    if let Some(val_str) = scalar_value_text(v) {
-                        pending.push(PendingExtractedPair::value_anchor("tfstate-value", val_str));
-                    }
+            if let Some(v) = map.get("value") {
+                if let Some(val_str) = scalar_value_text(v) {
+                    pending.push(PendingExtractedPair::value_anchor("tfstate-value", val_str));
                 }
-                extract_tfstate_values(v, pending, depth + 1);
+                return;
+            }
+            for (key, output) in map {
+                if let Some(v) = output.get("value") {
+                    if let Some(val_str) = scalar_value_text(v) {
+                        let context = if key.is_empty() {
+                            "tfstate-value".to_string()
+                        } else {
+                            format!("tfstate-output.{key}")
+                        };
+                        pending.push(PendingExtractedPair::value_anchor(context, val_str));
+                    }
+                } else {
+                    extract_tfstate_output_values(output, pending, depth + 1);
+                }
             }
         }
         serde_json::Value::Array(arr) => {
             for v in arr {
-                extract_tfstate_values(v, pending, depth + 1);
+                extract_tfstate_output_values(v, pending, depth + 1);
             }
         }
         _ => {}
     }
 }
 
-fn extract_tfstate_resource_attributes(
+fn extract_tfstate_resource_collections(
     value: &serde_json::Value,
     pending: &mut Vec<PendingExtractedPair>,
     depth: usize,
@@ -64,23 +95,42 @@ fn extract_tfstate_resource_attributes(
     if depth >= MAX_TFSTATE_DEPTH {
         return;
     }
-    match value {
-        serde_json::Value::Object(map) => {
-            if let Some(serde_json::Value::Array(resources)) = map.get("resources") {
-                for resource in resources {
-                    extract_tfstate_resource(resource, pending);
-                }
-            }
-            for v in map.values() {
-                extract_tfstate_resource_attributes(v, pending, depth + 1);
-            }
+    let serde_json::Value::Object(map) = value else {
+        return;
+    };
+    if let Some(serde_json::Value::Array(resources)) = map.get("resources") {
+        for resource in resources {
+            extract_tfstate_resource(resource, pending);
         }
-        serde_json::Value::Array(arr) => {
-            for v in arr {
-                extract_tfstate_resource_attributes(v, pending, depth + 1);
-            }
+    }
+    if let Some(values) = map.get("values") {
+        extract_tfstate_resource_collections(values, pending, depth + 1);
+    }
+    if let Some(root_module) = map.get("root_module") {
+        extract_tfstate_module_resources(root_module, pending, depth + 1);
+    }
+}
+
+fn extract_tfstate_module_resources(
+    module: &serde_json::Value,
+    pending: &mut Vec<PendingExtractedPair>,
+    depth: usize,
+) {
+    if depth >= MAX_TFSTATE_DEPTH {
+        return;
+    }
+    let serde_json::Value::Object(map) = module else {
+        return;
+    };
+    if let Some(serde_json::Value::Array(resources)) = map.get("resources") {
+        for resource in resources {
+            extract_tfstate_resource(resource, pending);
         }
-        _ => {}
+    }
+    if let Some(serde_json::Value::Array(child_modules)) = map.get("child_modules") {
+        for child in child_modules {
+            extract_tfstate_module_resources(child, pending, depth + 1);
+        }
     }
 }
 
@@ -88,6 +138,14 @@ fn extract_tfstate_resource(resource: &serde_json::Value, pending: &mut Vec<Pend
     let serde_json::Value::Object(map) = resource else {
         return;
     };
+    let address = map
+        .get("address")
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.is_empty());
+    let module = map
+        .get("module")
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.is_empty());
     let resource_type = map
         .get("type")
         .and_then(serde_json::Value::as_str)
@@ -96,25 +154,43 @@ fn extract_tfstate_resource(resource: &serde_json::Value, pending: &mut Vec<Pend
         .get("name")
         .and_then(serde_json::Value::as_str)
         .filter(|s| !s.is_empty());
-    let base_context = match (resource_type, resource_name) {
-        (Some(resource_type), Some(resource_name)) => format!("{resource_type}.{resource_name}"),
-        (Some(resource_type), None) => resource_type.to_string(),
-        (None, Some(resource_name)) => resource_name.to_string(),
-        (None, None) => "tfstate-resource".to_string(),
+    let base_context = match address {
+        Some(address) => address.to_string(),
+        None => match (module, resource_type, resource_name) {
+            (Some(module), Some(resource_type), Some(resource_name)) => {
+                format!("{module}.{resource_type}.{resource_name}")
+            }
+            (_, Some(resource_type), Some(resource_name)) => {
+                format!("{resource_type}.{resource_name}")
+            }
+            (_, Some(resource_type), None) => resource_type.to_string(),
+            (_, None, Some(resource_name)) => resource_name.to_string(),
+            (_, None, None) => "tfstate-resource".to_string(),
+        },
     };
     let Some(instances) = map.get("instances").and_then(serde_json::Value::as_array) else {
         return;
     };
     let include_index = instances.len() > 1;
     for (idx, instance) in instances.iter().enumerate() {
-        let instance_context = if include_index {
-            format!("{base_context}[{idx}]")
-        } else {
-            base_context.clone()
-        };
+        let instance_context =
+            tfstate_instance_context(&base_context, instance, idx, include_index);
         if let Some(attributes) = instance.get("attributes") {
             extract_tfstate_attribute_scalars(attributes, pending, &instance_context, "", None, 0);
         }
+    }
+}
+
+fn tfstate_instance_context(
+    base_context: &str,
+    instance: &serde_json::Value,
+    fallback_idx: usize,
+    include_index: bool,
+) -> String {
+    match instance.get("index_key").and_then(json_index_key_literal) {
+        Some(index_key) => format!("{base_context}[{index_key}]"),
+        None if include_index => format!("{base_context}[{fallback_idx}]"),
+        None => base_context.to_string(),
     }
 }
 
@@ -283,11 +359,20 @@ fn json_mapping_anchors(key: &str, value: &serde_json::Value) -> Option<(String,
     let value_literal = json_scalar_literal(value)?;
     Some((
         format!("{key_literal}: {value_literal}"),
-        format!("{key_literal}:"),
+        format!("{key_literal}:{value_literal}"),
     ))
 }
 
 fn json_scalar_literal(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(s) => Some(json_string_literal(s)),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
+fn json_index_key_literal(value: &serde_json::Value) -> Option<String> {
     match value {
         serde_json::Value::String(s) => Some(json_string_literal(s)),
         serde_json::Value::Number(n) => Some(n.to_string()),

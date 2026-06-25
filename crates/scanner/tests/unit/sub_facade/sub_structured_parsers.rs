@@ -183,7 +183,7 @@ fn tfstate_extracts_value_fields() {
     let text = r#"{"outputs":{"secret":{"value":"ghp_abcdefghij0123456789"}}}"#;
     let pairs = parse_tfstate(text);
     assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].context, "tfstate-value");
+    assert_eq!(pairs[0].context, "tfstate-output.secret");
     assert_eq!(pairs[0].value, "ghp_abcdefghij0123456789");
 }
 
@@ -194,9 +194,10 @@ fn tfstate_invalid_json_yields_no_pairs() {
 
 #[test]
 fn tfstate_stringifies_numeric_value() {
-    let text = r#"{"value":12345}"#;
+    let text = r#"{"outputs":{"port":{"value":12345}}}"#;
     let pairs = parse_tfstate(text);
     assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].context, "tfstate-output.port");
     assert_eq!(pairs[0].value, "12345");
 }
 
@@ -263,6 +264,95 @@ fn tfstate_indexes_repeated_resource_instances() {
     assert_eq!(
         value_of!(pairs, "aws_iam_access_key.deploy[1].secret"),
         Some("second-secret")
+    );
+}
+
+#[test]
+fn tfstate_uses_module_and_instance_index_key_context() {
+    let text = r#"{
+  "resources": [
+    {
+      "module": "module.database",
+      "type": "aws_secretsmanager_secret_version",
+      "name": "app",
+      "instances": [
+        {"index_key": "blue", "attributes": {"secret_string": "blue-secret"}}
+      ]
+    }
+  ]
+}"#;
+    let pairs = parse_tfstate(text);
+    assert_eq!(
+        value_of!(
+            pairs,
+            "module.database.aws_secretsmanager_secret_version.app[\"blue\"].secret_string"
+        ),
+        Some("blue-secret")
+    );
+}
+
+#[test]
+fn tfstate_attribute_named_value_keeps_resource_context() {
+    let text = r#"{
+  "resources": [
+    {
+      "type": "custom_resource",
+      "name": "example",
+      "instances": [
+        {"attributes": {"metadata": {"value": "resource-owned-secret"}}}
+      ]
+    }
+  ]
+}"#;
+    let pairs = parse_tfstate(text);
+    assert_eq!(
+        value_of!(pairs, "custom_resource.example.metadata.value"),
+        Some("resource-owned-secret")
+    );
+    assert_eq!(
+        value_of!(pairs, "tfstate-value"),
+        None,
+        "resource attributes named value must not be duplicated as anonymous outputs"
+    );
+}
+
+#[test]
+fn tfstate_attribute_named_resources_is_not_reinterpreted_as_resource_collection() {
+    let text = r#"{
+  "resources": [
+    {
+      "type": "custom_resource",
+      "name": "parent",
+      "instances": [
+        {
+          "attributes": {
+            "resources": [
+              {
+                "type": "fake_child",
+                "name": "nested",
+                "instances": [
+                  {"attributes": {"secret": "nested-secret"}}
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}"#;
+    let pairs = parse_tfstate(text);
+    assert_eq!(
+        value_of!(
+            pairs,
+            "custom_resource.parent.resources[0].instances[0].attributes.secret"
+        ),
+        Some("nested-secret")
+    );
+    assert_eq!(
+        value_of!(pairs, "fake_child.nested.secret"),
+        None,
+        "resource-like data inside attributes must stay under the parent attribute path"
     );
 }
 
