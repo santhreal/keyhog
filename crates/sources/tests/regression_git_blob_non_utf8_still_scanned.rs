@@ -15,7 +15,8 @@
 
 mod support;
 
-use support::collect_chunks;
+use keyhog_core::Source;
+use support::split_chunk_results;
 
 use std::path::Path;
 use std::process::Command;
@@ -60,21 +61,41 @@ fn git_source_scans_blob_with_non_utf8_byte() {
     git(repo, &["add", "config.ini"]);
     git(repo, &["commit", "-m", "add config with stray high byte"]);
 
-    let bodies: Vec<String> =
-        collect_chunks(&GitSource::new(repo.to_path_buf()).with_max_commits(1))
-            .into_iter()
-            .map(|c| c.data.to_string())
-            .collect();
+    let source = GitSource::new(repo.to_path_buf()).with_max_commits(1);
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "non-UTF8 Git blob regression must not hide SourceError rows, got {errors:?}"
+    );
+    assert_eq!(
+        chunks.len(),
+        1,
+        "single committed text blob should emit exactly one chunk, got {chunks:?}"
+    );
+    let chunk = chunks[0];
+    assert_eq!(chunk.metadata.source_type, "git/head");
+    assert!(
+        chunk
+            .metadata
+            .path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("config.ini")),
+        "Git chunk path must identify config.ini, got {:?}",
+        chunk.metadata.path
+    );
 
     assert!(
-        bodies.iter().any(|b| b.contains("AKIAIOSFODNN7EXAMPLE")),
+        chunk.data.contains("AKIAIOSFODNN7EXAMPLE"),
         "git source must still surface a credential from a blob containing a \
-         non-UTF-8 byte (lossy decode contract); got {bodies:?}"
+         non-UTF-8 byte (lossy decode contract); got {:?}",
+        chunk.data.to_string()
     );
     // The stray byte should have been replaced (lossy), not have aborted the
     // blob: the surrounding text is preserved and scannable.
     assert!(
-        bodies.iter().any(|b| b.contains("lose this file")),
-        "lossy decode must preserve the surrounding text; got {bodies:?}"
+        chunk.data.contains("lose this file"),
+        "lossy decode must preserve the surrounding text; got {:?}",
+        chunk.data.to_string()
     );
 }
