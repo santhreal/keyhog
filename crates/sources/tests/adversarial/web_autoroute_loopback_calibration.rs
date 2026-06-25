@@ -1,7 +1,7 @@
 //! Autoroute calibration may fetch a loopback WebSource fixture; normal scans may not.
 
 #[cfg(feature = "web")]
-use super::support::collect_chunks;
+use crate::support::split_chunk_results;
 
 #[cfg(feature = "web")]
 #[test]
@@ -33,13 +33,27 @@ fn web_loopback_fetch_requires_explicit_autoroute_calibration() {
         "normal loopback block must happen before HTTP"
     );
 
-    let chunks =
-        collect_chunks(&TestApi.web_source_with_autoroute_loopback_calibration(vec![url], true));
+    let source = TestApi.web_source_with_autoroute_loopback_calibration(vec![url.clone()], true);
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
     assert!(
-        chunks
-            .iter()
-            .any(|chunk| chunk.data.contains("keyhog-web-autoroute-calibration")),
+        errors.is_empty(),
+        "autoroute calibration loopback fetch must not hide SourceError rows, got {errors:?}"
+    );
+    assert_eq!(
+        chunks.len(),
+        1,
+        "autoroute calibration loopback fetch must emit exactly one JS chunk, got {chunks:?}"
+    );
+    let chunk = chunks[0];
+    assert!(
+        chunk.data.contains("keyhog-web-autoroute-calibration"),
         "autoroute calibration loopback fetch must emit the JS chunk"
+    );
+    assert_eq!(chunk.metadata.source_type, "web:js");
+    assert!(
+        chunk.metadata.path.as_deref() == Some(url.as_str()),
+        "autoroute calibration chunk must preserve web source URL, got {chunk:?}"
     );
 }
 
