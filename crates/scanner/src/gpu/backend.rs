@@ -39,7 +39,6 @@ pub(crate) struct GpuContext {
     device_limits: wgpu::Limits,
     pipeline: wgpu::ComputePipeline,
     weights_buf: wgpu::Buffer,
-    params_buf: wgpu::Buffer,
     bind_group_layout: wgpu::BindGroupLayout,
 }
 
@@ -201,20 +200,12 @@ fn init_gpu() -> Result<GpuContext, Box<dyn std::error::Error + Send + Sync>> {
         usage: wgpu::BufferUsages::STORAGE,
     });
 
-    let params_buf = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("params"),
-        size: std::mem::size_of::<GpuParams>() as u64,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-
     Ok(GpuContext {
         device_queue: dq,
         adapter_info,
         device_limits,
         pipeline,
         weights_buf,
-        params_buf,
         bind_group_layout,
     })
 }
@@ -485,12 +476,24 @@ fn dispatch_moe_batch(
         mapped_at_creation: false,
     });
 
-    // Upload params
+    // Per-dispatch params buffer (NOT a shared `gpu.params_buf`). Per-chunk ML
+    // scoring runs `dispatch_moe_batch` CONCURRENTLY across chunks (the rayon
+    // par_iter in `scan_coalesced`). A single uniform buffer written by every
+    // concurrent dispatch is a data race (Law 7): dispatch A writes batch_size
+    // 136, dispatch B overwrites it with 72 before A's compute reads it, so A
+    // processes only 72 of its 136 candidates and the tail 64 outputs are never
+    // written — read back as 0.0 and dropped below the confidence floor. Each
+    // dispatch owning its params buffer (like input/output/staging) removes the
+    // only shared mutable GPU state across concurrent MoE batches.
     let params = GpuParams {
         batch_size: batch_size as u32,
         _pad: [0; 3],
     };
-    queue.write_buffer(&gpu.params_buf, 0, bytemuck::bytes_of(&params));
+    let params_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("moe_params"),
+        contents: bytemuck::bytes_of(&params),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
 
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("moe_bg"),
@@ -510,7 +513,7 @@ fn dispatch_moe_batch(
             },
             wgpu::BindGroupEntry {
                 binding: 3,
-                resource: gpu.params_buf.as_entire_binding(),
+                resource: params_buf.as_entire_binding(),
             },
         ],
     });
@@ -532,7 +535,7 @@ fn dispatch_moe_batch(
     }
 
     encoder.copy_buffer_to_buffer(&output_buf, 0, &staging_buf, 0, output_size);
-    queue.submit(std::iter::once(encoder.finish()));
+    let submission = queue.submit(std::iter::once(encoder.finish()));
 
     // Read back results
     let slice = staging_buf.slice(..);
@@ -565,7 +568,24 @@ fn dispatch_moe_batch(
             return None;
         }
 
-        if let Err(error) = device.poll(wgpu::PollType::Poll) {
+        // Block until THIS submission (the MoE compute dispatch AND the
+        // output->staging copy) has fully completed and its map-async callback
+        // has been invoked. The prior `PollType::Poll` was NON-BLOCKING and the
+        // loop broke as soon as the map callback arrived; on the NVIDIA Vulkan
+        // backend that callback could be delivered while one workgroup's storage
+        // writes were not yet visible to the transfer copy, so the staging
+        // buffer intermittently came back with exactly one workgroup (64
+        // candidates) of 0.0 scores. Those zeros dropped real findings below the
+        // confidence floor and made autoroute calibration's reference backend
+        // non-reproducible (a floor-straddling entropy candidate flipped
+        // present/absent between trials, aborting `install.sh --calibrate`).
+        // `WaitForSubmissionIndex` guarantees this exact submission has finished
+        // and its callbacks have run before it returns, so the buffer is fully
+        // written when mapped — correct even when other chunks dispatch their MoE
+        // batches concurrently.
+        if let Err(error) =
+            device.poll(wgpu::PollType::WaitForSubmissionIndex(submission.clone()))
+        {
             tracing::warn!(
                 ?error,
                 "GPU MoE device.poll() failed; GPU MoE disabled and scoring uses CPU MoE for this scan"
@@ -747,6 +767,108 @@ fn gpu_moe_numerically_trustworthy(readback_timeout: Duration) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gpu_moe_dispatch_matches_cpu_every_repeat_no_zeroed_workgroup() {
+        // Regression for the autoroute-calibration abort: the GPU MoE readback
+        // used a NON-BLOCKING `device.poll(PollType::Poll)` spin and broke as
+        // soon as the map-async callback arrived. On the NVIDIA Vulkan backend
+        // that callback could be delivered before one workgroup's storage writes
+        // were visible to the output->staging copy, so a >=GPU_BATCH_THRESHOLD
+        // batch intermittently read back EXACTLY one workgroup (64) of 0.0
+        // scores. Those zeros dropped real findings below the confidence floor,
+        // so a floor-straddling entropy candidate flipped present/absent between
+        // identical scans and `install.sh --calibrate` aborted. The dispatch now
+        // blocks on `WaitForSubmissionIndex`; assert every repeat reproduces the
+        // CPU MoE with ZERO spurious zeros (the bug fired ~1 dispatch in 2).
+        if super::super::gpu_disabled_by_policy() || get_gpu().is_none() {
+            eprintln!("no usable GPU adapter; skipping GPU MoE dispatch regression");
+            return;
+        }
+        let probe = gpu_moe_parity_probe_features();
+        assert!(probe.len() >= GPU_BATCH_THRESHOLD);
+        let cpu: Vec<f64> = probe.iter().map(crate::ml_scorer::score_features).collect();
+        let timeout = Duration::from_millis(30_000);
+        for rep in 0..128 {
+            let gpu = dispatch_moe_batch(&probe, timeout)
+                .unwrap_or_else(|| panic!("GPU MoE dispatch {rep} returned no result")); // LAW10: test-only proof panic; a missing dispatch result is the failure under test, not a shipped fallback
+            assert_eq!(gpu.len(), probe.len(), "dispatch {rep}: score count mismatch");
+            let zeroed = gpu
+                .iter()
+                .zip(cpu.iter())
+                .filter(|(g, c)| **g == 0.0 && **c > 0.01)
+                .count();
+            let worst = gpu
+                .iter()
+                .zip(cpu.iter())
+                .map(|(g, c)| (g - c).abs())
+                .fold(0.0f64, f64::max);
+            assert_eq!(
+                zeroed, 0,
+                "dispatch {rep}: {zeroed} candidate(s) read back 0.0 while the CPU MoE scores them >0.01 \
+                 (GPU workgroup-visibility readback race)"
+            );
+            assert!(
+                worst <= GPU_MOE_PARITY_TOLERANCE,
+                "dispatch {rep}: GPU MoE diverged from CPU MoE by {worst:.6} (tolerance {GPU_MOE_PARITY_TOLERANCE})"
+            );
+        }
+    }
+
+    #[test]
+    fn gpu_moe_dispatch_is_race_free_under_concurrent_batches() {
+        // Regression for the shared `gpu.params_buf` data race: per-chunk ML
+        // scoring dispatches MoE batches concurrently (rayon par_iter in
+        // scan_coalesced). A single shared uniform written by every dispatch let
+        // one dispatch clobber another's batch_size, so the larger batch
+        // processed too few candidates and its tail read back 0.0. Each dispatch
+        // now owns its params buffer. Two distinct batch sizes are dispatched
+        // from many threads in a tight loop; assert every concurrent dispatch
+        // reproduces ITS OWN CPU reference with zero spurious zeros.
+        if super::super::gpu_disabled_by_policy() || get_gpu().is_none() {
+            eprintln!("no usable GPU adapter; skipping concurrent GPU MoE regression");
+            return;
+        }
+        use std::sync::Arc;
+        let small: Vec<[f32; INPUT_DIM]> = gpu_moe_parity_probe_features();
+        let mut large = small.clone();
+        large.extend(small.iter().copied()); // 2x threshold: a different batch size
+        let cpu_small: Vec<f64> = small.iter().map(crate::ml_scorer::score_features).collect();
+        let cpu_large: Vec<f64> = large.iter().map(crate::ml_scorer::score_features).collect();
+        let small = Arc::new(small);
+        let large = Arc::new(large);
+        std::thread::scope(|scope| {
+            for thread_idx in 0..16u32 {
+                let small = Arc::clone(&small);
+                let large = Arc::clone(&large);
+                let cpu_small = &cpu_small;
+                let cpu_large = &cpu_large;
+                scope.spawn(move || {
+                    let timeout = Duration::from_millis(30_000);
+                    for _ in 0..8 {
+                        let (feat, cpu): (&[[f32; INPUT_DIM]], &[f64]) = if thread_idx % 2 == 0 {
+                            (&small, cpu_small)
+                        } else {
+                            (&large, cpu_large)
+                        };
+                        let gpu = dispatch_moe_batch(feat, timeout)
+                            .expect("concurrent GPU MoE dispatch returned no result");
+                        assert_eq!(gpu.len(), feat.len());
+                        let zeroed = gpu
+                            .iter()
+                            .zip(cpu.iter())
+                            .filter(|(g, c)| **g == 0.0 && **c > 0.01)
+                            .count();
+                        assert_eq!(
+                            zeroed, 0,
+                            "concurrent dispatch (batch={}) produced {zeroed} zeroed score(s): shared GPU params race",
+                            feat.len()
+                        );
+                    }
+                });
+            }
+        });
+    }
 
     #[test]
     fn gpu_moe_parity_probe_covers_dispatch_threshold_with_varied_features() {
