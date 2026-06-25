@@ -1,9 +1,10 @@
 //! Shallow git clone (depth 1) must still scan without panic.
 
-use super::support::collect_chunks;
+use crate::support::split_chunk_results;
 #[cfg(feature = "git")]
 #[test]
 fn git_shallow_clone_single_commit_scanned() {
+    use keyhog_core::Source;
     use keyhog_sources::GitSource;
     use std::process::Command;
 
@@ -49,13 +50,23 @@ fn git_shallow_clone_single_commit_scanned() {
         .expect("git clone")
         .success());
 
-    let bodies: Vec<String> = collect_chunks(&GitSource::new(shallow.path().to_path_buf()))
-        .into_iter()
-        .map(|c| c.data.to_string())
-        .collect();
+    let source = GitSource::new(shallow.path().to_path_buf());
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
     assert!(
-        bodies.iter().any(|b| b.contains("SHALLOW=AKIA")),
-        "shallow clone must still surface tracked secrets; got {bodies:?}"
+        errors.is_empty(),
+        "shallow clone scan should not emit SourceError rows: {errors:?}"
+    );
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("SHALLOW=AKIA")
+                && chunk
+                    .metadata
+                    .path
+                    .as_deref()
+                    .is_some_and(|path| path.ends_with("secret.env"))),
+        "shallow clone must still surface tracked secrets with path metadata; got {chunks:?}"
     );
 }
 
