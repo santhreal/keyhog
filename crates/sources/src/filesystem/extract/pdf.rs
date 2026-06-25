@@ -10,7 +10,6 @@ use super::{display_path, is_symlink};
 use crate::filesystem::read;
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 use memchr::memmem;
-use std::io::Read;
 use std::path::Path;
 
 const STREAM: &[u8] = b"stream";
@@ -300,29 +299,15 @@ fn decode_stream<'a>(dict: &[u8], stream_bytes: &'a [u8], budget: usize) -> Stre
 }
 
 fn inflate_pdf_stream(stream_bytes: &[u8], budget: usize) -> StreamDecode<'_> {
-    let limit = (budget as u64).saturating_add(1);
-    let mut decoder = flate2::read::ZlibDecoder::new(stream_bytes).take(limit);
-    let (mut out, result) = read_pdf_stream_prefix(&mut decoder);
-    let truncated = out.len() > budget;
-    if truncated {
-        out.truncate(budget);
-    }
-    match result {
-        Ok(_) => StreamDecode::Owned(out, truncated, false),
-        Err(_) if !out.is_empty() => StreamDecode::Owned(out, truncated, true),
-        Err(_) => StreamDecode::Unreadable, // LAW10: loud-counted/surfaced: caller turns this stream decode failure into an unreadable source coverage gap
-    }
-}
-
-fn read_pdf_stream_prefix(reader: &mut impl Read) -> (Vec<u8>, std::io::Result<()>) {
-    let mut out = Vec::new();
-    let mut buf = [0u8; 4096];
-    loop {
-        match reader.read(&mut buf) {
-            Ok(0) => return (out, Ok(())),
-            Ok(n) => out.extend_from_slice(&buf[..n]),
-            Err(error) => return (out, Err(error)),
+    let cap = u64::try_from(budget).unwrap_or(u64::MAX); // LAW10: on wider-than-u64 usize targets, u64::MAX is the largest stream cap the shared reader can represent.
+    let decoder = flate2::read::ZlibDecoder::new(stream_bytes);
+    let read = crate::capped_read::read_to_cap_preserving_error(decoder, cap, None);
+    match read.error {
+        None => StreamDecode::Owned(read.bytes, read.truncated, false),
+        Some(_error) if !read.bytes.is_empty() => {
+            StreamDecode::Owned(read.bytes, read.truncated, true)
         }
+        Some(_error) => StreamDecode::Unreadable, // LAW10: loud-counted/surfaced: caller turns this stream decode failure into an unreadable source coverage gap
     }
 }
 

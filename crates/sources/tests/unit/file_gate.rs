@@ -183,6 +183,21 @@ fn source_extract_pdf_and_binary_hot_paths_are_bounded() {
             && pdf.contains("let mut nibbles = Vec::with_capacity"),
         "PDF literal/hex scanners must bound failed delimiter scans and pre-size per-string scratch buffers"
     );
+    assert!(
+        pdf.contains("crate::capped_read::read_to_cap_preserving_error")
+            && !pdf.contains("fn read_pdf_stream_prefix(")
+            && !pdf.contains(".take(limit)")
+            && !pdf.contains("read_to_end(&mut out)"),
+        "PDF Flate stream reads must use the shared partial-error capped-read owner instead of a local decoder loop"
+    );
+
+    let compressed = include_str!("../../src/filesystem/extract/compressed.rs");
+    assert!(
+        compressed.contains("crate::capped_read::read_to_cap_preserving_error")
+            && !compressed.contains(".take(take_limit)")
+            && !compressed.contains("read_to_end(&mut out)"),
+        "compressed stream reads must use the shared partial-error capped-read owner instead of per-format decoder loops"
+    );
 }
 
 #[test]

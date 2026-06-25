@@ -59,71 +59,78 @@ fn decompress_to_bytes(
     compressed: &[u8],
     budget: usize,
 ) -> Option<DecompressedBytes> {
-    use std::io::Read as _;
-
     // Cap the reader at `budget + 1` bytes: one over the budget so the caller
     // can tell "hit the cap" from "exactly fit". Every decoder below streams,
     // so a decompression bomb can never allocate beyond this ceiling.
-    let take_limit = (budget as u64).saturating_add(1);
-    let mut out = Vec::new();
-    let read_result = match format {
+    let budget_u64 = u64::try_from(budget).unwrap_or(u64::MAX); // LAW10: on wider-than-u64 usize targets, u64::MAX is the largest stream cap the shared reader can represent.
+    let read_cap = budget_u64.saturating_add(1);
+    let read = match format {
         CompressedFormat::Gzip => {
             // MultiGzDecoder: stock `gzip -c` of multiple files, and some tools,
             // emit concatenated gzip members; the plain GzDecoder stops after
             // the first member and would silently drop the rest.
-            let mut dec = flate2::read::MultiGzDecoder::new(compressed).take(take_limit);
-            dec.read_to_end(&mut out)
+            Some(read_decoder_prefix(
+                flate2::read::MultiGzDecoder::new(compressed),
+                read_cap,
+            ))
         }
         CompressedFormat::Zstd => match zstd::stream::read::Decoder::new(compressed) {
             Ok(mut dec) => {
                 // Bound libzstd's INTERNAL window allocation to the extraction
-                // budget. `.take(take_limit)` caps decoded OUTPUT, but a crafted
+                // budget. The shared cap helper caps decoded OUTPUT, but a crafted
                 // tiny `.zst` can advertise a large `windowLog` and force that
                 // allocation before producing a single byte.
                 match dec.window_log_max(crate::compression_limits::zstd_window_log_max_for_budget(
-                    budget as u64,
+                    budget_u64,
                 )) {
-                    Ok(()) => dec.take(take_limit).read_to_end(&mut out),
-                    Err(e) => Err(e),
+                    Ok(()) => Some(read_decoder_prefix(dec, read_cap)),
+                    Err(_error) => None,
                 }
             }
-            Err(e) => Err(e),
+            Err(_error) => None,
         },
-        CompressedFormat::Lz4 => {
-            let mut dec = lz4_flex::frame::FrameDecoder::new(compressed).take(take_limit);
-            dec.read_to_end(&mut out)
-        }
-        CompressedFormat::Snappy => {
-            let mut dec = snap::read::FrameDecoder::new(compressed).take(take_limit);
-            dec.read_to_end(&mut out)
-        }
-        CompressedFormat::Bzip2 => {
-            let mut dec = bzip2::read::MultiBzDecoder::new(compressed).take(take_limit);
-            dec.read_to_end(&mut out)
-        }
-        CompressedFormat::Xz => match xz2::stream::Stream::new_stream_decoder(budget as u64, 0) {
-            Ok(stream) => {
-                let mut dec = xz2::read::XzDecoder::new_stream(compressed, stream).take(take_limit);
-                dec.read_to_end(&mut out)
-            }
-            Err(error) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, error)),
+        CompressedFormat::Lz4 => Some(read_decoder_prefix(
+            lz4_flex::frame::FrameDecoder::new(compressed),
+            read_cap,
+        )),
+        CompressedFormat::Snappy => Some(read_decoder_prefix(
+            snap::read::FrameDecoder::new(compressed),
+            read_cap,
+        )),
+        CompressedFormat::Bzip2 => Some(read_decoder_prefix(
+            bzip2::read::MultiBzDecoder::new(compressed),
+            read_cap,
+        )),
+        CompressedFormat::Xz => match xz2::stream::Stream::new_stream_decoder(budget_u64, 0) {
+            Ok(stream) => Some(read_decoder_prefix(
+                xz2::read::XzDecoder::new_stream(compressed, stream),
+                read_cap,
+            )),
+            Err(_error) => None,
         },
-    };
+    }?;
 
-    match read_result {
-        Ok(_) => Some(DecompressedBytes {
-            bytes: out,
+    match read.error {
+        None => Some(DecompressedBytes {
+            bytes: read.bytes,
             recovered_after_error: false,
         }),
         // A premature-EOF / decode error after producing some bytes still leaves
         // the decoded prefix in `out`; scan what we recovered rather than drop
         // the whole file.
-        Err(_) if !out.is_empty() => Some(DecompressedBytes {
-            bytes: out,
+        Some(_error) if !read.bytes.is_empty() => Some(DecompressedBytes {
+            bytes: read.bytes,
             recovered_after_error: true,
         }),
-        Err(_) => None, // LAW10: unrecognized/partial => caller scans whole-file/recovered prefix; recall-preserving
+        Some(_error) => None, // LAW10: unrecognized/partial => caller scans whole-file/recovered prefix; recall-preserving
     }
+}
+
+fn read_decoder_prefix(
+    reader: impl std::io::Read,
+    cap: u64,
+) -> crate::capped_read::CappedReadPrefix {
+    crate::capped_read::read_to_cap_preserving_error(reader, cap, None)
 }
 
 /// True when `data` is likely a POSIX/ustar/GNU tar stream.
