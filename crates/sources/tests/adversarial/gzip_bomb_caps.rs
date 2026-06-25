@@ -4,6 +4,7 @@
 //! malformed `.gz` (truncated header, bad CRC, invalid block) should
 //! also preserve neighboring-file coverage.
 
+use super::support::assert_compressed_error;
 use crate::support::split_chunk_results;
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
@@ -114,15 +115,5 @@ fn random_bytes_with_gz_extension_fail_loud() {
         skip_counts().unreadable,
         1,
         "random .gz bytes must count one unreadable coverage gap"
-    );
-}
-
-fn assert_compressed_error(error: &keyhog_core::SourceError) {
-    let err = error.to_string();
-    assert!(
-        err.contains("failed to scan compressed file")
-            && err.contains("failed to decompress file")
-            && err.contains("was not scanned"),
-        "compressed error should name the unscanned coverage gap, got {err}"
     );
 }

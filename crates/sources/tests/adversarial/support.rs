@@ -1,6 +1,6 @@
 //! Shared hostile oracles for adversarial source tests (Unix + Windows).
 
-use keyhog_core::{Chunk, Source};
+use keyhog_core::{Chunk, Source, SourceError};
 use keyhog_sources::FilesystemSource;
 
 #[cfg(feature = "binary")]
@@ -9,6 +9,16 @@ pub use crate::support::{collect_chunks, count_chunks};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+
+pub fn assert_compressed_error(error: &SourceError) {
+    let err = error.to_string();
+    assert!(
+        err.contains("failed to scan compressed file")
+            && err.contains("failed to decompress file")
+            && err.contains("was not scanned"),
+        "compressed error should name the unscanned coverage gap, got {err}"
+    );
+}
 
 pub fn oracle_plain_file_symlink_refused() {
     let outer = tempfile::tempdir().expect("outer");
