@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use keyhog_core::{Chunk, Source, SourceError};
+use serde::de::DeserializeOwned;
 
 use crate::FilesystemSource;
 
@@ -306,6 +307,42 @@ mod tests {
     }
 
     #[test]
+    fn hosted_git_api_json_cap_is_counted_unreadable() {
+        let _guard = counter_guard();
+        crate::reset_skip_counters();
+        let before = crate::skip_counts();
+        let cap = 16;
+        let server = httpmock::MockServer::start();
+        let _api = server.mock(|when, then| {
+            when.method(httpmock::Method::GET).path("/api");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(format!(r#"{{"padding":"{}"}}"#, "x".repeat(cap)));
+        });
+        let response = reqwest::blocking::Client::new()
+            .get(server.url("/api"))
+            .send()
+            .expect("mock API response");
+
+        let error = super::read_api_json::<serde_json::Value>(response, "GitHub API response", cap)
+            .expect_err("oversized hosted Git API response must fail");
+
+        let message = error.to_string();
+        assert!(
+            message.contains("GitHub API response")
+                && message.contains("web_response_bytes")
+                && message.contains(&cap.to_string()),
+            "hosted Git API cap error must be visible, got {message}"
+        );
+        let after = crate::skip_counts();
+        assert_eq!(
+            after.unreadable,
+            before.unreadable + 1,
+            "hosted Git API cap must bump SKIPPED_UNREADABLE exactly once"
+        );
+    }
+
+    #[test]
     fn hosted_git_stderr_drain_is_bounded_and_marks_truncation() {
         let payload = vec![b'E'; crate::process_excerpt::STDERR_EXCERPT_BYTES * 2];
         let excerpt = crate::process_excerpt::drain_stderr_excerpt(&payload[..]);
@@ -594,6 +631,38 @@ pub(crate) fn listing_truncated_error(
 pub(crate) fn api_unreadable_error(message: impl Into<String>) -> SourceError {
     let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
     SourceError::Other(message.into())
+}
+
+#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
+pub(crate) fn read_api_json<T: DeserializeOwned>(
+    response: reqwest::blocking::Response,
+    context: &str,
+    max_response_bytes: usize,
+) -> Result<T, SourceError> {
+    let max_response_bytes_u64 = match u64::try_from(max_response_bytes) {
+        Ok(value) => value,
+        Err(_) => u64::MAX, // LAW10: on hypothetical usize wider than u64 targets, reqwest content lengths and Read::take caps are u64-bounded, so every representable HTTP body length is still capped.
+    };
+    if let Some(content_length) = response.content_length() {
+        if content_length > max_response_bytes_u64 {
+            return Err(api_unreadable_error(format!(
+                "{context} Content-Length {content_length} exceeds the web_response_bytes cap {max_response_bytes}"
+            )));
+        }
+    }
+
+    let capacity_hint = response
+        .content_length()
+        .map(|len| len.min(max_response_bytes_u64).min(64 * 1024));
+    let read = crate::capped_read::read_to_cap(response, max_response_bytes_u64, capacity_hint)
+        .map_err(|error| api_unreadable_error(format!("failed to read {context}: {error}")))?;
+    if read.truncated {
+        return Err(api_unreadable_error(format!(
+            "streamed {context} exceeded the web_response_bytes cap {max_response_bytes}"
+        )));
+    }
+    serde_json::from_slice(&read.bytes)
+        .map_err(|error| api_unreadable_error(format!("failed to parse {context}: {error}")))
 }
 
 #[cfg(any(feature = "gitlab", feature = "bitbucket"))]

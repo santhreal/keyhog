@@ -166,7 +166,12 @@ fn collect_org_chunks(
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     validate_org_name(org)?;
     let client = build_client(token, http)?;
-    let repos = list_repos(&client, org, limits.hosted_git_pages)?;
+    let repos = list_repos(
+        &client,
+        org,
+        limits.hosted_git_pages,
+        limits.web_response_bytes,
+    )?;
     hosted_git::scan_hosted_repos(
         "github",
         "github-org",
@@ -217,6 +222,7 @@ fn list_repos(
     client: &Client,
     org: &str,
     max_pages: usize,
+    max_response_bytes: usize,
 ) -> Result<Vec<HostedRepo>, SourceError> {
     let mut repos = Vec::new();
     let mut page = 1;
@@ -231,9 +237,8 @@ fn list_repos(
             )));
         }
 
-        let page_repos: Vec<GitHubRepo> = response.json().map_err(|e| {
-            hosted_git::api_unreadable_error(format!("failed to parse GitHub API response: {e}"))
-        })?;
+        let page_repos: Vec<GitHubRepo> =
+            hosted_git::read_api_json(response, "GitHub API response", max_response_bytes)?;
 
         let count = page_repos.len();
         repos.extend(page_repos.into_iter().map(|repo| HostedRepo {

@@ -102,7 +102,13 @@ fn collect_group_chunks(
     validate_group_path(group)?;
     let api_root = normalize_gitlab_api_root(endpoint)?;
     let client = build_client(token, http)?;
-    let repos = list_projects(&client, &api_root, group, limits.hosted_git_pages)?;
+    let repos = list_projects(
+        &client,
+        &api_root,
+        group,
+        limits.hosted_git_pages,
+        limits.web_response_bytes,
+    )?;
     let expected_clone_origin = hosted_git::ExpectedCloneOrigin::from_api_root(&api_root)?;
     hosted_git::scan_hosted_repos(
         "gitlab",
@@ -139,6 +145,7 @@ fn list_projects(
     api_root: &reqwest::Url,
     group: &str,
     max_pages: usize,
+    max_response_bytes: usize,
 ) -> Result<Vec<HostedRepo>, SourceError> {
     let mut repos = Vec::new();
     let encoded_group = urlencoding::encode(group);
@@ -164,9 +171,8 @@ fn list_projects(
             )));
         }
 
-        let projects: Vec<GitLabProject> = response.json().map_err(|e| {
-            hosted_git::api_unreadable_error(format!("failed to parse GitLab API response: {e}"))
-        })?;
+        let projects: Vec<GitLabProject> =
+            hosted_git::read_api_json(response, "GitLab API response", max_response_bytes)?;
         let count = projects.len();
         for project in projects {
             repos.push(HostedRepo {

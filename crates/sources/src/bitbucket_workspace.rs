@@ -124,8 +124,13 @@ fn collect_workspace_chunks(
     validate_basic_auth(username, token)?;
     let api_root = hosted_git::validated_api_endpoint("bitbucket", endpoint)?;
     let client = build_client(username, token, http)?;
-    let (repos, listing_errors) =
-        list_repositories(&client, &api_root, workspace, limits.hosted_git_pages)?;
+    let (repos, listing_errors) = list_repositories(
+        &client,
+        &api_root,
+        workspace,
+        limits.hosted_git_pages,
+        limits.web_response_bytes,
+    )?;
     let expected_clone_origin = hosted_git::ExpectedCloneOrigin::bitbucket(&api_root)?;
     let mut rows = hosted_git::scan_hosted_repos(
         "bitbucket",
@@ -170,6 +175,7 @@ fn list_repositories(
     api_root: &reqwest::Url,
     workspace: &str,
     max_pages: usize,
+    max_response_bytes: usize,
 ) -> Result<(Vec<HostedRepo>, Vec<SourceError>), SourceError> {
     let mut repos = Vec::new();
     let mut listing_errors = Vec::new();
@@ -191,9 +197,8 @@ fn list_repositories(
             )));
         }
 
-        let page: BitbucketPage = response.json().map_err(|e| {
-            hosted_git::api_unreadable_error(format!("failed to parse Bitbucket API response: {e}"))
-        })?;
+        let page: BitbucketPage =
+            hosted_git::read_api_json(response, "Bitbucket API response", max_response_bytes)?;
         for repo in page.values {
             let slug = repo.slug.clone();
             let clone_url = match repo_https_clone_url(repo) {
@@ -277,8 +282,14 @@ mod tests {
                 .body(r#"{"values":[{"slug":"good","links":{"clone":[{"name":"https","href":"https://bitbucket.org/acme/good.git"}]}},{"slug":"bad","links":{"clone":[{"name":"ssh","href":"ssh://git@bitbucket.org/acme/bad.git"}]}}],"next":null}"#);
         });
 
-        let (repos, errors) =
-            list_repositories(&http_client(), &api_root(&server), "acme", 1).expect("listing");
+        let (repos, errors) = list_repositories(
+            &http_client(),
+            &api_root(&server),
+            "acme",
+            1,
+            crate::SourceLimits::default().web_response_bytes,
+        )
+        .expect("listing");
         assert_eq!(repos.len(), 1, "valid sibling repo must be preserved");
         assert_eq!(repos[0].display_path, "good");
         assert_eq!(errors.len(), 1, "bad sibling must become one row error");
