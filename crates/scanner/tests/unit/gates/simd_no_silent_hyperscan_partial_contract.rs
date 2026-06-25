@@ -105,6 +105,7 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
             && scan.contains("fn put_scratch(")
             && scan.contains("struct CachedScratch")
             && scan.contains("owner: Weak<()>")
+            && scan.contains("SCRATCH_TLS_PRUNE_THRESHOLD")
             && scan.contains("fn prune_dead_scanner_scratch(")
             && scan.contains("fn purge_scanner_scratch(")
             && scan.contains("prune_dead_scanner_scratch(&mut tls);")
@@ -113,7 +114,7 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
             && backend.contains("impl Drop for HsScanner")
             && backend.contains("scratch_owner: Arc<()>")
             && backend.contains("scan::purge_scanner_scratch(scanner_id);")
-            && backend.contains("rayon::broadcast(|_| scan::purge_scanner_scratch(scanner_id));"),
+            && !backend.contains("rayon::broadcast(|_| scan::purge_scanner_scratch(scanner_id));"),
         "fallible Hyperscan scan paths must return scratch, keep live interleaved scanner caches, and prune/drop retained thread-local scratches"
     );
     assert!(

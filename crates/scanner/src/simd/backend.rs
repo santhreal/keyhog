@@ -276,7 +276,6 @@ impl Drop for HsScanner {
     fn drop(&mut self) {
         let scanner_id = self.scanner_id;
         scan::purge_scanner_scratch(scanner_id);
-        rayon::broadcast(|_| scan::purge_scanner_scratch(scanner_id));
     }
 }
 

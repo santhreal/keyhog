@@ -9,6 +9,8 @@ struct CachedScratch {
     scratch: Scratch,
 }
 
+const SCRATCH_TLS_PRUNE_THRESHOLD: usize = 32;
+
 thread_local! {
     static SCRATCH_TLS: RefCell<HashMap<(u64, usize), CachedScratch>> =
         RefCell::new(HashMap::new());
@@ -21,14 +23,13 @@ fn take_scratch(
     owner: &Arc<()>,
 ) -> Result<Scratch, String> {
     let key = (scanner_id, shard_idx);
-    if let Some(scratch) = SCRATCH_TLS.with(|tls| {
-        let mut tls = tls.borrow_mut();
-        prune_dead_scanner_scratch(&mut tls);
-        tls.remove(&key).map(|cached| cached.scratch)
-    }) {
+    if let Some(scratch) =
+        SCRATCH_TLS.with(|tls| tls.borrow_mut().remove(&key).map(|cached| cached.scratch))
+    {
         return Ok(scratch);
     }
     debug_assert!(Arc::strong_count(owner) > 0);
+    SCRATCH_TLS.with(|tls| prune_dead_scanner_scratch(&mut tls.borrow_mut()));
     if let Some(scratch) = shard.scratch_pool.lock().pop() {
         return Ok(scratch);
     }
@@ -59,7 +60,9 @@ fn put_scratch(scanner_id: u64, shard_idx: usize, owner: &Arc<()>, scratch: Scra
     let key = (scanner_id, shard_idx);
     SCRATCH_TLS.with(|tls| {
         let mut tls = tls.borrow_mut();
-        prune_dead_scanner_scratch(&mut tls);
+        if tls.len() >= SCRATCH_TLS_PRUNE_THRESHOLD {
+            prune_dead_scanner_scratch(&mut tls);
+        }
         tls.insert(
             key,
             CachedScratch {
@@ -273,6 +276,66 @@ mod scratch_lifetime {
         assert!(
             super::current_thread_scratch_count_for_test(scanner_b.scanner_id) > 0,
             "scanner B should retain its own current-thread scratch"
+        );
+    }
+
+    #[test]
+    fn dead_scanner_scratch_is_pruned_on_worker_next_cache_touch() {
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (continue_tx, continue_rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let patterns_a = [(0usize, 0usize, "KHSTALE_[A-Z0-9]{8}", false)];
+            let (scanner_a, unsupported_a) =
+                HsScanner::compile(&patterns_a).expect("scanner A pattern compiles");
+            assert!(
+                unsupported_a.is_empty(),
+                "scanner A pattern must be Hyperscan-supported"
+            );
+            let scanner_a_id = scanner_a.scanner_id;
+            scanner_a
+                .scan_matches_result(b"KHSTALE_AB12CD34", |_, _, _| {})
+                .expect("scanner A scan succeeds");
+            ready_tx
+                .send((
+                    scanner_a_id,
+                    super::current_thread_scratch_count_for_test(scanner_a_id),
+                ))
+                .expect("send scanner A cache count");
+            continue_rx.recv().expect("wait for prune command");
+            drop(scanner_a);
+
+            let patterns_b = [(0usize, 0usize, "KHFRESH_[A-Z0-9]{8}", false)];
+            let (scanner_b, unsupported_b) =
+                HsScanner::compile(&patterns_b).expect("scanner B pattern compiles");
+            assert!(
+                unsupported_b.is_empty(),
+                "scanner B pattern must be Hyperscan-supported"
+            );
+            scanner_b
+                .scan_matches_result(b"KHFRESH_AB12CD34", |_, _, _| {})
+                .expect("scanner B scan succeeds and prunes stale entries on miss");
+            (
+                super::current_thread_scratch_count_for_test(scanner_a_id),
+                super::current_thread_scratch_count_for_test(scanner_b.scanner_id),
+            )
+        });
+
+        let (_scanner_a_id, cached_before_drop) =
+            ready_rx.recv().expect("receive scanner A cache count");
+        assert!(
+            cached_before_drop > 0,
+            "worker should retain scanner A scratch before scanner A is dropped"
+        );
+        continue_tx.send(()).expect("release worker");
+        let (stale_after_touch, fresh_after_touch) = worker.join().expect("worker joins");
+
+        assert_eq!(
+            stale_after_touch, 0,
+            "dead scanner A scratch must be pruned on the worker's next cache touch"
+        );
+        assert!(
+            fresh_after_touch > 0,
+            "worker should retain scanner B scratch after pruning stale scanner A"
         );
     }
 }

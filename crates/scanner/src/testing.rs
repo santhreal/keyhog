@@ -8,6 +8,8 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 
 #[cfg(test)]
 pub(crate) use crate::engine::scan_chunk_boundaries;
+#[cfg(all(test, feature = "simd"))]
+pub(crate) use crate::simd::backend::HsScanner;
 #[cfg(test)]
 pub(crate) const REGEX_SIZE_LIMIT_BYTES: usize = crate::types::REGEX_SIZE_LIMIT_BYTES;
 
