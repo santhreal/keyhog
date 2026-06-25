@@ -120,6 +120,9 @@ fn has_disclaimer_comment_bytes(bytes: &[u8]) -> bool {
             if !bytes[start..start + m_len].eq_ignore_ascii_case(marker) {
                 continue;
             }
+            if !comment_marker_has_boundary(bytes, start) || is_inside_ascii_quotes(bytes, start) {
+                continue;
+            }
             let comment_tail = &bytes[start + m_len..];
             for phrase in phrases {
                 if ci_find(comment_tail, phrase.as_bytes()) {
@@ -129,6 +132,31 @@ fn has_disclaimer_comment_bytes(bytes: &[u8]) -> bool {
         }
     }
     false
+}
+
+fn comment_marker_has_boundary(bytes: &[u8], start: usize) -> bool {
+    start == 0 || bytes[start - 1].is_ascii_whitespace()
+}
+
+fn is_inside_ascii_quotes(bytes: &[u8], offset: usize) -> bool {
+    let mut quote = None;
+    let mut escaped = false;
+    for &byte in bytes.iter().take(offset) {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if byte == b'\\' {
+            escaped = true;
+            continue;
+        }
+        match quote {
+            Some(open) if byte == open => quote = None,
+            None if byte == b'"' || byte == b'\'' => quote = Some(byte),
+            _ => {}
+        }
+    }
+    quote.is_some()
 }
 
 /// Check whether a line-level match sits in known false-positive context.
