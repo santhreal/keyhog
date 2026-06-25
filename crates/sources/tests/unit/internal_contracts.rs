@@ -953,12 +953,20 @@ fn web_ssrf_url_classifier_uses_verifier_owner() {
         "keyhog-sources no longer needs a direct url crate dependency for the WebSource SSRF prefilter"
     );
     assert!(
-        http.contains("timeout(cfg.timeout.unwrap_or(DEFAULT_TIMEOUT))"),
+        http.contains("pub(crate) fn effective_timeout(&self) -> Duration")
+            && http.contains("self.timeout.unwrap_or(DEFAULT_TIMEOUT)")
+            && http.contains("timeout(cfg.effective_timeout())"),
         "shared HTTP builder must own the Tier-A timeout default"
     );
     assert!(
-        !ssrf.contains(".timeout(crate::timeouts::HTTP_REQUEST)"),
-        "WebSource SSRF client builder must not clobber HttpClientConfig::timeout after the shared builder applies it"
+        ssrf.contains("let total_timeout = cfg.effective_timeout()")
+            && ssrf.contains("resolve_and_screen(&host, port, total_timeout)")
+            && ssrf.contains("remaining_fetch_timeout(url, total_timeout, fetch_started)")
+            && ssrf.contains("request_cfg.timeout = Some(remaining_timeout)")
+            && ssrf.contains("try_send(DnsJob")
+            && ssrf.contains("recv_timeout(timeout)")
+            && !ssrf.contains(".timeout(crate::timeouts::HTTP_REQUEST)"),
+        "WebSource SSRF client builder must use one shared effective timeout budget across bounded DNS screening and the HTTP request"
     );
 }
 
@@ -978,12 +986,12 @@ fn web_dns_screen_and_proxy_contracts() {
     assert!(!TestApi.is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1))));
 
     let err = TestApi
-        .resolve_and_screen("127.0.0.1", 80)
+        .resolve_and_screen("127.0.0.1", 80, std::time::Duration::from_secs(5))
         .expect_err("loopback refused");
     assert!(err.to_string().contains("private / loopback"));
 
     let addrs = TestApi
-        .resolve_and_screen("1.1.1.1", 443)
+        .resolve_and_screen("1.1.1.1", 443, std::time::Duration::from_secs(5))
         .expect("public IP must pass");
     assert!(!addrs.is_empty(), "must return at least one pinned addr");
     assert!(addrs.iter().all(|a| !TestApi.is_disallowed_ip(a.ip())));

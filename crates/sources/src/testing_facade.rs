@@ -374,6 +374,7 @@ pub mod testing {
             &self,
             host: &str,
             port: u16,
+            timeout: std::time::Duration,
         ) -> Result<Vec<std::net::SocketAddr>, keyhog_core::SourceError>;
         #[cfg(feature = "web")]
         fn build_web_client(
@@ -1061,8 +1062,9 @@ pub mod testing {
             &self,
             host: &str,
             port: u16,
+            timeout: std::time::Duration,
         ) -> Result<Vec<std::net::SocketAddr>, keyhog_core::SourceError> {
-            crate::web::resolve_and_screen(host, port)
+            crate::web::resolve_and_screen(host, port, timeout)
         }
 
         #[cfg(feature = "web")]

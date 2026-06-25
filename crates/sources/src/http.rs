@@ -82,6 +82,22 @@ impl HttpClientConfig {
         self.proxy.clone()
     }
 
+    /// Effective timeout used by both shared HTTP clients and pre-connect
+    /// network policy checks such as WebSource DNS screening.
+    #[cfg(any(
+        feature = "azure",
+        feature = "web",
+        feature = "github",
+        feature = "gitlab",
+        feature = "bitbucket",
+        feature = "slack",
+        feature = "s3",
+        feature = "gcs"
+    ))]
+    pub(crate) fn effective_timeout(&self) -> Duration {
+        self.timeout.unwrap_or(DEFAULT_TIMEOUT) // LAW10: Tier-A config default — unset timeout uses the documented shared DEFAULT_TIMEOUT, not a swallowed error
+    }
+
     /// Whether to accept invalid / self-signed TLS certs. ONLY the explicit
     /// `insecure_tls` field (set by `--insecure` / TOML) is honored — no
     /// environment variable can disable certificate verification. An ambient
@@ -150,7 +166,7 @@ pub(crate) fn blocking_client_builder(
     cfg: &HttpClientConfig,
 ) -> Result<reqwest::blocking::ClientBuilder, String> {
     let mut builder = reqwest::blocking::Client::builder()
-        .timeout(cfg.timeout.unwrap_or(DEFAULT_TIMEOUT)) // LAW10: Tier-A config default — unset timeout uses the documented DEFAULT_TIMEOUT, not a silent error
+        .timeout(cfg.effective_timeout()) // LAW10: Tier-A config default — unset timeout uses the documented DEFAULT_TIMEOUT, not a silent error
         .redirect(reqwest::redirect::Policy::limited(REDIRECT_LIMIT))
         .user_agent(user_agent(cfg.ua_suffix.as_deref()))
         .no_gzip()
@@ -194,7 +210,7 @@ pub(crate) fn async_client_builder(
     cfg: &HttpClientConfig,
 ) -> Result<reqwest::ClientBuilder, String> {
     let mut builder = reqwest::Client::builder()
-        .timeout(cfg.timeout.unwrap_or(DEFAULT_TIMEOUT)) // LAW10: Tier-A config default — unset timeout uses the documented DEFAULT_TIMEOUT, not a silent error
+        .timeout(cfg.effective_timeout()) // LAW10: Tier-A config default — unset timeout uses the documented DEFAULT_TIMEOUT, not a silent error
         .redirect(reqwest::redirect::Policy::limited(REDIRECT_LIMIT))
         .user_agent(user_agent(cfg.ua_suffix.as_deref()))
         .no_gzip()
