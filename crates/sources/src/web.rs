@@ -222,17 +222,18 @@ fn fetch_url(
         }
     };
 
-    let status = resp.status().as_u16();
-    if status != 200 {
+    let status = resp.status();
+    if !status.is_success() {
         let safe_url = redact_url(url);
-        tracing::warn!(url = %safe_url, status, "non-200 response; URL body was NOT scanned");
+        tracing::warn!(url = %safe_url, %status, "non-success response; URL body was NOT scanned");
         return vec![Err(web_unreadable_error(format!(
             "failed to fetch {safe_url}: HTTP status {status}; response body was not scanned"
         )))];
     }
 
-    match classify_web_response(url) {
+    match classify_web_response_with_headers(url, resp.headers()) {
         WebResponseKind::Wasm => handle_wasm(resp, url, max_response_bytes),
+        WebResponseKind::Json => handle_json(resp, url, max_response_bytes),
         WebResponseKind::SourceMap => handle_sourcemap(resp, url, max_response_bytes),
         WebResponseKind::JavaScript => handle_js(resp, url, max_response_bytes),
     }
@@ -257,6 +258,7 @@ fn validate_initial_web_url(url: &str) -> Result<(), SourceError> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WebResponseKind {
     JavaScript,
+    Json,
     SourceMap,
     Wasm,
 }
@@ -269,6 +271,43 @@ fn classify_web_response(url: &str) -> WebResponseKind {
         WebResponseKind::SourceMap
     } else {
         WebResponseKind::JavaScript
+    }
+}
+
+fn classify_web_response_with_headers(
+    url: &str,
+    headers: &reqwest::header::HeaderMap,
+) -> WebResponseKind {
+    let url_kind = classify_web_response(url);
+    if url_kind != WebResponseKind::JavaScript {
+        return url_kind;
+    }
+    match web_response_kind_from_content_type(headers) {
+        Some(kind) => kind,
+        None => url_kind,
+    }
+}
+
+fn web_response_kind_from_content_type(
+    headers: &reqwest::header::HeaderMap,
+) -> Option<WebResponseKind> {
+    let raw = match headers.get(reqwest::header::CONTENT_TYPE)?.to_str() {
+        Ok(raw) => raw,
+        Err(_error) => {
+            // LAW10: invalid Content-Type is only a routing hint failure; the
+            // URL-extension classifier below still chooses a scannable path.
+            return None;
+        }
+    };
+    let media_type = raw.split_once(';').map_or(raw, |(head, _)| head).trim();
+    if media_type.eq_ignore_ascii_case("application/wasm") {
+        Some(WebResponseKind::Wasm)
+    } else if media_type.eq_ignore_ascii_case("application/source-map") {
+        Some(WebResponseKind::SourceMap)
+    } else if media_type.eq_ignore_ascii_case("application/json") {
+        Some(WebResponseKind::Json)
+    } else {
+        None
     }
 }
 
@@ -372,22 +411,42 @@ fn handle_js(
     max_response_bytes: usize,
 ) -> Vec<Result<Chunk, SourceError>> {
     match read_text_response(resp, max_response_bytes) {
-        Ok(body) => vec![Ok(Chunk {
-            data: body.into(),
-            metadata: ChunkMetadata {
-                base_offset: 0,
-                base_line: 0,
-                source_type: "web:js".to_string(),
-                path: Some(url.to_string()),
-                commit: None,
-                author: None,
-                date: None,
-                mtime_ns: None,
-                size_bytes: None,
-                decoded_span: None,
-            },
-        })],
+        Ok(body) => vec![Ok(web_text_chunk(body, url))],
         Err(e) => vec![Err(e)],
+    }
+}
+
+fn handle_json(
+    resp: reqwest::blocking::Response,
+    url: &str,
+    max_response_bytes: usize,
+) -> Vec<Result<Chunk, SourceError>> {
+    let body = match read_text_response(resp, max_response_bytes) {
+        Ok(body) => body,
+        Err(e) => return vec![Err(e)],
+    };
+    if is_sourcemap_shaped_json(&body) {
+        expand_sourcemap_body(body, url)
+    } else {
+        vec![Ok(web_text_chunk(body, url))]
+    }
+}
+
+fn web_text_chunk(body: String, url: &str) -> Chunk {
+    Chunk {
+        data: body.into(),
+        metadata: ChunkMetadata {
+            base_offset: 0,
+            base_line: 0,
+            source_type: "web:js".to_string(),
+            path: Some(url.to_string()),
+            commit: None,
+            author: None,
+            date: None,
+            mtime_ns: None,
+            size_bytes: None,
+            decoded_span: None,
+        },
     }
 }
 
@@ -402,7 +461,10 @@ fn handle_sourcemap(
         Ok(b) => b,
         Err(e) => return vec![Err(e)],
     };
+    expand_sourcemap_body(body, url)
+}
 
+fn expand_sourcemap_body(body: String, url: &str) -> Vec<Result<Chunk, SourceError>> {
     let mut map: serde_json::Value = match serde_json::from_str(&body) {
         Ok(v) => v,
         Err(e) => {
@@ -514,6 +576,16 @@ fn handle_sourcemap(
     }
 
     chunks
+}
+
+fn is_sourcemap_shaped_json(body: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
+        return false;
+    };
+    value.get("sourcesContent").is_some()
+        || (value.get("version").is_some()
+            && value.get("sources").is_some()
+            && value.get("mappings").is_some())
 }
 
 fn sourcemap_raw_chunk(body: String, url: &str) -> Chunk {
