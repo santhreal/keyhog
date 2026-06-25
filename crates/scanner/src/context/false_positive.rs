@@ -32,9 +32,9 @@ pub(crate) fn is_false_positive_match_context_with_path(
     let current_line_bytes = current_line.as_bytes();
     let (current_match_line, current_match_offset) = line_at_offset(text, match_start);
 
-    is_go_sum_checksum_bytes(bytes, path_lower)
+    is_go_sum_checksum_bytes(current_line_bytes, path_lower)
         || is_integrity_hash_bytes(current_line_bytes)
-        || is_git_lfs_pointer_context_bytes(bytes)
+        || (is_git_lfs_oid_line(current_line_bytes) && is_git_lfs_pointer_context_bytes(bytes))
         || is_renovate_digest_match_context(current_match_line.as_bytes(), current_match_offset)
         || is_cors_header_bytes(current_line_bytes)
         || is_http_cache_header_bytes(current_line_bytes)

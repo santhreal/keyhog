@@ -114,6 +114,19 @@ fn false_positive_context_detects_strict_go_sum_checksum_without_path() {
 }
 
 #[test]
+fn false_positive_match_context_does_not_suppress_adjacent_go_sum_checksum() {
+    let text = concat!(
+        "github.com/example/module v1.0.0 h1:Fr1vK8xdpbQ5OCaCB3ABAfRtq5B4JZc0jRUXPv7Q3k0=\n",
+        "api_key = sk-proj-abcdefghijklmnopqrstuvwxyz123456\n",
+    );
+    let offset = text.find("sk-proj").expect("fixture contains secret");
+    assert!(
+        !is_false_positive_match_context(text, offset, None),
+        "a Go module checksum on a neighboring line must not suppress the credential line"
+    );
+}
+
+#[test]
 fn false_positive_context_detects_configmap_binary_data_block() {
     let lines = vec![
         "kind: ConfigMap",
@@ -220,6 +233,21 @@ fn false_positive_match_context_detects_git_lfs_pointer() {
     );
     let offset = text.find("012345").expect("fixture contains oid");
     assert!(is_false_positive_match_context(text, offset, None));
+}
+
+#[test]
+fn false_positive_match_context_does_not_suppress_adjacent_git_lfs_pointer() {
+    let text = concat!(
+        "version https://git-lfs.github.com/spec/v1\n",
+        "oid sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
+        "size 12345\n",
+        "api_key = sk-proj-abcdefghijklmnopqrstuvwxyz123456\n",
+    );
+    let offset = text.find("sk-proj").expect("fixture contains secret");
+    assert!(
+        !is_false_positive_match_context(text, offset, None),
+        "a Git LFS pointer in the surrounding window must not suppress a different credential line"
+    );
 }
 
 #[test]
