@@ -95,8 +95,135 @@ pub(crate) fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
         }
     }
 
-    // Default: try to extract a single prefix from the start
-    extract_literal_prefix(pattern).into_iter().collect()
+    // A clean leading literal prefix (`AKIA…`, `cs_…`) is the common case.
+    if let Some(p) = extract_literal_prefix(pattern) {
+        return vec![p];
+    }
+
+    // Fallback: a leading literal run interrupted by a small, fully-enumerable
+    // character class (`dd[npc]_…`). `extract_literal_prefix` stops at the `[`
+    // carrying only a sub-floor stub (`dd`), so the detector would route on its
+    // keyword lane alone and a bare-token positive scored below the confidence
+    // floor (contracts_runner: deno-kv MISSED). Expanding the class into one
+    // concrete prefix per member (`ddn_`, `ddp_`, `ddc_`) is the exact analogue
+    // of expanding the `(n|p|c)` alternation above, so each branch earns its AC
+    // trigger + literal-prefix anchor; the full regex still confirms.
+    if let Some(expanded) = expand_leading_charclass_prefixes(pattern) {
+        return expanded;
+    }
+
+    Vec::new()
+}
+
+/// Upper bound on how many members a leading character class may have before
+/// `expand_leading_charclass_prefixes` declines to enumerate it. A genuine
+/// service-prefix discriminator (`dd[npc]_`, `sk[_-]live`) has a handful of
+/// members; a wide class (`[a-z]` after `-` expansion, `[A-Za-z0-9]`) is a body
+/// matcher, not a prefix, and enumerating it would flood the AC set.
+pub(crate) const MAX_CHARCLASS_PREFIX_EXPANSION: usize = 8;
+
+/// Expand a leading literal run interrupted by a SMALL, fully-enumerable
+/// character class into one concrete literal prefix per class member.
+///
+/// `dd[npc]_[a-f0-9]{64}` carries no extractable prefix — `extract_literal_prefix`
+/// stops at `[` with only `dd` (below the 3-char floor) — even though every
+/// concrete branch begins with a perfectly good literal: `ddn_`, `ddp_`,
+/// `ddc_`. A character class whose members are all single literal characters is
+/// semantically an alternation of those characters, so enumerating it is the
+/// exact analogue of the `(n|p|c)` alternation the plural extractor already
+/// expands. Each produced prefix is still confirmed by the full regex, so AC
+/// routing only gains triggers and precision stays held by the body matcher.
+///
+/// Conservative by construction:
+///   * the leading run before `[` must be plain literals (no other metachar);
+///   * the class must be a bare enumeration of single literal chars — no
+///     negation (`[^…]`), no ranges (`[a-f]`), no POSIX/Perl classes;
+///   * cardinality ≤ [`MAX_CHARCLASS_PREFIX_EXPANSION`]; and
+///   * EVERY member must yield a prefix ≥ [`MIN_LITERAL_PREFIX_CHARS`] — partial
+///     coverage is refused outright (an unlisted branch would be dead in AC,
+///     the same hazard the alternation path guards against).
+fn expand_leading_charclass_prefixes(pattern: &str) -> Option<Vec<String>> {
+    let bytes = pattern.as_bytes();
+
+    // 1. Plain literal head up to the first unescaped `[`.
+    let mut head = String::new();
+    let mut i = 0;
+    loop {
+        let &b = bytes.get(i)?;
+        match b {
+            b'[' => break,
+            b'\\' => {
+                let next = *bytes.get(i + 1)? as char;
+                if is_escaped_literal(next) {
+                    head.push(next);
+                    i += 2;
+                } else {
+                    // `\d`, `\w`, … — not a plain literal head.
+                    return None;
+                }
+            }
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-' => {
+                head.push(b as char);
+                i += 1;
+            }
+            // Any other metacharacter before the class means this is not the
+            // `<literal-run>[<members>]` shape this fallback targets.
+            _ => return None,
+        }
+    }
+
+    // 2. Enumerate the class members. `i` points at `[`.
+    let class_start = i + 1;
+    if bytes.get(class_start) == Some(&b'^') {
+        return None; // negated class is not a small enumeration
+    }
+    let mut members = Vec::new();
+    let mut j = class_start;
+    while let Some(&b) = bytes.get(j) {
+        match b {
+            b']' => break,
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' => {
+                members.push(b as char);
+                j += 1;
+            }
+            b'\\' => {
+                let next = *bytes.get(j + 1)? as char;
+                if is_escaped_literal(next) {
+                    members.push(next);
+                    j += 2;
+                } else {
+                    return None;
+                }
+            }
+            // `-` (range), or any other class metacharacter: not a bare
+            // enumeration. Decline rather than guess at the expansion.
+            _ => return None,
+        }
+        if members.len() > MAX_CHARCLASS_PREFIX_EXPANSION {
+            return None;
+        }
+    }
+    if bytes.get(j) != Some(&b']') || members.is_empty() {
+        return None; // unterminated class or empty enumeration
+    }
+
+    // 3. Literal head of what follows the class (`_` in `_[a-f0-9]{64}`), so the
+    //    concrete prefix extends past the class to its next break.
+    let tail = literal_head(&pattern[j + 1..]).unwrap_or_default();
+
+    let mut out = Vec::with_capacity(members.len());
+    for m in members {
+        let mut prefix = head.clone();
+        prefix.push(m);
+        prefix.push_str(&tail);
+        if prefix.len() < MIN_LITERAL_PREFIX_CHARS {
+            // One sub-floor branch ⇒ refuse the whole expansion: a partial set
+            // would route only the long branches and leave the short ones dead.
+            return None;
+        }
+        out.push(prefix);
+    }
+    Some(out)
 }
 
 /// If `pattern` opens with a non-capturing boundary-guard group whose every
@@ -585,5 +712,82 @@ fn walk_ast(ast: &regex_syntax::ast::Ast, out: &mut Vec<String>) {
         | Ast::Empty(_)
         | Ast::Flags(_)
         | Ast::Assertion(_) => {}
+    }
+}
+
+#[cfg(test)]
+mod charclass_prefix_expansion_tests {
+    use super::*;
+
+    #[test]
+    fn deno_kv_class_expands_to_one_prefix_per_member() {
+        // `dd[npc]_[a-f0-9]{64}` carries no extractable single prefix (`dd` is
+        // sub-floor), but each concrete branch is a clean ≥3-char literal.
+        let got = expand_leading_charclass_prefixes("dd[npc]_[a-f0-9]{64}");
+        assert_eq!(
+            got,
+            Some(vec!["ddn_".to_string(), "ddp_".to_string(), "ddc_".to_string()]),
+            "the class members must expand IN ORDER, each extended past the class to the trailing `_`"
+        );
+    }
+
+    #[test]
+    fn plural_extractor_routes_deno_kv_through_the_expansion() {
+        // End-to-end through the public plural extractor: the singular path
+        // yields nothing, so the char-class fallback must supply the triggers.
+        let got = extract_literal_prefixes("dd[npc]_[a-f0-9]{64}");
+        assert_eq!(
+            got,
+            vec!["ddn_".to_string(), "ddp_".to_string(), "ddc_".to_string()]
+        );
+    }
+
+    #[test]
+    fn clean_leading_prefix_is_untouched_by_the_fallback() {
+        // A detector with a normal literal prefix must still route through the
+        // singular extractor and never reach the char-class fallback.
+        assert_eq!(extract_literal_prefixes("AKIA[0-9A-Z]{16}"), vec!["AKIA"]);
+        assert_eq!(
+            extract_literal_prefixes("(?-i)cs_[a-z0-9]{32}"),
+            vec!["cs_"]
+        );
+    }
+
+    #[test]
+    fn ranges_negation_and_perl_classes_are_not_enumerated() {
+        // A range (`[a-f]`), a negation (`[^x]`), and a leading body matcher
+        // are bodies, not enumerable prefixes — declined, no triggers emitted.
+        assert_eq!(expand_leading_charclass_prefixes("dd[a-f]_[0-9]{8}"), None);
+        assert_eq!(expand_leading_charclass_prefixes("dd[^np]_[0-9]{8}"), None);
+        assert_eq!(expand_leading_charclass_prefixes("[a-z]{20}"), None);
+    }
+
+    #[test]
+    fn oversized_class_is_declined() {
+        // A class wider than MAX_CHARCLASS_PREFIX_EXPANSION is a body matcher;
+        // enumerating it would flood the AC set.
+        let wide: String = ('a'..='z')
+            .take(MAX_CHARCLASS_PREFIX_EXPANSION + 1)
+            .collect();
+        let pattern = format!("xy[{wide}]_[0-9]{{8}}");
+        assert_eq!(expand_leading_charclass_prefixes(&pattern), None);
+    }
+
+    #[test]
+    fn sub_floor_branch_refuses_the_whole_expansion() {
+        // Head is empty and the trailing literal is one char, so every branch
+        // would be 2 chars — below the floor. Partial coverage is unsafe, so
+        // the entire expansion is refused (no dead branches in AC).
+        assert_eq!(expand_leading_charclass_prefixes("[npc]x[0-9]{8}"), None);
+    }
+
+    #[test]
+    fn underscore_member_is_a_valid_literal() {
+        // `_` is a legitimate enumerable member (e.g. `sk[_-]live`-style).
+        let got = expand_leading_charclass_prefixes("sk[_x]live[0-9]{8}");
+        assert_eq!(
+            got,
+            Some(vec!["sk_live".to_string(), "skxlive".to_string()])
+        );
     }
 }

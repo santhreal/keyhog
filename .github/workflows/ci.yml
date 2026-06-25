@@ -291,6 +291,14 @@ jobs:
       # pattern surfaces and the bare-host precision twin (no keyword → no claim).
       - name: per-pattern weak-anchor recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_per_pattern_weak_anchor_recall
+      # Character-class prefix expansion recall contract. A regex opening with a
+      # literal run interrupted by a small enumerable class (`dd[npc]_[a-f0-9]{64}`)
+      # carries no extractable single prefix, so the plural extractor enumerates
+      # the class into one concrete prefix per member (`ddn_`/`ddp_`/`ddc_`) to
+      # earn each branch its AC trigger + literal-prefix anchor. Pins the member
+      # tokens surface and the faithful-expansion twin (non-member `ddz_` → no claim).
+      - name: char-class prefix expansion recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_charclass_prefix_expansion_recall
       - name: RawMatch total-order gate
         run: cargo test -p keyhog-core --test new_core_finding_dedup --profile release-fast
 
