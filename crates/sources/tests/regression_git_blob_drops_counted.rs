@@ -743,3 +743,57 @@ fn aggregate_git_history_cap_is_counted_source_truncated() {
         "aggregate Git cap is not a per-blob/per-file over-size skip"
     );
 }
+
+/// `GitHistorySource` has its own patch-streaming path, so it must prove the
+/// shared aggregate cap telemetry independently of `GitSource`.
+#[test]
+fn aggregate_git_history_patch_cap_is_counted_source_truncated() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path();
+    init_repo(repo);
+    std::fs::write(repo.join("first.txt"), "FIRST=visible\n").expect("write first");
+    std::fs::write(repo.join("second.txt"), "SECOND=not reached\n").expect("write second");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-m", "two patch chunks"]);
+
+    let mut limits = keyhog_sources::SourceLimits::default();
+    limits.git_chunk_count = 1;
+
+    let rows: Vec<_> = GitHistorySource::new(repo.to_path_buf())
+        .with_limits(limits)
+        .chunks()
+        .collect();
+    let (ok, errors) = split_chunk_results(&rows);
+    assert_eq!(
+        ok.len(),
+        1,
+        "the first git-history patch chunk should still be scanned before the cap"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "aggregate git-history patch cap must surface one source error"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("git history source was truncated")
+            && err.contains("remaining blobs were not scanned"),
+        "error should describe partial git-history coverage, got {err}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.source_truncated - before.source_truncated,
+        1,
+        "aggregate git-history patch cap MUST bump SOURCE_TRUNCATED exactly once"
+    );
+    assert_eq!(
+        after.over_max_size - before.over_max_size,
+        0,
+        "aggregate git-history patch cap is not a per-blob/per-file over-size skip"
+    );
+}
