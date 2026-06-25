@@ -249,3 +249,50 @@ fn pdf_decoded_stream_truncation_surfaces_source_error() {
         "PDF decoded-stream truncation must bump ARCHIVE_TRUNCATED exactly once"
     );
 }
+
+#[test]
+fn pdf_partial_flate_recovery_surfaces_archive_truncated_gap() {
+    let _guard = COUNTER_LOCK.lock().unwrap();
+    TestApi.reset_skip_counters();
+
+    let mut decoded = b"BT (KEYHOG_PDF_RECOVERED_SECRET_1234567890) Tj ET\n".to_vec();
+    decoded.extend(vec![b'A'; 60 * 1024]);
+    let len = u16::try_from(decoded.len()).expect("fixture fits in one stored block");
+    let nlen = !len;
+    let mut compressed = vec![0x78, 0x01, 0x00];
+    compressed.extend_from_slice(&len.to_le_bytes());
+    compressed.extend_from_slice(&nlen.to_le_bytes());
+    compressed.extend_from_slice(&decoded);
+    compressed.push(0x06);
+
+    let pdf = pdf_support::minimal_pdf(" /Filter /FlateDecode", &compressed);
+    let rows = scan_pdf(&pdf);
+    let (chunks, errors) = split_chunk_results(&rows);
+
+    assert_eq!(
+        errors.len(),
+        1,
+        "partial PDF FlateDecode recovery must surface one source error row"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("failed after recovering decoded text")
+            && err.contains("only the recovered prefix was scanned")
+            && err.contains("remaining PDF stream bytes were not scanned"),
+        "error should describe partial PDF recovery coverage, got {err}"
+    );
+    assert!(
+        chunks.iter().any(|chunk| {
+            chunk.metadata.source_type == "filesystem/pdf"
+                && chunk
+                    .data
+                    .contains("KEYHOG_PDF_RECOVERED_SECRET_1234567890")
+        }),
+        "recovered PDF text must still emit the admitted chunk; chunks={chunks:?}"
+    );
+    assert_eq!(
+        skip_counts().archive_truncated,
+        1,
+        "partial PDF FlateDecode recovery must bump ARCHIVE_TRUNCATED exactly once"
+    );
+}
