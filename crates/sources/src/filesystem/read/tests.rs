@@ -57,6 +57,16 @@ fn looks_binary_repeated_nul_run_is_binary() {
 }
 
 #[test]
+fn decode_text_rejects_dense_control_prefix_even_with_invalid_utf8_tail() {
+    let mut bytes = vec![b'a'; 100_000];
+    bytes[..300].fill(0x03);
+    bytes.push(0xFF);
+
+    assert!(decode_text_file(&bytes).is_none());
+    assert!(decode_text_file_owned_or_bytes(bytes).is_err());
+}
+
+#[test]
 fn binary_magic_short_ascii_prefixes_require_structure() {
     assert!(!looks_binary(b"BM_TOKEN=text_prefix_value"));
     assert!(!looks_binary_prefix(b"BM_TOKEN=text"));
@@ -81,6 +91,18 @@ fn binary_magic_structural_bmp_pe_and_bzip2_headers_are_binary() {
 
     assert!(looks_binary(b"BZh1compressed"));
     assert!(looks_binary_prefix(b"BZh1compressed"));
+}
+
+#[test]
+fn binary_magic_pe_prefix_can_live_beyond_256_bytes() {
+    let mut pe = vec![b'A'; 1024];
+    pe[0..2].copy_from_slice(b"MZ");
+    pe[60..64].copy_from_slice(&512u32.to_le_bytes());
+    pe[512..516].copy_from_slice(b"PE\0\0");
+
+    assert!(!looks_binary_prefix(&pe[..256]));
+    assert!(looks_binary_prefix(&pe));
+    assert!(decode_text_file(&pe).is_none());
 }
 
 #[test]

@@ -10,10 +10,19 @@ fn pdf_magic_file_not_scanned_as_text() {
 "
     .to_vec();
     bytes.extend_from_slice(b"SECRET=should-not-appear-as-text");
-    std::fs::write(dir.path().join("doc.pdf"), bytes).expect("write");
+    std::fs::write(dir.path().join("doc.dat"), bytes).expect("write");
 
-    let count = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
-        .into_iter()
-        .count();
-    assert_eq!(count, 0, "PDF magic must skip text decode");
+    let chunks = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()));
+    assert!(
+        chunks
+            .iter()
+            .all(|chunk| chunk.metadata.source_type != "filesystem"),
+        "PDF magic must not be decoded as ordinary filesystem text; chunks={chunks:?}"
+    );
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.metadata.source_type == "filesystem:binary-strings"),
+        "PDF magic with printable payload should preserve recall through binary strings; chunks={chunks:?}"
+    );
 }

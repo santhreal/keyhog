@@ -48,7 +48,7 @@ pub(crate) fn decode_text_file(bytes: &[u8]) -> Option<String> {
     // is what makes us robust to minified-JS / log-tail encoding hiccups
     // and preserves recall) or actual binary. Fall back to the full
     // controls-density check before paying for the lossy copy.
-    if looks_binary(bytes) {
+    if looks_binary_header_check(bytes) || looks_binary(bytes) {
         return None;
     }
     Some(String::from_utf8_lossy(bytes).into_owned())
@@ -100,7 +100,7 @@ pub(in crate::filesystem) fn decode_text_file_owned_or_bytes(
         // binary-density fallback.
         Err(e) => {
             let bytes = e.into_bytes();
-            if looks_binary(&bytes) {
+            if looks_binary_header_check(&bytes) || looks_binary(&bytes) {
                 let mut bytes = bytes;
                 if had_utf8_bom {
                     bytes.splice(0..0, [0xEF, 0xBB, 0xBF]);
@@ -160,12 +160,11 @@ pub(in crate::filesystem::read) fn looks_binary(bytes: &[u8]) -> bool {
     //   * As soon as `(suspicious + remaining) * 20 ≤ total`, even worst-case
     //     remaining bytes can't push us past threshold → it's text.
     //
-    // On a 100 KiB clean text file the loop now exits after ~5 KiB once the
-    // worst-case branch concludes "no suspicious density possible." On a
-    // binary blob it exits within the first few bytes once the density is
-    // confirmed. Either way, the rare-but-pathological dense-clean-text
-    // case still walks the whole file - same complexity bound, just a much
-    // tighter constant.
+    // On clean text the proof can fire once the remaining unscanned suffix
+    // cannot mathematically push controls past 5%; binary blobs still exit
+    // within the first few bytes once density is confirmed. Either way, the
+    // rare-but-pathological dense-clean-text case still walks the whole file -
+    // same complexity bound, tighter common constants.
     let total = bytes.len() as u64;
     if total == 0 {
         return false;

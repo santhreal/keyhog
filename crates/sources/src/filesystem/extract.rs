@@ -18,6 +18,7 @@ mod seven_zip;
 /// per-file cap. Extraction still needs a hard bomb guard so an archive or
 /// compressed stream cannot expand without bound.
 pub(super) const UNCAPPED_ARCHIVE_BUDGET: u64 = 1024 * 1024 * 1024;
+const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 1024;
 
 pub(crate) fn extraction_total_budget(max_size: u64) -> u64 {
     if max_size == 0 {
@@ -213,7 +214,7 @@ pub(super) fn process_entry(
         // no-follow safe open as the real file reader: an extensionless symlink
         // must not get a pre-guard `File::open` of its target just because this
         // is only a header sniff.
-        let mut buf = [0u8; 256];
+        let mut buf = [0u8; EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES];
         if let Ok(n) = read::read_file_prefix_safe(&path, &mut buf) {
             // LAW10: failed prefix probe leaves binary hint false; full safe read path below still surfaces unreadable files.
             let head = &buf[..n];
