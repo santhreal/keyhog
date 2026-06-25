@@ -15,8 +15,16 @@
 //!
 //! Unix-only: the daemon and the `--daemon` flag are unix-only (the whole
 //! `crate::daemon` subtree is `#[cfg(unix)]`).
+//!
+//! Requires the `simd` feature: the daemon is started with `--cache-dir`
+//! (Hyperscan DB cache) and `--backend simd`, both of which a non-simd build
+//! rejects ("--cache-dir requires a keyhog build with the simd feature"), so the
+//! spawned daemon exits before becoming ready. Gating on `feature = "simd"` makes
+//! a bare `cargo test -p keyhog` (default features) skip these cleanly instead of
+//! failing with a confusing "daemon exited before becoming ready; status=2"; CI
+//! runs them under `--features simd`.
 
-#![cfg(unix)]
+#![cfg(all(unix, feature = "simd"))]
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
