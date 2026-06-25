@@ -6,11 +6,14 @@
 
 use crate::support::split_chunk_results;
 use keyhog_core::Source;
-use keyhog_sources::FilesystemSource;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::{skip_counts, FilesystemSource};
 use std::fs;
 
 #[test]
 fn malformed_gzip_fails_loud_and_scan_continues() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().unwrap();
     // Bytes that look gzip-y (correct magic, wrong everything else).
     let bogus = [0x1f, 0x8b, 0x08, 0x00, 0xde, 0xad, 0xbe, 0xef, 0x00, 0xff];
@@ -40,10 +43,17 @@ fn malformed_gzip_fails_loud_and_scan_continues() {
         "malformed gzip must emit one visible source error"
     );
     assert_compressed_error(errors[0]);
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "malformed gzip must count one unreadable coverage gap"
+    );
 }
 
 #[test]
 fn empty_gzip_fails_loud_without_panic() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("empty.gz"), []).unwrap();
     fs::write(
@@ -69,10 +79,17 @@ fn empty_gzip_fails_loud_without_panic() {
         "empty gzip must emit one visible source error"
     );
     assert_compressed_error(errors[0]);
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "empty gzip must count one unreadable coverage gap"
+    );
 }
 
 #[test]
 fn random_bytes_with_gz_extension_fail_loud() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().unwrap();
     // 256 random-ish bytes labelled .gz - the format dispatcher will
     // route them to the gzip path; ziftsieve should bail cleanly.
@@ -93,6 +110,11 @@ fn random_bytes_with_gz_extension_fail_loud() {
         "random .gz must emit one visible source error"
     );
     assert_compressed_error(errors[0]);
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "random .gz bytes must count one unreadable coverage gap"
+    );
 }
 
 fn assert_compressed_error(error: &keyhog_core::SourceError) {
