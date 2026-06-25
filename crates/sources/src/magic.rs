@@ -7,7 +7,10 @@
 pub(crate) const GZIP_PREFIX: &[u8] = b"\x1f\x8b";
 pub(crate) const PDF_PREFIX: &[u8] = b"%PDF-";
 pub(crate) const PYTHON_PICKLE_PROTOCOL2_PREFIX: &[u8] = b"\x80\x02";
+pub(crate) const ZIP_CENTRAL_DIRECTORY_FILE_HEADER_SIGNATURE: u32 = 0x0201_4b50;
 pub(crate) const ZIP_END_OF_CENTRAL_DIRECTORY_PREFIX: &[u8] = b"PK\x05\x06";
+pub(crate) const ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE: u32 = 0x0605_4b50;
+pub(crate) const ZIP_LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x0403_4b50;
 pub(crate) const ZIP_LOCAL_FILE_PREFIX: &[u8] = b"PK\x03\x04";
 pub(crate) const ZSTD_FRAME_MAGIC: &[u8] = b"\x28\xb5\x2f\xfd";
 pub(crate) const WASM_MAGIC: &[u8; 4] = b"\x00asm";

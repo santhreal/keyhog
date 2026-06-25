@@ -29,8 +29,14 @@ fn binary_magic_bytes_have_one_sources_owner() {
             && magic.contains(r#"b"%PDF-""#)
             && magic.contains("ZIP_LOCAL_FILE_PREFIX")
             && magic.contains(r#"b"PK\x03\x04""#)
+            && magic.contains("ZIP_LOCAL_FILE_HEADER_SIGNATURE")
+            && magic.contains("0x0403_4b50")
+            && magic.contains("ZIP_CENTRAL_DIRECTORY_FILE_HEADER_SIGNATURE")
+            && magic.contains("0x0201_4b50")
             && magic.contains("ZIP_END_OF_CENTRAL_DIRECTORY_PREFIX")
             && magic.contains(r#"b"PK\x05\x06""#)
+            && magic.contains("ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE")
+            && magic.contains("0x0605_4b50")
             && magic.contains(r#"b"\x89PNG\r\n\x1a\n""#)
             && magic.contains(r#"b"\x7fELF""#)
             && magic.contains("WASM_MAGIC"),
@@ -99,6 +105,7 @@ fn binary_magic_bytes_have_one_sources_owner() {
         "src/web.rs",
         "src/filesystem/extract/compressed.rs",
         "src/filesystem/extract/archive.rs",
+        "src/filesystem/extract/archive/zip_scan/duplicates.rs",
     ] {
         let body = source(path);
         for (needle, name) in [
@@ -119,6 +126,9 @@ fn binary_magic_bytes_have_one_sources_owner() {
         for (needle, name) in [
             ("[0x1f, 0x8b]", "gzip"),
             ("[0x28, 0xb5, 0x2f, 0xfd]", "zstd frame"),
+            ("0x0403_4b50", "ZIP local file header"),
+            ("0x0201_4b50", "ZIP central directory file header"),
+            ("0x0605_4b50", "ZIP end of central directory"),
         ] {
             assert!(
                 !body.contains(needle),

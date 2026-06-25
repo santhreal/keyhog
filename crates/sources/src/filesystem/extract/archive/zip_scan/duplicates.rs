@@ -4,6 +4,10 @@ use super::super::{
 };
 use super::{validate_scan_archive_entry_name, zip_external_attrs_are_special};
 use crate::filesystem::filter;
+use crate::magic::{
+    ZIP_CENTRAL_DIRECTORY_FILE_HEADER_SIGNATURE, ZIP_END_OF_CENTRAL_DIRECTORY_PREFIX,
+    ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE, ZIP_LOCAL_FILE_HEADER_SIGNATURE,
+};
 use keyhog_core::{Chunk, SourceError};
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -332,8 +336,6 @@ pub(super) fn extract_zip_archive_from_central_entries(
 
 fn read_central_zip_entries(path: &Path) -> Result<Vec<CentralZipEntry>, String> {
     const EOCD_LEN: usize = 22;
-    const EOCD_SIGNATURE: &[u8] = b"PK\x05\x06";
-    const CENTRAL_SIGNATURE: u32 = 0x0201_4b50;
     let mut file = File::open(path).map_err(|error| error.to_string())?;
     let file_len = file
         .seek(SeekFrom::End(0))
@@ -353,7 +355,7 @@ fn read_central_zip_entries(path: &Path) -> Result<Vec<CentralZipEntry>, String>
     let mut eocd = None;
     let mut last_candidate_error = None;
     for (index, window) in tail.windows(EOCD_LEN).enumerate().rev() {
-        if !window.starts_with(EOCD_SIGNATURE) {
+        if !window.starts_with(ZIP_END_OF_CENTRAL_DIRECTORY_PREFIX) {
             continue;
         }
         let comment_len = usize::from(read_u16(&tail[index + 20..index + 22])?);
@@ -428,7 +430,7 @@ fn read_central_zip_entries(path: &Path) -> Result<Vec<CentralZipEntry>, String>
         if fixed_end > central.len() {
             return Err("truncated zip central directory entry".to_string());
         }
-        if read_u32(&central[offset..offset + 4])? != CENTRAL_SIGNATURE {
+        if read_u32(&central[offset..offset + 4])? != ZIP_CENTRAL_DIRECTORY_FILE_HEADER_SIGNATURE {
             return Err("invalid zip central directory signature".to_string());
         }
         let compression_method = read_u16(&central[offset + 10..offset + 12])?;
@@ -475,7 +477,6 @@ fn read_central_zip_entries(path: &Path) -> Result<Vec<CentralZipEntry>, String>
 }
 
 fn read_local_zip_entry_data(file: &mut File, entry: &CentralZipEntry) -> Result<Vec<u8>, String> {
-    const LOCAL_SIGNATURE: u32 = 0x0403_4b50;
     let file_len = file
         .seek(SeekFrom::End(0))
         .map_err(|error| error.to_string())?;
@@ -484,7 +485,7 @@ fn read_local_zip_entry_data(file: &mut File, entry: &CentralZipEntry) -> Result
     let mut header = [0u8; 30];
     file.read_exact(&mut header)
         .map_err(|error| error.to_string())?;
-    if read_u32(&header[0..4])? != LOCAL_SIGNATURE {
+    if read_u32(&header[0..4])? != ZIP_LOCAL_FILE_HEADER_SIGNATURE {
         return Err("invalid zip local file header signature".to_string());
     }
     let name_len = u64::from(read_u16(&header[26..28])?);
@@ -528,7 +529,7 @@ fn build_single_entry_zip(
     let name_len = u16::try_from(name_bytes.len())
         .map_err(|error| format!("entry name length does not fit zip32: {error}"))?;
     let mut out = Vec::new();
-    write_u32(&mut out, 0x0403_4b50);
+    write_u32(&mut out, ZIP_LOCAL_FILE_HEADER_SIGNATURE);
     write_u16(&mut out, 20);
     write_u16(&mut out, 0);
     write_u16(&mut out, entry.compression_method);
@@ -544,7 +545,7 @@ fn build_single_entry_zip(
 
     let central_offset = u32::try_from(out.len())
         .map_err(|error| format!("central directory offset does not fit zip32: {error}"))?;
-    write_u32(&mut out, 0x0201_4b50);
+    write_u32(&mut out, ZIP_CENTRAL_DIRECTORY_FILE_HEADER_SIGNATURE);
     write_u16(&mut out, 20);
     write_u16(&mut out, 20);
     write_u16(&mut out, 0);
@@ -568,7 +569,7 @@ fn build_single_entry_zip(
     let central_size = central_end
         .checked_sub(central_offset)
         .ok_or_else(|| "central directory size underflow".to_string())?;
-    write_u32(&mut out, 0x0605_4b50);
+    write_u32(&mut out, ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE);
     write_u16(&mut out, 0);
     write_u16(&mut out, 0);
     write_u16(&mut out, 1);
