@@ -1,6 +1,36 @@
 //! Install integrity bypasses must be explicit flags, never ambient env.
 
-use keyhog::testing::{CliTestApi as _, API};
+use keyhog::testing::{API, CliTestApi as _};
+use std::collections::BTreeSet;
+
+fn keyhog_env_tokens(script: &str) -> BTreeSet<&str> {
+    let mut tokens = BTreeSet::new();
+    for (start, _) in script.match_indices("KEYHOG_") {
+        let tail = &script[start..];
+        let end = tail
+            .find(|ch: char| !(ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_'))
+            .unwrap_or(tail.len());
+        tokens.insert(&tail[..end]);
+    }
+    tokens
+}
+
+#[test]
+fn installer_keyhog_env_surface_is_exactly_the_install_pin() {
+    let allowed = BTreeSet::from(["KEYHOG_VERSION"]);
+    for (name, script) in [
+        ("install.sh", include_str!("../../../install.sh")),
+        ("install.ps1", include_str!("../../../install.ps1")),
+    ] {
+        let actual = keyhog_env_tokens(script);
+        assert_eq!(
+            actual, allowed,
+            "{name} must not grow ambient KEYHOG_* installer configuration. \
+             The only surviving installer env is KEYHOG_VERSION as the release pin; \
+             local files, destination, variant, insecure mode, calibration, and behavior use explicit flags."
+        );
+    }
+}
 
 #[test]
 fn install_scripts_do_not_accept_insecure_env_override() {
