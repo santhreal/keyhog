@@ -3,8 +3,7 @@
 #[cfg(feature = "docker")]
 #[test]
 fn docker_tar_caps_in_source() {
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/docker.rs"))
-        .expect("docker.rs");
+    let src = docker_module_source();
     assert!(
         !src.contains("MAX_TAR_ENTRY_BYTES") && !src.contains("MAX_TAR_TOTAL_BYTES"),
         "Docker tar caps must be owned by SourceLimits"
@@ -24,13 +23,16 @@ fn docker_tar_caps_in_source() {
 #[cfg(feature = "docker")]
 #[test]
 fn docker_layer_validation_and_extraction_share_one_open_descriptor() {
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/docker.rs"))
-        .expect("docker.rs");
+    let src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/docker/archive.rs"
+    ))
+    .expect("docker/archive.rs");
     let unpack_layer = src
         .split("fn unpack_layer_archive(")
         .nth(1)
         .expect("unpack_layer_archive must exist")
-        .split("fn validate_tar_reader")
+        .split("fn validate_tar_archive_with_total_cap")
         .next()
         .expect("unpack_layer_archive section must be bounded");
 
@@ -56,4 +58,24 @@ fn docker_layer_validation_and_extraction_share_one_open_descriptor() {
 #[test]
 fn docker_tar_caps_require_docker_feature() {
     assert!(!cfg!(feature = "docker"));
+}
+
+#[cfg(feature = "docker")]
+fn docker_module_source() -> String {
+    [
+        "src/docker.rs",
+        "src/docker/archive.rs",
+        "src/docker/file_read.rs",
+        "src/docker/layer.rs",
+        "src/docker/metadata.rs",
+        "src/docker/oci.rs",
+    ]
+    .into_iter()
+    .map(|path| {
+        let full_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
+        std::fs::read_to_string(&full_path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", full_path.display()))
+    })
+    .collect::<Vec<_>>()
+    .join("\n")
 }

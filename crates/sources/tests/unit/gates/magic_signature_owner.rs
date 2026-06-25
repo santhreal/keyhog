@@ -66,7 +66,7 @@ fn binary_magic_bytes_have_one_sources_owner() {
         "filesystem text decode must consume shared structural magic predicates instead of owning local copies"
     );
 
-    let docker = source("src/docker.rs");
+    let docker = source("src/docker/archive.rs");
     assert!(
         docker.contains("crate::magic::starts_with_gzip")
             && docker.contains("crate::magic::starts_with_zstd_frame"),
@@ -95,6 +95,7 @@ fn binary_magic_bytes_have_one_sources_owner() {
     for path in [
         "src/filesystem/read/decode.rs",
         "src/docker.rs",
+        "src/docker/archive.rs",
         "src/web.rs",
         "src/filesystem/extract/compressed.rs",
         "src/filesystem/extract/archive.rs",

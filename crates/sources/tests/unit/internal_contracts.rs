@@ -408,13 +408,14 @@ fn docker_collect_is_phase_orchestrator() {
     for required in [
         "struct DockerScanWorkspace",
         "fn resolve_docker_binary(",
-        "fn collect_docker_layer_chunks(",
-        "fn scan_docker_layer(",
-        "fn docker_layer_name(",
+        "mod archive;",
+        "mod layer;",
+        "mod metadata;",
+        "mod oci;",
     ] {
         assert!(
             source.contains(required),
-            "docker.rs must keep {required} as an explicit Docker collection phase boundary"
+            "docker.rs must keep {required} as an explicit Docker collection boundary"
         );
     }
 
@@ -422,7 +423,7 @@ fn docker_collect_is_phase_orchestrator() {
         "DockerScanWorkspace::new()",
         "resolve_docker_binary()",
         "find_manifest_config_chunks(",
-        "collect_docker_layer_chunks(",
+        "layer::collect_docker_layer_chunks(",
     ] {
         assert!(
             collect.contains(required_call),
