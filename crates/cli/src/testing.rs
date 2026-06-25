@@ -102,7 +102,7 @@ pub trait CliTestApi {
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
     ) -> Result<Vec<Box<dyn Source>>>;
     fn merge_scan_ignore_paths(&self, args: &ScanArgs, allowlist_paths: Vec<String>)
-    -> Vec<String>;
+        -> Vec<String>;
     fn validate_cli_path_arg(&self, path: &Path, name: &str) -> Result<()>;
     fn report_findings(
         &self,
@@ -127,6 +127,8 @@ pub trait CliTestApi {
     fn validate_socket_for_connect(&self, socket_path: &Path) -> Result<()>;
     fn current_uid(&self) -> libc::uid_t;
     fn connected_peer_uid(&self, stream: &tokio::net::UnixStream) -> Result<libc::uid_t>;
+    #[cfg(unix)]
+    fn is_transient_accept_error(&self, error: &std::io::Error) -> bool;
     fn daemon_client_version<'a>(&self, client: &'a crate::daemon::client::Client) -> &'a str;
     fn daemon_client_is_stale(&self, client: &crate::daemon::client::Client) -> bool;
     fn daemon_client_round_trip<'a>(
@@ -464,6 +466,10 @@ impl CliTestApi for TestApi {
     }
     fn connected_peer_uid(&self, stream: &tokio::net::UnixStream) -> Result<libc::uid_t> {
         crate::daemon::client::testing::connected_peer_uid(stream)
+    }
+    #[cfg(unix)]
+    fn is_transient_accept_error(&self, error: &std::io::Error) -> bool {
+        crate::daemon::server::is_transient_accept_error(error)
     }
     fn daemon_client_version<'a>(&self, client: &'a crate::daemon::client::Client) -> &'a str {
         client.daemon_version()

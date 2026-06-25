@@ -10,7 +10,7 @@
 
 #![cfg(unix)]
 
-use keyhog::daemon::server::is_transient_accept_error;
+use keyhog::testing::{CliTestApi as _, API};
 use std::io::{Error, ErrorKind};
 
 #[test]
@@ -19,7 +19,7 @@ fn emfile_too_many_open_files_is_transient() {
     // std maps this to ErrorKind::Other, so the classifier matches on errno.
     let e = Error::from_raw_os_error(24);
     assert!(
-        is_transient_accept_error(&e),
+        API.is_transient_accept_error(&e),
         "EMFILE (too many open files) must be treated as transient so a momentary \
          fd-exhaustion spike does not permanently kill the daemon"
     );
@@ -30,7 +30,7 @@ fn enfile_system_fd_table_full_is_transient() {
     // ENFILE (errno 23): system-wide open-file table full. Also recoverable.
     let e = Error::from_raw_os_error(23);
     assert!(
-        is_transient_accept_error(&e),
+        API.is_transient_accept_error(&e),
         "ENFILE (system file table full) must be treated as transient"
     );
 }
@@ -39,7 +39,7 @@ fn enfile_system_fd_table_full_is_transient() {
 fn connection_aborted_is_transient() {
     let e = Error::from(ErrorKind::ConnectionAborted);
     assert!(
-        is_transient_accept_error(&e),
+        API.is_transient_accept_error(&e),
         "a peer that aborted between SYN and accept() is transient — keep serving"
     );
 }
@@ -48,7 +48,7 @@ fn connection_aborted_is_transient() {
 fn interrupted_syscall_is_transient() {
     let e = Error::from(ErrorKind::Interrupted);
     assert!(
-        is_transient_accept_error(&e),
+        API.is_transient_accept_error(&e),
         "EINTR (interrupted accept) is transient — retry, don't tear down"
     );
 }
@@ -57,7 +57,7 @@ fn interrupted_syscall_is_transient() {
 fn would_block_is_transient() {
     let e = Error::from(ErrorKind::WouldBlock);
     assert!(
-        is_transient_accept_error(&e),
+        API.is_transient_accept_error(&e),
         "EAGAIN/EWOULDBLOCK is transient"
     );
 }
@@ -69,7 +69,7 @@ fn permission_denied_is_fatal() {
     // would spin forever) — the caller shuts down loudly instead.
     let e = Error::from(ErrorKind::PermissionDenied);
     assert!(
-        !is_transient_accept_error(&e),
+        !API.is_transient_accept_error(&e),
         "a fatal, non-recoverable accept error must NOT be treated as transient"
     );
 }
@@ -78,7 +78,7 @@ fn permission_denied_is_fatal() {
 fn invalid_input_is_fatal() {
     let e = Error::from(ErrorKind::InvalidInput);
     assert!(
-        !is_transient_accept_error(&e),
+        !API.is_transient_accept_error(&e),
         "an unrecoverable accept error must be fatal so the daemon shuts down \
          instead of busy-looping forever"
     );

@@ -314,7 +314,7 @@ fn remove_daemon_socket_on_shutdown(socket_path: &std::path::Path) -> Result<()>
 /// (`WouldBlock`). Everything else (e.g. the socket fd closed under us) is
 /// treated as fatal so the daemon doesn't spin forever on an unrecoverable
 /// error.
-pub fn is_transient_accept_error(e: &std::io::Error) -> bool {
+pub(crate) fn is_transient_accept_error(e: &std::io::Error) -> bool {
     use std::io::ErrorKind;
     if matches!(
         e.kind(),

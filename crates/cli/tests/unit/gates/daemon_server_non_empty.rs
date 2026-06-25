@@ -43,6 +43,11 @@ fn daemon_server_non_empty() {
             && prod.contains("async fn handle_accept_error("),
         "daemon server lifecycle must have named owners for compile, trusted bind, accept loop, connection-spawn errors, and accept errors"
     );
+    assert!(
+        prod.contains("pub(crate) fn is_transient_accept_error(")
+            && !prod.contains("pub fn is_transient_accept_error("),
+        "daemon accept-error classifier is an internal server policy; tests must use the testing facade instead of widening the production API"
+    );
     let spawn_error = prod
         .split("fn handle_connection_spawn_error(")
         .nth(1)
