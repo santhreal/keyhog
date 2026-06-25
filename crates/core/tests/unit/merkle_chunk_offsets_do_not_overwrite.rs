@@ -73,9 +73,23 @@ fn merkle_chunk_offset_source_contract_is_on_production_path() {
         std::fs::read_to_string("src/merkle_index.rs").expect("read merkle index source");
     assert!(root_source.contains("const SCHEMA_VERSION: u32 = 4"));
     assert!(root_source.contains("struct CacheKey"));
+    assert!(root_source.contains("struct CacheKeyRef<'a>"));
     assert!(root_source.contains("chunk_offset: u64"));
     assert!(root_source.contains("record_chunk_at_offset_and_check_unchanged"));
+    assert!(root_source.contains("record_borrowed_key_at_offset_with_metadata"));
     assert!(!root_source.contains("HashMap<PathBuf, CacheEntry>"));
+    let borrowed_recording = root_source
+        .split("fn record_borrowed_key_at_offset_with_metadata(")
+        .nth(1)
+        .expect("borrowed recording helper exists")
+        .split("/// Insert or update one entry")
+        .next()
+        .expect("borrowed recording helper body");
+    assert!(borrowed_recording.contains("shard.get_mut(&lookup)"));
+    assert!(
+        !borrowed_recording.contains("let key = CacheKey::chunk(path.to_path_buf(), chunk_offset)"),
+        "borrowed chunk recording must not allocate the owned key before checking existing entries"
+    );
 
     let storage_source =
         std::fs::read_to_string("src/merkle_index/storage.rs").expect("read merkle storage");

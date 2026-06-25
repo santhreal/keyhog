@@ -25,10 +25,10 @@ fn merkle_index_non_empty() {
     assert!(
         prod.contains("type MerkleShardBuildHasher = ahash::RandomState")
             && prod
-                .contains("type MerkleShardMap = HashMap<CacheKey, CacheEntry, MerkleShardBuildHasher>")
+                .contains("type MerkleShardMap = IndexMap<CacheKey, CacheEntry, MerkleShardBuildHasher>")
             && !prod.contains("MERKLE_FNV")
             && !prod.contains("impl Hasher for MerkleShardHasher"),
-        "merkle_index: per-shard HashMap lookups must use a keyed fast hasher, not std RandomState or unkeyed FNV"
+        "merkle_index: per-shard map lookups must use a keyed fast hasher, not std RandomState or unkeyed FNV"
     );
     assert!(
         prod.contains("fn shard_index_bytes(bytes: &[u8]) -> usize")
@@ -38,10 +38,17 @@ fn merkle_index_non_empty() {
     );
     assert!(
         prod.contains("fn shard_capacity(max_entries: usize) -> usize")
-            && prod.contains("HashMap::with_capacity_and_hasher(")
+            && prod.contains("IndexMap::with_capacity_and_hasher(")
             && prod.contains("MerkleShardBuildHasher::default()")
-            && !prod.contains("RwLock::new(HashMap::new())")
-            && !prod.contains("HashMap::with_capacity(shard_capacity)"),
+            && !prod.contains("RwLock::new(IndexMap::new())")
+            && !prod.contains("IndexMap::with_capacity(shard_capacity)"),
         "merkle_index: shard maps must be pre-sized from the configured entry cap"
+    );
+    assert!(
+        prod.contains("struct CacheKeyRef<'a>")
+            && prod.contains("impl Equivalent<CacheKey> for CacheKeyRef<'_>")
+            && prod.contains("shard.get_mut(&lookup)")
+            && prod.contains("record_borrowed_key_at_offset_with_metadata"),
+        "merkle_index: borrowed chunk recording must update existing entries without allocating a temporary PathBuf key"
     );
 }

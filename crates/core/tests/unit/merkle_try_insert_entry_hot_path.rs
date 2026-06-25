@@ -1,4 +1,4 @@
-//! Merkle insert hot path uses one HashMap entry probe.
+//! Merkle insert hot path uses one map entry probe.
 
 use std::path::PathBuf;
 
@@ -7,7 +7,7 @@ fn sample_hash(bytes: &[u8]) -> [u8; 32] {
 }
 
 #[test]
-fn merkle_try_insert_uses_hash_map_entry_once() {
+fn merkle_try_insert_uses_map_entry_once() {
     let source = std::fs::read_to_string("src/merkle_index.rs").expect("read merkle index source");
     let try_insert = source
         .split("fn try_insert(")

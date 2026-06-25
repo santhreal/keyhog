@@ -54,7 +54,8 @@
 //! and what its content fingerprint is, which is why `--lockdown`
 //! refuses to load or write the cache at all.
 
-use std::collections::{HashMap, hash_map::Entry};
+use indexmap::{map::Entry, Equivalent, IndexMap};
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
@@ -75,7 +76,7 @@ const SCHEMA_VERSION: u32 = 4;
 const MERKLE_SHARDS: usize = 64;
 
 type MerkleShardBuildHasher = ahash::RandomState;
-type MerkleShardMap = HashMap<CacheKey, CacheEntry, MerkleShardBuildHasher>;
+type MerkleShardMap = IndexMap<CacheKey, CacheEntry, MerkleShardBuildHasher>;
 
 #[cfg(target_pointer_width = "64")]
 const SHARD_MIX: usize = 0x517c_c1b7_2722_0a95;
@@ -226,6 +227,24 @@ impl CacheKey {
     }
 }
 
+struct CacheKeyRef<'a> {
+    path: &'a Path,
+    chunk_offset: u64,
+}
+
+impl Hash for CacheKeyRef<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.path.hash(state);
+        self.chunk_offset.hash(state);
+    }
+}
+
+impl Equivalent<CacheKey> for CacheKeyRef<'_> {
+    fn equivalent(&self, key: &CacheKey) -> bool {
+        self.path == key.path.as_path() && self.chunk_offset == key.chunk_offset
+    }
+}
+
 /// In-memory per-entry record. Mirrors the durable storage entry but holds the hash as
 /// a fixed-size array - saves the per-lookup hex-decode cost on the
 /// `unchanged` hot path.
@@ -297,7 +316,7 @@ impl MerkleIndex {
         Self {
             shards: (0..MERKLE_SHARDS)
                 .map(|_| {
-                    RwLock::new(HashMap::with_capacity_and_hasher(
+                    RwLock::new(IndexMap::with_capacity_and_hasher(
                         shard_capacity,
                         MerkleShardBuildHasher::default(),
                     ))
@@ -366,18 +385,16 @@ impl MerkleIndex {
         content: &[u8],
     ) -> bool {
         let content_hash = Self::hash_content(content);
-        let key = CacheKey::chunk(path.to_path_buf(), chunk_offset);
-        let unchanged = self.unchanged_key(&key, &content_hash);
-        self.record_key_with_metadata(
-            key,
+        self.record_borrowed_key_at_offset_with_metadata(
+            path,
+            chunk_offset,
             CacheEntry {
                 mtime_ns,
                 size,
                 last_seen_order: self.next_access_order(),
                 hash: content_hash,
             },
-        );
-        unchanged
+        )
     }
 
     /// Returns `true` when `path` was previously indexed with the SAME
@@ -480,6 +497,29 @@ impl MerkleIndex {
         self.try_insert(key, entry);
     }
 
+    fn record_borrowed_key_at_offset_with_metadata(
+        &self,
+        path: &Path,
+        chunk_offset: u64,
+        entry: CacheEntry,
+    ) -> bool {
+        let i = shard_index(path);
+        let mut shard = self.shards[i].write();
+        let lookup = CacheKeyRef { path, chunk_offset };
+        if let Some(previous) = shard.get_mut(&lookup) {
+            let unchanged = previous.hash == entry.hash;
+            *previous = entry;
+            return unchanged;
+        }
+
+        if self.entry_cap_reached() {
+            return false;
+        }
+        shard.insert(CacheKey::chunk(path.to_path_buf(), chunk_offset), entry);
+        self.approx_count.fetch_add(1, Ordering::Relaxed);
+        false
+    }
+
     /// Insert or update one entry, honoring [`Self::max_entries`].
     ///
     /// Returns `true` if the entry is now present (inserted or updated),
@@ -505,20 +545,26 @@ impl MerkleIndex {
         // overshoot by at most the number of in-flight `record` calls -
         // bounded and harmless (a few entries over budget, never
         // unbounded growth).
-        use std::sync::atomic::Ordering;
-        if self.max_entries != 0 && self.approx_count.load(Ordering::Relaxed) >= self.max_entries {
-            if !self.cap_warned.swap(true, Ordering::Relaxed) {
-                tracing::warn!(
-                    cap = self.max_entries,
-                    "merkle index entry cap reached; new paths will not be \
-                     cached this run (they are re-scanned next run). Raise \
-                     the cap for very large trees if the rescan cost matters."
-                );
-            }
+        if self.entry_cap_reached() {
             return false;
         }
         slot.insert(entry);
         self.approx_count.fetch_add(1, Ordering::Relaxed);
+        true
+    }
+
+    fn entry_cap_reached(&self) -> bool {
+        if self.max_entries == 0 || self.approx_count.load(Ordering::Relaxed) < self.max_entries {
+            return false;
+        }
+        if !self.cap_warned.swap(true, Ordering::Relaxed) {
+            tracing::warn!(
+                cap = self.max_entries,
+                "merkle index entry cap reached; new paths will not be \
+                 cached this run (they are re-scanned next run). Raise \
+                 the cap for very large trees if the rescan cost matters."
+            );
+        }
         true
     }
 
