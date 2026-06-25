@@ -494,6 +494,68 @@ fn overlong_git_history_added_line_is_counted_source_truncated() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn untracked_symlink_git_diff_is_visible_unreadable_and_safe_sibling_scans() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path().join("repo");
+    std::fs::create_dir(&repo).expect("repo dir");
+    init_repo(&repo);
+    std::fs::write(repo.join("tracked.txt"), "baseline\n").expect("write tracked");
+    git(&repo, &["add", "tracked.txt"]);
+    git(&repo, &["commit", "-m", "baseline"]);
+
+    let outside = temp.path().join("outside-secret.env");
+    std::fs::write(
+        &outside,
+        "SYMLINK_SECRET=AKIAZZZZZZZZZZZZZZZZ\n", // keyhog:ignore detector=aws-access-key (synthetic test fixture)
+    )
+    .expect("write outside target");
+    std::os::unix::fs::symlink(&outside, repo.join("a-link.env")).expect("create symlink");
+    std::fs::write(
+        repo.join("z-safe.env"),
+        "SAFE_UNTRACKED=AKIA1111111111111111\n", // keyhog:ignore detector=aws-access-key (synthetic test fixture)
+    )
+    .expect("write safe untracked");
+
+    let rows: Vec<_> = GitDiffSource::new(repo.to_path_buf(), "HEAD")
+        .chunks()
+        .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("SAFE_UNTRACKED")),
+        "safe untracked sibling must still scan after symlink error; rows={rows:?}"
+    );
+    assert!(
+        !chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("SYMLINK_SECRET")),
+        "untracked symlink target must not be followed; chunks={chunks:?}"
+    );
+    let rendered_errors: Vec<_> = errors.iter().map(ToString::to_string).collect();
+    assert!(
+        rendered_errors.iter().any(|error| {
+            error.contains("a-link.env")
+                && error.contains("not a regular file")
+                && error.contains("path was not scanned")
+        }),
+        "untracked symlink must emit a visible not-scanned SourceError; errors={rendered_errors:?}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.unreadable - before.unreadable,
+        1,
+        "untracked symlink git-diff coverage gap MUST bump UNREADABLE exactly once"
+    );
+}
+
 /// A blob skipped by the shared default-exclude policy is intentionally not
 /// scanned, but it still has to reach the shared excluded coverage counter.
 #[test]

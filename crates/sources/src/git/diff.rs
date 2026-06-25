@@ -650,8 +650,13 @@ fn read_untracked_worktree_chunk(
     let full_path = repo_root.join(rel);
     let metadata = std::fs::symlink_metadata(&full_path).map_err(SourceError::Io)?;
     if !metadata.file_type().is_file() {
+        tracing::warn!(
+            path = %rel,
+            "git-diff untracked path is not a regular file; path was NOT scanned"
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
         return Err(SourceError::Git(format!(
-            "git-diff untracked path '{}' is not a regular file",
+            "git-diff untracked path '{}' is not a regular file; path was not scanned",
             rel
         )));
     }
