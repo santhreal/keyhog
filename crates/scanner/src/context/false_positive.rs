@@ -28,12 +28,14 @@ pub(crate) fn is_false_positive_match_context_with_path(
     // bytes when a candidate first-byte is actually present.
     let window = surrounding_line_window(text, match_start, 1);
     let bytes = window.as_bytes();
+    let configmap_window = surrounding_line_window(text, match_start, 8);
+    let configmap_bytes = configmap_window.as_bytes();
     let current_line = surrounding_line_window(text, match_start, 0);
     let current_line_bytes = current_line.as_bytes();
 
     is_go_sum_checksum_bytes(bytes, path_lower)
         || is_integrity_hash_bytes(bytes)
-        || is_configmap_binary_data_bytes(bytes)
+        || is_configmap_binary_data_match_context(configmap_bytes, current_line_bytes)
         || is_git_lfs_pointer_context_bytes(bytes)
         || is_renovate_digest_context_bytes(bytes)
         || is_cors_header_bytes(current_line_bytes)
@@ -245,14 +247,104 @@ fn is_integrity_hash_bytes(bytes: &[u8]) -> bool {
 }
 
 fn is_configmap_binary_data_context(lines: &[&str], line_idx: usize, line_bytes: &[u8]) -> bool {
-    is_configmap_binary_data_bytes(line_bytes)
-        || nearby_lines_contain(lines, line_idx, 8, |candidate| {
-            is_configmap_binary_data_bytes(candidate.trim().as_bytes())
-        })
+    is_configmap_binary_data_value_line(line_bytes)
+        && is_inside_configmap_binary_data_block(lines, line_idx)
 }
 
-fn is_configmap_binary_data_bytes(bytes: &[u8]) -> bool {
-    ci_find(bytes, b"binarydata:")
+fn is_configmap_binary_data_match_context(window_bytes: &[u8], current_line: &[u8]) -> bool {
+    if !is_configmap_binary_data_value_line(current_line) {
+        return false;
+    }
+    let current_trimmed = trim_ascii_bytes(current_line);
+    let mut binary_data_indent = None;
+    for line in window_bytes.split(|byte| matches!(byte, b'\n' | b'\r')) {
+        let trimmed = trim_ascii_bytes(line);
+        if trimmed.is_empty() {
+            continue;
+        }
+        if is_configmap_binary_data_header(trimmed) {
+            binary_data_indent = Some(leading_ascii_space_count(line));
+            continue;
+        }
+        if let Some(header_indent) = binary_data_indent {
+            let line_indent = leading_ascii_space_count(line);
+            if line_indent <= header_indent {
+                binary_data_indent = None;
+            } else if trimmed == current_trimmed {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn is_inside_configmap_binary_data_block(lines: &[&str], line_idx: usize) -> bool {
+    let Some(current_line) = lines.get(line_idx) else {
+        return false;
+    };
+    let current_indent = leading_ascii_space_count(current_line.as_bytes());
+    if current_indent == 0 {
+        return false;
+    }
+    let start = line_idx.saturating_sub(8);
+    for candidate in lines[start..line_idx].iter().rev() {
+        let bytes = candidate.as_bytes();
+        let trimmed = trim_ascii_bytes(bytes);
+        if trimmed.is_empty() {
+            continue;
+        }
+        let indent = leading_ascii_space_count(bytes);
+        if indent >= current_indent {
+            continue;
+        }
+        return is_configmap_binary_data_header(trimmed);
+    }
+    false
+}
+
+fn leading_ascii_space_count(bytes: &[u8]) -> usize {
+    bytes.iter().take_while(|byte| **byte == b' ').count()
+}
+
+fn is_configmap_binary_data_header(bytes: &[u8]) -> bool {
+    trim_ascii_bytes(bytes).eq_ignore_ascii_case(b"binarydata:")
+}
+
+fn is_configmap_binary_data_value_line(bytes: &[u8]) -> bool {
+    let trimmed = trim_ascii_bytes(bytes);
+    let Some(colon) = memchr::memchr(b':', trimmed) else {
+        return false;
+    };
+    let key = trim_ascii_bytes(&trimmed[..colon]);
+    let value = trim_ascii_bytes(&trimmed[colon + 1..]);
+    !key.is_empty()
+        && is_yaml_scalar_key(key)
+        && is_base64_scalar(strip_balanced_ascii_quotes(value))
+}
+
+fn is_yaml_scalar_key(bytes: &[u8]) -> bool {
+    bytes
+        .iter()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+fn strip_balanced_ascii_quotes(bytes: &[u8]) -> &[u8] {
+    if bytes.len() >= 2
+        && ((bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\''))
+    {
+        &bytes[1..bytes.len() - 1]
+    } else {
+        bytes
+    }
+}
+
+fn is_base64_scalar(bytes: &[u8]) -> bool {
+    bytes.len() >= 8
+        && bytes.len() % 4 == 0
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
 }
 
 fn is_git_lfs_pointer_context_with_lines(

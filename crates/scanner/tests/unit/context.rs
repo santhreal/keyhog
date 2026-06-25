@@ -124,6 +124,83 @@ fn false_positive_context_detects_configmap_binary_data_block() {
 }
 
 #[test]
+fn false_positive_match_context_detects_configmap_binary_data_block() {
+    let text = "kind: ConfigMap\nbinaryData:\n  cert-fingerprint-sha256: Z2hwX2FiYw==\n";
+    let offset = text.find("Z2hw").expect("fixture contains base64 value");
+    assert!(is_false_positive_match_context(text, offset, None));
+}
+
+#[test]
+fn false_positive_match_context_detects_later_configmap_binary_data_value() {
+    let text = concat!(
+        "kind: ConfigMap\n",
+        "binaryData:\n",
+        "  first.bin: QUJDREVGRw==\n",
+        "  second.bin: SElKS0xNTg==\n",
+        "  third.bin: T1BRUlNUVQ==\n",
+    );
+    let offset = text
+        .find("T1BR")
+        .expect("fixture contains later base64 value");
+    assert!(is_false_positive_match_context(text, offset, None));
+}
+
+#[test]
+fn false_positive_context_does_not_suppress_secret_like_configmap_binary_data_value() {
+    let lines = vec![
+        "kind: ConfigMap",
+        "binaryData:",
+        "  api-token: sk-proj-abcdefghijklmnopqrstuvwxyz123456",
+    ];
+    assert!(
+        !is_false_positive_context(&lines, 2, None),
+        "binaryData suppression is for base64 scalar data, not secret-shaped cleartext values"
+    );
+}
+
+#[test]
+fn false_positive_context_does_not_suppress_data_block_after_configmap_binary_data() {
+    let lines = vec![
+        "kind: ConfigMap",
+        "binaryData:",
+        "  cert.bin: QUJDREVGRw==",
+        "data:",
+        "  api-token: Z2hwX2FiYw==",
+    ];
+    assert!(
+        !is_false_positive_context(&lines, 4, None),
+        "binaryData suppression must stop when indentation returns to a sibling data block"
+    );
+}
+
+#[test]
+fn false_positive_match_context_does_not_suppress_data_block_after_configmap_binary_data() {
+    let text = concat!(
+        "kind: ConfigMap\n",
+        "binaryData:\n",
+        "  cert.bin: QUJDREVGRw==\n",
+        "data:\n",
+        "  api-token: Z2hwX2FiYw==\n",
+    );
+    let offset = text.rfind("Z2hw").expect("fixture contains data value");
+    assert!(
+        !is_false_positive_match_context(text, offset, None),
+        "match-window binaryData suppression must honor YAML sibling block boundaries"
+    );
+}
+
+#[test]
+fn false_positive_match_context_does_not_suppress_secret_like_configmap_binary_data_value() {
+    let text =
+        "kind: ConfigMap\nbinaryData:\n  api-token: sk-proj-abcdefghijklmnopqrstuvwxyz123456\n";
+    let offset = text.find("sk-proj").expect("fixture contains secret");
+    assert!(
+        !is_false_positive_match_context(text, offset, None),
+        "match-window binaryData suppression must not hide cleartext secret-shaped values"
+    );
+}
+
+#[test]
 fn false_positive_context_detects_git_lfs_pointer() {
     let lines = vec![
         "version https://git-lfs.github.com/spec/v1",
