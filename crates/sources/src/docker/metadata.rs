@@ -215,6 +215,8 @@ fn find_fallback_config_chunks(
             limits.docker_image_config_bytes,
         )?;
         let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
+            let _event =
+                crate::record_skip_event(crate::SourceSkipEvent::StructuredSourceParseFailure);
             SourceError::Other(format!(
                 "invalid metadata-less docker image config '{}': {error}",
                 config_path.display()

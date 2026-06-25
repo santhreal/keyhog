@@ -1,6 +1,8 @@
 //! Docker save archives with OCI blob layers must produce scan chunks.
 
 #[cfg(feature = "docker")]
+use keyhog_sources::skip_counts;
+#[cfg(feature = "docker")]
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 
 #[cfg(feature = "docker")]
@@ -553,6 +555,67 @@ fn docker_metadata_less_config_json_yields_metadata_chunks() {
             && chunk.data.contains("STRIPE_SECRET_KEY"),
         "metadata-less Docker config ENV, labels, and history must be scanned as source text: {}",
         chunk.data
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
+fn docker_metadata_less_invalid_config_counts_structured_parse_gap() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(root.join("metadata")).expect("mkdir metadata");
+    std::fs::write(root.join("metadata").join("config.json"), b"{not-json")
+        .expect("write invalid metadata-less config");
+
+    let err = TestApi
+        .docker_manifest_config_chunks(&root, "keyhog:test")
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("invalid metadata-less docker image config")
+            && msg.contains("metadata/config.json"),
+        "invalid metadata-less Docker config must fail loud with path context, got {msg:?}"
+    );
+    assert_eq!(
+        skip_counts().structured_source_parse_failures,
+        1,
+        "invalid metadata-less Docker config JSON must count a structured parse coverage gap"
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
+fn docker_metadata_less_oversized_config_counts_over_max_size() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(root.join("metadata")).expect("mkdir metadata");
+    let cap = keyhog_sources::SourceLimits::default().docker_image_config_bytes as usize;
+    std::fs::write(
+        root.join("metadata").join("config.json"),
+        vec![b' '; cap + 1],
+    )
+    .expect("write oversized metadata-less config");
+
+    let err = TestApi
+        .docker_manifest_config_chunks(&root, "keyhog:test")
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("metadata-less docker image config")
+            && msg.contains("metadata/config.json")
+            && msg.contains("exceeds"),
+        "oversized metadata-less Docker config must fail loud with path and cap context, got {msg:?}"
+    );
+    assert_eq!(
+        skip_counts().over_max_size,
+        1,
+        "oversized metadata-less Docker config must count an over-max-size coverage gap"
     );
 }
 
