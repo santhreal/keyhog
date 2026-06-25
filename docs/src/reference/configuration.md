@@ -24,6 +24,7 @@ compiled defaults  →  .keyhog.toml  →  CLI flags
   [`.keyhog.toml.example`](https://github.com/santhsecurity/keyhog/blob/main/.keyhog.toml.example)
   to your repo root and delete what you don't need. A malformed `.keyhog.toml`
   fails closed with the path and TOML error before any scan output is written.
+  Unknown tables and keys are parse failures, not ignored compatibility shims.
   Use `--no-config` when you intentionally want compiled defaults.
 - **CLI flags** always override the file. A flag left unset falls through to
   the file, then to the compiled default.

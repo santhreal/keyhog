@@ -114,6 +114,22 @@ fn config_effective_prints_and_exits_without_source() {
 }
 
 #[test]
+fn config_effective_example_file_parses_on_default_build() {
+    let example = concat!(env!("CARGO_MANIFEST_DIR"), "/../../.keyhog.toml.example");
+    let (stdout, stderr, code) = effective_config(&["--config", example]);
+
+    assert_eq!(code, Some(0), "stdout={stdout}\nstderr={stderr}");
+    assert!(
+        stdout.contains("[effective-config]"),
+        "example config must produce effective config output; stdout={stdout}"
+    );
+    assert!(
+        !stderr.contains("invalid .keyhog.toml configuration"),
+        "example config must not be a stale or feature-incompatible template; stderr={stderr}"
+    );
+}
+
+#[test]
 fn config_effective_prints_explicit_diagnostic_flags() {
     let (stdout, stderr, code) = effective_config(&["--profile", "--perf-trace"]);
 
@@ -952,6 +968,105 @@ fn config_effective_rejects_malformed_toml() {
         !stderr.contains("Failed to parse .keyhog.toml"),
         "old warning-and-defaults path must not survive; stderr={stderr}"
     );
+}
+
+#[test]
+fn config_effective_rejects_unknown_top_level_toml_key() {
+    let (stdout, stderr, code) = effective_config_with_toml("no_entropy_ml_scoring = true\n");
+
+    assert_eq!(code, Some(2), "stdout={stdout}\nstderr={stderr}");
+    assert!(
+        stdout.is_empty(),
+        "unknown top-level config must not print config: {stdout}"
+    );
+    for required in [
+        "invalid .keyhog.toml configuration",
+        ".keyhog.toml",
+        "failed to parse TOML",
+        "unknown field",
+        "no_entropy_ml_scoring",
+        "Fix: correct the TOML syntax",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing `{required}`; stderr={stderr}"
+        );
+    }
+}
+
+#[test]
+fn config_effective_rejects_unknown_nested_scan_toml_key() {
+    let (stdout, stderr, code) =
+        effective_config_with_toml("[scan]\nno_keyword_low_entropy = true\n");
+
+    assert_eq!(code, Some(2), "stdout={stdout}\nstderr={stderr}");
+    assert!(
+        stdout.is_empty(),
+        "unknown nested config must not print config: {stdout}"
+    );
+    for required in [
+        "invalid .keyhog.toml configuration",
+        ".keyhog.toml",
+        "failed to parse TOML",
+        "unknown field",
+        "no_keyword_low_entropy",
+        "Fix: correct the TOML syntax",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing `{required}`; stderr={stderr}"
+        );
+    }
+}
+
+#[test]
+fn config_effective_rejects_unknown_detector_override_toml_key() {
+    let (stdout, stderr, code) =
+        effective_config_with_toml("[detector.generic-api-key]\nsuppress = true\n");
+
+    assert_eq!(code, Some(2), "stdout={stdout}\nstderr={stderr}");
+    assert!(
+        stdout.is_empty(),
+        "unknown detector override must not print config: {stdout}"
+    );
+    for required in [
+        "invalid .keyhog.toml configuration",
+        ".keyhog.toml",
+        "failed to parse TOML",
+        "unknown field",
+        "suppress",
+        "Fix: correct the TOML syntax",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing `{required}`; stderr={stderr}"
+        );
+    }
+}
+
+#[test]
+fn config_effective_rejects_retired_suppress_table() {
+    let (stdout, stderr, code) =
+        effective_config_with_toml("[suppress]\nhashes = [\"sha256:abc123\"]\n");
+
+    assert_eq!(code, Some(2), "stdout={stdout}\nstderr={stderr}");
+    assert!(
+        stdout.is_empty(),
+        "retired suppress table must not print config: {stdout}"
+    );
+    for required in [
+        "invalid .keyhog.toml configuration",
+        ".keyhog.toml",
+        "failed to parse TOML",
+        "unknown field",
+        "suppress",
+        "Fix: correct the TOML syntax",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing `{required}`; stderr={stderr}"
+        );
+    }
 }
 
 #[test]

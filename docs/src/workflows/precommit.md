@@ -90,10 +90,9 @@ prerogative. Use it sparingly. A team norm of `--no-verify` for
 A better pattern when a legitimate-looking credential needs to ship
 (e.g. a public OAuth client_id that vendor docs say to commit):
 
-1. Add its sha256 hash to `.keyhog.toml`:
-   ```toml
-   [suppress]
-   hashes = ["sha256:abc123..."]
+1. Add its sha256 hash to `.keyhogignore`:
+   ```text
+   hash:sha256:abc123...
    ```
 2. Commit the suppression file alongside the credential.
 3. The next commit sees the hash and skips it.

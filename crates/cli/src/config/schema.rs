@@ -3,7 +3,7 @@ use std::path::PathBuf;
 /// On-disk `.keyhog.toml` configuration file that mirrors CLI arguments.
 /// CLI flags always override values from the config file.
 #[derive(Debug, Default, serde::Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub(super) struct ConfigFile {
     /// Path to detector TOMLs directory.
     pub detectors: Option<String>,
@@ -107,7 +107,7 @@ pub(super) struct ConfigFile {
 
 /// `[scan]` nested table. Fields here map 1:1 to the flat top-level scalars.
 #[derive(Debug, Default, serde::Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub(super) struct ScanSection {
     pub severity: Option<String>,
     pub min_confidence: Option<f64>,
@@ -128,7 +128,7 @@ pub(super) struct ScanSection {
 
 /// `[allowlist]` nested table.
 #[derive(Debug, Default, serde::Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub(super) struct AllowlistSection {
     pub file: Option<String>,
     pub require_reason: Option<bool>,
@@ -138,7 +138,7 @@ pub(super) struct AllowlistSection {
 
 /// `[detector.<id>]` per-detector override.
 #[derive(Debug, Default, serde::Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub(super) struct DetectorSection {
     pub enabled: Option<bool>,
     pub min_confidence: Option<f64>,
@@ -146,14 +146,14 @@ pub(super) struct DetectorSection {
 
 /// `[lockdown]` enforcement.
 #[derive(Debug, Default, serde::Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub(super) struct LockdownSection {
     pub require: Option<bool>,
 }
 
 /// `[limits]` source byte/count ceilings.
 #[derive(Debug, Default, serde::Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub(super) struct LimitsSection {
     pub stdin_bytes: Option<String>,
     pub web_response_bytes: Option<String>,
@@ -175,7 +175,7 @@ pub(super) struct LimitsSection {
 
 /// `[http]` explicit outbound HTTP policy.
 #[derive(Debug, Default, serde::Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub(super) struct HttpSection {
     /// Proxy URL or `off`.
     pub proxy: Option<String>,
@@ -185,7 +185,7 @@ pub(super) struct HttpSection {
 
 /// `[system]` host integration settings.
 #[derive(Debug, Default, serde::Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub(super) struct SystemSection {
     /// Absolute directories allowed by `keyhog_core::safe_bin` in addition to
     /// the compiled system defaults.
@@ -206,7 +206,7 @@ pub(super) struct SystemSection {
 
 /// `[aws]` offline AWS safety metadata.
 #[derive(Debug, Default, serde::Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub(super) struct AwsSection {
     /// Extra 12-digit AWS account IDs treated as canary-token issuers.
     pub canary_accounts: Option<Vec<String>>,
@@ -216,7 +216,7 @@ pub(super) struct AwsSection {
 
 /// `[tuning]` scanner performance-route overrides.
 #[derive(Debug, Default, serde::Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub(super) struct TuningSection {
     pub fallback_hs: Option<bool>,
     pub hs_prefilter_max_len: Option<usize>,

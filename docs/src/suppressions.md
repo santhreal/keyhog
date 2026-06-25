@@ -13,10 +13,10 @@ reported finding. KeyHog has **two kinds**:
 
 > **There is no `.keyhog.toml [suppress]` table.** Older docs showed a
 > `[suppress] hashes = […] / paths = […] / detectors = […]` block. It never
-> existed: `.keyhog.toml` does not `deny_unknown_fields`, so such a table is
-> *silently ignored* and your findings reappear with no warning. Use the
-> surfaces below instead. Per-detector control lives under `[detector.<id>]`;
-> hash/path/detector allowlisting lives in `.keyhogignore`.
+> existed. Current `.keyhog.toml` parsing rejects unknown tables and keys
+> before scanning, so `[suppress]` fails loudly instead of creating a silent
+> no-op. Use the surfaces below instead. Per-detector control lives under
+> `[detector.<id>]`; hash/path/detector allowlisting lives in `.keyhogignore`.
 
 ## Where each surface fires
 

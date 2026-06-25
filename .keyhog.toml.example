@@ -158,28 +158,6 @@ rate = 5
 max_commits = 1000
 
 # ============================================================================
-# SOURCE LIMITS
-# ============================================================================
-
-# Source byte/count ceilings. CLI flags with the matching `--limit-*` name
-# override these values. Defaults are in `keyhog_sources::SourceLimits`.
-[limits]
-stdin_bytes = "10MB"
-web_response_bytes = "10MB"
-s3_object_bytes = "10MB"
-gcs_object_bytes = "10MB"
-azure_blob_bytes = "10MB"
-docker_tar_entry_bytes = "128MB"
-docker_image_config_bytes = "16MB"
-docker_tar_total_bytes = "8GB"
-git_line_bytes = "10MB"
-git_total_bytes = "256MB"
-git_blob_bytes = "10MB"
-git_chunks = 500000
-binary_read_bytes = "64MB"
-binary_decompiled_bytes = "50MB"
-
-# ============================================================================
 # OUTPUT OPTIONS
 # ============================================================================
 
@@ -200,6 +178,29 @@ show_secrets = false
 # Default cache path: `~/.cache/keyhog/merkle.idx` (platform-aware via `dirs`).
 # incremental = false
 # incremental_cache = "~/.cache/keyhog/merkle.idx"
+
+# ============================================================================
+# SOURCE LIMITS
+# ============================================================================
+
+# Source byte/count ceilings. CLI flags with the matching `--limit-*` name
+# override these values. Defaults are in `keyhog_sources::SourceLimits`.
+[limits]
+stdin_bytes = "10MB"
+web_response_bytes = "10MB"
+s3_object_bytes = "10MB"
+gcs_object_bytes = "10MB"
+azure_blob_bytes = "10MB"
+docker_tar_entry_bytes = "128MB"
+docker_image_config_bytes = "16MB"
+docker_tar_total_bytes = "8GB"
+git_line_bytes = "10MB"
+git_total_bytes = "256MB"
+git_blob_bytes = "10MB"
+git_chunks = 500000
+# Requires a keyhog build with the `binary` feature.
+# binary_read_bytes = "64MB"
+# binary_decompiled_bytes = "50MB"
 
 # ============================================================================
 # HOST INTEGRATION
