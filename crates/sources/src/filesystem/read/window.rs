@@ -39,8 +39,9 @@ pub(in crate::filesystem) struct FileWindow {
 ///     non-mmap windowed path).
 ///
 /// Returns `Some(Vec::new())` when an advisory shared lock cannot be taken on
-/// Unix: that is an already-counted unreadable skip, not permission for the
-/// caller to reopen and stream the same locked file without a lock.
+/// Unix or the post-open metadata probe fails: that is an already-counted
+/// unreadable skip, not permission for the caller to reopen and stream the
+/// same locked/unproven file without the hard mmap sanity-cap proof.
 pub(in crate::filesystem) fn read_file_windowed_mmap(
     path: &Path,
     window_size: usize,
@@ -100,26 +101,39 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
     // windowed-mmap path. The walker decides which files reach this
     // function based on its own size budget; this cap is a defense
     // against the file growing AFTER the walker's stat completed.
-    if let Ok(meta) = file.metadata() {
-        // LAW10: failed post-open metadata probe skips only mmap TOCTOU optimization; caller falls back to bounded reads.
-        if meta.len() > MMAP_TOCTOU_SANITY_CAP_BYTES {
+    let meta = match file.metadata() {
+        Ok(meta) => meta,
+        Err(error) => {
             tracing::warn!(
                 path = %path.display(),
-                live_size = meta.len(),
-                cap = MMAP_TOCTOU_SANITY_CAP_BYTES,
-                "refusing to windowed-mmap file: live size exceeds sanity cap (likely TOCTOU growth)"
+                %error,
+                "cannot stat opened large file for windowed mmap sanity cap; skipping"
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             let _continue_scan = emit(Err(windowed_mmap_error(
                 path,
-                format!(
-                    "live size {} exceeded the {}-byte windowed mmap sanity cap",
-                    meta.len(),
-                    MMAP_TOCTOU_SANITY_CAP_BYTES
-                ),
+                format!("cannot stat opened large file for windowed mmap ({error})"),
             )));
             return Some(());
         }
+    };
+    if meta.len() > MMAP_TOCTOU_SANITY_CAP_BYTES {
+        tracing::warn!(
+            path = %path.display(),
+            live_size = meta.len(),
+            cap = MMAP_TOCTOU_SANITY_CAP_BYTES,
+            "refusing to windowed-mmap file: live size exceeds sanity cap (likely TOCTOU growth)"
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+        let _continue_scan = emit(Err(windowed_mmap_error(
+            path,
+            format!(
+                "live size {} exceeded the {}-byte windowed mmap sanity cap",
+                meta.len(),
+                MMAP_TOCTOU_SANITY_CAP_BYTES
+            ),
+        )));
+        return Some(());
     }
 
     #[cfg(unix)]

@@ -263,20 +263,28 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileR
     // size check and our mmap. The walker's max_file_size is the
     // user-configurable budget; this constant is a HARD ceiling on
     // any mmap-based read regardless of user config.
-    let mut live_size_hint = None;
-    if let Ok(meta) = file.metadata() {
-        // LAW10: failed post-open metadata probe only skips TOCTOU optimization; bounded read path still enforces the cap.
-        live_size_hint = Some(meta.len());
-        if meta.len() > MMAP_TOCTOU_SANITY_CAP_BYTES {
+    let meta = match file.metadata() {
+        Ok(meta) => meta,
+        Err(error) => {
             tracing::warn!(
                 path = %path.display(),
-                live_size = meta.len(),
-                cap = MMAP_TOCTOU_SANITY_CAP_BYTES,
-                "refusing to mmap file: live size exceeds sanity cap (likely TOCTOU growth)"
+                %error,
+                "cannot stat opened file for mmap sanity cap; skipping"
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             return None;
         }
+    };
+    let live_size_hint = Some(meta.len());
+    if meta.len() > MMAP_TOCTOU_SANITY_CAP_BYTES {
+        tracing::warn!(
+            path = %path.display(),
+            live_size = meta.len(),
+            cap = MMAP_TOCTOU_SANITY_CAP_BYTES,
+            "refusing to mmap file: live size exceeds sanity cap (likely TOCTOU growth)"
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+        return None;
     }
 
     #[cfg(unix)]
