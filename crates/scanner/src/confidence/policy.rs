@@ -115,6 +115,45 @@ pub(crate) fn match_heuristic_confidence(policy: MatchHeuristicConfidencePolicy)
     )
 }
 
+/// Baseline confidence guaranteed to a service-anchored ("named") detector whose
+/// regex required a context anchor. Chosen to clear the default `min_confidence`
+/// floor (`0.40`) with headroom for downstream path / calibration penalties,
+/// while staying below the "high confidence" band so refinement signals
+/// (entropy, companion, sensitive file) still differentiate above it.
+pub(crate) const NAMED_DETECTOR_ANCHOR_FLOOR: f64 = 0.55;
+
+/// Lift the heuristic confidence of a service-anchored detector match to
+/// [`NAMED_DETECTOR_ANCHOR_FLOOR`] when the detector's regex required a context
+/// anchor (a keyword capture group rather than a bare-value literal).
+///
+/// `compute_confidence` is a *normalized* weighted sum: it divides the earned
+/// signal weight by the full signal set (literal prefix, sensitive file,
+/// companion, keyword-nearby, …). A keyword-anchored service detector
+/// (`CROWDIN_API_TOKEN = <40hex>`, `Splunk=<uuid>`) earns the context-anchor
+/// weight but structurally cannot earn the others, so its normalized score lands
+/// below the `0.40` floor and the match is dropped as `below_min_confidence` —
+/// even though the match *only fired because the service-specific keyword was
+/// present next to a value of the contracted shape*, which is itself positive
+/// evidence. This is the single trust signal that the previously-scattered
+/// shape / entropy / confidence gates each failed to credit consistently.
+///
+/// FP-safe by construction: `is_named_detector` is `is_service_anchored_detector
+/// && !weak_anchor`, so generic, entropy, private-key-fallback, and
+/// collision-prone weak-anchor detectors are excluded upstream and keep the full
+/// gate stack. The lift is a floor (`max`), never a cap, so stronger matches
+/// keep their higher score.
+pub(crate) fn apply_named_detector_anchor_floor(
+    confidence: f64,
+    is_named_detector: bool,
+    has_context_anchor: bool,
+) -> f64 {
+    if is_named_detector && has_context_anchor {
+        confidence.max(NAMED_DETECTOR_ANCHOR_FLOOR)
+    } else {
+        confidence
+    }
+}
+
 pub(crate) fn candidate_match_score<'a>(
     policy: CandidateMatchScorePolicy<'a>,
 ) -> MlScoreResult<'a> {
@@ -129,6 +168,16 @@ pub(crate) fn candidate_match_score<'a>(
         code_context: policy.code_context,
         penalize_test_paths: policy.penalize_test_paths,
     });
+    // A keyword-anchored service detector match is positive evidence the
+    // normalized signal sum structurally under-credits; lift it to clear the
+    // floor. Applied before the ML branch so it propagates through both the
+    // heuristic-only `Final` path and the `Pending` path (whose
+    // `ml_pending_confidence` takes `max(heuristic, model)`).
+    let heuristic_conf = apply_named_detector_anchor_floor(
+        heuristic_conf,
+        policy.is_named_detector,
+        policy.has_context_anchor,
+    );
 
     #[cfg(not(feature = "ml"))]
     let score_result = {

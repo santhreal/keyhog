@@ -583,6 +583,24 @@ pub use crate::pipeline::compute_line_offsets;
 pub fn normalize_chunk_data(data: &str) -> std::borrow::Cow<'_, str> {
     crate::normalize_chunk_data(data)
 }
+
+/// Baseline confidence a service-anchored ("named") detector match is lifted to
+/// when its regex required a context anchor. Exposed for the
+/// `named_detector_anchor_floor` regression test.
+pub const NAMED_DETECTOR_ANCHOR_FLOOR: f64 = crate::confidence::policy::NAMED_DETECTOR_ANCHOR_FLOOR;
+
+/// Test seam for [`crate::confidence::policy::apply_named_detector_anchor_floor`].
+pub fn apply_named_detector_anchor_floor(
+    confidence: f64,
+    is_named_detector: bool,
+    has_context_anchor: bool,
+) -> f64 {
+    crate::confidence::policy::apply_named_detector_anchor_floor(
+        confidence,
+        is_named_detector,
+        has_context_anchor,
+    )
+}
 pub fn normalize_scannable_chunk<'a>(
     chunk: &'a keyhog_core::Chunk,
     owned: &'a mut Option<keyhog_core::Chunk>,

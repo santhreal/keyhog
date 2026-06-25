@@ -261,6 +261,18 @@ jobs:
       # source, never to weaken.
       - name: basic-auth detector recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test basic_auth_credentials_recall
+      # Named-detector anchor-floor recall contract. `compute_confidence` is a
+      # *normalized* signal sum, so a keyword-anchored service detector match
+      # (`Splunk=<uuid>`) that can only earn the context-anchor weight scored
+      # below the 0.40 floor and was dropped as `below_min_confidence` — the
+      # dominant cause of 538 strict contract-positive misses. The floor lifts
+      # such matches; this pins the lift is named+anchor-gated (FP-safe: generic
+      # / entropy / weak-anchor detectors keep the full gate stack), a recovered
+      # positive surfaces, and a bare value without the keyword does not claim
+      # the named detector. A regression here is a real detection loss to fix at
+      # the source, never to weaken.
+      - name: named-detector anchor-floor recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_named_detector_anchor_floor_recall
       - name: RawMatch total-order gate
         run: cargo test -p keyhog-core --test new_core_finding_dedup --profile release-fast
 
