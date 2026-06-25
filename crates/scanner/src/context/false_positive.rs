@@ -28,14 +28,16 @@ pub(crate) fn is_false_positive_match_context_with_path(
     // bytes when a candidate first-byte is actually present.
     let window = surrounding_line_window(text, match_start, 1);
     let bytes = window.as_bytes();
+    let current_line = surrounding_line_window(text, match_start, 0);
+    let current_line_bytes = current_line.as_bytes();
 
     is_go_sum_checksum_bytes(bytes, path_lower)
         || is_integrity_hash_bytes(bytes)
         || is_configmap_binary_data_bytes(bytes)
         || is_git_lfs_pointer_context_bytes(bytes)
         || is_renovate_digest_context_bytes(bytes)
-        || is_cors_header_bytes(bytes)
-        || is_http_cache_header_bytes(bytes)
+        || is_cors_header_bytes(current_line_bytes)
+        || is_http_cache_header_bytes(current_line_bytes)
         || has_disclaimer_comment_bytes(bytes)
 }
 
@@ -262,7 +264,7 @@ fn is_git_lfs_pointer_context_with_lines(
         && nearby_lines_contain(lines, line_idx, 3, |candidate| {
             is_git_lfs_version_line(candidate.as_bytes())
         })
-        && surrounding_lines_contain(lines, line_idx, 3, |candidate| {
+        && following_lines_contain(lines, line_idx, 3, |candidate| {
             is_git_lfs_size_line(candidate.as_bytes())
         })
 }
@@ -270,12 +272,16 @@ fn is_git_lfs_pointer_context_with_lines(
 fn is_git_lfs_pointer_context_bytes(bytes: &[u8]) -> bool {
     let mut has_version = false;
     let mut has_oid = false;
-    let mut has_size = false;
     for line in bytes.split(|byte| matches!(byte, b'\n' | b'\r')) {
-        has_version |= is_git_lfs_version_line(line);
-        has_oid |= is_git_lfs_oid_line(line);
-        has_size |= is_git_lfs_size_line(line);
-        if has_version && has_oid && has_size {
+        if !has_version {
+            has_version = is_git_lfs_version_line(line);
+            continue;
+        }
+        if !has_oid {
+            has_oid = is_git_lfs_oid_line(line);
+            continue;
+        }
+        if is_git_lfs_size_line(line) {
             return true;
         }
     }
@@ -330,43 +336,45 @@ fn is_renovate_digest_context_bytes(bytes: &[u8]) -> bool {
 }
 
 fn is_cors_header_bytes(bytes: &[u8]) -> bool {
-    ci_find(bytes, b"access-control-")
+    const CORS_HEADERS: &[&[u8]] = &[
+        b"access-control-allow-origin",
+        b"access-control-allow-methods",
+        b"access-control-allow-headers",
+        b"access-control-allow-credentials",
+        b"access-control-expose-headers",
+        b"access-control-max-age",
+        b"access-control-request-method",
+        b"access-control-request-headers",
+    ];
+    header_name_matches(bytes, CORS_HEADERS)
 }
 
-fn is_http_cache_header_context(lines: &[&str], line_idx: usize, line_bytes: &[u8]) -> bool {
+fn is_http_cache_header_context(_lines: &[&str], _line_idx: usize, line_bytes: &[u8]) -> bool {
     is_http_cache_header_bytes(line_bytes)
-        || surrounding_lines_contain(lines, line_idx, 1, |candidate| {
-            is_http_cache_header_bytes(candidate.as_bytes())
-        })
 }
 
 fn is_http_cache_header_bytes(bytes: &[u8]) -> bool {
-    let trimmed_start = bytes
-        .iter()
-        .position(|b| !b.is_ascii_whitespace())
-        .unwrap_or(bytes.len()); // LAW10: search/boundary miss => span end (whole remainder), recall-safe boundary default
-    let trimmed = &bytes[trimmed_start..];
-    trimmed
-        .get(..4)
-        .is_some_and(|p| p.eq_ignore_ascii_case(b"etag"))
-        || has_token_bytes(bytes, b"etag")
+    header_name_matches(bytes, &[b"etag"])
 }
 
-fn has_token_bytes(text: &[u8], token: &[u8]) -> bool {
-    let n = token.len();
-    if n == 0 {
-        return true;
+fn header_name_matches(bytes: &[u8], allowed: &[&[u8]]) -> bool {
+    let trimmed = trim_ascii_bytes(bytes);
+    let Some(colon) = memchr::memchr(b':', trimmed) else {
+        return false;
+    };
+    let name = trim_ascii_bytes(&trimmed[..colon]);
+    if name.is_empty() {
+        return false;
     }
-    let mut start = 0usize;
-    for (i, &b) in text.iter().enumerate() {
-        if !b.is_ascii_alphanumeric() {
-            if i - start == n && text[start..i].eq_ignore_ascii_case(token) {
-                return true;
-            }
-            start = i + 1;
-        }
+    if !name
+        .iter()
+        .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
+    {
+        return false;
     }
-    text.len() - start == n && text[start..].eq_ignore_ascii_case(token)
+    allowed
+        .iter()
+        .any(|candidate| name.eq_ignore_ascii_case(candidate))
 }
 
 fn contains_hex_sequence_bytes(bytes: &[u8]) -> bool {
@@ -408,4 +416,18 @@ fn surrounding_lines_contain(
     let start = line_idx.saturating_sub(radius);
     let end = (line_idx + radius + 1).min(lines.len());
     lines[start..end].iter().copied().any(predicate)
+}
+
+fn following_lines_contain(
+    lines: &[&str],
+    line_idx: usize,
+    lookahead_lines: usize,
+    predicate: impl Fn(&str) -> bool,
+) -> bool {
+    let start = line_idx.saturating_add(1);
+    let end = line_idx
+        .saturating_add(lookahead_lines)
+        .saturating_add(1)
+        .min(lines.len());
+    start < end && lines[start..end].iter().copied().any(predicate)
 }

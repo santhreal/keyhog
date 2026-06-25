@@ -1,5 +1,7 @@
 use keyhog_scanner::context::{infer_context, CodeContext};
-use keyhog_scanner::testing::context::is_false_positive_context;
+use keyhog_scanner::testing::context::{
+    is_false_positive_context, is_false_positive_match_context,
+};
 
 #[test]
 fn assignment_context() {
@@ -132,6 +134,17 @@ fn false_positive_context_detects_git_lfs_pointer() {
 }
 
 #[test]
+fn false_positive_match_context_detects_git_lfs_pointer() {
+    let text = concat!(
+        "version https://git-lfs.github.com/spec/v1\n",
+        "oid sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
+        "size 12345\n"
+    );
+    let offset = text.find("012345").expect("fixture contains oid");
+    assert!(is_false_positive_match_context(text, offset, None));
+}
+
+#[test]
 fn false_positive_context_does_not_suppress_nearby_git_lfs_prose() {
     let lines = vec![
         "# git-lfs stores large binaries out of band",
@@ -140,6 +153,19 @@ fn false_positive_context_does_not_suppress_nearby_git_lfs_prose() {
     assert!(
         !is_false_positive_context(&lines, 1, None),
         "a nearby git-lfs mention is not a Git LFS pointer and must not hide a real credential"
+    );
+}
+
+#[test]
+fn false_positive_context_does_not_suppress_out_of_order_git_lfs_pointer() {
+    let lines = vec![
+        "size 12345",
+        "version https://git-lfs.github.com/spec/v1",
+        "oid sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    ];
+    assert!(
+        !is_false_positive_context(&lines, 2, None),
+        "Git LFS suppression requires the size line after the object id"
     );
 }
 
@@ -184,7 +210,57 @@ fn false_positive_context_detects_cors_header() {
 }
 
 #[test]
+fn false_positive_context_does_not_suppress_custom_access_control_secret() {
+    let lines = vec!["access-control-api-token: sk-proj-abcdefghijklmnopqrstuvwxyz123456"];
+    assert!(
+        !is_false_positive_context(&lines, 0, None),
+        "only real CORS header names are context suppressors; custom secret-bearing names must surface"
+    );
+}
+
+#[test]
 fn false_positive_context_detects_http_cache_header() {
     let lines = vec![r#"ETag: W/concat!("xox", "b-8f3a9b2c1d4e5f60718293a4b5c6d7e8f9a0b")"#];
     assert!(is_false_positive_context(&lines, 0, None));
+}
+
+#[test]
+fn false_positive_match_context_detects_http_cache_header() {
+    let text = r#"ETag: W/concat!("xox", "b-8f3a9b2c1d4e5f60718293a4b5c6d7e8f9a0b")"#;
+    let offset = text.find("xox").expect("fixture contains header token");
+    assert!(is_false_positive_match_context(text, offset, None));
+}
+
+#[test]
+fn false_positive_context_does_not_suppress_adjacent_etag_metadata() {
+    let lines = vec![
+        r#""etag": "v1","#,
+        r#""api_key": "sk-proj-abcdefghijklmnopqrstuvwxyz123456""#,
+    ];
+    assert!(
+        !is_false_positive_context(&lines, 1, None),
+        "an adjacent JSON etag field is not an HTTP ETag header and must not hide a secret"
+    );
+}
+
+#[test]
+fn false_positive_context_does_not_suppress_adjacent_unquoted_etag_metadata() {
+    let lines = vec![
+        "etag: v1",
+        "api_key = sk-proj-abcdefghijklmnopqrstuvwxyz123456",
+    ];
+    assert!(
+        !is_false_positive_context(&lines, 1, None),
+        "an adjacent unquoted etag metadata key is not an HTTP ETag header for the secret line"
+    );
+}
+
+#[test]
+fn false_positive_match_context_does_not_suppress_adjacent_etag_metadata() {
+    let text = "etag: v1\napi_key = sk-proj-abcdefghijklmnopqrstuvwxyz123456\n";
+    let offset = text.find("sk-proj").expect("fixture contains secret");
+    assert!(
+        !is_false_positive_match_context(text, offset, None),
+        "match-window checks must not let adjacent etag metadata hide the current secret line"
+    );
 }
