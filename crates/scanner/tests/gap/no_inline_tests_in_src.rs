@@ -34,6 +34,65 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // Co-located tests keep the bit-layout helpers and counters private instead
     // of exporting them only for external test placement.
     "engine/backend_triggered.rs",
+    // The root module has test-only imports used by crate-internal unit builds.
+    // These are not behavioral inline tests; moving them to `tests/` would not
+    // remove source-owned test logic, only break crate-local compilation seams.
+    "lib.rs",
+    // Hardware-probe tests need the crate-private backend override hook and
+    // live under a `testing` facade, not as hidden production behavior.
+    "hw_probe/mod.rs",
+    // Telemetry exposes a test-only reset/read facade for integration tests that
+    // assert visible counters. Keeping the facade in-module avoids making the
+    // mutable global telemetry internals public production API.
+    "telemetry.rs",
+    // `testing.rs` is the intentionally doc-hidden scanner test facade used by
+    // external integration targets. Its `#[cfg(test)]` sections are facade
+    // wiring, not source-local behavioral test suites.
+    "testing.rs",
+    // The Hyperscan scratch pool keeps private thread-local scratch state. The
+    // remaining co-located test reads that private TLS count to prove scanner
+    // drop evicts retained scratches; external tests cover oversubscription
+    // through the narrow `testing` facade instead of keeping that larger
+    // concurrency regression in production source.
+    "simd/backend/scan.rs",
+    // The GPU MoE wgpu dispatch is a crate-private accelerator path. Its
+    // regressions drive the private `dispatch_moe_batch` and
+    // `gpu_moe_parity_probe_features` directly: a per-dispatch GPU/CPU parity
+    // guard and the concurrent params-buffer race reproducer (the
+    // shared-batch_size clobber that aborted autoroute calibration). Both need
+    // the real device dispatch, so co-locating keeps `dispatch_moe_batch` and the
+    // probe builder private instead of exporting the GPU internals as `pub`
+    // solely for external test placement.
+    "gpu/backend.rs",
+    // `CredentialShapeRule` keeps its length/prefix/body fields PRIVATE; the
+    // co-located tests construct fixtures through the `#[cfg(test)] pub(crate)`
+    // `exact_length_for_test` / `prefix_body_range_for_test` builders that set
+    // those private fields directly. Those builders are irreducibly co-located -
+    // they exist only to populate the private shape - so migrating the tests out
+    // would force the fields (or the builders) `pub` purely for test placement.
+    "credential_shapes.rs",
+    // The detector-classification tests drive the crate-private
+    // `parse_classification_rules` parser against the private
+    // `DETECTOR_CLASSIFICATION_TOML` bundle (duplicate-id, unknown-id and
+    // duplicate-prefix rejection). The parser fn and the embedded TOML are both
+    // deliberately not part of the crate's public API, so external placement
+    // would force exposing them `pub` solely for the test.
+    "detector_classification.rs",
+    // The path-filter tests pin the `pub(crate)` path classifiers
+    // (`path_is_ci_workflow_file`, `path_is_i18n_file`,
+    // `looks_like_raw_base64_file_path`, `looks_like_entropy_raw_base64_file_path`)
+    // with direct cross-platform boundary assertions. `tests/unit/` exercises only
+    // the truly-`pub` API (see `tests/unit/shape_canonical.rs`), so migrating these
+    // would force the crate-internal classifiers `pub` or weaken them to indirect
+    // tests - both worse than co-locating the white-box assertions.
+    "suppression/path_filter.rs",
+    // The canonical-shape tests pin the `pub(crate)` suppression predicates
+    // (`is_structured_dotted_token`, `looks_like_dashed_serial_key`,
+    // `looks_like_aws_iam_arn`, `looks_like_random_byte_base64_blob`) whose exact
+    // boundary behaviour is recall-load-bearing. They are crate-internal, not the
+    // public API `tests/unit/` can reach, so the direct boundary assertions stay
+    // co-located instead of widening the surface or weakening to indirect tests.
+    "suppression/shape/canonical.rs",
 ];
 
 /// True iff `path` ends with an allowlisted `src/`-relative path (component-wise,

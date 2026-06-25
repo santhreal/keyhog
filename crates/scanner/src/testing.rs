@@ -1231,7 +1231,7 @@ pub mod entropy_keywords {
 
 pub mod checksum {
     pub use crate::checksum::{
-        CHECKSUM_VALID_FLOOR, ChecksumResult, checksum_adjusted_confidence, validate_checksum,
+        checksum_adjusted_confidence, validate_checksum, ChecksumResult, CHECKSUM_VALID_FLOOR,
     };
 
     pub fn standard_crc32(data: &[u8]) -> u32 {
@@ -2150,16 +2150,80 @@ pub(crate) unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
     }
 }
 
-#[cfg(all(test, feature = "simd"))]
-pub(crate) struct HsScanner;
+#[cfg(feature = "simd")]
+pub fn hyperscan_oversubscribed_match_ids_are_stable(
+    patterns: &[(usize, usize, &str, bool)],
+    probe: &[u8],
+    threads: usize,
+    rounds: usize,
+) -> Result<Vec<usize>, String> {
+    if threads == 0 {
+        return Err("threads must be greater than zero".into());
+    }
+    if rounds == 0 {
+        return Err("rounds must be greater than zero".into());
+    }
 
-#[cfg(all(test, feature = "simd"))]
-impl HsScanner {
-    pub(crate) fn compile(
-        patterns: &[(usize, usize, &str, bool)],
-    ) -> Result<(Self, Vec<usize>), String> {
-        crate::simd::backend::HsScanner::compile(patterns)
-            .map(|(_scanner, unsupported)| (Self, unsupported))
+    let (scanner, unsupported) = crate::simd::backend::HsScanner::compile_with_opts(
+        patterns,
+        crate::simd::backend::HsCompileOpts::default(),
+    )?;
+    if !unsupported.is_empty() {
+        return Err(format!(
+            "probe patterns must all be Hyperscan-supported, got unsupported={unsupported:?}"
+        ));
+    }
+
+    let mut expected = Vec::new();
+    scanner.scan_matches_result(probe, |id, _start, _end| expected.push(id))?;
+    expected.sort_unstable();
+    expected.dedup();
+
+    let barrier = std::sync::Barrier::new(threads);
+    let scanner_ref = &scanner;
+    let barrier_ref = &barrier;
+    let expected_ref = &expected;
+
+    let failures = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(move || {
+                    barrier_ref.wait();
+                    for _ in 0..rounds {
+                        let mut ids = Vec::new();
+                        scanner_ref
+                            .scan_matches_result(probe, |id, _start, _end| ids.push(id))
+                            .map_err(|error| {
+                                format!("scan errored under oversubscription: {error}")
+                            })?;
+                        ids.sort_unstable();
+                        ids.dedup();
+                        if &ids != expected_ref {
+                            return Err(format!(
+                                "oversubscribed scan produced {ids:?}, expected {expected_ref:?}"
+                            ));
+                        }
+                    }
+                    Ok::<(), String>(())
+                })
+            })
+            .collect();
+
+        handles
+            .into_iter()
+            .filter_map(|handle| handle.join().expect("scan thread did not panic").err())
+            .collect::<Vec<String>>()
+    });
+
+    if failures.is_empty() {
+        Ok(expected)
+    } else {
+        Err(format!(
+            "{}/{} oversubscribed scan threads diverged from the complete match set:\n{}",
+            failures.len(),
+            threads,
+            failures.join("\n")
+        ))
     }
 }
 

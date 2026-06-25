@@ -20,10 +20,27 @@ fn take_scratch(
     if let Some(scratch) = shard.scratch_pool.lock().pop() {
         return Ok(scratch);
     }
-    Err(format!(
-        "hyperscan scratch pool exhausted for scanner {scanner_id} shard {shard_idx}; \
-         preallocated scratches are already checked out on this thread set"
-    ))
+    // Pool drained: MORE distinct threads are scanning this shard than the
+    // compile-time preallocation seeded (the pool is sized to the host core
+    // count, but `--batch-pipeline` stacks a reader pool + the fused dispatch
+    // threads ON TOP of rayon, so one shard can see more live threads than
+    // cores). Grow on demand with a fresh scratch bound to THIS shard's
+    // database. This is NOT a fallback and NOT a partial scan: it runs the
+    // identical precise Hyperscan path over the full chunk, so recall and
+    // precision are unchanged. It is the seed pool growing to true concurrency
+    // — at most once per (thread, scanner, shard), because the scratch then
+    // lives in this thread's TLS and is reused lock-free on every later scan
+    // (alloc cost amortizes to zero, Law 7). The old hard error here was the
+    // real defect: it forced callers into the over-marking degrade, which is
+    // non-deterministic (it depends on which chunk loses the scratch race) and
+    // is what made `autoroute` calibration's reference-consistency check abort
+    // on high-core hosts.
+    shard.db.alloc_scratch().map_err(|error| {
+        format!(
+            "hyperscan scratch on-demand growth failed for scanner {scanner_id} \
+             shard {shard_idx}: {error}"
+        )
+    })
 }
 
 fn put_scratch(scanner_id: u64, shard_idx: usize, scratch: Scratch) {

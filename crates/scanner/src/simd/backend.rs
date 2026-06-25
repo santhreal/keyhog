@@ -216,9 +216,14 @@ static SCANNER_ID_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// One compiled shard: its database plus a Mutex-guarded scratch pool. Each
 /// `Scratch` is tied to exactly one `BlockDatabase`, so the pools are
-/// per-shard. The pool is filled during scanner construction; scan coverage
-/// never allocates a scratch opportunistically, so exhaustion is visible as a
-/// runtime error instead of a partial scan.
+/// per-shard. The pool is SEEDED during scanner construction to the host core
+/// count (the warm-start fast path: every common-case thread checks out a
+/// preallocated scratch under the lock once, then reuses it lock-free from its
+/// TLS). If more distinct threads scan a shard than the seed covered (the
+/// `--batch-pipeline` reader + fused-dispatch threads stack on top of rayon),
+/// `take_scratch` GROWS the pool on demand with a fresh per-database scratch.
+/// On-demand growth runs the identical precise scan — it never skips a shard
+/// or returns a partial marked set, so there is no silent recall loss.
 struct Shard {
     db: BlockDatabase,
     scratch_pool: parking_lot::Mutex<Vec<Scratch>>,
@@ -767,6 +772,16 @@ impl HsScanner {
             .collect()
     }
 
+    // Seed the per-shard scratch pool to the host core count: this is a
+    // WARM-START FLOOR, not a hard cap. The common case (rayon worker count ≈
+    // cores) checks out a preallocated scratch under the lock once and then
+    // reuses it lock-free from TLS. When more distinct threads scan a shard than
+    // the seed covered (`--batch-pipeline` stacks a reader pool + fused-dispatch
+    // threads on top of rayon), `take_scratch` GROWS the pool on demand with a
+    // fresh per-database scratch — the same precise scan, never a partial — so
+    // there is no exhaustion failure and no recall-losing degrade to fall into.
+    // The `MAX_COMPILE_SHARDS` clamp only bounds the up-front preallocation
+    // memory; growth handles any host whose true concurrency exceeds it.
     fn scratch_pool_size() -> usize {
         std::thread::available_parallelism()
             .map(|cores| cores.get())

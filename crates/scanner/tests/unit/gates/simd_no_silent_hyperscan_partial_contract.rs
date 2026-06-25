@@ -59,7 +59,18 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         backend.contains("fn scratch_pool_size()")
             && backend.contains("Vec::with_capacity(scratch_count)")
             && backend.contains("scratch_pool.push("),
-        "Hyperscan scratches must be preallocated per shard instead of allocated opportunistically during scan coverage"
+        "Hyperscan scratches must be preallocated per shard to seed the warm-start fast path"
+    );
+    assert!(
+        scan.contains("shard.db.alloc_scratch()")
+            && scan.contains("hyperscan scratch on-demand growth failed"),
+        "scratch-pool exhaustion under thread oversubscription must GROW the pool on demand \
+         (the same precise full-chunk scan), never degrade into a partial or over-marked scan"
+    );
+    assert!(
+        !scan.contains("hyperscan scratch pool exhausted"),
+        "the hard scratch-exhaustion error is forbidden: it forced the non-deterministic \
+         over-marking degrade that silently varied findings and aborted autoroute calibration"
     );
     assert!(
         backend.contains("keyhog_core::HYPERSCAN_CACHE_FILE_BYTES")
