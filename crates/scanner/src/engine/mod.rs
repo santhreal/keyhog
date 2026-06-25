@@ -93,6 +93,8 @@ mod phase2_generic_shape;
 mod phase2_gpu_dfa;
 #[cfg(feature = "simd")]
 mod phase2_hs;
+#[cfg(all(test, feature = "simd"))]
+pub(crate) use phase2_hs::hs_prefilter_requires_host_regex as hs_prefilter_requires_host_regex_for_test;
 mod phase2_prefilter;
 pub(crate) mod phase2_truncate;
 mod process;

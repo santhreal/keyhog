@@ -32,6 +32,8 @@ mod perf_phase2_confirmed_collect;
 mod perf_phase2_literal_prefix_memoized;
 mod phase2_anchor_analysis;
 mod phase2_anchor_parity;
+#[cfg(feature = "simd")]
+mod phase2_hs_anchor_parser;
 mod phase2_no_candidate_gate_perf;
 mod phase2_no_candidate_zero_work;
 mod phase2_order_independence;

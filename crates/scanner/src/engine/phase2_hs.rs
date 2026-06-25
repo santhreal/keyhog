@@ -149,6 +149,21 @@ impl Phase2HsEngine {
     }
 }
 
-fn hs_prefilter_requires_host_regex(src: &str) -> bool {
-    src.contains('^') || src.contains('$')
+pub(crate) fn hs_prefilter_requires_host_regex(src: &str) -> bool {
+    let mut escaped = false;
+    let mut in_class = false;
+    for ch in src.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '[' if !in_class => in_class = true,
+            ']' if in_class => in_class = false,
+            '^' | '$' if !in_class => return true,
+            _ => {}
+        }
+    }
+    false
 }
