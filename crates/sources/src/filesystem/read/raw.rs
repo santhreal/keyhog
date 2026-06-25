@@ -67,10 +67,11 @@ pub(in crate::filesystem) fn read_file_buffered(
 }
 
 /// Open `path` in a symlink-resistant way. POSIX gets `O_NOFOLLOW`;
-/// Windows checks `symlink_metadata` first (small TOCTOU window, but
-/// acceptable for a defensive scanner - the attacker would have to
-/// win a race they don't see initiated). The shipped Windows contract is
-/// explicit refusal of symlink paths before the standard-library open.
+/// Windows must classify the path with `symlink_metadata` before open (small
+/// TOCTOU window, but acceptable for a defensive scanner - the attacker would
+/// have to win a race they don't see initiated). The shipped Windows contract
+/// is explicit refusal of symlink paths and fail-closed refusal when the file
+/// type cannot be classified before the standard-library open.
 pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
@@ -90,14 +91,17 @@ pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
     // opening it through the cross-platform standard-library path.
     #[cfg(windows)]
     {
-        if let Ok(meta) = std::fs::symlink_metadata(path) {
-            // LAW10: failed pre-open metadata probe falls through to O_NOFOLLOW/open error, which surfaces unreadable paths.
-            if meta.file_type().is_symlink() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::PermissionDenied,
-                    "refusing to follow symlink (Windows safety guard)",
-                ));
-            }
+        let meta = std::fs::symlink_metadata(path).map_err(|error| {
+            std::io::Error::new(
+                error.kind(),
+                format!("cannot classify path before Windows no-follow open: {error}"),
+            )
+        })?;
+        if meta.file_type().is_symlink() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "refusing to follow symlink (Windows safety guard)",
+            ));
         }
     }
     let file = options.open(path)?;
