@@ -24,7 +24,7 @@ pub(crate) async fn build_request_for_auth(
     allow_script_verify: bool,
 ) -> RequestBuildResult {
     match auth {
-        AuthSpec::None => RequestBuildResult::Ready(request),
+        AuthSpec::None {} => RequestBuildResult::Ready(request),
         AuthSpec::Bearer { field } => {
             if let Some(missing) = missing_companion_field(field, companions) {
                 return missing_auth_companion("bearer auth field", vec![missing]);

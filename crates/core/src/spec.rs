@@ -266,9 +266,9 @@ pub struct HeaderSpec {
 
 /// Authentication scheme for verification requests.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AuthSpec {
-    None,
+    None {},
     Bearer {
         field: String,
     },
@@ -516,6 +516,7 @@ pub enum HttpMethod {
 
 /// Wrapping struct for a detector TOML file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DetectorFile {
     pub detector: DetectorSpec,
 }

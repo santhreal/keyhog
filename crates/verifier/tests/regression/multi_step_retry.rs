@@ -79,7 +79,7 @@ fn multi_step_non_aws_auth_uses_verify_service_rate_bucket() {
         service: "service-a".into(),
         ..Default::default()
     };
-    let auth = AuthSpec::None;
+    let auth = AuthSpec::None {};
 
     assert_eq!(
         TestApi.multi_step_rate_limit_service_name(&spec, &auth),
@@ -137,7 +137,7 @@ async fn multi_step_500_retries_then_live() {
                 name: "probe".into(),
                 method: HttpMethod::Get,
                 url: format!("{base}/step"),
-                auth: AuthSpec::None,
+                auth: AuthSpec::None {},
                 headers: vec![],
                 body: None,
                 success: SuccessSpec {
@@ -192,7 +192,7 @@ async fn multi_step_empty_credential_is_unverifiable_without_network() {
                 name: "probe".into(),
                 method: HttpMethod::Get,
                 url: format!("{base}/step"),
-                auth: AuthSpec::None,
+                auth: AuthSpec::None {},
                 headers: vec![],
                 body: None,
                 success: SuccessSpec {

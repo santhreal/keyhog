@@ -177,7 +177,7 @@ fn verify_multi_step_happy() {
             name: "step".into(),
             method: HttpMethod::Get,
             url: "https://example.com".into(),
-            auth: AuthSpec::None,
+            auth: AuthSpec::None {},
             headers: vec![],
             body: None,
             success: SuccessSpec {

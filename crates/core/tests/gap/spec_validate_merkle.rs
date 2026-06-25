@@ -26,8 +26,8 @@
 //! comparing `compute_spec_hash` outputs to one another.
 
 use keyhog_core::{
-    compute_spec_hash, validate_detector, CompanionSpec, DetectorSpec, PatternSpec, QualityIssue,
-    Severity,
+    compute_spec_hash, validate_detector, CompanionSpec, DetectorFile, DetectorSpec, PatternSpec,
+    QualityIssue, Severity,
 };
 
 // ---------------------------------------------------------------------------
@@ -216,6 +216,18 @@ keywords = ["demo_"]
 // ===========================================================================
 
 #[test]
+fn unknown_detector_file_top_level_field_rejected() {
+    let toml = format!("schema_typo = true\n{VALID_TOML}");
+    let err = toml::from_str::<DetectorFile>(&toml)
+        .expect_err("unknown top-level DetectorFile field must be rejected");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("schema_typo") || msg.contains("unknown field"),
+        "top-level schema error should name the offending key, got: {msg}"
+    );
+}
+
+#[test]
 fn unknown_top_level_detector_field_rejected() {
     // DetectorSpec has #[serde(deny_unknown_fields)] — a typoed field fails.
     let toml = format!("{VALID_TOML}sevrity = \"low\"\n");
@@ -285,6 +297,40 @@ fn unknown_verify_field_rejected() {
         )
         .is_err(),
         "unknown field on VerifySpec must be rejected"
+    );
+}
+
+#[test]
+fn unknown_auth_spec_field_rejected() {
+    let toml = format!(
+        "{VALID_TOML}\n[detector.verify]\nurl = \"https://api.demo.test/v1\"\n[detector.verify.auth]\ntype = \"query\"\nparam = \"key\"\nfield = \"match\"\nschema_typo = true\n"
+    );
+    let err = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        &toml,
+    )
+    .expect_err("unknown AuthSpec field must be rejected");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("schema_typo") || msg.contains("unknown field"),
+        "auth schema error should name the offending key, got: {msg}"
+    );
+}
+
+#[test]
+fn unknown_none_auth_spec_field_rejected() {
+    let toml = format!(
+        "{VALID_TOML}\n[detector.verify]\nurl = \"https://api.demo.test/v1\"\n[detector.verify.auth]\ntype = \"none\"\nschema_typo = true\n"
+    );
+    let err = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        &toml,
+    )
+    .expect_err("unknown AuthSpec::None field must be rejected");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("schema_typo") || msg.contains("unknown field"),
+        "none-auth schema error should name the offending key, got: {msg}"
     );
 }
 

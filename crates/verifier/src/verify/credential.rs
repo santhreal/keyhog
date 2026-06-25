@@ -359,7 +359,8 @@ pub(crate) async fn verify_credential(
 
     let url_template = spec.url.as_deref().unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
     let method = spec.method.as_ref().unwrap_or(&HttpMethod::Get); // LAW10: absent verify-spec field => documented default (GET / AuthSpec::None / first); recall-safe
-    let auth = spec.auth.as_ref().unwrap_or(&AuthSpec::None); // LAW10: absent verify-spec field => documented default (GET / AuthSpec::None / first); recall-safe
+    let default_auth = AuthSpec::None {};
+    let auth = spec.auth.as_ref().unwrap_or(&default_auth); // LAW10: absent verify-spec field => documented default (GET / AuthSpec::None / first); recall-safe
     let success = spec.success.as_ref();
 
     let is_self_constructing_auth = matches!(auth, AuthSpec::AwsV4 { .. });

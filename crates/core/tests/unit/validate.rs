@@ -206,7 +206,7 @@ fn rejects_step_success_statuses_outside_http_range() {
             name: "probe".into(),
             method: HttpMethod::Get,
             url: "https://example.com/verify".into(),
-            auth: AuthSpec::None,
+            auth: AuthSpec::None {},
             headers: Vec::new(),
             body: None,
             success: SuccessSpec {

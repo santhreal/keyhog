@@ -114,7 +114,7 @@ async fn oob_required_without_session_errors_before_http_probe() {
             service: "test".into(),
             method: Some(HttpMethod::Post),
             url: Some(format!("{base}/probe")),
-            auth: Some(AuthSpec::None),
+            auth: Some(AuthSpec::None {}),
             headers: vec![],
             body: Some(r#"{"callback":"{{interactsh.url}}"}"#.into()),
             success: Some(SuccessSpec {
@@ -177,7 +177,7 @@ async fn multi_step_oob_errors_before_any_step_request() {
                 name: "probe".into(),
                 method: HttpMethod::Post,
                 url: format!("{base}/step"),
-                auth: AuthSpec::None,
+                auth: AuthSpec::None {},
                 headers: vec![],
                 body: Some(r#"{"callback":"{{interactsh.url}}"}"#.into()),
                 success: SuccessSpec {
@@ -229,7 +229,7 @@ async fn oob_only_preserves_transient_http_rate_limit_when_callback_absent() {
             service: "test".into(),
             method: Some(HttpMethod::Post),
             url: Some(format!("{base}/probe")),
-            auth: Some(AuthSpec::None),
+            auth: Some(AuthSpec::None {}),
             headers: vec![],
             body: Some(r#"{"callback":"{{interactsh.url}}"}"#.into()),
             success: Some(SuccessSpec {

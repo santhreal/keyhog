@@ -43,7 +43,7 @@ async fn test_verify_all_logic() {
             service: "test".into(),
             method: Some(keyhog_core::HttpMethod::Get),
             url: Some(format!("http://127.0.0.1:{}/verify", addr.port())),
-            auth: Some(keyhog_core::AuthSpec::None),
+            auth: Some(keyhog_core::AuthSpec::None {}),
             headers: vec![],
             body: None,
             success: Some(keyhog_core::SuccessSpec {

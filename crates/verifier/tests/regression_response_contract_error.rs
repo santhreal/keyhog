@@ -44,7 +44,7 @@ fn detector_for(url: String) -> DetectorSpec {
             service: "test".into(),
             url: Some(url),
             method: None,
-            auth: Some(AuthSpec::None),
+            auth: Some(AuthSpec::None {}),
             headers: vec![],
             body: None,
             success: Some(SuccessSpec {
