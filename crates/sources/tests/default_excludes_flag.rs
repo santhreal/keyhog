@@ -8,6 +8,7 @@ mod support;
 use keyhog_core::Chunk;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
+use rars::{rar15_40, ArchiveVersion, FeatureSet};
 use std::fs;
 use std::io::Write;
 use support::archive::{
@@ -37,6 +38,8 @@ fn body_contains(chunks: &[Chunk], needle: &str) -> bool {
 }
 
 const SENTINEL: &str = "ghp_defaultexcludesentinel0123456789ABCD";
+const RAR_UNIX_REGULAR_MODE: u64 = 0o100644;
+const RAR15_40_UNIX_HOST_OS: u64 = 3;
 
 fn make_corpus() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -185,6 +188,34 @@ fn write_seven_zip_with_default_excluded_entry(path: &std::path::Path) {
         ]),
     )
     .unwrap();
+}
+
+fn write_rar_with_default_excluded_entry(path: &std::path::Path) {
+    let archive = rar15_40::write_stored_archive(
+        &[
+            rar15_40::StoredEntry {
+                name: b"package-lock.json",
+                data: format!("{{ \"token\": \"{SENTINEL}\" }}\n").as_bytes(),
+                file_time: 0,
+                file_attr: (RAR_UNIX_REGULAR_MODE as u32) << 16,
+                host_os: RAR15_40_UNIX_HOST_OS as u8,
+                password: None,
+                file_comment: None,
+            },
+            rar15_40::StoredEntry {
+                name: b"config.env",
+                data: b"API=rar_normal_always_scanned_marker\n",
+                file_time: 0,
+                file_attr: (RAR_UNIX_REGULAR_MODE as u32) << 16,
+                host_os: RAR15_40_UNIX_HOST_OS as u8,
+                password: None,
+                file_comment: None,
+            },
+        ],
+        rar15_40::WriterOptions::new(ArchiveVersion::Rar29, FeatureSet::store_only()),
+    )
+    .expect("write RAR fixture");
+    fs::write(path, archive).unwrap();
 }
 
 fn write_crx_with_default_excluded_entry(path: &std::path::Path) {
@@ -745,6 +776,33 @@ fn default_excludes_apply_inside_seven_zip_archives() {
     assert!(
         body_contains(&included, SENTINEL),
         "--no-default-excludes must scan default-excluded entries inside 7z archives"
+    );
+    assert_eq!(skip_counts().excluded, 0);
+}
+
+#[test]
+fn default_excludes_apply_inside_rar_archives() {
+    let _guard = counter_guard();
+    let dir = tempfile::tempdir().unwrap();
+    write_rar_with_default_excluded_entry(&dir.path().join("fixture.rar"));
+
+    TestApi.reset_skip_counters();
+    let skipped = scan_dir(dir.path(), true);
+    assert!(
+        body_contains(&skipped, "rar_normal_always_scanned_marker"),
+        "control RAR entry must be scanned when archive default excludes are enabled"
+    );
+    assert!(
+        !body_contains(&skipped, SENTINEL),
+        "default-excluded RAR entries must not leak into chunks by default"
+    );
+    assert_eq!(skip_counts().excluded, 1);
+
+    TestApi.reset_skip_counters();
+    let included = scan_dir(dir.path(), false);
+    assert!(
+        body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan default-excluded entries inside RAR archives"
     );
     assert_eq!(skip_counts().excluded, 0);
 }
