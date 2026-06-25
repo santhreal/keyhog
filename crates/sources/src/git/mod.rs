@@ -139,6 +139,25 @@ pub(crate) fn git_unscanned_object_error(reason: impl std::fmt::Display) -> Sour
     SourceError::Git(format!("failed to scan git object: {reason}"))
 }
 
+pub(crate) fn git_output_line_truncated_error(
+    source_name: &str,
+    line_kind: &str,
+    cap: usize,
+    consumed: usize,
+) -> SourceError {
+    tracing::warn!(
+        %source_name,
+        %line_kind,
+        cap,
+        consumed,
+        "git output line exceeded the configured byte cap; full line was NOT scanned"
+    );
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
+    SourceError::Other(format!(
+        "{source_name} output was truncated: {line_kind} exceeded the {cap}-byte line cap after {consumed} bytes; the full line was not scanned"
+    ))
+}
+
 pub(crate) fn drain_trimmed_hunk(buffer: &mut Vec<u8>) -> Option<String> {
     let decoded = String::from_utf8_lossy(buffer);
     let trimmed = decoded.trim();

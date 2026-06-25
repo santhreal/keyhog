@@ -168,6 +168,14 @@ fn stream_git_history_chunks(
             line_buf.clear();
             let line =
                 match super::read_capped_line(&mut reader, &mut line_buf, limits.git_line_bytes) {
+                    Ok(n) if n > limits.git_line_bytes => {
+                        return Some(Err(super::git_output_line_truncated_error(
+                            "git history source",
+                            "unified diff line",
+                            limits.git_line_bytes,
+                            n,
+                        )));
+                    }
                     Ok(0) => {
                         if let (Some(commit), Some(author), Some(date), Some(path)) = (
                             &current_commit,

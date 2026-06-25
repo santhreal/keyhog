@@ -418,6 +418,82 @@ fn overlong_untracked_git_diff_path_is_counted_source_truncated() {
     );
 }
 
+#[test]
+fn overlong_git_diff_added_line_is_counted_source_truncated() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path();
+    init_repo(repo);
+    std::fs::write(repo.join("tracked.txt"), "baseline\n").expect("write baseline");
+    git(repo, &["add", "tracked.txt"]);
+    git(repo, &["commit", "-m", "baseline"]);
+    std::fs::write(repo.join("tracked.txt"), format!("{}\n", "A".repeat(160)))
+        .expect("write overlong diff line");
+
+    let mut limits = keyhog_sources::SourceLimits::default();
+    limits.git_line_bytes = 80;
+
+    let rows: Vec<_> = GitDiffSource::new(repo.to_path_buf(), "HEAD")
+        .with_limits(limits)
+        .chunks()
+        .collect();
+    let (_ok, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.iter().any(|error| error
+            .to_string()
+            .contains("git diff source output was truncated")),
+        "overlong git diff line must surface a truncation SourceError; errors={errors:?}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.source_truncated - before.source_truncated,
+        1,
+        "overlong git diff line MUST bump SOURCE_TRUNCATED exactly once"
+    );
+}
+
+#[test]
+fn overlong_git_history_added_line_is_counted_source_truncated() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path();
+    init_repo(repo);
+    std::fs::write(repo.join("history.txt"), format!("{}\n", "B".repeat(160)))
+        .expect("write overlong history line");
+    git(repo, &["add", "history.txt"]);
+    git(repo, &["commit", "-m", "add overlong line"]);
+
+    let mut limits = keyhog_sources::SourceLimits::default();
+    limits.git_line_bytes = 80;
+
+    let rows: Vec<_> = GitHistorySource::new(repo.to_path_buf())
+        .with_max_commits(1)
+        .with_limits(limits)
+        .chunks()
+        .collect();
+    let (_ok, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.iter().any(|error| error
+            .to_string()
+            .contains("git history source output was truncated")),
+        "overlong git history line must surface a truncation SourceError; errors={errors:?}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.source_truncated - before.source_truncated,
+        1,
+        "overlong git history line MUST bump SOURCE_TRUNCATED exactly once"
+    );
+}
+
 /// A blob skipped by the shared default-exclude policy is intentionally not
 /// scanned, but it still has to reach the shared excluded coverage counter.
 #[test]

@@ -35,10 +35,20 @@ pub(crate) fn collect_reachable_tag_messages(
     let mut reader = std::io::BufReader::new(stdout);
     let mut tags = VecDeque::new();
     let mut line_buf = Vec::new();
-    while super::read_capped_line(&mut reader, &mut line_buf, GIT_TAG_REF_LINE_BYTES)
-        .map_err(SourceError::Io)?
-        > 0
-    {
+    loop {
+        let consumed = super::read_capped_line(&mut reader, &mut line_buf, GIT_TAG_REF_LINE_BYTES)
+            .map_err(SourceError::Io)?;
+        if consumed == 0 {
+            break;
+        }
+        if consumed > GIT_TAG_REF_LINE_BYTES {
+            return Err(super::git_output_line_truncated_error(
+                "git tag source",
+                "tag ref line",
+                GIT_TAG_REF_LINE_BYTES,
+                consumed,
+            ));
+        }
         let line = String::from_utf8_lossy(&line_buf);
         let line = line.trim_end_matches('\n').trim_end_matches('\r');
         let mut parts = line.splitn(3, ' ');

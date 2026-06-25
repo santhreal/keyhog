@@ -6,6 +6,8 @@ fn git_diff_sources_share_byte_oriented_parser() {
     let diff = std::fs::read_to_string(root.join("src/git/diff.rs")).expect("git diff readable");
     let history =
         std::fs::read_to_string(root.join("src/git/history.rs")).expect("git history readable");
+    let tag_messages = std::fs::read_to_string(root.join("src/git/tag_messages.rs"))
+        .expect("git tag messages readable");
 
     for required in [
         "struct UnifiedDiffParser",
@@ -109,6 +111,17 @@ fn git_diff_sources_share_byte_oriented_parser() {
         !git_mod.contains("let digits: String")
             && !git_mod.contains(".take_while(|c| c.is_ascii_digit()).collect()"),
         "git hunk header parsing must parse borrowed digit slices without allocating"
+    );
+    assert!(
+        git_mod.contains("fn git_output_line_truncated_error(")
+            && git_mod.contains("SourceSkipEvent::SourceTruncated")
+            && diff.contains("git_output_line_truncated_error(")
+            && diff.contains("\"git diff source\"")
+            && history.contains("git_output_line_truncated_error(")
+            && history.contains("\"git history source\"")
+            && tag_messages.contains("git_output_line_truncated_error(")
+            && tag_messages.contains("\"git tag source\""),
+        "git output line caps must surface SourceError rows and SOURCE_TRUNCATED counters in diff, history, and tag-ref enumeration"
     );
     assert!(
         !parser.contains("String::from_utf8_lossy(line)")
