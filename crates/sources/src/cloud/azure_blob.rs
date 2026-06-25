@@ -140,8 +140,13 @@ fn collect_azure_blob_chunks(
             break;
         }
 
-        let listing =
-            fetch_azure_blob_listing_page(&client, &container_url, prefix, marker.as_deref())?;
+        let listing = fetch_azure_blob_listing_page(
+            &client,
+            &container_url,
+            prefix,
+            marker.as_deref(),
+            limits.web_response_bytes,
+        )?;
         let next_marker = listing.next_marker().map(str::to_string);
         let (page, reached_limit) = coverage.take_page(listing.blobs.blob);
 
@@ -175,6 +180,7 @@ fn fetch_azure_blob_listing_page(
     container_url: &reqwest::Url,
     prefix: Option<&str>,
     marker: Option<&str>,
+    max_response_bytes: usize,
 ) -> Result<AzureListResponse, SourceError> {
     let list_url = azure_list_url(container_url, prefix, marker);
     let response = client.get(list_url.clone()).send().map_err(|error| {
@@ -192,13 +198,12 @@ fn fetch_azure_blob_listing_page(
             format!("container request returned {status}"),
         ));
     }
-    let body = response.text().map_err(|error| {
-        crate::cloud::record_unreadable_listing_skip(
-            "Azure Blob",
-            "blobs",
-            format!("failed to read listing response body: {error}"),
-        )
-    })?;
+    let body = crate::cloud::read_listing_response_body(
+        response,
+        "Azure Blob",
+        "blobs",
+        max_response_bytes,
+    )?;
     parse_azure_listing(&body).map_err(|error| {
         crate::cloud::record_unreadable_listing_skip(
             "Azure Blob",

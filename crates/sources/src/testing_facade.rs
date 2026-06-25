@@ -195,6 +195,16 @@ pub mod testing {
             B: Into<String>,
             E: Into<String>;
         #[cfg(feature = "gcs")]
+        fn gcs_source_with_endpoint_and_limits<B, E>(
+            &self,
+            bucket: B,
+            endpoint: E,
+            limits: crate::SourceLimits,
+        ) -> crate::GcsSource
+        where
+            B: Into<String>,
+            E: Into<String>;
+        #[cfg(feature = "gcs")]
         fn gcs_source_with_endpoint_max_objects<B, E>(
             &self,
             bucket: B,
@@ -210,6 +220,16 @@ pub mod testing {
         fn s3_credential_forward_allowed(&self, allow_explicit: bool) -> bool;
         #[cfg(feature = "s3")]
         fn s3_source_with_endpoint<B, E>(&self, bucket: B, endpoint: E) -> crate::S3Source
+        where
+            B: Into<String>,
+            E: Into<String>;
+        #[cfg(feature = "s3")]
+        fn s3_source_with_endpoint_and_limits<B, E>(
+            &self,
+            bucket: B,
+            endpoint: E,
+            limits: crate::SourceLimits,
+        ) -> crate::S3Source
         where
             B: Into<String>,
             E: Into<String>;
@@ -380,6 +400,14 @@ pub mod testing {
             &self,
             container_url: U,
             max_objects: usize,
+        ) -> crate::AzureBlobSource
+        where
+            U: Into<String>;
+        #[cfg(feature = "azure")]
+        fn azure_blob_source_with_limits<U>(
+            &self,
+            container_url: U,
+            limits: crate::SourceLimits,
         ) -> crate::AzureBlobSource
         where
             U: Into<String>;
@@ -803,6 +831,22 @@ pub mod testing {
         }
 
         #[cfg(feature = "gcs")]
+        fn gcs_source_with_endpoint_and_limits<B, E>(
+            &self,
+            bucket: B,
+            endpoint: E,
+            limits: crate::SourceLimits,
+        ) -> crate::GcsSource
+        where
+            B: Into<String>,
+            E: Into<String>,
+        {
+            crate::GcsSource::new(bucket)
+                .with_endpoint(endpoint)
+                .with_limits(limits)
+        }
+
+        #[cfg(feature = "gcs")]
         fn gcs_source_with_endpoint_max_objects<B, E>(
             &self,
             bucket: B,
@@ -835,6 +879,22 @@ pub mod testing {
             E: Into<String>,
         {
             crate::S3Source::new(bucket).with_endpoint(endpoint)
+        }
+
+        #[cfg(feature = "s3")]
+        fn s3_source_with_endpoint_and_limits<B, E>(
+            &self,
+            bucket: B,
+            endpoint: E,
+            limits: crate::SourceLimits,
+        ) -> crate::S3Source
+        where
+            B: Into<String>,
+            E: Into<String>,
+        {
+            crate::S3Source::new(bucket)
+                .with_endpoint(endpoint)
+                .with_limits(limits)
         }
 
         #[cfg(feature = "s3")]
@@ -1114,6 +1174,18 @@ pub mod testing {
             U: Into<String>,
         {
             crate::AzureBlobSource::new(container_url).with_max_objects(max_objects)
+        }
+
+        #[cfg(feature = "azure")]
+        fn azure_blob_source_with_limits<U>(
+            &self,
+            container_url: U,
+            limits: crate::SourceLimits,
+        ) -> crate::AzureBlobSource
+        where
+            U: Into<String>,
+        {
+            crate::AzureBlobSource::new(container_url).with_limits(limits)
         }
 
         #[cfg(feature = "web")]

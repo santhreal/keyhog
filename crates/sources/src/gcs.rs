@@ -155,6 +155,7 @@ fn collect_gcs_chunks(
             prefix,
             page_token.as_deref(),
             bearer.as_deref(),
+            limits.web_response_bytes,
         )?;
         let (page, reached_limit) = coverage.take_page(listing.items);
 
@@ -199,6 +200,7 @@ fn fetch_gcs_listing_page(
     prefix: Option<&str>,
     page_token: Option<&str>,
     bearer: Option<&str>,
+    max_response_bytes: usize,
 ) -> Result<GcsListResponse, SourceError> {
     let list_url = gcs_list_url(endpoint, bucket);
     let mut request = client
@@ -229,13 +231,8 @@ fn fetch_gcs_listing_page(
             format!("bucket request returned {status}"),
         ));
     }
-    let body = response.text().map_err(|error| {
-        crate::cloud::record_unreadable_listing_skip(
-            "GCS",
-            "objects",
-            format!("failed to read listing response body: {error}"),
-        )
-    })?;
+    let body =
+        crate::cloud::read_listing_response_body(response, "GCS", "objects", max_response_bytes)?;
     parse_gcs_listing(&body).map_err(|error| {
         crate::cloud::record_unreadable_listing_skip(
             "GCS",

@@ -1,5 +1,25 @@
+#[cfg(any(
+    feature = "azure",
+    feature = "web",
+    feature = "slack",
+    feature = "s3",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "gcs"
+))]
 #[path = "a5_lr2/http_proxy_flag_overrides_env.rs"]
 mod a5_lr2_http_proxy_flag_overrides_env;
+#[cfg(any(
+    feature = "azure",
+    feature = "web",
+    feature = "slack",
+    feature = "s3",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "gcs"
+))]
 #[path = "a5_lr2/http_proxy_off_preserved.rs"]
 mod a5_lr2_http_proxy_off_preserved;
 #[path = "a5_lr2/read_safe_cap_refuses_huge.rs"]
@@ -19,5 +39,12 @@ pub mod har;
 pub mod http;
 pub mod internal_contracts;
 pub mod lib;
+#[cfg(any(
+    feature = "git",
+    feature = "docker",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket"
+))]
 pub mod process_excerpt;
 pub mod timeouts;

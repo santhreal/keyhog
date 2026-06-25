@@ -3,10 +3,10 @@
 mod support;
 
 use keyhog_core::{Chunk, Source, SourceError};
-use keyhog_sources::skip_counts;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 #[cfg(feature = "azure")]
 use keyhog_sources::AzureBlobSource;
+use keyhog_sources::{skip_counts, SkipCounts, SourceLimits};
 use std::sync::{Mutex, MutexGuard};
 use support::split_chunk_results;
 
@@ -47,6 +47,51 @@ fn assert_one_unreadable_listing_error(
         after.unreadable - before_unreadable,
         1,
         "{source} listing failure must bump SKIPPED_UNREADABLE exactly once"
+    );
+}
+
+fn listing_limits(max_response_bytes: usize) -> SourceLimits {
+    let mut limits = SourceLimits::default();
+    limits.web_response_bytes = max_response_bytes;
+    limits
+}
+
+fn assert_one_oversized_listing_error(
+    rows: &[Result<Chunk, SourceError>],
+    before: SkipCounts,
+    source: &str,
+    item_plural: &str,
+    cap: usize,
+) {
+    let (chunks, errors) = split_chunk_results(rows);
+    assert_eq!(
+        chunks.len(),
+        0,
+        "an oversized {source} listing must not claim scanned chunks"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "an oversized {source} listing must surface one SourceError row"
+    );
+    let error = errors[0].to_string();
+    assert!(
+        error.contains("source listing failed")
+            && error.contains("listing response")
+            && error.contains("web_response_bytes")
+            && error.contains(&cap.to_string())
+            && error.contains(&format!("{item_plural} were not scanned")),
+        "{source} oversized listing error must describe the cap and unscanned coverage, got {error}"
+    );
+    let after = skip_counts();
+    assert_eq!(
+        after.over_max_size,
+        before.over_max_size + 1,
+        "{source} oversized listing must bump SKIPPED_OVER_MAX_SIZE exactly once"
+    );
+    assert_eq!(
+        after.unreadable, before.unreadable,
+        "{source} oversized listing must not be mislabeled unreadable"
     );
 }
 
@@ -274,6 +319,46 @@ fn s3_malformed_listing_is_counted_unreadable() {
     assert_one_unreadable_listing_error(&rows, before, "S3", "objects");
 }
 
+#[cfg(feature = "s3")]
+#[test]
+fn s3_oversized_listing_body_is_counted_and_stops_before_object_fetch() {
+    let _guard = counter_guard();
+    let _restore = RestoreS3Env::capture();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    unsafe {
+        std::env::remove_var("AWS_ACCESS_KEY_ID");
+        std::env::remove_var("AWS_SECRET_ACCESS_KEY");
+        std::env::remove_var("AWS_SESSION_TOKEN");
+    }
+
+    let cap = 32;
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .query_param("list-type", "2");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body("<ListBucketResult>".repeat(8));
+    });
+    let object = server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/secret.txt");
+        then.status(200).body("secret");
+    });
+
+    let rows: Vec<_> = TestApi
+        .s3_source_with_endpoint_and_limits(BUCKET, server.url(""), listing_limits(cap))
+        .chunks()
+        .collect();
+    assert_one_oversized_listing_error(&rows, before, "S3", "objects", cap);
+    assert_eq!(
+        object.calls(),
+        0,
+        "S3 must not fetch objects after an oversized listing body"
+    );
+}
+
 #[cfg(feature = "gcs")]
 #[test]
 fn gcs_custom_endpoint_with_ambient_token_fails_before_anonymous_listing() {
@@ -366,6 +451,47 @@ fn gcs_malformed_listing_is_counted_unreadable() {
     assert_one_unreadable_listing_error(&rows, before, "GCS", "objects");
 }
 
+#[cfg(feature = "gcs")]
+#[test]
+fn gcs_oversized_listing_body_is_counted_and_stops_before_object_fetch() {
+    let _guard = counter_guard();
+    let _restore = RestoreGcsEnv::capture();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    unsafe {
+        std::env::remove_var("GOOGLE_OAUTH_ACCESS_TOKEN");
+        std::env::remove_var("GCS_BEARER_TOKEN");
+    }
+
+    let cap = 32;
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o"))
+            .query_param("alt", "json");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(format!(r#"{{"items":[],"padding":"{}"}}"#, "x".repeat(cap)));
+    });
+    let object = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o/secret.txt"));
+        then.status(200).body("secret");
+    });
+
+    let rows: Vec<_> = TestApi
+        .gcs_source_with_endpoint_and_limits(BUCKET, server.url(""), listing_limits(cap))
+        .chunks()
+        .collect();
+    assert_one_oversized_listing_error(&rows, before, "GCS", "objects", cap);
+    assert_eq!(
+        object.calls(),
+        0,
+        "GCS must not fetch objects after an oversized listing body"
+    );
+}
+
 #[cfg(feature = "azure")]
 fn container_url(server: &httpmock::MockServer) -> String {
     format!("{}/container?sv=2024-11-04&sig=regression", server.url(""))
@@ -419,4 +545,42 @@ fn azure_malformed_listing_is_counted_unreadable() {
         .chunks()
         .collect();
     assert_one_unreadable_listing_error(&rows, before, "Azure Blob", "blobs");
+}
+
+#[cfg(feature = "azure")]
+#[test]
+fn azure_oversized_listing_body_is_counted_and_stops_before_blob_fetch() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let cap = 32;
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container")
+            .query_param("sv", "2024-11-04")
+            .query_param("sig", "regression")
+            .query_param("restype", "container")
+            .query_param("comp", "list");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body("<EnumerationResults>".repeat(8));
+    });
+    let blob = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container/secret.txt");
+        then.status(200).body("secret");
+    });
+
+    let rows: Vec<_> = TestApi
+        .azure_blob_source_with_limits(container_url(&server), listing_limits(cap))
+        .chunks()
+        .collect();
+    assert_one_oversized_listing_error(&rows, before, "Azure Blob", "blobs", cap);
+    assert_eq!(
+        blob.calls(),
+        0,
+        "Azure Blob must not fetch blobs after an oversized listing body"
+    );
 }

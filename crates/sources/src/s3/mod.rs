@@ -170,6 +170,7 @@ fn collect_s3_chunks(
             prefix,
             continuation_token.as_deref(),
             aws_auth.as_ref(),
+            limits.web_response_bytes,
         )?;
         let (page, reached_limit) = coverage.take_page(listing.contents);
 
@@ -264,6 +265,7 @@ fn fetch_s3_listing_page(
     prefix: Option<&str>,
     continuation_token: Option<&str>,
     aws_auth: Option<&AwsSigV4Config>,
+    max_response_bytes: usize,
 ) -> Result<ListBucketResult, SourceError> {
     let mut request = client.get(base_url).query(&[("list-type", "2")]);
     if let Some(prefix) = prefix {
@@ -293,13 +295,8 @@ fn fetch_s3_listing_page(
         ));
     }
 
-    let body = response.text().map_err(|error| {
-        crate::cloud::record_unreadable_listing_skip(
-            "S3",
-            "objects",
-            format!("failed to read listing response body: {error}"),
-        )
-    })?;
+    let body =
+        crate::cloud::read_listing_response_body(response, "S3", "objects", max_response_bytes)?;
     parse_s3_listing(&body).map_err(|error| {
         crate::cloud::record_unreadable_listing_skip(
             "S3",

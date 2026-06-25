@@ -188,6 +188,69 @@ pub(crate) fn record_unreadable_listing_skip(
     ))
 }
 
+pub(crate) fn record_oversized_listing_skip(
+    source: &str,
+    item_plural: &str,
+    reason: impl std::fmt::Display,
+) -> SourceError {
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+    SourceError::Other(format!(
+        "{source} source listing failed: {reason}; {item_plural} were not scanned"
+    ))
+}
+
+pub(crate) fn read_listing_response_body(
+    response: Response,
+    source: &str,
+    item_plural: &str,
+    max_response_bytes: usize,
+) -> Result<String, SourceError> {
+    let max_response_bytes_u64 = match u64::try_from(max_response_bytes) {
+        Ok(value) => value,
+        Err(_) => u64::MAX, // LAW10: on hypothetical usize wider than u64 targets, reqwest content lengths and Read::take caps are u64-bounded, so every representable HTTP body length is still capped.
+    };
+    if let Some(content_length) = response.content_length() {
+        if content_length > max_response_bytes_u64 {
+            return Err(record_oversized_listing_skip(
+                source,
+                item_plural,
+                format!(
+                    "listing response Content-Length {content_length} exceeds the web_response_bytes cap {max_response_bytes}"
+                ),
+            ));
+        }
+    }
+
+    let capacity_hint = response
+        .content_length()
+        .map(|len| len.min(max_response_bytes_u64).min(64 * 1024));
+    let read = crate::capped_read::read_to_cap(response, max_response_bytes_u64, capacity_hint)
+        .map_err(|error| {
+            record_unreadable_listing_skip(
+                source,
+                item_plural,
+                format!("failed to read listing response body: {error}"),
+            )
+        })?;
+    if read.truncated {
+        return Err(record_oversized_listing_skip(
+            source,
+            item_plural,
+            format!(
+                "streamed listing response body exceeded the web_response_bytes cap {max_response_bytes}"
+            ),
+        ));
+    }
+    String::from_utf8(read.bytes).map_err(|error| {
+        let valid_up_to = error.utf8_error().valid_up_to();
+        record_unreadable_listing_skip(
+            source,
+            item_plural,
+            format!("listing response body failed UTF-8 decode at byte {valid_up_to}"),
+        )
+    })
+}
+
 pub(crate) struct TextObjectBodyContext<'a> {
     pub(crate) source: &'static str,
     pub(crate) item_kind: &'static str,
