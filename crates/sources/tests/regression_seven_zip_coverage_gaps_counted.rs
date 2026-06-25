@@ -315,6 +315,10 @@ fn seven_zip_entry_read_errors_are_per_entry_skips() {
         !source.contains("drain_entry(entry_reader)?"),
         "7z skipped-entry draining must not abort the whole archive through ?"
     );
+    assert!(
+        !source.contains("cannot drain skipped 7z entry; continuing with remaining entries"),
+        "7z skipped-entry drain failures must not warn-and-continue after solid-stream alignment is suspect"
+    );
 }
 
 #[test]
@@ -335,8 +339,17 @@ fn seven_zip_skipped_entry_draining_is_limited_to_solid_archives() {
         "non-solid skipped 7z entries must not be pointlessly decompressed after they are refused"
     );
     assert!(
-        source.contains("drain_entry_lossy(archive_display, entry_name, entry_reader"),
+        source.contains("drain_entry_or_stop(archive_display, entry_name, entry_reader, emit)"),
         "solid 7z skips still need an explicit drain path so later entries stay aligned"
+    );
+    assert!(
+        source.contains("\"cannot drain skipped solid 7z entry; stopping archive extraction\"")
+            && source.contains("failed to drain skipped solid 7z entry")
+            && source.contains("remaining archive entries were not scanned")
+            && source.contains("let _emitted = emit(Err(SourceError::Other(format!(")
+            && source.contains("            false\n")
+            && source.contains("SourceSkipEvent::Unreadable"),
+        "solid 7z drain failures must emit a machine-visible SourceError row and typed skip event"
     );
     assert!(
         source.contains("entry_size.min(READ_CAPACITY_HINT)"),

@@ -107,13 +107,16 @@ pub(super) fn extract_seven_zip_chunks(
                 return Ok(false);
             }
             if entry.has_stream() {
-                drain_skipped_entry_if_needed(
+                if !drain_skipped_entry_if_needed(
                     archive_requires_skip_drain,
                     &archive_display,
                     &entry_name,
                     entry_reader,
-                    false,
-                );
+                    emit,
+                ) {
+                    consumer_stopped = true;
+                    return Ok(false);
+                }
             }
             return Ok(true);
         }
@@ -132,24 +135,30 @@ pub(super) fn extract_seven_zip_chunks(
                 consumer_stopped = true;
                 return Ok(false);
             }
-            drain_skipped_entry_if_needed(
+            if !drain_skipped_entry_if_needed(
                 archive_requires_skip_drain,
                 &archive_display,
                 &entry_name,
                 entry_reader,
-                false,
-            );
+                emit,
+            ) {
+                consumer_stopped = true;
+                return Ok(false);
+            }
             return Ok(true);
         }
         if super::super::filter::is_default_excluded(&entry_name) {
             record_default_excluded_archive_entry(&archive_display, &entry_name);
-            drain_skipped_entry_if_needed(
+            if !drain_skipped_entry_if_needed(
                 archive_requires_skip_drain,
                 &archive_display,
                 &entry_name,
                 entry_reader,
-                true,
-            );
+                emit,
+            ) {
+                consumer_stopped = true;
+                return Ok(false);
+            }
             return Ok(true);
         }
 
@@ -174,13 +183,16 @@ pub(super) fn extract_seven_zip_chunks(
                 consumer_stopped = true;
                 return Ok(false);
             }
-            drain_skipped_entry_if_needed(
+            if !drain_skipped_entry_if_needed(
                 archive_requires_skip_drain,
                 &archive_display,
                 &entry_name,
                 entry_reader,
-                false,
-            );
+                emit,
+            ) {
+                consumer_stopped = true;
+                return Ok(false);
+            }
             return Ok(true);
         }
         if total_uncompressed.saturating_add(entry_size) > total_budget {
@@ -244,13 +256,16 @@ pub(super) fn extract_seven_zip_chunks(
                 consumer_stopped = true;
                 return Ok(false);
             }
-            drain_skipped_entry_if_needed(
+            if !drain_skipped_entry_if_needed(
                 archive_requires_skip_drain,
                 &archive_display,
                 &entry_name,
                 entry_reader,
-                false,
-            );
+                emit,
+            ) {
+                consumer_stopped = true;
+                return Ok(false);
+            }
             return Ok(true);
         }
         if read.truncated {
@@ -313,8 +328,8 @@ fn drain_skipped_entry_if_needed(
     archive_display: &str,
     entry_name: &str,
     entry_reader: &mut dyn Read,
-    count_unreadable: bool,
-) {
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
     if !archive_requires_skip_drain {
         // LAW10: non-solid 7z entries are independently seekable; skipped
         // entries were already counted, and no later entry is dropped.
@@ -323,26 +338,31 @@ fn drain_skipped_entry_if_needed(
             entry = %entry_name,
             "not draining skipped non-solid 7z entry"
         );
-        return;
+        return true;
     }
-    drain_entry_lossy(archive_display, entry_name, entry_reader, count_unreadable);
+    drain_entry_or_stop(archive_display, entry_name, entry_reader, emit)
 }
 
-fn drain_entry_lossy(
+fn drain_entry_or_stop(
     archive_display: &str,
     entry_name: &str,
     entry_reader: &mut dyn Read,
-    count_unreadable: bool,
-) {
-    if let Err(error) = std::io::copy(entry_reader, &mut std::io::sink()) {
-        tracing::warn!(
-            archive = %archive_display,
-            entry = %entry_name,
-            %error,
-            "cannot drain skipped 7z entry; continuing with remaining entries"
-        );
-        if count_unreadable {
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    match std::io::copy(entry_reader, &mut std::io::sink()) {
+        Ok(_) => true,
+        Err(error) => {
+            tracing::warn!(
+                archive = %archive_display,
+                entry = %entry_name,
+                %error,
+                "cannot drain skipped solid 7z entry; stopping archive extraction"
+            );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            let _emitted = emit(Err(SourceError::Other(format!(
+                "failed to drain skipped solid 7z entry '{archive_display}//{entry_name}': {error}; remaining archive entries were not scanned"
+            ))));
+            false
         }
     }
 }
