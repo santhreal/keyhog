@@ -103,14 +103,18 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         scan.contains("static SCRATCH_TLS")
             && scan.contains("fn take_scratch(")
             && scan.contains("fn put_scratch(")
-            && scan.contains("fn retain_current_scanner_scratch(")
+            && scan.contains("struct CachedScratch")
+            && scan.contains("owner: Weak<()>")
+            && scan.contains("fn prune_dead_scanner_scratch(")
             && scan.contains("fn purge_scanner_scratch(")
-            && scan.contains("retain_current_scanner_scratch(&mut tls, scanner_id);")
-            && scan.contains("put_scratch(self.scanner_id, shard_idx, scratch);")
+            && scan.contains("prune_dead_scanner_scratch(&mut tls);")
+            && !scan.contains("retain_current_scanner_scratch")
+            && scan.contains("put_scratch(self.scanner_id, shard_idx, &self.scratch_owner, scratch);")
             && backend.contains("impl Drop for HsScanner")
+            && backend.contains("scratch_owner: Arc<()>")
             && backend.contains("scan::purge_scanner_scratch(scanner_id);")
             && backend.contains("rayon::broadcast(|_| scan::purge_scanner_scratch(scanner_id));"),
-        "fallible Hyperscan scan paths must return scratch and scanner drop must evict retained thread-local scratches on current and Rayon worker threads"
+        "fallible Hyperscan scan paths must return scratch, keep live interleaved scanner caches, and prune/drop retained thread-local scratches"
     );
     assert!(
         !scan.contains("alloc_scratch().ok()"),

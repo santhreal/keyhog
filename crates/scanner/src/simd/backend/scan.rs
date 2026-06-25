@@ -2,9 +2,15 @@ use super::HsScanner;
 use hyperscan::{Matching, Scratch};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::{Arc, Weak};
+
+struct CachedScratch {
+    owner: Weak<()>,
+    scratch: Scratch,
+}
 
 thread_local! {
-    static SCRATCH_TLS: RefCell<HashMap<(u64, usize), Scratch>> =
+    static SCRATCH_TLS: RefCell<HashMap<(u64, usize), CachedScratch>> =
         RefCell::new(HashMap::new());
 }
 
@@ -12,11 +18,17 @@ fn take_scratch(
     scanner_id: u64,
     shard_idx: usize,
     shard: &super::Shard,
+    owner: &Arc<()>,
 ) -> Result<Scratch, String> {
     let key = (scanner_id, shard_idx);
-    if let Some(scratch) = SCRATCH_TLS.with(|tls| tls.borrow_mut().remove(&key)) {
+    if let Some(scratch) = SCRATCH_TLS.with(|tls| {
+        let mut tls = tls.borrow_mut();
+        prune_dead_scanner_scratch(&mut tls);
+        tls.remove(&key).map(|cached| cached.scratch)
+    }) {
         return Ok(scratch);
     }
+    debug_assert!(Arc::strong_count(owner) > 0);
     if let Some(scratch) = shard.scratch_pool.lock().pop() {
         return Ok(scratch);
     }
@@ -43,20 +55,23 @@ fn take_scratch(
     })
 }
 
-fn put_scratch(scanner_id: u64, shard_idx: usize, scratch: Scratch) {
+fn put_scratch(scanner_id: u64, shard_idx: usize, owner: &Arc<()>, scratch: Scratch) {
     let key = (scanner_id, shard_idx);
     SCRATCH_TLS.with(|tls| {
         let mut tls = tls.borrow_mut();
-        retain_current_scanner_scratch(&mut tls, scanner_id);
-        tls.insert(key, scratch);
+        prune_dead_scanner_scratch(&mut tls);
+        tls.insert(
+            key,
+            CachedScratch {
+                owner: Arc::downgrade(owner),
+                scratch,
+            },
+        );
     });
 }
 
-fn retain_current_scanner_scratch(
-    tls: &mut HashMap<(u64, usize), Scratch>,
-    current_scanner_id: u64,
-) {
-    tls.retain(|(scanner_id, _), _| *scanner_id == current_scanner_id);
+fn prune_dead_scanner_scratch(tls: &mut HashMap<(u64, usize), CachedScratch>) {
+    tls.retain(|_, cached| cached.owner.strong_count() > 0);
 }
 
 pub(super) fn purge_scanner_scratch(scanner_id: u64) {
@@ -87,19 +102,19 @@ impl HsScanner {
         // to a single all-patterns database's output - offsets are in the
         // original byte space, no remapping.
         for (shard_idx, shard) in self.shards.iter().enumerate() {
-            let scratch = take_scratch(self.scanner_id, shard_idx, shard)?;
+            let scratch = take_scratch(self.scanner_id, shard_idx, shard, &self.scratch_owner)?;
 
             if let Err(error) = shard.db.scan(text, &scratch, |id, from, to, _flags| {
                 on_match(id as usize, from as usize, to as usize);
                 Matching::Continue
             }) {
-                put_scratch(self.scanner_id, shard_idx, scratch);
+                put_scratch(self.scanner_id, shard_idx, &self.scratch_owner, scratch);
                 return Err(format!(
                     "hyperscan scan failed for shard {shard_idx}: {error}"
                 ));
             }
 
-            put_scratch(self.scanner_id, shard_idx, scratch);
+            put_scratch(self.scanner_id, shard_idx, &self.scratch_owner, scratch);
         }
         Ok(())
     }
@@ -116,17 +131,17 @@ impl HsScanner {
         mut on_match: impl FnMut(usize),
     ) -> Result<(), String> {
         for (shard_idx, shard) in self.shards.iter().enumerate() {
-            let scratch = take_scratch(self.scanner_id, shard_idx, shard)?;
+            let scratch = take_scratch(self.scanner_id, shard_idx, shard, &self.scratch_owner)?;
             if let Err(error) = shard.db.scan(text, &scratch, |id, _from, _to, _flags| {
                 on_match(id as usize);
                 Matching::Continue
             }) {
-                put_scratch(self.scanner_id, shard_idx, scratch);
+                put_scratch(self.scanner_id, shard_idx, &self.scratch_owner, scratch);
                 return Err(format!(
                     "hyperscan scan_each failed for shard {shard_idx}: {error}"
                 ));
             }
-            put_scratch(self.scanner_id, shard_idx, scratch);
+            put_scratch(self.scanner_id, shard_idx, &self.scratch_owner, scratch);
         }
         Ok(())
     }
@@ -141,20 +156,20 @@ impl HsScanner {
     /// set is the measured #1 scan cost (`phase2:prefilter`).
     pub(crate) fn any_match_result(&self, text: &[u8]) -> Result<bool, String> {
         for (shard_idx, shard) in self.shards.iter().enumerate() {
-            let scratch = take_scratch(self.scanner_id, shard_idx, shard)?;
+            let scratch = take_scratch(self.scanner_id, shard_idx, shard, &self.scratch_owner)?;
             let mut hit = false;
             if let Err(error) = shard.db.scan(text, &scratch, |_id, _from, _to, _flags| {
                 hit = true;
                 Matching::Terminate
             }) {
                 if !hit {
-                    put_scratch(self.scanner_id, shard_idx, scratch);
+                    put_scratch(self.scanner_id, shard_idx, &self.scratch_owner, scratch);
                     return Err(format!(
                         "hyperscan any_match failed before a match was observed for shard {shard_idx}: {error}"
                     ));
                 }
             }
-            put_scratch(self.scanner_id, shard_idx, scratch);
+            put_scratch(self.scanner_id, shard_idx, &self.scratch_owner, scratch);
             if hit {
                 return Ok(true);
             }
@@ -223,6 +238,41 @@ mod scratch_lifetime {
             super::current_thread_scratch_count_for_test(scanner_id),
             0,
             "dropping a scanner must evict its thread-local Hyperscan scratches"
+        );
+    }
+
+    #[test]
+    fn interleaved_live_scanners_keep_thread_local_scratches() {
+        let patterns_a = [(0usize, 0usize, "KHA_[A-Z0-9]{8}", false)];
+        let patterns_b = [(0usize, 0usize, "KHB_[A-Z0-9]{8}", false)];
+        let (scanner_a, unsupported_a) =
+            HsScanner::compile(&patterns_a).expect("scanner A pattern compiles");
+        let (scanner_b, unsupported_b) =
+            HsScanner::compile(&patterns_b).expect("scanner B pattern compiles");
+        assert!(
+            unsupported_a.is_empty() && unsupported_b.is_empty(),
+            "probe patterns must be Hyperscan-supported"
+        );
+
+        scanner_a
+            .scan_matches_result(b"KHA_AB12CD34", |_, _, _| {})
+            .expect("scanner A scan succeeds");
+        assert!(
+            super::current_thread_scratch_count_for_test(scanner_a.scanner_id) > 0,
+            "scanner A should retain its current-thread scratch"
+        );
+
+        scanner_b
+            .scan_matches_result(b"KHB_AB12CD34", |_, _, _| {})
+            .expect("scanner B scan succeeds");
+
+        assert!(
+            super::current_thread_scratch_count_for_test(scanner_a.scanner_id) > 0,
+            "interleaving scanner B must not evict live scanner A scratch"
+        );
+        assert!(
+            super::current_thread_scratch_count_for_test(scanner_b.scanner_id) > 0,
+            "scanner B should retain its own current-thread scratch"
         );
     }
 }

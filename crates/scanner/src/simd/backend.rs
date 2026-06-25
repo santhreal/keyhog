@@ -3,7 +3,7 @@ use hyperscan::{
 };
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 mod scan;
 
@@ -259,6 +259,11 @@ pub(crate) struct HsScanner {
     /// Distinct id for this scanner instance, used to key the thread-local
     /// per-shard scratch cache so two scanners never share scratches.
     scanner_id: u64,
+    /// Liveness token for thread-local scratch entries. Drop broadcasts purge
+    /// current/Rayon workers immediately; other persistent worker threads prune
+    /// stale scratches on their next Hyperscan cache touch without evicting
+    /// live scanners that are interleaved on the same thread.
+    scratch_owner: Arc<()>,
 }
 
 // SAFETY: BlockDatabase is immutable after compilation and safe to share.
@@ -851,6 +856,7 @@ impl HsScanner {
                 shards,
                 pattern_map,
                 scanner_id: SCANNER_ID_SEQ.fetch_add(1, Ordering::Relaxed),
+                scratch_owner: Arc::new(()),
             },
             unsupported,
         ))
