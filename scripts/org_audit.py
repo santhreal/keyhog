@@ -43,6 +43,28 @@ def fail(violations: list[str], msg: str) -> None:
     violations.append(msg)
 
 
+def scan_commands_under_environment_variables(path: pathlib.Path, src: str) -> list[str]:
+    violations: list[str] = []
+    in_environment_section = False
+    environment_heading_level = 0
+    for line_number, raw_line in enumerate(src.splitlines(), start=1):
+        heading = re.match(r"^(#+)\s+(.*)$", raw_line)
+        if heading:
+            level = len(heading.group(1))
+            title = heading.group(2).strip().casefold()
+            if in_environment_section and level <= environment_heading_level:
+                in_environment_section = False
+            if level > 1 and title == "environment variables":
+                in_environment_section = True
+                environment_heading_level = level
+            continue
+        if in_environment_section and re.search(r"\bkeyhog\s+scan\b", raw_line, re.IGNORECASE):
+            violations.append(
+                f"CLI reference labels scan command controls as environment variables: {rel(path)}:{line_number}"
+            )
+    return violations
+
+
 def check_no_generated_cache_clutter(violations: list[str]) -> None:
     seen: set[str] = set()
     for raw in GENERATED_CACHE_DIRS:
@@ -114,14 +136,7 @@ def check_current_claims(violations: list[str]) -> None:
     for path in sorted(p for p in claim_paths if p.is_file()):
         src = path.read_text(encoding="utf-8", errors="replace")
         rel_path = rel(path)
-        if rel_path == "docs/src/reference/cli.md" and re.search(
-            r"(?ms)^### Environment variables\s*\n\s*\|[^\n]*\|\s*\n\s*\|[^\n]*\|\s*\n\s*\| `keyhog scan ",
-            src,
-        ):
-            fail(
-                violations,
-                "CLI reference labels scan command controls as environment variables: docs/src/reference/cli.md",
-            )
+        violations.extend(scan_commands_under_environment_variables(path, src))
         for pattern, reason in stale_patterns.items():
             if pattern == r"\bgpu-zero-copy\b" and rel_path == "crates/scanner/src/hw_probe/select.rs":
                 continue

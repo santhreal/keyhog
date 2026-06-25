@@ -6,6 +6,7 @@
 //! stay removed. This file pins the positive live side: adaptive MegaScan sizing
 //! and the collapsed backend labels.
 
+use crate::engine::rule_pipeline::megascan_input_len_for_vram_mb;
 use keyhog_scanner::engine::megascan_input_len;
 use keyhog_scanner::hw_probe::testing::ScanBackend;
 
@@ -35,6 +36,31 @@ fn megascan_input_len_is_vram_sized_and_never_below_floor() {
         len,
         "megascan_input_len must be process-stable (cached)"
     );
+}
+
+#[test]
+fn megascan_input_len_matches_documented_vram_table() {
+    const MIB_128: usize = 128 * 1024 * 1024;
+    const MIB_256: usize = 256 * 1024 * 1024;
+    const MIB_512: usize = 512 * 1024 * 1024;
+    const GIB_1: usize = 1024 * 1024 * 1024;
+
+    for (vram_mb, expected) in [
+        (None, MIB_128),
+        (Some(0), MIB_128),
+        (Some(8 * 1024 - 1), MIB_128),
+        (Some(8 * 1024), MIB_256),
+        (Some(12 * 1024 - 1), MIB_256),
+        (Some(12 * 1024), MIB_512),
+        (Some(24 * 1024 - 1), MIB_512),
+        (Some(24 * 1024), GIB_1),
+    ] {
+        assert_eq!(
+            megascan_input_len_for_vram_mb(vram_mb),
+            expected,
+            "VRAM {vram_mb:?} MiB must map to documented MegaScan input length"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

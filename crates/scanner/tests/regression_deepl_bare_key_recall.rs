@@ -79,6 +79,22 @@ fn deepl_free_key_surfaces_inside_common_value_contexts() {
 }
 
 #[test]
+fn deepl_standard_key_surfaces_only_with_deepl_context() {
+    let scanner = scanner();
+    for body in [
+        format!("DEEPL_API_KEY={PLAIN_UUID}\n"),
+        format!("DEEPL_AUTH_KEY='{PLAIN_UUID}'\n"),
+        format!("DeepL-Auth-Key {PLAIN_UUID}\n"),
+    ] {
+        let matches = matches_for(scanner, &body);
+        assert!(
+            deepl_caught(&matches, PLAIN_UUID),
+            "DeepL standard UUID key must surface with DeepL context; body={body:?}; matches={matches:?}"
+        );
+    }
+}
+
+#[test]
 fn bare_uuid_and_non_deepl_suffix_do_not_fire_deepl() {
     let scanner = scanner();
     for value in [PLAIN_UUID, NON_DEEPL_SUFFIX] {

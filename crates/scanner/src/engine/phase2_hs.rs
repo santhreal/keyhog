@@ -33,8 +33,13 @@ impl Phase2HsEngine {
     ) -> Option<Self> {
         let mut refs: Vec<(usize, usize, &str, bool)> = Vec::with_capacity(always_active.len());
         let mut caseless: Vec<bool> = Vec::with_capacity(always_active.len());
+        let mut dropped = Vec::new();
         for &idx in always_active {
             let (pat, _) = &phase2_patterns[idx];
+            if hs_prefilter_requires_host_regex(pat.regex.as_str()) {
+                dropped.push((idx, pat.regex.clone()));
+                continue;
+            }
             // det_idx slot carries the phase-2 index back through `pattern_info`.
             refs.push((idx, 0, pat.regex.as_str(), false));
             caseless.push(pat.regex.is_case_insensitive());
@@ -76,7 +81,6 @@ impl Phase2HsEngine {
         }
         // `unsupported` indexes `refs`; map back to phase-2 indices and keep
         // each on its own compiled regex (the LOUD host path, Law 10).
-        let mut dropped = Vec::new();
         for &i in &unsupported {
             let Some((phase2_idx, _, _, _)) = refs.get(i).copied() else {
                 panic!(
@@ -143,4 +147,8 @@ impl Phase2HsEngine {
         }
         Ok(false)
     }
+}
+
+fn hs_prefilter_requires_host_regex(src: &str) -> bool {
+    src.contains('^') || src.contains('$')
 }

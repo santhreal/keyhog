@@ -478,8 +478,8 @@ impl ScanOrchestrator {
         // `RulePipeline` input cap) so the GPU dispatch never
         // auto-degrades to literal-set on oversized batches and we
         // capture every regex-NFA win. The engine sizes its cap by
-        // VRAM (1 GiB on RTX 4090/5090, 256 MiB default), so the
-        // orchestrator inherits that scaling automatically.
+        // VRAM (1 GiB on RTX 4090/5090, 128 MiB when VRAM is low or
+        // unknown), so the orchestrator inherits that scaling automatically.
         //
         // Clamped so worst-case resident memory (`pipeline_depth ×
         // batch_bytes_budget`) stays under 1/8 of system RAM. On a
@@ -492,8 +492,8 @@ impl ScanOrchestrator {
         // memory-safety invariant.
         let pipeline_plan = coalesced_pipeline_plan();
         // Producer/scanner pipeline depth. Each in-flight batch holds up
-        // to `batch_bytes_budget` (256 MiB default, up to 1 GiB on
-        // big-VRAM cards) of coalesced chunks, so the worst-case
+        // to `batch_bytes_budget` (128 MiB on low/unknown VRAM hosts,
+        // up to 1 GiB on big-VRAM cards) of coalesced chunks, so the worst-case
         // resident memory floor is depth * batch_bytes_budget. Higher
         // depth lets the reader prefetch the next batch while the
         // scanner is still grinding the previous one - critical at

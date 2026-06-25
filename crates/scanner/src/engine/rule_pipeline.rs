@@ -5,17 +5,10 @@
 //! module owns only the live byte-budget selector used for routing and
 //! cache-key stability.
 
-/// Maximum input buffer length the MegaScan `RulePipeline` is
-/// pre-compiled for. Chosen to match the orchestrator's
-/// `BATCH_BYTES_BUDGET` so any normal coalesced batch fits the
-/// pre-built pipeline without needing recompile-per-batch. Batches
-/// larger than this fall back to the literal-set path.
-///
-/// Kept as the conservative default for hosts without GPU info or
-/// for callers (tests, fuzzers) that want a stable byte budget. The
-/// adaptive size for the running host is exposed via
-/// [`megascan_input_len`].
-const MEGASCAN_INPUT_LEN_DEFAULT: usize = 256 * 1024 * 1024;
+/// Conservative floor for hosts with low or unknown VRAM. Unknown must not
+/// inherit the 8-11 GiB tier: absence of adapter memory evidence is the same
+/// safety class as low-memory/iGPU/software adapters.
+const MEGASCAN_INPUT_LEN_UNKNOWN: usize = 128 * 1024 * 1024;
 
 /// VRAM-adaptive megascan input length. Bigger buffers mean fewer
 /// device dispatches per multi-TB scan; each kernel launch is a fixed
@@ -39,13 +32,7 @@ pub fn megascan_input_len() -> usize {
     static CACHED: OnceLock<usize> = OnceLock::new();
     *CACHED.get_or_init(|| {
         let caps = crate::hw_probe::probe_hardware();
-        let len = match caps.gpu_vram_mb {
-            Some(mb) if mb >= 24 * 1024 => 1024 * 1024 * 1024,
-            Some(mb) if mb >= 12 * 1024 => 512 * 1024 * 1024,
-            Some(mb) if mb >= 8 * 1024 => 256 * 1024 * 1024,
-            Some(_) => 128 * 1024 * 1024,
-            None => MEGASCAN_INPUT_LEN_DEFAULT,
-        };
+        let len = megascan_input_len_for_vram_mb(caps.gpu_vram_mb);
         tracing::debug!(
             target: "keyhog::routing",
             gpu_vram_mb = ?caps.gpu_vram_mb,
@@ -54,4 +41,13 @@ pub fn megascan_input_len() -> usize {
         );
         len
     })
+}
+
+pub(crate) fn megascan_input_len_for_vram_mb(gpu_vram_mb: Option<u64>) -> usize {
+    match gpu_vram_mb {
+        Some(mb) if mb >= 24 * 1024 => 1024 * 1024 * 1024,
+        Some(mb) if mb >= 12 * 1024 => 512 * 1024 * 1024,
+        Some(mb) if mb >= 8 * 1024 => 256 * 1024 * 1024,
+        Some(_) | None => MEGASCAN_INPUT_LEN_UNKNOWN,
+    }
 }
