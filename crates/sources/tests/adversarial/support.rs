@@ -3,7 +3,6 @@
 use keyhog_core::{Chunk, Source, SourceError};
 use keyhog_sources::FilesystemSource;
 
-pub use crate::support::collect_chunks;
 #[cfg(feature = "binary")]
 pub use crate::support::split_chunk_results;
 
@@ -33,9 +32,15 @@ pub fn oracle_plain_file_symlink_refused() {
     std::fs::write(root.path().join("real.txt"), "REAL=ok\n").expect("real");
 
     let source = FilesystemSource::new(root.path().to_path_buf());
-    let paths: Vec<_> = collect_chunks(&source)
-        .into_iter()
-        .filter_map(|c| c.metadata.path.clone())
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = crate::support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "plain-file symlink refusal must not hide SourceError rows, got {errors:?}"
+    );
+    let paths: Vec<_> = chunks
+        .iter()
+        .filter_map(|chunk| chunk.metadata.path.as_ref())
         .collect();
 
     assert!(paths.iter().any(|p| p.ends_with("real.txt")));
@@ -62,9 +67,15 @@ pub fn oracle_walker_symlink_escape_outside_root() {
     std::fs::write(root.path().join("inside.txt"), "INSIDE=ok\n").expect("inside");
 
     let source = FilesystemSource::new(root.path().to_path_buf());
-    let bodies: Vec<String> = collect_chunks(&source)
-        .into_iter()
-        .map(|c| c.data.to_string())
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = crate::support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "walker symlink escape refusal must not hide SourceError rows, got {errors:?}"
+    );
+    let bodies: Vec<_> = chunks
+        .iter()
+        .map(|chunk| chunk.data.as_ref().to_string())
         .collect();
 
     assert!(bodies.iter().any(|b| b.contains("INSIDE=ok")));
@@ -84,13 +95,22 @@ pub fn oracle_permission_denied_subtree_scan_continues() {
     deny_read_subtree(&locked).expect("deny locked subtree");
 
     let source = FilesystemSource::new(dir.path().to_path_buf());
-    let bodies: Vec<String> = collect_chunks(&source)
-        .into_iter()
-        .map(|c| c.data.to_string())
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = crate::support::split_chunk_results(&rows);
+    let bodies: Vec<_> = chunks
+        .iter()
+        .map(|chunk| chunk.data.as_ref().to_string())
         .collect();
 
     restore_read_subtree(&locked);
 
+    assert!(
+        errors.iter().any(|error| {
+            let error = error.to_string();
+            error.contains("locked") && error.contains("entry was not scanned")
+        }),
+        "permission-denied subtree must emit a visible SourceError row, got {errors:?}"
+    );
     assert!(
         bodies.iter().any(|b| b.contains("OPEN=visible")),
         "scan must continue past permission-denied subtree"
