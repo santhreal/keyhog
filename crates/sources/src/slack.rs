@@ -161,16 +161,29 @@ where
 fn read_slack_response<T>(
     endpoint: &str,
     response: Response,
+    max_response_bytes: usize,
 ) -> Result<SlackResponse<T>, SourceError>
 where
     T: DeserializeOwned,
 {
     let status = response.status();
-    let body = response.text().map_err(|error| {
+    let cap = u64::try_from(max_response_bytes).map_err(|error| {
+        slack_unreadable_error(format!(
+            "Slack API {endpoint} response byte cap is not addressable on this platform: {error}"
+        ))
+    })?;
+    let capacity_hint = response
+        .content_length()
+        .map(|len| len.min(cap).min(64 * 1024));
+    let read = crate::capped_read::read_to_cap(response, cap, capacity_hint).map_err(|error| {
         slack_unreadable_error(format!(
             "failed to read Slack {endpoint} response body: {error}"
         ))
     })?;
+    if read.truncated {
+        return Err(slack_response_over_cap_error(endpoint, max_response_bytes));
+    }
+    let body = String::from_utf8_lossy(&read.bytes);
     match parse_slack_response(endpoint, &body) {
         Ok(resp) => {
             if !status.is_success() && resp.ok {
@@ -190,6 +203,13 @@ where
 fn slack_unreadable_error(message: String) -> SourceError {
     let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
     SourceError::Other(message)
+}
+
+fn slack_response_over_cap_error(endpoint: &str, cap: usize) -> SourceError {
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+    SourceError::Other(format!(
+        "Slack API {endpoint} response body exceeded the {cap}-byte cap; response was not parsed and remaining Slack data was not scanned"
+    ))
 }
 
 fn slack_payload_error(message: String, record_skip: bool) -> SourceError {
@@ -391,15 +411,17 @@ impl SlackSource {
                     };
                 }
             };
-            let resp = match read_slack_response(CONVERSATIONS_LIST, resp) {
-                Ok(resp) => resp,
-                Err(error) => {
-                    return ChannelListFetch {
-                        channels,
-                        error: Some(error),
-                    };
-                }
-            };
+            let resp =
+                match read_slack_response(CONVERSATIONS_LIST, resp, self.limits.web_response_bytes)
+                {
+                    Ok(resp) => resp,
+                    Err(error) => {
+                        return ChannelListFetch {
+                            channels,
+                            error: Some(error),
+                        };
+                    }
+                };
             let (page_channels, next_cursor) = match channels_page_from_response(resp, true) {
                 Ok(page) => page,
                 Err(error) => {
@@ -458,7 +480,11 @@ impl SlackSource {
                     };
                 }
             };
-            let resp = match read_slack_response(CONVERSATIONS_HISTORY, resp) {
+            let resp = match read_slack_response(
+                CONVERSATIONS_HISTORY,
+                resp,
+                self.limits.web_response_bytes,
+            ) {
                 Ok(resp) => resp,
                 Err(error) => {
                     return HistoryFetch {

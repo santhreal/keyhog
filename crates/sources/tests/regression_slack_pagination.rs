@@ -263,6 +263,69 @@ fn slack_history_zero_lookback_skips_history_requests() {
 
 #[cfg(feature = "slack")]
 #[test]
+fn slack_api_response_body_cap_is_counted_over_max_size() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let list_page = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.list")
+            .query_param("types", "public_channel,private_channel")
+            .query_param("limit", "1000");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"ok":true,"channels":[{"id":"C1","name":"alpha"}]}"#);
+    });
+    let history_page = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/conversations.history");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"ok":true,"messages":[],"has_more":false}"#);
+    });
+    let limits = SourceLimits {
+        web_response_bytes: 16,
+        ..Default::default()
+    };
+
+    let rows: Vec<_> = TestApi
+        .slack_source_with_endpoint_and_limits("xoxb-test-token", server.url(""), limits)
+        .chunks()
+        .collect();
+
+    assert_eq!(list_page.calls(), 1, "channel list page");
+    assert_eq!(
+        history_page.calls(),
+        0,
+        "over-cap channel list body must stop before history requests"
+    );
+    assert_eq!(
+        rows.len(),
+        1,
+        "over-cap Slack API body must produce one visible error row: {rows:?}"
+    );
+    assert!(
+        rows[0].as_ref().is_err_and(|error| {
+            error
+                .to_string()
+                .contains("Slack API conversations.list response body exceeded the 16-byte cap")
+        }),
+        "error must name the capped Slack endpoint and byte cap: {rows:?}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.over_max_size - before.over_max_size,
+        1,
+        "over-cap Slack API response body must bump OVER_MAX_SIZE exactly once"
+    );
+    TestApi.reset_skip_counters();
+}
+
+#[cfg(feature = "slack")]
+#[test]
 fn slack_channel_list_page_cap_is_counted_source_truncated() {
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
