@@ -388,29 +388,6 @@ pub(super) fn chunk_from_archive_content(
     chunk_from_archive_content_inner(archive_display, entry_name, content)
 }
 
-pub(super) fn emit_archive_content(
-    archive_display: &str,
-    entry_name: &str,
-    content: Vec<u8>,
-    per_entry_cap: u64,
-    total_budget: u64,
-    total_uncompressed: &mut u64,
-    respect_default_excludes: bool,
-    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
-) -> bool {
-    emit_archive_content_with_depth(
-        archive_display,
-        entry_name,
-        content,
-        per_entry_cap,
-        total_budget,
-        total_uncompressed,
-        respect_default_excludes,
-        0,
-        emit,
-    )
-}
-
 pub(super) fn emit_archive_content_with_depth(
     archive_display: &str,
     entry_name: &str,

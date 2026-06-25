@@ -4,8 +4,9 @@ use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 
 use crate::support::archive::{
-    stored_zip_with_duplicate_names, stored_zip_with_duplicate_names_and_comment,
+    stored_zip_with_duplicate_names, stored_zip_with_duplicate_names_and_comment, zip_with_entries,
 };
+use crate::support::split_chunk_results;
 
 #[test]
 fn r5t_zip_duplicate_entry_names_no_panic() {
@@ -72,5 +73,57 @@ fn duplicate_zip_with_fake_eocd_in_comment_scans_both_entries() {
             .iter()
             .any(|body| body.contains("DUPLICATE_COMMENT_SECOND=1")),
         "second duplicate entry must be scanned despite fake EOCD comment; bodies={bodies:?}"
+    );
+}
+
+#[test]
+fn nested_zip_duplicate_entry_names_are_disambiguated_and_scanned() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let inner = stored_zip_with_duplicate_names(&[
+        ("dup.txt", b"NESTED_DUPLICATE_FIRST=1\n".as_slice()),
+        ("dup.txt", b"NESTED_DUPLICATE_SECOND=1\n".as_slice()),
+    ]);
+    let outer = zip_with_entries(&[("nested.zip", inner.as_slice())]);
+    std::fs::write(dir.path().join("outer.zip"), outer).expect("write nested duplicate zip");
+
+    let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
+        .chunks()
+        .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "nested duplicate-name ZIP should scan both entries without source errors; errors={errors:?}"
+    );
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("NESTED_DUPLICATE_FIRST=1")),
+        "first nested duplicate entry must be scanned; chunks={chunks:?}"
+    );
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("NESTED_DUPLICATE_SECOND=1")),
+        "second nested duplicate entry must be scanned; chunks={chunks:?}"
+    );
+    assert!(
+        chunks.iter().any(|chunk| {
+            chunk
+                .metadata
+                .path
+                .as_deref()
+                .is_some_and(|path| path.ends_with("outer.zip//nested.zip//dup.txt"))
+        }),
+        "first nested duplicate path must keep the original entry name; chunks={chunks:?}"
+    );
+    assert!(
+        chunks.iter().any(|chunk| {
+            chunk
+                .metadata
+                .path
+                .as_deref()
+                .is_some_and(|path| path.ends_with("outer.zip//nested.zip//dup.txt#2"))
+        }),
+        "second nested duplicate path must be disambiguated with #2; chunks={chunks:?}"
     );
 }

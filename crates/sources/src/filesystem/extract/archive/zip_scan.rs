@@ -142,7 +142,40 @@ pub(super) fn extract_embedded_zip_archive(
     respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
-    let archive = match zip::ZipArchive::new(Cursor::new(content)) {
+    let mut cursor = Cursor::new(content);
+    match duplicates::duplicate_central_zip_entries_from_reader(&mut cursor) {
+        Ok(Some(entries)) => {
+            return duplicates::extract_zip_archive_from_central_entries_reader(
+                &mut cursor,
+                archive_display,
+                per_entry_cap,
+                total_budget,
+                total_uncompressed,
+                nested_depth,
+                respect_default_excludes,
+                emit,
+                entries,
+            );
+        }
+        Ok(None) => {}
+        Err(error) => {
+            tracing::warn!(
+                archive = archive_display,
+                %error,
+                "embedded zip duplicate-entry detection unavailable; scanning with the standard \
+                 parser, which may miss a duplicated/shadow central-directory entry"
+            );
+            let _event =
+                crate::record_skip_event(crate::SourceSkipEvent::ArchiveDuplicateScanUnavailable);
+            if !emit(Err(SourceError::Other(format!(
+                "embedded ZIP duplicate-entry detection unavailable for '{archive_display}': {error}; scanning continued with the standard parser, which may miss duplicated or shadowed entries"
+            )))) {
+                return false;
+            }
+        }
+    }
+
+    let archive = match zip::ZipArchive::new(cursor) {
         Ok(archive) => archive,
         Err(error) => {
             tracing::warn!(

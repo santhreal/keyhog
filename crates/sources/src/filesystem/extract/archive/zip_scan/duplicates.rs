@@ -1,5 +1,5 @@
 use super::super::{
-    emit_archive_content, emit_archive_entry_error, emit_archive_entry_over_cap_error,
+    emit_archive_content_with_depth, emit_archive_entry_error, emit_archive_entry_over_cap_error,
     emit_archive_unreadable_error, report_archive_truncation,
 };
 use super::{validate_scan_archive_entry_name, zip_external_attrs_are_special};
@@ -28,7 +28,14 @@ pub(super) struct CentralZipEntry {
 pub(super) fn duplicate_central_zip_entries(
     path: &Path,
 ) -> Result<Option<Vec<CentralZipEntry>>, String> {
-    let entries = read_central_zip_entries(path)?;
+    let mut file = File::open(path).map_err(|error| error.to_string())?;
+    duplicate_central_zip_entries_from_reader(&mut file)
+}
+
+pub(super) fn duplicate_central_zip_entries_from_reader<R: Read + Seek>(
+    reader: &mut R,
+) -> Result<Option<Vec<CentralZipEntry>>, String> {
+    let entries = read_central_zip_entries(reader)?;
     let mut names = HashSet::new();
     let has_duplicates = entries
         .iter()
@@ -45,8 +52,6 @@ pub(super) fn extract_zip_archive_from_central_entries(
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
     entries: Vec<CentralZipEntry>,
 ) {
-    let mut occurrence_counts: HashMap<String, usize> = HashMap::new();
-    let mut total_uncompressed = 0u64;
     let mut file = match File::open(path) {
         Ok(file) => file,
         Err(error) => {
@@ -69,6 +74,33 @@ pub(super) fn extract_zip_archive_from_central_entries(
         }
     };
 
+    let mut total_uncompressed = 0u64;
+    let _completed = extract_zip_archive_from_central_entries_reader(
+        &mut file,
+        archive_display,
+        per_entry_cap,
+        total_budget,
+        &mut total_uncompressed,
+        0,
+        respect_default_excludes,
+        emit,
+        entries,
+    );
+}
+
+pub(super) fn extract_zip_archive_from_central_entries_reader<R: Read + Seek>(
+    reader: &mut R,
+    archive_display: &str,
+    per_entry_cap: u64,
+    total_budget: u64,
+    total_uncompressed: &mut u64,
+    nested_depth: usize,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+    entries: Vec<CentralZipEntry>,
+) -> bool {
+    let mut occurrence_counts: HashMap<String, usize> = HashMap::new();
+
     for entry in entries {
         let occurrence = occurrence_counts.entry(entry.name.clone()).or_insert(0);
         *occurrence += 1;
@@ -90,7 +122,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
         }
         if let Err(reason) = validate_scan_archive_entry_name(&entry.name) {
             tracing::warn!(
-                archive = %path.display(),
+                archive = archive_display,
                 entry = %entry.name,
                 reason,
                 "skipping unsafe archive entry name"
@@ -103,13 +135,13 @@ pub(super) fn extract_zip_archive_from_central_entries(
                 &entry.name,
                 reason,
             ) {
-                return;
+                return false;
             }
             continue;
         }
         if zip_external_attrs_are_special(entry.external_attrs) {
             tracing::warn!(
-                archive = %path.display(),
+                archive = archive_display,
                 entry = %entry.name,
                 "skipping special archive entry"
             );
@@ -121,13 +153,13 @@ pub(super) fn extract_zip_archive_from_central_entries(
                 &entry.name,
                 "special file type",
             ) {
-                return;
+                return false;
             }
             continue;
         }
         if entry.uncompressed_size > per_entry_cap {
             tracing::warn!(
-                archive = %path.display(),
+                archive = archive_display,
                 entry = %entry.name,
                 size = entry.uncompressed_size,
                 "skipping archive entry: uncompressed size exceeds per-file cap"
@@ -142,29 +174,29 @@ pub(super) fn extract_zip_archive_from_central_entries(
                 per_entry_cap,
                 "uncompressed",
             ) {
-                return;
+                return false;
             }
             continue;
         }
         if entry.uncompressed_size > 0
-            && total_uncompressed.saturating_add(entry.uncompressed_size) > total_budget
+            && (*total_uncompressed).saturating_add(entry.uncompressed_size) > total_budget
         {
             let error = report_archive_truncation(
                 archive_display,
-                total_uncompressed.saturating_add(entry.uncompressed_size),
+                (*total_uncompressed).saturating_add(entry.uncompressed_size),
                 total_budget,
             );
             if !emit(Err(error)) {
-                return;
+                return false;
             }
             break;
         }
 
-        let compressed = match read_local_zip_entry_data(&mut file, &entry) {
+        let compressed = match read_local_zip_entry_data(reader, &entry) {
             Ok(data) => data,
             Err(error) => {
                 tracing::warn!(
-                    archive = %path.display(),
+                    archive = archive_display,
                     entry = %entry.name,
                     error,
                     "cannot read archive entry payload; skipping"
@@ -174,7 +206,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
                     "failed to scan duplicate ZIP entry '{}//{}': cannot read local entry payload ({error}); entry was not scanned",
                     archive_display, entry.name
                 )))) {
-                    return;
+                    return false;
                 }
                 continue;
             }
@@ -184,7 +216,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
             Ok(zip) => zip,
             Err(error) => {
                 tracing::warn!(
-                    archive = %path.display(),
+                    archive = archive_display,
                     entry = %entry.name,
                     error,
                     "cannot rebuild duplicate archive entry for isolated scan; skipping"
@@ -194,7 +226,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
                     "failed to scan duplicate ZIP entry '{}//{}': cannot rebuild isolated entry ({error}); entry was not scanned",
                     archive_display, entry.name
                 )))) {
-                    return;
+                    return false;
                 }
                 continue;
             }
@@ -203,7 +235,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
             Ok(archive) => archive,
             Err(error) => {
                 tracing::warn!(
-                    archive = %path.display(),
+                    archive = archive_display,
                     entry = %entry.name,
                     %error,
                     "cannot rebuild duplicate archive entry for isolated scan; skipping"
@@ -213,7 +245,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
                     "failed to scan duplicate ZIP entry '{}//{}': cannot open rebuilt isolated entry ({error}); entry was not scanned",
                     archive_display, entry.name
                 )))) {
-                    return;
+                    return false;
                 }
                 continue;
             }
@@ -222,7 +254,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
             Ok(entry) => entry,
             Err(error) => {
                 tracing::warn!(
-                    archive = %path.display(),
+                    archive = archive_display,
                     entry = %entry.name,
                     %error,
                     "cannot open duplicate archive entry for isolated scan; skipping"
@@ -232,12 +264,12 @@ pub(super) fn extract_zip_archive_from_central_entries(
                     "failed to scan duplicate ZIP entry '{}//{}': cannot open isolated entry ({error}); entry was not scanned",
                     archive_display, entry.name
                 )))) {
-                    return;
+                    return false;
                 }
                 continue;
             }
         };
-        let remaining_budget = total_budget.saturating_sub(total_uncompressed);
+        let remaining_budget = total_budget.saturating_sub(*total_uncompressed);
         let read_cap = per_entry_cap.min(remaining_budget);
         let read = match crate::capped_read::read_to_cap(
             &mut single_entry,
@@ -247,7 +279,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
             Ok(read) => read,
             Err(error) => {
                 tracing::warn!(
-                    archive = %path.display(),
+                    archive = archive_display,
                     entry = %entry.name,
                     %error,
                     "cannot read duplicate archive entry; skipping"
@@ -257,7 +289,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
                     "failed to scan duplicate ZIP entry '{}//{}': cannot read entry ({error}); entry was not scanned",
                     archive_display, entry.name
                 )))) {
-                    return;
+                    return false;
                 }
                 continue;
             }
@@ -267,7 +299,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
             Ok(len) => len,
             Err(error) => {
                 tracing::warn!(
-                    archive = %path.display(),
+                    archive = archive_display,
                     entry = %entry.name,
                     %error,
                     "duplicate archive entry decoded length cannot be represented; skipping"
@@ -277,7 +309,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
                     "failed to scan duplicate ZIP entry '{}//{}': decoded length cannot be represented ({error}); entry was not scanned",
                     archive_display, entry.name
                 )))) {
-                    return;
+                    return false;
                 }
                 continue;
             }
@@ -285,7 +317,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
         if read.truncated && read_cap == per_entry_cap {
             let observed_uncompressed = read_cap.saturating_add(1);
             tracing::warn!(
-                archive = %path.display(),
+                archive = archive_display,
                 entry = %entry.name,
                 size = observed_uncompressed,
                 "skipping archive entry: decoded size exceeds per-file cap"
@@ -300,46 +332,49 @@ pub(super) fn extract_zip_archive_from_central_entries(
                 per_entry_cap,
                 "decoded",
             ) {
-                return;
+                return false;
             }
             continue;
         }
         if read.truncated {
-            let attempted_total = total_uncompressed.saturating_add(read_cap.saturating_add(1));
+            let attempted_total = (*total_uncompressed).saturating_add(read_cap.saturating_add(1));
             let error = report_archive_truncation(archive_display, attempted_total, total_budget);
             if !emit(Err(error)) {
-                return;
+                return false;
             }
             break;
         }
-        total_uncompressed = total_uncompressed.saturating_add(actual_uncompressed);
-        if total_uncompressed > total_budget {
+        *total_uncompressed = (*total_uncompressed).saturating_add(actual_uncompressed);
+        if *total_uncompressed > total_budget {
             let error =
-                report_archive_truncation(archive_display, total_uncompressed, total_budget);
+                report_archive_truncation(archive_display, *total_uncompressed, total_budget);
             if !emit(Err(error)) {
-                return;
+                return false;
             }
             break;
         }
-        if !emit_archive_content(
+        if !emit_archive_content_with_depth(
             archive_display,
             &entry_path_name,
             content,
             per_entry_cap,
             total_budget,
-            &mut total_uncompressed,
+            total_uncompressed,
             respect_default_excludes,
+            nested_depth,
             emit,
         ) {
-            return;
+            return false;
         }
     }
+    true
 }
 
-fn read_central_zip_entries(path: &Path) -> Result<Vec<CentralZipEntry>, String> {
+fn read_central_zip_entries<R: Read + Seek>(
+    reader: &mut R,
+) -> Result<Vec<CentralZipEntry>, String> {
     const EOCD_LEN: usize = 22;
-    let mut file = File::open(path).map_err(|error| error.to_string())?;
-    let file_len = file
+    let file_len = reader
         .seek(SeekFrom::End(0))
         .map_err(|error| error.to_string())?;
     let tail_len = usize::try_from(file_len.min(66_000)).map_err(|error| error.to_string())?;
@@ -348,10 +383,12 @@ fn read_central_zip_entries(path: &Path) -> Result<Vec<CentralZipEntry>, String>
             "zip file is too short to contain an end-of-central-directory record".to_string(),
         );
     }
-    file.seek(SeekFrom::End(-(tail_len as i64)))
+    reader
+        .seek(SeekFrom::End(-(tail_len as i64)))
         .map_err(|error| error.to_string())?;
     let mut tail = vec![0u8; tail_len];
-    file.read_exact(&mut tail)
+    reader
+        .read_exact(&mut tail)
         .map_err(|error| error.to_string())?;
     let tail_file_offset = file_len.saturating_sub(tail_len as u64);
     let mut eocd = None;
@@ -403,7 +440,8 @@ fn read_central_zip_entries(path: &Path) -> Result<Vec<CentralZipEntry>, String>
     if total_entries == u16::MAX || central_size == u32::MAX || central_offset == u32::MAX {
         return Err("zip64 central directory is not handled by duplicate fallback".to_string());
     }
-    file.seek(SeekFrom::Start(u64::from(central_offset)))
+    reader
+        .seek(SeekFrom::Start(u64::from(central_offset)))
         .map_err(|error| error.to_string())?;
     let central_len = usize::try_from(central_size).map_err(|error| error.to_string())?;
     // A crafted EOCD can declare a central-directory size far larger than the
@@ -420,7 +458,8 @@ fn read_central_zip_entries(path: &Path) -> Result<Vec<CentralZipEntry>, String>
         );
     }
     let mut central = vec![0u8; central_len];
-    file.read_exact(&mut central)
+    reader
+        .read_exact(&mut central)
         .map_err(|error| error.to_string())?;
 
     let mut entries = Vec::with_capacity(usize::from(total_entries));
@@ -478,14 +517,19 @@ fn read_central_zip_entries(path: &Path) -> Result<Vec<CentralZipEntry>, String>
     Ok(entries)
 }
 
-fn read_local_zip_entry_data(file: &mut File, entry: &CentralZipEntry) -> Result<Vec<u8>, String> {
-    let file_len = file
+fn read_local_zip_entry_data<R: Read + Seek>(
+    reader: &mut R,
+    entry: &CentralZipEntry,
+) -> Result<Vec<u8>, String> {
+    let file_len = reader
         .seek(SeekFrom::End(0))
         .map_err(|error| error.to_string())?;
-    file.seek(SeekFrom::Start(entry.local_header_offset))
+    reader
+        .seek(SeekFrom::Start(entry.local_header_offset))
         .map_err(|error| error.to_string())?;
     let mut header = [0u8; 30];
-    file.read_exact(&mut header)
+    reader
+        .read_exact(&mut header)
         .map_err(|error| error.to_string())?;
     if read_u32(&header[0..4])? != ZIP_LOCAL_FILE_HEADER_SIGNATURE {
         return Err("invalid zip local file header signature".to_string());
@@ -498,7 +542,8 @@ fn read_local_zip_entry_data(file: &mut File, entry: &CentralZipEntry) -> Result
         .and_then(|value| value.checked_add(name_len))
         .and_then(|value| value.checked_add(extra_len))
         .ok_or_else(|| "zip local entry offset overflow".to_string())?;
-    file.seek(SeekFrom::Start(data_offset))
+    reader
+        .seek(SeekFrom::Start(data_offset))
         .map_err(|error| error.to_string())?;
     let data_len = usize::try_from(entry.compressed_size)
         .map_err(|error| format!("zip entry compressed size is too large: {error}"))?;
@@ -512,7 +557,8 @@ fn read_local_zip_entry_data(file: &mut File, entry: &CentralZipEntry) -> Result
         );
     }
     let mut data = vec![0u8; data_len];
-    file.read_exact(&mut data)
+    reader
+        .read_exact(&mut data)
         .map_err(|error| error.to_string())?;
     Ok(data)
 }
@@ -597,7 +643,8 @@ fn read_u32(bytes: &[u8]) -> Result<u32, String> {
 }
 
 pub(crate) fn read_central_zip_entries_error_for_test(path: &Path) -> Result<String, String> {
-    match read_central_zip_entries(path) {
+    let mut file = File::open(path).map_err(|error| error.to_string())?;
+    match read_central_zip_entries(&mut file) {
         Ok(_entries) => Err("zip central directory parsed without an error".to_string()),
         Err(error) => Ok(error),
     }
