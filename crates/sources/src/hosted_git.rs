@@ -1,7 +1,7 @@
 //! Shared clone-and-scan machinery for hosted Git repository collections.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -693,6 +693,8 @@ fn clone_repo(
         .arg("--end-of-options")
         .arg(clone_url)
         .arg(clone_target)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(SourceError::Io)?;
 

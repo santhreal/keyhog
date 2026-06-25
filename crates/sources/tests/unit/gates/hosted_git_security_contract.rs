@@ -36,6 +36,12 @@ fn hosted_git_clone_origin_and_wait_cleanup_contracts_stay_wired() {
             && hosted_git.contains(r#""credential.helper=""#),
         "hosted Git clone must bind forge-listed URLs to the expected origin and disable redirect/ambient credential paths"
     );
+    assert!(
+        hosted_git.contains(".stdout(Stdio::piped())")
+            && hosted_git.contains(".stderr(Stdio::piped())")
+            && hosted_git.contains("sanitize_git_error_message(&String::from_utf8_lossy(&output.stderr))"),
+        "hosted Git clone must capture child output so git failure diagnostics are sanitized instead of inherited"
+    );
 
     let wait_start = hosted_git
         .find("fn wait_for_command_with_timeout(")
