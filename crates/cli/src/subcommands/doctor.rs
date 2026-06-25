@@ -232,9 +232,68 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
             Err(e) => {
                 healthy = false;
                 println!(
-                    "  gpu scan path  {}  GPU AC kernel self-test failed; the default GPU scan route is BROKEN on this host (auto scans fail closed rather than silently route to CPU/SIMD). Fix the GPU path, or scan with an explicit `--backend cpu`/`--backend simd` override.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test` for the full GPU diagnostic{reset}",
+                    "  gpu scan path  {}  GPU AC kernel self-test failed; GPU routes are unavailable until fixed. The default GPU scan route is BROKEN on this host (auto scans fail closed rather than silently route to CPU/SIMD). Fix the GPU path, or scan with an explicit `--backend cpu`/`--backend simd` override.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test` for the full GPU diagnostic{reset}",
                     style::fail("FAIL", &palette)
                 );
+            }
+        }
+
+        match keyhog_scanner::gpu::vyre_gpu_self_test() {
+            Ok(report) => println!(
+                "  gpu literal    {}  {dim}direct={}, coalesced={}{reset}",
+                style::pass("PASS", &palette),
+                report.direct_matches,
+                report.coalesced_matches
+            ),
+            Err(e) => {
+                let known_lowering_gap = e.contains("_vyre_match_leader")
+                    || e.contains("canonical pre-emit lowering")
+                    || e.contains("subgroup_ballot");
+                if known_lowering_gap {
+                    warned = true;
+                    println!(
+                        "  gpu literal    {}  vyre literal-set path has a known lowering limitation; scans use the AC kernel path checked above.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
+                        style::warn("WARN", &palette)
+                    );
+                } else {
+                    healthy = false;
+                    println!(
+                        "  gpu literal    {}  GPU literal-set self-test failed; GPU routes are unavailable until fixed.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
+                        style::fail("FAIL", &palette)
+                    );
+                }
+            }
+        }
+
+        match keyhog_scanner::gpu::gpu_self_test() {
+            Ok(report) => {
+                let max_buffer = match report.vram_mb {
+                    Some(mb) => mb.to_string(),
+                    None => "unknown".to_string(), // LAW10: absent GPU buffer limit => reporting-only display label; self-test already proved dispatch/parity
+                };
+                println!(
+                    "  gpu moe path   {}  {dim}MoE shader matches CPU reference, adapter={}, scores={}, max_buffer={} MB{reset}",
+                    style::pass("PASS", &palette),
+                    report.adapter_name,
+                    report.scores,
+                    max_buffer
+                );
+            }
+            Err(e) => {
+                let parity_degrade = e.contains("diverges from the CPU MoE reference");
+                if parity_degrade {
+                    warned = true;
+                    println!(
+                        "  gpu moe path   {}  GPU MoE shader diverges from CPU reference; GPU ML acceleration is disabled on this host and scoring uses the deterministic CPU MoE path.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
+                        style::warn("WARN", &palette)
+                    );
+                } else {
+                    healthy = false;
+                    println!(
+                        "  gpu moe path   {}  GPU MoE self-test failed; GPU routes are unavailable until fixed. GPU ML acceleration is unavailable until fixed.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
+                        style::fail("FAIL", &palette)
+                    );
+                }
             }
         }
     }

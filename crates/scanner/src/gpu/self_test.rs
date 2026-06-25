@@ -40,43 +40,44 @@ pub fn gpu_self_test() -> Result<GpuSelfTest, String> {
     {
         GPU_SELF_TEST_CACHE
             .get_or_init(|| {
-                const SELF_TEST_BATCH: usize = 64;
-
                 let gpu = super::backend::get_gpu().ok_or_else(|| {
                     "GPU adapter unavailable; install or enable a non-software GPU adapter and driver"
                         .to_string()
                 })?;
 
-                let features = [[0.0_f32; crate::ml_scorer::NUM_FEATURES]; SELF_TEST_BATCH];
-                let scores = super::backend::batch_score_features(
-                    &features,
+                // PARITY, not "in range". The prior check scored ALL-ZERO feature
+                // vectors and only asserted each result was finite and within
+                // [0,1] — which a GPU that returns 0.0 for EVERY input trivially
+                // passes. That masked a real shipped fault: the MoE shader scored
+                // genuine secrets ~0.0 (CPU scored them ~1.0), so on a GPU host the
+                // ML gate silently dropped findings and `--self-test` still reported
+                // HEALTHY. Assert the actual contract instead: the GPU MoE must
+                // reproduce the CPU MoE (`ml_scorer::score_features`, the reference
+                // every confidence floor is tuned/benched against) within tolerance
+                // on a probe that includes real secrets. This is the SAME verdict
+                // the scan path enforces (`batch_score_features` fails closed to CPU
+                // on the same divergence), so doctor and the scanner never disagree.
+                let max_abs = super::backend::gpu_moe_parity_max_divergence(
                     std::time::Duration::from_millis(
                         crate::scanner_config::ScannerTuningConfig::GPU_MOE_TIMEOUT_MS_DEFAULT,
                     ),
-                )
-                .ok_or_else(|| "GPU dispatch produced no result".to_string())?;
-
-                if scores.len() != SELF_TEST_BATCH {
+                )?;
+                if max_abs > super::backend::GPU_MOE_PARITY_TOLERANCE {
                     return Err(format!(
-                        "GPU dispatch returned {} scores for {SELF_TEST_BATCH} inputs",
-                        scores.len()
-                    ));
-                }
-
-                if let Some((index, score)) = scores
-                    .iter()
-                    .enumerate()
-                    .find(|(_, score)| !score.is_finite() || !(0.0..=1.0).contains(*score))
-                {
-                    return Err(format!(
-                        "GPU dispatch returned invalid score {score} at index {index}"
+                        "GPU MoE compute shader diverges from the CPU MoE reference by {max_abs:.4} \
+                         (tolerance {:.4}); the GPU would score findings differently from the \
+                         CPU/SIMD path. Indicates a shader miscompile, weights-packing mismatch, \
+                         or driver bug. Scans record the GPU MoE degrade and use the CPU MoE \
+                         (correct + deterministic), \
+                         so detection is unaffected, but GPU ML acceleration is OFF on this host.",
+                        super::backend::GPU_MOE_PARITY_TOLERANCE
                     ));
                 }
 
                 Ok(GpuSelfTest {
                     adapter_name: gpu.gpu_name().to_string(),
                     vram_mb: gpu.vram_mb(),
-                    scores: scores.len(),
+                    scores: crate::ml_scorer::GPU_BATCH_THRESHOLD,
                 })
             })
             .clone()
@@ -174,6 +175,16 @@ fn vyre_ac_kernel_self_test_impl() -> Result<VyreAcKernelSelfTest, String> {
     use crate::hw_probe::ScanBackend;
     use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 
+    // The probe MUST be a credential keyhog actually REPORTS, not one it
+    // suppresses. A plain dictionary word (e.g. "needle") triggers phase-1 and
+    // extracts, but is then correctly dropped by low-entropy/placeholder
+    // suppression on EVERY backend - so asserting "GPU found > 0" on such a word
+    // is a false failure that has nothing to do with the GPU kernel. This probe
+    // mirrors the proven `scan_engine_self_test` shape: a distinctive literal
+    // PREFIX ("KHGPUSELFTEST_") that the GPU literal-set anchors on to drive
+    // region-presence -> trigger, followed by a mixed-case high-entropy suffix
+    // that survives suppression so the match is emitted end to end.
+    const PLANTED: &str = "KHGPUSELFTEST_A1b2C3d4E5f6";
     let detector = DetectorSpec {
         tests: Vec::new(),
         id: "kh-gpu-self-test".into(),
@@ -181,12 +192,12 @@ fn vyre_ac_kernel_self_test_impl() -> Result<VyreAcKernelSelfTest, String> {
         service: "test".into(),
         severity: Severity::Low,
         patterns: vec![PatternSpec {
-            regex: "needle".into(),
+            regex: "KHGPUSELFTEST_[A-Za-z0-9]{12}".into(),
             description: None,
             group: None,
             client_safe: false,
         }],
-        keywords: vec!["needle".into()],
+        keywords: vec!["KHGPUSELFTEST".into()],
         min_confidence: None,
         ..Default::default()
     };
@@ -198,24 +209,37 @@ fn vyre_ac_kernel_self_test_impl() -> Result<VyreAcKernelSelfTest, String> {
         .gpu_backend_label()
         .ok_or_else(|| "no GPU backend acquired during self-test compile".to_string())?;
 
-    let chunk = Chunk {
-        data: "the quick brown needle jumps over the lazy fox".into(),
+    let make_chunk = || Chunk {
+        data: format!("gpu_secret = {PLANTED}").into(),
         metadata: ChunkMetadata::default(),
     };
 
-    let results = scanner.scan_chunks_with_backend(&[chunk], ScanBackend::Gpu);
+    // CPU baseline on the SAME detector+chunk. This is the oracle: it proves the
+    // planted secret is detectable AT ALL on this build, so a low GPU count means
+    // a real GPU phase-1 divergence rather than an invalid/suppressed probe.
+    let cpu_results = scanner.scan_chunks_with_backend(&[make_chunk()], ScanBackend::CpuFallback);
+    let cpu_total: usize = cpu_results.iter().map(Vec::len).sum();
+    if cpu_total == 0 {
+        return Err(
+            "GPU self-test probe matched on NO backend (CPU baseline is zero); the planted secret or detector is invalid (harness bug), not a GPU kernel defect. Fix the self-test probe so it survives suppression."
+                .to_string(),
+        );
+    }
+
+    let results = scanner.scan_chunks_with_backend(&[make_chunk()], ScanBackend::Gpu);
     if let Some(detail) = scanner.last_gpu_degrade_reason() {
         return Err(format!(
             "GPU region-presence scan degraded to SIMD/CPU at runtime despite an acquired GPU stack: {detail}"
         ));
     }
     let total: usize = results.iter().map(Vec::len).sum();
-    if total == 0 {
-        return Err(
-            "GPU region-presence scan ran on GPU but reported zero matches for the planted 'needle' literal. \
-Indicates a literal-set lowering regression or a dispatch/workgroup-size mismatch."
-                .to_string(),
-        );
+    // The real contract: the GPU phase-1 path must find EXACTLY what the CPU
+    // baseline finds for the same input. A divergence (high or low) is a
+    // literal-set lowering regression or dispatch/workgroup-size mismatch.
+    if total != cpu_total {
+        return Err(format!(
+            "GPU region-presence scan diverged from the CPU baseline: GPU found {total} match(es), CPU found {cpu_total} for the same planted secret. Indicates a GPU phase-1 literal-set lowering regression or a dispatch/workgroup-size mismatch."
+        ));
     }
     Ok(VyreAcKernelSelfTest {
         matches: total,

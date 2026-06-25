@@ -548,7 +548,7 @@ fn dispatch_moe_batch(
             Ok(result) => break result,
             Err(TryRecvError::Disconnected) => {
                 tracing::warn!(
-                    "GPU MoE staging-buffer callback disconnected; falling back to CPU MoE for this scan"
+                    "GPU MoE staging-buffer callback disconnected; GPU MoE disabled and scoring uses CPU MoE for this scan"
                 );
                 moe_runtime_degrade("staging-buffer callback disconnected");
                 return None;
@@ -559,7 +559,7 @@ fn dispatch_moe_batch(
         if Instant::now() >= deadline {
             tracing::warn!(
                 ?timeout,
-                "GPU MoE staging-buffer readback timed out; falling back to CPU MoE for this scan"
+                "GPU MoE staging-buffer readback timed out; GPU MoE disabled and scoring uses CPU MoE for this scan"
             );
             moe_runtime_degrade("staging-buffer readback timed out");
             return None;
@@ -568,7 +568,7 @@ fn dispatch_moe_batch(
         if let Err(error) = device.poll(wgpu::PollType::Poll) {
             tracing::warn!(
                 ?error,
-                "GPU MoE device.poll() failed; falling back to CPU MoE for this scan"
+                "GPU MoE device.poll() failed; GPU MoE disabled and scoring uses CPU MoE for this scan"
             );
             moe_runtime_degrade("device.poll() failed");
             return None;
@@ -584,7 +584,7 @@ fn dispatch_moe_batch(
     if let Err(error) = map_recv {
         tracing::warn!(
             ?error,
-            "GPU MoE staging-buffer map_async failed; falling back to CPU MoE for this scan"
+            "GPU MoE staging-buffer map_async failed; GPU MoE disabled and scoring uses CPU MoE for this scan"
         );
         moe_runtime_degrade("staging-buffer map_async failed");
         return None;
