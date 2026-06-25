@@ -497,6 +497,28 @@ fn k8s_secret_stringdata_prefers_value_line_when_key_repeats() {
 }
 
 #[test]
+fn k8s_secret_extracts_secret_from_second_yaml_document() {
+    let text = "apiVersion: v1\nkind: ConfigMap\ndata:\n  token: public\n---\napiVersion: v1\nkind: Secret\nstringData:\n  token: ghp_abcdefghij0123456789\n";
+    let pairs = parse_k8s_secret(text);
+    assert_eq!(value_of!(pairs, "token"), Some("ghp_abcdefghij0123456789"));
+    assert_eq!(line_of!(pairs, "token"), Some(9));
+}
+
+#[test]
+fn k8s_secret_extracts_secret_items_from_list() {
+    use base64::Engine;
+    let plain = "ghp_abcdefghij0123456789";
+    let encoded = base64::engine::general_purpose::STANDARD.encode(plain);
+    let text = format!(
+        "apiVersion: v1\nkind: List\nitems:\n  - apiVersion: v1\n    kind: ConfigMap\n    data:\n      token: public\n  - apiVersion: v1\n    kind: Secret\n    data:\n      token: {}\n",
+        encoded
+    );
+    let pairs = parse_k8s_secret(&text);
+    assert_eq!(value_of!(pairs, "token"), Some(plain));
+    assert_eq!(line_of!(pairs, "token"), Some(11));
+}
+
+#[test]
 fn k8s_secret_invalid_yaml_empty() {
     assert!(parse_k8s_secret("\t: : : not yaml").is_empty());
 }

@@ -2,6 +2,7 @@ use super::{
     line::{finalize_pending_pairs, PendingExtractedPair},
     ExtractedPair,
 };
+use serde::Deserialize;
 
 /// Parse a Kubernetes Secret YAML and decode base64 values under `data:`.
 ///
@@ -10,12 +11,41 @@ use super::{
 /// same byte body, and matching on the encoded blob would route both
 /// findings to the first occurrence.
 pub(crate) fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
-    let value = match parse_yaml_value(text, "k8s-secret", "base64 data: values") {
-        Some(value) => value,
+    let values = match parse_yaml_documents(text, "k8s-secret", "base64 data: values") {
+        Some(values) => values,
         None => return Vec::new(),
     };
 
     let mut pending = Vec::new();
+    for value in &values {
+        extract_k8s_secret(value, &mut pending, 0);
+    }
+
+    finalize_pending_pairs(text, pending)
+}
+
+fn extract_k8s_secret(
+    value: &serde_yaml::Value,
+    pending: &mut Vec<PendingExtractedPair>,
+    depth: usize,
+) {
+    if depth >= MAX_YAML_TRAVERSAL_DEPTH {
+        return;
+    }
+    match yaml_kind(value) {
+        Some("Secret") => extract_k8s_secret_maps(value, pending),
+        Some("List") => {
+            if let Some(serde_yaml::Value::Sequence(items)) = value.get("items") {
+                for item in items {
+                    extract_k8s_secret(item, pending, depth + 1);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn extract_k8s_secret_maps(value: &serde_yaml::Value, pending: &mut Vec<PendingExtractedPair>) {
     if let Some(serde_yaml::Value::Mapping(map)) = value.get("data") {
         for (k, v) in map {
             let key = k.as_str().unwrap_or_default(); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
@@ -68,8 +98,10 @@ pub(crate) fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
             ));
         }
     }
+}
 
-    finalize_pending_pairs(text, pending)
+fn yaml_kind(value: &serde_yaml::Value) -> Option<&str> {
+    value.get("kind").and_then(serde_yaml::Value::as_str)
 }
 
 /// Parse docker-compose.yml environment blocks.
@@ -131,16 +163,49 @@ fn parse_yaml_value(
     }
 }
 
-/// Cap recursion depth on adversarial YAML. Real docker-compose schemas nest
-/// about six levels deep; 256 stays permissive while preventing stack overflow.
-const MAX_COMPOSE_DEPTH: usize = 256;
+fn parse_yaml_documents(
+    text: &str,
+    surface: &'static str,
+    lost_decode_surface: &'static str,
+) -> Option<Vec<serde_yaml::Value>> {
+    let mut values = Vec::new();
+    let mut had_error = false;
+    for document in serde_yaml::Deserializer::from_str(text) {
+        match serde_yaml::Value::deserialize(document) {
+            Ok(value) => values.push(value),
+            Err(error) => {
+                had_error = true;
+                crate::telemetry::record_structured_parse_failure();
+                tracing::warn!(
+                    target: "keyhog::structured",
+                    %error,
+                    surface,
+                    lost_decode_surface,
+                    serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
+                    "structured YAML document parse failed; decode-through disabled for that document"
+                );
+                break;
+            }
+        }
+    }
+    if values.is_empty() && had_error {
+        None
+    } else {
+        Some(values)
+    }
+}
+
+/// Cap recursion depth on adversarial YAML. Real docker-compose schemas and
+/// Kubernetes List wrappers nest shallowly; 256 stays permissive while
+/// preventing stack overflow.
+const MAX_YAML_TRAVERSAL_DEPTH: usize = 256;
 
 fn find_environment_pairs(
     value: &serde_yaml::Value,
     pending: &mut Vec<PendingExtractedPair>,
     depth: usize,
 ) {
-    if depth >= MAX_COMPOSE_DEPTH {
+    if depth >= MAX_YAML_TRAVERSAL_DEPTH {
         return;
     }
     match value {
