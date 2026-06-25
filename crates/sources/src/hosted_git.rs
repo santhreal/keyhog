@@ -888,7 +888,12 @@ fn wait_for_command_with_timeout(
         }
 
         if start.elapsed() >= timeout {
-            kill_and_reap_child(&mut child)?;
+            kill_and_reap_child(&mut child).map_err(|cleanup_error| {
+                format!(
+                    "git clone timed out after {}s; additionally failed to stop child: {cleanup_error}",
+                    timeout.as_secs()
+                )
+            })?;
             let stderr = join_hosted_git_stderr(stderr_drain.take());
             let stderr_suffix = hosted_git_stderr_suffix(&stderr);
             let stdout_cleanup = match join_hosted_git_stdout(stdout_drain.take()) {
