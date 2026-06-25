@@ -24,6 +24,13 @@ mod magic;
     feature = "bitbucket"
 ))]
 mod parallel_fetch;
+#[cfg(any(
+    feature = "git",
+    feature = "docker",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket"
+))]
 mod process_excerpt;
 mod skip;
 pub(crate) mod timeouts;

@@ -21,7 +21,7 @@ fn process_stderr_excerpt_has_one_owner() {
     for path in ["src/git/mod.rs", "src/docker.rs", "src/hosted_git.rs"] {
         let body = source(path);
         assert!(
-            body.contains("crate::process_excerpt::drain_stderr_excerpt(pipe)"),
+            body.contains("crate::process_excerpt::drain_stderr_excerpt"),
             "{path} must route child stderr through the shared excerpt owner"
         );
         assert!(

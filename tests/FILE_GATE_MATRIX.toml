@@ -1506,6 +1506,9 @@ path = "crates/sources/src/filesystem/reader.rs"
 path = "crates/sources/src/api.rs"
 
 [[module]]
+path = "crates/sources/src/capped_read.rs"
+
+[[module]]
 path = "crates/sources/src/compression_limits.rs"
 
 [[module]]
@@ -1566,7 +1569,13 @@ path = "crates/sources/src/lib.rs"
 path = "crates/sources/src/limits.rs"
 
 [[module]]
+path = "crates/sources/src/magic.rs"
+
+[[module]]
 path = "crates/sources/src/parallel_fetch.rs"
+
+[[module]]
+path = "crates/sources/src/process_excerpt.rs"
 
 [[module]]
 path = "crates/sources/src/testing_facade.rs"
