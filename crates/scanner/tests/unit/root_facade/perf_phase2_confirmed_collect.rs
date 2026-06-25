@@ -16,18 +16,20 @@
 //!      THOUSANDS of randomized bitmaps + every boundary shape, so the perf
 //!      rewrite can never silently drop, add, or reorder a confirmed pattern.
 //!
-//!   2. PER-DETECTOR WEAK-ANCHOR MEMOIZATION (engine/process.rs +
-//!      engine/mod.rs::detector_weak_anchor_by_index, built in engine/compile.rs):
-//!      `process_match` consumes `detector_weak_anchor(spec)` for EVERY surviving
-//!      candidate. That classification runs a regex-string scan
-//!      (`has_broad_identifier_capture`) over the detector's patterns and depends
-//!      ONLY on the spec, so on a hot detector firing thousands of matches per
-//!      chunk it re-derived an unchanging value thousands of times. It is now
-//!      resolved ONCE at scanner construction into a `Vec<bool>` indexed by
-//!      `detector_index`. `weak_anchor_is_a_pure_function_of_the_spec` pins the
-//!      precondition the cache relies on (the classification is deterministic and
-//!      depends only on the spec), and the golden-findings tests prove the cached
-//!      value is finding-for-finding identical to the live call.
+//!   2. WEAK-ANCHOR MEMOIZATION (engine/process.rs +
+//!      engine/mod.rs::detector_weak_anchor_base_by_index, built in
+//!      engine/compile.rs): `process_match` resolves the weak-anchor for EVERY
+//!      surviving candidate. The per-DETECTOR base class (residual pure-hex list,
+//!      generic/private-key carve-outs, explicit min_confidence) depends ONLY on
+//!      the spec and is resolved ONCE at scanner construction into a
+//!      `Vec<WeakAnchorBase>` indexed by `detector_index`; the per-PATTERN
+//!      broad-identifier half is a regex-string scan memoized on the matched
+//!      pattern's `LazyRegex`, so a hot detector no longer re-derives either an
+//!      unchanging detector-wide value or an unchanging per-pattern value.
+//!      `weak_anchor_is_a_pure_function_of_the_spec` pins the precondition the
+//!      cache relies on (the classification is deterministic), and the
+//!      golden-findings tests prove the cached value is finding-for-finding
+//!      identical to the live call.
 //!
 //! GOLDEN FINDINGS (the durable proof both fixes are output-neutral):
 //!   * `dense_corpus_findings_unchanged` — a dense corpus of a strong-anchored

@@ -126,11 +126,11 @@ fn engine_named_detector_suppression_routes_through_adjudicator() {
         "engine/process.rs must not name adjudicator stages directly"
     );
     assert!(
-        process.contains("detector_weak_anchor_by_detector_index(entry.detector_index)")
+        process.contains("detector_pattern_weak_anchor(entry)")
             && !process.contains("crate::suppression::detector_weak_anchor(")
-            && !process.contains("detector_weak_anchor_by_index\n            .get")
+            && !process.contains("detector_weak_anchor_base_by_index\n            .get")
             && !process.contains(".unwrap_or_else(|| crate::suppression::detector_weak_anchor"),
-        "engine/process.rs must use the construction-time weak-anchor cache directly instead of silently recomputing on cache/index mismatch"
+        "engine/process.rs must resolve the per-pattern weak-anchor through the construction-time base cache plus the memoized per-pattern broad-identifier check, not by silently recomputing the detector-wide classification on cache/index mismatch"
     );
     assert!(
         !process.contains("suppress_named_detector_finding("),
