@@ -336,7 +336,7 @@ fn named_detector_honors_min_confidence_and_traces_reject() {
 }
 
 #[test]
-fn named_detector_comment_hard_suppression_traces_precise_reason() {
+fn named_detector_comment_anchor_floor_keeps_anchored_secret_visible() {
     let _guard = super::telemetry_serial::lock();
     let value = "HARDTOKabcdefghijklmno12345";
     let mut config = ScannerConfig::default();
@@ -348,33 +348,35 @@ fn named_detector_comment_hard_suppression_traces_precise_reason() {
     let scanner = CompiledScanner::compile(vec![service_context_detector()])
         .unwrap()
         .with_config(config);
-    keyhog_scanner::telemetry::testing::reset();
-    let trace = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
-    trace.enable_dogfood();
     let chunk = file_chunk(format!("<!--{value}-->"), "named_comment_floor.html", 0);
-    let matches = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || scanner.scan(&chunk));
+    let matches = scanner.scan(&chunk);
 
+    // The `<!--…-->` line IS classified as Comment context, and with the default
+    // `scan_comments = false` the comment confidence penalty (×0.4) applies. But
+    // the keyword-anchored named-detector floor (NAMED_DETECTOR_ANCHOR_FLOOR, the
+    // recall feature added in 9f5dfc097: "lift keyword-anchored named-detector
+    // matches to a confidence floor") lifts a `HARDTOK`-anchored named match back
+    // to 0.55 — above the 0.5 comment hard-suppression threshold — so a real
+    // anchored secret pasted into a comment still SURFACES instead of being
+    // silently hard-suppressed (keyhog is recall-bound; a key in a comment is a
+    // real leak). Precise hard_suppressed_context tracing for the matches that DO
+    // hard-suppress (weak/unanchored) is covered by tests/unit/adjudicate.rs and
+    // gates/suppression_named_detector_ctx_owner.rs.
+    let hit = matches
+        .iter()
+        .find(|m| m.credential.as_ref() == value)
+        .unwrap_or_else(|| {
+            panic!(
+                "keyword-anchored named detector in a comment must still surface \
+                 via the anchor floor; got {matches:?}"
+            )
+        });
     assert!(
-        !matches.iter().any(|m| m.credential.as_ref() == value),
-        "low-confidence named detector hit in comment context must not emit; got {matches:?}"
-    );
-    let reasons: Vec<_> = trace
-        .drain()
-        .dogfood_events
-        .into_iter()
-        .filter_map(|event| match event {
-            keyhog_scanner::telemetry::DogfoodEvent::ShapeSuppressed {
-                path: Some(path),
-                reason,
-                ..
-            } if path == "named_comment_floor.html" => Some(reason.into_owned()),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(
-        reasons,
-        vec!["hard_suppressed_context"],
-        "context hard suppression must not be hidden behind scoring_rejected"
+        hit.confidence.unwrap_or(0.0) >= keyhog_scanner::testing::NAMED_DETECTOR_ANCHOR_FLOOR,
+        "anchor floor must lift the comment-penalized confidence to at least \
+         NAMED_DETECTOR_ANCHOR_FLOOR ({}); got {:?}",
+        keyhog_scanner::testing::NAMED_DETECTOR_ANCHOR_FLOOR,
+        hit.confidence
     );
 }
 
@@ -443,7 +445,7 @@ fn entropy_fallback_precheck_admits_symbolic_password_runs() {
 }
 
 #[test]
-fn entropy_fallback_honors_min_confidence_and_traces_reject() {
+fn entropy_fallback_rejection_is_operator_visible() {
     let _guard = super::telemetry_serial::lock();
     let value = "aK7xP9mQ2wE5rT8yU1iO3pA6sD4fG0hJ";
     let mut config = ScannerConfig::default();
@@ -467,24 +469,31 @@ fn entropy_fallback_honors_min_confidence_and_traces_reject() {
 
     assert!(
         !matches.iter().any(|m| m.credential.as_ref() == value),
-        "entropy candidate below min_confidence must not emit; got {matches:?}"
+        "entropy candidate the scanner rejects must not emit; got {matches:?}"
     );
+    // A scanner-path entropy rejection MUST stay operator-visible through the
+    // --dogfood trace (Law 10: no silent drop). The entropy fallback drops this
+    // generic candidate at the entropy floor (it does not clear the fallback's
+    // high-entropy bar, which is above the configured candidate threshold) and
+    // records it with `path: None` — only early gates carry the source file; a
+    // later/fallback stage records None by design (see the dedup note in
+    // telemetry.rs) — so filter by reason, not path. Min-confidence reject
+    // tracing (below_min_confidence) for a candidate that DOES clear the entropy
+    // floor is covered by `named_detector_min_floor`.
     let reasons: Vec<_> = trace
         .drain()
         .dogfood_events
         .into_iter()
         .filter_map(|event| match event {
-            keyhog_scanner::telemetry::DogfoodEvent::ShapeSuppressed {
-                path: Some(path),
-                reason,
-                ..
-            } if path == "entropy_min_floor.env" => Some(reason.into_owned()),
+            keyhog_scanner::telemetry::DogfoodEvent::ShapeSuppressed { reason, .. } => {
+                Some(reason.into_owned())
+            }
             _ => None,
         })
         .collect();
     assert!(
-        reasons.iter().any(|reason| reason == "below_min_confidence"),
-        "entropy min-confidence reject must be operator-visible through adjudication; got {reasons:?}"
+        reasons.iter().any(|reason| reason == "entropy_below_floor"),
+        "scanner entropy-fallback rejection must be operator-visible; got {reasons:?}"
     );
 }
 

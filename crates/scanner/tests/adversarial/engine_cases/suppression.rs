@@ -72,9 +72,6 @@ fn example_suppression_is_recorded_in_telemetry() {
 
 #[test]
 fn dogfood_captures_redacted_event() {
-    let _guard = keyhog_scanner::testing::telemetry_serial_lock();
-    keyhog_scanner::telemetry::testing::reset();
-    keyhog_scanner::telemetry::enable_dogfood();
     let detector = DetectorSpec {
         tests: Vec::new(),
         id: "aws-key".into(),
@@ -94,8 +91,17 @@ fn dogfood_captures_redacted_event() {
     };
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     let chunk = make_chunk("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
-    let _ = scanner.scan(&chunk);
-    let events = keyhog_scanner::telemetry::drain_events();
+    // Capture via a THREAD-LOCAL scoped telemetry trace, not the process-global
+    // enable_dogfood()/drain_events() path. Under parallel test execution another
+    // thread's scan can record — and dedup, by credential hash — the SAME EXAMPLE
+    // credential into the global buffer inside this test's enable→scan→drain
+    // window, so the global path is racy here (it passes single-threaded, flakes
+    // in the full parallel run). The scoped trace is per-thread, so this test
+    // observes exactly its own suppression event regardless of siblings.
+    let trace = std::sync::Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+    trace.enable_dogfood();
+    let _ = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || scanner.scan(&chunk));
+    let events = trace.drain().dogfood_events;
     // The dogfood trace must redact via the SAME canonical policy as findings
     // (`keyhog_core::redact`), which scales the retained edge to credential length
     // (`(len/8).clamp(1,4)`): the 20-char AWS EXAMPLE key keeps 2 leading + 2
@@ -130,7 +136,6 @@ fn dogfood_captures_redacted_event() {
         redacted.starts_with("AK") && redacted.contains("...") && redacted.ends_with("LE"),
         "redaction must keep the scaled edge bytes around an ellipsis: {redacted}"
     );
-    keyhog_scanner::telemetry::testing::reset();
 }
 
 #[test]
