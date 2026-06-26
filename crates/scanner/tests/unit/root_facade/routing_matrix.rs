@@ -477,12 +477,23 @@ fn no_gpu_with_hyperscan_picks_simd() {
     });
 }
 
+// The `SimdCpu` ("simd-regex") backend IS the Hyperscan/Vectorscan path:
+// `cpu_tier_backend = hyperscan_available ? SimdCpu : CpuFallback` (select.rs).
+// Commit 0eb97683a ("Fail closed selected SIMD routes") dropped the standalone
+// ISA branch, so a CPU's AVX2/NEON/AVX512 flags no longer enable a SIMD backend
+// on their own — Hyperscan detects and uses those ISAs internally. Without
+// Hyperscan there is no SIMD regex engine, so every no-Hyperscan capability mix
+// routes to the scalar CpuFallback.
+
 #[test]
-fn no_gpu_no_hyperscan_with_avx2_picks_simd() {
+fn no_gpu_no_hyperscan_with_avx2_picks_cpu_fallback() {
     let mut caps = caps_no_gpu(false, true);
     caps.has_avx2 = true;
     with_env(None, || {
-        assert_eq!(select_backend(&caps, 1 << 30, 10_000), ScanBackend::SimdCpu,);
+        assert_eq!(
+            select_backend(&caps, 1 << 30, 10_000),
+            ScanBackend::CpuFallback,
+        );
     });
 }
 
@@ -498,20 +509,26 @@ fn no_gpu_no_hyperscan_no_simd_picks_cpu_fallback() {
 }
 
 #[test]
-fn neon_alone_picks_simd_cpu() {
+fn neon_alone_without_hyperscan_picks_cpu_fallback() {
     let mut caps = caps_no_gpu(false, false);
     caps.has_neon = true;
     with_env(None, || {
-        assert_eq!(select_backend(&caps, 1 << 30, 10_000), ScanBackend::SimdCpu,);
+        assert_eq!(
+            select_backend(&caps, 1 << 30, 10_000),
+            ScanBackend::CpuFallback,
+        );
     });
 }
 
 #[test]
-fn avx512_alone_picks_simd_cpu() {
+fn avx512_alone_without_hyperscan_picks_cpu_fallback() {
     let mut caps = caps_no_gpu(false, false);
     caps.has_avx512 = true;
     with_env(None, || {
-        assert_eq!(select_backend(&caps, 1 << 30, 10_000), ScanBackend::SimdCpu,);
+        assert_eq!(
+            select_backend(&caps, 1 << 30, 10_000),
+            ScanBackend::CpuFallback,
+        );
     });
 }
 

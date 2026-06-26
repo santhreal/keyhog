@@ -101,13 +101,17 @@ fn simd_cpu_when_no_gpu_with_hyperscan() {
 }
 
 #[test]
-fn simd_cpu_when_no_gpu_no_hyperscan_but_avx2() {
+fn cpu_fallback_when_no_gpu_no_hyperscan_even_with_avx2() {
     clear_env();
     let caps = caps_with(false, false, false, true);
-    // SIMD CPU features alone still pick the SIMD path (sans Hyperscan).
+    // The `SimdCpu` route IS the Hyperscan prefilter path: commit 0eb97683a
+    // ("Fail closed selected SIMD routes") dropped the standalone AVX2 ISA
+    // branch, so `cpu_tier_backend = hyperscan_available ? SimdCpu : CpuFallback`.
+    // Without Hyperscan, AVX2 alone no longer promotes to SimdCpu — it falls to
+    // the scalar CpuFallback (sibling of `cpu_fallback_when_no_gpu_no_hyperscan_no_simd`).
     assert_eq!(
         select_backend(&caps, 1024 * 1024, 100),
-        ScanBackend::SimdCpu
+        ScanBackend::CpuFallback
     );
 }
 

@@ -134,8 +134,9 @@ fn positioned_gpu_candidate_loss_updates_runtime_status() {
     assert!(
         src.contains("positioned literal matcher not built for this scanner")
             && src.contains("positioned GPU candidate collection failed")
-            && src.contains("positioned literal scan reached cap"),
-        "positioned matcher-missing, scan-error, and cap branches must keep concrete degradation reasons"
+            && src.contains("still exceeds cap")
+            && src.contains("pathological literal density"),
+        "positioned matcher-missing, scan-error, and unsplittable-over-cap branches must keep concrete degradation reasons"
     );
     let forced = engine_src("gpu_forced.rs");
     assert!(
