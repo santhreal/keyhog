@@ -177,11 +177,15 @@ fn entropy_generation_rejection_is_dogfood_visible() {
         .dogfood_events
         .into_iter()
         .filter_map(|event| match event {
+            // canonical keyhog_core::redact keeps edge = (len/8).clamp(1,4)
+            // bytes per side (02d6150d9/17f4f2084 capped short-secret exposure);
+            // this 20-byte candidate redacts to "ab...12", so the prefix guard is
+            // the canonical 2-byte edge, not the old fixed 4.
             DogfoodEvent::ShapeSuppressed {
                 credential_redacted,
                 reason,
                 ..
-            } if credential_redacted.starts_with("abc1") => Some(reason.into_owned()),
+            } if credential_redacted.starts_with("ab") => Some(reason.into_owned()),
             _ => None,
         })
         .collect();
@@ -287,11 +291,14 @@ fn entropy_extraction_rejection_is_dogfood_visible() {
         .dogfood_events
         .into_iter()
         .filter_map(|event| match event {
+            // "YOUR_API_KEY_HERE" (17 bytes) redacts to "YO...RE" under the
+            // canonical edge = (len/8).clamp(1,4) = 2; the old fixed 4-byte
+            // prefix predates the short-secret exposure cap (02d6150d9).
             DogfoodEvent::ShapeSuppressed {
                 credential_redacted,
                 reason,
                 ..
-            } if credential_redacted.starts_with("YOUR") => Some(reason.into_owned()),
+            } if credential_redacted.starts_with("YO") => Some(reason.into_owned()),
             _ => None,
         })
         .collect();

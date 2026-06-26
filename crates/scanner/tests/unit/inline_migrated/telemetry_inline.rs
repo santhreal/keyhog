@@ -162,21 +162,18 @@ fn dogfood_captures_events() {
             ..
         } => {
             assert_eq!(detector, "aws-access-key");
-            assert!(
-                credential_redacted.starts_with("AKIA"),
-                "should keep service prefix: {credential_redacted}"
+            // Canonical keyhog_core::redact: edge = (len/8).clamp(1,4); this
+            // 20-byte value redacts to "AK" + "..." + "LE". telemetry.rs migrated
+            // dogfood redaction onto the shared finding-output policy, dropping the
+            // old fixed-prefix helper that leaked too much of short secrets
+            // (02d6150d9 "Cap redaction preview exposure").
+            assert_eq!(
+                credential_redacted, "AK...LE",
+                "dogfood redaction must match canonical keyhog_core::redact"
             );
             assert!(
                 !credential_redacted.contains("EXAMPLE"),
                 "must not leak the full value"
-            );
-            assert!(
-                credential_redacted.ends_with("MPLE"),
-                "short redaction truncation should keep provider tail bytes: {credential_redacted}"
-            );
-            assert!(
-                credential_redacted.contains("..."),
-                "must contain an ellipsis separator when redacting a long credential"
             );
             assert_eq!(reason.as_ref(), "ends_with_EXAMPLE");
         }
@@ -202,9 +199,9 @@ fn redaction_keeps_prefix_only() {
         } => credential_redacted.as_str(),
         other => panic!("expected ExampleSuppressed, got {other:?}"),
     };
-    assert!(red.starts_with("AKIA"));
-    assert!(red.contains("..."));
-    assert!(red.ends_with("MPLE"));
+    // Canonical redact keeps (len/8).clamp(1,4)=2-byte edges for this 20-byte
+    // value: "AK...LE". The middle and the distinctive tail stay hidden.
+    assert_eq!(red, "AK...LE");
     assert!(!red.contains("EXAMPLE"));
 }
 
