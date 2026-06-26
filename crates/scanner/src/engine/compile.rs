@@ -1,5 +1,5 @@
 #[cfg(feature = "simdsieve")]
-use super::compile_helpers::build_hot_ac_map_index_by_index;
+use super::compile_helpers::build_hot_pattern_slots;
 #[cfg(all(target_os = "linux", feature = "gpu"))]
 use super::compile_helpers::surface_cuda_acquisition_failure;
 use super::compile_helpers::validate_compiled_pattern_detector_indices;
@@ -391,21 +391,16 @@ impl CompiledScanner {
             })
         };
 
-        // Precise-regex validators for the simdsieve hot fast-path. Built here
-        // (before `detectors` is moved into the struct) so the fast path can
-        // reject literal-prefix candidates the detector's own regex would not
-        // match - see `build_hot_pattern_validators`.
+        // Resolved hot-pattern slots for the simdsieve fast path: one row per
+        // slot carrying BOTH the precise-regex validator AND the canonical
+        // `ac_map` delegate, so the two can never be indexed apart at scan time.
+        // Built here (before `detectors` is moved into the struct) so the fast
+        // path can reject literal-prefix candidates the detector's own regex
+        // would not match - see `build_hot_pattern_slots`. The builder asserts
+        // both component tables equal `HOT_PATTERNS.len()` before zipping, so a
+        // drift fails the scanner build loud rather than silently truncating.
         #[cfg(feature = "simdsieve")]
-        let hot_pattern_validators =
-            crate::simdsieve_prefilter::build_hot_pattern_validators(&detectors)?;
-        #[cfg(feature = "simdsieve")]
-        let hot_ac_map_index_by_index = build_hot_ac_map_index_by_index(&detectors, &state.ac_map)?;
-
-        #[cfg(feature = "simdsieve")]
-        crate::simdsieve_prefilter::validate_hot_pattern_runtime_table_lengths(
-            hot_pattern_validators.len(),
-            hot_ac_map_index_by_index.len(),
-        )?;
+        let hot_pattern_slots = build_hot_pattern_slots(&detectors, &state.ac_map)?;
 
         let scanner = Self {
             ac,
@@ -455,9 +450,7 @@ impl CompiledScanner {
             #[cfg(feature = "simd")]
             hs_index_map,
             #[cfg(feature = "simdsieve")]
-            hot_pattern_validators,
-            #[cfg(feature = "simdsieve")]
-            hot_ac_map_index_by_index,
+            hot_pattern_slots,
             #[cfg(feature = "entropy")]
             entropy_metadata_by_index,
             config: ScannerConfig::default(),

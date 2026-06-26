@@ -190,3 +190,60 @@ fn loaded_hot_detector_without_matching_ac_prefix_fails_construction() {
         "error must name stale hot-pattern prefix mapping and fix context; got {msg}"
     );
 }
+
+#[test]
+fn unified_hot_slot_keeps_validator_and_ac_map_in_lockstep() {
+    // The drift this table's unification eliminates: a slot's precise validator
+    // and its canonical `ac_map` delegate are ONE row, so they are populated or
+    // emptied together. With only the github detector loaded, the `ghp_` slot
+    // must resolve BOTH; every slot for an unloaded detector must resolve
+    // NEITHER. Two parallel `Vec`s could have drifted to one-present-one-absent
+    // (a wrong-detector emission); one row makes that unrepresentable.
+    let detector = DetectorSpec {
+        id: "github-classic-pat".to_string(),
+        name: "GitHub Classic PAT".to_string(),
+        service: "github".to_string(),
+        severity: Severity::Critical,
+        patterns: vec![PatternSpec {
+            regex: r"ghp_[A-Za-z0-9]{36}".to_string(),
+            ..Default::default()
+        }],
+        keywords: vec!["ghp".to_string()],
+        min_confidence: Some(0.1),
+        ..Default::default()
+    };
+
+    let scanner =
+        CompiledScanner::compile(vec![detector]).expect("real github hot detector compiles");
+    let presence = keyhog_scanner::testing::hot_pattern_slot_presence(&scanner);
+    assert_eq!(presence.len(), HOT_PATTERNS.len(), "one slot row per hot prefix");
+
+    for (i, (has_validator, has_ac_map)) in presence.iter().enumerate() {
+        assert_eq!(
+            has_validator, has_ac_map,
+            "slot {i} ({:?}): validator presence must equal ac_map-delegate presence — the \
+             unified row forbids one without the other",
+            HOT_PATTERN_DETECTOR_IDS[i]
+        );
+    }
+
+    let ghp_slot = HOT_PATTERN_DETECTOR_IDS
+        .iter()
+        .position(|id| *id == "github-classic-pat")
+        .expect("ghp_ slot present in table");
+    assert_eq!(
+        presence[ghp_slot],
+        (true, true),
+        "loaded github slot must resolve BOTH its validator and its ac_map delegate"
+    );
+
+    let openai_slot = HOT_PATTERN_DETECTOR_IDS
+        .iter()
+        .position(|id| *id == "openai-api-key")
+        .expect("openai slot present in table");
+    assert_eq!(
+        presence[openai_slot],
+        (false, false),
+        "an unloaded detector's slot must resolve NEITHER validator nor ac_map delegate"
+    );
+}

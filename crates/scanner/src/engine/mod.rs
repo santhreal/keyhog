@@ -302,20 +302,20 @@ pub struct CompiledScanner {
     pub(crate) simd_prefilter: Option<crate::simd::backend::HsScanner>,
     #[cfg(feature = "simd")]
     pub(crate) hs_index_map: CsrU32,
-    /// Precise-regex validator per hot-pattern slot (index-parallel with
-    /// `simdsieve_prefilter::HOT_PATTERNS`). The hot fast-path runs each
-    /// literal-prefix candidate through these before emitting so it can never
-    /// surface a token the detector's own regex rejects (the length floor
-    /// alone let `ghp_…_…`/`xoxp-123-456-789-abc` through). `None` for the one
-    /// slot with no canonical detector (square).
+    /// Resolved hot-pattern slots, index-parallel with
+    /// `simdsieve_prefilter::HOT_PATTERNS`. Each row bundles the slot's precise
+    /// validator AND its canonical `ac_map` delegate together, so a slot's
+    /// validation target and emission target can never be indexed apart and so
+    /// can never drift — they were two parallel `Vec`s read by the same
+    /// `pattern_idx` before, an unauditable coupling. The hot fast-path runs each
+    /// literal-prefix candidate through `slot.validator` before emitting (so it
+    /// can never surface a token the detector's own regex rejects — the length
+    /// floor alone let `ghp_…_…`/`xoxp-123-456-789-abc` through) and delegates
+    /// the survivor to `ac_map[slot.ac_map_index]` via `process_match`. A slot's
+    /// fields are both `None` together when no canonical detector is loaded.
+    /// Built once by `compile_helpers::build_hot_pattern_slots`.
     #[cfg(feature = "simdsieve")]
-    pub(crate) hot_pattern_validators: Vec<Option<regex::Regex>>,
-    /// Canonical confirmed-pattern entry for each hot-pattern slot. `Some(i)`
-    /// means the SIMD hot path is only an accelerator for `ac_map[i]` and must
-    /// delegate surviving candidates through `process_match`; `None` is
-    /// reserved for genuinely synthetic slots with no loaded detector.
-    #[cfg(feature = "simdsieve")]
-    pub(crate) hot_ac_map_index_by_index: Vec<Option<usize>>,
+    pub(crate) hot_pattern_slots: Vec<crate::simdsieve_prefilter::HotPatternSlot>,
     /// Pre-interned `(detector_id, detector_name, service)` triple for each of
     /// the four synthetic entropy-fallback classes, indexed by
     /// `classify_entropy_detector_index` (0 generic / 1 password / 2 token /

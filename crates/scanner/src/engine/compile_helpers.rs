@@ -39,8 +39,42 @@ fn validate_compiled_pattern_detector_index(
     Ok(())
 }
 
+/// Resolve every hot-pattern slot into a single `Vec<HotPatternSlot>` — the one
+/// runtime table the SIMD fast path indexes by `pattern_idx`.
+///
+/// Each slot's precise validator and its canonical `ac_map` delegate are built
+/// by two focused helpers (`build_hot_pattern_validators` over the detector
+/// regexes, `build_hot_ac_map_index_by_index` over the compiled AC prefixes),
+/// then zipped into one row per slot. Both helpers project
+/// `HOT_PATTERN_DETECTOR_IDS`, so both must equal `HOT_PATTERNS.len()`; we assert
+/// that BEFORE the zip so a future divergence fails the scanner build loud
+/// instead of `zip()` silently truncating to the shorter table (Law 10). After
+/// the zip the two columns live in one row and can never drift again.
 #[cfg(feature = "simdsieve")]
-pub(super) fn build_hot_ac_map_index_by_index(
+pub(super) fn build_hot_pattern_slots(
+    detectors: &[DetectorSpec],
+    ac_map: &[CompiledPattern],
+) -> Result<Vec<crate::simdsieve_prefilter::HotPatternSlot>> {
+    use crate::simdsieve_prefilter::{
+        build_hot_pattern_validators, validate_hot_pattern_runtime_table_lengths, HotPatternSlot,
+    };
+
+    let validators = build_hot_pattern_validators(detectors)?;
+    let ac_map_indices = build_hot_ac_map_index_by_index(detectors, ac_map)?;
+    validate_hot_pattern_runtime_table_lengths(validators.len(), ac_map_indices.len())?;
+
+    Ok(validators
+        .into_iter()
+        .zip(ac_map_indices)
+        .map(|(validator, ac_map_index)| HotPatternSlot {
+            validator,
+            ac_map_index,
+        })
+        .collect())
+}
+
+#[cfg(feature = "simdsieve")]
+fn build_hot_ac_map_index_by_index(
     detectors: &[DetectorSpec],
     ac_map: &[CompiledPattern],
 ) -> Result<Vec<Option<usize>>> {

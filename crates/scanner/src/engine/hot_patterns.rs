@@ -48,8 +48,13 @@ impl CompiledScanner {
                     continue;
                 }
 
-                let ac_map_index = self.hot_ac_map_index_by_index[pattern_idx];
-                let Some(ac_map_index) = ac_map_index else {
+                // One slot owns BOTH this pattern's `ac_map` delegate and its
+                // precise validator, so `pattern_idx` resolves them together and
+                // they cannot drift apart. Direct `[pattern_idx]` indexing (not
+                // `.get()`) keeps the construction-time length invariant loud:
+                // an out-of-range slot is a corrupt build, not a silent skip.
+                let slot = &self.hot_pattern_slots[pattern_idx];
+                let Some(ac_map_index) = slot.ac_map_index else {
                     continue;
                 };
 
@@ -95,7 +100,7 @@ impl CompiledScanner {
                 // validator owns the emitted token span; process_match owns
                 // every suppression, checksum, confidence, ML, and reporting
                 // policy after that.
-                let credential = match &self.hot_pattern_validators[pattern_idx] {
+                let credential = match &slot.validator {
                     Some(validator) => match validator.find(credential) {
                         // `^`-anchored, so any match starts at 0; trim the
                         // delimiter-bounded capture down to the real token.

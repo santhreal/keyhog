@@ -23,15 +23,15 @@ fn hot_pattern_slot_metadata_has_one_owner() {
         "hot prefixes, slot dispatch, and identity metadata must be generated from one simdsieve table with compile-time length guards"
     );
     assert!(
-        hot_patterns.contains("let Some(ac_map_index) = ac_map_index else")
+        hot_patterns.contains("let slot = &self.hot_pattern_slots[pattern_idx];")
+            && hot_patterns.contains("let Some(ac_map_index) = slot.ac_map_index else")
             && hot_patterns.contains("hot_pattern_index_at")
             && hot_patterns.contains("self.process_match(")
-            && hot_patterns.contains("hot_pattern_index_at")
             && !hot_patterns.contains("fn hot_pattern_index_at")
             && !hot_patterns.contains("=> Some(")
             && !hot_patterns.contains("PER_PATTERN_MIN_LEN")
             && !hot_patterns.contains("HOT_PATTERN_MIN_LENGTHS")
             && !hot_patterns.contains("unwrap_or(8)"),
-        "engine hot-pattern dispatch must consume the shared slot resolver, require a canonical ac_map entry, and never keep a local fallback table"
+        "engine hot-pattern dispatch must consume the unified slot resolver (one row per slot, ac_map delegate + validator inseparable), require a canonical ac_map entry, and never keep a local fallback table"
     );
 }

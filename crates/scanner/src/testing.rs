@@ -2295,6 +2295,21 @@ pub(crate) fn validate_hot_pattern_runtime_table_lengths(
     )
 }
 
+/// Per-slot `(validator present, ac_map delegate present)` for a compiled
+/// scanner's unified hot-pattern table. Lets a regression test assert the
+/// structural invariant the [`crate::simdsieve_prefilter::HotPatternSlot`]
+/// unification guarantees: a slot's validator and its `ac_map` delegate are one
+/// row, so they are populated or emptied together and can never drift to one
+/// present without the other.
+#[cfg(all(test, feature = "simdsieve"))]
+pub(crate) fn hot_pattern_slot_presence(scanner: &crate::CompiledScanner) -> Vec<(bool, bool)> {
+    scanner
+        .hot_pattern_slots
+        .iter()
+        .map(|slot| (slot.validator.is_some(), slot.ac_map_index.is_some()))
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg(test)]
 pub(crate) struct StructuredPair {

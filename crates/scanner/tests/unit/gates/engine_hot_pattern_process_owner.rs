@@ -35,11 +35,14 @@ fn canonical_hot_patterns_delegate_to_process_match() {
     let backend_triggered = uncommented_code(&read(&src.join("engine/backend_triggered.rs")));
 
     assert!(
-        hot_patterns.contains("self.hot_ac_map_index_by_index[pattern_idx]")
-            && hot_patterns.contains("let Some(ac_map_index) = ac_map_index else")
+        hot_patterns.contains("let slot = &self.hot_pattern_slots[pattern_idx];")
+            && hot_patterns.contains("let Some(ac_map_index) = slot.ac_map_index else")
+            && hot_patterns.contains("match &slot.validator {")
             && hot_patterns.contains("self.process_match(")
             && hot_patterns.contains("super::scan_filters::compute_pattern_signals("),
-        "canonical hot-pattern hits must delegate through process_match with shared confidence/suppression signals"
+        "canonical hot-pattern hits must resolve one unified slot (validator + ac_map delegate \
+         indexed together, never apart) and delegate through process_match with shared \
+         confidence/suppression signals"
     );
     for forbidden in [
         "hot_pattern_direct_emit_allowed",
@@ -55,20 +58,21 @@ fn canonical_hot_patterns_delegate_to_process_match() {
         );
     }
     assert!(
-        !hot_patterns.contains("self.hot_ac_map_index_by_index.get(pattern_idx)")
-            && !hot_patterns.contains("self.hot_pattern_validators.get(pattern_idx)"),
-        "hot-pattern runtime tables must be construction-validated and indexed directly, not silently treated as missing slots"
+        !hot_patterns.contains("self.hot_pattern_slots.get(pattern_idx)"),
+        "the unified hot-pattern slot table must be construction-validated and indexed directly, not silently treated as a missing slot via .get()"
     );
     assert!(
-        compile.contains("build_hot_ac_map_index_by_index(")
+        compile.contains("build_hot_pattern_slots(")
+            && compile_helpers.contains("fn build_hot_pattern_slots(")
             && compile_helpers.contains("fn build_hot_ac_map_index_by_index(")
             && compile_helpers
                 .contains("crate::compiler::compiler_prefix::extract_literal_prefixes("),
-        "compile must build hot-slot to canonical ac_map entries from existing compiler prefix extraction"
+        "compile must build the unified hot-pattern slot table, resolving each slot's canonical ac_map entry from existing compiler prefix extraction"
     );
     assert!(
-        compile.contains("validate_hot_pattern_runtime_table_lengths("),
-        "scanner construction must fail loud if hot-pattern runtime tables drift from HOT_PATTERNS"
+        compile_helpers.contains("validate_hot_pattern_runtime_table_lengths(")
+            && compile_helpers.contains(".zip(ac_map_indices)"),
+        "the slot builder must fail loud if the validator/ac_map component tables drift from HOT_PATTERNS BEFORE zipping them into one row per slot"
     );
     let simdsieve = uncommented_code(&read(&src.join("simdsieve_prefilter.rs")));
     assert!(

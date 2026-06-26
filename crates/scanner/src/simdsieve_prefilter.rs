@@ -159,6 +159,38 @@ pub(crate) fn validate_hot_pattern_runtime_table_lengths(
     Ok(())
 }
 
+/// Everything the SIMD hot fast-path needs to turn a literal-prefix sieve hit
+/// at slot `i` into a precise finding, kept in ONE row so a slot's validator and
+/// its `ac_map` delegate are physically inseparable — they can never be indexed
+/// apart and so can never drift. Index-parallel with [`HOT_PATTERNS`] (slot
+/// order is the literal-table order); built once by
+/// `engine::compile_helpers::build_hot_pattern_slots`.
+///
+/// Before unification these were two separate `Vec`s on `CompiledScanner`
+/// (`hot_pattern_validators` and `hot_ac_map_index_by_index`) read by the SAME
+/// `pattern_idx` at scan time. Nothing structurally bound slot `i`'s validator
+/// to slot `i`'s `ac_map` entry — only construction discipline and a runtime
+/// length-equality guard. A future edit that filtered one vec but not the other
+/// would have silently applied slot `i`'s validator to slot `j`'s detector: a
+/// wrong-detector emission, invisible. One row per slot makes that
+/// unrepresentable.
+#[derive(Debug)]
+pub(crate) struct HotPatternSlot {
+    /// Precise-regex validator (anchored at the candidate start) every
+    /// literal-prefix candidate for this slot must satisfy before emission —
+    /// restores AC+regex parity so the fast path can't surface a token the
+    /// detector's own regex rejects (the length floor alone let
+    /// `ghp_…_…`/`xoxp-123-456-789-abc` through). `None` when the slot names no
+    /// loaded detector; the hot path skips the slot rather than emit a synthetic
+    /// finding.
+    pub(crate) validator: Option<regex::Regex>,
+    /// Canonical confirmed-pattern `ac_map` entry this slot accelerates.
+    /// `Some(i)` means the SIMD hit is only an accelerator for `ac_map[i]` and
+    /// delegates surviving candidates through `process_match`; `None` is the
+    /// genuinely synthetic slot with no loaded detector exposing the literal.
+    pub(crate) ac_map_index: Option<usize>,
+}
+
 /// Build a precise-regex validator for each hot-pattern slot, index-parallel
 /// with [`HOT_PATTERNS`].
 ///
