@@ -314,6 +314,12 @@ jobs:
       # surfaces and the soundness twin (same shape without `.atlasv1.` → no claim).
       - name: distinctive-infix anchor recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_distinctive_infix_anchor_recall
+      # Checksum boundary no-downgrade recall contract. A known-prefix boundary
+      # extension (provider-token bytes / base64 `=` padding) must never turn a
+      # checksum-VALID token into a non-valid one — e.g. a `pypi-…` token abutted
+      # by a `="…"` separator must not absorb the `=` and fail its checksum.
+      - name: checksum boundary no-downgrade recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_checksum_boundary_no_downgrade
       - name: RawMatch total-order gate
         run: cargo test -p keyhog-core --test new_core_finding_dedup --profile release-fast
 

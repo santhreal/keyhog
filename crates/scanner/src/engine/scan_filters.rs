@@ -268,6 +268,8 @@ pub(super) fn extend_known_prefix_credential<'a>(
     credential: &'a str,
     match_end: usize,
 ) -> (&'a str, usize) {
+    let original = credential;
+    let original_end = match_end;
     let (credential, match_end) = if crate::confidence::known_prefix_confidence_floor(credential)
         .is_some()
     {
@@ -298,7 +300,26 @@ pub(super) fn extend_known_prefix_credential<'a>(
         (credential, match_end)
     };
 
-    extend_base64_padding(data, credential, match_end)
+    let (credential, match_end) = extend_base64_padding(data, credential, match_end);
+
+    // A boundary extension must never DOWNGRADE an already-valid checksum. A
+    // known-prefix token whose canonical form passes its checksum is complete;
+    // grabbing a trailing byte that merely abuts it — a base64 `=` that is
+    // really a separator (`pypi-…MNH` followed by `="…"`), or a provider-token
+    // byte from adjacent content — corrupts the token so it fails the checksum
+    // and is dropped, losing a real secret. Only the extension is reverted (the
+    // canonical token still surfaces); the unicode swap-invariance gate
+    // exercises exactly this (homoglyphed companion context whose trailing `=`
+    // was being appended to a valid pypi token). Cheap: `validate_checksum`
+    // runs only when the extension actually changed the credential.
+    if credential.len() != original.len()
+        && crate::checksum::validate_checksum(original) == crate::checksum::ChecksumResult::Valid
+        && crate::checksum::validate_checksum(credential) != crate::checksum::ChecksumResult::Valid
+    {
+        return (original, original_end);
+    }
+
+    (credential, match_end)
 }
 
 /// Swallow up to two trailing `=` when the captured body is base64-shaped.
@@ -366,4 +387,42 @@ pub(super) fn compute_pattern_signals(
         .map(crate::confidence::is_sensitive_path)
         .unwrap_or(false); // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
     (kw, sf)
+}
+
+#[cfg(test)]
+mod extend_boundary_tests {
+    use super::*;
+
+    // A checksum-valid PyPI token (checksum/pypi.rs: `pypi-` + base64url body).
+    const VALID_PYPI: &str =
+        "pypi-EUJykml7ZgrfPCV8aS7QTdFqbB2uTkz8KP4a8d3M1JxnuJn7UfyK_Dalj4zgPh-hecYl8DYcWbo6yT2c7xfyT0QjAXikOrHrbMNH";
+
+    #[test]
+    fn valid_checksum_token_is_not_extended_over_a_trailing_equals() {
+        // `pypi-…MNH="x"` — the base64-padding extension would append the `=`,
+        // breaking the PyPI checksum. The extension must be reverted.
+        let data = format!("{VALID_PYPI}=\"x\"");
+        let credential = &data[..VALID_PYPI.len()];
+        let (cred, end) = extend_known_prefix_credential(&data, credential, VALID_PYPI.len());
+        assert_eq!(cred, VALID_PYPI, "valid token must keep its canonical boundary");
+        assert_eq!(end, VALID_PYPI.len());
+        assert_eq!(
+            crate::checksum::validate_checksum(cred),
+            crate::checksum::ChecksumResult::Valid
+        );
+    }
+
+    #[test]
+    fn non_checksum_base64_value_still_recovers_padding() {
+        // No checksum applies, so the base64-padding recovery is UNCHANGED: a
+        // generic base64 value still absorbs its trailing `==`. This pins that
+        // the no-downgrade guard only fires on a Valid→non-Valid checksum
+        // transition and never weakens padding recovery for ordinary base64.
+        let token = "YWJjZGVmZ2hpamtsbW5vcA"; // base64, no known-prefix checksum
+        let data = format!("{token}==trailing");
+        let credential = &data[..token.len()];
+        let (cred, end) = extend_known_prefix_credential(&data, credential, token.len());
+        assert_eq!(cred, "YWJjZGVmZ2hpamtsbW5vcA==", "padding must still be recovered");
+        assert_eq!(end, token.len() + 2);
+    }
 }
