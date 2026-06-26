@@ -160,7 +160,15 @@ fn hot_pattern_runtime_tables_fail_loud_on_length_drift() {
 }
 
 #[test]
-fn loaded_hot_detector_without_matching_ac_prefix_fails_construction() {
+fn loaded_hot_detector_without_matching_ac_prefix_degrades_slot_gracefully() {
+    // A detector reusing a hot-table id (`github-classic-pat`) but whose regex
+    // exposes a DIFFERENT prefix (`not_ghp_`) no longer fails construction. The
+    // hot table is an internal SIMD optimization keyed to the embedded corpus;
+    // for an arbitrary caller-supplied detector set the `ghp_` slot it cannot
+    // back simply goes inactive — recall-safe, because the hot path is a pure
+    // accelerator over the confirmed AC scan, which still covers `not_ghp_`. The
+    // unified row empties BOTH columns together for that slot (lockstep), so an
+    // inactive slot is never a validator-without-delegate dormant emitter.
     let detector = DetectorSpec {
         id: "github-classic-pat".to_string(),
         name: "GitHub Classic PAT".to_string(),
@@ -175,20 +183,48 @@ fn loaded_hot_detector_without_matching_ac_prefix_fails_construction() {
         ..Default::default()
     };
 
-    let err = match CompiledScanner::compile(vec![detector]) {
-        Ok(_) => {
-            panic!("loaded hot detector with stale HOT_PATTERNS prefix must fail construction")
-        }
-        Err(err) => err,
-    };
-    let msg = err.to_string();
-    assert!(
-        msg.contains("simdsieve hot-pattern slot")
-            && msg.contains("github-classic-pat")
-            && msg.contains("ghp_")
-            && msg.contains("no compiled AC entry"),
-        "error must name stale hot-pattern prefix mapping and fix context; got {msg}"
+    let scanner = CompiledScanner::compile(vec![detector])
+        .expect("a detector that cannot back a hot slot must still compile (slot goes inactive)");
+    let presence = keyhog_scanner::testing::hot_pattern_slot_presence(&scanner);
+    let ghp_slot = HOT_PATTERN_DETECTOR_IDS
+        .iter()
+        .position(|id| *id == "github-classic-pat")
+        .expect("ghp_ slot present in table");
+    assert_eq!(
+        presence[ghp_slot],
+        (false, false),
+        "the ghp_ slot has no backing ac_map entry (regex exposes not_ghp_), so it must \
+         resolve NEITHER validator nor delegate — inactive, not a dormant emitter"
     );
+}
+
+/// Drift gate at the correct scope: the SHIPPED embedded corpus MUST back every
+/// hot-pattern slot. A `HOT_PATTERNS` entry no embedded detector exposes is a
+/// dormant fast-path slot (the class commit 74348481a removed). Catching it here
+/// — against the real corpus the table is authored for — is what replaced the
+/// former per-compile hard error, which over-fired on partial caller detectors
+/// (e.g. a `stripe-secret-key` defining only `sk_live_`) that are legitimately
+/// allowed to leave the other stripe slots inactive.
+#[test]
+fn hot_pattern_table_fully_backed_by_embedded_corpus() {
+    let detectors =
+        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load");
+    let scanner = CompiledScanner::compile(detectors).expect("embedded corpus compiles");
+    let presence = keyhog_scanner::testing::hot_pattern_slot_presence(&scanner);
+    assert_eq!(
+        presence.len(),
+        HOT_PATTERNS.len(),
+        "one slot row per hot prefix"
+    );
+    for (i, (has_validator, has_ac_map)) in presence.iter().enumerate() {
+        assert!(
+            *has_validator && *has_ac_map,
+            "embedded corpus leaves hot slot {i} ({:?}, prefix {:?}) unbacked — a dormant \
+             HOT_PATTERNS entry; fix the detector regex or remove the stale slot",
+            HOT_PATTERN_DETECTOR_IDS[i],
+            std::str::from_utf8(HOT_PATTERNS[i]).unwrap_or("<non-utf8>")
+        );
+    }
 }
 
 #[test]

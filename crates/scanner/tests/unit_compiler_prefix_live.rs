@@ -44,7 +44,14 @@ fn partial_alternation_unprefixed_branch_still_scans() {
 
 #[cfg(feature = "simdsieve")]
 #[test]
-fn loaded_hot_detector_without_matching_ac_prefix_fails_construction() {
+fn loaded_hot_detector_without_matching_ac_prefix_degrades_gracefully_and_still_detects() {
+    // The hot-pattern table is an internal SIMD optimization keyed to the
+    // embedded corpus. A caller who reuses a hot-table id (`github-classic-pat`)
+    // with a regex that exposes a DIFFERENT prefix (`not_ghp_`) must NOT fail
+    // construction: the `ghp_` hot slot it cannot back goes inactive, and the
+    // credential is still found by the confirmed AC scan (the hot path is a pure
+    // accelerator over it). Drift in the SHIPPED table is caught separately by
+    // `hot_pattern_table_fully_backed_by_embedded_corpus` (internal unit test).
     let detector = DetectorSpec {
         id: "github-classic-pat".into(),
         name: "GitHub Classic PAT".into(),
@@ -59,18 +66,22 @@ fn loaded_hot_detector_without_matching_ac_prefix_fails_construction() {
         ..Default::default()
     };
 
-    let err = match CompiledScanner::compile(vec![detector]) {
-        Ok(_) => {
-            panic!("loaded hot detector with stale HOT_PATTERNS prefix must fail construction")
-        }
-        Err(err) => err,
+    let scanner = CompiledScanner::compile(vec![detector])
+        .expect("a detector that cannot back a hot slot must still compile (slot goes inactive)");
+
+    // not_ghp_ + exactly 36 high-entropy body chars from [A-Za-z0-9_].
+    let credential = "not_ghp_Kp7Rm2Qx9Bn4Lv6Tw8Ys1Hj3Dg5Fc0Zb2aQp";
+    let chunk = Chunk {
+        data: format!("token = \"{credential}\"\n").into(),
+        metadata: ChunkMetadata {
+            path: Some("degraded-hot-slot.txt".into()),
+            ..Default::default()
+        },
     };
-    let msg = err.to_string();
+    let matches = scanner.scan(&chunk);
     assert!(
-        msg.contains("simdsieve hot-pattern slot")
-            && msg.contains("github-classic-pat")
-            && msg.contains("ghp_")
-            && msg.contains("no compiled AC entry"),
-        "error must name stale hot-pattern prefix mapping and fix context; got {msg}"
+        matches.iter().any(|m| m.credential.as_ref() == credential),
+        "credential must still be detected via the confirmed AC scan even though its hot \
+         slot is inactive; matches={matches:?}"
     );
 }
