@@ -18,9 +18,9 @@ text = "4EVER_KEY=KP4QX7RM2SN5TB8VW3Y"
 reason = "Body 19 chars, below 20 minimum."
 
 [[evasion]]
-text = "Bearer 4ever-access-key=KP4QX7RM2SN5TB8VW3YZKP4QX7RM2SN5TB8VW3YZK"
-credential = "KP4QX7RM2SN5TB8VW3YZKP4QX7RM2SN5TB8VW3YZK"
-reason = "Bearer prefix with hyphen-separated key form."
+text = "Bearer 4ever-access-key=KP4QX7RM2SN5TB8VW3YZKP4QX7RM2SN5"
+credential = "KP4QX7RM2SN5TB8VW3YZKP4QX7RM2SN5"
+reason = "Bearer prefix + hyphen-separated access-key form. A 4everland access key is [A-Z0-9]{20,32}, so the token is 32 chars (the prior 41-char value exceeded the access-key length and the regex captured only its first 32)."
 
 [perf]
 fixture_bytes = 4096

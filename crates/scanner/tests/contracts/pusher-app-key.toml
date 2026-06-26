@@ -22,9 +22,9 @@ text = "PUSHER=7a5c6EXAMPLEEXAMPLE788cb"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
 
 [[evasion]]
-text = "{\"secret\":\"7a5c6e6b26ccfcb788cb\"}"
+text = "{\"pusher_app_key\":\"7a5c6e6b26ccfcb788cb\"}"
 credential = "7a5c6e6b26ccfcb788cb"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "JSON-config envelope evasion: the credential is wrapped in JSON but the service key (pusher_app_key) survives as the field name, so the detector still surfaces it. A context-free {\"secret\":\"<hex>\"} carries no service marker and is correctly NOT claimed (firing on it would flag any JSON hash field)."
 
 [perf]
 fixture_bytes = 4096
