@@ -19,6 +19,22 @@ pub(crate) struct CompileState {
     pub(crate) quality_warnings: Vec<String>,
 }
 
+/// Everything the serial assembly phase needs for one compiled pattern, all
+/// derived inside the parallel compile map: the compiled pattern, its literal
+/// prefixes, any homoglyph phase-2 variants (each a freshly compiled regex),
+/// its inner literals (only when there is no usable prefix), and whether it has
+/// neither a literal nor a keyword (a quality warning). Deriving these in the
+/// `par_iter` instead of the serial assembly loop is what keeps cold-compile
+/// wall-clock flat as the corpus grows — the AST parsing and homoglyph DFA
+/// compilation are the cost, and they are independent per pattern.
+struct PatternArtifacts {
+    compiled: CompiledPattern,
+    prefixes: Vec<String>,
+    homoglyph_phase2: Vec<(CompiledPattern, Vec<String>)>,
+    inner_literals: Vec<String>,
+    no_literal_no_keyword: bool,
+}
+
 pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
     use rayon::prelude::*;
 
@@ -43,23 +59,98 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
         tracing::debug!(unique, "compiler dedup: unique pattern regexes");
     }
 
-    // Phase 1: Pre-compile all regexes in parallel (the expensive part).
-    let compiled_results: Vec<Result<(Vec<CompiledPattern>, Vec<CompiledCompanion>)>> = detectors
+    // Phase 1: compile every regex AND derive all of its per-pattern artifacts
+    // (literal prefixes, homoglyph phase-2 variants, inner literals) in
+    // parallel. The derivation used to live in the serial assembly loop below,
+    // where its per-pattern AST parsing and homoglyph DFA compilation dominated
+    // cold compile (~430ms over the full corpus on a 22-core box, scaling ~2x
+    // with detector count while every core but one idled). It is independent
+    // per pattern, so it belongs in the `par_iter`; Phase 2 is now pure
+    // assembly (cheap vec pushes, no regex work).
+    let compiled_results: Vec<Result<(Vec<PatternArtifacts>, Vec<CompiledCompanion>)>> = detectors
         .par_iter()
         .enumerate()
         .map(|(detector_index, detector)| {
             let companions = compile_detector_companions(detector)?;
-            let mut patterns = Vec::new();
+            let mut artifacts = Vec::with_capacity(detector.patterns.len());
             for (pattern_index, pattern) in detector.patterns.iter().enumerate() {
-                patterns.push(compile_pattern(
+                let compiled = compile_pattern(
                     detector_index,
                     pattern_index,
                     pattern,
                     &detector.id,
                     &detector.keywords,
-                )?);
+                )?;
+
+                let prefixes = extract_literal_prefixes(&pattern.regex);
+
+                // Homoglyph expansion for patterns with a literal prefix:
+                // catches tokens whose prefix is visually spoofed with
+                // Cyrillic/Greek/full-width lookalikes. The expanded prefix is
+                // substituted back into the FULL regex so the variant still
+                // requires the rest of the pattern to match (a bare prefix
+                // anchor would turn every detector into "fires on `<prefix>*`").
+                let mut homoglyph_phase2 = Vec::new();
+                for prefix in &prefixes {
+                    if prefix.len() < 3 {
+                        continue;
+                    }
+                    let expanded_prefix = crate::homoglyph::expand_homoglyphs(prefix);
+                    if expanded_prefix == *prefix {
+                        continue;
+                    }
+                    // Prefix appears in the parse tree but isn't a leading
+                    // literal slice / trivially-rewritable alternation (e.g. it
+                    // sits inside a nested group): no safe text rewrite, skip.
+                    let Some(full_homoglyph_regex) =
+                        rewrite_homoglyph_literal_prefix(&pattern.regex, prefix, &expanded_prefix)
+                    else {
+                        continue;
+                    };
+                    let compiled_homoglyph_regex = regex::Regex::new(&full_homoglyph_regex)
+                        .map(std::sync::Arc::new)
+                        .map_err(|source| ScanError::RegexCompile {
+                            detector_id: detector.id.clone(),
+                            index: pattern_index,
+                            source,
+                        })?;
+                    homoglyph_phase2.push((
+                        CompiledPattern {
+                            detector_index,
+                            regex: LazyRegex::plain_compiled(
+                                full_homoglyph_regex,
+                                compiled_homoglyph_regex,
+                            ),
+                            group: pattern.group,
+                            client_safe: pattern.client_safe,
+                            match_proves_keyword_nearby: false,
+                            homoglyph_variant: true,
+                        },
+                        Vec::new(),
+                    ));
+                }
+
+                // Inner-literal fallback is only needed when no usable prefix
+                // exists; keep it lazy so prefix-bearing patterns skip the
+                // second AST walk (preserves the original control flow).
+                let inner_literals = if prefixes.is_empty() {
+                    extract_inner_literals(&pattern.regex)
+                } else {
+                    Vec::new()
+                };
+                let no_literal_no_keyword = prefixes.is_empty()
+                    && inner_literals.is_empty()
+                    && detector.keywords.is_empty();
+
+                artifacts.push(PatternArtifacts {
+                    compiled,
+                    prefixes,
+                    homoglyph_phase2,
+                    inner_literals,
+                    no_literal_no_keyword,
+                });
             }
-            Ok((patterns, companions))
+            Ok((artifacts, companions))
         })
         .collect();
 
@@ -70,73 +161,25 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
     let mut companions = Vec::with_capacity(detectors.len());
     let mut quality_warnings = Vec::new();
 
-    for (detector_index, (result, detector)) in compiled_results
-        .into_iter()
-        .zip(detectors.iter())
-        .enumerate()
-    {
-        let (compiled_patterns, detector_companions) = result?;
+    // Phase 2 is now a pure drain of the parallel-derived artifacts. Every
+    // push preserves the original detector-then-pattern order (and, within a
+    // pattern, homoglyph variants before the prefix/inner/phase-2 routing), so
+    // the compiled scanner is byte-for-byte identical to the serial build.
+    for (result, detector) in compiled_results.into_iter().zip(detectors.iter()) {
+        let (artifacts, detector_companions) = result?;
         companions.push(detector_companions);
 
-        for (pattern_index, (compiled, pattern)) in compiled_patterns
-            .into_iter()
-            .zip(detector.patterns.iter())
-            .enumerate()
-        {
-            let prefixes = extract_literal_prefixes(&pattern.regex);
+        for (pattern_index, artifact) in artifacts.into_iter().enumerate() {
+            let PatternArtifacts {
+                compiled,
+                prefixes,
+                homoglyph_phase2,
+                inner_literals,
+                no_literal_no_keyword,
+            } = artifact;
 
-            // Homoglyph expansion for high-confidence patterns: catches
-            // tokens where the literal prefix has been visually spoofed
-            // with Cyrillic/Greek/full-width lookalikes. Earlier code
-            // dropped just the expanded PREFIX into phase-2 as
-            // `Regex::new("^[hh][ff]_")` - anchored to start, but with
-            // NO body constraint, so any string beginning with the
-            // prefix would match. Combined with the task #69 phase-2
-            // wire fix that finally runs these patterns, that turned
-            // every prefix-anchored detector into "fires on `<prefix>*`."
-            // Fix: substitute the expanded prefix into the FULL regex so
-            // the homoglyph variant still requires the rest of the
-            // pattern to match.
-            for prefix in &prefixes {
-                if prefix.len() < 3 {
-                    continue;
-                }
-                let expanded_prefix = crate::homoglyph::expand_homoglyphs(prefix);
-                if expanded_prefix == *prefix {
-                    continue;
-                }
-                let full_homoglyph_regex = if let Some(rewritten) =
-                    rewrite_homoglyph_literal_prefix(&pattern.regex, prefix, &expanded_prefix)
-                {
-                    rewritten
-                } else {
-                    // Prefix appears in the parse tree but isn't a leading
-                    // literal slice and isn't a trivially-rewritable alternation
-                    // (e.g. it sits inside a nested group). Skip - there's no
-                    // safe text rewrite we can do here.
-                    continue;
-                };
-                let compiled_homoglyph_regex = regex::Regex::new(&full_homoglyph_regex)
-                    .map(std::sync::Arc::new)
-                    .map_err(|source| ScanError::RegexCompile {
-                        detector_id: detector.id.clone(),
-                        index: pattern_index,
-                        source,
-                    })?;
-                phase2_patterns.push((
-                    CompiledPattern {
-                        detector_index,
-                        regex: LazyRegex::plain_compiled(
-                            full_homoglyph_regex,
-                            compiled_homoglyph_regex,
-                        ),
-                        group: pattern.group,
-                        client_safe: pattern.client_safe,
-                        match_proves_keyword_nearby: false,
-                        homoglyph_variant: true,
-                    },
-                    Vec::new(),
-                ));
+            for homoglyph in homoglyph_phase2 {
+                phase2_patterns.push(homoglyph);
             }
 
             if !prefixes.is_empty() {
@@ -144,28 +187,22 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                     ac_literals.push(prefix);
                     ac_map.push(compiled.clone());
                 }
-            } else {
-                // Prefix extraction failed - try the AST-walking inner-literal
-                // extractor before routing through phase 2. Patterns like
-                // `[a-zA-Z0-9]{20}_AKIA[A-Z0-9]{16}` have no leading literal
-                // but contain `_AKIA` mid-pattern; pulling that into the AC
-                // moves the detector out of the O(m × n) phase-2 loop and
-                // into the O(n) prefilter path.
-                let inner = extract_inner_literals(&pattern.regex);
-                if !inner.is_empty() {
-                    for lit in inner {
-                        ac_literals.push(lit);
-                        ac_map.push(compiled.clone());
-                    }
-                } else {
-                    if detector.keywords.is_empty() {
-                        quality_warnings.push(format!(
-                            "Detector {} pattern {pattern_index} has no literal prefix and no keywords.",
-                            detector.id
-                        ));
-                    }
-                    phase2_patterns.push((compiled, detector.keywords.clone()));
+            } else if !inner_literals.is_empty() {
+                // No leading literal, but an inner literal (e.g. `_AKIA` in
+                // `[a-zA-Z0-9]{20}_AKIA[A-Z0-9]{16}`) moves the detector out of
+                // the O(m x n) phase-2 loop into the O(n) AC prefilter path.
+                for lit in inner_literals {
+                    ac_literals.push(lit);
+                    ac_map.push(compiled.clone());
                 }
+            } else {
+                if no_literal_no_keyword {
+                    quality_warnings.push(format!(
+                        "Detector {} pattern {pattern_index} has no literal prefix and no keywords.",
+                        detector.id
+                    ));
+                }
+                phase2_patterns.push((compiled, detector.keywords.clone()));
             }
         }
     }

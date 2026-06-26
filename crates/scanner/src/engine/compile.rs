@@ -172,29 +172,39 @@ impl CompiledScanner {
         let phase2_always_active_indices =
             super::gpu_artifacts::phase2_always_active_indices(&state.phase2_patterns);
 
-        // Shared-anchor localization index: one Aho-Corasick over every
-        // phase-2 pattern's regex-REQUIRED prefix literals, so a single chunk
-        // pass yields candidate positions for all eligible patterns instead of
-        // each pattern scanning the chunk for its own literal. `None` when no
-        // pattern is anchor-eligible. Recall-identical (see `phase2_anchor`).
-        // Built BEFORE the prefilter so eligible always-active patterns can be
-        // removed from it (the prefilter, not extraction, is ~90% of phase-2 cost).
-        let phase2_anchor_index = phase2_anchor::Phase2AnchorIndex::build(
-            &state.phase2_patterns,
-            &phase2_always_active_indices,
-        );
+        // Three independent Aho-Corasick indices over the (post-HS-append)
+        // compile state. They share no mutable state and each is a pure function
+        // of `state`, so they build concurrently on the rayon pool instead of
+        // back-to-back (~82ms -> ~46ms serial->parallel on the full corpus):
+        //   - phase2_anchor_index: shared-anchor localization over every phase-2
+        //     pattern's regex-REQUIRED prefix literals, so one chunk pass yields
+        //     candidate positions for all eligible patterns. Built BEFORE the
+        //     prefilter so eligible always-active patterns can be removed from it
+        //     (the prefilter, not extraction, is ~90% of phase-2 cost). `None`
+        //     when no pattern is anchor-eligible. Recall-identical.
+        //   - suffix gate: one AC over required suffix literals so a triggered
+        //     detector whose rare trailing literal (`.*<sitename>`) is absent
+        //     skips its O(chunk) whole-chunk regex run.
+        //   - confirmed_anchor_index: AC over the confirmed ac_map anchors.
+        let (phase2_anchor_index, ((suffix_gate_ac, ac_suffix_gate), confirmed_anchor_index)) =
+            rayon::join(
+                || {
+                    phase2_anchor::Phase2AnchorIndex::build(
+                        &state.phase2_patterns,
+                        &phase2_always_active_indices,
+                    )
+                },
+                || {
+                    rayon::join(
+                        || super::scan_postprocess::build_confirmed_suffix_gate(&state.ac_map),
+                        || scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex::build(&state.ac_map),
+                    )
+                },
+            );
         let phase2_always_anchor_literal_count = phase2_anchor_index
             .as_ref()
             .map_or(0, |index| index.always_anchor_literals().len());
-
-        // Confirmed-pass suffix gate (one AC over required suffix literals) so a
-        // triggered detector whose rare trailing literal (`.*<sitename>`) is
-        // absent skips its O(chunk) whole-chunk regex run.
-        let (suffix_gate_ac, ac_suffix_gate) =
-            super::scan_postprocess::build_confirmed_suffix_gate(&state.ac_map);
         let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
-        let confirmed_anchor_index =
-            scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex::build(&state.ac_map);
         #[cfg(feature = "gpu")]
         let confirmed_anchor_literal_count = confirmed_anchor_index
             .as_ref()
