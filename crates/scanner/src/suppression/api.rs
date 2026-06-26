@@ -433,9 +433,12 @@ pub(crate) fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> Result<b
         WeakAnchorBase::Always => true,
         WeakAnchorBase::Never => false,
         // Detector-level back-compat: weak iff ANY pattern is broad-identifier.
-        // The per-PATTERN resolution (`WeakAnchorBase::resolve`) is what the scan
-        // path uses so a strong pattern in an otherwise-weak detector is not
-        // dragged down by a sibling username/password pattern.
+        // The scan path instead resolves PER PATTERN, via the memoized
+        // `LazyRegex::has_broad_identifier_capture` in
+        // `CompiledScanner::detector_pattern_weak_anchor`, so a strong pattern in
+        // an otherwise-weak detector is not dragged down by a sibling
+        // username/password pattern. This whole-detector form is for callers
+        // (classification, tooling) that have no single matched pattern in hand.
         WeakAnchorBase::PerPattern => spec
             .patterns
             .iter()
@@ -461,19 +464,13 @@ pub(crate) enum WeakAnchorBase {
     /// Never weak (generic/entropy/private-key fallback, or an explicit
     /// detector-level `min_confidence` already tunes the bar).
     Never,
-    /// Weak iff the MATCHED pattern has a broad-identifier capture.
+    /// Weak iff the MATCHED pattern has a broad-identifier capture. The scan
+    /// path resolves this against the specific pattern via the memoized
+    /// `LazyRegex::has_broad_identifier_capture`
+    /// (`CompiledScanner::detector_pattern_weak_anchor`), so there is no
+    /// regex-reparsing `resolve` helper here — the hot path must use the
+    /// memoized form, not a fresh parse.
     PerPattern,
-}
-
-impl WeakAnchorBase {
-    /// Resolve to the effective weak-anchor for one matched pattern regex.
-    pub(crate) fn resolve(self, matched_pattern_regex: &str) -> bool {
-        match self {
-            WeakAnchorBase::Always => true,
-            WeakAnchorBase::Never => false,
-            WeakAnchorBase::PerPattern => has_broad_identifier_capture(matched_pattern_regex),
-        }
-    }
 }
 
 pub(crate) fn detector_weak_anchor_base(
