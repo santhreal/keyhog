@@ -117,17 +117,30 @@ const REQUIRED_EIGHT_MIB: u64 = 8 * 1024 * 1024;
 
 #[test]
 fn cpu_tier_backend_is_the_single_simd_vs_scalar_source() {
-    // Hyperscan compiled in  -> SimdCpu.
+    // `SimdCpu` strictly denotes the Hyperscan/Vectorscan prefilter path, so it
+    // is chosen ONLY when Hyperscan is compiled in and live ("Fail closed
+    // selected SIMD routes", 0eb97683a). CPU ISA flags are operator-visibility
+    // only: an accelerated ISA without Hyperscan does NOT prove the simd-regex
+    // backend exists, so it must resolve to the scalar `CpuFallback` rather than
+    // auto-select a SimdCpu the scan path cannot honor (its `simd_prefilter`
+    // would be absent and `resolve_backend_for_scan` would fail closed).
+
+    // Hyperscan compiled in -> SimdCpu, independent of ISA flags.
     assert_eq!(
         cpu_tier_backend(&caps_no_gpu(true, false)),
         ScanBackend::SimdCpu,
         "hyperscan_available must pick SimdCpu"
     );
-    // No hyperscan but an accelerated ISA (AVX2 here) -> SimdCpu.
+    assert_eq!(
+        cpu_tier_backend(&caps_no_gpu(true, true)),
+        ScanBackend::SimdCpu,
+        "hyperscan_available picks SimdCpu regardless of ISA flags"
+    );
+    // No Hyperscan: an accelerated ISA (AVX2 here) alone is NOT sufficient.
     assert_eq!(
         cpu_tier_backend(&caps_no_gpu(false, true)),
-        ScanBackend::SimdCpu,
-        "SIMD ISA without hyperscan must still pick SimdCpu"
+        ScanBackend::CpuFallback,
+        "SIMD ISA without Hyperscan does not prove the simd-regex backend; must fall to CpuFallback"
     );
     // Neither hyperscan nor SIMD -> pure scalar CpuFallback.
     assert_eq!(
