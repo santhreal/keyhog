@@ -12,21 +12,21 @@ Last run: 2026-06-15.
 
 ## Host reachability (probed `ssh -o ConnectTimeout=8 <host> 'uname -a || ver'`)
 
-| Host             | Alias(es)              | State        | Evidence |
-|------------------|------------------------|--------------|----------|
-| tt-macbook       | macbook-pro            | **UP**       | `Darwin Mac.lan 25.3.0 ... arm64`, macOS 26.3, rustc/cargo 1.94.1 |
-| windows-thinkpad | thinkpad-win           | **UP**       | `Microsoft Windows [Version 10.0.26200.8655]`, rustc/cargo 1.94.1 |
-| santhserver      | santh-server           | **DOWN**     | SSH connect hangs to timeout (rc 124); no banner, no refusal |
-| axiomexec        | axiom-exec             | **DOWN**     | SSH connect hangs to timeout (rc 124); no banner, no refusal |
-| thamiya          | thamiya-desktop        | **DOWN**     | `ssh: connect to host 100.85.80.41 port 22: Connection timed out` |
+| Host (role)       | State        | Evidence |
+|-------------------|--------------|----------|
+| macos-host        | **UP**       | `Darwin <host> 25.3.0 ... arm64`, macOS 26.3, rustc/cargo 1.94.1 |
+| windows-host      | **UP**       | `Microsoft Windows [Version 10.0.26200.8655]`, rustc/cargo 1.94.1 |
+| linux-build-host  | **DOWN**     | SSH connect hangs to timeout (rc 124); no banner, no refusal |
+| linux-host-2      | **DOWN**     | SSH connect hangs to timeout (rc 124); no banner, no refusal |
+| linux-host-3      | **DOWN**     | `ssh: connect to host <redacted> port 22: Connection timed out` |
 
-LOUD, not a silent skip (Law 10): santhserver was the expected primary Linux
-build host and it is **unreachable** — the Linux leg of this run was NOT
-exercised on the fleet (only the work-linux hub, which is the source tree
-itself). axiomexec and thamiya are likewise down. A green macOS+Windows matrix
-here does NOT clear Linux-on-fleet; it is "not run on those hosts this round."
+LOUD, not a silent skip (Law 10): the primary Linux build host was
+**unreachable** — the Linux leg of this run was NOT exercised on the fleet
+(only the work-linux hub, which is the source tree itself). The two secondary
+Linux hosts are likewise down. A green macOS+Windows matrix here does NOT clear
+Linux-on-fleet; it is "not run on those hosts this round."
 
-## macOS (tt-macbook, Darwin arm64) — REACHED, built, dogfooded
+## macOS (macos-host, Darwin arm64) — REACHED, built, dogfooded
 
 Build: `cargo build --profile release-fast -p keyhog --no-default-features
 --features portable` → **rc 0** in 1m10s. That historical run reported three
@@ -53,7 +53,7 @@ Installer proof (`tests/install/linux/install_from_local_build.sh` and
 scan exit 1, empty scan exit 0, SARIF well-formed, correct/tampered `.sha256`
 gate, missing-file error path, and the `expect`-driven interactive wizard.
 
-## Windows (windows-thinkpad, Windows 10.0.26200) — REACHED, built, dogfooded
+## Windows (windows-host, Windows 10.0.26200) — REACHED, built, dogfooded
 
 The Santh NFS share is **not** mounted on Windows (`Test-Path Z:\... = False`),
 so the only build path is an offline source ship. The previous source package
@@ -105,11 +105,11 @@ Pinned by:
 * `crates/cli/tests/target_spec/cross_os_contracts.rs::main_defines_exit_user_error_two_for_windows_uninstall_path`
   (GREEN — pins `EXIT_USER_ERROR = 2`).
 * `scripts/dogfood-windows.ps1` phase 5 (live end-to-end: asserts exit 2 + the
-  binary persists; verified PASS on windows-thinkpad).
+  binary persists; verified PASS on the Windows host).
 
 ### F2 — CROSS-OS BUILD BLOCKER (RESOLVED): old Vyre path override escaped the repo tree
 
-Reproduced on windows-thinkpad (no NFS share). `tar`-shipping ONLY the keyhog
+Reproduced on the Windows host (no NFS share). `tar`-shipping ONLY the keyhog
 source and running `cargo metadata` there:
 
 ```
