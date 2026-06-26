@@ -320,6 +320,13 @@ jobs:
       # by a `="…"` separator must not absorb the `=` and fail its checksum.
       - name: checksum boundary no-downgrade recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_checksum_boundary_no_downgrade
+      # Inter-keyword separator policy: every detector's separator class collapses
+      # to the single canonical `[_\-\s]*` at spec-load, so `api  key`, `client
+      # id`, and `last fm` are never missed because an author allowed only one
+      # underscore (or over-escaped `\s`). Audits the live corpus + proves the
+      # recall gain end to end.
+      - name: keyword-separator canonicalization recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_keyword_separator_canonicalization
       - name: RawMatch total-order gate
         run: cargo test -p keyhog-core --test new_core_finding_dedup --profile release-fast
 

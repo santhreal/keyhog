@@ -119,6 +119,7 @@ pub mod redact_no_middle_exposure_long_secrets;
 pub mod redact_utf8_multibyte_preserves_grapheme_edges;
 pub mod refuses_absolute_path_outside_trusted_dirs;
 pub mod refuses_relative_path;
+pub mod regex_separator;
 pub mod registry;
 pub mod relative_configured_trusted_bin_dir_ignored;
 pub mod replacement_char_in_path_round_trips;

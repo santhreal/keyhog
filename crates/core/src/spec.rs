@@ -7,6 +7,7 @@
 #![allow(missing_docs)]
 
 pub(crate) mod load;
+mod regex_separator;
 mod validate;
 
 use std::fmt;
@@ -14,7 +15,24 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 pub use load::{load_detectors, read_detector_toml_file, SpecError, DETECTOR_TOML_FILE_BYTES};
+pub use regex_separator::{canonicalize_keyword_separators, CANONICAL_SEPARATOR};
 pub use validate::{validate_detector, QualityIssue};
+
+/// serde adapter for every detector `regex` field: deserialize the string, then
+/// collapse its inter-keyword separator classes to the single canonical form
+/// (see [`regex_separator`]). Applied at the spec boundary so the canonical
+/// regex is the ONLY form any downstream consumer — the compiler, AC-literal
+/// extraction, Hyperscan, literal prefixes, the spec hash, the bench — ever
+/// sees. A real secret is therefore never missed because a leaked file used a
+/// tab, a double space, or a hyphen where the detector author allowed only one
+/// underscore.
+fn deserialize_canonical_regex<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = String::deserialize(deserializer)?;
+    Ok(canonicalize_keyword_separators(&raw).into_owned())
+}
 
 /// Metadata field specification for verification results.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,7 +106,9 @@ pub struct DetectorTestSpec {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct PatternSpec {
-    /// Regular expression string (Rust flavor).
+    /// Regular expression string (Rust flavor). Inter-keyword separator classes
+    /// are canonicalized at load (see [`deserialize_canonical_regex`]).
+    #[serde(deserialize_with = "deserialize_canonical_regex")]
     pub regex: String,
     /// Optional context description.
     pub description: Option<String>,
@@ -122,7 +142,9 @@ pub struct PatternSpec {
 pub struct CompanionSpec {
     /// Field name used in verification templates (e.g. \`{{companion.secret_key}}\`).
     pub name: String,
-    /// Regex to find the companion value nearby.
+    /// Regex to find the companion value nearby. Inter-keyword separator classes
+    /// are canonicalized at load (see [`deserialize_canonical_regex`]).
+    #[serde(deserialize_with = "deserialize_canonical_regex")]
     pub regex: String,
     /// Maximum line distance from the primary match.
     pub within_lines: usize,

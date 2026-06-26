@@ -56,6 +56,28 @@ fn rejects_cumulative_nested_counted_repetition() {
 }
 
 #[test]
+fn accepts_unbounded_simple_class_nested_in_counted_group() {
+    // An UNBOUNDED char-class repeat is a self-loop on keyhog's linear engines,
+    // not a finite unrolling, so it must NOT inflate the counted-repetition
+    // product even when nested inside a counted group. This is exactly the
+    // canonical inter-keyword separator `[_\-\s]*` inside a `(?:…){1,3}` anchor
+    // (deepnote-api-credentials); before the fix it scored a fictitious
+    // 3 x 1000 = 3000 and rejected the whole corpus. A genuinely COUNTED
+    // explosion (`(?:X{500}){3}`) is still rejected (test above).
+    let issues = validate_detector(&detector_with_pattern(
+        "(?:DEEPNOTE)(?:[_\\-\\s]*(?:API|KEY)){1,3}[=:](secret_[a-z]{20,})",
+    ));
+    assert!(
+        !issues.iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Error(message) if message.contains("counted repetition bound")
+        )),
+        "unbounded simple-class repeat nested in a counted group must not trip the \
+         counted-repetition guard: {issues:?}"
+    );
+}
+
+#[test]
 fn deeply_nested_regex_validation_is_iterative() {
     let mut regex = format!("token{}", "a{1}".repeat(300));
     for _ in 0..120 {

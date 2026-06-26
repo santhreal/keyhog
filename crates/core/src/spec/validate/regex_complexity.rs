@@ -79,8 +79,22 @@ fn collect_regex_stats(ast: &Ast, stats: &mut RegexComplexityStats) {
             Ast::Repetition(repetition) => {
                 let this_is_simple_atom = is_simple_atom(&repetition.ast);
                 let this_is_unbounded = is_unbounded_repeat(&repetition.op.kind);
-                let repeat_bound = repeat_bound(&repetition.op.kind);
-                let cumulative_bound = frame.repeat_product.saturating_mul(repeat_bound);
+                // The "counted repetition bound" models FINITE unrolling cost:
+                // `{n,m}` expands to up to `m` copies, and nesting multiplies
+                // (`(?:X{500}){3}` -> 1500 copies). An UNBOUNDED repeat (`*`,
+                // `+`, `{n,}`) is a self-loop on keyhog's linear engines, never a
+                // finite unrolling, so it must NOT multiply into this product —
+                // otherwise a cheap separator `[_\-\s]*` nested in a `(?:…){1,3}`
+                // anchor (deepnote) scores a fictitious 3 x 1000 = 3000 and the
+                // whole corpus is rejected. Catastrophic BACKTRACKING from
+                // unbounded nesting is a different risk, caught by
+                // `has_nested_quantifier` below; the AST-node cap bounds size.
+                let counted_bound = if this_is_unbounded {
+                    1
+                } else {
+                    repeat_bound(&repetition.op.kind)
+                };
+                let cumulative_bound = frame.repeat_product.saturating_mul(counted_bound);
                 stats.max_repeat_bound = stats.max_repeat_bound.max(cumulative_bound);
 
                 if frame.inside_unbounded_repetition && !this_is_simple_atom && this_is_unbounded {
