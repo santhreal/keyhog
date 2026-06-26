@@ -4178,10 +4178,17 @@ credential = '00000000000000000000'
 detector_id = "census-api-key"
 suite = 18
 
+# A 32+ alphanumeric value after the CENSUS_TOKEN anchor IS a census-api-key by
+# the detector contract (`(?:CENSUS)[_.]?(?:API[._-]?KEY|TOKEN)[=:\s"']+([a-zA-Z0-9]{32,})`),
+# so these fire — including the unicode-evasion variants, which the scanner
+# normalizes and defeats rather than letting them hide the secret (mirrors the
+# census suite-74 positive and the zwsp/hyphen/homoglyph "fires" convention the
+# whole adversarial suite uses). The only true negative is a wrong keyword.
 [[case.assertion]]
-kind = "silent"
-name = "bare"
+kind = "fires"
+name = "clean"
 text = 'CENSUS_TOKEN = "abcde12345abcde12345abcde1234512"'
+credential = 'abcde12345abcde12345abcde1234512'
 
 [[case.assertion]]
 kind = "silent"
@@ -4189,19 +4196,22 @@ name = "prefix"
 text = 'DENSUS_TOKEN = "abcde12345abcde12345abcde1234512"'
 
 [[case.assertion]]
-kind = "silent"
-name = "bare"
+kind = "fires"
+name = "zwsp_keyword"
 text = 'CENSUS\u{200B}_TOKEN = "abcde12345abcde12345abcde1234512"'
+credential = 'abcde12345abcde12345abcde1234512'
 
 [[case.assertion]]
-kind = "silent"
-name = "bare"
+kind = "fires"
+name = "soft_hyphen_value"
 text = 'CENSUS_TOKEN = "abcde12345abcde\u{00AD}12345abcde1234512"'
+credential = 'abcde12345abcde12345abcde1234512'
 
 [[case.assertion]]
-kind = "silent"
-name = "bare"
+kind = "fires"
+name = "homoglyph_keyword"
 text = 'C\u{0415}NSUS_TOKEN = "abcde12345abcde12345abcde1234512"'
+credential = 'abcde12345abcde12345abcde1234512'
 
 [[case]]
 detector_id = "censys-api-credentials"
@@ -7944,31 +7954,31 @@ suite = 41
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'HOMEBREW_GITHUB_API_TOKEN = "ghp_HomebrewGithubTokenHighEntropySecret123"'
-credential = 'ghp_HomebrewGithubTokenHighEntropySecret123'
+text = 'HOMEBREW_GITHUB_API_TOKEN = "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"'
+credential = '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'
 
 [[case.assertion]]
 kind = "silent"
 name = "prefix"
-text = 'TOMEBREW_GITHUB_API_TOKEN = "ghp_HomebrewGithubTokenHighEntropySecret123"'
+text = 'TOMEBREW_GITHUB_API_TOKEN = "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"'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'HOMEBREW_GITHUB_API_TOKEN = "ghp_HomebrewGithubTokenHigh\u{200B}EntropySecret123"'
-credential = 'ghp_HomebrewGithubTokenHighEntropySecret123'
+text = 'HOMEBREW_GITHUB_API_TOKEN = "ghp_R7mK2pQ9xB4nL6vT8\u{200B}wY1sH3jD5gF0c3c2qPK"'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'HOMEBREW_GITHUB_API_TOKEN = "ghp_HomebrewGithubTokenHigh\u{00AD}EntropySecret123"'
-credential = 'ghp_HomebrewGithubTokenHighEntropySecret123'
+text = 'HOMEBREW_GITHUB_API_TOKEN = "ghp_R7mK2pQ9xB4nL6vT8\u{00AD}wY1sH3jD5gF0c3c2qPK"'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "homoglyph"
-text = 'h\u{043e}m\u{0435}br\u{0435}w_api_token = "ghp_HomebrewGithubTokenHighEntropySecret123"'
-credential = 'ghp_HomebrewGithubTokenHighEntropySecret123'
+text = 'h\u{043e}m\u{0435}br\u{0435}w_api_token = "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"'
+credential = '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'
 
 [[case]]
 detector_id = "honeybadger-api-key"
@@ -11856,8 +11866,8 @@ suite = 66
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'ATLANTIS_GH_TOKEN=ghp_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2SnTbW3Yz'
-credential = 'ghp_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2SnTbW3Yz'
+text = 'ATLANTIS_GH_TOKEN=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'
+credential = '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'
 
 [[case.assertion]]
 kind = "silent"
@@ -11867,62 +11877,62 @@ text = 'dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'ATLANTIS_GH_TOKEN=ghp_Kp4Qx7Rm2Sn5Tb8V\u{200B}w3YzKp4Qx7Rm2SnTbW3Yz'
-credential = 'ghp_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2SnTbW3Yz'
+text = 'ATLANTIS_GH_TOKEN=ghp_R7mK2pQ9xB4nL6vT8\u{200B}wY1sH3jD5gF0c3c2qPK'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'ATLANTIS_GH_TOKEN=ghp_Kp4Qx7Rm2Sn5Tb8V\u{00AD}w3YzKp4Qx7Rm2SnTbW3Yz'
-credential = 'ghp_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2SnTbW3Yz'
+text = 'ATLANTIS_GH_TOKEN=ghp_R7mK2pQ9xB4nL6vT8\u{00AD}wY1sH3jD5gF0c3c2qPK'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnj"
-text = 'ATLANTIS_GH_TOKEN=ghp_Kp4Qx7Rm2Sn5Tb8V\u{200C}w3YzKp4Qx7Rm2SnTbW3Yz'
-credential = 'ghp_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2SnTbW3Yz'
+text = 'ATLANTIS_GH_TOKEN=ghp_R7mK2pQ9xB4nL6vT8\u{200C}wY1sH3jD5gF0c3c2qPK'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwj"
-text = 'ATLANTIS_GH_TOKEN=ghp_Kp4Qx7Rm2Sn5Tb8V\u{200D}w3YzKp4Qx7Rm2SnTbW3Yz'
-credential = 'ghp_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2SnTbW3Yz'
+text = 'ATLANTIS_GH_TOKEN=ghp_R7mK2pQ9xB4nL6vT8\u{200D}wY1sH3jD5gF0c3c2qPK'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnbsp"
-text = 'ATLANTIS_GH_TOKEN=ghp_Kp4Qx7Rm2Sn5Tb8V\u{FEFF}w3YzKp4Qx7Rm2SnTbW3Yz'
-credential = 'ghp_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2SnTbW3Yz'
+text = 'ATLANTIS_GH_TOKEN=ghp_R7mK2pQ9xB4nL6vT8\u{FEFF}wY1sH3jD5gF0c3c2qPK'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "joiner"
-text = 'ATLANTIS_GH_TOKEN=ghp_Kp4Qx7Rm2Sn5Tb8V\u{2060}w3YzKp4Qx7Rm2SnTbW3Yz'
-credential = 'ghp_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2SnTbW3Yz'
+text = 'ATLANTIS_GH_TOKEN=ghp_R7mK2pQ9xB4nL6vT8\u{2060}wY1sH3jD5gF0c3c2qPK'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "mongolian"
-text = 'ATLANTIS_GH_TOKEN=ghp_Kp4Qx7Rm2Sn5Tb8V\u{180E}w3YzKp4Qx7Rm2SnTbW3Yz'
-credential = 'ghp_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2SnTbW3Yz'
+text = 'ATLANTIS_GH_TOKEN=ghp_R7mK2pQ9xB4nL6vT8\u{180E}wY1sH3jD5gF0c3c2qPK'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "rtl"
-text = 'ATLANTIS_GH_TOKEN=ghp_Kp4Qx7Rm2Sn5Tb8V\u{202E}w3YzKp4Qx7Rm2SnTbW3Yz'
-credential = 'ghp_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2SnTbW3Yz'
+text = 'ATLANTIS_GH_TOKEN=ghp_R7mK2pQ9xB4nL6vT8\u{202E}wY1sH3jD5gF0c3c2qPK'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "dir"
-text = 'ATLANTIS_GH_TOKEN=ghp_Kp4Qx7Rm2Sn5Tb8V\u{202C}w3YzKp4Qx7Rm2SnTbW3Yz'
-credential = 'ghp_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2SnTbW3Yz'
+text = 'ATLANTIS_GH_TOKEN=ghp_R7mK2pQ9xB4nL6vT8\u{202C}wY1sH3jD5gF0c3c2qPK'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "lrm"
-text = 'ATLANTIS_GH_TOKEN=ghp_Kp4Qx7Rm2Sn5Tb8V\u{200E}w3YzKp4Qx7Rm2SnTbW3Yz'
-credential = 'ghp_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2SnTbW3Yz'
+text = 'ATLANTIS_GH_TOKEN=ghp_R7mK2pQ9xB4nL6vT8\u{200E}wY1sH3jD5gF0c3c2qPK'
+credential = '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'
 
 [[case]]
 detector_id = "australia-data-gov-api-key"
