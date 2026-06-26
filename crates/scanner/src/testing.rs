@@ -1848,6 +1848,38 @@ pub(crate) mod compiler_prefix {
     pub(crate) fn strip_leading_inline_flags(pattern: &str) -> &str {
         crate::compiler::compiler_prefix::strip_leading_inline_flags(pattern)
     }
+
+    pub(crate) const MAX_CHARCLASS_PREFIX_EXPANSION: usize =
+        crate::compiler::compiler_prefix::MAX_CHARCLASS_PREFIX_EXPANSION;
+
+    pub(crate) const MIN_DISTINCTIVE_INFIX_CHARS: usize =
+        crate::compiler::compiler_prefix::MIN_DISTINCTIVE_INFIX_CHARS;
+
+    pub(crate) fn extract_literal_prefix(pattern: &str) -> Option<String> {
+        crate::compiler::compiler_prefix::extract_literal_prefix(pattern)
+    }
+
+    pub(crate) fn strip_leading_zero_width_assertions(pattern: &str) -> &str {
+        crate::compiler::compiler_prefix::strip_leading_zero_width_assertions(pattern)
+    }
+
+    pub(crate) fn expand_leading_charclass_prefixes(pattern: &str) -> Option<Vec<String>> {
+        crate::compiler::compiler_prefix::expand_leading_charclass_prefixes(pattern)
+    }
+
+    pub(crate) fn expand_leading_literal_alternation_with_tail(
+        pattern: &str,
+    ) -> Option<Vec<String>> {
+        crate::compiler::compiler_prefix::expand_leading_literal_alternation_with_tail(pattern)
+    }
+
+    pub(crate) fn leading_literal_run(s: &str) -> String {
+        crate::compiler::compiler_prefix::leading_literal_run(s)
+    }
+
+    pub(crate) fn regex_has_required_literal_run(pattern: &str, min_len: usize) -> bool {
+        crate::compiler::compiler_prefix::regex_has_required_literal_run(pattern, min_len)
+    }
 }
 
 #[cfg(test)]
