@@ -105,7 +105,7 @@ pub(crate) mod profile;
 pub(crate) mod rule_pipeline;
 mod scan;
 mod scan_coalesced;
-mod scan_filters;
+pub(crate) mod scan_filters;
 mod scan_inner_profile;
 mod scan_no_hit_reassembly;
 mod scan_postprocess;

@@ -1882,6 +1882,20 @@ pub(crate) mod compiler_prefix {
     }
 }
 
+/// Engine scan-filter boundary helpers, exposed for the credential-boundary
+/// extension suite migrated out of `engine/scan_filters.rs` (no-inline-tests
+/// gate). Crate-private; not part of the public API.
+#[cfg(test)]
+pub(crate) mod scan_filters {
+    pub(crate) fn extend_known_prefix_credential<'a>(
+        data: &'a str,
+        credential: &'a str,
+        match_end: usize,
+    ) -> (&'a str, usize) {
+        crate::engine::scan_filters::extend_known_prefix_credential(data, credential, match_end)
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn match_proves_keyword_nearby(regex: &str, keywords: &[String]) -> bool {
     crate::compiler::match_proves_keyword_nearby(regex, keywords)
