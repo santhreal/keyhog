@@ -18,7 +18,10 @@ fn valid_checksum_token_is_not_extended_over_a_trailing_equals() {
     let data = format!("{VALID_PYPI}=\"x\"");
     let credential = &data[..VALID_PYPI.len()];
     let (cred, end) = extend_known_prefix_credential(&data, credential, VALID_PYPI.len());
-    assert_eq!(cred, VALID_PYPI, "valid token must keep its canonical boundary");
+    assert_eq!(
+        cred, VALID_PYPI,
+        "valid token must keep its canonical boundary"
+    );
     assert_eq!(end, VALID_PYPI.len());
     assert_eq!(
         keyhog_scanner::testing::checksum::validate_checksum(cred),
@@ -36,6 +39,9 @@ fn non_checksum_base64_value_still_recovers_padding() {
     let data = format!("{token}==trailing");
     let credential = &data[..token.len()];
     let (cred, end) = extend_known_prefix_credential(&data, credential, token.len());
-    assert_eq!(cred, "YWJjZGVmZ2hpamtsbW5vcA==", "padding must still be recovered");
+    assert_eq!(
+        cred, "YWJjZGVmZ2hpamtsbW5vcA==",
+        "padding must still be recovered"
+    );
     assert_eq!(end, token.len() + 2);
 }
