@@ -115,19 +115,31 @@ fn gpu_self_test_can_report_recorded_degrade_reason() {
 }
 
 /// The stale AC GPU bounded-ranges builder was deleted as a dead route. Keep
-/// this gate pointed at the current live invariant: `gpu_lazy.rs` owns the
-/// GpuLiteralSet cache/scratch path used by both per-chunk and coalesced GPU
-/// trigger production.
+/// this gate pointed at the current live invariant, which now spans two files
+/// after the lazy/helper split:
+///   * `gpu_lazy.rs` owns the lazy-dispatch accessors (`gpu_matcher` /
+///     `gpu_position_matcher`) that drive both per-chunk and coalesced GPU
+///     trigger production through `compile_gpu_literal_set`, and keeps the old
+///     bounded-ranges `ac_gpu_program` documented as a removed dead route.
+///   * `gpu_lazy_helpers.rs` owns the actual cache/scratch path
+///     (`cached_load_or_compile` → `GpuLiteralSet::compile`) the accessors call.
 #[test]
 fn gpu_lazy_keeps_removed_ac_program_dead_and_literal_set_live() {
     let lazy = engine_src("src/engine/gpu_lazy.rs");
     assert!(
-        lazy.contains("GpuLiteralSet::compile")
-            && lazy.contains("cached_load_or_compile")
+        lazy.contains("GpuLiteralSet")
+            && lazy.contains("compile_gpu_literal_set")
+            && lazy.contains("gpu_matcher")
             && lazy.contains("ac_gpu_program")
             && lazy.contains("removed as dead")
             && !lazy.contains("build_ac_bounded_ranges_program_bound_atomic")
             && !lazy.contains("fn append_match_bound_slot"),
-        "gpu_lazy.rs must keep the old bounded-ranges AC program dead and expose only the live GpuLiteralSet cache path"
+        "gpu_lazy.rs must keep the old bounded-ranges AC program dead and expose only the live GpuLiteralSet accessors"
+    );
+
+    let helpers = engine_src("src/engine/gpu_lazy_helpers.rs");
+    assert!(
+        helpers.contains("cached_load_or_compile") && helpers.contains("GpuLiteralSet::compile"),
+        "gpu_lazy_helpers.rs must own the live GpuLiteralSet cache/compile path the accessors call"
     );
 }
