@@ -21,12 +21,15 @@ fn github_classic_payload_35_chars_not_applicable() {
 }
 
 #[test]
-fn github_classic_payload_37_chars_not_applicable() {
-    // 37 chars → wrong length → NotApplicable
+fn github_classic_payload_37_chars_too_long_is_invalid() {
+    // The length boundary is asymmetric by design (checksum/github.rs): a payload
+    // SHORTER than 36 is NotApplicable (too little to be a token), but a `ghp_`
+    // payload LONGER than 36 is a fabricated/malformed token, flagged `Invalid`
+    // (capped to low confidence) rather than silently ignored.
     let token = concat!("gh", "p_").to_string() + &"A".repeat(37);
     assert_eq!(
         GithubClassicPatValidator.validate(&token),
-        ChecksumResult::NotApplicable
+        ChecksumResult::Invalid
     );
 }
 
