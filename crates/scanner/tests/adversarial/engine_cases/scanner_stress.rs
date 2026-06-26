@@ -70,17 +70,24 @@ fn stress_boundary_github_pat_exact_length_detected() {
     );
 }
 
-/// Documents a known shape bug: `github-classic-pat` fires on a 35-char body.
-/// When the regex boundary is tightened, invert this assertion or delete the test.
+/// Regression: `github-classic-pat` is `ghp_[A-Za-z0-9]{36}` (exactly 36 body chars),
+/// so a 35-char body MUST NOT match. An earlier looser boundary fired a false positive
+/// here; this now locks in the no-FP behavior. (Per the prior note, the boundary was
+/// tightened, so the assertion is inverted rather than left documenting the old bug.)
 #[test]
-fn stress_boundary_github_pat_truncated_false_positive_regression() {
+fn stress_boundary_github_pat_truncated_35char_body_no_false_positive() {
     let truncated = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890a";
     let matches = scan_corpus("adversarial", "boundary_truncated_only.txt");
     assert!(
-        matches.iter().any(|m| {
+        !matches.iter().any(|m| {
             m.detector_id.as_ref() == "github-classic-pat" && m.credential.as_ref() == truncated
         }),
-        "expected github-classic-pat false positive on 35-char body until regex is fixed"
+        "35-char github PAT body must NOT match github-classic-pat (regex requires exactly 36); \
+         credentials={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -127,7 +134,7 @@ fn stress_zero_width_inside_aws_key_still_detected() {
 fn stress_inline_zero_width_github_pat_detected() {
     // Belt-and-suspenders: explicit ZWSP between prefix and body.
     let zwsp = "\u{200B}";
-    let payload = format!("token=ghp_{zwsp}aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890ab\n");
+    let payload = format!("token=ghp_{zwsp}R7mK2pQ9xB4nL6vT8wY1sH3jD5gF0c3c2qPK\n");
     let matches = scan_text(&payload, "inline_zwsp.js");
     assert!(
         has_detector(&matches, "github"),

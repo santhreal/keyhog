@@ -6,7 +6,13 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 /// Canonical synthetic credentials used across corpus fixtures.
-pub const GITHUB_PAT: &str = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890ab";
+// A real github-classic-pat shape: `ghp_` + a 36-char body whose trailing chars
+// are a VALID checksum, so the scanner actually fires on it. The prior value
+// `ghp_aBc…7890ab` had a 38-char body and an invalid checksum, so the engine
+// correctly dropped it and every recall/evasion test expecting it to fire failed
+// (the checksum-fabricated-token trap). This token is the github-classic-pat
+// contract's must-fire positive, so it is guaranteed to pass checksum validation.
+pub const GITHUB_PAT: &str = "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";
 pub const AWS_ACCESS_KEY: &str = concat!("AK", "IAR7VXNPLMQ3HSKWJT");
 pub fn corpus_fixture_path(subdir: &str, rel: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
