@@ -11,11 +11,11 @@ severity = "critical"
 keywords = ["microsoft-teams", "TEAMS_API", "MS_TEAMS", "graph.microsoft.com"]
 
 [[detector.patterns]]
-regex = "(?:microsoft[_\\-\\s]?teams|ms[_\\-\\s]?teams|teams)[_\\-\\s]?(?:api[_\\-\\s]?key|secret|token)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-\\.]{32,})"
+regex = "(?:microsoft[_\\-\\s]{0,2}teams|ms[_\\-\\s]{0,2}teams|teams)[_\\-\\s]{0,2}(?:api[_\\-\\s]{0,2}key|secret|token)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-\\.]{32,})"
 description = "Microsoft Teams API credential with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:TEAMS[_\\-\\s]?API[_\\-\\s]?KEY|MICROSOFT[_\\-\\s]?TEAMS[_\\-\\s]?SECRET|MS[_\\-\\s]?TEAMS[_\\-\\s]?TOKEN)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-\\.]{32,})"
+regex = "(?:TEAMS[_\\-\\s]{0,2}API[_\\-\\s]{0,2}KEY|MICROSOFT[_\\-\\s]{0,2}TEAMS[_\\-\\s]{0,2}SECRET|MS[_\\-\\s]{0,2}TEAMS[_\\-\\s]{0,2}TOKEN)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-\\.]{32,})"
 description = "Microsoft Teams API credential in environment variable format"
 group = 1
