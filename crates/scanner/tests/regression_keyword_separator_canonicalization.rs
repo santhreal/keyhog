@@ -38,14 +38,20 @@ fn loaded_corpus_separators_are_all_canonical() {
         for r in regexes {
             patterns += 1;
             if canonicalize_keyword_separators(r).as_ref() != r.as_str() {
-                offenders.push(format!("{}: non-canonical separator survived load: {r:?}", d.id));
+                offenders.push(format!(
+                    "{}: non-canonical separator survived load: {r:?}",
+                    d.id
+                ));
             }
             if r.contains(CANONICAL_SEPARATOR) {
                 canonical_uses += 1;
             }
         }
     }
-    assert!(patterns > 800, "expected the full corpus, only saw {patterns} regexes");
+    assert!(
+        patterns > 800,
+        "expected the full corpus, only saw {patterns} regexes"
+    );
     assert!(
         offenders.is_empty(),
         "{} regex(es) carry a non-canonical inter-keyword separator after load — a load path \
@@ -126,12 +132,18 @@ fn detectors_fire_under_doubled_keyword_separators() {
              pick a different fixture",
             p.text
         );
-        let text = format!("{prefix}{}{}", p.credential, &p.text[pos + p.credential.len()..]);
+        let text = format!(
+            "{prefix}{}{}",
+            p.credential,
+            &p.text[pos + p.credential.len()..]
+        );
         let chunk = make_chunk(&text, SOURCE_TYPE, "anchor.txt");
         if surfaces(&scanner, &chunk, &p.credential) {
             proven += 1;
         } else {
-            failures.push(format!("{id}: doubled-separator anchor {text:?} dropped the credential"));
+            failures.push(format!(
+                "{id}: doubled-separator anchor {text:?} dropped the credential"
+            ));
         }
     }
 

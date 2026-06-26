@@ -252,7 +252,11 @@ fn unified_hot_slot_keeps_validator_and_ac_map_in_lockstep() {
     let scanner =
         CompiledScanner::compile(vec![detector]).expect("real github hot detector compiles");
     let presence = keyhog_scanner::testing::hot_pattern_slot_presence(&scanner);
-    assert_eq!(presence.len(), HOT_PATTERNS.len(), "one slot row per hot prefix");
+    assert_eq!(
+        presence.len(),
+        HOT_PATTERNS.len(),
+        "one slot row per hot prefix"
+    );
 
     for (i, (has_validator, has_ac_map)) in presence.iter().enumerate() {
         assert_eq!(

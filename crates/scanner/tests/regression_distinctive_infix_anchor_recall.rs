@@ -57,9 +57,11 @@ const TF_TOKEN: &str =
 fn terraform_atlasv1_token_surfaces_on_the_infix_anchor() {
     let matches = matches_for(TF_TOKEN);
     assert!(
-        matches.iter().any(|(id, found)| (id == "terraform-cloud-api-token"
-            || id == "terraform-enterprise-token")
-            && found == TF_TOKEN),
+        matches
+            .iter()
+            .any(|(id, found)| (id == "terraform-cloud-api-token"
+                || id == "terraform-enterprise-token")
+                && found == TF_TOKEN),
         "terraform atlasv1 token must surface on the required-infix anchor; matches={matches:?}"
     );
 }
@@ -73,8 +75,9 @@ fn same_shape_without_atlasv1_is_not_claimed() {
         "9X3kQp7VbT2hYR.somethin.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy";
     let matches = matches_for(bogus);
     assert!(
-        !matches.iter().any(|(id, _)| id == "terraform-cloud-api-token"
-            || id == "terraform-enterprise-token"),
+        !matches
+            .iter()
+            .any(|(id, _)| id == "terraform-cloud-api-token" || id == "terraform-enterprise-token"),
         "a token without the .atlasv1. infix must not be claimed; matches={matches:?}"
     );
 }

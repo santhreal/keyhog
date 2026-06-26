@@ -197,7 +197,11 @@ impl CompiledScanner {
                 || {
                     rayon::join(
                         || super::scan_postprocess::build_confirmed_suffix_gate(&state.ac_map),
-                        || scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex::build(&state.ac_map),
+                        || {
+                            scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex::build(
+                                &state.ac_map,
+                            )
+                        },
                     )
                 },
             );
