@@ -37,7 +37,7 @@ use super::support;
 use support::paths::detector_dir;
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
-use keyhog_scanner::testing::extract_literal_prefix;
+use keyhog_scanner::testing::{extract_literal_prefix, extract_literal_prefixes};
 use keyhog_scanner::testing::LazyRegexProbe as LazyRegex;
 use keyhog_scanner::{CompiledScanner, ScannerConfig};
 
@@ -139,9 +139,15 @@ fn memoized_value_is_stable_and_shared_across_clones() {
 }
 
 /// CORPUS-WIDE correctness: for every pattern in every on-disk detector, the
-/// memoized accessor equals `extract_literal_prefix(src).is_some()`. This is
-/// the broadest regression net — any future change to the memoized computation
-/// that diverges from the parser on even one shipped pattern goes red here.
+/// memoized accessor equals `!extract_literal_prefixes(src).is_empty()` — the
+/// PLURAL routing extractor that `has_literal_prefix` delegates to (see
+/// `types.rs`). The singular `extract_literal_prefix` returns only the single
+/// COMMON prefix, so it wrongly yields `None` for a leading DIVERGENT
+/// alternation (123formbuilder's `(?:api…|API…)`), where the plural correctly
+/// expands both branches — so confidence and routing agree a literal anchor
+/// exists. This is the broadest regression net: any future change to the
+/// memoized computation that diverges from the plural source-of-truth on even
+/// one shipped pattern goes red here.
 #[test]
 fn memoized_matches_source_of_truth_on_full_corpus() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
@@ -149,12 +155,12 @@ fn memoized_matches_source_of_truth_on_full_corpus() {
     for d in &detectors {
         for pat in &d.patterns {
             let src = pat.regex.as_str();
-            let expected = extract_literal_prefix(src).is_some();
+            let expected = !extract_literal_prefixes(src).is_empty();
             let got = LazyRegex::detector(src).has_literal_prefix();
             assert_eq!(
                 got, expected,
                 "detector `{}` pattern `{src}`: memoized has_literal_prefix={got} \
-                 disagrees with extract_literal_prefix(...).is_some()={expected}",
+                 disagrees with !extract_literal_prefixes(...).is_empty()={expected}",
                 d.id
             );
             checked += 1;

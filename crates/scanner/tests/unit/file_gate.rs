@@ -981,7 +981,7 @@ fn engine_hot_and_entropy_metadata_clones_are_heap_admission_gated() {
         "hot-pattern scanning must not stop at first-N and bypass best-N heap admission"
     );
     assert!(
-        hot_src.contains("let Some(ac_map_index) = ac_map_index else")
+        hot_src.contains("let Some(ac_map_index) = slot.ac_map_index else")
             && hot_src.contains("hot_pattern_index_at")
             && hot_src.contains("self.process_match(")
             && !hot_src.contains("fn hot_pattern_index_at")

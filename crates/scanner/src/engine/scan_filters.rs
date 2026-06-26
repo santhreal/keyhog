@@ -310,11 +310,14 @@ pub(crate) fn extend_known_prefix_credential<'a>(
     // and is dropped, losing a real secret. Only the extension is reverted (the
     // canonical token still surfaces); the unicode swap-invariance gate
     // exercises exactly this (homoglyphed companion context whose trailing `=`
-    // was being appended to a valid pypi token). Cheap: `validate_checksum`
-    // runs only when the extension actually changed the credential.
+    // was being appended to a valid pypi token). Cheap: the length guard keeps
+    // the checksum-validity comparison off the hot path until an extension
+    // actually changed the credential. The comparison itself lives in the
+    // checksum module (`extension_downgrades_checksum`) so this engine emission
+    // path asks a named checksum question instead of owning raw checksum
+    // primitives (the `engine_match_policy_checksum_owner` gate).
     if credential.len() != original.len()
-        && crate::checksum::validate_checksum(original) == crate::checksum::ChecksumResult::Valid
-        && crate::checksum::validate_checksum(credential) != crate::checksum::ChecksumResult::Valid
+        && crate::checksum::extension_downgrades_checksum(original, credential)
     {
         return (original, original_end);
     }

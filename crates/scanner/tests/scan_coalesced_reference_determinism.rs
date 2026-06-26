@@ -77,14 +77,24 @@ fn fixed_chunks() -> Vec<Chunk> {
     };
     let mut stack = vec![demo];
     while let Some(dir) = stack.pop() {
-        if let Ok(rd) = std::fs::read_dir(&dir) {
-            for entry in rd.flatten() {
-                let p = entry.path();
-                if p.is_dir() {
-                    stack.push(p);
-                } else if p.is_file() {
-                    push_file(p);
-                }
+        // Fail loud on a real directory-read or entry error instead of the old
+        // ignore-the-Result-and-flatten silent-skip (Law 10): a permission/IO
+        // error must surface, not quietly shrink the reference corpus and weaken
+        // the determinism check. A simply-absent demo dir is the one benign case
+        // and is tolerated explicitly.
+        if !dir.exists() {
+            continue;
+        }
+        let rd = std::fs::read_dir(&dir)
+            .unwrap_or_else(|error| panic!("read_dir({}) failed: {error}", dir.display()));
+        for entry in rd {
+            let entry = entry
+                .unwrap_or_else(|error| panic!("read_dir entry in {} failed: {error}", dir.display()));
+            let p = entry.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.is_file() {
+                push_file(p);
             }
         }
     }

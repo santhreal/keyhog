@@ -67,6 +67,21 @@ pub fn validate_checksum(credential: &str) -> ChecksumResult {
     ChecksumResult::NotApplicable
 }
 
+/// True when extending `original` to `extended` turned a `Valid` checksum into a
+/// non-`Valid` one — a boundary extension that corrupted a complete,
+/// checksum-valid token by grabbing an adjacent byte. The credential-boundary
+/// extender in `engine::scan_filters` reverts to `original` in that case so the
+/// canonical, checksum-valid token still surfaces.
+///
+/// Lives here in the checksum-validity owner so engine emission paths ask a
+/// named checksum question rather than owning raw `validate_checksum` calls (the
+/// `engine_match_policy_checksum_owner` architecture gate keeps confidence AND
+/// validity primitives out of `src/engine/`).
+pub(crate) fn extension_downgrades_checksum(original: &str, extended: &str) -> bool {
+    validate_checksum(original) == ChecksumResult::Valid
+        && validate_checksum(extended) != ChecksumResult::Valid
+}
+
 pub(crate) fn standard_crc32(data: &[u8]) -> u32 {
     github::crc32(data)
 }
