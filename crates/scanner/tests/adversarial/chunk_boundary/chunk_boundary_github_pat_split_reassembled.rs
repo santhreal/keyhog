@@ -13,7 +13,7 @@ fn chunk_boundary_github_pat_split_reassembled() {
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
 
-    let secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890AB";
+    let secret = "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";
     let split = 16;
     let pad = "z\n".repeat(4096);
     let mut data_a = pad.clone();
@@ -44,7 +44,7 @@ fn chunk_boundary_github_pat_split_reassembled() {
     let results = scanner.scan_coalesced(&[chunk_a, chunk_b]);
     let found = results.iter().flatten().any(|m| {
         m.detector_id.as_ref() == "github-classic-pat"
-            && m.credential.as_ref() == "ghp_abcdefghijklmnopqrstuvwxyz1234567890AB"
+            && m.credential.as_ref() == "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"
     });
     assert!(
         found,

@@ -532,13 +532,18 @@ fn adv4_redact_short_credential_produces_four_asterisks() {
 
 #[test]
 fn adv4_redact_long_ascii_credential_preserves_two_edge_chars() {
-    assert_eq!(redact("123456789"), "12...89");
+    // `redact` scales the retained edge to length: `(len/8).clamp(1,4)`. A 16-char
+    // credential lands at edge 2, so it keeps two bytes on each side of the
+    // ellipsis. (A 9-char value gets only one edge -> "1...9"; see
+    // keyhog-core redact_extended.)
+    assert_eq!(redact("1234567890123456"), "12...56");
 }
 
 #[test]
 fn adv4_redact_utf8_long_credential_preserves_two_edge_chars() {
-    // UTF-8 path: 9 characters
-    let credential = "🦀🦀🦀🦀🔥🦖🦖🦖🦖";
+    // UTF-8 path: 16 characters -> edge = (16/8).clamp(1,4) = 2, counted by
+    // chars (not bytes) so multibyte graphemes stay whole.
+    let credential = "🦀🦀🦀🦀🦀🦀🦀🦀🔥🔥🦖🦖🦖🦖🦖🦖";
     assert_eq!(redact(credential), "🦀🦀...🦖🦖");
 }
 

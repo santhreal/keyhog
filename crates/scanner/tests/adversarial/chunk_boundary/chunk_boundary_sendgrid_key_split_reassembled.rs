@@ -13,7 +13,7 @@ fn chunk_boundary_sendgrid_key_split_reassembled() {
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
 
-    let secret = "SG.0000000000000000000000.0000000000000000000000000000000000000000000";
+    let secret = "SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF";
     let split = 18;
     let pad = "z\n".repeat(4096);
     let mut data_a = pad.clone();
@@ -45,7 +45,7 @@ fn chunk_boundary_sendgrid_key_split_reassembled() {
     let found = results.iter().flatten().any(|m| {
         m.detector_id.as_ref() == "sendgrid-api-key"
             && m.credential.as_ref()
-                == "SG.0000000000000000000000.0000000000000000000000000000000000000000000"
+                == "SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF"
     });
     assert!(
         found,
