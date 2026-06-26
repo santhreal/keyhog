@@ -135,18 +135,18 @@ impl CompiledScanner {
                     // 64 MiB chunk that decodes into 1 000 sub-chunks
                     // that's a 50-second tax - exactly the wall-clock
                     // delta keyhog used to show vs SIMD on messy
-                    // corpora. Force a CPU backend here regardless of
-                    // env override.
-                    let decoded_backend = {
-                        #[cfg(feature = "simd")]
-                        {
-                            crate::hw_probe::ScanBackend::SimdCpu
-                        }
-                        #[cfg(not(feature = "simd"))]
-                        {
-                            crate::hw_probe::ScanBackend::CpuFallback
-                        }
-                    };
+                    // corpora. Force the live CPU-tier backend here
+                    // regardless of env override: `live_cpu_backend()`
+                    // returns SimdCpu ONLY when this scanner actually
+                    // built a Hyperscan prefilter, else CpuFallback, and
+                    // never GPU/MegaScan. Hardcoding SimdCpu crashed a
+                    // scanner whose patterns expose no anchorable literal
+                    // (an empty detector set, or `[a-z]{16}`-only) — its
+                    // `simd_prefilter` is None, so the SimdCpu trigger
+                    // collection fails closed through `backend_unavailable`
+                    // (process exit), aborting the whole scan on the
+                    // decode-through path.
+                    let decoded_backend = self.live_cpu_backend();
                     self.scan_inner(&decoded_chunk, decoded_backend, deadline)
                 };
                 super::profile::set_in_decode(restore_rescan);
