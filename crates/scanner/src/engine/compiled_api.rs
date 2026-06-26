@@ -338,6 +338,18 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             );
             return self.live_cpu_backend();
         }
+        // The hardware probe can pick SimdCpu from host capability + pattern count
+        // alone, but THIS scanner may have built no Hyperscan prefilter — e.g. a
+        // detector set whose patterns expose no anchorable literal (`[a-z]{16}`), so
+        // `simd_prefilter` is None. Auto-route such a scan to the live CPU backend
+        // (CpuFallback) instead of returning a SimdCpu the scan path cannot honor:
+        // `resolve_backend_for_scan`'s fail-closed abort is reserved for an EXPLICIT
+        // `--backend simd-regex` request, not for auto-selection, which must always
+        // resolve to a backend this scanner can actually run (Law 10: no silent — and
+        // here, no fatal — degrade on the auto path).
+        if selected == crate::hw_probe::ScanBackend::SimdCpu && !self.simd_backend_usable() {
+            return self.live_cpu_backend();
+        }
         selected
     }
 

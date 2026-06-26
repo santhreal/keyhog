@@ -96,42 +96,39 @@ fn dogfood_captures_redacted_event() {
     let chunk = make_chunk("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
     let _ = scanner.scan(&chunk);
     let events = keyhog_scanner::telemetry::drain_events();
-    // Other tests may run concurrently and fire their own suppressions
-    // while dogfood is enabled, so don't assume index 0 is ours.
+    // The dogfood trace must redact via the SAME canonical policy as findings
+    // (`keyhog_core::redact`), which scales the retained edge to credential length
+    // (`(len/8).clamp(1,4)`): the 20-char AWS EXAMPLE key keeps 2 leading + 2
+    // trailing bytes around an ellipsis (`AK...LE`), NOT a fixed 4+4 prefix. Pin
+    // to the canonical redaction of the credential this test planted so that —
+    // even if another test's EXAMPLE suppression interleaves in the process-global
+    // buffer under parallel execution — we assert against our own event.
+    let planted = concat!("AK", "IAIOSFODNN7EXAMPLE");
+    let expected_redaction = keyhog_core::redact(planted).into_owned();
     let redacted = events
         .iter()
         .find_map(|event| match event {
-            // `drain_events()` empties a process-global telemetry buffer, so
-            // under parallel test execution another test's EXAMPLE suppression
-            // (e.g. `my_example_key`) can interleave ahead of ours. Pin to the
-            // AKIA credential this test actually planted so we never assert
-            // against a sibling's event.
             DogfoodEvent::ExampleSuppressed {
                 credential_redacted,
                 reason,
                 ..
-            } if reason.contains("EXAMPLE") && credential_redacted.starts_with("AKIA") => {
+            } if reason.contains("EXAMPLE") && *credential_redacted == expected_redaction => {
                 Some(credential_redacted.as_str())
             }
             _ => None,
         })
-        .expect("--dogfood must capture this AKIA suppression event");
+        .expect("--dogfood must capture this AKIA EXAMPLE suppression event, canonically redacted");
 
+    // Security property (independent of redact's impl): never leak the full value.
     assert!(
-        !redacted.contains(concat!("AK", "IAIOSFODNN7EXAMPLE")),
+        !redacted.contains(planted),
         "redacted output must NOT contain the full credential: {redacted}"
     );
+    // Shape: scaled edge bytes around an ellipsis — provider-identifying prefix,
+    // a `...` separator, and trailing bytes for at-a-glance verification.
     assert!(
-        redacted.starts_with("AKIA"),
-        "redacted output should include the provider prefix: {redacted}"
-    );
-    assert!(
-        redacted.contains("..."),
-        "redacted output should keep an ellipsis separator: {redacted}"
-    );
-    assert!(
-        redacted.ends_with("MPLE"),
-        "redacted output should retain trailing bytes for verification: {redacted}"
+        redacted.starts_with("AK") && redacted.contains("...") && redacted.ends_with("LE"),
+        "redaction must keep the scaled edge bytes around an ellipsis: {redacted}"
     );
     keyhog_scanner::telemetry::testing::reset();
 }
@@ -339,8 +336,11 @@ fn dogfood_records_engine_probabilistic_gate_drop() {
     // is the lowest-diversity value possible -> the probabilistic gate rejects it.
     let chunk = make_chunk("secret = aaaaaaaaaaaaaaaa\n");
     let _ = scanner.scan(&chunk);
-    // Pin to OUR planted credential's redaction ("aaaa...aaaa") so a concurrent
-    // test's suppression event can't satisfy the assertion.
+    // Pin to OUR planted credential's canonical redaction so a concurrent test's
+    // suppression event can't satisfy the assertion. `keyhog_core::redact` scales
+    // the retained edge to length (`(16/8).clamp(1,4)` = 2), so the 16-'a' value
+    // redacts to "aa...aa", NOT a fixed 4+4 "aaaa...aaaa".
+    let expected_redaction = keyhog_core::redact("aaaaaaaaaaaaaaaa").into_owned();
     let reasons: Vec<String> = keyhog_scanner::telemetry::drain_events()
         .into_iter()
         .filter_map(|e| match e {
@@ -348,7 +348,7 @@ fn dogfood_records_engine_probabilistic_gate_drop() {
                 reason,
                 credential_redacted,
                 ..
-            } if credential_redacted.starts_with("aaaa") => Some(reason.into_owned()),
+            } if credential_redacted == expected_redaction => Some(reason.into_owned()),
             _ => None,
         })
         .collect();
