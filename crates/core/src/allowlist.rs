@@ -583,7 +583,7 @@ impl Allowlist {
     ///
     /// ```rust
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use keyhog_core::Allowlist;
+    /// use keyhog_core::{Allowlist, CredentialHash};
     ///
     /// let path = std::env::temp_dir().join(format!(
     ///     "keyhog_allowlist_hash_{}.keyhogignore",
@@ -592,7 +592,7 @@ impl Allowlist {
     /// std::fs::write(&path, "hash:0000000000000000000000000000000000000000000000000000000000000000\n")?;
     /// let allowlist = Allowlist::load_with_metadata_policy(&path, false, false, None)?;
     /// std::fs::remove_file(&path)?;
-    /// assert!(allowlist.credential_hashes.contains(&[0u8; 32]));
+    /// assert!(allowlist.credential_hashes.contains(&CredentialHash::from([0u8; 32])));
     /// # Ok(()) }
     /// ```
     pub(crate) fn is_hash_allowed(&self, credential: &str) -> bool {
