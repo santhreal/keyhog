@@ -194,6 +194,23 @@ pub fn validate_hyperscan_cache_dir(path: &std::path::Path) -> std::result::Resu
     simd::backend::validate_configured_cache_dir(path)
 }
 
+/// True when `detector_id` names the pure-entropy fallback family (`"entropy"`
+/// or any `"entropy-*"` id such as `entropy-token`).
+///
+/// Pure-entropy detectors fire on the Shannon entropy of the matched character
+/// run rather than on a distinctive prefix/shape, so whether one fires for a
+/// given secret is *context-dependent*: the same bytes embedded in a longer
+/// token run (a connection-string URL, a `key=` assignment) can dilute below the
+/// entropy gate even though they fire in isolation. Consumers that categorize a
+/// finding by detector family — and the contract test harness, which must not
+/// gate context-dependent firings all-or-nothing — use this to distinguish the
+/// entropy fallback from service-anchored detectors without re-encoding the
+/// naming contract owned by [`detector_ids`].
+#[inline]
+pub fn is_entropy_detector(detector_id: &str) -> bool {
+    detector_ids::is_entropy_detector(detector_id)
+}
+
 /// Normalize scannable text by removing evasion characters and handling homoglyphs.
 pub(crate) fn normalize_chunk_data(data: &str) -> Cow<'_, str> {
     if data.is_ascii() {

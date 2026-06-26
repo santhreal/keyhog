@@ -152,22 +152,43 @@ pub fn surfaces(scanner: &CompiledScanner, chunk: &Chunk, credential: &str) -> b
 }
 
 /// A credential is *credential-sufficient* when it surfaces from its OWN bytes
-/// alone — a distinctive prefix/shape, no companion `api`/`secret`/`key` anchor
-/// needed. Only these can be gated all-or-nothing across a byte-preserving
-/// transform: the transform leaves the credential bytes intact, so a sufficient
-/// credential that vanishes is a real recall bug, never a fixture artifact.
+/// alone via a detector keyed on a distinctive PREFIX/SHAPE — no companion
+/// `api`/`secret`/`key` anchor needed. Only these can be gated all-or-nothing
+/// across a byte-preserving transform: the transform leaves the credential bytes
+/// intact, so a sufficient credential that vanishes is a real recall bug, never
+/// a fixture artifact.
+///
+/// A standalone hit from the pure-entropy fallback (`entropy`/`entropy-*`) does
+/// NOT count. Entropy detectors fire on the Shannon entropy of the matched
+/// character *run*, which is intrinsically context-dependent: the SAME credential
+/// bytes that form a clean high-entropy run in isolation dilute below the entropy
+/// gate once embedded in a longer run (e.g. `rediss://default:<cred>@host…`,
+/// `teams api key=<cred>`), where a service-anchored detector — not entropy —
+/// surfaces the secret. Gating an entropy-only credential all-or-nothing would
+/// therefore assert survival of a context-dependent firing the moment any
+/// transform perturbs the surrounding run (whitespace injected between an anchor
+/// and the token, doubled separators that break an anchor regex), which is
+/// exactly the accuracy-RATE question this module delegates to the bench. Such
+/// credentials fall through to the companion/informational bucket below: still
+/// recorded for visibility, never gated. (A credential with a distinctive prefix
+/// that *also* happens to be high-entropy stays sufficient — its named detector
+/// surfaces it here regardless of the entropy fallback.)
 ///
 /// Companion-required positives (a bare UUID, a low-entropy generic body that
-/// needs a keyword anchor nearby) legitimately depend on surrounding context a
-/// transform may perturb; how well they survive is an accuracy RATE owned by
-/// the bench, so they are recorded for visibility but never gated.
+/// needs a keyword anchor nearby) likewise legitimately depend on surrounding
+/// context a transform may perturb; how well they survive is an accuracy RATE
+/// owned by the bench, so they are recorded for visibility but never gated.
 pub fn credential_sufficient(
     scanner: &CompiledScanner,
     source_type: &str,
     primary: &Primary,
 ) -> bool {
     let chunk = make_chunk(&primary.credential, source_type, "sufficiency-probe.txt");
-    surfaces(scanner, &chunk, &primary.credential)
+    scanner.clear_fragment_cache();
+    scanner.scan(&chunk).iter().any(|m| {
+        m.credential.as_ref().contains(primary.credential.as_str())
+            && !keyhog_scanner::is_entropy_detector(m.detector_id.as_ref())
+    })
 }
 
 /// Probe every primary once and return the parallel credential-sufficiency
