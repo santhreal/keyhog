@@ -88,8 +88,9 @@ fn fixed_chunks() -> Vec<Chunk> {
         let rd = std::fs::read_dir(&dir)
             .unwrap_or_else(|error| panic!("read_dir({}) failed: {error}", dir.display()));
         for entry in rd {
-            let entry = entry
-                .unwrap_or_else(|error| panic!("read_dir entry in {} failed: {error}", dir.display()));
+            let entry = entry.unwrap_or_else(|error| {
+                panic!("read_dir entry in {} failed: {error}", dir.display())
+            });
             let p = entry.path();
             if p.is_dir() {
                 stack.push(p);

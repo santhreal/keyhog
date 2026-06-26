@@ -37,8 +37,8 @@ use super::support;
 use support::paths::detector_dir;
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
-use keyhog_scanner::testing::{extract_literal_prefix, extract_literal_prefixes};
 use keyhog_scanner::testing::LazyRegexProbe as LazyRegex;
+use keyhog_scanner::testing::{extract_literal_prefix, extract_literal_prefixes};
 use keyhog_scanner::{CompiledScanner, ScannerConfig};
 
 /// Representative pattern shapes covering every branch of
