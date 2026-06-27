@@ -155,12 +155,17 @@ fn measure_reference_simd(
     scanner: &CompiledScanner,
     sample: &[Chunk],
 ) -> Result<(Vec<Vec<keyhog_core::RawMatch>>, BackendTimingEvidence), AutorouteRoutingError> {
+    // Warmup (UN-timed): the reference scan establishes the reference match set
+    // AND absorbs one-time cold costs — Hyperscan scratch first-alloc, cold
+    // instruction cache, page-faults — so the timed trials below measure
+    // steady-state throughput, not first-run startup. Including the cold first
+    // run would inflate the SIMD baseline and unfairly bias every candidate
+    // comparison against it (Law 7: a biased measurement is a production bug).
     scanner.clear_fragment_cache();
-    let (reference, first_dur) =
-        timed(|| scanner.scan_coalesced_with_backend(sample, ScanBackend::SimdCpu));
+    let reference = scanner.scan_coalesced_with_backend(sample, ScanBackend::SimdCpu);
     let reference_key = canonical_matches(&reference);
-    let mut durations = vec![first_dur];
-    for trial_idx in 1..AUTOROUTE_CALIBRATION_TRIALS {
+    let mut durations = Vec::with_capacity(AUTOROUTE_CALIBRATION_TRIALS);
+    for trial_idx in 0..AUTOROUTE_CALIBRATION_TRIALS {
         scanner.clear_fragment_cache();
         let (matches, dur) =
             timed(|| scanner.scan_coalesced_with_backend(sample, ScanBackend::SimdCpu));
@@ -231,7 +236,14 @@ fn measure_candidate_backend(
 ) -> Result<BackendTimingEvidence, AutorouteRoutingError> {
     let reference_key = canonical_matches(reference_matches);
     let mut durations = Vec::with_capacity(AUTOROUTE_CALIBRATION_TRIALS);
-    for _ in 0..AUTOROUTE_CALIBRATION_TRIALS {
+    // Run one extra UN-recorded warmup pass first (trial_idx 0): it pays the same
+    // per-trial cold-fragment-cache cost a real scan does AND absorbs one-time
+    // startup — Hyperscan scratch first-alloc, cold instruction cache, page-faults
+    // — so the recorded trials measure steady-state throughput, the same warmup
+    // the SIMD reference already gets (Law 7: a biased measurement mis-selects the
+    // backend). The warmup is fully checked (parity + GPU-degrade), so a backend
+    // that diverges or degrades on first contact is still rejected here.
+    for trial_idx in 0..=AUTOROUTE_CALIBRATION_TRIALS {
         scanner.clear_fragment_cache();
         let gpu_degrade_count_before = if is_gpu_backend(backend) {
             Some(scanner.runtime_status().gpu_degrade_count)
@@ -270,7 +282,9 @@ fn measure_candidate_backend(
                 "candidate findings diverged from the SIMD reference",
             ));
         }
-        durations.push(dur);
+        if trial_idx > 0 {
+            durations.push(dur);
+        }
     }
     scanner.clear_fragment_cache();
     BackendTimingEvidence::from_durations(durations).ok_or_else(|| {

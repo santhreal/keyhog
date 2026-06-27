@@ -468,9 +468,17 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && install_ps1.contains("Docker daemon is not responding")
             && install_ps1.contains("'--autoroute-calibrate'")
             && !install_ps1.contains("KEYHOG_AUTOROUTE_CALIBRATE")
-            && install_ps1.contains("'--batch-pipeline'")
+            // Calibration runs the DEFAULT scan flags plus each documented
+            // scan-policy preset, parametrized through `$autoroutePresets` /
+            // `$presetPasses` — NOT the spurious `--batch-pipeline --autoroute-gpu`,
+            // which hashed into a digest no real `keyhog scan .` ever requested and
+            // made every default Windows scan fail closed (parity with install.sh).
+            && install_ps1.contains("autoroutePresets")
+            && install_ps1.contains("presetPasses")
+            && install_ps1.contains("--fast")
+            && !install_ps1.contains("'--batch-pipeline'")
             && !install_ps1.contains("KEYHOG_BATCH_PIPELINE")
-            && install_ps1.contains("'--autoroute-gpu'")
+            && !install_ps1.contains("'--autoroute-gpu'")
             && !install_ps1.contains("KEYHOG_GPU_AUTOROUTE")
             && install_ps1.contains("$failed = $false")
             && install_ps1.contains("return $false")
