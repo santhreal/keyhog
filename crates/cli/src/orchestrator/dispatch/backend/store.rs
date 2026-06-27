@@ -339,6 +339,221 @@ fn read_autoroute_cache_file(path: &std::path::Path) -> std::io::Result<Vec<u8>>
     Ok(data)
 }
 
+// --- Read-only inspection ---------------------------------------------------
+//
+// `keyhog backend --autoroute` renders the persisted cache so an operator who hit
+// a fail-closed "no decision for workload bucket ..." error can see exactly which
+// resolved configs and workload buckets ARE calibrated, and whether the cache is
+// stale for this build. This path deliberately does NOT validate host/detector/
+// rules identity — a real scan does that and surfaces a mismatch loudly. It
+// deserializes and DISPLAYS, additionally flagging the cheap build-identity drift
+// (binary version / git hash / feature set) that a post-upgrade stale cache shows.
+
+/// Operator-facing view of the persisted autoroute cache (one JSON object).
+#[derive(Debug, Serialize)]
+pub(crate) struct AutorouteCacheInspection {
+    pub(crate) path: Option<String>,
+    pub(crate) present: bool,
+    /// Set when the cache exists but is unusable (disabled / unreadable / wrong
+    /// schema version / corrupt). A real scan fails closed on the same input.
+    pub(crate) error: Option<String>,
+    pub(crate) version: Option<u32>,
+    pub(crate) binary_version: Option<String>,
+    pub(crate) git_hash: Option<String>,
+    pub(crate) identity_matches_build: Option<bool>,
+    pub(crate) identity_mismatch_reason: Option<String>,
+    pub(crate) host: Option<String>,
+    pub(crate) detector_digest: Option<String>,
+    pub(crate) rules_digest: Option<String>,
+    pub(crate) configs: Vec<AutorouteConfigInspection>,
+}
+
+/// One resolved scan-config digest's calibrated workload decisions.
+#[derive(Debug, Serialize)]
+pub(crate) struct AutorouteConfigInspection {
+    pub(crate) config_digest: String,
+    pub(crate) decision_count: usize,
+    pub(crate) decisions: Vec<AutorouteDecisionInspection>,
+}
+
+/// One calibrated (workload bucket -> fastest-correct backend) decision.
+#[derive(Debug, Serialize)]
+pub(crate) struct AutorouteDecisionInspection {
+    pub(crate) workload: String,
+    pub(crate) backend: String,
+    pub(crate) sample_bytes: u64,
+    pub(crate) sample_chunks: usize,
+    pub(crate) simd_ms: u128,
+    pub(crate) cpu_ms: Option<u128>,
+    pub(crate) gpu_ms: Option<u128>,
+}
+
+pub(crate) fn inspect_autoroute_cache(
+    path: Option<&std::path::Path>,
+) -> AutorouteCacheInspection {
+    let mut out = AutorouteCacheInspection {
+        path: path.map(|p| p.display().to_string()),
+        present: false,
+        error: None,
+        version: None,
+        binary_version: None,
+        git_hash: None,
+        identity_matches_build: None,
+        identity_mismatch_reason: None,
+        host: None,
+        detector_digest: None,
+        rules_digest: None,
+        configs: Vec::new(),
+    };
+
+    let Some(path) = path else {
+        out.error = Some(
+            "autoroute cache is disabled (--autoroute-cache off / [system].autoroute_cache = \
+             off); auto scans require an explicit --backend in this configuration"
+                .to_string(),
+        );
+        return out;
+    };
+
+    if !path.exists() {
+        // Not an error: simply not calibrated yet.
+        return out;
+    }
+
+    let data = match read_autoroute_cache_file(path) {
+        Ok(data) => data,
+        Err(error) => {
+            out.present = true;
+            out.error = Some(format!("autoroute cache is unreadable: {error}"));
+            return out;
+        }
+    };
+    out.present = true;
+
+    match serde_json::from_slice::<AutorouteCacheVersionEnvelope>(&data) {
+        Ok(envelope) => {
+            out.version = Some(envelope.version);
+            if envelope.version != AUTOROUTE_CACHE_VERSION {
+                out.error = Some(format!(
+                    "cache schema version {} is incompatible with this build (expects {}); \
+                     re-run calibration to regenerate it",
+                    envelope.version, AUTOROUTE_CACHE_VERSION
+                ));
+                return out;
+            }
+        }
+        Err(error) => {
+            out.error = Some(format!("autoroute cache is not valid cache JSON: {error}"));
+            return out;
+        }
+    }
+
+    let cache: AutorouteCache = match serde_json::from_slice(&data) {
+        Ok(cache) => cache,
+        Err(error) => {
+            out.error = Some(format!("autoroute cache payload did not deserialize: {error}"));
+            return out;
+        }
+    };
+
+    out.binary_version = Some(cache.binary_version.clone());
+    out.git_hash = Some(cache.git_hash.clone());
+    out.detector_digest = Some(format!("{:016x}", cache.detector_digest));
+    out.rules_digest = Some(cache.rules_digest.clone());
+    out.host = Some(render_host_profile(&cache.host));
+
+    let mut drift = Vec::new();
+    if cache.binary_version != env!("CARGO_PKG_VERSION") {
+        drift.push(format!(
+            "binary version {} != current {}",
+            cache.binary_version,
+            env!("CARGO_PKG_VERSION")
+        ));
+    }
+    if cache.git_hash != keyhog_core::git_hash() {
+        drift.push(format!(
+            "git hash {} != current {}",
+            cache.git_hash,
+            keyhog_core::git_hash()
+        ));
+    }
+    let current_features = AutorouteBuildFeatures::current();
+    if cache.build_features != current_features {
+        drift.push(format!(
+            "build features {} != current {}",
+            cache.build_features.describe(),
+            current_features.describe()
+        ));
+    }
+    out.identity_matches_build = Some(drift.is_empty());
+    if !drift.is_empty() {
+        out.identity_mismatch_reason = Some(drift.join("; "));
+    }
+
+    for config in &cache.configs {
+        let mut decisions: Vec<AutorouteDecisionInspection> = config
+            .decisions
+            .iter()
+            .map(|(key, decision)| AutorouteDecisionInspection {
+                workload: render_workload_key(key),
+                backend: decision.backend.clone(),
+                sample_bytes: decision.sample_bytes,
+                sample_chunks: decision.sample_chunks,
+                simd_ms: decision.simd_ms,
+                cpu_ms: decision.cpu_ms,
+                gpu_ms: decision.gpu_ms,
+            })
+            .collect();
+        decisions.sort_by(|a, b| a.workload.cmp(&b.workload));
+        out.configs.push(AutorouteConfigInspection {
+            config_digest: format!("{:016x}", config.config_digest),
+            decision_count: config.decisions.len(),
+            decisions,
+        });
+    }
+    out.configs.sort_by(|a, b| a.config_digest.cmp(&b.config_digest));
+    out
+}
+
+/// Render a workload bucket in the same field layout as the fail-closed
+/// "no persisted decision for workload bucket ..." error, so an operator can
+/// match the bucket they were refused against the buckets that ARE calibrated.
+fn render_workload_key(key: &WorkloadKey) -> String {
+    format!(
+        "bytes_log2={} chunks_log2={} max_file_log2={} patterns_log2={} \
+         decode_density_log2={} source_hash={:016x}",
+        key.bytes_bucket,
+        key.chunks_bucket,
+        key.max_file_bucket,
+        key.pattern_bucket,
+        key.decode_density_bucket,
+        key.source_class_hash
+    )
+}
+
+fn render_host_profile(host: &AutorouteHostProfile) -> String {
+    let simd = if host.has_avx512 {
+        "AVX-512"
+    } else if host.has_avx2 {
+        "AVX2"
+    } else if host.has_neon {
+        "NEON"
+    } else {
+        "scalar"
+    };
+    format!(
+        "{}/{} {} | {}p/{}l cores | {} | hyperscan={} | gpu={}",
+        host.os,
+        host.arch,
+        host.cpu_model.as_deref().unwrap_or("unknown-cpu"),
+        host.physical_cores,
+        host.logical_cores,
+        simd,
+        if host.hyperscan_available { "yes" } else { "no" },
+        host.gpu_name.as_deref().unwrap_or("none"),
+    )
+}
+
 /// Collapse the two GPU labels to one route class for routing-decision
 /// comparison. `Gpu` and `MegaScan` share the same measured GPU timing evidence
 /// and differ only by a config-driven execution label, so they are equivalent

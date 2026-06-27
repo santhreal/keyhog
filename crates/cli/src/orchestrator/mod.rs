@@ -52,6 +52,7 @@ pub(crate) use reporting::{
 };
 
 pub(crate) use dispatch::CachedBackendRouter;
+pub(crate) use dispatch::inspect_autoroute_cache;
 pub(crate) use streaming::{scan_streaming_source, StreamingSourceEvent};
 
 pub(crate) fn cached_autoroute_router_for_default_config(

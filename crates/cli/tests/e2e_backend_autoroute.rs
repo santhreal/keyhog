@@ -1,0 +1,149 @@
+//! e2e: `keyhog backend --autoroute` inspects the persisted calibration cache.
+//!
+//! This is the operator's window into autoroute: after a fail-closed
+//! "no decision for workload bucket ..." scan error, `backend --autoroute` shows
+//! which resolved configs and workload buckets ARE calibrated, the backend each
+//! resolved to, and whether the cache is stale for this build. The command is
+//! read-only and always exits 0 (it is a report, not a gate).
+
+use std::path::PathBuf;
+use std::process::Command;
+use tempfile::TempDir;
+
+fn binary() -> PathBuf {
+    PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
+}
+
+/// An uncalibrated cache directory reports "not calibrated yet" in text mode and
+/// exits 0 — never a scary error, since the operator's next step is to calibrate.
+#[test]
+fn backend_autoroute_reports_uncalibrated_cache_cleanly() {
+    let cache = TempDir::new().unwrap();
+    let out = Command::new(binary())
+        .args(["backend", "--autoroute"])
+        .env("XDG_CACHE_HOME", cache.path())
+        .env("KEYHOG_NO_GPU", "1")
+        .output()
+        .expect("spawn keyhog backend --autoroute");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "backend --autoroute must exit 0; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("autoroute calibration cache"),
+        "must render the cache header; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("not calibrated yet"),
+        "an empty cache dir must say it is not calibrated yet; got: {stdout}"
+    );
+}
+
+/// `--json` emits a valid object that marks an absent cache as `present:false`
+/// with an empty `configs` array — a stable shape for scripted health checks.
+#[test]
+fn backend_autoroute_json_is_valid_and_marks_absence() {
+    let cache = TempDir::new().unwrap();
+    let out = Command::new(binary())
+        .args(["backend", "--autoroute", "--json"])
+        .env("XDG_CACHE_HOME", cache.path())
+        .env("KEYHOG_NO_GPU", "1")
+        .output()
+        .expect("spawn keyhog backend --autoroute --json");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let value: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("backend --autoroute --json must emit valid JSON");
+    assert_eq!(value["present"], serde_json::json!(false), "json={value}");
+    assert!(
+        value["configs"].as_array().expect("configs array").is_empty(),
+        "absent cache lists no configs; json={value}"
+    );
+}
+
+/// After an `--autoroute-calibrate` scan writes a decision, `backend --autoroute
+/// --json` lists the resolved config, its workload decision(s), and a real
+/// backend label, and reports the freshly-written cache as matching this build.
+#[test]
+fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
+    let cache = TempDir::new().unwrap();
+    let work = TempDir::new().unwrap();
+    let target = work.path().join("c.txt");
+    std::fs::write(&target, "api_key = \"abcdefghijklmnop\"\n").unwrap();
+
+    let calibrate = Command::new(binary())
+        .args([
+            "scan",
+            "--no-daemon",
+            "--autoroute-calibrate",
+            "--format",
+            "json",
+        ])
+        .arg(&target)
+        .env("XDG_CACHE_HOME", cache.path())
+        .env("KEYHOG_NO_GPU", "1")
+        .output()
+        .expect("spawn keyhog scan --autoroute-calibrate");
+    // A calibration scan runs calibration THEN scans, so it returns the scan code
+    // (0 clean / 1 found). Anything >= 2 means calibration failed.
+    assert!(
+        matches!(calibrate.status.code(), Some(0) | Some(1)),
+        "calibration scan must succeed (exit 0/1); code={:?} stderr={}",
+        calibrate.status.code(),
+        String::from_utf8_lossy(&calibrate.stderr)
+    );
+
+    let out = Command::new(binary())
+        .args(["backend", "--autoroute", "--json"])
+        .env("XDG_CACHE_HOME", cache.path())
+        .env("KEYHOG_NO_GPU", "1")
+        .output()
+        .expect("spawn keyhog backend --autoroute --json");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    assert_eq!(value["present"], serde_json::json!(true), "json={value}");
+    assert_eq!(
+        value["identity_matches_build"],
+        serde_json::json!(true),
+        "a cache written by this exact binary must match this build; json={value}"
+    );
+    let configs = value["configs"].as_array().expect("configs array");
+    assert!(
+        !configs.is_empty(),
+        "a calibrated cache must list >= 1 config; json={value}"
+    );
+    let decisions = configs[0]["decisions"]
+        .as_array()
+        .expect("decisions array");
+    assert!(
+        !decisions.is_empty(),
+        "a calibrated config must list >= 1 workload decision; json={value}"
+    );
+    let backend = decisions[0]["backend"]
+        .as_str()
+        .expect("decision backend is a string");
+    assert!(
+        !backend.is_empty(),
+        "a decision must name the resolved backend; json={value}"
+    );
+    let workload = decisions[0]["workload"]
+        .as_str()
+        .expect("decision workload is a string");
+    assert!(
+        workload.contains("bytes_log2=") && workload.contains("source_hash="),
+        "the workload bucket must render in the same field layout as the fail-closed \
+         scan error so operators can match them; got: {workload}"
+    );
+}

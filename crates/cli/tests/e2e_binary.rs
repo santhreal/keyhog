@@ -1350,6 +1350,14 @@ fn doctor_reports_corpus_and_passes_scan_self_test() {
         stdout.contains("PASS"),
         "the scan-engine self-test must PASS; got:\n{stdout}"
     );
+    // Autoroute calibration coverage: doctor must surface whether the default
+    // scan path is calibrated, so a user understands an "autoroute calibration
+    // required" exit-2 scan. The section is informational and never flips the
+    // exit code (uncalibrated is the expected pre-`--calibrate` state).
+    assert!(
+        stdout.contains("autoroute") && stdout.contains("calibration"),
+        "doctor must report autoroute calibration coverage; got:\n{stdout}"
+    );
     let corpus = keyhog_core::embedded_detector_count();
     assert!(corpus > 0, "binary must embed a detector corpus");
     assert!(

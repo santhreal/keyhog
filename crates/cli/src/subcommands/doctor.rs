@@ -181,6 +181,48 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
         println!("  embedded       {red}0 - corpus missing from binary{reset}");
     }
 
+    // ── Autoroute calibration coverage ────────────────────────────────
+    // The default `keyhog scan` resolves a backend from the persisted autoroute
+    // cache and FAILS CLOSED (exit 2) on a workload it has no decision for —
+    // Law 10: never guess a substitute. Surface whether this binary+host is
+    // calibrated so a user understands an "autoroute calibration required" scan
+    // error. This is informational and never marks the install unhealthy: an
+    // uncalibrated cache is the expected pre-`--calibrate` state (and single-
+    // backend / portable builds never fail closed, so they need no decision). A
+    // STALE cache — one written by a different build — is a WARN (exit stays 0),
+    // because auto scans reject it until re-calibrated while explicit `--backend`
+    // still works. Reuses the same inspection primitive as `backend --autoroute`.
+    println!("\n{bold}autoroute{reset}");
+    let autoroute_cache = crate::autoroute_cache_path::resolve_autoroute_cache_path(None)
+        .ok()
+        .flatten();
+    let autoroute = crate::orchestrator::inspect_autoroute_cache(autoroute_cache.as_deref());
+    if let Some(error) = &autoroute.error {
+        warned = true;
+        println!("  calibration    {yellow}unusable{reset}  {dim}{error}{reset}");
+        println!(
+            "                 {dim}auto scans fail closed until re-calibrated; explicit `--backend` still works{reset}"
+        );
+    } else if !autoroute.present {
+        println!(
+            "  calibration    {dim}not calibrated — run `install.sh --calibrate` / `install.ps1 -Calibrate`, or scan with an explicit `--backend`{reset}"
+        );
+    } else {
+        let decisions: usize = autoroute.configs.iter().map(|c| c.decision_count).sum();
+        if autoroute.identity_matches_build == Some(false) {
+            warned = true;
+            println!(
+                "  calibration    {yellow}STALE{reset}  {dim}cache is for a different build; auto scans will reject it — re-run `install.sh --calibrate`{reset}"
+            );
+        } else {
+            println!(
+                "  calibration    {green}{} config(s), {} decision(s){reset}  {dim}`keyhog backend --autoroute` for detail{reset}",
+                autoroute.configs.len(),
+                decisions
+            );
+        }
+    }
+
     // ── End-to-end self-test ──────────────────────────────────────────
     // Compile a synthetic single-detector scanner and confirm a planted
     // secret round-trips through compile -> scan -> extract -> report.

@@ -102,3 +102,43 @@ pipeline flags; the documented presets each change scan-policy fields. The
   the exit-2 error message must state real coverage.
 - **#41 elegance** — co-locate decision/bucket/digest/cache-schema/fail-closed
   policy behind one documented boundary; one re-export.
+
+## Session findings (2026-06-27) — empirical, drive #34/#36/#38
+
+**#36 root cause was two-layered, not just "uncalibrated."**
+1. The ci-lean image carries Hyperscan/SIMD *and* scalar CPU, so every auto
+   scan fails closed (exit 2) without a baked decision — fixed by the in-image
+   `--autoroute-calibrate` bake (`tests/docker/Dockerfile.glibc`).
+2. Even after baking, `--precision /test/corpus/aws_leak.env` returned **0
+   findings** (rc 0, empty array), failing `inv:precision/aws-found`. Cause:
+   `high_precision()` keeps `penalize_test_paths` ON, and `test` is a penalized
+   path component (`crates/scanner/data/test-path-rules.toml`), so the planted
+   AKIA was dropped below the 0.85 floor. The corpus was relocated `/test/corpus`
+   → `/data/corpus` (a neutral path), restoring the "found under every profile"
+   invariant. This is **correct** detector behavior surfaced by a bad fixture
+   path — not a recall bug.
+
+**Bucket/digest fragility — the concrete case for #34.** The matrix exercises
+more autoroute (workload, config) pairs than the policy×file grid, and EACH that
+the bake omitted failed closed at exit 2 until calibrated explicitly:
+- a **directory** target is a different `WorkloadKey` than a single file;
+- `--min-confidence 0.0` and `--threads 64` each fork the `autoroute_config_digest`
+  (both are hashed in `effective.rs::autoroute_config_digest`), so each needs its
+  own calibration even though neither changes which backend is *fastest*;
+- **stdin** buckets are CONTENT-sensitive: calibrating stdin with `clean.txt`
+  did NOT cover a stdin scan of the AKIA line — the bake and scenario must feed
+  byte-identical input (now both pipe `/data/corpus/aws_leak.env`).
+
+The image now bakes all of these explicitly (a drift = a loud exit 2 in run.sh,
+never a silent miscalibration). But the broader lesson for **#34** is that the
+exact-bucket-or-fail-closed model forces N calibrations for N near-identical
+workloads. `min_confidence` is a pure post-scan *filter* — it cannot change
+backend throughput — yet it forks the digest; that fragmentation (and the file
+vs dir vs stdin bucket split) is what #34 must generalize WITHOUT guessing a
+backend (Law 10): a decision may cover a neighbor only when the backend choice
+is provably stable across that range, never by silent substitution.
+
+**#38 shipped:** `keyhog backend --autoroute` (`+ --json`) renders the persisted
+cache — configs, workload buckets, resolved backend, and build-staleness — so an
+operator who hits the exit-2 message can see what *is* calibrated. Reuses one
+`inspect_autoroute_cache` primitive (store.rs), re-exported once up the chain.

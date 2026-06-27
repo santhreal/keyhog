@@ -138,6 +138,14 @@ the size-keyed routing matrix where small inputs stay on `simd-regex` and large
 chunks cross into `gpu-region-presence` once the per-tier byte thresholds are
 met — a measured, explainable function of host and input size, never a guess.
 
+`keyhog backend --autoroute` is the companion view: it reads the *persisted*
+calibration cache and lists which resolved scan configs and workload buckets
+already have a fastest-correct decision (and the backend each resolved to),
+plus whether the cache is stale for this build. When a scan exits with
+`autoroute calibration required: no decision for workload bucket …`, this is
+how you see what *is* calibrated and recalibrate the gap. Add `--json` for a
+stable, scriptable shape.
+
 <p align="center">
   <img src="demo/keyhog-backend.gif" alt="keyhog backend — hardware probe (RTX 5090, AVX-512, io_uring) and the size-driven autoroute decision matrix: simd-regex for small inputs, gpu-region-presence once per-tier byte thresholds are met" width="860" />
 </p>

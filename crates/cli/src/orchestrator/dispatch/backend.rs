@@ -10,6 +10,7 @@ use self::calibration::calibrate_fastest_correct_backend;
 use self::evidence::AutorouteDecision;
 use self::host::AutorouteHostProfile;
 use self::store::{load_autoroute_cache, save_autoroute_cache};
+pub(crate) use self::store::inspect_autoroute_cache;
 use self::workload::{workload_key, WorkloadClassificationError, WorkloadKey};
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};

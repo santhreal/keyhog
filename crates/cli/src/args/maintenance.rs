@@ -8,12 +8,23 @@ pub struct CompletionArgs {
 }
 
 #[derive(Parser)]
+// `--json` renders either the self-test report or the autoroute-cache inspection,
+// so it requires one of them; the two modes are mutually exclusive.
+#[command(group(clap::ArgGroup::new("json_target").args(["self_test", "autoroute"])))]
 pub struct BackendArgs {
     /// Probe the workload size that would route to a different backend.
     /// E.g. `--probe-bytes $((256 * 1024 * 1024))` to confirm GPU is picked
     /// at the 256 MiB threshold.
     #[arg(long)]
     pub probe_bytes: Option<u64>,
+
+    /// Inspect the persisted autoroute calibration cache: which resolved scan
+    /// configs and workload buckets have a fastest-correct backend decision,
+    /// the backend each resolved to, and whether the cache is stale for this
+    /// build. Read-only; pairs with `--json`. Use this to diagnose a
+    /// fail-closed "no decision for workload bucket ..." scan error.
+    #[arg(long)]
+    pub autoroute: bool,
 
     /// Compiled pattern count to use for the routing-simulation matrix.
     /// This is a what-if knob: it does not change the loaded corpus, only
@@ -31,8 +42,9 @@ pub struct BackendArgs {
     #[arg(long)]
     pub self_test: bool,
 
-    /// Emit `backend --self-test` as stable JSON for CI health gates.
-    #[arg(long, requires = "self_test")]
+    /// Emit `backend --self-test` or `backend --autoroute` as stable JSON for
+    /// CI health gates / scripted inspection.
+    #[arg(long, requires = "json_target")]
     pub json: bool,
 
     /// Disable GPU probing for backend inspection/self-test.

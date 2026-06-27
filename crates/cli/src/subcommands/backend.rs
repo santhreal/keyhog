@@ -33,7 +33,127 @@ pub(crate) fn run(args: BackendArgs) -> Result<ExitCode> {
     if args.self_test {
         return run_self_test(args.json);
     }
+    if args.autoroute {
+        return run_autoroute_inspection(args.json);
+    }
     print_backend_report(&args)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+/// `keyhog backend --autoroute` — render the persisted autoroute calibration
+/// cache so an operator can see which resolved configs and workload buckets are
+/// calibrated (and to which backend), diagnosing a fail-closed scan. Read-only.
+fn run_autoroute_inspection(json: bool) -> Result<ExitCode> {
+    let path = crate::autoroute_cache_path::resolve_autoroute_cache_path(None)
+        .map_err(|message| anyhow::anyhow!(message))?;
+    let inspection = crate::orchestrator::inspect_autoroute_cache(path.as_deref());
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&inspection)?);
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let p = style::for_stdout();
+    println!("{}## autoroute calibration cache{}", p.bold, p.reset);
+    match &inspection.path {
+        Some(path) => println!("  path:            {path}"),
+        None => println!("  path:            (disabled)"),
+    }
+
+    // Unusable cache (disabled / unreadable / wrong version / corrupt): a real
+    // scan fails closed on the same input, so say so loudly with the next step.
+    if let Some(error) = &inspection.error {
+        println!("  status:          {}{}{}", p.yellow, error, p.reset);
+        println!();
+        println!(
+            "Run `install.sh --calibrate` (Unix) or `install.ps1 -Calibrate` (Windows) to \
+             (re)build the cache, or scan with an explicit `--backend`."
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    // Cache file absent: simply not calibrated yet.
+    if !inspection.present {
+        println!("  status:          {}not calibrated yet{}", p.yellow, p.reset);
+        println!();
+        println!(
+            "No autoroute cache here yet — auto scans fail closed until calibrated. Run \
+             `install.sh --calibrate` (Unix) / `install.ps1 -Calibrate` (Windows), or scan \
+             with an explicit `--backend`."
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    if let Some(version) = inspection.version {
+        println!("  schema version:  {version}");
+    }
+    if let (Some(binary), Some(git)) = (&inspection.binary_version, &inspection.git_hash) {
+        println!("  built for:       keyhog {binary} ({git})");
+    }
+    match inspection.identity_matches_build {
+        Some(true) => println!(
+            "  identity:        {}matches this build{} (host/detector/rules verified at scan time)",
+            p.green, p.reset
+        ),
+        Some(false) => {
+            println!(
+                "  identity:        {}STALE — real scans will reject this cache{}",
+                p.red, p.reset
+            );
+            if let Some(reason) = &inspection.identity_mismatch_reason {
+                println!("                   {reason}");
+            }
+        }
+        None => {}
+    }
+    if let Some(host) = &inspection.host {
+        println!("  host:            {host}");
+    }
+    if let Some(detector) = &inspection.detector_digest {
+        println!("  detector digest: {detector}");
+    }
+    if let Some(rules) = &inspection.rules_digest {
+        println!("  rules digest:    {rules}");
+    }
+
+    println!();
+    let total_decisions: usize = inspection.configs.iter().map(|c| c.decision_count).sum();
+    println!(
+        "{}{} calibrated config(s), {} workload decision(s){}",
+        p.bold,
+        inspection.configs.len(),
+        total_decisions,
+        p.reset
+    );
+    for config in &inspection.configs {
+        println!();
+        println!(
+            "  {}config {}{}  —  {} decision(s)",
+            p.cyan, config.config_digest, p.reset, config.decision_count
+        );
+        for decision in &config.decisions {
+            let cpu = decision
+                .cpu_ms
+                .map(|ms| format!(" cpu={ms}ms"))
+                .unwrap_or_default();
+            let gpu = decision
+                .gpu_ms
+                .map(|ms| format!(" gpu={ms}ms"))
+                .unwrap_or_default();
+            println!("    {}", decision.workload);
+            println!(
+                "        -> {}  {}[{} B / {} chunk(s); simd={}ms{}{}]{}",
+                decision.backend,
+                p.dim,
+                decision.sample_bytes,
+                decision.sample_chunks,
+                decision.simd_ms,
+                cpu,
+                gpu,
+                p.reset
+            );
+        }
+    }
     Ok(ExitCode::SUCCESS)
 }
 
