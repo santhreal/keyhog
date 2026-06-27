@@ -63,6 +63,21 @@ fn is_symlink(path: &Path) -> bool {
         .unwrap_or(false) // LAW10: empty/absent => documented numeric default, recall-safe
 }
 
+/// True when `path` begins with a UTF-16 byte-order mark (`FF FE` LE / `FE FF`
+/// BE). Used to keep large UTF-16 files off the raw-byte windowed/mmap path,
+/// which would NUL-interleave their ASCII secrets and mis-count their lines
+/// (see the call site in `process_entry`). The probe is a no-follow-safe
+/// 2-byte prefix read.
+///
+/// LAW10: a failed or short prefix probe returns `false`, NOT a silent skip —
+/// the caller's windowed path then runs and itself loudly surfaces any
+/// unreadable file, so this classifier can never produce a silent false-clean.
+fn file_starts_with_utf16_bom(path: &Path) -> bool {
+    let mut bom = [0u8; 2];
+    matches!(read::read_file_prefix_safe(path, &mut bom), Ok(2))
+        && (bom == [0xFF, 0xFE] || bom == [0xFE, 0xFF])
+}
+
 pub(super) fn record_binary_without_printable_strings(path: &str) {
     let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
     tracing::warn!(
@@ -386,7 +401,24 @@ pub(super) fn process_entry(
         return;
     }
 
-    if file_size > window_size as u64 {
+    // A file that begins with a UTF-16 BOM (`FF FE`/`FE FF`) must NOT take the
+    // raw-byte windowed/mmap path below: that path decodes each window with
+    // `from_utf8_lossy`, which leaves a UTF-16 ASCII secret NUL-interleaved
+    // (`g\0h\0p\0…`) so no detector matches it, and counts `\n` on raw UTF-16
+    // bytes so line attribution drifts. The cross-window stitch invariant
+    // (`base_offset + data.len()` gapless; see engine::boundary) is raw-byte
+    // based, so windows cannot be transcoded in place without breaking it.
+    // `file_starts_with_utf16_bom` short-circuits those files out of the windowed
+    // branch (the `&&` only pays the probe syscall when the file is large enough
+    // to reach it), letting them fall through to the single-chunk
+    // `read_file_mmap` path below — which runs `decode_text_file` over the whole
+    // mapping (correct UTF-16 decode + exact line/col), is bounded by the same
+    // 2 GiB mmap sanity cap (an over-cap or TOCTOU-grown file is a loud counted
+    // skip), and routes a non-UTF-16 buffer that merely starts with the BOM bytes
+    // to printable-string scanning. LAW10: closes the silent windowed-path UTF-16
+    // recall hole that returned a false "clean" on large Windows/PowerShell/.NET
+    // UTF-16 files holding ASCII secrets.
+    if file_size > window_size as u64 && !file_starts_with_utf16_bom(&path) {
         let display = display_path(&path);
         let mut consumer_stopped = false;
         let windowed_mmap_outcome = read::for_each_file_windowed_mmap(

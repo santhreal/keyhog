@@ -986,6 +986,85 @@ fn mmap_binary_falls_back_to_printable_strings_without_reread() {
     );
 }
 
+// ───────────── UTF-16 large file: windowed-path recall guard ─────────────
+
+/// Encode `s` as UTF-16LE bytes (each unit little-endian), no BOM.
+fn utf16le_no_bom(s: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(s.len() * 2);
+    for unit in s.encode_utf16() {
+        out.extend_from_slice(&unit.to_le_bytes());
+    }
+    out
+}
+
+#[test]
+fn large_utf16le_file_with_ascii_secret_is_decoded_not_windowed_nul_interleaved() {
+    // REGRESSION (windowed-path UTF-16 recall gap): a UTF-16LE file larger than
+    // DEFAULT_WINDOW_SIZE (1 MiB) used to take the raw-byte windowed/mmap path,
+    // which `from_utf8_lossy`-decodes each byte window and so leaves an ASCII
+    // secret NUL-interleaved (`A\0K\0I\0A\0…`) — no detector can match it, a
+    // silent false "clean" on large Windows/PowerShell/.NET UTF-16 dumps. The fix
+    // short-circuits a UTF-16-BOM file out of the windowed branch so it falls
+    // through to the single-chunk `read_file_mmap` -> `decode_text_file` path,
+    // which transcodes the whole mapping to clean contiguous UTF-8.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("powershell-transcript.txt");
+
+    // Build > 1 MiB of UTF-16LE ASCII so file_size exceeds DEFAULT_WINDOW_SIZE and
+    // forces the windowed branch, with the marker planted well past the first
+    // 1 MiB window cut (the byte region the old path would have NUL-interleaved).
+    let marker = "AKIA_UTF16_CONTIGUOUS_RECALL_MARKER_01";
+    let filler_line = "Write-Output 'routine benign transcript line padding'\r\n";
+    let mut text = String::new();
+    while text.len() < 1_200_000 {
+        text.push_str(filler_line);
+    }
+    text.push_str(marker);
+    text.push_str("\r\n");
+    while text.len() < 1_400_000 {
+        text.push_str(filler_line);
+    }
+
+    let mut bytes = vec![0xFF, 0xFE]; // UTF-16LE BOM
+    bytes.extend_from_slice(&utf16le_no_bom(&text));
+    assert!(
+        bytes.len() as u64 > 1024 * 1024,
+        "test file ({} bytes) must exceed the 1 MiB windowed-path threshold",
+        bytes.len()
+    );
+    fs::write(&path, &bytes).unwrap();
+
+    let chunks = scan_single_file(&path);
+    let source_types: Vec<String> = chunks
+        .iter()
+        .map(|c| c.metadata.source_type.clone())
+        .collect();
+    let body = combined_body(&chunks);
+
+    // The ASCII secret survives CONTIGUOUSLY (correctly de-interleaved).
+    assert!(
+        body.contains(marker),
+        "UTF-16 ASCII secret must survive de-interleaved; {} chunk(s), source_types {:?}",
+        chunks.len(),
+        source_types
+    );
+    // ...and is NOT left NUL-interleaved — the exact signature of the old
+    // raw-byte windowed path having run on UTF-16 bytes.
+    let interleaved: String = marker.chars().flat_map(|c| [c, '\u{0}']).collect();
+    assert!(
+        !body.contains(&interleaved),
+        "secret must not appear NUL-interleaved (would mean the raw-byte windowed path ran)"
+    );
+    // Routing proof: a UTF-16 large file is now ONE decoded text chunk, not many
+    // `filesystem/windowed` raw-byte chunks.
+    assert!(
+        chunks
+            .iter()
+            .all(|c| c.metadata.source_type != "filesystem/windowed"),
+        "UTF-16 large file must not be emitted as raw windowed chunks; source_types {source_types:?}"
+    );
+}
+
 #[test]
 fn binary_with_only_short_runs_yields_no_chunk() {
     // extract_printable_strings uses min_len 8. A binary file whose printable
