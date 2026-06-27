@@ -332,3 +332,11 @@ path:crates/scanner/src/gpu/backend.rs
 # there is no source line to path-suppress, and the real verifier logic stays
 # scanned); the reassembled buffer value is suppressed by hash, stable across runs.
 hash:26e4e47b31d8cefa746fc6bb298ad3f846e293c9c10243418d28b747155e1207
+# The canonical fabricated GitHub classic PAT (the `...PDSiF` valid-CRC token) is
+# the fleet-wide test fixture for github-classic-pat detection - it recurs across
+# many test files (the format/backend parity e2e, the -o /dev/null regression, the
+# new BOM-prefixed UTF-16 decode test in filesystem/read/tests.rs, ...). It is
+# exactly 36 chars, so unlike the canonical.rs example its value hash is stable (no
+# match-extent flap); suppress it by VALUE so any test that plants it stays green
+# without a per-file path entry.
+hash:7b85310a29300230c865bc48ca1836f15b81bd50ac85e8c0785e8145e98ff175
