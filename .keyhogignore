@@ -302,3 +302,44 @@ hash:e24897816e2d61526e61bf2041e4d1c6747cc5129ed1d52f00fb02167bfd0b0d
 hash:f4913b0dd2685cbdf7af5d2fb5c8b21c1389ff106f99f4f4296d3ae3b7ffda17
 hash:f6dc8f29e382dcc29478e74e5419e82c8d03453461b06224b9f8d573cc2bd79f
 hash:f9b149f9188fb49b28ee28794382c1d4bc655f6b5086e01da4d5308372fbb87e
+# docs/EXECUTION_PLAN.md is the master planning / execution doc. Like CHANGELOG.md
+# and backlog/ above, it quotes detector IDs, cargo test-command lines, and
+# credential SHAPES verbatim while documenting detector behavior - e.g. a
+# `regression_*` test-name command line whose substring matches the
+# chef-automate-token / thehive-api-key / deepl-api-key regexes, and a
+# negative-corpus discussion of the vercel-edge-function-credentials detector that
+# embeds the CUDNN_BACKEND_ENGINECFG_DESCRIPTOR counter-example it fires on. The
+# pinned v0.5.37 dogfood binary surfaces five such doc FPs. Documentation about
+# findings, not live secrets - same rationale as CHANGELOG.md / analysis docs.
+path:docs/EXECUTION_PLAN.md
+# Fabricated test/probe fixtures the pinned v0.5.37 dogfood binary surfaces from
+# inline-test and ML-probe SOURCE (not live secrets; literal shapes deliberately
+# NOT pasted - this file is itself scanned). Dedup is by value, so one hash entry
+# covers every occurrence:
+#   * crates/sources/src/hosted_git/sanitize.rs redaction-test fixtures - the
+#     redacts_every_credential_shape / url_credential_exact_output /
+#     missing_pattern_fails_closed cases feed deliberately fake gitlab-PAT,
+#     stripe, slack-bot, AWS-access-key, and github-classic-PAT shapes THROUGH the
+#     git stderr redactor to PROVE every shape is scrubbed. The credentials exist
+#     only to be redacted.
+#   * crates/scanner/src/suppression/shape/canonical.rs shape-classifier tests -
+#     the canonical jwt.io JWT example plus a fabricated github-classic-PAT used
+#     to prove the dotted-token / url-safe-blob shape gates accept/reject.
+#   * crates/scanner/src/gpu/backend.rs ML feature-probe table - canonical vendor
+#     example tokens used only to warm the GPU-batch ML scorer's feature
+#     extractor before the first real batch.
+#   * crates/verifier/src/verify/aws.rs (attributed) - an aws-access-key shape the
+#     pinned binary re-emits from a git-history / decode-through buffer attributed
+#     to that path. No AWS access-key value has ever lived in that file's history
+#     and the HEAD binary does not surface it; suppressed by value hash like the
+#     other reassembled-fragment artifacts above.
+hash:21017a7322a948583f64870370480f0ca891297fbff5808ef64b9dbc04e10bcf
+hash:26e4e47b31d8cefa746fc6bb298ad3f846e293c9c10243418d28b747155e1207
+hash:4d4966799223157dba92bc3bfe502bd94c0771b7c11f825b34d2c4887e0b02c1
+hash:730613e039494f9328db3fa140fcf79600d7f632a0faf52e621476cedb9862f4
+hash:743554670c6065b3f7f13ac4f07e392f977b3556ceb7457411633c454bcbece8
+hash:76063ea328e351e4aee6899303adb27c18e1739753108bac98aa5c6b46175205
+hash:7b85310a29300230c865bc48ca1836f15b81bd50ac85e8c0785e8145e98ff175
+hash:8708d89275941b1e8aa9866c3d0fc98c78cfb74e5f98c2d700f4ee90c84341f9
+hash:ba94fef946060f5e556722d1f1f4e5e6de65a57de8a3f830c8f130b58031e523
+hash:e4b78f83e32d6ea27cfde4144bf090c52c6191af4662e75b2fb5f99fd2fe7435
