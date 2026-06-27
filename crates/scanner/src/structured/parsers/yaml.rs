@@ -10,15 +10,28 @@ use serde::Deserialize;
 /// encoded value: two different keys in the same Secret CAN encode the
 /// same byte body, and matching on the encoded blob would route both
 /// findings to the first occurrence.
-pub(crate) fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
-    let values = match parse_yaml_documents(text, "k8s-secret", "base64 data: values") {
+///
+/// `decode_derived` is true when `text` is not the original file but a buffer
+/// the decode-through pipeline produced by splicing a decoded payload back into
+/// the parent (`ChunkMetadata::decoded_span.is_some()`). On a derived buffer a
+/// YAML parse failure is EXPECTED and loses nothing — the encoded surface was
+/// already decoded and scanned by the pipeline that produced this buffer — so it
+/// must not be counted or announced as a lost decode surface (that would be a
+/// false Law-10 alarm and would inflate the structured-parse-failure telemetry).
+pub(crate) fn parse_k8s_secret(text: &str, decode_derived: bool) -> Vec<ExtractedPair> {
+    let values = match parse_yaml_documents(
+        text,
+        "k8s-secret",
+        "base64 data: values",
+        decode_derived,
+    ) {
         Some(values) => values,
         None => return Vec::new(),
     };
 
     let mut pending = Vec::new();
     for value in &values {
-        extract_k8s_secret(value, &mut pending, 0);
+        extract_k8s_secret(value, &mut pending, 0, decode_derived);
     }
 
     finalize_pending_pairs(text, pending)
@@ -28,16 +41,17 @@ fn extract_k8s_secret(
     value: &serde_yaml::Value,
     pending: &mut Vec<PendingExtractedPair>,
     depth: usize,
+    decode_derived: bool,
 ) {
     if depth >= MAX_YAML_TRAVERSAL_DEPTH {
         return;
     }
     match yaml_kind(value) {
-        Some("Secret") => extract_k8s_secret_maps(value, pending),
+        Some("Secret") => extract_k8s_secret_maps(value, pending, decode_derived),
         Some("List") => {
             if let Some(serde_yaml::Value::Sequence(items)) = value.get("items") {
                 for item in items {
-                    extract_k8s_secret(item, pending, depth + 1);
+                    extract_k8s_secret(item, pending, depth + 1, decode_derived);
                 }
             }
         }
@@ -45,7 +59,11 @@ fn extract_k8s_secret(
     }
 }
 
-fn extract_k8s_secret_maps(value: &serde_yaml::Value, pending: &mut Vec<PendingExtractedPair>) {
+fn extract_k8s_secret_maps(
+    value: &serde_yaml::Value,
+    pending: &mut Vec<PendingExtractedPair>,
+    decode_derived: bool,
+) {
     if let Some(serde_yaml::Value::Mapping(map)) = value.get("data") {
         for (k, v) in map {
             let key = k.as_str().unwrap_or_default(); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
@@ -59,13 +77,18 @@ fn extract_k8s_secret_maps(value: &serde_yaml::Value, pending: &mut Vec<PendingE
             let decoded = match keyhog_core::decode_standard_base64(&encoded) {
                 Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
                 Err(error) => {
-                    crate::telemetry::record_structured_parse_failure();
-                    // LAW10: invalid k8s Secret base64 is counted as a
-                    // structured parse/decode coverage gap before debug detail.
+                    // On a decode-derived buffer the `data:` value has already
+                    // been decoded by the pipeline (e.g. the base64 blob decoded
+                    // to a JWT), so it is NOT base64 a second time - failing to
+                    // re-decode it loses nothing and must not be counted as a
+                    // coverage gap (false Law-10 alarm). At depth 0 a non-base64
+                    // `data:` value IS a genuine decode-through gap (counted).
+                    let _ = super::structured_gap_is_real(decode_derived);
                     tracing::debug!(
                         target: "keyhog::structured",
                         key,
                         %error,
+                        decode_derived,
                         "k8s secret data: value is not valid standard base64; skipping decode-through"
                     );
                     continue;
@@ -105,8 +128,15 @@ fn yaml_kind(value: &serde_yaml::Value) -> Option<&str> {
 }
 
 /// Parse docker-compose.yml environment blocks.
-pub(crate) fn parse_docker_compose(text: &str) -> Vec<ExtractedPair> {
-    let value = match parse_yaml_value(text, "docker-compose", "environment-block values") {
+///
+/// `decode_derived` carries the same meaning as in [`parse_k8s_secret`].
+pub(crate) fn parse_docker_compose(text: &str, decode_derived: bool) -> Vec<ExtractedPair> {
+    let value = match parse_yaml_value(
+        text,
+        "docker-compose",
+        "environment-block values",
+        decode_derived,
+    ) {
         Some(value) => value,
         None => return Vec::new(),
     };
@@ -120,44 +150,79 @@ pub(crate) fn parse_docker_compose(text: &str) -> Vec<ExtractedPair> {
 /// instead of being mistaken for the post-parse compose traversal cap below.
 const SERDE_YAML_PARSE_RECURSION_LIMIT: usize = 128;
 
+/// Report a YAML parse failure on a structured-format surface.
+///
+/// At decode depth 0 (`decode_derived == false`) the parsed `text` IS the
+/// original file, so a parse failure genuinely loses the decode-through surface:
+/// count it (it is a real structured-coverage gap, Law 10) and warn loudly.
+///
+/// At depth > 0 (`decode_derived == true`) the `text` is a buffer the
+/// decode-through pipeline synthesised by splicing an already-decoded payload
+/// back into the parent k8s/compose scaffold. Such a buffer is NOT guaranteed to
+/// be valid YAML — e.g. a base64 `data:` value that decodes to a JWT whose own
+/// base64url header decodes to inline JSON `{"alg":...}.<sig>` is not — yet the
+/// secret it carried was already surfaced and scanned when the pipeline produced
+/// this buffer. Announcing "decode-through disabled / lost surface" here is a
+/// FALSE alarm and inflates the structured-parse-failure telemetry, so the
+/// failure is recorded only as debug detail and never counted as a lost surface.
+fn report_yaml_parse_failure(
+    error: &serde_yaml::Error,
+    surface: &'static str,
+    lost_decode_surface: &'static str,
+    decode_derived: bool,
+) {
+    if !super::structured_gap_is_real(decode_derived) {
+        tracing::debug!(
+            target: "keyhog::structured",
+            %error,
+            surface,
+            "decode-derived buffer is not valid YAML; nothing lost (payload already \
+             decoded and scanned by the decode-through pipeline)"
+        );
+        return;
+    }
+    // Law 10: a structured file that won't parse loses its decode-through
+    // surface (already counted above). Warn loudly per surface so the operator
+    // sees exactly which structured format dropped coverage; serde_yaml also
+    // rejects deeply nested YAML before Value construction.
+    match surface {
+        "k8s-secret" => tracing::warn!(
+            target: "keyhog::structured",
+            %error,
+            surface,
+            lost_decode_surface,
+            serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
+            "k8s secret YAML parse failed; decode-through disabled"
+        ),
+        "docker-compose" => tracing::warn!(
+            target: "keyhog::structured",
+            %error,
+            surface,
+            lost_decode_surface,
+            serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
+            "docker-compose YAML parse failed; decode-through disabled"
+        ),
+        _ => tracing::warn!(
+            target: "keyhog::structured",
+            %error,
+            surface,
+            lost_decode_surface,
+            serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
+            "structured YAML parse failed; decode-through disabled"
+        ),
+    }
+}
+
 fn parse_yaml_value(
     text: &str,
     surface: &'static str,
     lost_decode_surface: &'static str,
+    decode_derived: bool,
 ) -> Option<serde_yaml::Value> {
     match serde_yaml::from_str(text) {
         Ok(value) => Some(value),
         Err(error) => {
-            // Law 10: a structured YAML file that won't parse loses its
-            // decode-through surface. Count + keep the debug detail; serde_yaml
-            // also rejects deeply nested YAML before Value construction.
-            crate::telemetry::record_structured_parse_failure();
-            match surface {
-                "k8s-secret" => tracing::warn!(
-                    target: "keyhog::structured",
-                    %error,
-                    surface,
-                    lost_decode_surface,
-                    serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
-                    "k8s secret YAML parse failed; decode-through disabled"
-                ),
-                "docker-compose" => tracing::warn!(
-                    target: "keyhog::structured",
-                    %error,
-                    surface,
-                    lost_decode_surface,
-                    serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
-                    "docker-compose YAML parse failed; decode-through disabled"
-                ),
-                _ => tracing::warn!(
-                    target: "keyhog::structured",
-                    %error,
-                    surface,
-                    lost_decode_surface,
-                    serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
-                    "structured YAML parse failed; decode-through disabled"
-                ),
-            }
+            report_yaml_parse_failure(&error, surface, lost_decode_surface, decode_derived);
             None
         }
     }
@@ -167,6 +232,7 @@ fn parse_yaml_documents(
     text: &str,
     surface: &'static str,
     lost_decode_surface: &'static str,
+    decode_derived: bool,
 ) -> Option<Vec<serde_yaml::Value>> {
     let mut values = Vec::new();
     let mut had_error = false;
@@ -175,15 +241,7 @@ fn parse_yaml_documents(
             Ok(value) => values.push(value),
             Err(error) => {
                 had_error = true;
-                crate::telemetry::record_structured_parse_failure();
-                tracing::warn!(
-                    target: "keyhog::structured",
-                    %error,
-                    surface,
-                    lost_decode_surface,
-                    serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
-                    "structured YAML document parse failed; decode-through disabled for that document"
-                );
+                report_yaml_parse_failure(&error, surface, lost_decode_surface, decode_derived);
                 break;
             }
         }

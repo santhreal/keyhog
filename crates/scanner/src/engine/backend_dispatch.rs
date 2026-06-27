@@ -100,9 +100,16 @@ impl CompiledScanner {
         // it through a plain `&str`. The passthrough path, by contrast, is
         // byte-identical to `data_to_pp` and carries the Cow through unchanged
         // so a borrowed chunk stays borrowed (no full-body copy).
-        let preprocessed = if let Some(pp) =
-            crate::structured::preprocess(&data_to_pp, chunk.metadata.path.as_deref())
-        {
+        // A chunk the decode-through pipeline produced carries `decoded_span`;
+        // on such a derived buffer a structured-format parse failure is expected
+        // and loses nothing (the encoded surface was already decoded + scanned),
+        // so it must not be counted/announced as a lost decode surface.
+        let decode_derived = chunk.metadata.decoded_span.is_some();
+        let preprocessed = if let Some(pp) = crate::structured::preprocess(
+            &data_to_pp,
+            chunk.metadata.path.as_deref(),
+            decode_derived,
+        ) {
             pp
         } else {
             #[cfg(feature = "multiline")]

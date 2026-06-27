@@ -2380,7 +2380,8 @@ fn structured_pairs(pairs: Vec<crate::structured::ExtractedPair>) -> Vec<Structu
 
 #[cfg(test)]
 pub(crate) fn parse_docker_compose(text: &str) -> Vec<StructuredPair> {
-    structured_pairs(crate::structured::parsers::parse_docker_compose(text))
+    // Test facade exercises the original-file (non-decode-derived) path.
+    structured_pairs(crate::structured::parsers::parse_docker_compose(text, false))
 }
 
 #[cfg(test)]
@@ -2395,15 +2396,37 @@ pub(crate) fn parse_hcl(text: &str) -> Vec<StructuredPair> {
 
 #[cfg(test)]
 pub(crate) fn parse_jupyter(text: &str) -> Vec<StructuredPair> {
-    structured_pairs(crate::structured::parsers::parse_jupyter(text))
+    // Test facade exercises the original-file (non-decode-derived) path.
+    structured_pairs(crate::structured::parsers::parse_jupyter(text, false))
 }
 
 #[cfg(test)]
 pub(crate) fn parse_k8s_secret(text: &str) -> Vec<StructuredPair> {
-    structured_pairs(crate::structured::parsers::parse_k8s_secret(text))
+    // Test facade exercises the original-file (non-decode-derived) path.
+    structured_pairs(crate::structured::parsers::parse_k8s_secret(text, false))
 }
 
 #[cfg(test)]
 pub(crate) fn parse_tfstate(text: &str) -> Vec<StructuredPair> {
-    structured_pairs(crate::structured::parsers::parse_tfstate(text))
+    // Test facade exercises the original-file (non-decode-derived) path.
+    structured_pairs(crate::structured::parsers::parse_tfstate(text, false))
+}
+
+// Decode-derived-aware facades: expose the `decode_derived` flag so integration
+// tests can pin both depth-0 (original file) extraction AND the depth>0
+// (decode-through-derived buffer) behavior of the structured parsers without
+// widening the crate-internal parser surface to `pub`.
+#[cfg(test)]
+pub(crate) fn parse_k8s_secret_derived(text: &str, decode_derived: bool) -> Vec<StructuredPair> {
+    structured_pairs(crate::structured::parsers::parse_k8s_secret(text, decode_derived))
+}
+
+#[cfg(test)]
+pub(crate) fn parse_tfstate_derived(text: &str, decode_derived: bool) -> Vec<StructuredPair> {
+    structured_pairs(crate::structured::parsers::parse_tfstate(text, decode_derived))
+}
+
+#[cfg(test)]
+pub(crate) fn parse_jupyter_derived(text: &str, decode_derived: bool) -> Vec<StructuredPair> {
+    structured_pairs(crate::structured::parsers::parse_jupyter(text, decode_derived))
 }

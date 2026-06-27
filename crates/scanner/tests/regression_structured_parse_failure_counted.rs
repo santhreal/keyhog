@@ -92,4 +92,30 @@ fn malformed_structured_files_are_counted_valid_ones_are_not() {
         "a successfully-parsed structured file must NOT increment the failure \
          counter (no false coverage-gap warning)"
     );
+
+    // Decode-through false-alarm regression (dogfood: `mirror-pos` k8s Secrets
+    // holding JWTs). The base64 `data:` value decodes to a JWT whose own
+    // base64url header decodes to inline JSON `{"alg":...}.<sig>`. The
+    // decode-through pipeline splices that decoded payload back into the k8s
+    // scaffold and re-parses the DERIVED buffer as YAML, which legitimately
+    // fails - but the depth-0 document parsed cleanly and the JWT was already
+    // surfaced, so nothing is lost. The derived-buffer parse failure must NOT be
+    // counted. Before the depth-0 gate this fired on 64 of 356 corpus k8s
+    // positives - a false coverage-gap alarm with zero real recall loss.
+    reset_for_scan();
+    let jwt_secret = "apiVersion: v1\nkind: Secret\nmetadata:\n  name: token-secret\ntype: Opaque\ndata:\n  token: ZXlKaGJHY2lPaUpJVXpJMU5pSXNJblI1Y0NJNklrcFhWQ0o5LmV5SnpkV0lpT2lJeE1qTTBOVFkzT0Rrd0lpd2libUZ0WlNJNklrcHZhRzRnUkc5bElpd2lhV0YwSWpveE5URTJNak01TURJeWZRLlNmbEt4d1JKU01lS0tGMlFUNGZ3cE1lSmYzNlBPazZ5SlZfYWRRc3N3NWM=\n";
+    scan(&scanner, jwt_secret, "/repo/token-secret.yaml");
+    assert_eq!(
+        structured_parse_failure_count(),
+        0,
+        "a k8s Secret whose base64 data: value decodes to a JWT must NOT be \
+         counted as a structured parse failure. The depth-0 YAML parses cleanly; \
+         the decode-through pipeline then re-scans derived buffers where (a) the \
+         spliced-in decoded JSON makes the YAML invalid and (b) the already-\
+         decoded value is no longer base64 - BOTH are expected on a derived \
+         buffer and lose nothing (the JWT was surfaced at depth 0). Before the \
+         decode_derived gate this scan counted 2 false coverage gaps. \
+         Depth-0 extraction recall is locked separately by the unit test \
+         `structured::parsers::yaml::decode_derived_gate::depth0_extracts_decoded_jwt`."
+    );
 }

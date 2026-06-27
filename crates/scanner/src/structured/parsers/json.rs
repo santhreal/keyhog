@@ -5,16 +5,19 @@ use super::{
 
 /// Parse Terraform state JSON and recursively extract output `value` fields and
 /// resource instance attributes.
-pub(crate) fn parse_tfstate(text: &str) -> Vec<ExtractedPair> {
+pub(crate) fn parse_tfstate(text: &str, decode_derived: bool) -> Vec<ExtractedPair> {
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
         Err(error) => {
             // Law 10: a `.tfstate` file that won't parse loses its structured
             // decode-through (the `value` fields never become scannable lines).
-            // Count it so the scan surfaces the coverage gap; keep the debug log
-            // for the `-v` error detail.
-            crate::telemetry::record_structured_parse_failure();
-            tracing::warn!(target: "keyhog::structured", %error, "tfstate JSON parse failed; value fields will not be decoded-through");
+            // Count + warn only at depth 0; on a decode-derived buffer the parse
+            // failure is expected and loses nothing (see `structured_gap_is_real`).
+            if super::structured_gap_is_real(decode_derived) {
+                tracing::warn!(target: "keyhog::structured", %error, "tfstate JSON parse failed; value fields will not be decoded-through");
+            } else {
+                tracing::debug!(target: "keyhog::structured", %error, "decode-derived buffer is not valid tfstate JSON; nothing lost");
+            }
             return Vec::new();
         }
     };
@@ -261,15 +264,19 @@ fn extract_tfstate_attribute_scalars(
 }
 
 /// Parse Jupyter notebook JSON and extract code cell sources.
-pub(crate) fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
+pub(crate) fn parse_jupyter(text: &str, decode_derived: bool) -> Vec<ExtractedPair> {
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
         Err(error) => {
             // Law 10: a `.ipynb` that won't parse loses its code-cell
             // decode-through (secrets pasted into notebook cells never become
-            // scannable lines). Count + keep the debug detail.
-            crate::telemetry::record_structured_parse_failure();
-            tracing::warn!(target: "keyhog::structured", %error, "Jupyter notebook JSON parse failed; code cells will not be decoded-through");
+            // scannable lines). Count + warn only at depth 0; on a decode-derived
+            // buffer the failure is expected and loses nothing.
+            if super::structured_gap_is_real(decode_derived) {
+                tracing::warn!(target: "keyhog::structured", %error, "Jupyter notebook JSON parse failed; code cells will not be decoded-through");
+            } else {
+                tracing::debug!(target: "keyhog::structured", %error, "decode-derived buffer is not valid Jupyter JSON; nothing lost");
+            }
             return Vec::new();
         }
     };
@@ -287,9 +294,9 @@ pub(crate) fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
             continue;
         }
         if let Some(source) = cell.get("source") {
-            extract_jupyter_source(source, idx, &mut pending);
+            extract_jupyter_source(source, idx, &mut pending, decode_derived);
         }
-        extract_jupyter_outputs(cell, idx, &mut pending);
+        extract_jupyter_outputs(cell, idx, &mut pending, decode_derived);
     }
     finalize_pending_pairs(text, pending)
 }
@@ -298,6 +305,7 @@ fn extract_jupyter_source(
     source: &serde_json::Value,
     idx: usize,
     pending: &mut Vec<PendingExtractedPair>,
+    decode_derived: bool,
 ) {
     match source {
         serde_json::Value::String(s) => {
@@ -310,8 +318,7 @@ fn extract_jupyter_source(
         }
         serde_json::Value::Array(arr) => {
             let (joined, anchor, malformed) = jupyter_join_text_fragments(arr);
-            if malformed {
-                crate::telemetry::record_structured_parse_failure();
+            if malformed && super::structured_gap_is_real(decode_derived) {
                 tracing::warn!(
                     target: "keyhog::structured",
                     cell = idx,
@@ -321,12 +328,13 @@ fn extract_jupyter_source(
             push_jupyter_text_pair(pending, format!("jupyter-cell-{idx}"), joined, anchor);
         }
         _ => {
-            crate::telemetry::record_structured_parse_failure();
-            tracing::warn!(
-                target: "keyhog::structured",
-                cell = idx,
-                "Jupyter notebook code cell source has unsupported shape; code cell will not be decoded-through"
-            );
+            if super::structured_gap_is_real(decode_derived) {
+                tracing::warn!(
+                    target: "keyhog::structured",
+                    cell = idx,
+                    "Jupyter notebook code cell source has unsupported shape; code cell will not be decoded-through"
+                );
+            }
         }
     }
 }
@@ -335,21 +343,23 @@ fn extract_jupyter_outputs(
     cell: &serde_json::Value,
     idx: usize,
     pending: &mut Vec<PendingExtractedPair>,
+    decode_derived: bool,
 ) {
     let Some(outputs) = cell.get("outputs") else {
         return;
     };
     let serde_json::Value::Array(outputs) = outputs else {
-        crate::telemetry::record_structured_parse_failure();
-        tracing::warn!(
-            target: "keyhog::structured",
-            cell = idx,
-            "Jupyter notebook code cell outputs field has unsupported shape; outputs will not be decoded-through"
-        );
+        if super::structured_gap_is_real(decode_derived) {
+            tracing::warn!(
+                target: "keyhog::structured",
+                cell = idx,
+                "Jupyter notebook code cell outputs field has unsupported shape; outputs will not be decoded-through"
+            );
+        }
         return;
     };
     for (output_idx, output) in outputs.iter().enumerate() {
-        extract_jupyter_output(output, idx, output_idx, pending);
+        extract_jupyter_output(output, idx, output_idx, pending, decode_derived);
     }
 }
 
@@ -358,10 +368,19 @@ fn extract_jupyter_output(
     cell_idx: usize,
     output_idx: usize,
     pending: &mut Vec<PendingExtractedPair>,
+    decode_derived: bool,
 ) {
     let context = format!("jupyter-cell-{cell_idx}-output-{output_idx}");
     if let Some(text) = output.get("text") {
-        extract_jupyter_output_text(text, &context, pending, cell_idx, output_idx, "text");
+        extract_jupyter_output_text(
+            text,
+            &context,
+            pending,
+            cell_idx,
+            output_idx,
+            "text",
+            decode_derived,
+        );
     }
     if let Some(text_plain) = output.get("data").and_then(|data| data.get("text/plain")) {
         extract_jupyter_output_text(
@@ -371,6 +390,7 @@ fn extract_jupyter_output(
             cell_idx,
             output_idx,
             "text/plain",
+            decode_derived,
         );
     }
     if let Some(traceback) = output.get("traceback") {
@@ -381,10 +401,12 @@ fn extract_jupyter_output(
             cell_idx,
             output_idx,
             "traceback",
+            decode_derived,
         );
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn extract_jupyter_output_text(
     value: &serde_json::Value,
     context: &str,
@@ -392,6 +414,7 @@ fn extract_jupyter_output_text(
     cell_idx: usize,
     output_idx: usize,
     surface: &'static str,
+    decode_derived: bool,
 ) {
     match value {
         serde_json::Value::String(s) => {
@@ -399,8 +422,7 @@ fn extract_jupyter_output_text(
         }
         serde_json::Value::Array(arr) => {
             let (joined, anchor, malformed) = jupyter_join_text_fragments(arr);
-            if malformed {
-                crate::telemetry::record_structured_parse_failure();
+            if malformed && super::structured_gap_is_real(decode_derived) {
                 tracing::warn!(
                     target: "keyhog::structured",
                     cell = cell_idx,
@@ -412,14 +434,15 @@ fn extract_jupyter_output_text(
             push_jupyter_text_pair(pending, context.to_string(), joined, anchor);
         }
         _ => {
-            crate::telemetry::record_structured_parse_failure();
-            tracing::warn!(
-                target: "keyhog::structured",
-                cell = cell_idx,
-                output = output_idx,
-                surface,
-                "Jupyter notebook output text has unsupported shape; output will not be decoded-through"
-            );
+            if super::structured_gap_is_real(decode_derived) {
+                tracing::warn!(
+                    target: "keyhog::structured",
+                    cell = cell_idx,
+                    output = output_idx,
+                    surface,
+                    "Jupyter notebook output text has unsupported shape; output will not be decoded-through"
+                );
+            }
         }
     }
 }

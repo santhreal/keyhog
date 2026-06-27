@@ -22,21 +22,33 @@ pub(crate) struct ExtractedPair {
 /// Returns `None` when the file is not a recognised structured format, when it
 /// exceeds the size limit, or when no pairs could be extracted.
 /// Pre-process structured configuration files to extract key-value pairs.
+///
+/// `decode_derived` must be true when `text` is a buffer the decode-through
+/// pipeline synthesised (the chunk carries `ChunkMetadata::decoded_span`), not
+/// the original file. It is threaded to the YAML parsers so a parse failure on a
+/// derived buffer - which is expected and loses nothing, because the encoded
+/// surface was already decoded and scanned - is not counted or announced as a
+/// lost decode surface (Law 10: no false-loud signals, honest telemetry).
 pub(crate) fn preprocess<'a>(
     text: &str,
     path: Option<&str>,
+    decode_derived: bool,
 ) -> Option<ScannerPreprocessedText<'a>> {
     if text.len() > MAX_STRUCTURED_PARSE_BYTES {
         return None;
     }
-    let pairs = detect_and_parse(text, path)?;
+    let pairs = detect_and_parse(text, path, decode_derived)?;
     if pairs.is_empty() {
         return None;
     }
     Some(build_preprocessed_text(text, pairs))
 }
 
-fn detect_and_parse(text: &str, path: Option<&str>) -> Option<Vec<ExtractedPair>> {
+fn detect_and_parse(
+    text: &str,
+    path: Option<&str>,
+    decode_derived: bool,
+) -> Option<Vec<ExtractedPair>> {
     // ASCII case-insensitive byte compares - every chunk runs through this
     // detector to decide whether a structured parser applies. The previous
     // flow built a fully-lowercased copy of the path on every call.
@@ -72,17 +84,17 @@ fn detect_and_parse(text: &str, path: Option<&str>) -> Option<Vec<ExtractedPair>
     }
 
     if (ends_ci(b".yaml") || ends_ci(b".yml")) && text.contains("kind: Secret") {
-        return Some(parsers::parse_k8s_secret(text));
+        return Some(parsers::parse_k8s_secret(text, decode_derived));
     }
 
     if (file_contains_ci(b"docker-compose") || file_contains_ci(b"compose"))
         && (ends_ci(b".yaml") || ends_ci(b".yml"))
     {
-        return Some(parsers::parse_docker_compose(text));
+        return Some(parsers::parse_docker_compose(text, decode_derived));
     }
 
     if ends_ci(b".tfstate") {
-        return Some(parsers::parse_tfstate(text));
+        return Some(parsers::parse_tfstate(text, decode_derived));
     }
 
     // HCL / Terraform configuration. The block shape
@@ -96,7 +108,7 @@ fn detect_and_parse(text: &str, path: Option<&str>) -> Option<Vec<ExtractedPair>
     }
 
     if ends_ci(b".ipynb") {
-        return Some(parsers::parse_jupyter(text));
+        return Some(parsers::parse_jupyter(text, decode_derived));
     }
 
     None

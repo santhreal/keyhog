@@ -4,7 +4,8 @@
 /// parse_jupyter — correctness (known-fake key-value pairs), boundary (empty
 /// input, no matching pairs), and hostile inputs (oversized, malformed).
 use keyhog_scanner::testing::{
-    parse_docker_compose, parse_env, parse_jupyter, parse_k8s_secret, parse_tfstate,
+    parse_docker_compose, parse_env, parse_jupyter, parse_jupyter_derived, parse_k8s_secret,
+    parse_k8s_secret_derived, parse_tfstate, parse_tfstate_derived,
 };
 
 // ── parse_env ─────────────────────────────────────────────────────────────────
@@ -260,4 +261,83 @@ fn parse_jupyter_markdown_cell_not_extracted() {
 #[test]
 fn parse_jupyter_malformed_json_does_not_panic() {
     let _ = parse_jupyter("{ broken json <<<");
+}
+
+// ── decode-derived gate ─────────────────────────────────────────────────────
+//
+// The decode-through pipeline splices an already-decoded payload back into the
+// parent structured scaffold and re-scans the derived buffer. On such a buffer
+// (`decode_derived = true`) a parse/decode failure is EXPECTED and loses nothing
+// (the payload was already surfaced upstream), so it must degrade to "no pairs"
+// gracefully and must NOT count a lost surface. Depth-0 extraction is unchanged.
+// The end-to-end counter contract is pinned in the isolated
+// `tests/regression_structured_parse_failure_counted.rs`; here we pin the
+// per-parser behavior through the test facade.
+
+// A real `mirror-pos` corpus shape: the base64 `data:` value decodes to a JWT.
+const K8S_JWT_SECRET: &str = "apiVersion: v1\nkind: Secret\nmetadata:\n  name: token-secret\ntype: Opaque\ndata:\n  token: ZXlKaGJHY2lPaUpJVXpJMU5pSXNJblI1Y0NJNklrcFhWQ0o5LmV5SnpkV0lpT2lJeE1qTTBOVFkzT0Rrd0lpd2libUZ0WlNJNklrcHZhRzRnUkc5bElpd2lhV0YwSWpveE5URTJNak01TURJeWZRLlNmbEt4d1JKU01lS0tGMlFUNGZ3cE1lSmYzNlBPazZ5SlZfYWRRc3N3NWM=\n";
+
+// What the decode-through pipeline produces at depth > 0: the JWT header has been
+// decoded to inline JSON `{...}`; the trailing `.sig` after `}` is not a valid
+// YAML key, so serde_yaml rejects the derived buffer.
+const K8S_DERIVED_INVALID: &str =
+    "apiVersion: v1\nkind: Secret\ndata:\n  token: {\"alg\":\"HS512\",\"typ\":\"JWT\"}.sig\n";
+
+#[test]
+fn k8s_depth0_extracts_decoded_jwt() {
+    let pairs = parse_k8s_secret_derived(K8S_JWT_SECRET, false);
+    assert_eq!(pairs.len(), 1, "the single data: value must produce one pair");
+    assert!(
+        pairs[0].value.as_str().starts_with("eyJ") && pairs[0].value.as_str().contains('.'),
+        "the extracted value is the decoded JWT, not the base64 blob: {:?}",
+        pairs[0].value.as_str()
+    );
+}
+
+#[test]
+fn k8s_derived_invalid_yaml_yields_no_pairs_without_panic() {
+    assert!(parse_k8s_secret_derived(K8S_DERIVED_INVALID, true).is_empty());
+}
+
+#[test]
+fn k8s_invalid_yaml_at_depth0_still_yields_no_pairs() {
+    assert!(parse_k8s_secret_derived(K8S_DERIVED_INVALID, false).is_empty());
+}
+
+const DERIVED_INVALID_JSON: &str = "{ outputs: not json after decode .sig";
+
+#[test]
+fn tfstate_depth0_extracts_output_value() {
+    let pairs = parse_tfstate_derived(
+        r#"{"outputs":{"db_password":{"value":"s3cr3t-value-here"}}}"#,
+        false,
+    );
+    assert!(
+        pairs.iter().any(|p| p.value.as_str() == "s3cr3t-value-here"),
+        "depth-0 tfstate output value must be extracted: {:?}",
+        pairs.iter().map(|p| p.value.as_str()).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn tfstate_derived_invalid_json_yields_no_pairs_without_panic() {
+    assert!(parse_tfstate_derived(DERIVED_INVALID_JSON, true).is_empty());
+}
+
+#[test]
+fn jupyter_depth0_extracts_code_cell_source() {
+    let pairs = parse_jupyter_derived(
+        r#"{"cells":[{"cell_type":"code","source":["api_key = 'leaked-secret-123'"]}]}"#,
+        false,
+    );
+    assert!(
+        pairs.iter().any(|p| p.value.as_str().contains("leaked-secret-123")),
+        "depth-0 jupyter code cell source must be extracted: {:?}",
+        pairs.iter().map(|p| p.value.as_str()).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn jupyter_derived_invalid_json_yields_no_pairs_without_panic() {
+    assert!(parse_jupyter_derived(DERIVED_INVALID_JSON, true).is_empty());
 }
