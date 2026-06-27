@@ -784,7 +784,10 @@ mod backend_override_tests {
             .expect("compile default scan runtime")
             .with_backend_override(Some(forced));
 
-        let body = "AWS_ACCESS_KEY_ID=AKIA2E0A8F3B244C9986\n".to_string();
+        // Canonical firing AWS-key fixture (shared with scan_planted_aws_exit_one
+        // and ~169 other sites); already hash-suppressed in .keyhogignore, so the
+        // CI self-scan stays green without minting a new suppression entry.
+        let body = "AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\n".to_string();
         let chunk = Chunk {
             data: body.into(),
             metadata: keyhog_core::ChunkMetadata {
