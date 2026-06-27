@@ -216,3 +216,90 @@ fn daemon_rejects_oversized_frame_length_prefix() {
     let _ = stop_daemon(&socket);
     let _ = child.wait();
 }
+
+/// Wiring (#9): a daemon bound to a non-default socket (`daemon start --socket`)
+/// must be reachable by a scan via `scan --daemon --daemon-socket <same path>`
+/// — proving the CLI override symmetrically targets the daemon's bind and the
+/// scan client's connect. Before `--daemon-socket`, a fixed-location daemon
+/// (e.g. a systemd unit on `/run/keyhog/keyhog.sock`) was unreachable by scans:
+/// `scan --daemon` only ever resolved `default_socket_path()`, so a
+/// `daemon start --socket <other>` daemon could be stopped/queried but never
+/// actually serve a scan.
+///
+/// Strengthening: the same scan forced `--daemon=on` but pointed at a DIFFERENT
+/// `--daemon-socket` must fail closed (no daemon there), proving the flag — not
+/// coincidence — is what makes the running daemon reachable.
+#[cfg(unix)]
+#[test]
+fn daemon_socket_flag_wires_scan_to_a_fixed_location_daemon() {
+    use std::process::Stdio;
+
+    let dir = TempDir::new().unwrap();
+    // --backend cpu keeps the daemon's scan path hermetic (no install-time
+    // autoroute calibration needed to resolve a backend for the served scan).
+    let (mut child, socket) = start_daemon(dir.path(), &["--backend", "cpu"]);
+
+    // Split the literal so this test file is not itself flagged by a self-scan.
+    let fixture = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n");
+
+    // (a) A scan pointed at the daemon's socket reaches it and finds the secret.
+    let mut scan = Command::new(binary())
+        .env("KEYHOG_NO_GPU", "1")
+        .args(["scan", "--daemon=on", "--daemon-socket"])
+        .arg(&socket)
+        .args(["--stdin", "--format", "json"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn flag-wired daemon scan");
+    scan.stdin
+        .take()
+        .expect("child stdin")
+        .write_all(fixture.as_bytes())
+        .expect("pipe fixture");
+    let reached = scan.wait_with_output().expect("flag-wired scan output");
+    assert_eq!(
+        reached.status.code(),
+        Some(1),
+        "scan --daemon=on --daemon-socket <path> must reach the fixed-location daemon and find \
+         the planted AWS key (exit 1); stderr={}",
+        String::from_utf8_lossy(&reached.stderr)
+    );
+    let findings: serde_json::Value =
+        serde_json::from_slice(&reached.stdout).expect("flag-wired scan stdout is JSON");
+    assert_eq!(
+        findings.as_array().map(|a| a.len()),
+        Some(1),
+        "flag-wired daemon scan must return exactly the planted AWS finding; got {findings:?}"
+    );
+
+    // (b) The SAME forced scan pointed at a DIFFERENT --daemon-socket must fail
+    //     closed (no daemon there) — proving the flag is what wired (a).
+    let elsewhere = dir.path().join("nowhere.sock");
+    let mut miss = Command::new(binary())
+        .env("KEYHOG_NO_GPU", "1")
+        .args(["scan", "--daemon=on", "--daemon-socket"])
+        .arg(&elsewhere)
+        .args(["--stdin", "--format", "json"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn mismatched-socket daemon scan");
+    miss.stdin
+        .take()
+        .expect("child stdin")
+        .write_all(fixture.as_bytes())
+        .expect("pipe fixture");
+    let missed = miss.wait_with_output().expect("mismatched scan output");
+    assert!(
+        !matches!(missed.status.code(), Some(0) | Some(1)),
+        "scan --daemon=on pointed at a different --daemon-socket must fail closed (no daemon \
+         there), not silently succeed; got exit {:?}",
+        missed.status.code()
+    );
+
+    let _ = stop_daemon(&socket);
+    let _ = child.wait();
+}

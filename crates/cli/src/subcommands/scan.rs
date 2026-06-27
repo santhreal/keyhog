@@ -313,11 +313,26 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         return DaemonRoute::Required;
     }
 
-    if default_socket_path().exists() {
+    // Opportunistic route flips on only when a live daemon is actually at the
+    // socket we'd connect to — the `--daemon-socket` override when present, else
+    // the default. Probing the default while a scan targeted an override socket
+    // would mis-route (treat an unrelated daemon as ours, or miss the real one).
+    if effective_daemon_socket(args).exists() {
         DaemonRoute::Opportunistic
     } else {
         DaemonRoute::Forbidden
     }
+}
+
+/// The socket the daemon route connects to: the `--daemon-socket` override when
+/// the operator points the scan at a non-default daemon, else the default
+/// (`$XDG_RUNTIME_DIR/keyhog.sock`). The single source of truth shared by the
+/// route decision and the connect in [`run_via_daemon`], so they never diverge.
+#[cfg(unix)]
+fn effective_daemon_socket(args: &ScanArgs) -> std::path::PathBuf {
+    args.daemon_socket
+        .clone()
+        .unwrap_or_else(default_socket_path)
 }
 
 #[cfg(unix)]
@@ -462,11 +477,15 @@ fn effective_single_file_path(args: &ScanArgs) -> Result<Option<&Path>> {
 #[cfg(unix)]
 async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
     let wall_start = chrono::Utc::now();
-    let socket = default_socket_path();
+    let socket = effective_daemon_socket(args);
     let mut conn = client::connect(&socket).await.with_context(|| {
         format!(
-            "daemon route: connect to {} (start one with `keyhog daemon start` or pass --no-daemon)",
-            socket.display()
+            "daemon route: connect to {} (start one with `keyhog daemon start{}` or pass --no-daemon)",
+            socket.display(),
+            match &args.daemon_socket {
+                Some(path) => format!(" --socket {}", path.display()),
+                None => String::new(),
+            },
         )
     })?;
 

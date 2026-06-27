@@ -34,7 +34,7 @@ These are read by the installer, not by the scanner.
 | `NO_COLOR`        | (unset)       | Honored per [no-color.org](https://no-color.org): if set, all ANSI styling is disabled. |
 | `TERM`, `COLORTERM` | (set by terminal) | Read only to detect terminal color capability for the human reporter. |
 | `PATH`            | (OS)          | Used when locating trusted system binaries (KeyHog never trusts a bare `PATH` lookup for credential-handling tools — see the safe-binary resolver). |
-| `XDG_RUNTIME_DIR` | (login session) | Preferred daemon socket location: `$XDG_RUNTIME_DIR/keyhog.sock` (falls back to `~/.cache/keyhog/server.sock`). |
+| `XDG_RUNTIME_DIR` | (login session) | Preferred daemon socket location: `$XDG_RUNTIME_DIR/keyhog.sock` (falls back to `~/.cache/keyhog/server.sock`). The exact path is overridable per-process with the `daemon start/stop/status --socket` and `scan --daemon-socket` CLI flags — there is no `KEYHOG_*` socket env var. |
 | `RUST_LOG`        | `keyhog=warn` | Tracing filter. `keyhog=debug` for verbose detector/suppression telemetry; `keyhog::routing=trace` for per-chunk backend selection. |
 | `RUST_BACKTRACE`  | (unset)       | Standard Rust backtrace control on panic (`1` short, `full` full). |
 

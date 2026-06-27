@@ -43,6 +43,13 @@ impl Default for ServerOptions {
 /// (per-user, tmpfs-backed, auto-cleaned on logout) and falls back
 /// to `~/.cache/keyhog/server.sock` when the runtime dir isn't
 /// exported (e.g. inside Docker containers, CI runners).
+///
+/// This is the everyday default. To point a `scan --daemon` at a daemon bound
+/// to a non-default path (a `daemon start --socket <path>` daemon, e.g. a
+/// systemd unit), pass `scan --daemon-socket <path>` — the blessed CLI override
+/// tier. KeyHog deliberately reads no `KEYHOG_*` socket env var (see
+/// docs/src/reference/env.md): socket location is `XDG_RUNTIME_DIR` or a CLI
+/// flag, never an ambient KeyHog-owned environment knob.
 pub fn default_socket_path() -> PathBuf {
     if let Some(runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR") {
         let mut p = PathBuf::from(runtime_dir);
@@ -133,6 +140,13 @@ pub(crate) async fn run_with_backend_override(
     options: ServerOptions,
     backend_override: Option<ScanBackend>,
 ) -> Result<()> {
+    // Tell the operator the daemon is working BEFORE the scanner compile + warm
+    // below. On a warm Hyperscan cache that compile is sub-second and the
+    // "ready" line follows immediately; on a COLD cache (first start, or after a
+    // CPU/detector change) it can take tens of seconds, during which `daemon
+    // start` would otherwise print nothing and look hung. The count is the spec
+    // count (pre-compile); the ready line reports the final compiled count.
+    announce_daemon_starting(detectors.len());
     let (scanner, router, detector_count) = compile_daemon_scan_runtime(detectors)?;
     let listener = bind_trusted_daemon_socket(&socket_path)?;
     let shutdown = Arc::new(Notify::new());
@@ -191,6 +205,13 @@ fn bind_trusted_daemon_socket(socket_path: &Path) -> Result<UnixListener> {
     // and request scans, exposing every credential the scanner finds.
     trust::set_socket_mode_user_only(socket_path)?;
     Ok(listener)
+}
+
+fn announce_daemon_starting(detector_spec_count: usize) {
+    eprintln!(
+        "keyhog daemon: compiling {detector_spec_count} detectors \
+         (first start on a cold cache can take tens of seconds; later starts reuse the cache)…"
+    );
 }
 
 fn announce_daemon_ready(socket_path: &Path, detector_count: usize) {

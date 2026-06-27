@@ -466,6 +466,10 @@ pub struct ScanArgs {
     /// dominates the actual scan; the daemon holds a compiled scanner so each
     /// invocation is sub-ms IPC + scan. See `keyhog daemon start --help`.
     ///
+    /// Socket: the daemon route connects to the default socket
+    /// ($XDG_RUNTIME_DIR/keyhog.sock) unless `--daemon-socket <path>` points it
+    /// at a daemon bound elsewhere (`daemon start --socket <path>`).
+    ///
     /// Read it through [`ScanArgs::daemon_mode`], never directly: that folds in
     /// the `--no-daemon` compatibility alias.
     #[arg(
@@ -489,6 +493,17 @@ pub struct ScanArgs {
     /// in the wild pass `--no-daemon`.
     #[arg(long, conflicts_with = "daemon")]
     pub no_daemon: bool,
+
+    /// Connect the daemon route to a daemon bound on a non-default socket.
+    ///
+    /// By default `scan --daemon` connects to `$XDG_RUNTIME_DIR/keyhog.sock`.
+    /// Pass the same path a daemon was started on
+    /// (`keyhog daemon start --socket <path>`) to reach a fixed-location daemon
+    /// (e.g. a shared/system or systemd-managed instance). Only meaningful with
+    /// the daemon route; ignored when `--daemon=off` / `--no-daemon` forces the
+    /// in-process scanner.
+    #[arg(long, value_name = "PATH", conflicts_with = "no_daemon")]
+    pub daemon_socket: Option<PathBuf>,
 
     /// Write findings to file
     #[arg(short, long)]
