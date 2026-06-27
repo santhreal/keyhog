@@ -82,8 +82,10 @@ pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
             Ok(exit) => Ok(exit),
             Err(e) => {
                 if policy.effective_args.daemon_mode() == DaemonMode::Auto {
+                    let palette = crate::style::for_stderr();
                     eprintln!(
-                        "keyhog: daemon auto route unavailable ({e:#}); running in-process scanner"
+                        "{}: daemon auto route unavailable ({e:#}); running in-process scanner",
+                        crate::style::warn("keyhog", &palette)
                     );
                 }
                 // LAW10: opportunistic daemon failure is reported on stderr in
@@ -505,14 +507,20 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
     crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
 
     if !source_coverage_gaps.is_empty() {
+        let palette = crate::style::for_stderr();
         eprintln!(
-            "warning: daemon input coverage was incomplete ({} source gap(s)); some requested bytes were not scanned.",
+            "{}: daemon input coverage was incomplete ({} source gap(s)); some requested bytes were not scanned.",
+            crate::style::warn("warning", &palette),
             source_coverage_gaps.total()
         );
     }
 
     if findings.is_empty() && !source_coverage_gaps.is_empty() {
-        eprintln!("error: not reporting \"clean\" after incomplete daemon input coverage.");
+        let palette = crate::style::for_stderr();
+        eprintln!(
+            "{}: not reporting \"clean\" after incomplete daemon input coverage.",
+            crate::style::fail("error", &palette)
+        );
         Ok(ExitCode::from(EXIT_SOURCE_FAILED))
     } else if findings.is_empty() {
         Ok(ExitCode::SUCCESS)

@@ -79,14 +79,26 @@ fn run_list(args: DetectorArgs) -> Result<()> {
         return Ok(());
     }
 
+    let p = style::for_stdout();
     if let Some(q) = args.search.as_deref() {
         println!(
-            "Loaded {} detectors ({source}); {} match '{q}':",
-            detectors.len(),
-            filtered.len()
+            "Loaded {green}{len}{reset} {dim}detectors{reset} {dim}({source}){reset}; {green}{match_len}{reset} match '{q}':",
+            green = p.green,
+            len = detectors.len(),
+            reset = p.reset,
+            dim = p.dim,
+            source = source,
+            match_len = filtered.len(),
         );
     } else {
-        println!("Loaded {} detectors ({source}):", detectors.len());
+        println!(
+            "Loaded {green}{len}{reset} {dim}detectors{reset} {dim}({source}){reset}:",
+            green = p.green,
+            len = detectors.len(),
+            reset = p.reset,
+            dim = p.dim,
+            source = source,
+        );
     }
 
     if args.verbose {
@@ -106,7 +118,16 @@ fn run_list(args: DetectorArgs) -> Result<()> {
     }
 
     for (service, ids) in &by_service {
-        println!("  - {} ({} detectors)", service, ids.len());
+        println!(
+            "  - {bold}{cyan}{service}{reset} {dim}({reset}{green}{count}{reset}{dim} detectors){reset}",
+            bold = p.bold,
+            cyan = p.cyan,
+            service = service,
+            reset = p.reset,
+            dim = p.dim,
+            green = p.green,
+            count = ids.len(),
+        );
         for id in ids {
             println!("    - {}", id);
         }

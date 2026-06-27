@@ -128,61 +128,108 @@ pub(crate) mod testing {
 }
 
 fn print_explanation(d: &DetectorSpec) {
-    println!("\u{1F4D6} {}\n", d.id);
-    println!("  Name:      {}", d.name);
-    println!("  Service:   {}", d.service);
-    println!("  Severity:  {:?}", d.severity);
-    println!("  Patterns:  {}", d.patterns.len());
+    let style = crate::style::for_stdout();
+    let sev_color = match d.severity {
+        keyhog_core::Severity::Critical | keyhog_core::Severity::High => style.red,
+        _ => style.yellow,
+    };
+
+    println!(
+        "\u{1F4D6} {}{}{}{}\n",
+        style.bold, style.cyan, d.id, style.reset
+    );
+    println!("  {}Name:{}      {}", style.bold, style.reset, d.name);
+    println!("  {}Service:{}   {}", style.bold, style.reset, d.service);
+    println!(
+        "  {}Severity:{}  {}{:?}{}",
+        style.bold, style.reset, sev_color, d.severity, style.reset
+    );
+    println!(
+        "  {}Patterns:{}  {}",
+        style.bold,
+        style.reset,
+        d.patterns.len()
+    );
     for (i, p) in d.patterns.iter().enumerate() {
-        println!("    [{i}] {}", p.regex);
+        println!("    {}[{i}]{} {}", style.dim, style.reset, p.regex);
         if let Some(group) = p.group {
-            println!("        capture group: {group}");
+            println!("        {}capture group: {group}{}", style.dim, style.reset);
         }
         if let Some(desc) = &p.description {
-            println!("        description: {desc}");
+            println!("        {}description: {desc}{}", style.dim, style.reset);
         }
     }
 
     if !d.keywords.is_empty() {
-        println!("  Keywords:");
+        println!("  {}Keywords:{}", style.bold, style.reset);
         for kw in &d.keywords {
             println!("    - {kw}");
         }
     }
 
     if !d.companions.is_empty() {
-        println!("  Companions:");
+        println!("  {}Companions:{}", style.bold, style.reset);
         for c in &d.companions {
-            let req = if c.required { " (required)" } else { "" };
+            let req = if c.required {
+                format!(" {}(required){}", style.dim, style.reset)
+            } else {
+                String::new()
+            };
             println!(
-                "    - {}{req}: {} (within {} lines)",
-                c.name, c.regex, c.within_lines
+                "    - {}{}: {} {}(within {} lines){}",
+                c.name, req, c.regex, style.dim, c.within_lines, style.reset
             );
         }
     }
 
     if let Some(verify) = &d.verify {
-        println!("  Verification:");
+        println!("  {}Verification:{}", style.bold, style.reset);
         if let Some(url) = verify.url.as_deref() {
-            println!("    URL: {url}");
+            println!("    {}URL: {}{}", style.dim, url, style.reset);
         }
-        println!("    Steps: {}", verify.steps.len());
+        println!(
+            "    {}Steps: {}{}",
+            style.dim,
+            verify.steps.len(),
+            style.reset
+        );
     } else {
-        println!("  Verification:  (none; pattern match only)");
+        println!(
+            "  {}Verification:{}  {}(none; pattern match only){}",
+            style.bold, style.reset, style.dim, style.reset
+        );
     }
 
     if let Some(rotation) = rotation_guide(&d.service) {
         println!();
-        println!("\u{1F510} Rotation guide for {}:", d.service);
-        println!("    {rotation}");
+        println!(
+            "{}\u{1F510} Rotation guide for {}:{}",
+            style.bold, d.service, style.reset
+        );
+        println!("    {}{}{}", style.dim, rotation, style.reset);
     }
 
     println!();
-    println!("If this finding lands in your scan, the canonical remediation is:");
-    println!("  1. Treat the credential as compromised; assume it has been read.");
-    println!("  2. Rotate it at the issuer (see rotation-guide URL above).");
-    println!("  3. Audit access logs for the old credential's identifier.");
-    println!("  4. Replace the leaked value with an env-var reference and add to `.gitignore`.");
+    println!(
+        "{}If this finding lands in your scan, the canonical remediation is:{}",
+        style.bold, style.reset
+    );
+    println!(
+        "  {}1. Treat the credential as compromised; assume it has been read.{}",
+        style.dim, style.reset
+    );
+    println!(
+        "  {}2. Rotate it at the issuer (see rotation-guide URL above).{}",
+        style.dim, style.reset
+    );
+    println!(
+        "  {}3. Audit access logs for the old credential's identifier.{}",
+        style.dim, style.reset
+    );
+    println!(
+        "  {}4. Replace the leaked value with an env-var reference and add to `.gitignore`.{}",
+        style.dim, style.reset
+    );
     println!();
 }
 

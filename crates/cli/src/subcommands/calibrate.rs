@@ -51,22 +51,38 @@ pub(crate) fn run(args: CalibrateArgs) -> Result<()> {
     if args.show {
         print_show(&calibration, &cache_path);
     } else {
+        let p = crate::style::for_stdout();
         let updated = args.tp.len() + args.fp.len();
         println!(
-            "\u{1F4CA} updated {updated} detector counter{} ({} TP, {} FP) at {}",
-            if updated == 1 { "" } else { "s" },
-            args.tp.len(),
-            args.fp.len(),
-            cache_path.display()
+            "\u{1F4CA} updated {green}{updated}{reset} {dim}detector counter{suffix}{reset} ({green}{tp}{reset}{dim} TP{reset}, {green}{fp}{reset}{dim} FP){reset} at {dim}{path}{reset}",
+            suffix = if updated == 1 { "" } else { "s" },
+            tp = args.tp.len(),
+            fp = args.fp.len(),
+            path = cache_path.display(),
+            green = p.green,
+            reset = p.reset,
+            dim = p.dim,
         );
     }
     Ok(())
 }
 
 fn print_show(calibration: &Calibration, cache_path: &std::path::Path) {
+    let p = crate::style::for_stdout();
     let entries = calibration.entries();
-    println!("\u{1F4CA} keyhog calibration ({} detectors)", entries.len());
-    println!("    cache: {}", cache_path.display());
+    println!(
+        "\u{1F4CA} keyhog calibration {dim}({reset}{green}{count}{reset}{dim} detectors){reset}",
+        count = entries.len(),
+        dim = p.dim,
+        green = p.green,
+        reset = p.reset,
+    );
+    println!(
+        "    cache: {dim}{}{reset}",
+        cache_path.display(),
+        dim = p.dim,
+        reset = p.reset
+    );
     if entries.is_empty() {
         println!();
         println!("    (no observations yet; record outcomes with `--tp <id>` or `--fp <id>`)");
@@ -75,20 +91,22 @@ fn print_show(calibration: &Calibration, cache_path: &std::path::Path) {
 
     println!();
     println!(
-        "    {:<40}  {:>5}  {:>5}  {:>9}  {:>5}",
-        "DETECTOR", "α", "β", "POSTERIOR", "OBS"
+        "    {}{:<40}  {:>5}  {:>5}  {:>9}  {:>5}{}",
+        p.bold, "DETECTOR", "α", "β", "POSTERIOR", "OBS", p.reset
     );
     for (id, c) in entries {
         let mean = posterior_mean(c);
         let bar = bar_for(mean);
         println!(
-            "    {:<40}  {:>5}  {:>5}  {:>6.3}  {} {:>4}",
-            id,
-            c.alpha,
-            c.beta,
-            mean,
-            bar,
-            observations(c)
+            "    {id:<40}  {green}{alpha:>5}{reset}  {green}{beta:>5}{reset}  {green}{mean:>6.3}{reset}  {green}{bar}{reset} {green}{obs:>4}{reset}",
+            id = id,
+            alpha = c.alpha,
+            beta = c.beta,
+            mean = mean,
+            bar = bar,
+            obs = observations(c),
+            green = p.green,
+            reset = p.reset,
         );
     }
 }

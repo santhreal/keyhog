@@ -72,10 +72,12 @@ fn install(force: bool) -> Result<ExitCode> {
         let existing = std::fs::read_to_string(&hook_path)
             .with_context(|| format!("reading existing hook at {}", hook_path.display()))?;
         if existing.contains(HOOK_MARKER) && !force {
-            eprintln!(
+            let palette = crate::style::for_stderr();
+            let msg = format!(
                 "KeyHog pre-commit hook is already installed at {}.",
                 hook_path.display()
             );
+            eprintln!("{}", crate::style::warn(&msg, &palette));
             return Ok(ExitCode::SUCCESS);
         }
         if !force {
@@ -110,7 +112,8 @@ fn install(force: bool) -> Result<ExitCode> {
             .with_context(|| format!("making {} executable", hook_path.display()))?;
     }
 
-    eprintln!(
+    let palette = crate::style::for_stderr();
+    let msg = format!(
         "KeyHog pre-commit hook {} at {}.",
         if force {
             "installed/updated"
@@ -119,6 +122,7 @@ fn install(force: bool) -> Result<ExitCode> {
         },
         hook_path.display(),
     );
+    eprintln!("{}", crate::style::pass(&msg, &palette));
     Ok(ExitCode::SUCCESS)
 }
 
@@ -127,7 +131,9 @@ fn uninstall() -> Result<ExitCode> {
     let hook_path = git_dir.join("hooks").join("pre-commit");
 
     if !hook_path.exists() {
-        eprintln!("No pre-commit hook found at {}.", hook_path.display());
+        let palette = crate::style::for_stderr();
+        let msg = format!("No pre-commit hook found at {}.", hook_path.display());
+        eprintln!("{}", crate::style::warn(&msg, &palette));
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -144,10 +150,12 @@ fn uninstall() -> Result<ExitCode> {
     std::fs::remove_file(&hook_path)
         .with_context(|| format!("removing hook at {}", hook_path.display()))?;
 
-    eprintln!(
+    let palette = crate::style::for_stderr();
+    let msg = format!(
         "KeyHog pre-commit hook removed from {}.",
         hook_path.display()
     );
+    eprintln!("{}", crate::style::pass(&msg, &palette));
     Ok(ExitCode::SUCCESS)
 }
 
