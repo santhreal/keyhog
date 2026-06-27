@@ -21,7 +21,7 @@ use super::*;
 #[test]
 fn sole_compiled_backend_tracks_the_feature_set() {
     let sole = super::sole_compiled_backend();
-    if cfg!(feature = "simd") || cfg!(feature = "gpu") {
+    if keyhog_scanner::hw_probe::multiple_backends_compiled() {
         assert_eq!(
             sole, None,
             "a build with a backend choice must defer to autoroute, not short-circuit"

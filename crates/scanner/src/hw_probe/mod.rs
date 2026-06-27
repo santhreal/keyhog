@@ -66,6 +66,21 @@ impl ScanBackend {
     }
 }
 
+/// True when this build compiled a scan backend beyond the always-present scalar
+/// [`ScanBackend::CpuFallback`] — Hyperscan (`simd`) and/or the GPU stack (`gpu`).
+///
+/// When this is `false` there is no routing choice: every scan can only run
+/// `CpuFallback`, so autoroute calibration is neither needed nor possible and the
+/// caller resolves the lone backend directly instead of failing closed. This is a
+/// COMPILE-time fact, owned here in the scanner where the `simd`/`gpu` feature gates
+/// actually live: a consumer's own feature flags can diverge (e.g. the CLI's
+/// `ci-lean` enables `keyhog-scanner/simd` without the CLI's own `simd` feature), so
+/// consumers MUST ask the scanner rather than checking their own `cfg!`.
+#[must_use]
+pub const fn multiple_backends_compiled() -> bool {
+    cfg!(feature = "simd") || cfg!(feature = "gpu")
+}
+
 /// Hardware capabilities detected at startup.
 #[derive(Debug, Clone)]
 pub struct HardwareCaps {

@@ -145,3 +145,38 @@ is provably stable across that range, never by silent substitution.
 cache — configs, workload buckets, resolved backend, and build-staleness — so an
 operator who hits the exit-2 message can see what *is* calibrated. Reuses one
 `inspect_autoroute_cache` primitive (store.rs), re-exported once up the chain.
+
+## Session findings (2026-06-27, cont.) — #36 musl green + single-backend bypass
+
+**#36 fully closed (glibc AND musl).** The glibc image was greened earlier by the
+in-image calibration bake + neutral corpus path. The **musl** image had been red
+for 12+ runs for a *different* reason: it is built `--features portable` (no
+Hyperscan/`simd`, no `gpu`), so it compiles only `ScanBackend::CpuFallback` — yet
+both routers still demanded a cached decision and **failed closed (exit 2)** on
+every auto scan. There was no single-backend bypass.
+
+Fix: `sole_compiled_backend()` (`dispatch/backend.rs`) resolves the lone
+`CpuFallback` directly when no backend *choice* was compiled, checked AFTER the
+explicit `--backend` override (so it never silently substitutes for a requested
+backend — Law 10). A multi-backend build returns `None` and routes as before. The
+`--backend simd` Docker scenarios are skipped on single-backend images (that
+backend genuinely does not exist there — a loud, recorded skip, not test-weakening).
+Result: musl integration **green**. This also closes the doctor.rs/portable
+coherence claim (#40) that single-backend builds never fail closed — now true.
+
+**The cfg discriminator must live in the scanner, not the CLI.** First cut gated on
+`cfg!(feature="simd") || cfg!(feature="gpu")` *inside the CLI crate* — WRONG, because
+cli `ci-lean = ["keyhog-scanner/ci-lean"]` enables `keyhog-scanner/simd` WITHOUT the
+CLI's own `simd` feature, so the CLI `cfg!` reads false while SimdCpu is compiled →
+the bypass wrongly skipped calibration and reddened the e2e
+`backend_autoroute_shows_calibrated_decisions_after_calibration`. Correct:
+`keyhog_scanner::hw_probe::multiple_backends_compiled()` (`pub const fn`), where the
+`simd`/`gpu` gates actually live.
+
+**#40 install.ps1 Windows parity.** install.ps1 calibrated every probe with
+`--autoroute-calibrate --batch-pipeline --autoroute-gpu`, keying a digest a plain
+`keyhog scan .` never requests → every default Windows scan failed closed. Now it
+calibrates the plain default + each supported preset (core stdin/filesystem
+workloads once per preset; external sources at default only), mirroring install.sh's
+`for autoroute_scan_flags in "" $autoroute_presets` loop. README documents the
+single-backend bypass.

@@ -114,6 +114,11 @@ or `install.ps1 -Calibrate` to replace the persisted calibration. Explicit
 `--backend` overrides are for diagnostics and benchmarking,
 not evidence that autoroute is correct.
 
+A single-backend build — one compiled without Hyperscan (`simd`) or the GPU stack,
+such as the portable/static release — has no backend *choice* to route, so it
+resolves its lone CPU backend directly and never requires calibration (and never
+fails closed). Autoroute engages only when a build compiled more than one backend.
+
 The visible calibration phase measures every real workload class on your
 hardware — stdin, small/large files, many-file trees, decode-heavy input, git
 history/blobs/diff, a loopback web URL, and a live container image — timing each

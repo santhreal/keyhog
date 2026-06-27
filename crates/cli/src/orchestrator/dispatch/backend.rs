@@ -204,8 +204,13 @@ impl std::error::Error for AutorouteRoutingError {}
 /// they have no way to calibrate. This is NOT a silent fallback: it is the only
 /// backend that exists, and it is reached only AFTER the explicit `--backend`
 /// override, so it never substitutes for a backend the operator actually asked for.
+///
+/// The compiled-backend fact is owned by the scanner, not asked via the CLI's own
+/// `cfg!`: the CLI's features diverge from the scanner's (e.g. `ci-lean` turns on
+/// `keyhog-scanner/simd` without the CLI's `simd`), so a CLI-local `cfg!` would
+/// wrongly bypass calibration on a build that DOES compile Hyperscan.
 fn sole_compiled_backend() -> Option<ScanBackend> {
-    if cfg!(feature = "simd") || cfg!(feature = "gpu") {
+    if keyhog_scanner::hw_probe::multiple_backends_compiled() {
         None
     } else {
         Some(ScanBackend::CpuFallback)
