@@ -543,7 +543,10 @@ fn multi_config_cache_accumulates_buckets_across_sequential_saves() {
     let small_key = test_workload_key();
     let mut large_key = small_key;
     large_key.bytes_bucket = large_key.bytes_bucket.saturating_add(3);
-    assert_ne!(small_key, large_key, "test needs two distinct workload buckets");
+    assert_ne!(
+        small_key, large_key,
+        "test needs two distinct workload buckets"
+    );
 
     let mut first = HashMap::new();
     first.insert(
@@ -563,7 +566,14 @@ fn multi_config_cache_accumulates_buckets_across_sequential_saves() {
     let mut second = HashMap::new();
     second.insert(
         large_key,
-        AutorouteDecision::new(ScanBackend::CpuFallback, 8 * 1024 * 1024, 1, 13, Some(7), None),
+        AutorouteDecision::new(
+            ScanBackend::CpuFallback,
+            8 * 1024 * 1024,
+            1,
+            13,
+            Some(7),
+            None,
+        ),
     );
     save_autoroute_cache(
         &path,
@@ -623,7 +633,14 @@ fn multi_config_cache_keeps_distinct_presets_side_by_side() {
     let mut fast_decisions = HashMap::new();
     fast_decisions.insert(
         key,
-        AutorouteDecision::new(ScanBackend::CpuFallback, 8 * 1024 * 1024, 1, 13, Some(7), None),
+        AutorouteDecision::new(
+            ScanBackend::CpuFallback,
+            8 * 1024 * 1024,
+            1,
+            13,
+            Some(7),
+            None,
+        ),
     );
     save_autoroute_cache(
         &path,
@@ -639,7 +656,9 @@ fn multi_config_cache_keeps_distinct_presets_side_by_side() {
         load_autoroute_cache(&path, digest, test_rules_digest(), default_config, &host)
             .expect("default config still resolves after calibrating the fast preset");
     assert_eq!(
-        default_loaded.get(&key).and_then(AutorouteDecision::backend),
+        default_loaded
+            .get(&key)
+            .and_then(AutorouteDecision::backend),
         Some(ScanBackend::SimdCpu),
         "calibrating the fast preset must not overwrite the default config's decision"
     );
@@ -681,7 +700,14 @@ fn multi_config_cache_upserts_same_bucket_without_duplicating() {
     let mut second = HashMap::new();
     second.insert(
         key,
-        AutorouteDecision::new(ScanBackend::CpuFallback, 8 * 1024 * 1024, 1, 13, Some(7), None),
+        AutorouteDecision::new(
+            ScanBackend::CpuFallback,
+            8 * 1024 * 1024,
+            1,
+            13,
+            Some(7),
+            None,
+        ),
     );
     save_autoroute_cache(
         &path,
@@ -2384,9 +2410,14 @@ fn cpu_decision(backend: ScanBackend) -> AutorouteDecision {
         ScanBackend::SimdCpu => {
             AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None)
         }
-        ScanBackend::CpuFallback => {
-            AutorouteDecision::new(ScanBackend::CpuFallback, 8 * 1024 * 1024, 1, 13, Some(7), None)
-        }
+        ScanBackend::CpuFallback => AutorouteDecision::new(
+            ScanBackend::CpuFallback,
+            8 * 1024 * 1024,
+            1,
+            13,
+            Some(7),
+            None,
+        ),
         other => panic!("cpu_decision only builds CPU-class backends, got {other:?}"),
     }
 }

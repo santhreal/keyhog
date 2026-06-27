@@ -520,9 +520,7 @@ pub(crate) struct AutorouteDecisionInspection {
     pub(crate) gpu_ms: Option<u128>,
 }
 
-pub(crate) fn inspect_autoroute_cache(
-    path: Option<&std::path::Path>,
-) -> AutorouteCacheInspection {
+pub(crate) fn inspect_autoroute_cache(path: Option<&std::path::Path>) -> AutorouteCacheInspection {
     let mut out = AutorouteCacheInspection {
         path: path.map(|p| p.display().to_string()),
         present: false,
@@ -583,7 +581,9 @@ pub(crate) fn inspect_autoroute_cache(
     let cache: AutorouteCache = match serde_json::from_slice(&data) {
         Ok(cache) => cache,
         Err(error) => {
-            out.error = Some(format!("autoroute cache payload did not deserialize: {error}"));
+            out.error = Some(format!(
+                "autoroute cache payload did not deserialize: {error}"
+            ));
             return out;
         }
     };
@@ -643,7 +643,8 @@ pub(crate) fn inspect_autoroute_cache(
             decisions,
         });
     }
-    out.configs.sort_by(|a, b| a.config_digest.cmp(&b.config_digest));
+    out.configs
+        .sort_by(|a, b| a.config_digest.cmp(&b.config_digest));
     out
 }
 
@@ -679,12 +680,16 @@ fn render_host_profile(host: &AutorouteHostProfile) -> String {
         "{}/{} {} | {}p/{}l cores | {} | hyperscan={} | gpu={}",
         host.os,
         host.arch,
-        host.cpu_model.as_deref().unwrap_or("unknown-cpu"),
+        host.cpu_model.as_deref().unwrap_or("unknown-cpu"), // LAW10: display-only host label; recall-safe
         host.physical_cores,
         host.logical_cores,
         simd,
-        if host.hyperscan_available { "yes" } else { "no" },
-        host.gpu_name.as_deref().unwrap_or("none"),
+        if host.hyperscan_available {
+            "yes"
+        } else {
+            "no"
+        },
+        host.gpu_name.as_deref().unwrap_or("none"), // LAW10: display-only host label; recall-safe
     )
 }
 

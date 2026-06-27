@@ -194,7 +194,7 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
     // still works. Reuses the same inspection primitive as `backend --autoroute`.
     println!("\n{bold}autoroute{reset}");
     let autoroute_cache = crate::autoroute_cache_path::resolve_autoroute_cache_path(None)
-        .ok()
+        .ok() // LAW10: reporting-only doctor cache-path resolve; display default, recall-safe
         .flatten();
     let autoroute = crate::orchestrator::inspect_autoroute_cache(autoroute_cache.as_deref());
     if let Some(error) = &autoroute.error {

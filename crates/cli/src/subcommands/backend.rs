@@ -74,7 +74,10 @@ fn run_autoroute_inspection(json: bool) -> Result<ExitCode> {
 
     // Cache file absent: simply not calibrated yet.
     if !inspection.present {
-        println!("  status:          {}not calibrated yet{}", p.yellow, p.reset);
+        println!(
+            "  status:          {}not calibrated yet{}",
+            p.yellow, p.reset
+        );
         println!();
         println!(
             "No autoroute cache here yet — auto scans fail closed until calibrated. Run \
@@ -135,11 +138,11 @@ fn run_autoroute_inspection(json: bool) -> Result<ExitCode> {
             let cpu = decision
                 .cpu_ms
                 .map(|ms| format!(" cpu={ms}ms"))
-                .unwrap_or_default();
+                .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
             let gpu = decision
                 .gpu_ms
                 .map(|ms| format!(" gpu={ms}ms"))
-                .unwrap_or_default();
+                .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
             println!("    {}", decision.workload);
             println!(
                 "        -> {}  {}[{} B / {} chunk(s); simd={}ms{}{}]{}",

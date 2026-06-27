@@ -337,7 +337,7 @@ fn findings_fingerprint(matches: &[keyhog_core::RawMatch]) -> u64 {
             h ^= u64::from(*b);
             h = h.wrapping_mul(0x0000_0100_0000_01b3);
         }
-        h ^= m.location.line.unwrap_or(0) as u64;
+        h ^= m.location.line.unwrap_or(0) as u64; // LAW10: dedup-key hash input; recall-safe
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
         h ^= m.location.offset as u64;
         h = h.wrapping_mul(0x0000_0100_0000_01b3);

@@ -1685,6 +1685,11 @@ run_autoroute_scan_probe() {
     errfile="$7"
     probe_started_ms="$(now_ms)"
     printf '  [%s/%s] %s ' "$idx" "$total" "$label"
+    # $autoroute_scan_flags carries one preset's flag string (e.g. "--fast", or
+    # empty for the default policy) and MUST word-split into separate argv entries
+    # below. It is an internal, controlled value (preset list, never user input),
+    # so the split is intentional and safe; POSIX sh has no arrays to express it.
+    # shellcheck disable=SC2086
     case "$mode" in
         path)
             run_keyhog_calibration_scan scan --autoroute-calibrate "$probe" $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &

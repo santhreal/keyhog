@@ -1,4 +1,4 @@
-//! e2e: `keyhog backend --autoroute` inspects the persisted calibration cache.
+//! E2E: `keyhog backend --autoroute` inspects the persisted calibration cache.
 //!
 //! This is the operator's window into autoroute: after a fail-closed
 //! "no decision for workload bucket ..." scan error, `backend --autoroute` shows
@@ -6,13 +6,9 @@
 //! resolved to, and whether the cache is stale for this build. The command is
 //! read-only and always exits 0 (it is a report, not a gate).
 
-use std::path::PathBuf;
+use crate::e2e::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
-
-fn binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
-}
 
 /// An uncalibrated cache directory reports "not calibrated yet" in text mode and
 /// exits 0 — never a scary error, since the operator's next step is to calibrate.
@@ -59,11 +55,14 @@ fn backend_autoroute_json_is_valid_and_marks_absence() {
         "stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let value: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("backend --autoroute --json must emit valid JSON");
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout)
+        .expect("backend --autoroute --json must emit valid JSON");
     assert_eq!(value["present"], serde_json::json!(false), "json={value}");
     assert!(
-        value["configs"].as_array().expect("configs array").is_empty(),
+        value["configs"]
+            .as_array()
+            .expect("configs array")
+            .is_empty(),
         "absent cache lists no configs; json={value}"
     );
 }
@@ -124,9 +123,7 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
         !configs.is_empty(),
         "a calibrated cache must list >= 1 config; json={value}"
     );
-    let decisions = configs[0]["decisions"]
-        .as_array()
-        .expect("decisions array");
+    let decisions = configs[0]["decisions"].as_array().expect("decisions array");
     assert!(
         !decisions.is_empty(),
         "a calibrated config must list >= 1 workload decision; json={value}"
