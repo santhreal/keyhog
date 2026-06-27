@@ -373,6 +373,27 @@ pub(super) fn emit_tar_entries_with_state(
             continue;
         }
 
+        // A zip-family member inside this tar (`bundle.tar//app.jar`, common for
+        // docker layers and JARs) must be unzipped so a DEFLATE-compressed
+        // secret in it is found, not leaf-scanned as printable strings -- which
+        // silently missed it (Law 10). Symmetric with the zip extractor
+        // recursing into tar members. `content` is moved only on this branch.
+        if super::archive::member_is_embedded_zip(&entry_name, &content) {
+            let nested_display = format!("{container_display}//{entry_name}");
+            if !super::archive::emit_embedded_zip_member(
+                content,
+                &nested_display,
+                max_size,
+                total_uncompressed,
+                nested_depth,
+                respect_default_excludes,
+                emit,
+            ) {
+                return;
+            }
+            continue;
+        }
+
         // A compressed member (`.gz` / `.tgz` / `.zst` / `.lz4` / `.sz` /
         // `.bz2` / `.xz`) inside this tar must be decompressed and its TRUE
         // bytes scanned, exactly as the same file is when scanned standalone.

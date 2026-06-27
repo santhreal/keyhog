@@ -452,6 +452,50 @@ fn entry_is_embedded_openpack_archive(entry_name: &str, content: &[u8]) -> bool 
     has_openpack_ext && crate::magic::starts_with_zip_container_prefix(content)
 }
 
+/// True when a member of ANY archive is itself a zip-family (openpack) container
+/// (`.zip` / `.jar` / `.war` / ... with the local-file-header magic). Exposed so
+/// the tar extractor can recurse into a zip nested in a tar, symmetric with the
+/// zip extractor already recursing into a tar nested in a zip.
+pub(super) fn member_is_embedded_zip(entry_name: &str, content: &[u8]) -> bool {
+    entry_is_embedded_openpack_archive(entry_name, content)
+}
+
+/// Recurse into a zip-family MEMBER discovered inside another archive (e.g.
+/// `bundle.tar//app.jar`): unzip and scan its entries in memory so a
+/// DEFLATE-compressed secret is found, not leaf-scanned as printable strings
+/// (which silently missed it -- Law 10). Bounded by `nested_depth` and the
+/// shared bomb budget; the depth-exceeded case is surfaced and counted. Returns
+/// false when the consumer asked to stop.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn emit_embedded_zip_member(
+    content: Vec<u8>,
+    nested_display: &str,
+    per_entry_cap: u64,
+    total_uncompressed: &mut u64,
+    nested_depth: usize,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    const MAX_EMBEDDED_ARCHIVE_DEPTH: usize = 8;
+    if nested_depth >= MAX_EMBEDDED_ARCHIVE_DEPTH {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        return emit(Err(SourceError::Other(format!(
+            "failed to scan embedded ZIP archive '{nested_display}': maximum nested archive depth {MAX_EMBEDDED_ARCHIVE_DEPTH} exceeded; embedded archive was not scanned"
+        ))));
+    }
+    let total_budget = super::extraction_total_budget(per_entry_cap);
+    zip_scan::extract_embedded_zip_archive(
+        content,
+        nested_display,
+        per_entry_cap,
+        total_budget,
+        total_uncompressed,
+        nested_depth + 1,
+        respect_default_excludes,
+        emit,
+    )
+}
+
 fn chunk_from_archive_content_inner(
     archive_display: &str,
     entry_name: &str,

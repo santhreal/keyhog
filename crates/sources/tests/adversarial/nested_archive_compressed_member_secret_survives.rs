@@ -113,6 +113,29 @@ fn zip_with_tar_with_gz_member_secret_survives() {
 }
 
 #[test]
+fn tar_with_deflated_zip_member_secret_survives() {
+    // `archive.tar` -> `inner.zip` (DEFLATE) -> secret. Previously a SILENT
+    // clean: the tar extractor leaf-scanned the zip member's compressed bytes,
+    // so a DEFLATE-compressed secret in it vanished. The tar extractor now
+    // recurses into zip members, symmetric with the zip->tar recursion.
+    let mut zip = ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    zip.start_file("creds.env", opts).expect("zip start");
+    // Pad so DEFLATE actually compresses the stream (a tiny file is STORED, and
+    // a stored secret would be found incidentally by printable-strings; the bug
+    // only bites a genuinely compressed payload).
+    let body = format!("{}\n{SECRET}\n{}\n", "x".repeat(256), "y".repeat(256));
+    zip.write_all(body.as_bytes()).expect("zip write");
+    let inner_zip = zip.finish().expect("zip finish").into_inner();
+    let tar = tar_with("inner.zip", &inner_zip);
+    let chunks = scan_bytes("archive.tar", &tar);
+    assert!(
+        chunks.iter().any(|c| c.data.contains(SECRET)),
+        "secret inside archive.tar//inner.zip (DEFLATE) must be unzipped and found; got {chunks:?}"
+    );
+}
+
+#[test]
 fn tar_with_benign_gz_member_stays_clean_without_error() {
     // Negative twin: a benign gz member must decompress, scan clean, and emit NO
     // SourceError coverage-gap row -- the recursion must not turn a clean member
@@ -130,9 +153,7 @@ fn tar_with_benign_gz_member_stays_clean_without_error() {
         "a benign compressed member must not emit a coverage-gap error: {errors:?}"
     );
     assert!(
-        chunks
-            .iter()
-            .any(|c| c.data.contains("ordinary log line")),
+        chunks.iter().any(|c| c.data.contains("ordinary log line")),
         "the benign member's decompressed text must be scanned; got {chunks:?}"
     );
     assert!(
