@@ -263,7 +263,17 @@ fn log_load_summary(state: &DetectorLoadState) {
         );
     }
     if state.total_warnings > 0 {
-        tracing::warn!("quality gate: {} warnings", state.total_warnings);
+        // Advisory (non-rejecting) quality warnings describe detector-AUTHORING
+        // nits on the already-validated, shipped detector set (e.g. "companion
+        // regex is a pure character class; ALLOWED because within_lines <= 5").
+        // They are build-time/authoring feedback, not an operator signal: the
+        // bundled detectors passed the gate, so re-announcing their advisories
+        // on every user command that loads detectors (`explain`, `detectors`,
+        // a custom `--detectors` dir) is noise that drowns out the real
+        // rejections above. Keep them at debug! (visible with `-vv` /
+        // RUST_LOG=keyhog=debug for authors); errors and gate REJECTIONS stay
+        // loud above (Law 10).
+        tracing::debug!("quality gate: {} advisory warnings", state.total_warnings);
     }
 }
 
@@ -325,7 +335,11 @@ fn should_reject_detector(
     for issue in validate_detector(spec) {
         match issue {
             QualityIssue::Warning(warning) => {
-                tracing::warn!("quality: {} - {}", spec.id, warning);
+                // Advisory only - the detector still loads and scans. This is
+                // authoring feedback (see the aggregate at debug! in
+                // `log_load_summary`), so keep it at debug! to stay out of
+                // user-facing command output; errors below stay loud (Law 10).
+                tracing::debug!("quality: {} - {}", spec.id, warning);
                 *total_warnings += 1;
             }
             QualityIssue::Error(error) => {
