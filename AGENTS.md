@@ -30,11 +30,10 @@
 
 ## Paths and environments
 
-- Linux workspace: `/media/mukund-thiru/SanthData/Santh/software/keyhog`
-- Windows ThinkPad mount: `Z:\` (same NFS content; mount with  
-  `mount.exe -o anon 100.127.90.39:/media/mukund-thiru/SanthData/Santh Z:` if needed)
-- Desktop cargo target: `/mnt/FlareTraining/santh-archive/cargo-target`
-- ThinkPad cargo target: `C:\\cargo-target`
+- Work from the repository root.
+- Keep the Cargo target directory OUTSIDE the source tree — set `CARGO_TARGET_DIR`
+  to a path on a fast local disk. This keeps multi-gigabyte build artifacts out of
+  the working copy and out of the dogfood self-scan.
 
 ## Simplicity rule
 
