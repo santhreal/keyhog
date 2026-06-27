@@ -1,7 +1,12 @@
 #![no_main]
 use keyhog_core::Chunk;
-use keyhog_scanner::alphabet_filter::AlphabetScreen;
-use keyhog_scanner::decode::decode_chunk;
+// Drive the decode pipeline through the crate's public test/fuzz surface
+// (`keyhog_scanner::testing`) instead of its private internals. `decode` and
+// `alphabet_filter` are `pub(crate)`; importing them directly broke the fuzz
+// build with E0603 (Fuzz smoke CI). `testing::decode_chunk` is the same 5-arg
+// pipeline entry, and `testing::AlphabetScreen::new(&[String])` wraps the inner
+// screen identically -- so the fuzz coverage is unchanged.
+use keyhog_scanner::testing::{decode_chunk, AlphabetScreen};
 use libfuzzer_sys::fuzz_target;
 
 /// Build a `Chunk` from raw text. `Chunk.data` is a `SensitiveString`, so the
