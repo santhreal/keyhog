@@ -348,14 +348,6 @@ pub(super) fn archive_unix_mode_is_special(mode: u32) -> bool {
     )
 }
 
-pub(super) fn chunk_from_archive_content(
-    archive_display: &str,
-    entry_name: &str,
-    content: Vec<u8>,
-) -> Option<Result<Chunk, SourceError>> {
-    chunk_from_archive_content_inner(archive_display, entry_name, content)
-}
-
 pub(super) fn emit_archive_content_with_depth(
     archive_display: &str,
     entry_name: &str,

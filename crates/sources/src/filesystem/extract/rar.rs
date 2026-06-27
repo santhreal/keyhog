@@ -1,7 +1,7 @@
 //! RAR archive extraction for filesystem entries.
 
 use super::archive::{
-    archive_unix_mode_is_special, chunk_from_archive_content, emit_archive_entry_over_cap_error,
+    archive_unix_mode_is_special, emit_archive_entry_over_cap_error,
     validate_scan_archive_entry_name,
 };
 use super::{
@@ -719,10 +719,24 @@ impl<'a> RarExtractionState<'a> {
             self.report_archive_truncation(self.total_uncompressed, emit);
             return;
         }
-        if let Some(chunk) =
-            chunk_from_archive_content(&self.archive_display, &sink.entry_name, sink.content)
-        {
-            self.consumer_stopped = !emit(chunk);
+        // Re-dispatch the member through the canonical archive-member handler so a
+        // tar/zip/gz nested inside the RAR is recursed into its true bytes, not
+        // leaf-scanned as printable strings -- which silently missed a secret in
+        // its compressed payload (Law 10). A RAR member starts at depth 0.
+        let member_display = format!("{}//{}", self.archive_display, sink.entry_name);
+        let per_entry_cap = self.per_entry_cap;
+        let respect = self.respect_default_excludes;
+        if !super::emit_archive_member(
+            &sink.entry_name,
+            sink.content,
+            &member_display,
+            per_entry_cap,
+            &mut self.total_uncompressed,
+            0,
+            respect,
+            emit,
+        ) {
+            self.consumer_stopped = true;
         }
     }
 

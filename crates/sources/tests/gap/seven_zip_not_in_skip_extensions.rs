@@ -41,8 +41,11 @@ fn seven_zip_routes_to_dedicated_extractor() {
         "report_archive_truncation",
         "validate_scan_archive_entry_name",
         "EncoderMethod::LZMA",
-        "filesystem/archive",
-        "filesystem/archive-binary",
+        // Members route through the shared recursive dispatcher so a tar/zip/gz
+        // nested inside the 7z is recursed, not leaf-scanned (Law 10). The
+        // `filesystem/archive[-binary]` source types now live on that shared
+        // leaf, asserted against extract.rs below.
+        "emit_archive_member",
     ] {
         assert!(
             seven_zip.contains(needle),
@@ -54,6 +57,16 @@ fn seven_zip_routes_to_dedicated_extractor() {
         "7z archive truncation must use the shared truncation reporter, not a format-local counter mutation"
     );
 
+    // The canonical archive-member leaf (shared by every container extractor)
+    // stamps the archive source types. Pinning them here keeps the contract
+    // even though each extractor now routes through `emit_archive_member`.
+    for needle in ["filesystem/archive", "filesystem/archive-binary"] {
+        assert!(
+            extract.contains(needle),
+            "the shared archive-member dispatcher must stamp {needle}"
+        );
+    }
+
     let rar = read("src/filesystem/extract/rar.rs");
     for needle in [
         "ArchiveReader::read",
@@ -61,7 +74,9 @@ fn seven_zip_routes_to_dedicated_extractor() {
         "SourceSkipEvent::Unreadable",
         "report_archive_truncation",
         "validate_scan_archive_entry_name",
-        "chunk_from_archive_content",
+        // RAR members route through the same shared recursive dispatcher (a
+        // tar/zip/gz nested inside the RAR is recursed, not leaf-scanned).
+        "emit_archive_member",
     ] {
         assert!(rar.contains(needle), "RAR extractor must retain {needle}");
     }
