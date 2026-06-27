@@ -194,6 +194,24 @@ impl fmt::Display for AutorouteRoutingError {
 
 impl std::error::Error for AutorouteRoutingError {}
 
+/// The sole scan backend when this build compiled no backend *choice*.
+///
+/// `SimdCpu` is gated by the `simd` (Hyperscan) feature and `Gpu`/`MegaScan` by
+/// `gpu`; a build with neither (e.g. `--features portable`) can only ever run
+/// `CpuFallback`. There is nothing to route, and autoroute calibration could never
+/// produce a decision such a build would request — so resolving the lone backend
+/// here keeps single-backend builds from failing closed (exit 2) on a workload
+/// they have no way to calibrate. This is NOT a silent fallback: it is the only
+/// backend that exists, and it is reached only AFTER the explicit `--backend`
+/// override, so it never substitutes for a backend the operator actually asked for.
+fn sole_compiled_backend() -> Option<ScanBackend> {
+    if cfg!(feature = "simd") || cfg!(feature = "gpu") {
+        None
+    } else {
+        Some(ScanBackend::CpuFallback)
+    }
+}
+
 impl CachedBackendRouter {
     pub(crate) fn new(
         hw_caps: HardwareCaps,
@@ -229,6 +247,9 @@ impl CachedBackendRouter {
     ) -> Result<ScanBackend, AutorouteRoutingError> {
         if let Some(forced) = explicit {
             return Ok(forced);
+        }
+        if let Some(only) = sole_compiled_backend() {
+            return Ok(only);
         }
         let key = workload_key(batch, self.pattern_count)
             .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
@@ -294,6 +315,9 @@ impl MeasuredBackendRouter {
     ) -> Result<ScanBackend, AutorouteRoutingError> {
         if let Some(forced) = explicit {
             return Ok(forced);
+        }
+        if let Some(only) = sole_compiled_backend() {
+            return Ok(only);
         }
         let key = workload_key(batch, self.pattern_count)
             .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;

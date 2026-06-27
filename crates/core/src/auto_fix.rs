@@ -145,6 +145,12 @@ struct RemediationFile {
     severity: Vec<SeverityRemediationEntry>,
 }
 
+// The embedded remediation map is `include_str!`d at compile time, so an invalid
+// document is a BUILD bug, never a runtime/user condition. Failing loud (panic in
+// the initializer) is the correct, recall-safe response: a runtime fallback to an
+// empty map would silently strip remediation advice (Law 10). `clippy::panic`
+// targets genuine runtime panics; this compile-time invariant is the exception.
+#[allow(clippy::panic)]
 static REMEDIATION_MAP: LazyLock<RemediationFile> =
     LazyLock::new(|| {
         match parse_remediation_file(

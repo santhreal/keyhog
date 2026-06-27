@@ -25,6 +25,21 @@ PASS=0
 FAIL=0
 FAILED=()
 
+# Some images ship a single-backend PORTABLE build (the musl/static image is built
+# `--features portable`: no Hyperscan, no GPU). On such a build the `simd` backend
+# does not exist, so `--backend simd` correctly errors instead of scanning. Probe
+# the image's compiled backends once and skip the simd-specific scenarios there —
+# they assert a backend this variant cannot have. This is a loud, recorded skip,
+# never a silent pass. (Auto scans need no guard: a single-backend build resolves
+# its lone backend directly — see `sole_compiled_backend` in dispatch/backend.rs —
+# so it never fails closed and needs no calibration bake.)
+if docker run --rm "$IMAGE" keyhog backend 2>&1 | grep -qE 'hyperscan: *compiled-in'; then
+  HAS_SIMD=1
+else
+  HAS_SIMD=0
+  echo "  ⓘ single-backend image (hyperscan absent): skipping the --backend simd scenarios"
+fi
+
 # Run `keyhog $args` in the image with the given space-separated env (or "-"),
 # asserting exit code + a required / forbidden stdout+stderr substring.
 check() {
@@ -76,6 +91,7 @@ INVARIANTS=(
 )
 for prof in "${CLI_PROFILES[@]}"; do
   IFS='|' read -r pname pflags <<<"$prof"
+  if [[ "$pname" == "backend-simd" && "$HAS_SIMD" == 0 ]]; then continue; fi
   for inv in "${INVARIANTS[@]}"; do
     IFS='|' read -r iname iargs ix ig if_ <<<"$inv"
     check "inv:$pname/$iname" "-" "scan $pflags $iargs" "$ix" "$ig" "$if_"
@@ -111,6 +127,7 @@ SURFACES=(
 )
 for s in "${SURFACES[@]}"; do
   IFS='|' read -r n e a x g f <<<"$s"
+  if [[ "$n" == "scan-backend-simd" && "$HAS_SIMD" == 0 ]]; then continue; fi
   check "surf:$n" "$e" "$a" "$x" "$g" "$f"
 done
 

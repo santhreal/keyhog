@@ -13,6 +13,28 @@ use super::workload::{
 };
 use super::*;
 
+/// `sole_compiled_backend` must short-circuit autoroute to the lone backend on a
+/// build that compiled no backend choice (portable: no `simd`/`gpu`), and defer to
+/// autoroute (return `None`) whenever a real choice exists. This is what keeps a
+/// portable single-backend build from failing closed (exit 2) on an uncalibrated
+/// workload — the Docker `musl` integration matrix is the end-to-end proof.
+#[test]
+fn sole_compiled_backend_tracks_the_feature_set() {
+    let sole = super::sole_compiled_backend();
+    if cfg!(feature = "simd") || cfg!(feature = "gpu") {
+        assert_eq!(
+            sole, None,
+            "a build with a backend choice must defer to autoroute, not short-circuit"
+        );
+    } else {
+        assert_eq!(
+            sole,
+            Some(ScanBackend::CpuFallback),
+            "a single-backend (portable) build resolves its only backend without calibration"
+        );
+    }
+}
+
 fn test_host(gpu_name: Option<&str>) -> AutorouteHostProfile {
     AutorouteHostProfile {
         os: "linux".to_string(),
