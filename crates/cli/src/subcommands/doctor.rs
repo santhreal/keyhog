@@ -205,14 +205,14 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
         );
     } else if !autoroute.present {
         println!(
-            "  calibration    {dim}not calibrated — run `install.sh --calibrate` / `install.ps1 -Calibrate`, or scan with an explicit `--backend`{reset}"
+            "  calibration    {dim}not calibrated — run `keyhog calibrate-autoroute` (or `install.sh --calibrate` / `install.ps1 -Calibrate`), or scan with an explicit `--backend`{reset}"
         );
     } else {
         let decisions: usize = autoroute.configs.iter().map(|c| c.decision_count).sum();
         if autoroute.identity_matches_build == Some(false) {
             warned = true;
             println!(
-                "  calibration    {yellow}STALE{reset}  {dim}cache is for a different build; auto scans will reject it — re-run `install.sh --calibrate`{reset}"
+                "  calibration    {yellow}STALE{reset}  {dim}cache is for a different build; auto scans will reject it — re-run `keyhog calibrate-autoroute` or `install.sh --calibrate`{reset}"
             );
         } else {
             println!(

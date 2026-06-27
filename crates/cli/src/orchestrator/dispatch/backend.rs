@@ -114,11 +114,12 @@ impl AutorouteRoutingError {
                  exists for workload bucket bytes_log2={} chunks_log2={} max_file_log2={} \
                  patterns_log2={} decode_density_log2={} source_hash={:016x}. {cache_state}. \
                  Normal auto scans never benchmark, guess, or substitute CPU/SIMD/GPU for a \
-                 missing decision. Run \
-                 `install.sh --calibrate` on Unix or `install.ps1 -Calibrate` on Windows for \
-                 this binary, host, detector corpus, resolved scan config, source class, and \
-                 explicit scan controls; or pass an explicit `--backend <{}>` \
-                 for diagnostics.",
+                 missing decision. Run `keyhog calibrate-autoroute` to prime every \
+                 scan-policy preset and workload bucket for this binary in place, or rerun \
+                 `install.sh --calibrate` on Unix / `install.ps1 -Calibrate` on Windows to \
+                 recalibrate at install time, for this binary, host, detector corpus, resolved \
+                 scan config, source class, and explicit scan controls; or pass an explicit \
+                 `--backend <{}>` for diagnostics.",
                 key.bytes_bucket,
                 key.chunks_bucket,
                 key.max_file_bucket,

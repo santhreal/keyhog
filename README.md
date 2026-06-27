@@ -109,10 +109,11 @@ phase and persists those measured decisions on disk. Normal scans do not
 benchmark candidates or rewrite routing records; they either find a valid
 persisted fastest-correct decision for the scan class or report an invalid
 autoroute state. A missing, stale, invalid, or incomplete decision is not
-permission to run SIMD/CPU/GPU as a substitute. Rerun `install.sh --calibrate`
-or `install.ps1 -Calibrate` to replace the persisted calibration. Explicit
-`--backend` overrides are for diagnostics and benchmarking,
-not evidence that autoroute is correct.
+permission to run SIMD/CPU/GPU as a substitute. Run `keyhog calibrate-autoroute`
+to re-prime every preset and workload bucket for the installed binary in place,
+or rerun `install.sh --calibrate` / `install.ps1 -Calibrate` to replace the
+persisted calibration at install time. Explicit `--backend` overrides are for
+diagnostics and benchmarking, not evidence that autoroute is correct.
 
 A single-backend build — one compiled without Hyperscan (`simd`) or the GPU stack,
 such as the portable/static release — has no backend *choice* to route, so it

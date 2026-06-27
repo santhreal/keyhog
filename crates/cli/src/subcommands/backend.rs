@@ -66,8 +66,9 @@ fn run_autoroute_inspection(json: bool) -> Result<ExitCode> {
         println!("  status:          {}{}{}", p.yellow, error, p.reset);
         println!();
         println!(
-            "Run `install.sh --calibrate` (Unix) or `install.ps1 -Calibrate` (Windows) to \
-             (re)build the cache, or scan with an explicit `--backend`."
+            "Run `keyhog calibrate-autoroute` to (re)build the cache in place, or \
+             `install.sh --calibrate` (Unix) / `install.ps1 -Calibrate` (Windows), or scan \
+             with an explicit `--backend`."
         );
         return Ok(ExitCode::SUCCESS);
     }
@@ -81,8 +82,8 @@ fn run_autoroute_inspection(json: bool) -> Result<ExitCode> {
         println!();
         println!(
             "No autoroute cache here yet — auto scans fail closed until calibrated. Run \
-             `install.sh --calibrate` (Unix) / `install.ps1 -Calibrate` (Windows), or scan \
-             with an explicit `--backend`."
+             `keyhog calibrate-autoroute` to prime it in place, or `install.sh --calibrate` \
+             (Unix) / `install.ps1 -Calibrate` (Windows), or scan with an explicit `--backend`."
         );
         return Ok(ExitCode::SUCCESS);
     }
