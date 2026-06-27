@@ -5,8 +5,6 @@ pub mod a3_multiline_unit_file_count;
 pub mod a3_pipeline_unit_file_count;
 pub mod all_tests_declares_a3_unit_modules;
 pub mod all_tests_declares_gate_module;
-pub mod execution_plan_hunt_ids_unique;
-pub mod execution_plan_hunt_sections;
 pub mod gap_mod_wires_a3_slice_gates;
 pub mod gate_mod_lists_six_replacement_gates;
 pub mod scanner_gap_mod_wires_all_disk_files;

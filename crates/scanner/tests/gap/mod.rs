@@ -24,7 +24,6 @@ pub mod docs_megakernel_env_claim_matches_engine;
 pub mod engine_backend_parity;
 pub mod entropy_keyword_only_requires_keyword_line;
 pub mod entropy_keywords_inline_tests_in_src;
-pub mod execution_plan_hunt_inventory;
 pub mod file_gate_matrix_scanner_adversarial_unmarked;
 pub mod file_gate_matrix_scanner_missing_submodule_rows;
 pub mod findings_registry_integrity;

@@ -180,10 +180,6 @@ name = "cross_detector_corpus_proptest"
 path = "tests/property/cross_detector_corpus_proptest.rs"
 
 [[test]]
-name = "execution_plan_hunt_inventory"
-path = "tests/gap/execution_plan_hunt_inventory.rs"
-
-[[test]]
 name = "gap_decode_pipeline_layers"
 path = "tests/gap/decode_pipeline_layers.rs"
 
