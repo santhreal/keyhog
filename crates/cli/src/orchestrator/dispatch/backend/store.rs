@@ -368,6 +368,17 @@ pub(super) enum BucketResolution {
         lo: WorkloadKey,
         hi: WorkloadKey,
     },
+    /// Smaller than every calibrated bucket in its workload class along one size
+    /// axis (e.g. `keyhog scan small.env`, below the ladder's smallest single-file
+    /// probe). Resolved to setup-free [`ScanBackend::CpuFallback`]: an input too
+    /// small to amortize any backend's fixed setup cannot be beaten by a backend
+    /// with setup, and CpuFallback is the reference-correct backend, so this is a
+    /// sound below-floor extrapolation, not a guess. `floor` is the smallest
+    /// calibrated bucket in the class (proof the class itself is calibrated).
+    ClampedBelowFloor {
+        backend: ScanBackend,
+        floor: WorkloadKey,
+    },
     /// No sound resolution exists — the caller must fail closed.
     Unresolved,
 }
@@ -384,7 +395,11 @@ pub(super) fn resolve_bucket(
             return resolution;
         }
     }
-    BucketResolution::Unresolved
+    // A query smaller than every calibrated bucket in its class has no lower
+    // bracket to interpolate from (the common `keyhog scan small.env` case: a
+    // single file below the ladder's smallest single-file probe). Clamp it to
+    // setup-free CpuFallback — see `clamp_below_calibrated_floor`.
+    clamp_below_calibrated_floor(decisions, key).unwrap_or(BucketResolution::Unresolved)
 }
 
 #[derive(Clone, Copy)]
@@ -469,6 +484,84 @@ fn interpolate_cpu_class(
         // Bracketing pair disagrees, or only one side exists -> not sound.
         _ => None,
     }
+}
+
+// Below-floor extrapolation (the second sound generalization, after #34's
+// interpolation). A single small file — `keyhog scan small.env`, by far the most
+// common scan — lands in a size bucket BELOW the ladder's smallest single-file
+// probe (4 KiB) and used to fail closed (exit 2) on an everyday input.
+//
+// Why interpolation can't reach it: for a SINGLE file, bytes_bucket and
+// max_file_bucket are perfectly correlated (both track the one file's size), so
+// two different-sized single files differ on BOTH size axes at once.
+// `interpolate_cpu_class` varies ONE axis while holding the other fixed, so it
+// never brackets them. This clamp instead works on the size FRONTIER: both axes
+// together.
+//
+// The resolution is sound, not a guess: when the query is STRICTLY smaller than
+// every calibrated bucket in its class on BOTH size axes, it is smaller than
+// anything measured, so no backend's FIXED setup (Hyperscan scratch/database
+// alloc, GPU kernel launch) can be amortized and the setup-free CpuFallback is
+// the lowest-overhead correct choice — a backend that paid setup to win at a
+// LARGER size only loses ground as the input shrinks. CpuFallback is also the
+// reference-correct backend (identical findings at any size), so recall is
+// preserved. GPU is never the anchor (its correctness varies with size).
+//
+// Strict on BOTH axes is deliberate: a query equal to a calibrated bucket on one
+// axis (same total bytes, fewer/larger files) is NOT unambiguously smaller, and a
+// query BETWEEN calibrated single-file buckets is an interpolation gap, not a
+// floor — both stay fail-closed rather than risk a slower route. The class must
+// have at least one calibrated CPU bucket (proof the class itself was
+// calibrated); a wholly uncalibrated class still fails closed. Surfaced LOUDLY by
+// the caller, like interpolation.
+fn clamp_below_calibrated_floor(
+    decisions: &HashMap<WorkloadKey, AutorouteDecision>,
+    key: &WorkloadKey,
+) -> Option<BucketResolution> {
+    let mut floor: Option<WorkloadKey> = None;
+
+    for (candidate_key, decision) in decisions {
+        // Same workload class on every NON-size dimension.
+        if candidate_key.chunks_bucket != key.chunks_bucket
+            || candidate_key.pattern_bucket != key.pattern_bucket
+            || candidate_key.decode_density_bucket != key.decode_density_bucket
+            || candidate_key.source_class_hash != key.source_class_hash
+        {
+            continue;
+        }
+        let Some(backend) = decision.backend() else {
+            continue;
+        };
+        // GPU correctness can vary with input size — never anchor a clamp to it.
+        if super::is_gpu_backend(backend) {
+            continue;
+        }
+        // Any calibrated CPU bucket that is NOT strictly larger than the query on
+        // BOTH size axes means the query is not below this class's frontier — an
+        // exact hit, an interpolation, or a between-bucket miss owns it, never a
+        // clamp. Bail rather than clamp over real (or equal) bracketing evidence.
+        if candidate_key.bytes_bucket <= key.bytes_bucket
+            || candidate_key.max_file_bucket <= key.max_file_bucket
+        {
+            return None;
+        }
+        // Strictly larger on both axes: a genuine floor. Keep the smallest one.
+        let smaller = match floor {
+            Some(best) => {
+                (candidate_key.bytes_bucket, candidate_key.max_file_bucket)
+                    < (best.bytes_bucket, best.max_file_bucket)
+            }
+            None => true,
+        };
+        if smaller {
+            floor = Some(*candidate_key);
+        }
+    }
+
+    floor.map(|floor_key| BucketResolution::ClampedBelowFloor {
+        backend: ScanBackend::CpuFallback,
+        floor: floor_key,
+    })
 }
 
 // --- Read-only inspection ---------------------------------------------------

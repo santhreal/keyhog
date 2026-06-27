@@ -12,25 +12,29 @@
 //! proves the spawn + cache-path plumbing and that decisions persist across
 //! processes.
 //!
-//! The verifying targets are sized to the ladder's single-file buckets (4 KiB,
-//! 64 KiB) with plain, low-decode-density content, so they exact-match a
-//! calibrated WorkloadKey. (Single files BELOW the ladder's smallest file
-//! workload have no lower bracket to interpolate from — a separate ladder /
-//! resolution-clamp coverage item, tracked apart from this subcommand.)
+//! The verifying targets cover (a) the ladder's exact single-file buckets
+//! (4 KiB, 64 KiB) and (b) a sub-floor tiny file (`keyhog scan small.env`),
+//! which resolves through the #44 below-floor clamp to setup-free CpuFallback
+//! rather than failing closed — so this also proves the everyday small-file
+//! scan never exits 2 after calibration.
 
 use crate::e2e::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 
-/// Write `kib` KiB of plain, low-decode-density text — density bucket 0, so the
-/// file matches the calibration ladder's plain single-file buckets exactly.
-fn write_plain_kib(path: &std::path::Path, kib: usize) {
+/// Write `bytes` of plain, low-decode-density text. The block is the same
+/// trigger-free seed `calibrate-autoroute` builds its plain single-file probes
+/// from (no decode-trigger bytes like `=`/`"`, no 24-char+ alnum runs), so the
+/// file lands in decode-density bucket 0 — the exact class of the calibrated
+/// plain single-file rungs. A `=` or a long token would shift it to a different
+/// density class the rungs never calibrate.
+fn write_plain_bytes(path: &std::path::Path, bytes: usize) {
     let block = "src path one. scan text two. keyhog route plain. config value sample. ";
-    let mut buf = String::with_capacity(kib * 1024 + block.len());
-    while buf.len() < kib * 1024 {
+    let mut buf = String::with_capacity(bytes + block.len());
+    while buf.len() < bytes {
         buf.push_str(block);
     }
-    buf.truncate(kib * 1024);
+    buf.truncate(bytes);
     std::fs::write(path, buf).expect("write calibration-sized probe");
 }
 
@@ -65,11 +69,19 @@ fn calibrate_autoroute_primes_every_preset_for_a_later_scan() {
     // persist that bucket.
     let four_kib = work.path().join("probe-4kib.txt");
     let sixty_four_kib = work.path().join("probe-64kib.txt");
-    write_plain_kib(&four_kib, 4);
-    write_plain_kib(&sixty_four_kib, 64);
+    write_plain_bytes(&four_kib, 4 * 1024);
+    write_plain_bytes(&sixty_four_kib, 64 * 1024);
+    // A sub-floor tiny file — the everyday `keyhog scan small.config`. At 512
+    // bytes it is strictly below the ladder's smallest single-file probe (4 KiB)
+    // on both size axes, so it can only resolve via the #44 below-floor clamp;
+    // before that fix this exited 2. Built from the same trigger-free plain block
+    // as the rungs, so it shares their decode-density class and the clamp finds
+    // its floor.
+    let tiny = work.path().join("small.config");
+    write_plain_bytes(&tiny, 512);
 
     for preset in [&[][..], &["--fast"], &["--deep"], &["--precision"]] {
-        for target in [&four_kib, &sixty_four_kib] {
+        for target in [&four_kib, &sixty_four_kib, &tiny] {
             let target_arg = target.to_string_lossy().into_owned();
             let mut args: Vec<&str> = vec!["scan", "--no-daemon", "--no-config"];
             args.extend_from_slice(preset);

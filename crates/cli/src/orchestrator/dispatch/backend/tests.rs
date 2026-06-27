@@ -2643,3 +2643,134 @@ fn bucket_resolution_does_not_cross_non_size_dimensions() {
         BucketResolution::Unresolved
     );
 }
+
+// --- #44 below-floor clamp: a sub-floor single file routes to CpuFallback -----
+
+#[test]
+fn bucket_resolution_clamps_below_floor_to_cpu_fallback() {
+    // A single small file (`keyhog scan small.env`) lands BELOW the smallest
+    // calibrated bucket on BOTH size axes (bytes and max_file move together for
+    // one file), so no lower neighbour brackets it. Instead of failing closed it
+    // clamps to setup-free CpuFallback (an input too small to amortize any
+    // backend's setup cannot be beaten by one that pays it).
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 8,
+            max_file_bucket: 8,
+            ..base
+        },
+        cpu_decision(ScanBackend::SimdCpu),
+    );
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 12,
+            max_file_bucket: 12,
+            ..base
+        },
+        cpu_decision(ScanBackend::SimdCpu),
+    );
+    let requested = WorkloadKey {
+        bytes_bucket: 3,
+        max_file_bucket: 3,
+        ..base
+    };
+    assert_eq!(
+        resolve_bucket(&decisions, &requested),
+        BucketResolution::ClampedBelowFloor {
+            backend: ScanBackend::CpuFallback,
+            floor: WorkloadKey {
+                bytes_bucket: 8,
+                max_file_bucket: 8,
+                ..base
+            },
+        },
+        "a sub-floor single-file bucket must clamp to setup-free CpuFallback, not fail closed"
+    );
+}
+
+#[test]
+fn bucket_resolution_does_not_clamp_between_single_file_buckets() {
+    // A single file BETWEEN two calibrated single-file buckets (here bytes/max_file
+    // 7, between 6 and 8) is an interpolation gap, not a below-floor case: a lower
+    // calibrated bucket exists, so the clamp must NOT fire and it stays fail-closed
+    // (the strict "smaller than every calibrated bucket on both axes" guard).
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 6,
+            max_file_bucket: 6,
+            ..base
+        },
+        cpu_decision(ScanBackend::SimdCpu),
+    );
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 8,
+            max_file_bucket: 8,
+            ..base
+        },
+        cpu_decision(ScanBackend::SimdCpu),
+    );
+    let requested = WorkloadKey {
+        bytes_bucket: 7,
+        max_file_bucket: 7,
+        ..base
+    };
+    assert_eq!(
+        resolve_bucket(&decisions, &requested),
+        BucketResolution::Unresolved
+    );
+}
+
+#[test]
+fn bucket_resolution_does_not_clamp_below_a_gpu_floor() {
+    // GPU correctness can vary with input size, so a below-floor query whose only
+    // calibrated neighbour is GPU must still fail closed — never clamp to GPU, and
+    // no CPU-class evidence exists for this class.
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 8,
+            ..base
+        },
+        gpu_decision(),
+    );
+    let requested = WorkloadKey {
+        bytes_bucket: 3,
+        ..base
+    };
+    assert_eq!(
+        resolve_bucket(&decisions, &requested),
+        BucketResolution::Unresolved
+    );
+}
+
+#[test]
+fn bucket_resolution_does_not_clamp_an_uncalibrated_class() {
+    // No calibrated bucket shares the request's non-size dimensions: the workload
+    // CLASS itself was never calibrated, so there is no floor to clamp under —
+    // fail closed rather than invent one.
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 8,
+            source_class_hash: 0x1111_1111_1111_1111,
+            ..base
+        },
+        cpu_decision(ScanBackend::SimdCpu),
+    );
+    let requested = WorkloadKey {
+        bytes_bucket: 3,
+        source_class_hash: 0x2222_2222_2222_2222,
+        ..base
+    };
+    assert_eq!(
+        resolve_bucket(&decisions, &requested),
+        BucketResolution::Unresolved
+    );
+}

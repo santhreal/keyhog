@@ -297,6 +297,10 @@ impl CachedBackendRouter {
                 note_interpolated_route(&key, backend, &lo, &hi);
                 Ok(backend)
             }
+            store::BucketResolution::ClampedBelowFloor { backend, floor } => {
+                note_below_floor_route(&key, backend, &floor);
+                Ok(backend)
+            }
             store::BucketResolution::Unresolved => Err(AutorouteRoutingError::missing_decision(
                 key,
                 &self.cache_path,
@@ -365,19 +369,26 @@ impl MeasuredBackendRouter {
 
         if !self.calibration_mode {
             // Not calibrating: behave like the cache-only router — an exact miss
-            // may still resolve by sound CPU-class interpolation before failing
-            // closed (the exact lookup above already missed).
-            if let store::BucketResolution::Interpolated { backend, lo, hi } =
-                store::resolve_bucket(&self.decisions, &key)
-            {
-                note_interpolated_route(&key, backend, &lo, &hi);
-                return Ok(backend);
+            // may still resolve by sound CPU-class interpolation or a below-floor
+            // clamp before failing closed (the exact lookup above already missed).
+            match store::resolve_bucket(&self.decisions, &key) {
+                store::BucketResolution::Exact(backend) => return Ok(backend),
+                store::BucketResolution::Interpolated { backend, lo, hi } => {
+                    note_interpolated_route(&key, backend, &lo, &hi);
+                    return Ok(backend);
+                }
+                store::BucketResolution::ClampedBelowFloor { backend, floor } => {
+                    note_below_floor_route(&key, backend, &floor);
+                    return Ok(backend);
+                }
+                store::BucketResolution::Unresolved => {
+                    return Err(AutorouteRoutingError::missing_decision(
+                        key,
+                        &self.cache_path,
+                        &self.cache_load_error,
+                    ));
+                }
             }
-            return Err(AutorouteRoutingError::missing_decision(
-                key,
-                &self.cache_path,
-                &self.cache_load_error,
-            ));
         }
         self.host_profile
             .require_exact_identity()
@@ -560,12 +571,30 @@ fn note_interpolated_route(
         "keyhog: autoroute workload bucket [{}] was not directly calibrated; resolved to {} by \
          interpolation between two agreeing calibrated CPU-class buckets [{}] and [{}]. This is \
          recall-safe (CPU backends return identical findings at any input size) but run \
-         `install.sh --calibrate` / `install.ps1 -Calibrate` for an exact decision. (Further \
+         `keyhog calibrate-autoroute` for an exact decision. (Further \
          interpolations this run are not repeated.)",
         store::render_workload_key(key),
         backend.label(),
         store::render_workload_key(lo),
         store::render_workload_key(hi),
+    );
+}
+
+fn note_below_floor_route(key: &WorkloadKey, backend: ScanBackend, floor: &WorkloadKey) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if WARNED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    eprintln!(
+        "keyhog: autoroute workload bucket [{}] is smaller than every calibrated bucket in its \
+         class (floor [{}]); resolved to setup-free {} because an input too small to amortize \
+         any backend's fixed setup cannot be beaten by one that pays it. This is recall-safe \
+         (CpuFallback is the reference backend) but run `keyhog calibrate-autoroute` for an \
+         exact decision. (Further below-floor clamps this run are not repeated.)",
+        store::render_workload_key(key),
+        store::render_workload_key(floor),
+        backend.label(),
     );
 }
 
