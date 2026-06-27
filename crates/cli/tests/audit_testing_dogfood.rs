@@ -25,10 +25,16 @@ fn binary() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// A generic key/value secret that the entropy scanner reports below 0.99
-/// confidence. This keeps the stream/min-confidence contract non-vacuous now
-/// that AWS and GitHub structured findings are promoted to confidence 1.0.
-const FIRING_LOW_CONFIDENCE_SECRET: &str = "aAbBcCdDeEfFgGhH12345678";
+/// A generic key/value secret whose reported confidence sits strictly INSIDE the
+/// `(0.40, 0.99)` band: `--min-confidence 0.40` keeps it, `--min-confidence 0.99`
+/// drops it. The stream/min-confidence contract is only non-vacuous with such a
+/// straddle fixture — a 1.0-confidence finding can never be dropped by any floor.
+/// (As `api_key = "<this>"` it scores ~0.59 via `generic-secret`.) If a detector
+/// retune pushes it to >=0.99 or stops firing, the `run("0.40")`/`run("0.99")`
+/// preconditions below fail loudly — pick a new value back in the band, do not
+/// relax the asserts. The earlier `aAbBcCdDeEfFgGhH12345678` fixture drifted to
+/// `entropy-api-key` confidence 1.0 and made `--min-confidence 0.99` vacuous.
+const FIRING_LOW_CONFIDENCE_SECRET: &str = "hunter2hunter2hunter2xy";
 
 /// Stripe's published docs example secret key. keyhog's bundled test-fixture
 /// suppression list silences this one (it is a tutorial copy, not a leak), so

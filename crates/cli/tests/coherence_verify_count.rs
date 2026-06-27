@@ -32,7 +32,13 @@ fn scan_clean(extra: &[&str]) -> Option<i32> {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("clean.txt");
     std::fs::write(&path, "clean prose, no secrets here\n").unwrap();
-    let mut args: Vec<&str> = vec!["scan", "--no-daemon"];
+    // Pin an explicit backend: a default `scan` resolves the backend from the
+    // persisted autoroute cache and FAILS CLOSED (exit 2) when no decision exists
+    // (Law 10 — it never guesses). This test only checks that the --verify-rate /
+    // --verify-batch flags parse and exit 0 on a clean file; it must not depend on
+    // an ambient ~/.cache/keyhog/autoroute.json that exists on a dev box but never
+    // on a fresh CI runner. `--backend cpu` bypasses autoroute deterministically.
+    let mut args: Vec<&str> = vec!["scan", "--no-daemon", "--backend", "cpu"];
     args.extend_from_slice(extra);
     let p = path.to_string_lossy().into_owned();
     args.push(&p);
