@@ -7,6 +7,45 @@
 const SUSPICIOUS_CONTROL_BINARY_MIN: u64 = 4;
 const BINARY_NUL_RUN: usize = 4;
 
+/// A buffer that STARTS with a UTF-16 BOM (`FF FE` / `FE FF`) but is not
+/// actually UTF-16 - a Latin-1 / mojibake / adversarially-prefixed file -
+/// decodes via [`decode_utf16`] into valid-but-meaningless BMP/CJK scalars, so
+/// an ASCII secret in the raw bytes is destroyed and the scan silently finds
+/// nothing (and reports a false "clean"). Genuine non-Latin UTF-16 (e.g. CJK
+/// text) decodes to the same valid-scalar shape, so the two are indistinguishable
+/// by decoded content alone.
+///
+/// Rather than GUESS - which would regress one case to "fix" the other - when the
+/// UTF-16 decode is overwhelmingly non-ASCII we APPEND the lossy-UTF-8 view of
+/// the raw bytes. An ASCII secret survives in the appended view; a genuine UTF-16
+/// finding already survives in the primary view; dedup-by-value collapses any
+/// overlap, so this never double-reports. Only non-ASCII-dominant UTF-16 (rare:
+/// the common ASCII/Latin UTF-16 config/source/secret file is returned untouched
+/// with exact offsets) pays the second view, so the whole-scan cost is a rounding
+/// error (LAW10 speed bound). LAW10: closes the silent-recall-loss / false-clean
+/// hole on BOM-prefixed non-UTF-16 input without touching the genuine-UTF-16 fast
+/// path.
+fn append_lossy_view_if_non_ascii_utf16(utf16_text: String, raw: &[u8]) -> String {
+    let total = utf16_text.chars().count();
+    if total == 0 {
+        return utf16_text;
+    }
+    let ascii = utf16_text.chars().filter(|c| c.is_ascii()).count();
+    // ASCII-dominant => genuine ASCII/Latin UTF-16 (configs, source, secrets):
+    // no ambiguity, return untouched so reported offsets stay exact.
+    if ascii * 2 >= total {
+        return utf16_text;
+    }
+    // Non-ASCII-dominant: could be genuine CJK text OR a non-UTF-16 buffer that
+    // merely begins with the BOM bytes. Carry BOTH interpretations so an ASCII
+    // secret is found regardless of which one is "correct".
+    let lossy = String::from_utf8_lossy(raw);
+    let mut out = utf16_text;
+    out.push('\n');
+    out.push_str(&lossy);
+    out
+}
+
 pub(crate) fn decode_text_file(bytes: &[u8]) -> Option<String> {
     // Cheap O(1) header rejects first - no full pass needed to know a PDF or
     // ZIP isn't a text file. NOTE: `has_utf16_nul_pattern` (which previously
@@ -23,7 +62,7 @@ pub(crate) fn decode_text_file(bytes: &[u8]) -> Option<String> {
     // BOM-keyed UTF-16 fast path (rejects in ~6 bytes when the BOM doesn't
     // match; the streaming decode fires only on real UTF-16).
     if let Some(text) = decode_utf16(bytes) {
-        return Some(text);
+        return Some(append_lossy_view_if_non_ascii_utf16(text, bytes));
     }
     let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes); // LAW10: no prefix/BOM to strip => value unchanged (intended), recall-safe
 
@@ -74,7 +113,7 @@ pub(in crate::filesystem) fn decode_text_file_owned_or_bytes(
         return Err(bytes);
     }
     if let Some(text) = decode_utf16(&bytes) {
-        return Ok(text);
+        return Ok(append_lossy_view_if_non_ascii_utf16(text, &bytes));
     }
     let mut bytes = bytes;
     let had_utf8_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);

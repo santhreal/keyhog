@@ -227,6 +227,46 @@ fn decode_text_file_utf16_trailing_orphan_is_not_binary_skip() {
 }
 
 #[test]
+fn decode_text_file_bom_prefixed_non_utf16_preserves_ascii_secret_via_lossy_append() {
+    // A file that STARTS with the UTF-16-LE BOM bytes but is NOT UTF-16: a
+    // Latin-1 / adversarial prefix, then an ASCII secret on a clean line. Decoded
+    // as UTF-16 the ASCII bytes pair into meaningless CJK scalars (no 0x00 high
+    // bytes => no ASCII scalars), so the secret would vanish and the scan would
+    // report a false "clean". The non-ASCII-dominant lossy-view append must keep
+    // the ASCII secret scannable.
+    let secret = "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";
+    let mut bytes = vec![0xFF, 0xFE, 0x80, 0x80];
+    bytes.extend_from_slice(b" noise ");
+    bytes.extend_from_slice(format!("GITHUB_TOKEN={secret}\n").as_bytes());
+    bytes.extend_from_slice(&[0x80, 0x81]);
+
+    let decoded =
+        decode_text_file(&bytes).expect("BOM-prefixed non-UTF-16 buffer still decodes (not binary)");
+    assert!(
+        decoded.contains(secret),
+        "a BOM-prefixed non-UTF-16 file must keep its ASCII secret scannable via the \
+         appended lossy view; decoded was:\n{decoded:?}"
+    );
+}
+
+#[test]
+fn decode_text_file_genuine_ascii_utf16_is_unchanged_no_lossy_append() {
+    // A genuine ASCII UTF-16-LE file is ASCII-dominant, so NO lossy view is
+    // appended and the decoded text equals the original exactly (offsets stay
+    // exact). Guards the append from firing on the common UTF-16 case.
+    let s = "API_KEY=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";
+    let mut bytes = vec![0xFF, 0xFE];
+    for u in s.encode_utf16() {
+        bytes.extend_from_slice(&u.to_le_bytes());
+    }
+    assert_eq!(
+        decode_text_file(&bytes).as_deref(),
+        Some(s),
+        "ASCII-dominant UTF-16 must decode exactly, with no lossy view appended"
+    );
+}
+
+#[test]
 fn decode_utf16_unpaired_surrogate_is_none() {
     // Lone high surrogate followed by ASCII - invalid UTF-16.
     let bytes = [0xFF, 0xFE, 0x00, 0xD8, b'a', 0x00];
