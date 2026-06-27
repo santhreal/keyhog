@@ -214,6 +214,13 @@ fn source_line_at(source: &str, start: usize) -> Option<&str> {
     if start >= source.len() {
         return None;
     }
+    // `start` is a byte offset that can land inside a multi-byte UTF-8 scalar on
+    // binary / lossy-UTF-8 input (a `&source[start..]` there panics with "byte
+    // index N is not a char boundary" and aborts the worker). Snap DOWN to the
+    // enclosing char boundary; the line containing that byte is unchanged. LAW10:
+    // a scanner must never panic/abort on hostile bytes. (Mirrors the identical
+    // guard in the `multiline`-enabled twin in multiline/config.rs.)
+    let start = crate::engine::floor_char_boundary(source, start);
     let rest = &source[start..];
     let end = rest.find('\n').unwrap_or(rest.len()); // LAW10: no newline means the line runs to source end; reporting-only coordinate slice
     let line = &rest[..end];

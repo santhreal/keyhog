@@ -1,5 +1,64 @@
 use keyhog_scanner::testing::fragment_cache::FragmentCache;
-use keyhog_scanner::testing::multiline::{preprocess_multiline, MultilineConfig};
+use keyhog_scanner::testing::multiline::{
+    preprocess_multiline, source_offset_for_match_for_test, LineMapping, MultilineConfig,
+};
+
+/// Regression (dogfood): a `keyhog scan .` over a tree containing a compiled
+/// binary (decoded to lossy UTF-8 with U+FFFD replacement scalars) aborted the
+/// whole worker with
+/// `panicked at multiline/config.rs: byte index N is not a char boundary; it is
+/// inside '\u{FFFD}'`. The match-offset remap sliced `source` at a mapping's
+/// `original_start_offset`, a raw byte offset that landed INSIDE a multi-byte
+/// scalar. A secret scanner must never panic/abort on hostile bytes (LAW10):
+/// the slice now snaps DOWN to the enclosing char boundary. Every offset the
+/// remap returns must be a valid, in-bounds char boundary so downstream slicing
+/// is panic-free.
+#[test]
+fn source_offset_remap_does_not_panic_on_mid_scalar_offset() {
+    // Each case: source with a multi-byte scalar, plus a mapping whose
+    // `original_start_offset` deliberately lands mid-scalar (and differs from
+    // `start_offset`, so the remap reaches the slicing `source_line_at` path).
+    // U+03A9 'Ω' and U+00E9 'é' are 2-byte; U+FFFD '\u{FFFD}' is 3-byte (the
+    // exact replacement scalar from the original crash).
+    let cases: &[(&str, usize, &str, usize)] = &[
+        // (source, mid-scalar original_start_offset, credential, byte_len_of_scalar_at_offset)
+        ("\u{03A9}=SECRET_TOKEN", 1, "SECRET_TOKEN", 2),
+        ("caf\u{00E9}_KEY=ghp_TOKENVALUE", 4, "ghp_TOKENVALUE", 2),
+        ("x\u{FFFD}y_TOKEN=AKIA_VALUE", 2, "AKIA_VALUE", 3),
+        ("x\u{FFFD}y_TOKEN=AKIA_VALUE", 3, "AKIA_VALUE", 3),
+    ];
+
+    for (source, mid_offset, credential, scalar_len) in cases {
+        // Sanity: the chosen offset really is mid-scalar (not a char boundary),
+        // so the test exercises the snap rather than a trivially-aligned offset.
+        assert!(
+            !source.is_char_boundary(*mid_offset),
+            "test setup: offset {mid_offset} must be mid-scalar in {source:?}"
+        );
+        let mapping = LineMapping {
+            start_offset: 0,
+            end_offset: source.len(),
+            line_number: 1,
+            original_start_offset: *mid_offset,
+        };
+        // offset is a position inside the mapped span (>= start_offset, <
+        // end_offset) so the remap selects this mapping and reaches the slice.
+        let offset = mid_offset + scalar_len;
+        let result = source_offset_for_match_for_test(source, offset, credential, mapping);
+
+        // The contract: no panic, and the returned offset is a valid char
+        // boundary within bounds (downstream code slices `source` at it).
+        assert!(
+            result <= source.len(),
+            "remapped offset {result} out of bounds for {source:?} (len {})",
+            source.len()
+        );
+        assert!(
+            source.is_char_boundary(result),
+            "remapped offset {result} is not a char boundary in {source:?}"
+        );
+    }
+}
 
 #[test]
 fn test_python_backslash_continuation() {

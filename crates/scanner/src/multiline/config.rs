@@ -185,6 +185,15 @@ fn source_line_at(source: &str, start: usize) -> Option<&str> {
     if start >= source.len() {
         return None;
     }
+    // `start` is a byte offset carried through the line-mapping bookkeeping; on
+    // binary / lossy-UTF-8 input (e.g. a compiled artifact decoded with U+FFFD
+    // replacement chars) it can land INSIDE a multi-byte scalar, where a raw
+    // `&source[start..]` panics with "byte index N is not a char boundary" and
+    // aborts the whole worker. Snap DOWN to the enclosing char boundary - the
+    // line that contains that byte is unchanged - so the slice is always valid.
+    // LAW10: a scanner must never panic/abort on hostile bytes; this mirrors the
+    // pervasive `floor_char_boundary` guarding the engine's other offset slices.
+    let start = crate::engine::floor_char_boundary(source, start);
     let rest = &source[start..];
     let end = rest.find('\n').unwrap_or(rest.len()); // LAW10: no newline means the line runs to source end; reporting-only coordinate slice
     let line = &rest[..end];

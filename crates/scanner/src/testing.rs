@@ -536,6 +536,33 @@ pub mod multiline {
         )
     }
 
+    /// Test seam for the match-offset remap path. Builds the REAL
+    /// `crate::multiline::PreprocessedText` from a single crafted mapping and
+    /// drives `source_offset_for_match`, which ultimately slices `source` at the
+    /// mapping's `original_start_offset`. On binary / lossy-UTF-8 input that
+    /// offset can land inside a multi-byte scalar; before the
+    /// `floor_char_boundary` snap that slice panicked ("byte index N is not a
+    /// char boundary") and aborted the worker. Exercises the production code, not
+    /// the facade mirror.
+    pub fn source_offset_for_match_for_test(
+        source: &str,
+        offset: usize,
+        credential: &str,
+        mapping: LineMapping,
+    ) -> usize {
+        let pre = crate::multiline::PreprocessedText {
+            text: std::borrow::Cow::Borrowed(source),
+            original_end: source.len(),
+            mappings: vec![crate::multiline::LineMapping {
+                start_offset: mapping.start_offset,
+                end_offset: mapping.end_offset,
+                line_number: mapping.line_number,
+                original_start_offset: mapping.original_start_offset,
+            }],
+        };
+        pre.source_offset_for_match(source, offset, credential)
+    }
+
     fn public_preprocessed<'a>(
         preprocessed: crate::multiline::PreprocessedText<'a>,
     ) -> PreprocessedText<'a> {
