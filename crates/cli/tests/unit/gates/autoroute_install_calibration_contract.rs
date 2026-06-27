@@ -214,7 +214,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("source_class_hash")
             && backend.contains("StableHasher::new(\"autoroute-source-class\")")
             && backend.contains("StableHasher::new(\"autoroute-correctness-digest\")")
-            && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 19")
+            && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 20")
             && backend.contains("AUTOROUTE_CALIBRATION_TRIALS: usize = 7")
             && backend.contains("trials"),
         "autoroute cache must persist binary identity, build feature identity, exact host identity, and measured calibration evidence"
@@ -399,9 +399,15 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && install_sh.contains("Docker daemon is not responding")
             && install_sh.contains("--autoroute-calibrate")
             && !install_sh.contains("KEYHOG_AUTOROUTE_CALIBRATE")
-            && install_sh.contains("--batch-pipeline")
+            // Calibration runs with the DEFAULT scan flags plus each documented
+            // scan-policy preset, parametrized through `autoroute_scan_flags` /
+            // `autoroute_presets` — NOT the spurious `--batch-pipeline
+            // --autoroute-gpu`, which hashed into a digest no real `keyhog
+            // scan .` ever requested and made every auto scan fail closed.
+            && install_sh.contains("autoroute_scan_flags")
+            && install_sh.contains("autoroute_presets")
+            && install_sh.contains("--fast")
             && !install_sh.contains("KEYHOG_BATCH_PIPELINE")
-            && install_sh.contains("--autoroute-gpu")
             && !install_sh.contains("KEYHOG_GPU_AUTOROUTE")
             && install_sh.contains("failed=0")
             && install_sh.contains("return 1")
