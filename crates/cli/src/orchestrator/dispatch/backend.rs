@@ -1,4 +1,36 @@
 //! Backend override parsing and calibrated batch backend selection.
+//!
+//! # Two routers, one decision source
+//!
+//! Backend choice splits by *when* it runs, never by guessing:
+//!
+//! - [`CachedBackendRouter`] drives normal scans. It only reads install-time
+//!   calibration evidence — zero benchmarks, zero writes. A bucket the
+//!   installer never measured is an [`AutorouteRoutingError`], not a runtime
+//!   probe or a substitute backend.
+//! - [`MeasuredBackendRouter`] drives explicit calibration (installer / backend
+//!   maintenance). It probes candidate backends, proves output parity against a
+//!   reference, times the survivors, and persists the fastest correct choice.
+//!
+//! Both honour an explicit `--backend` first; only then does
+//! [`sole_compiled_backend`] resolve a build that compiled exactly one backend
+//! (portable / single-feature). Neither path silently substitutes — a miss
+//! fails closed (Law 10).
+//!
+//! # Submodule map (one-way dependency DAG)
+//!
+//! ```text
+//! backend.rs ── routers, override parsing, single-backend resolution
+//!   ├─ calibration ── install-time probe/parity/timing measurement
+//!   └─ store ──────── on-disk cache schema (v20), load/validate/merge-save
+//!        depend on ↓
+//!   ├─ evidence ───── timing records, AutorouteDecision, correctness digests
+//!   ├─ host ───────── host identity captured in each calibration record
+//!   └─ workload ───── workload bucketing + source-shape fingerprints
+//! ```
+//!
+//! Leaves (`evidence`, `host`, `workload`) never import upward; only
+//! [`inspect_autoroute_cache`] crosses the module boundary outward.
 
 mod calibration;
 mod evidence;
