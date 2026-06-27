@@ -2,12 +2,14 @@
 
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
-use keyhog_sources::{create_source, reset_skipped_over_max_size, FilesystemSource, StdinSource};
+use keyhog_sources::{create_source, FilesystemSource, StdinSource};
 
 // ── crates/sources/src/lib.rs ─────────────────────────────────────────
 #[test]
 fn lib_happy() {
-    reset_skipped_over_max_size();
+    // No counter reset here: this test asserts nothing about the process-global
+    // skip counters, and a bare unguarded reset in the parallel `all_tests`
+    // binary would zero a concurrent counter-asserting test mid-measurement.
     assert!(create_source("unknown-plugin", None).is_err());
 }
 #[test]

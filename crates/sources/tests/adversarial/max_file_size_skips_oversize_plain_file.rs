@@ -2,11 +2,16 @@
 
 use crate::support::split_chunk_results;
 use keyhog_core::Source;
-use keyhog_sources::{reset_skipped_over_max_size, skip_counts, FilesystemSource};
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::{skip_counts, FilesystemSource};
 
 #[test]
 fn max_file_size_skips_oversize_plain_file() {
-    reset_skipped_over_max_size();
+    // Aggregator-binary test: hold the exclusive scan scope across reset->scan->
+    // read so a parallel test cannot reset `over_max_size` between this scan and
+    // the assertion (which would zero the absolute count -> false failure).
+    let _counter_guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(
         dir.path().join("tiny.txt"),

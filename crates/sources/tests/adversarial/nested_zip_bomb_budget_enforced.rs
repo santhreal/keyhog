@@ -4,6 +4,7 @@ use crate::support::split_chunk_results;
 use std::io::Write;
 
 use keyhog_core::Source;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
 use std::fs::File;
 use zip::write::SimpleFileOptions;
@@ -54,7 +55,12 @@ fn nested_zip_bomb_budget_enforced() {
     outer.finish().expect("finish outer");
     std::fs::remove_file(&inner_path).expect("remove inner builder artifact");
 
-    let before_truncated = skip_counts().archive_truncated;
+    // Exclusive scan scope + reset under the lease (canonical counter-isolation
+    // primitive): keeps a parallel test from resetting/recording into the
+    // process-global skip counters during this scan's measurement window, which
+    // otherwise underflows the bare global delta to 0 (a false failure).
+    let _counter_guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
     let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
         .with_max_file_size(MAX_FILE_SIZE)
         .chunks()
@@ -62,12 +68,10 @@ fn nested_zip_bomb_budget_enforced() {
     let (chunks, errors) = split_chunk_results(&rows);
     let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
 
-    let archive_truncation_delta = skip_counts()
-        .archive_truncated
-        .saturating_sub(before_truncated);
+    let archive_truncated = skip_counts().archive_truncated;
     assert!(
-        archive_truncation_delta >= 1,
-        "embedded ZIP member bytes must record an archive-bomb truncation in this scan; delta={archive_truncation_delta}"
+        archive_truncated >= 1,
+        "embedded ZIP member bytes must record an archive-bomb truncation in this scan; got {archive_truncated}"
     );
     assert_eq!(
         errors.len(),

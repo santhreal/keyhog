@@ -5,6 +5,7 @@ use crate::support::split_chunk_results;
 use std::io::Write;
 
 use keyhog_core::Source;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
 use std::fs::File;
 use zip::write::SimpleFileOptions;
@@ -32,7 +33,14 @@ fn zip_bomb_4x_budget_aborts_before_late_entry() {
 
     std::fs::write(dir.path().join("outside.txt"), "OUTSIDE=ok\n").expect("outside");
 
-    let before_truncated = skip_counts().archive_truncated;
+    // Hold the exclusive scan scope for the whole reset->scan->read window so a
+    // concurrent test cannot reset or record into the process-global skip
+    // counters mid-measurement (the canonical isolation primitive used by every
+    // other counter-asserting archive test). Reset under the lease so the count
+    // read back is this scan's alone -- without it the bare global delta
+    // underflows to 0 when a parallel test resets the counter (a false failure).
+    let _counter_guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(MAX_FILE_SIZE);
     let rows: Vec<_> = source.chunks().collect();
     let (chunks, errors) = split_chunk_results(&rows);
@@ -42,12 +50,10 @@ fn zip_bomb_4x_budget_aborts_before_late_entry() {
         bodies.iter().any(|b| b.contains("OUTSIDE=ok")),
         "walk must continue after zip-bomb abort"
     );
-    let archive_truncation_delta = skip_counts()
-        .archive_truncated
-        .saturating_sub(before_truncated);
+    let archive_truncated = skip_counts().archive_truncated;
     assert!(
-        archive_truncation_delta >= 1,
-        "zip-bomb budget must record an archive truncation in this scan; delta={archive_truncation_delta}"
+        archive_truncated >= 1,
+        "zip-bomb budget must record an archive truncation in this scan; got {archive_truncated}"
     );
     assert_eq!(
         errors.len(),

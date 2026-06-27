@@ -1,14 +1,5 @@
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 
-#[cfg(feature = "binary")]
-static BINARY_SECTION_COUNTER_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
-#[cfg(feature = "github")]
-static GITHUB_SKIP_COUNTER_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
-#[cfg(feature = "gitlab")]
-static GITLAB_SKIP_COUNTER_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
-#[cfg(feature = "bitbucket")]
-static BITBUCKET_SKIP_COUNTER_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 #[test]
 fn core_windows_verbatim_prefix_contracts() {
     assert_eq!(
@@ -522,7 +513,12 @@ fn binary_section_extraction_rejects_bad_inputs_without_panic() {
 #[cfg(feature = "binary")]
 #[test]
 fn binary_unresolvable_section_name_bumps_partial_parse_counter() {
-    let _guard = BINARY_SECTION_COUNTER_GUARD.lock().expect("counter guard");
+    // Canonical SCAN_GATE guard, not a local mutex: this set_skip_counts zeroes
+    // ALL process-global counters, and only the shared exclusive scan scope
+    // serializes it against a concurrent counter-asserting scan in the same
+    // `all_tests` process (a local mutex does not, which intermittently flaked
+    // tests like zst_truncated_header_no_panic by zeroing their `unreadable`).
+    let _guard = TestApi.skip_counter_guard();
     TestApi.set_skip_counts(keyhog_sources::SkipCounts::default());
 
     let name = TestApi.resolve_binary_section_name(None, 42);
@@ -537,7 +533,12 @@ fn binary_unresolvable_section_name_bumps_partial_parse_counter() {
 #[cfg(feature = "binary")]
 #[test]
 fn binary_legitimate_unnamed_section_does_not_bump_counter() {
-    let _guard = BINARY_SECTION_COUNTER_GUARD.lock().expect("counter guard");
+    // Canonical SCAN_GATE guard, not a local mutex: this set_skip_counts zeroes
+    // ALL process-global counters, and only the shared exclusive scan scope
+    // serializes it against a concurrent counter-asserting scan in the same
+    // `all_tests` process (a local mutex does not, which intermittently flaked
+    // tests like zst_truncated_header_no_panic by zeroing their `unreadable`).
+    let _guard = TestApi.skip_counter_guard();
     TestApi.set_skip_counts(keyhog_sources::SkipCounts::default());
 
     let name = TestApi.resolve_binary_section_name(None, 0);
@@ -552,7 +553,12 @@ fn binary_legitimate_unnamed_section_does_not_bump_counter() {
 #[cfg(feature = "binary")]
 #[test]
 fn binary_resolved_section_name_passes_through_without_counting() {
-    let _guard = BINARY_SECTION_COUNTER_GUARD.lock().expect("counter guard");
+    // Canonical SCAN_GATE guard, not a local mutex: this set_skip_counts zeroes
+    // ALL process-global counters, and only the shared exclusive scan scope
+    // serializes it against a concurrent counter-asserting scan in the same
+    // `all_tests` process (a local mutex does not, which intermittently flaked
+    // tests like zst_truncated_header_no_panic by zeroing their `unreadable`).
+    let _guard = TestApi.skip_counter_guard();
     TestApi.set_skip_counts(keyhog_sources::SkipCounts::default());
 
     let name = TestApi.resolve_binary_section_name(Some(".rodata"), 7);
@@ -776,9 +782,10 @@ fn github_org_scan_repo_chunks_propagates_source_errors() {
 #[cfg(feature = "github")]
 #[test]
 fn github_org_listing_cap_counts_and_fails_loud() {
-    let _guard = GITHUB_SKIP_COUNTER_GUARD
-        .lock()
-        .expect("github counter guard");
+    // Canonical SCAN_GATE guard so this reset serializes against every other
+    // counter-asserting scan in the `all_tests` process (a local mutex would
+    // not, intermittently zeroing a concurrent test's counters).
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     let err = TestApi.github_org_listing_truncated_error("santhsecurity", 100_000, 1_000);
     assert!(
@@ -810,9 +817,10 @@ fn gitlab_group_validation_and_listing_cap_contracts() {
         );
     }
 
-    let _guard = GITLAB_SKIP_COUNTER_GUARD
-        .lock()
-        .expect("gitlab counter guard");
+    // Canonical SCAN_GATE guard so this reset serializes against every other
+    // counter-asserting scan in the `all_tests` process (a local mutex would
+    // not, intermittently zeroing a concurrent test's counters).
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     let err = TestApi.gitlab_group_listing_truncated_error("santhsecurity", 100_000, 1_000);
     assert!(
@@ -844,9 +852,10 @@ fn bitbucket_workspace_validation_and_listing_cap_contracts() {
         );
     }
 
-    let _guard = BITBUCKET_SKIP_COUNTER_GUARD
-        .lock()
-        .expect("bitbucket counter guard");
+    // Canonical SCAN_GATE guard so this reset serializes against every other
+    // counter-asserting scan in the `all_tests` process (a local mutex would
+    // not, intermittently zeroing a concurrent test's counters).
+    let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     let err = TestApi.bitbucket_workspace_listing_truncated_error("santhsecurity", 100_000, 1_000);
     assert!(
@@ -1244,19 +1253,40 @@ fn skip_counter_reset_tests_hold_shared_guard() {
     let mut offenders = Vec::new();
     for path in files {
         let src = std::fs::read_to_string(&path).expect("read source test");
+        // Aggregator-binary modules (everything under a tests/ subdirectory) run
+        // in parallel inside the single `all_tests` process and share the
+        // process-global skip counters, so even a pure READ of `skip_counts()`
+        // across a scan -- or a bare `reset_skipped_over_max_size()` that could
+        // zero a concurrent test's counters -- must hold the exclusive scan
+        // scope. Top-level `tests/*.rs` files are each their own binary (separate
+        // process, private counter copy); a single-test standalone is race-free.
+        let is_aggregator = path.parent() != Some(tests_root.as_path());
         let mut touches_counters = src.contains("TestApi.reset_skip_counters()")
             || src.contains("TestApi.set_skip_counts(");
         touches_counters |= src.contains("TestApi.bump_skipped_over_max_size(")
             || src.contains("TestApi.bump_git_object_unreadable(");
+        if is_aggregator {
+            touches_counters |=
+                src.contains("skip_counts(") || src.contains("reset_skipped_over_max_size(");
+        }
         if !touches_counters {
             continue;
         }
-        let has_guard = src.contains("skip_counter_guard()")
-            || src.contains("COUNTER_LOCK")
-            || src.contains("SKIP_COUNTER_GUARD")
-            || src.contains("GITHUB_SKIP_COUNTER_GUARD")
-            || src.contains("GITLAB_SKIP_COUNTER_GUARD")
-            || src.contains("BITBUCKET_SKIP_COUNTER_GUARD");
+        let has_guard = if is_aggregator {
+            // Aggregator modules share the single `all_tests` process, so only
+            // the canonical SCAN_GATE guard (`TestApi.skip_counter_guard()`)
+            // serializes a counter mutation against a concurrent counter-
+            // asserting scan. A local `Mutex` does NOT -- it only serializes
+            // within its own file -- which intermittently flaked tests like
+            // zst_truncated_header_no_panic by zeroing their counters mid-scan.
+            src.contains("skip_counter_guard()")
+        } else {
+            // Top-level `tests/*.rs` standalone binaries run in their own
+            // process (private counter copy); a local mutex is sufficient there.
+            src.contains("skip_counter_guard()")
+                || src.contains("COUNTER_LOCK")
+                || src.contains("SKIP_COUNTER_GUARD")
+        };
         if !has_guard {
             offenders.push(
                 path.strip_prefix(root)
@@ -1269,6 +1299,6 @@ fn skip_counter_reset_tests_hold_shared_guard() {
 
     assert!(
         offenders.is_empty(),
-        "tests touching process-global source skip counters must hold TestApi.skip_counter_guard() or an existing local guard: {offenders:?}"
+        "aggregator tests that read or mutate the process-global source skip counters must hold TestApi.skip_counter_guard() (or an existing local guard) so a parallel test cannot reset/record into the counters mid-measurement: {offenders:?}"
     );
 }
