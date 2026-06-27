@@ -162,6 +162,21 @@ fn calibration_block(seed: &str) -> Vec<u8> {
 }
 
 pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
+    // Calibration EXISTS to persist routing decisions; `--autoroute-cache off`
+    // disables persistence, so every probe would fail closed ("calibration did
+    // not persist a routing decision"). Reject it up front with one clear line
+    // instead of a flood of per-probe failures.
+    if args
+        .autoroute_cache
+        .as_deref()
+        .is_some_and(|cache| cache.trim().eq_ignore_ascii_case("off"))
+    {
+        anyhow::bail!(
+            "`--autoroute-cache off` disables persistence, but calibrate-autoroute exists to \
+             persist routing decisions — every probe would fail closed. Drop the flag to use the \
+             default cache, or pass a writable file path."
+        );
+    }
     let exe = std::env::current_exe()
         .context("could not resolve the running keyhog binary to spawn calibration probes")?;
     let workspace = tempfile::Builder::new()
@@ -222,7 +237,6 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     }
 
     let cache_note = match args.autoroute_cache.as_deref() {
-        Some("off") => "persistence disabled (--autoroute-cache off)".to_string(),
         Some(path) => path.to_string(),
         None => "the default autoroute cache".to_string(),
     };

@@ -103,3 +103,31 @@ fn calibrate_autoroute_primes_every_preset_for_a_later_scan() {
         }
     }
 }
+
+#[test]
+fn calibrate_autoroute_rejects_cache_off_up_front() {
+    // Calibration must persist; `--autoroute-cache off` disables persistence, so
+    // it is rejected up front with ONE clear line — not a flood of per-probe
+    // "did not persist a routing decision" failures (the original dogfood bug).
+    let out = Command::new(binary())
+        .args(["calibrate-autoroute", "--autoroute-cache", "off"])
+        .env("KEYHOG_NO_GPU", "1")
+        .output()
+        .expect("spawn keyhog calibrate-autoroute");
+    assert!(
+        !out.status.success(),
+        "calibrate-autoroute --autoroute-cache off must exit non-zero; got {:?}",
+        out.status.code(),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("disables persistence")
+            && stderr.contains("calibrate-autoroute exists to"),
+        "the rejection must explain why `off` is incompatible with calibration; stderr={stderr}"
+    );
+    // Fail-fast: it must NOT have flooded per-probe failures before bailing.
+    assert!(
+        !stderr.contains("did not persist a routing decision"),
+        "off must be rejected BEFORE any probe runs, not after each fails; stderr={stderr}"
+    );
+}
