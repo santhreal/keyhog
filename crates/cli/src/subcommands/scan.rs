@@ -332,6 +332,8 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
 fn effective_daemon_socket(args: &ScanArgs) -> std::path::PathBuf {
     args.daemon_socket
         .clone()
+        // LAW10: intentional_default — absent --daemon-socket => documented default
+        // socket; Tier-A transport knob, recall-irrelevant.
         .unwrap_or_else(default_socket_path)
 }
 

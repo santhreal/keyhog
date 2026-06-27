@@ -208,6 +208,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     for policy in &policy_flags {
         for workload in &workloads {
             idx += 1;
+            // LAW10: reporting_only — display label for the default (no-flag) policy.
             let policy_label = policy.unwrap_or("default policy");
             if let Err(error) = run_probe(
                 &exe,
@@ -278,6 +279,7 @@ fn run_probe(
             dim = p.dim,
             reset = p.reset,
         );
+        // LAW10: no_runtime_effect — a failed progress-line flush is cosmetic; stdout flushes at exit.
         std::io::stdout().flush().ok();
     }
 
@@ -324,6 +326,7 @@ fn run_probe(
         let reason = stderr
             .lines()
             .find(|line| !line.trim().is_empty())
+            // LAW10: reporting_only — placeholder when the failed child wrote no stderr.
             .unwrap_or("no error output");
         anyhow::bail!("{label} ({policy_label}): {reason}");
     }

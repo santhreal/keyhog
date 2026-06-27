@@ -407,6 +407,7 @@ pub(super) fn resolve_bucket(
     // single file below the ladder's smallest single-file probe). Clamp it to
     // setup-free CpuFallback — see `clamp_below_calibrated_floor`.
     clamp_below_calibrated_floor(decisions, key).unwrap_or(BucketResolution::Unresolved)
+    // LAW10: fail_closed — no clamp evidence => Unresolved => caller exits 2, not a silent route
 }
 
 #[derive(Clone, Copy)]
