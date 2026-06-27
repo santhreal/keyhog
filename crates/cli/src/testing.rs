@@ -265,6 +265,13 @@ pub trait CliTestApi {
         second: &[u8],
         elapsed: std::time::Duration,
     ) -> (bool, bool);
+    fn watch_findings_fingerprint(&self, matches: &[keyhog_core::RawMatch]) -> u64;
+    fn watch_duplicate_findings_decisions(
+        &self,
+        first: u64,
+        second: u64,
+        elapsed: std::time::Duration,
+    ) -> (bool, bool);
 
     fn max_resident_findings(&self) -> usize;
     fn parse_macos_mount_table_for_test(
@@ -806,6 +813,17 @@ impl CliTestApi for TestApi {
         elapsed: std::time::Duration,
     ) -> (bool, bool) {
         crate::subcommands::watch::testing::duplicate_event_decisions(first, second, elapsed)
+    }
+    fn watch_findings_fingerprint(&self, matches: &[keyhog_core::RawMatch]) -> u64 {
+        crate::subcommands::watch::testing::findings_fingerprint(matches)
+    }
+    fn watch_duplicate_findings_decisions(
+        &self,
+        first: u64,
+        second: u64,
+        elapsed: std::time::Duration,
+    ) -> (bool, bool) {
+        crate::subcommands::watch::testing::duplicate_findings_decisions(first, second, elapsed)
     }
 
     fn max_resident_findings(&self) -> usize {

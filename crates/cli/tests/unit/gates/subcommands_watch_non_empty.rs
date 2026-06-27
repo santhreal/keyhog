@@ -1,7 +1,32 @@
 //! Gate `subcommands::watch`: substantive source, no todo!/unimplemented! in prod paths.
 
 use keyhog::testing::{CliTestApi as _, API};
+use keyhog_core::{MatchLocation, RawMatch, Severity};
+use std::sync::Arc;
 use std::time::Duration;
+
+fn raw_match(detector_id: &str, line: Option<usize>, offset: usize) -> RawMatch {
+    RawMatch {
+        detector_id: Arc::from(detector_id),
+        detector_name: Arc::from("Test Detector"),
+        service: Arc::from("test"),
+        severity: Severity::High,
+        credential: keyhog_core::SensitiveString::from("secret"),
+        credential_hash: [0u8; 32].into(),
+        companions: std::collections::HashMap::new(),
+        location: MatchLocation {
+            source: Arc::from("filesystem"),
+            file_path: Some(Arc::from("watched.env")),
+            line,
+            offset,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: None,
+        confidence: None,
+    }
+}
 
 #[test]
 fn subcommands_watch_non_empty() {
@@ -52,6 +77,66 @@ fn watch_dedupe_hashes_raw_bytes_not_lossy_text() {
         API.watch_duplicate_event_decisions(first, first, Duration::from_secs(2)),
         (false, false),
         "same-byte events after the dedupe window are fresh scans, not permanent suppression"
+    );
+}
+
+#[test]
+fn watch_findings_dedupe_collapses_identical_finding_burst() {
+    // A single save fires a CREATE+MODIFY(+CLOSE_WRITE) burst. A read taken
+    // mid-write can return bytes that differ from the final read (e.g. missing
+    // the trailing newline) yet locate the SAME secret at the SAME offset -- so
+    // the raw-content dedupe misses and the finding printed twice. The finding
+    // fingerprint keys on detector id + line + byte offset (never credential
+    // bytes), so both reads of the same secret share a fingerprint.
+    let full_read = [raw_match("aws-access-key", Some(1), 17)];
+    // Same finding set surfaced by a byte-distinct partial read; the secret sits
+    // at the same offset, so the fingerprint must match the full read's.
+    let partial_read = [raw_match("aws-access-key", Some(1), 17)];
+    let fp_full = API.watch_findings_fingerprint(&full_read);
+    let fp_partial = API.watch_findings_fingerprint(&partial_read);
+    assert_eq!(
+        fp_full, fp_partial,
+        "two reads locating the same secret at the same offset must fingerprint identically"
+    );
+    assert_eq!(
+        API.watch_duplicate_findings_decisions(fp_full, fp_partial, Duration::from_millis(1)),
+        (false, true),
+        "a save burst that re-finds the same secret must print once, not twice"
+    );
+
+    // A genuine edit that surfaces a DIFFERENT finding set is a different
+    // fingerprint and must still print.
+    let edited = [raw_match("aws-access-key", Some(4), 92)];
+    let fp_edited = API.watch_findings_fingerprint(&edited);
+    assert_ne!(
+        fp_full, fp_edited,
+        "a finding at a different location must not collide with the original fingerprint"
+    );
+    assert_eq!(
+        API.watch_duplicate_findings_decisions(fp_full, fp_edited, Duration::from_millis(1)),
+        (false, false),
+        "a real edit changing the finding set must re-print, not be suppressed"
+    );
+
+    // Fingerprint is order-independent: the same set in a different order must
+    // collapse, so a backend that emits findings in a different order across two
+    // reads of one save still dedupes.
+    let a = raw_match("aws-access-key", Some(1), 17);
+    let b = raw_match("github-pat", Some(9), 40);
+    let forward = [a.clone(), b.clone()];
+    let reversed = [b, a];
+    assert_eq!(
+        API.watch_findings_fingerprint(&forward),
+        API.watch_findings_fingerprint(&reversed),
+        "finding-set fingerprint must be independent of match order"
+    );
+
+    // Same fingerprint after the dedupe window is a fresh scan, not permanent
+    // suppression.
+    assert_eq!(
+        API.watch_duplicate_findings_decisions(fp_full, fp_full, Duration::from_secs(2)),
+        (false, false),
+        "an identical finding set after the dedupe window must re-print"
     );
 }
 

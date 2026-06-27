@@ -40,7 +40,16 @@ const DEDUP_PRUNE_INTERVAL: usize = 128;
 
 #[derive(Default)]
 struct WatchDedupeState {
+    /// Pre-scan dedup keyed on RAW content hash: skips the scan when a burst
+    /// event re-reads byte-identical content (the cheap common case).
     entries: HashMap<PathBuf, (Instant, u64)>,
+    /// Post-scan dedup keyed on the FINDING-SET fingerprint: a single save fires
+    /// a CREATE+MODIFY(+CLOSE_WRITE) burst, and a read taken mid-write can return
+    /// bytes that differ from the final read (e.g. missing the trailing newline)
+    /// yet yield the SAME findings -- which then printed twice. This layer
+    /// collapses that to one print while a genuine edit (different findings)
+    /// still prints.
+    finding_entries: HashMap<PathBuf, (Instant, u64)>,
     scans_since_prune: usize,
 }
 
@@ -257,6 +266,19 @@ fn scan_file(
             return Ok(());
         }
     };
+    // Second dedup layer: the content pre-check above only suppresses a re-read
+    // of byte-identical content, but a save's burst can read different
+    // intermediate bytes that still produce the same findings. Collapse those to
+    // one print by deduping on the finding SET; a genuine edit that changes
+    // findings is a different fingerprint and prints again.
+    if suppress_duplicate_findings(
+        path,
+        findings_fingerprint(&matches),
+        Instant::now(),
+        recently_scanned,
+    ) {
+        return Ok(());
+    }
     for m in matches {
         crate::style::print_diagnostic_finding(
             "\u{1F50D}",
@@ -289,13 +311,61 @@ fn suppress_duplicate_event(
         .insert(path.to_path_buf(), (now, hash));
     recently_scanned.scans_since_prune = recently_scanned.scans_since_prune.saturating_add(1);
     if recently_scanned.scans_since_prune >= DEDUP_PRUNE_INTERVAL {
-        // Evict stale entries periodically so the map cannot grow without
+        // Evict stale entries periodically so the maps cannot grow without
         // bound, without making every event pay an O(active_paths) scan.
         recently_scanned.scans_since_prune = 0;
         recently_scanned
             .entries
             .retain(|_, (last, _)| now.saturating_duration_since(*last) < DEDUP_WINDOW);
+        recently_scanned
+            .finding_entries
+            .retain(|_, (last, _)| now.saturating_duration_since(*last) < DEDUP_WINDOW);
     }
+    false
+}
+
+/// Order-independent fingerprint of a scan's FINDING SET, built only from each
+/// match's stable position identity (detector id + line + byte offset) -- never
+/// the credential bytes. Two reads of the same save yield the same set even when
+/// their raw bytes differ (a partial mid-write read missing the trailing
+/// newline), so the burst's duplicate output collapses to one print.
+fn findings_fingerprint(matches: &[keyhog_core::RawMatch]) -> u64 {
+    let mut combined: u64 = 0;
+    for m in matches {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in m.detector_id.as_bytes() {
+            h ^= u64::from(*b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        h ^= m.location.line.unwrap_or(0) as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        h ^= m.location.offset as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        // XOR-combine so the fingerprint is independent of match order.
+        combined ^= h;
+    }
+    combined
+}
+
+/// Suppress a re-print when the SAME finding set for `path` was already printed
+/// within `DEDUP_WINDOW`. Mirrors `suppress_duplicate_event` but keyed on the
+/// post-scan finding fingerprint, which (unlike the raw-content hash) is robust
+/// to a burst's intermediate partial reads, so the operator sees one finding set
+/// per real change.
+fn suppress_duplicate_findings(
+    path: &std::path::Path,
+    fingerprint: u64,
+    now: Instant,
+    recently_scanned: &mut WatchDedupeState,
+) -> bool {
+    if let Some((last, last_fp)) = recently_scanned.finding_entries.get(path) {
+        if *last_fp == fingerprint && now.saturating_duration_since(*last) < DEDUP_WINDOW {
+            return true;
+        }
+    }
+    recently_scanned
+        .finding_entries
+        .insert(path.to_path_buf(), (now, fingerprint));
     false
 }
 
@@ -320,6 +390,29 @@ pub(crate) mod testing {
             super::suppress_duplicate_event(path, first, first_at, &mut recently_scanned);
         let second_suppressed =
             super::suppress_duplicate_event(path, second, second_at, &mut recently_scanned);
+        (first_suppressed, second_suppressed)
+    }
+
+    pub(crate) fn findings_fingerprint(matches: &[keyhog_core::RawMatch]) -> u64 {
+        super::findings_fingerprint(matches)
+    }
+
+    /// Drive two consecutive post-scan finding-set decisions for one path.
+    /// Mirrors `duplicate_event_decisions` but on the finding fingerprint,
+    /// which is what collapses a save burst's identical-finding re-prints.
+    pub(crate) fn duplicate_findings_decisions(
+        first: u64,
+        second: u64,
+        elapsed: Duration,
+    ) -> (bool, bool) {
+        let mut recently_scanned = super::WatchDedupeState::default();
+        let path = Path::new("watched-file.txt");
+        let first_at = Instant::now();
+        let second_at = first_at + elapsed;
+        let first_suppressed =
+            super::suppress_duplicate_findings(path, first, first_at, &mut recently_scanned);
+        let second_suppressed =
+            super::suppress_duplicate_findings(path, second, second_at, &mut recently_scanned);
         (first_suppressed, second_suppressed)
     }
 }
