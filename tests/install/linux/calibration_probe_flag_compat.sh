@@ -30,10 +30,13 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/binA"
 cat > "$work/binA/keyhog" <<'EOF'
 #!/usr/bin/env sh
-# Mimic a released keyhog: `scan --config <PATH>` exists, `--no-config` does not.
-# `scan --help` advertises ONLY --config (no --no-config) so detection picks it.
+# Mimic a released Linux/CUDA keyhog: it ships autoroute calibration
+# (`--autoroute-calibrate`, as the real Linux build does) and `scan --config
+# <PATH>`, but predates `--no-config`. `scan --help` advertises
+# --autoroute-calibrate and --config but NOT --no-config, so the installer runs
+# calibration and picks the --config isolation flag.
 if [ "$1 $2" = "scan --help" ] || [ "$1" = "--help" ]; then
-    printf '%s\n' "Usage: keyhog scan --config <PATH> <PATH>"
+    printf '%s\n' "Usage: keyhog scan --autoroute-calibrate --config <PATH> <PATH>"
     exit 0
 fi
 if [ "$1" = "scan" ]; then
@@ -58,7 +61,7 @@ mkdir -p "$work/binB"
 cat > "$work/binB/keyhog" <<'EOF'
 #!/usr/bin/env sh
 if [ "$1" = "scan" ]; then
-    case " $* " in *" --help "*) echo "Usage: keyhog scan --no-config <PATH>"; exit 0;; esac
+    case " $* " in *" --help "*) echo "Usage: keyhog scan --autoroute-calibrate --no-config <PATH>"; exit 0;; esac
     echo "error: GPU adapter request failed (mock driver fault)" >&2
     exit 1
 fi

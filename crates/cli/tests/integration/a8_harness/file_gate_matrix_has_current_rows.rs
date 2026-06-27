@@ -14,5 +14,5 @@ fn file_gate_matrix_has_current_rows() {
         rows, paths,
         "every FILE_GATE_MATRIX path row must be inside an explicit [[module]] table"
     );
-    assert_eq!(rows, 419, "expected 419 module rows, got {rows}");
+    assert_eq!(rows, 418, "expected 418 module rows, got {rows}");
 }

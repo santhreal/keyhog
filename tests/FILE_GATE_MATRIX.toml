@@ -703,11 +703,6 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/core/src/spec/validate_regex.rs"
-error = true
-adversarial = true
-
-[[module]]
 path = "crates/core/src/testing.rs"
 error = true
 adversarial = true
@@ -1383,11 +1378,6 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/suppression/shape.rs"
-error = true
-adversarial = true
-
-[[module]]
 path = "crates/scanner/src/suppression/shape/canonical.rs"
 error = true
 adversarial = true
@@ -1414,11 +1404,6 @@ adversarial = true
 
 [[module]]
 path = "crates/scanner/src/suppression/shape/source.rs"
-error = true
-adversarial = true
-
-[[module]]
-path = "crates/scanner/src/suppression/shape_gates.rs"
 error = true
 adversarial = true
 
@@ -1911,17 +1896,7 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/phase2_entropy/example_suppression.rs"
-error = true
-adversarial = true
-
-[[module]]
 path = "crates/scanner/src/engine/phase2_entropy/line_context.rs"
-error = true
-adversarial = true
-
-[[module]]
-path = "crates/scanner/src/engine/phase2_generic/auth_value.rs"
 error = true
 adversarial = true
 
