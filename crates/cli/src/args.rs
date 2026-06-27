@@ -1,6 +1,7 @@
 //! Command-line argument parsing for KeyHog.
 
 mod calibrate;
+mod calibrate_autoroute;
 mod config;
 mod daemon;
 mod detectors;
@@ -14,6 +15,7 @@ mod scan_system;
 mod watch;
 
 pub use calibrate::CalibrateArgs;
+pub use calibrate_autoroute::CalibrateAutorouteArgs;
 pub use config::ConfigArgs;
 pub use daemon::{DaemonAction, DaemonArgs};
 pub use detectors::{DetectorArgs, DetectorFormat};
@@ -83,6 +85,10 @@ pub enum Command {
     /// Show or update per-detector Bayesian calibration counters
     #[command(verbatim_doc_comment)]
     Calibrate(CalibrateArgs),
+
+    /// Prime autoroute: calibrate every scan-policy preset × workload bucket
+    #[command(verbatim_doc_comment)]
+    CalibrateAutoroute(CalibrateAutorouteArgs),
 
     /// Watch a directory and scan files as they change (daemon mode)
     #[command(verbatim_doc_comment)]

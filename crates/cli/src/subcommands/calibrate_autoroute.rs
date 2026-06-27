@@ -1,0 +1,423 @@
+//! `keyhog calibrate-autoroute` — drive the full install-time autoroute
+//! calibration sweep in one command.
+//!
+//! The installers used to hand-roll this probe loop twice — POSIX sh in
+//! `install.sh`, PowerShell in `install.ps1` — generating a stdin + filesystem
+//! workload ladder and then running `keyhog scan --autoroute-calibrate` once
+//! per (scan-policy preset × workload) so every bucket a real scan looks up is
+//! persisted before the scan path goes live. That orchestration now lives here,
+//! in one testable place; the installer keeps only the external source probes
+//! (git / docker / web) that need environment orchestration this command does
+//! not own (Screwdriver Principle: one job — the core workload sweep — done
+//! precisely).
+//!
+//! Each probe is a real child `keyhog scan --autoroute-calibrate` process —
+//! the same invocation the installer spawned — so calibration behavior is
+//! unchanged byte for byte; only the loop moved from shell into Rust. Because
+//! it runs in the same build whose presets it sweeps, every preset flag below
+//! always exists (the installer has to grep `scan --help` because it may drive
+//! an older released binary; this command never does).
+
+use crate::args::CalibrateAutorouteArgs;
+use crate::style::Palette;
+use anyhow::{Context, Result};
+use std::io::Write;
+use std::path::Path;
+use std::process::{Command, ExitCode, Stdio};
+
+/// This binary's own scan-policy preset flags, swept in addition to the default
+/// policy. Each resolves a distinct autoroute config digest, so each needs its
+/// own calibrated decisions or a `keyhog scan <preset>` fails closed (exit 2).
+/// Keep in sync with the `--fast` / `--deep` / `--precision` flags in
+/// `args::scan`; the `every_documented_preset_resolves` e2e gate fails if a
+/// preset is missing a calibrated decision.
+const SCAN_POLICY_PRESETS: &[&str] = &["--fast", "--deep", "--precision"];
+
+/// A 1 KiB block of plain, low-decode-density text. The installer builds probes
+/// as whole 1 KiB blocks; mirroring the block size keeps a Rust-generated probe
+/// in the exact same size / decode-density bucket a shell-generated one landed.
+const PLAIN_SEED: &str = "src path one. scan text two. keyhog route plain. config value sample. ";
+
+/// A 1 KiB block dense with base64 runs — the decode-heavy bucket the scanner's
+/// decode-through path is timed against. Mirrors the installer's seed.
+const DECODE_HEAVY_SEED: &str = "apiVersion:v1 kind:Secret data token:QUtJQUlPU0ZPRE5ON0VYQU1QTEVBS0lBSU9TRk9ETk43RVhBTVBMRT0= payload:c2stcHJvai1BQkNkZWZHSElKS0xtbm9QUVJTVFVWV1hZWjAxMjM0NTY3ODkwPQ== ";
+
+/// One calibration workload: how to materialize the probe and feed it to the
+/// child scan.
+enum Workload {
+    /// Pipe `bytes` of plain content over stdin (`bytes == 0` is the empty case).
+    Stdin { label: &'static str, bytes: usize },
+    /// A single file of `kib` KiB; `decode_heavy` selects the base64-dense block.
+    File {
+        label: &'static str,
+        kib: usize,
+        decode_heavy: bool,
+    },
+    /// A directory of `files` files, each `kib` KiB of plain content.
+    Tree {
+        label: &'static str,
+        files: usize,
+        kib: usize,
+    },
+}
+
+impl Workload {
+    fn label(&self) -> &'static str {
+        match self {
+            Workload::Stdin { label, .. }
+            | Workload::File { label, .. }
+            | Workload::Tree { label, .. } => label,
+        }
+    }
+}
+
+/// The core stdin + filesystem workload ladder. The sizes span the autoroute
+/// byte / file-count / decode-density buckets a real scan resolves, matching
+/// the installer's ladder exactly so install-time and in-binary calibration
+/// cover identical buckets.
+fn core_workload_plan() -> Vec<Workload> {
+    vec![
+        Workload::Stdin {
+            label: "empty stdin workload",
+            bytes: 0,
+        },
+        Workload::Stdin {
+            label: "stdin 64 KiB workload",
+            bytes: 64 * 1024,
+        },
+        Workload::File {
+            label: "4 KiB workload",
+            kib: 4,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "64 KiB workload",
+            kib: 64,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "1 MiB workload",
+            kib: 1024,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "8 MiB workload",
+            kib: 8 * 1024,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "32 MiB workload",
+            kib: 32 * 1024,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "decode-heavy 256 KiB workload",
+            kib: 256,
+            decode_heavy: true,
+        },
+        Workload::Tree {
+            label: "4 x 4 KiB files workload",
+            files: 4,
+            kib: 4,
+        },
+        Workload::Tree {
+            label: "16 x 4 KiB files workload",
+            files: 16,
+            kib: 4,
+        },
+        Workload::Tree {
+            label: "32 x 4 KiB files workload",
+            files: 32,
+            kib: 4,
+        },
+    ]
+}
+
+/// Build `total` bytes of calibration content by repeating `seed`'s 1 KiB block.
+/// `total` is always a whole KiB multiple here, so the probe is byte-for-byte a
+/// run of identical blocks — the same shape the installer's `awk` loop emits.
+fn calibration_bytes(seed: &str, total: usize) -> Vec<u8> {
+    let block = calibration_block(seed);
+    if total == 0 {
+        return Vec::new();
+    }
+    let reps = total.div_ceil(block.len());
+    let mut out = Vec::with_capacity(reps * block.len());
+    for _ in 0..reps {
+        out.extend_from_slice(&block);
+    }
+    out.truncate(total);
+    out
+}
+
+/// Expand `seed` to exactly 1024 bytes (repeat then truncate), matching the
+/// installer's `printf '%.1024s'` block.
+fn calibration_block(seed: &str) -> Vec<u8> {
+    let mut block = String::with_capacity(1024 + seed.len());
+    while block.len() < 1024 {
+        block.push_str(seed);
+    }
+    block.truncate(1024);
+    block.into_bytes()
+}
+
+pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
+    let exe = std::env::current_exe()
+        .context("could not resolve the running keyhog binary to spawn calibration probes")?;
+    let workspace = tempfile::Builder::new()
+        .prefix("keyhog-autoroute-prime-")
+        .tempdir()
+        .context("could not create the autoroute calibration workspace")?;
+
+    let workloads = core_workload_plan();
+    // Default policy first (no preset flag), then each preset.
+    let policy_flags: Vec<Option<&str>> = std::iter::once(None)
+        .chain(SCAN_POLICY_PRESETS.iter().copied().map(Some))
+        .collect();
+    let total = workloads.len() * policy_flags.len();
+
+    let p = crate::style::for_stdout();
+    if !args.quiet {
+        println!(
+            "{bold}Autoroute calibration{reset} {dim}\u{2014} {total} core workload probes across {passes} scan {policy_word}{reset}",
+            bold = p.bold,
+            reset = p.reset,
+            dim = p.dim,
+            passes = policy_flags.len(),
+            policy_word = if policy_flags.len() == 1 { "policy" } else { "policies" },
+        );
+    }
+
+    let mut idx = 0usize;
+    let mut failed = 0usize;
+    for policy in &policy_flags {
+        for workload in &workloads {
+            idx += 1;
+            let policy_label = policy.unwrap_or("default policy");
+            if let Err(error) = run_probe(
+                &exe,
+                workspace.path(),
+                workload,
+                *policy,
+                args.autoroute_cache.as_deref(),
+                idx,
+                total,
+                policy_label,
+                args.quiet,
+                &p,
+            ) {
+                failed += 1;
+                // The probe already printed its FAIL line; surface the cause
+                // loudly (Law 10) rather than swallowing it behind the counter.
+                eprintln!("    {} {error:#}", crate::style::fail("reason:", &p));
+            }
+        }
+    }
+
+    if failed > 0 {
+        anyhow::bail!(
+            "autoroute calibration failed for {failed}/{total} workload probes; \
+             persisted routing was not updated for every required bucket"
+        );
+    }
+
+    let cache_note = match args.autoroute_cache.as_deref() {
+        Some("off") => "persistence disabled (--autoroute-cache off)".to_string(),
+        Some(path) => path.to_string(),
+        None => "the default autoroute cache".to_string(),
+    };
+    println!(
+        "{check} calibrated {green}{total}{reset} workload {bucket_word} across {green}{passes}{reset} scan {policy_word} \u{2192} {dim}{cache}{reset}",
+        check = crate::style::pass("\u{2713}", &p),
+        green = p.green,
+        reset = p.reset,
+        dim = p.dim,
+        bucket_word = if total == 1 { "bucket" } else { "buckets" },
+        passes = policy_flags.len(),
+        policy_word = if policy_flags.len() == 1 { "policy" } else { "policies" },
+        cache = cache_note,
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Materialize one probe and run a child `keyhog scan --autoroute-calibrate`
+/// against it. Returns `Err` (with the child's first stderr line) if the probe
+/// could not be created or the scan exited non-zero.
+#[allow(clippy::too_many_arguments)]
+fn run_probe(
+    exe: &Path,
+    workspace: &Path,
+    workload: &Workload,
+    policy: Option<&str>,
+    autoroute_cache: Option<&str>,
+    idx: usize,
+    total: usize,
+    policy_label: &str,
+    quiet: bool,
+    p: &Palette,
+) -> Result<()> {
+    let label = workload.label();
+    if !quiet {
+        print!(
+            "  [{idx}/{total}] {tag} {label} {dim}({policy_label}){reset} ",
+            tag = crate::style::info("calibrating", p),
+            dim = p.dim,
+            reset = p.reset,
+        );
+        std::io::stdout().flush().ok();
+    }
+
+    let out = workspace.join(format!("probe-{idx}.json"));
+    let mut cmd = Command::new(exe);
+    cmd.arg("scan").arg("--autoroute-calibrate").arg("--no-config");
+    if let Some(cache) = autoroute_cache {
+        cmd.arg("--autoroute-cache").arg(cache);
+    }
+    // The probe target (positional path, or `--stdin` + piped file) is added by
+    // `materialize_probe`; the returned handle, if any, becomes the child stdin.
+    let stdin_handle = materialize_probe(workspace, idx, workload, &mut cmd)
+        .with_context(|| format!("creating {label} calibration probe"))?;
+    if let Some(flag) = policy {
+        cmd.arg(flag);
+    }
+    cmd.arg("--format").arg("json").arg("-o").arg(&out);
+    cmd.stdout(Stdio::null());
+    cmd.stderr(Stdio::piped());
+    match stdin_handle {
+        Some(file) => {
+            cmd.stdin(Stdio::from(file));
+        }
+        None => {
+            cmd.stdin(Stdio::null());
+        }
+    }
+
+    let output = cmd
+        .output()
+        .with_context(|| format!("spawning {label} calibration probe"))?;
+    if output.status.success() {
+        if !quiet {
+            println!("{}", crate::style::pass("ok", p));
+        }
+        Ok(())
+    } else {
+        if !quiet {
+            println!("{}", crate::style::fail("FAIL", p));
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let reason = stderr
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("no error output");
+        anyhow::bail!("{label} ({policy_label}): {reason}");
+    }
+}
+
+/// Write the probe for `workload` under `workspace` and add its target to `cmd`.
+/// Returns an open stdin file for stdin workloads (the caller wires it to the
+/// child), or `None` for path / tree workloads (added as a positional arg).
+fn materialize_probe(
+    workspace: &Path,
+    idx: usize,
+    workload: &Workload,
+    cmd: &mut Command,
+) -> Result<Option<std::fs::File>> {
+    match workload {
+        Workload::Stdin { bytes, .. } => {
+            let path = workspace.join(format!("stdin-{idx}.bin"));
+            std::fs::write(&path, calibration_bytes(PLAIN_SEED, *bytes))
+                .with_context(|| format!("writing stdin probe {}", path.display()))?;
+            cmd.arg("--stdin");
+            let file = std::fs::File::open(&path)
+                .with_context(|| format!("opening stdin probe {}", path.display()))?;
+            Ok(Some(file))
+        }
+        Workload::File {
+            kib, decode_heavy, ..
+        } => {
+            let path = workspace.join(format!("file-{idx}.txt"));
+            let seed = if *decode_heavy {
+                DECODE_HEAVY_SEED
+            } else {
+                PLAIN_SEED
+            };
+            std::fs::write(&path, calibration_bytes(seed, kib * 1024))
+                .with_context(|| format!("writing file probe {}", path.display()))?;
+            cmd.arg(&path);
+            Ok(None)
+        }
+        Workload::Tree { files, kib, .. } => {
+            let tree = workspace.join(format!("tree-{idx}"));
+            std::fs::create_dir_all(&tree)
+                .with_context(|| format!("creating tree probe {}", tree.display()))?;
+            for file_idx in 0..*files {
+                let path = tree.join(format!("file-{file_idx}.txt"));
+                std::fs::write(&path, calibration_bytes(PLAIN_SEED, kib * 1024))
+                    .with_context(|| format!("writing tree probe {}", path.display()))?;
+            }
+            cmd.arg(&tree);
+            Ok(None)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plain_block_is_exactly_one_kib() {
+        assert_eq!(calibration_block(PLAIN_SEED).len(), 1024);
+        assert_eq!(calibration_block(DECODE_HEAVY_SEED).len(), 1024);
+    }
+
+    #[test]
+    fn calibration_bytes_are_whole_kib_runs() {
+        assert!(calibration_bytes(PLAIN_SEED, 0).is_empty());
+        assert_eq!(calibration_bytes(PLAIN_SEED, 4 * 1024).len(), 4 * 1024);
+        assert_eq!(calibration_bytes(PLAIN_SEED, 64 * 1024).len(), 64 * 1024);
+        // The first 1024 bytes equal one block (probes are block runs, not noise).
+        let buf = calibration_bytes(PLAIN_SEED, 8 * 1024);
+        assert_eq!(&buf[..1024], calibration_block(PLAIN_SEED).as_slice());
+    }
+
+    #[test]
+    fn workload_plan_matches_the_installer_ladder() {
+        let plan = core_workload_plan();
+        // 2 stdin + 5 single-file (incl. decode-heavy) + 3 file-tree workloads.
+        assert_eq!(plan.len(), 11);
+        let labels: Vec<&str> = plan.iter().map(Workload::label).collect();
+        assert!(labels.contains(&"empty stdin workload"));
+        assert!(labels.contains(&"decode-heavy 256 KiB workload"));
+        assert!(labels.contains(&"32 MiB workload"));
+        assert!(labels.contains(&"32 x 4 KiB files workload"));
+    }
+
+    #[test]
+    fn decode_heavy_block_is_denser_than_plain() {
+        // The decode-heavy seed must carry materially more base64-alphabet run
+        // content than the plain seed, or the two probes collapse into the same
+        // decode-density bucket and the decode-through path is never timed.
+        fn longest_b64_run(bytes: &[u8]) -> usize {
+            let mut best = 0usize;
+            let mut run = 0usize;
+            for &b in bytes {
+                let b64 = b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'=');
+                if b64 {
+                    run += 1;
+                    best = best.max(run);
+                } else {
+                    run = 0;
+                }
+            }
+            best
+        }
+        let plain = longest_b64_run(calibration_block(PLAIN_SEED).as_slice());
+        let heavy = longest_b64_run(calibration_block(DECODE_HEAVY_SEED).as_slice());
+        assert!(
+            heavy >= plain + 24,
+            "decode-heavy block (longest b64 run {heavy}) must clear the plain block \
+             (longest run {plain}) by the encoded-run threshold"
+        );
+    }
+}

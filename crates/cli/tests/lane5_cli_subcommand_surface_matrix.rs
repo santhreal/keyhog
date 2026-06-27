@@ -38,6 +38,7 @@ const SUBCOMMANDS: &[&str] = &[
     "explain",
     "diff",
     "calibrate",
+    "calibrate-autoroute",
     "watch",
     "completion",
     "backend",

@@ -281,6 +281,9 @@ pub async fn cli_main() -> ExitCode {
         Some(args::Command::Calibrate(args)) => {
             subcommands::calibrate::run(args).map(|()| ExitCode::SUCCESS)
         }
+        Some(args::Command::CalibrateAutoroute(args)) => {
+            subcommands::calibrate_autoroute::run(args)
+        }
         Some(args::Command::Watch(args)) => {
             subcommands::watch::run(args).map(|()| ExitCode::SUCCESS)
         }

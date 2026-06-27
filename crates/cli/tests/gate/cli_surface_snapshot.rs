@@ -26,6 +26,7 @@ use keyhog::args::command;
 const BASE_SUBCOMMANDS: &[&str] = &[
     "backend",
     "calibrate",
+    "calibrate-autoroute",
     "completion",
     "config",
     "daemon",
