@@ -32,7 +32,11 @@ fn every_corpus_separator_form_collapses_to_canonical() {
         "[-_]?",
         "[_\\t\\r\\n ]{1,16}",
     ] {
-        assert_eq!(canon(&format!("api{form}key")), want, "form {form:?} did not canonicalize");
+        assert_eq!(
+            canon(&format!("api{form}key")),
+            want,
+            "form {form:?} did not canonicalize"
+        );
     }
 }
 
@@ -49,11 +53,11 @@ fn pure_whitespace_classes_are_left_alone() {
 fn non_separator_classes_are_untouched() {
     for s in [
         "[a-z]+",
-        "([A-Za-z0-9_\\-]{32,})",  // token body — has letters/digits
-        "[=:\\s\"']+",             // value assignment — has = : " '
-        "\\b(?:avaya)\\b",         // no class at all
-        "[0-9a-f]{32}",            // hex body
-        "(?:KEY|key)[\\d]{4}",     // \d is not a separator
+        "([A-Za-z0-9_\\-]{32,})", // token body — has letters/digits
+        "[=:\\s\"']+",            // value assignment — has = : " '
+        "\\b(?:avaya)\\b",        // no class at all
+        "[0-9a-f]{32}",           // hex body
+        "(?:KEY|key)[\\d]{4}",    // \d is not a separator
     ] {
         assert_eq!(canon(s), s, "{s:?} must be untouched");
     }
@@ -99,7 +103,10 @@ fn unchanged_input_is_borrowed() {
 fn non_ascii_literal_is_preserved() {
     // A regex carrying a multibyte literal must round-trip byte-exact while a
     // separator elsewhere is still canonicalized.
-    assert_eq!(canon("café[_-]?key"), format!("café{CANONICAL_SEPARATOR}key"));
+    assert_eq!(
+        canon("café[_-]?key"),
+        format!("café{CANONICAL_SEPARATOR}key")
+    );
 }
 
 #[test]
@@ -107,10 +114,22 @@ fn the_canonical_class_compiles_and_matches_real_spacings() {
     // Guard the canonical string itself: a valid regex that matches no-sep,
     // single, double, tab, hyphen, and underscore spacings between words.
     let re = regex::Regex::new(&format!("api{CANONICAL_SEPARATOR}key")).unwrap();
-    for s in ["apikey", "api key", "api  key", "api\tkey", "api-key", "api_key", "api__key", "api - key"] {
+    for s in [
+        "apikey",
+        "api key",
+        "api  key",
+        "api\tkey",
+        "api-key",
+        "api_key",
+        "api__key",
+        "api - key",
+    ] {
         assert!(re.is_match(s), "canonical must match {s:?}");
     }
-    assert!(!re.is_match("apiXkey"), "must not bridge a non-separator byte");
+    assert!(
+        !re.is_match("apiXkey"),
+        "must not bridge a non-separator byte"
+    );
 }
 
 #[test]
@@ -120,6 +139,12 @@ fn deepnote_style_nested_separator_canonicalizes_to_unbounded() {
     // validator's acceptance of an unbounded simple-class repeat nested in a
     // counted group is covered by `validate.rs`.
     let out = canon("(?:DEEPNOTE)(?:[_\\t\\r\\n ]{1,16}(?:API|KEY)){1,3}");
-    assert!(out.contains(CANONICAL_SEPARATOR), "separator must be canonicalized: {out}");
-    assert!(!out.contains("{1,16}"), "the bounded separator must be replaced: {out}");
+    assert!(
+        out.contains(CANONICAL_SEPARATOR),
+        "separator must be canonicalized: {out}"
+    );
+    assert!(
+        !out.contains("{1,16}"),
+        "the bounded separator must be replaced: {out}"
+    );
 }

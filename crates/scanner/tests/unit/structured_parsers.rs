@@ -286,7 +286,11 @@ const K8S_DERIVED_INVALID: &str =
 #[test]
 fn k8s_depth0_extracts_decoded_jwt() {
     let pairs = parse_k8s_secret_derived(K8S_JWT_SECRET, false);
-    assert_eq!(pairs.len(), 1, "the single data: value must produce one pair");
+    assert_eq!(
+        pairs.len(),
+        1,
+        "the single data: value must produce one pair"
+    );
     assert!(
         pairs[0].value.as_str().starts_with("eyJ") && pairs[0].value.as_str().contains('.'),
         "the extracted value is the decoded JWT, not the base64 blob: {:?}",
@@ -313,7 +317,9 @@ fn tfstate_depth0_extracts_output_value() {
         false,
     );
     assert!(
-        pairs.iter().any(|p| p.value.as_str() == "s3cr3t-value-here"),
+        pairs
+            .iter()
+            .any(|p| p.value.as_str() == "s3cr3t-value-here"),
         "depth-0 tfstate output value must be extracted: {:?}",
         pairs.iter().map(|p| p.value.as_str()).collect::<Vec<_>>()
     );
@@ -331,7 +337,9 @@ fn jupyter_depth0_extracts_code_cell_source() {
         false,
     );
     assert!(
-        pairs.iter().any(|p| p.value.as_str().contains("leaked-secret-123")),
+        pairs
+            .iter()
+            .any(|p| p.value.as_str().contains("leaked-secret-123")),
         "depth-0 jupyter code cell source must be extracted: {:?}",
         pairs.iter().map(|p| p.value.as_str()).collect::<Vec<_>>()
     );

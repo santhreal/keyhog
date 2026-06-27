@@ -34,7 +34,14 @@ fn scan_output_to_dev_null_succeeds_and_reports_findings_exit_code() {
     std::fs::write(&leak, format!("GITHUB_TOKEN={PLANTED}\n")).expect("write fixture");
 
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--backend", "cpu", "--format", "json"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "cpu",
+            "--format",
+            "json",
+        ])
         .args(["--output", "/dev/null"])
         .arg(&leak)
         .env("KEYHOG_NO_GPU", "1")
@@ -46,8 +53,7 @@ fn scan_output_to_dev_null_succeeds_and_reports_findings_exit_code() {
     // The pre-fix failure mode: the atomic temp+rename could not create
     // `/dev/.tmpXXXX`, so reporting aborted. Neither error string may appear.
     assert!(
-        !stderr.contains("atomically writing report")
-            && !stderr.contains("Permission denied"),
+        !stderr.contains("atomically writing report") && !stderr.contains("Permission denied"),
         "writing the report to /dev/null must not fail with an atomic-rename error; \
          stderr was:\n{stderr}"
     );

@@ -22,9 +22,9 @@ const BINARY_NUL_RUN: usize = 4;
 /// overlap, so this never double-reports. Only non-ASCII-dominant UTF-16 (rare:
 /// the common ASCII/Latin UTF-16 config/source/secret file is returned untouched
 /// with exact offsets) pays the second view, so the whole-scan cost is a rounding
-/// error (LAW10 speed bound). LAW10: closes the silent-recall-loss / false-clean
-/// hole on BOM-prefixed non-UTF-16 input without touching the genuine-UTF-16 fast
-/// path.
+/// error (LAW10 speed bound). LAW10: the appended lossy view keeps the ASCII
+/// secret scannable, so findings are unchanged and recall is preserved on
+/// BOM-prefixed non-UTF-16 input; the genuine-UTF-16 fast path is untouched.
 fn append_lossy_view_if_non_ascii_utf16(utf16_text: String, raw: &[u8]) -> String {
     let total = utf16_text.chars().count();
     if total == 0 {

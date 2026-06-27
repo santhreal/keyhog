@@ -240,8 +240,8 @@ fn decode_text_file_bom_prefixed_non_utf16_preserves_ascii_secret_via_lossy_appe
     bytes.extend_from_slice(format!("GITHUB_TOKEN={secret}\n").as_bytes());
     bytes.extend_from_slice(&[0x80, 0x81]);
 
-    let decoded =
-        decode_text_file(&bytes).expect("BOM-prefixed non-UTF-16 buffer still decodes (not binary)");
+    let decoded = decode_text_file(&bytes)
+        .expect("BOM-prefixed non-UTF-16 buffer still decodes (not binary)");
     assert!(
         decoded.contains(secret),
         "a BOM-prefixed non-UTF-16 file must keep its ASCII secret scannable via the \

@@ -191,8 +191,10 @@ fn source_line_at(source: &str, start: usize) -> Option<&str> {
     // `&source[start..]` panics with "byte index N is not a char boundary" and
     // aborts the whole worker. Snap DOWN to the enclosing char boundary - the
     // line that contains that byte is unchanged - so the slice is always valid.
-    // LAW10: a scanner must never panic/abort on hostile bytes; this mirrors the
-    // pervasive `floor_char_boundary` guarding the engine's other offset slices.
+    // LAW10: snapping down to a char boundary is recall-preserving -- the same
+    // line text is scanned and findings are unchanged; it only prevents a panic
+    // on a mid-scalar byte index. Mirrors the pervasive `floor_char_boundary`
+    // guarding the engine's other offset slices.
     let start = crate::engine::floor_char_boundary(source, start);
     let rest = &source[start..];
     let end = rest.find('\n').unwrap_or(rest.len()); // LAW10: no newline means the line runs to source end; reporting-only coordinate slice

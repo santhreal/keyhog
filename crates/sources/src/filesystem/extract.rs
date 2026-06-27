@@ -69,9 +69,9 @@ fn is_symlink(path: &Path) -> bool {
 /// (see the call site in `process_entry`). The probe is a no-follow-safe
 /// 2-byte prefix read.
 ///
-/// LAW10: a failed or short prefix probe returns `false`, NOT a silent skip —
-/// the caller's windowed path then runs and itself loudly surfaces any
-/// unreadable file, so this classifier can never produce a silent false-clean.
+/// LAW10: a failed or short prefix probe returns `false` (not a skip); the
+/// windowed path still runs and any unreadable file is surfaced and recorded
+/// there as a counted skip, so this classifier never yields a silent false-clean.
 fn file_starts_with_utf16_bom(path: &Path) -> bool {
     let mut bom = [0u8; 2];
     matches!(read::read_file_prefix_safe(path, &mut bom), Ok(2))
@@ -472,9 +472,9 @@ pub(super) fn process_entry(
     // mapping (correct UTF-16 decode + exact line/col), is bounded by the same
     // 2 GiB mmap sanity cap (an over-cap or TOCTOU-grown file is a loud counted
     // skip), and routes a non-UTF-16 buffer that merely starts with the BOM bytes
-    // to printable-string scanning. LAW10: closes the silent windowed-path UTF-16
-    // recall hole that returned a false "clean" on large Windows/PowerShell/.NET
-    // UTF-16 files holding ASCII secrets.
+    // to printable-string scanning. LAW10: routes UTF-16 to the single-chunk
+    // decode so its ASCII secrets are scanned, not dropped -- the prior raw-byte
+    // windowed path silently lost them (false clean); recall is preserved.
     if file_size > window_size as u64 && !file_starts_with_utf16_bom(&path) {
         let display = display_path(&path);
         let mut consumer_stopped = false;

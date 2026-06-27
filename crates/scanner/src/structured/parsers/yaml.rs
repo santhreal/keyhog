@@ -19,15 +19,11 @@ use serde::Deserialize;
 /// must not be counted or announced as a lost decode surface (that would be a
 /// false Law-10 alarm and would inflate the structured-parse-failure telemetry).
 pub(crate) fn parse_k8s_secret(text: &str, decode_derived: bool) -> Vec<ExtractedPair> {
-    let values = match parse_yaml_documents(
-        text,
-        "k8s-secret",
-        "base64 data: values",
-        decode_derived,
-    ) {
-        Some(values) => values,
-        None => return Vec::new(),
-    };
+    let values =
+        match parse_yaml_documents(text, "k8s-secret", "base64 data: values", decode_derived) {
+            Some(values) => values,
+            None => return Vec::new(),
+        };
 
     let mut pending = Vec::new();
     for value in &values {
@@ -77,13 +73,17 @@ fn extract_k8s_secret_maps(
             let decoded = match keyhog_core::decode_standard_base64(&encoded) {
                 Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
                 Err(error) => {
-                    // On a decode-derived buffer the `data:` value has already
-                    // been decoded by the pipeline (e.g. the base64 blob decoded
-                    // to a JWT), so it is NOT base64 a second time - failing to
-                    // re-decode it loses nothing and must not be counted as a
-                    // coverage gap (false Law-10 alarm). At depth 0 a non-base64
-                    // `data:` value IS a genuine decode-through gap (counted).
+                    // LAW10: at depth 0 `structured_gap_is_real` records the
+                    // structured-parse-failure counter, so a genuine decode-through
+                    // gap is counted and surfaced; at depth>0 the `data:` value was
+                    // already decoded once by the pipeline, so the re-decode failure
+                    // loses nothing and is correctly not counted. The raw value
+                    // still flows through the normal whole-chunk scan, so recall is
+                    // preserved either way (the bool is unused; we always continue).
                     let _ = super::structured_gap_is_real(decode_derived);
+                    // LAW10: supplementary diagnostic only -- the gap was already
+                    // counted and surfaced above and recall is preserved by the
+                    // whole-chunk scan, so this debug line is not the sole surface.
                     tracing::debug!(
                         target: "keyhog::structured",
                         key,
