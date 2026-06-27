@@ -302,16 +302,6 @@ hash:e24897816e2d61526e61bf2041e4d1c6747cc5129ed1d52f00fb02167bfd0b0d
 hash:f4913b0dd2685cbdf7af5d2fb5c8b21c1389ff106f99f4f4296d3ae3b7ffda17
 hash:f6dc8f29e382dcc29478e74e5419e82c8d03453461b06224b9f8d573cc2bd79f
 hash:f9b149f9188fb49b28ee28794382c1d4bc655f6b5086e01da4d5308372fbb87e
-# docs/EXECUTION_PLAN.md is the master planning / execution doc. Like CHANGELOG.md
-# and backlog/ above, it quotes detector IDs, cargo test-command lines, and
-# credential SHAPES verbatim while documenting detector behavior - e.g. a
-# `regression_*` test-name command line whose substring matches the
-# chef-automate-token / thehive-api-key / deepl-api-key regexes, and a
-# negative-corpus discussion of the vercel-edge-function-credentials detector that
-# embeds the CUDNN_BACKEND_ENGINECFG_DESCRIPTOR counter-example it fires on. The
-# pinned v0.5.37 dogfood binary surfaces five such doc FPs. Documentation about
-# findings, not live secrets - same rationale as CHANGELOG.md / analysis docs.
-path:docs/EXECUTION_PLAN.md
 # Fabricated test/probe fixtures the pinned v0.5.37 dogfood binary surfaces from
 # inline-test and ML-probe SOURCE. These three source files contain ONLY
 # fabricated detector-shape fixtures (no real credential ever belongs in them),
