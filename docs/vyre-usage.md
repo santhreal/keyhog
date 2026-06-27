@@ -7,7 +7,7 @@ catalogues every crate it ships so future wires don't have to
 re-discover the surface.
 
 Updated 2026-06-19. The workspace pins all five runtime `vyre*` crates at
-`=0.6.3` (vyre v0.6.3) from crates.io (root `Cargo.toml`, `[workspace.dependencies]`). That
+`=0.6.4` (vyre v0.6.4) from crates.io (root `Cargo.toml`, `[workspace.dependencies]`). That
 release carries the literal-set region APIs Keyhog imports, including
 `GpuLiteralSet::scan_presence_by_region_with_scratch`
 (`engine/gpu_region_dispatch.rs` via `engine/gpu_literal_scratch.rs`). The
@@ -113,7 +113,7 @@ The SPIR-V backend (Vulkan-only path). Same surface as wgpu.
 ### vyre-driver-cuda
 
 CUDA backend, shipped through the workspace `cuda` feature via
-`vyre-driver-cuda = 0.6.3`.
+`vyre-driver-cuda = 0.6.4`.
 
 ### vyre-driver-reference
 
@@ -276,7 +276,7 @@ by primitive authors.
 | `fuse_programs` decode+scan          | ⏳ pending  | needs source/scanner restructure (entry below)         |
 | `nn::moe` replacing gpu.rs MoE       | ⏳ pending  | parity work against existing weights (entry below)     |
 | `GpuMappedBuffer` zero-copy I/O      | ⏳ pending  | Linux-only + lifetime work (entry below)               |
-| Vyre crate upgrade                   | current     | crates.io latest verified as `0.6.3` on 2026-06-17    |
+| Vyre crate upgrade                   | current     | crates.io latest verified as `0.6.4` on 2026-06-17    |
 
 ## Innovation lane
 
@@ -576,7 +576,7 @@ bitmap Keyhog needs.
   Megakernel fusion (item 8) is the right fix.
 
 - **vyre regex/frontend release cadence.** crates.io's latest published Vyre
-  release used by Keyhog is `0.6.3`. The workspace resolves the five runtime
+  release used by Keyhog is `0.6.4`. The workspace resolves the five runtime
   `vyre*` crates from exact registry pins, and the GPU regex-DFA admission path imports
   `vyre_libs::scan::build_regex_dfa_unanchored` from that release. Future
   upgrades bump the workspace pins, run

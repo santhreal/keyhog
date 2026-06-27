@@ -27,7 +27,7 @@ import tomllib
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 ROOT_CARGO = REPO / "Cargo.toml"
-REQUIRED_VERSION = "0.6.3"
+REQUIRED_VERSION = "0.6.4"
 
 # Logical dep key in [workspace.dependencies] -> published crate name.
 VYRE_DEPS: dict[str, str] = {
@@ -40,7 +40,7 @@ VYRE_DEPS: dict[str, str] = {
 
 
 def _strip_version_op(v: str) -> str:
-    """`=0.6.3` -> `0.6.3`; `0.6.3` -> `0.6.3`."""
+    """`=0.6.4` -> `0.6.4`; `0.6.4` -> `0.6.4`."""
     return v.lstrip("=").strip()
 
 

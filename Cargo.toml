@@ -116,7 +116,7 @@ ahash = "=0.8.12"
 
 # Performance libraries
 simdsieve = "=0.1.1"
-# vyre 0.6.3 is published to crates.io and carries the megakernel + segmentation
+# vyre 0.6.4 is published to crates.io and carries the megakernel + segmentation
 # APIs keyhog imports (`vyre_driver_wgpu::megakernel::segmentation`,
 # `vyre_libs::scan::build_regex_dfa_unanchored`, etc.). Keyhog consumes the five
 # runtime vyre crates through exact registry pins only: no path overrides, no
@@ -124,11 +124,11 @@ simdsieve = "=0.1.1"
 # CUDA backend is wired in keyhog-scanner behind the `cuda` feature
 # (default on). On hosts without libcuda.so the backend's `acquire()`
 # call fails cleanly and the scanner falls back to wgpu.
-vyre = "=0.6.3"
-vyre_libs = { package = "vyre-libs", version = "=0.6.3" }
-vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.3" }
-vyre-driver-cuda = { package = "vyre-driver-cuda", version = "=0.6.3" }
-vyre-runtime = "=0.6.3"
+vyre = "=0.6.4"
+vyre_libs = { package = "vyre-libs", version = "=0.6.4" }
+vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.4" }
+vyre-driver-cuda = { package = "vyre-driver-cuda", version = "=0.6.4" }
+vyre-runtime = "=0.6.4"
 wgpu = "=25.0.2"
 pollster = "=0.4.0"
 bytemuck = { version = "=1.25.0", features = ["derive"] }
