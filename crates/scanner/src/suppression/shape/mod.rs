@@ -5,7 +5,12 @@
 
 mod canonical;
 mod path;
-#[cfg(any(feature = "entropy", test))]
+// `prose` is consumed by `engine::phase2_entropy::gates`, which is compiled
+// unconditionally (engine/mod.rs declares `mod phase2_entropy` with no cfg), so
+// the predicate must be available in every feature combo. Gating it on
+// `feature = "entropy"` broke `--no-default-features` builds with E0425
+// (Feature matrix CI). It is a tiny pure string predicate, so always compiling
+// it costs nothing.
 mod prose;
 mod public;
 mod source;
@@ -25,7 +30,6 @@ pub(crate) use canonical::{
 pub(crate) use path::{
     looks_like_filename_reference, looks_like_scheme_prefixed_uri, looks_like_url_or_path_segment,
 };
-#[cfg(any(feature = "entropy", test))]
 pub(crate) use prose::looks_like_english_prose;
 pub(crate) use public::{
     looks_like_html_event_handler_fragment, looks_like_percent_encoded_markup,
