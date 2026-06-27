@@ -112,7 +112,12 @@ mod interrupt {
         // SAFETY: registering a process-wide handler before the runtime and any
         // worker/reader threads start; `handle_sigint` is async-signal-safe.
         unsafe {
-            libc::signal(libc::SIGINT, handle_sigint as libc::sighandler_t);
+            // Cast the fn item via a thin pointer first: a direct fn-item -> integer
+            // cast trips `function_casts_as_integer` (a fn item is not an address).
+            libc::signal(
+                libc::SIGINT,
+                handle_sigint as *const () as libc::sighandler_t,
+            );
         }
     }
 }
