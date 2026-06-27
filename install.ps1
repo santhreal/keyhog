@@ -953,7 +953,27 @@ function Invoke-AutorouteCalibration {
                 New-Item -ItemType File -Force -Path $emptyConfig | Out-Null
                 @('--config', $emptyConfig)
             }
-            $batchArgs = @('--autoroute-calibrate', '--batch-pipeline', '--autoroute-gpu')
+            # Calibrate the SAME resolved-config digest a real scan requests. The
+            # autoroute config digest hashes routing/pipeline knobs (batch_pipeline,
+            # autoroute_gpu); forcing `--batch-pipeline --autoroute-gpu` here keyed the
+            # cache to a digest a plain `keyhog scan .` never looks up (a filesystem
+            # auto scan cannot route GPU and does not force the coalesced batch
+            # pipeline), so every default Windows scan failed closed (exit 2). The base
+            # calibration now matches the default scan path; GPU/coalesced routing is a
+            # separate, explicit opt-in digest, calibrated on first such scan. (Parity
+            # with install.sh, which made the same fix on Unix.)
+            $batchArgs = @('--autoroute-calibrate')
+            # Calibrate the documented scan-policy presets too: each changes scanner
+            # fields hashed into the config digest, so `keyhog scan . --fast` resolves a
+            # DIFFERENT digest than the default and needs its own decisions or it fails
+            # closed. The v20 multi-config cache lets the default + every preset coexist;
+            # only presets this build's `scan --help` actually exposes are calibrated.
+            $autoroutePresets = @()
+            foreach ($presetFlag in @('--fast', '--deep', '--precision')) {
+                if ($scanHelp -match [regex]::Escape($presetFlag)) {
+                    $autoroutePresets += $presetFlag
+                }
+            }
             $unavailableCalibrations = @()
             $gitCalibration = $false
             $gitPath = $null
@@ -1119,15 +1139,36 @@ function Invoke-AutorouteCalibration {
                 }
             }
 
-            for ($i = 0; $i -lt $workloads.Count; $i++) {
-                $workload = $workloads[$i]
-                $label = "  [{0}/{1}] {2}" -f ($i + 1), $workloads.Count, $workload.Label
+            # Core stdin + filesystem workloads calibrate once per scan-policy preset
+            # (default policy first, then each supported preset); external-source
+            # workloads (git/docker/web) calibrate the default policy only — mirrors
+            # the install.sh `for autoroute_scan_flags in "" $autoroute_presets` loop.
+            $coreModes = @('stdin', 'path')
+            $presetPasses = @('') + $autoroutePresets
+            $probePlan = @()
+            foreach ($pass in $presetPasses) {
+                foreach ($w in $workloads) {
+                    if ($coreModes -contains $w.Mode) {
+                        $probePlan += [pscustomobject]@{ Workload = $w; Preset = $pass }
+                    }
+                }
+            }
+            foreach ($w in $workloads) {
+                if ($coreModes -notcontains $w.Mode) {
+                    $probePlan += [pscustomobject]@{ Workload = $w; Preset = '' }
+                }
+            }
+            for ($i = 0; $i -lt $probePlan.Count; $i++) {
+                $workload = $probePlan[$i].Workload
+                $presetArgs = if ($probePlan[$i].Preset) { @($probePlan[$i].Preset) } else { @() }
+                $passSuffix = if ($probePlan[$i].Preset) { " [$($probePlan[$i].Preset)]" } else { '' }
+                $label = "  [{0}/{1}] {2}{3}" -f ($i + 1), $probePlan.Count, $workload.Label, $passSuffix
                 switch ($workload.Mode) {
                     'stdin' {
-                        $args = @('scan', '--stdin') + $batchArgs + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                        $args = @('scan', '--stdin') + $batchArgs + $presetArgs + $configArgs + @('--format', 'json', '-o', $workload.Out)
                     }
                     'path' {
-                        $args = @('scan', $workload.Target) + $batchArgs + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                        $args = @('scan', $workload.Target) + $batchArgs + $presetArgs + $configArgs + @('--format', 'json', '-o', $workload.Out)
                     }
                     'git-history' {
                         $args = @('scan', '--git-history', $workload.Target, '--max-commits', '1') + $batchArgs + $configArgs + @('--format', 'json', '-o', $workload.Out)
@@ -1190,7 +1231,7 @@ function Invoke-AutorouteCalibration {
                 Warn ("Autoroute calibration incomplete for unavailable source classes: {0}." -f ($unavailableCalibrations -join ', '))
                 Warn "Install the required source tools and rerun install.ps1 -Calibrate before using those source routes."
             }
-            if (-not (Show-AutorouteCalibrationSummary -ProbeCount $workloads.Count -StartedAt $calibrationStartedAt)) {
+            if (-not (Show-AutorouteCalibrationSummary -ProbeCount $probePlan.Count -StartedAt $calibrationStartedAt)) {
                 Err "Autoroute calibration completed but persisted decisions could not be read back."
                 return $false
             }
