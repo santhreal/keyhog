@@ -47,3 +47,4 @@ pub mod sanitise_thread_count_caps_pathological;
 pub mod sanitise_thread_count_passes_sane_values;
 pub mod sanitise_thread_count_zero_fallback;
 pub mod scanner_panic_notice_surfaced;
+pub mod watch_forced_backend_no_calibration;

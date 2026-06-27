@@ -23,7 +23,7 @@ fn scan_system_uses_shared_scan_runtime_boundary() {
         "load_detectors_or_embedded(detectors_path)",
         "detector_compile_failed(subcommand_name, detectors_path, e)",
         "fn scan_chunk(&self, chunk: &Chunk)",
-        "self.router.choose(None, std::slice::from_ref(chunk))",
+        ".choose(self.backend_override, std::slice::from_ref(chunk))",
         "self.scanner.scan_with_backend(chunk, backend)",
     ] {
         assert!(

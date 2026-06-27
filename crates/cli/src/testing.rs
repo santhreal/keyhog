@@ -341,6 +341,11 @@ pub trait CliTestApi {
         &self,
         raw: Option<&str>,
     ) -> Result<Option<keyhog_scanner::ScanBackend>>;
+    /// Build a `DefaultScanRuntime` forced to the explicit `backend` (e.g. "cpu")
+    /// and scan `body`, returning the detector ids found. Proves a forced backend
+    /// scans WITHOUT autoroute calibration — the `keyhog watch --backend` fix.
+    fn forced_backend_runtime_detector_ids(&self, backend: &str, body: &str)
+        -> Result<Vec<String>>;
     fn allowlist_root_for_test(&self, path: &Path) -> PathBuf;
     fn backend_requires_coalesced_batch_pipeline_for_test(
         &self,
@@ -983,6 +988,32 @@ impl CliTestApi for TestApi {
         raw: Option<&str>,
     ) -> Result<Option<keyhog_scanner::ScanBackend>> {
         crate::orchestrator::explicit_backend_override(raw)
+    }
+    fn forced_backend_runtime_detector_ids(
+        &self,
+        backend: &str,
+        body: &str,
+    ) -> Result<Vec<String>> {
+        let detectors = keyhog_core::load_embedded_detectors_or_fail()?;
+        let forced = crate::orchestrator::explicit_backend_override(Some(backend))?
+            .ok_or_else(|| anyhow::anyhow!("'{backend}' is auto, not an explicit backend"))?;
+        let runtime = crate::orchestrator::compile_default_scan_runtime(detectors, |e| {
+            anyhow::anyhow!("{e}")
+        })?
+        .with_backend_override(Some(forced));
+        let chunk = keyhog_core::Chunk {
+            data: body.to_string().into(),
+            metadata: keyhog_core::ChunkMetadata {
+                source_type: "filesystem".into(),
+                path: Some("watched.env".to_string()),
+                ..Default::default()
+            },
+        };
+        Ok(runtime
+            .scan_chunk(&chunk)?
+            .iter()
+            .map(|m| m.detector_id.as_ref().to_string())
+            .collect())
     }
     fn allowlist_root_for_test(&self, path: &Path) -> PathBuf {
         crate::orchestrator::allowlist_root_for_test(path)
