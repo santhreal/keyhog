@@ -274,7 +274,7 @@ pub(crate) fn shared_regex_compile(
 /// `Arc<Regex>` across every detector that uses it. The embedded corpus
 /// has ~6-15% duplicate regexes (Google, JWT, Slack shapes); this collapses
 /// each duplicate set into a single compiled instance, cutting startup
-/// compile time and resident memory proportionally - see docs/EXECUTION_PLAN.md.
+/// compile time and resident memory proportionally - see the internal design notes.
 ///
 /// The cache is process-wide and bounded: a sharded `parking_lot::Mutex<
 /// lru::LruCache<...>>` (mirroring `fragment_cache`) caps total

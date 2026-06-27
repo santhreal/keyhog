@@ -1,6 +1,6 @@
 //! Bayesian Beta(α, β) calibration per detector.
 //!
-//! Tier-B moat innovation #4 from docs/EXECUTION_PLAN.md: surface
+//! Tier-B moat innovation #4 from the internal design notes: surface
 //! per-detector reliability based on observed true-positive vs false-
 //! positive history rather than a fixed threshold. Detectors with a long
 //! history of clean hits get a higher confidence multiplier; detectors

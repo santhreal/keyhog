@@ -35,7 +35,8 @@ everything else is data, tooling, docs, or eval harness.
 | `demo/` | A self-contained demo deployment (app + infra + scripts). |
 | `metrics/` | Star and project-health metrics. |
 
-Internal execution planning lives in one file: `docs/EXECUTION_PLAN.md`.
+Internal execution planning lives in the private Santh monorepo, not in this
+public repository.
 
 ---
 
@@ -185,9 +186,7 @@ verdict.
 > Named-detector adjudication also preserves exact shared-cascade and
 > decode-through suppression reasons instead of using a generic bucket.
 > Some policy stages still execute from their emission-path owners instead of
-> one full verdict that owns suppression and report confidence end to end. The
-> consolidation is tracked in
-> [`EXECUTION_PLAN.md`](EXECUTION_PLAN.md) under **SILENT-OVERRIDE-1..4**; any
+> one full verdict that owns suppression and report confidence end to end. Any
 > emission path must route policy decisions through the adjudicator stage model,
 > not a silent local subset.
 
@@ -231,7 +230,6 @@ summary shown by `keyhog --version`.
 | Add live verification for a detector | `[detector.verify]` in the TOML + `crates/verifier/src/verify/` |
 | Change output format / exit codes | `crates/cli/src/format.rs`, `reporting.rs` |
 | Add a benchmark / change the gate | `benchmarks/bench/` |
-| See the internal execution plan | `docs/EXECUTION_PLAN.md` |
 | Verify a perf or detection claim | `benchmarks/` (the README numbers regenerate from here) |
 
 ---

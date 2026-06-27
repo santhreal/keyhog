@@ -1,7 +1,7 @@
 //! Auto-fix suggestions: turn each finding into "replace this credential
 //! with `${ENV_VAR_NAME}`" advice.
 //!
-//! Tier-B moat innovation #15 + #17 from docs/EXECUTION_PLAN.md:
+//! Tier-B moat innovation #15 + #17 from the internal design notes:
 //! moves keyhog from "find" to "fix." We surface the suggestion in SARIF
 //! `result.fixes[]` per the v2.2.0 spec; CLI consumers can apply the edit
 //! interactively or in a pre-commit hook.

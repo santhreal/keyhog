@@ -1,6 +1,6 @@
 //! `keyhog calibrate` - show or update per-detector Beta(α, β) counters.
 //!
-//! Tier-B moat innovation #4 from docs/EXECUTION_PLAN.md.
+//! Tier-B moat innovation #4 from the internal design notes.
 
 use crate::args::CalibrateArgs;
 use anyhow::{Context, Result};

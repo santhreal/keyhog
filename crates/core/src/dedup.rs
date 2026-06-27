@@ -121,7 +121,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
     // amortized insert like HashMap PLUS deterministic iteration order
     // (insertion order, which we sort post-pass for cross-run stability).
     // BTreeMap was O(log N) per insert and dominated dedup time on 1M+
-    // matches - see docs/EXECUTION_PLAN.md.
+    // matches - see the internal design notes.
     type DedupKey = (Arc<str>, SensitiveString, Option<FileScopeIdentity>);
 
     // O(1) per-match membership for additional_locations. The duplicate arm
@@ -320,7 +320,7 @@ fn effective_credential_hash(credential: &str, credential_hash: CredentialHash) 
 /// and folds related detectors into the WINNING DedupedMatch's companions
 /// map under a `cross_detector` namespace, so a reporter sees ONE finding
 /// per credential with the alternate service guesses listed as evidence -
-/// docs/EXECUTION_PLAN.md innovation #5, "Cuts noise ~30%".
+/// the internal design notes innovation #5, "Cuts noise ~30%".
 ///
 /// The winning detector is chosen by:
 ///   1. Highest confidence (Some(f64)::total_cmp).

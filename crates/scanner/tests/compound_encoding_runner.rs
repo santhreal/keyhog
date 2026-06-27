@@ -13,7 +13,7 @@
 //! Encoding the credential and asking whether keyhog re-derives it is a decode
 //! RECALL RATE over a corpus; detection-accuracy rates are owned by the
 //! differential bench (`benchmarks/bench`), never asserted in `cargo test`
-//! (`docs/EXECUTION_PLAN.md` T-01). It is also not a sound all-or-nothing contract:
+//! (the internal design notes T-01). It is also not a sound all-or-nothing contract:
 //! the decode pipeline decides whether to recurse from what each decoded layer
 //! looks like, so a given two-layer pair legitimately may or may not round-trip
 //! without that being a bug. Single-layer decode BEHAVIOR on known inputs is

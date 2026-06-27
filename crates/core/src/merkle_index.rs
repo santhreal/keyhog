@@ -11,7 +11,7 @@
 //! `(mtime, size)` differ but BLAKE3 matches we record the new mtime
 //! and still skip - same content, different stat (touched, copied).
 //!
-//! Tier-B moat innovation #3 from docs/EXECUTION_PLAN.md: "10–100×
+//! Tier-B moat innovation #3 from the internal design notes: "10–100×
 //! speedup on CI re-runs" by skipping the 99% of files that didn't change.
 //!
 //! ## Schema versions

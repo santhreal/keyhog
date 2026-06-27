@@ -23,7 +23,6 @@ ROOTS = [
     ".github",
     "install.sh",
     "install.ps1",
-    "docs/EXECUTION_PLAN.md",
 ]
 
 SKIP_DIR_PARTS = {

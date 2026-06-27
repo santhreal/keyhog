@@ -698,7 +698,7 @@ pub(crate) fn allowlist_days_since_epoch_for_test(
 
 /// Inline metadata parsed from a `.keyhogignore` line trailer. Used to
 /// implement enterprise governance fields (`reason`, `expires`,
-/// `approved_by`) per docs/EXECUTION_PLAN.md Tier-B #18.
+/// `approved_by`) per the internal design notes Tier-B #18.
 #[derive(Default, Debug)]
 struct InlineMetadata {
     reason: Option<String>,

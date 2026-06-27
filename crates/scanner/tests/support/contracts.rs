@@ -11,7 +11,7 @@
 //!   * the *credential-sufficiency* partition that turns a transform test into
 //!     a SOUND all-or-nothing BEHAVIOR contract instead of an accuracy RATE.
 //!
-//! T-01 contract (see `docs/EXECUTION_PLAN.md`): these runners assert a sound
+//! T-01 contract (see the internal design notes): these runners assert a sound
 //! PROPERTY — a credential that fires on its own bytes alone cannot be removed
 //! by a byte-preserving transform — never a recall/precision/F1 *rate* over a
 //! corpus. Aggregate accuracy rates live ONLY in the differential bench

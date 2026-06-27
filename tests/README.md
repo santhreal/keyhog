@@ -44,4 +44,7 @@ cargo run --release -p keyhog -- scan .
 - `tests/contracts/` — per-detector data-driven contracts (`crates/scanner/tests/contracts/`).
 - `tests/e2e/` / `tests/e2e_binary.rs` — full CLI-driven end-to-end tests.
 
-See `docs/EXECUTION_PLAN.md` for the full testing model: data + multipliers + gates.
+The testing model is data + multipliers + gates: per-detector contract data
+(`crates/*/tests/contracts/`), transform multipliers that re-run each positive
+through byte-preserving mutations, and the differential bench gate
+(`benchmarks/`) that guards recall/precision against a committed baseline.

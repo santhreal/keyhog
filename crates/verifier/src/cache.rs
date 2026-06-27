@@ -28,7 +28,7 @@ pub(crate) struct VerificationCache {
     /// Sharded concurrent map. DashMap (per-shard locking, default 64 shards
     /// based on parallelism) replaces the previous single global RwLock so
     /// concurrent `get`/`put` calls touch different shards and never block
-    /// each other on cacheline bouncing - see docs/EXECUTION_PLAN.md.
+    /// each other on cacheline bouncing - see the internal design notes.
     entries: DashMap<CacheKey, CacheEntry>,
     inserts: AtomicUsize,
     max_entries: usize,

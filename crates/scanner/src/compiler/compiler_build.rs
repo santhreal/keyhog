@@ -42,7 +42,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
     // detector corpus has ~6-15% duplicate patterns (e.g. multiple
     // google-* detectors share the `AIza` regex shape). Compiling each
     // once cuts startup-compile time and RAM proportionally - see
-    // docs/EXECUTION_PLAN.md.
+    // the internal design notes.
     //
     // The count is informational only (one debug log line), so gate the
     // whole computation behind the DEBUG level check and borrow the regex

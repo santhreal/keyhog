@@ -2,7 +2,7 @@
 //!
 //! Prints id, name, service, severity, all patterns, keywords, companions,
 //! verification spec presence, and a service-keyed rotation-guide URL when
-//! one is known. Tier-B innovation #9 from docs/EXECUTION_PLAN.md.
+//! one is known. Tier-B innovation #9 from the internal design notes.
 
 use crate::args::ExplainArgs;
 use anyhow::Result;

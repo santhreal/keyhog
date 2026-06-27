@@ -2,7 +2,7 @@
 //! registry can't resolve.
 //!
 //! DF-02 hit `keyhog explain aws-access-key-id` → exit 2 "no detector with id":
-//! `docs/EXECUTION_PLAN.md` cited an id (`aws-access-key-id`) that had drifted from
+//! the internal design notes cited an id (`aws-access-key-id`) that had drifted from
 //! the canonical registry id (`aws-access-key`). A doc that names a non-resolving
 //! detector is a coherence bug — a reader who copies the id into `keyhog explain`
 //! gets an error, and an audit keyed on a dead id silently audits nothing.

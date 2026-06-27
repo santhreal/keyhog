@@ -1,5 +1,5 @@
 //! Real-corpus phase-2 per-pass breakdown for the small-file regime that the
-//! on-GPU detection rewrite targets (`docs/EXECUTION_PLAN.md`). Scans the
+//! on-GPU detection rewrite targets (the internal design notes). Scans the
 //! mirror corpus (15k real secret-detection fixtures, ~138-byte median) plus a
 //! 16 KiB-concatenated variant, and dumps the accumulated [hot, confirmed,
 //! phase2-capture, generic, entropy, ml] split. CPU backend — phase-2 is

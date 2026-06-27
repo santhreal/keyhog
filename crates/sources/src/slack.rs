@@ -342,7 +342,7 @@ impl SlackSource {
 
         // Concurrent per-channel history fetch. Slack's tier-2 rate limit is
         // 20+ requests/minute; cap parallelism at 8 to leave headroom for the
-        // burst budget. Was sequential - see docs/EXECUTION_PLAN.md.
+        // burst budget. Was sequential - see the internal design notes.
         use rayon::prelude::*;
         let pool = crate::parallel_fetch::bounded_fetch_pool(
             "slack",

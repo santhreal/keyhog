@@ -12,7 +12,7 @@
 //! Swapping the credential for a synthetic body MEASURES the entropy gate —
 //! that is a recall RATE over a corpus, and detection-accuracy rates are owned
 //! by the differential bench (`benchmarks/bench`), never asserted in
-//! `cargo test` (see `docs/EXECUTION_PLAN.md` T-01). It is also not a sound
+//! `cargo test` (see the internal design notes T-01). It is also not a sound
 //! behavior contract: the synthetic body drops the detector's distinctive
 //! prefix/shape, so a prefixed detector legitimately stops matching regardless
 //! of entropy. Per-rule entropy-floor BEHAVIOR is covered by the `entropy_*`

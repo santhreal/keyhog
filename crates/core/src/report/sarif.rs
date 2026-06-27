@@ -388,7 +388,7 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
         // SARIF taxonomies block - each entry references a canonical entry in
         // CWE / OWASP. Compliance dashboards (e.g. SonarQube, GitHub Code
         // Scanning, Splunk) resolve `result.properties.cwe = "CWE-798"`
-        // against this block. Tier-B #16 from docs/EXECUTION_PLAN.md.
+        // against this block. Tier-B #16 from the internal design notes.
         write!(self.writer, ",\"taxonomies\":")?;
         serde_json::to_writer(&mut self.writer, &sarif_taxonomies_json())?;
 

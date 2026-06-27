@@ -67,7 +67,7 @@ pub struct VerificationEngine {
     cache: Arc<cache::VerificationCache>,
     /// One in-flight request per (detector_id, credential). DashMap (per-shard
     /// locking) replaces the previous parking_lot::Mutex<HashMap> which was an
-    /// async anti-pattern - see docs/EXECUTION_PLAN.md.
+    /// async anti-pattern - see the internal design notes.
     pub(crate) inflight: Arc<DashMap<(Arc<str>, SensitiveString), Arc<Notify>>>,
     pub(crate) inflight_count: Arc<AtomicUsize>,
     pub(crate) max_inflight_keys: usize,

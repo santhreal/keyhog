@@ -1,6 +1,6 @@
 //! `keyhog diff <baseline-a.json> <baseline-b.json>` - finding-set diff.
 //!
-//! Tier-B moat innovation #10 from docs/EXECUTION_PLAN.md: surface the
+//! Tier-B moat innovation #10 from the internal design notes: surface the
 //! delta between two scan results so CI can gate merges on "no NEW secrets"
 //! regardless of how many baselined secrets remain.
 //!

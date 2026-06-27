@@ -424,7 +424,7 @@ fn is_generic_or_entropy(detector_id: &str, weak_anchor: bool) -> bool {
 /// every present and future detector with this shape is covered - this
 /// replaces a hand-maintained ID allowlist that drifted out of sync with
 /// the detector corpus. The broad-identifier class (Category C of
-/// `docs/EXECUTION_PLAN.md`: a `[a-zA-Z0-9_-]`-style capture with a small
+/// the internal design notes: a `[a-zA-Z0-9_-]`-style capture with a small
 /// minimum length that matches any short identifier) is derived here; the
 /// pure-hex class, which is shape-indistinguishable from real hex keys,
 /// stays in `rules/detector-classification.toml`.
@@ -502,7 +502,7 @@ pub(crate) fn pattern_has_broad_identifier_capture(regex: &str) -> bool {
 /// full-alphabet identifier character class (`[a-zA-Z0-9_-]` and close
 /// variants, NOT hex-only `[a-f0-9]`) with a minimum repeat of 0 or 1
 /// (`+`, `*`, `{0,..}`, `{1,..}`, `{1}`). That is the broad-identifier
-/// false-positive shape from Category C of `docs/EXECUTION_PLAN.md`: a
+/// false-positive shape from Category C of the internal design notes: a
 /// minimum length of one means the capture matches ANY short identifier
 /// (function name, variable, kwarg default) sitting after the detector's
 /// keyword anchor. Higher minimums (e.g. `{8,}`, `{16}`) describe real

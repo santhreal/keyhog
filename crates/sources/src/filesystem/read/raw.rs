@@ -143,7 +143,7 @@ pub(in crate::filesystem) fn read_file_safe(
     // amortizes badly: ring setup + teardown is dominated by the syscalls
     // around the actual read for any file under ~1 GB. Plain buffered read
     // (and the `mmap` path used by `read_file_mmap`) outperformed it on the
-    // standard corpus; see docs/EXECUTION_PLAN.md sources finding.
+    // standard corpus; see the internal design notes sources finding.
     // io_uring belongs in a shared batched owner with benchmark proof, not as
     // per-file ring setup in this hot-path read.
     let file = open_file_safe(path)?;

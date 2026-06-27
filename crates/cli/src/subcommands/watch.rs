@@ -1,6 +1,6 @@
 //! `keyhog watch <path>` - daemon mode.
 //!
-//! Tier-B moat innovation #7 from docs/EXECUTION_PLAN.md: compile-once,
+//! Tier-B moat innovation #7 from the internal design notes: compile-once,
 //! scan-many. The detector corpus + Hyperscan database are built ONCE at
 //! startup; subsequent scans on a saved file run in O(file_size) without
 //! the ~50-100 ms compile overhead a fresh `keyhog scan` invocation pays.

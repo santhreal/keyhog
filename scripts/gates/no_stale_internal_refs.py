@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """Reject stale references to retired internal planning artifacts.
 
-The execution plan is the only live internal plan. Retired planning registries,
-coordination ledgers, backlog docs, and GPU rewrite notes may be mentioned only
-by the execution plan itself, historical changelog entries, or tests/gates whose
-job is to prove those artifacts stay absent.
+All internal planning artifacts -- the former execution plan, retired planning
+registries, coordination ledgers, backlog docs, and GPU rewrite notes -- are
+purged from this public repo (the plan leaked operator machine paths). They may
+be mentioned only by historical changelog entries or by the absence-guard
+tests/gates whose job is to prove they stay gone. A fresh reference to any of
+them is a coherence regression -- a pointer to a file that no public reader can
+open.
 """
 
 from __future__ import annotations
 
 import pathlib
 import re
+import subprocess
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
 PATTERNS = [
+    "EXECUTION_PLAN",
     "docs/legendary",
     "GPU_DETECTION_REWRITE",
     "ALL_VECTORS_GAPS",
@@ -34,9 +39,9 @@ PATTERNS = [
 ALLOWED = {
     ".gitignore",
     "CHANGELOG.md",
-    "docs/EXECUTION_PLAN.md",
+    # Absence guards: these tests/gates name the retired artifacts precisely to
+    # prove they stay gone.
     "crates/scanner/tests/gap/findings_registry_integrity.rs",
-    "tools/ci-operability/tests/gap/execution_plan_hunt_inventory.rs",
     "tools/ci-operability/tests/gap/execution_plan_no_retired_registry.rs",
     "scripts/gates/no_stale_internal_refs.py",
 }
@@ -78,8 +83,23 @@ def is_skipped(path: pathlib.Path) -> bool:
 
 
 def iter_files() -> list[pathlib.Path]:
+    # Scan git-TRACKED files (committed + staged), not the raw working tree.
+    # CI checks out a clean tree, so the two are identical there; locally this
+    # keeps a developer's untracked scratch (saved `git diff`/`git status`
+    # dumps, throwaway corpora) from tripping the gate on references it will
+    # never ship. Falls back to a working-tree walk outside a git checkout.
+    try:
+        listing = subprocess.run(
+            ["git", "-C", str(REPO), "ls-files", "-z"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        candidates = [REPO / rel for rel in listing.split("\0") if rel]
+    except (OSError, subprocess.CalledProcessError):
+        candidates = list(REPO.rglob("*"))
     files: list[pathlib.Path] = []
-    for path in REPO.rglob("*"):
+    for path in candidates:
         if not path.is_file() or is_skipped(path):
             continue
         if path.name in {".gitignore", "Dockerfile"} or path.suffix in TEXT_SUFFIXES:
@@ -108,7 +128,7 @@ def self_test() -> int:
         "write coordination/rounds/R5.md": True,
         "see TESTING_PROGRAM.md section 3": True,
         "old backlog cli-surface-bloat.md": True,
-        "normal docs/EXECUTION_PLAN.md reference": False,
+        "see docs/EXECUTION_PLAN.md (now purged)": True,
         "Druid coordinator string is unrelated": False,
     }
     ok = True
@@ -133,7 +153,8 @@ def main(argv: list[str]) -> int:
         for rel, lineno, pattern, line in hits:
             print(f"  {rel}:{lineno}: {pattern}: {line}", file=sys.stderr)
         print(
-            "\nRetarget current facts to docs/EXECUTION_PLAN.md or delete historical planning references.",
+            "\nThese planning artifacts are purged from the public repo. Delete the "
+            "reference, or -- if this file is an absence guard -- add it to ALLOWED.",
             file=sys.stderr,
         )
         return 1
