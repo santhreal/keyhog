@@ -29,6 +29,18 @@ struct AutorouteCacheVersionEnvelope {
     version: u32,
 }
 
+/// On-disk autoroute calibration cache.
+///
+/// The shared identity fields (binary, git hash, build features, detector
+/// corpus, rule set, host) are invariant across every scan-policy preset on the
+/// same binary+host, so they live ONCE at the top. A change to any of them
+/// invalidates the whole file. Per-resolved-config routing decisions live under
+/// `configs`, keyed by `config_digest`, so the default scan policy and every
+/// preset (`--fast`/`--deep`/`--precision`/a `.keyhog.toml`/`--batch-pipeline
+/// --autoroute-gpu`) coexist in one file instead of overwriting each other.
+/// `save_autoroute_cache` merges: it upserts the calibrated config's entry and
+/// preserves the rest, so sequential install-time probes (separate processes,
+/// one workload bucket each) accumulate instead of clobbering.
 #[derive(Debug, Serialize, Deserialize)]
 pub(super) struct AutorouteCache {
     pub(super) version: u32,
@@ -38,8 +50,16 @@ pub(super) struct AutorouteCache {
     pub(super) build_features: AutorouteBuildFeatures,
     pub(super) detector_digest: u64,
     pub(super) rules_digest: String,
-    pub(super) config_digest: u64,
     pub(super) host: AutorouteHostProfile,
+    pub(super) configs: Vec<AutorouteConfigDecisions>,
+}
+
+/// Routing decisions for a single resolved scan-config digest. One entry per
+/// distinct `autoroute_config_digest`, each holding the per-workload-bucket
+/// fastest-correct backend decisions calibrated for that config.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(super) struct AutorouteConfigDecisions {
+    pub(super) config_digest: u64,
     pub(super) decisions: Vec<(WorkloadKey, AutorouteDecision)>,
 }
 
@@ -220,6 +240,50 @@ pub(super) fn load_autoroute_cache(
     }
     let cache: AutorouteCache = serde_json::from_slice(&data)?;
     host_profile.require_exact_identity()?;
+    validate_cache_shared_identity(&cache, detector_digest, rules_digest, host_profile)?;
+    // Multi-config cache: pick the decisions calibrated for THIS resolved scan
+    // config. A missing entry fails closed exactly like the old single-config
+    // digest mismatch — the auto scan refuses to substitute a backend — but
+    // other presets calibrated on the same binary/host stay usable.
+    let Some(config) = cache
+        .configs
+        .iter()
+        .find(|c| c.config_digest == config_digest)
+    else {
+        return Err(format!(
+            "scan config digest mismatch; cache is for a different resolved scan config \
+             (this binary/host/corpus has {} calibrated config(s), none matching config \
+             digest {config_digest:016x}); calibrate this scan config",
+            cache.configs.len()
+        )
+        .into());
+    };
+    if config.decisions.is_empty() {
+        return Err("autoroute cache contains no workload decisions".into());
+    }
+    let mut out = HashMap::with_capacity(config.decisions.len());
+    for (key, decision) in &config.decisions {
+        validate_decision_route_evidence(decision)?;
+        if out.contains_key(key) {
+            return Err(format!(
+                "cache contains duplicate autoroute workload decision for {key:?}"
+            )
+            .into());
+        }
+        out.insert(*key, decision.clone());
+    }
+    Ok(out)
+}
+
+/// Validate the binary/host/corpus/rule-set identity shared by every config in a
+/// cache file. Reused by both the reader and the merge-aware writer so a single
+/// rule decides when an on-disk cache is for *this* exact build and host.
+fn validate_cache_shared_identity(
+    cache: &AutorouteCache,
+    detector_digest: u64,
+    rules_digest: &str,
+    host_profile: &AutorouteHostProfile,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if cache.binary_version != env!("CARGO_PKG_VERSION")
         || cache.git_hash != keyhog_core::git_hash()
     {
@@ -241,29 +305,10 @@ pub(super) fn load_autoroute_cache(
     if cache.rules_digest != rules_digest {
         return Err("rules digest mismatch; cache is for a different detector rule set".into());
     }
-    if cache.config_digest != config_digest {
-        return Err(
-            "scan config digest mismatch; cache is for a different resolved scan config".into(),
-        );
-    }
     if &cache.host != host_profile {
         return Err("host profile mismatch; cache is for different hardware".into());
     }
-    if cache.decisions.is_empty() {
-        return Err("autoroute cache contains no workload decisions".into());
-    }
-    let mut out = HashMap::with_capacity(cache.decisions.len());
-    for (key, decision) in cache.decisions {
-        validate_decision_route_evidence(&decision)?;
-        if out.contains_key(&key) {
-            return Err(format!(
-                "cache contains duplicate autoroute workload decision for {key:?}"
-            )
-            .into());
-        }
-        out.insert(key, decision);
-    }
-    Ok(out)
+    Ok(())
 }
 
 fn read_autoroute_cache_file(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
@@ -450,6 +495,33 @@ pub(super) fn save_autoroute_cache(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
+
+    // Merge, do not overwrite. Preserve every other resolved-config entry from a
+    // compatible on-disk cache so presets accumulate, and UNION this config's
+    // freshly measured buckets over any it already had so sequential install
+    // probes (separate processes, one bucket each) build up instead of each
+    // clobbering the last. An incompatible/corrupt file is superseded wholesale
+    // (loudly — see `read_mergeable_configs`).
+    let mut configs = read_mergeable_configs(path, detector_digest, rules_digest, host_profile);
+    let mut merged: std::collections::BTreeMap<WorkloadKey, AutorouteDecision> =
+        std::collections::BTreeMap::new();
+    if let Some(prior) = configs.iter().find(|c| c.config_digest == config_digest) {
+        for (key, decision) in &prior.decisions {
+            merged.insert(*key, decision.clone());
+        }
+    }
+    for (&key, decision) in decisions {
+        merged.insert(key, decision.clone());
+    }
+    configs.retain(|c| c.config_digest != config_digest);
+    configs.push(AutorouteConfigDecisions {
+        config_digest,
+        // BTreeMap iteration is WorkloadKey-sorted, so the persisted decision
+        // order is deterministic regardless of HashMap iteration order.
+        decisions: merged.into_iter().collect(),
+    });
+    configs.sort_by_key(|c| c.config_digest);
+
     let cache = AutorouteCache {
         version: AUTOROUTE_CACHE_VERSION,
         binary_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -457,14 +529,86 @@ pub(super) fn save_autoroute_cache(
         build_features: AutorouteBuildFeatures::current(),
         detector_digest,
         rules_digest: rules_digest.to_string(),
-        config_digest,
         host: host_profile.clone(),
-        decisions: decisions
-            .iter()
-            .map(|(&key, decision)| (key, decision.clone()))
-            .collect(),
+        configs,
     };
     let serialized = serde_json::to_vec_pretty(&cache)?;
     crate::atomic_file::write_bytes(path, &serialized)?;
     Ok(())
+}
+
+/// Read the per-config decisions from an existing cache that is STILL valid for
+/// this exact binary/host/corpus/rule-set, so a merge-save can preserve other
+/// presets. Returns an empty vec when there is nothing safe to preserve — file
+/// absent (expected), an older schema or a different build/host/corpus (an
+/// expected post-rebuild supersede, logged at info), or a present-but-corrupt
+/// file (logged loudly per Law 10 before replacement). It never fails the save;
+/// a fresh single-config cache is always derivable from the new decisions.
+fn read_mergeable_configs(
+    path: &std::path::Path,
+    detector_digest: u64,
+    rules_digest: &str,
+    host_profile: &AutorouteHostProfile,
+) -> Vec<AutorouteConfigDecisions> {
+    if !path.exists() {
+        return Vec::new();
+    }
+    let data = match read_autoroute_cache_file(path) {
+        Ok(data) => data,
+        Err(error) => {
+            tracing::warn!(
+                target: "keyhog::routing",
+                path = %path.display(),
+                %error,
+                "existing autoroute cache is unreadable; replacing it with a fresh calibration (any other presets in it are lost)"
+            );
+            return Vec::new();
+        }
+    };
+    match serde_json::from_slice::<AutorouteCacheVersionEnvelope>(&data) {
+        Ok(envelope) if envelope.version == AUTOROUTE_CACHE_VERSION => {}
+        Ok(envelope) => {
+            tracing::info!(
+                target: "keyhog::routing",
+                path = %path.display(),
+                found_version = envelope.version,
+                expected_version = AUTOROUTE_CACHE_VERSION,
+                "existing autoroute cache is an older schema; superseding it with this build's calibration"
+            );
+            return Vec::new();
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "keyhog::routing",
+                path = %path.display(),
+                %error,
+                "existing autoroute cache is not valid cache JSON; replacing it with a fresh calibration"
+            );
+            return Vec::new();
+        }
+    }
+    let cache: AutorouteCache = match serde_json::from_slice(&data) {
+        Ok(cache) => cache,
+        Err(error) => {
+            tracing::warn!(
+                target: "keyhog::routing",
+                path = %path.display(),
+                %error,
+                "existing autoroute cache failed to deserialize; replacing it with a fresh calibration"
+            );
+            return Vec::new();
+        }
+    };
+    if let Err(error) =
+        validate_cache_shared_identity(&cache, detector_digest, rules_digest, host_profile)
+    {
+        tracing::info!(
+            target: "keyhog::routing",
+            path = %path.display(),
+            %error,
+            "existing autoroute cache is for a different build/host/corpus; superseding it with this build's calibration"
+        );
+        return Vec::new();
+    }
+    cache.configs
 }

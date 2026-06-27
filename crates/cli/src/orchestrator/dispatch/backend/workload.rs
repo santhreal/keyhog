@@ -7,7 +7,10 @@ use std::fmt;
 const AUTOROUTE_DECODE_DENSITY_SAMPLE_BYTES: usize = 64 * 1024;
 const AUTOROUTE_DECODE_MIN_ENCODED_RUN: usize = 24;
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
+// `Ord` gives the multi-config cache a deterministic on-disk decision order
+// (decisions are collected through a `BTreeMap<WorkloadKey, _>` on save), so a
+// recalibration that re-measures the same buckets produces a byte-stable file.
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub(super) struct WorkloadKey {
     pub(super) bytes_bucket: u8,
     pub(super) chunks_bucket: u8,

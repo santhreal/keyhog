@@ -1334,6 +1334,15 @@ prime_autoroute_cache() {
         cfg_flag="--config"
         cfg_file="$tmpdir/empty-config.toml"
     fi
+    # Calibrate the SAME resolved-config digest a real scan requests. The
+    # autoroute config digest hashes routing/pipeline knobs (batch_pipeline,
+    # autoroute_gpu), so calibrating with `--batch-pipeline --autoroute-gpu` —
+    # which a plain `keyhog scan .` never uses (a filesystem auto scan cannot
+    # route GPU and does not force the coalesced batch pipeline) — keyed the
+    # cache to a digest no real default scan ever looked up, and every auto scan
+    # failed closed (exit 2). Default calibration now matches the default scan
+    # path; GPU/coalesced calibration is a separate, explicit opt-in digest.
+    autoroute_scan_flags=""
     unavailable_calibrations=""
     git_calibration=0
     git_bin=""
@@ -1645,25 +1654,25 @@ run_autoroute_scan_probe() {
     printf '  [%s/%s] %s ' "$idx" "$total" "$label"
     case "$mode" in
         path)
-            run_keyhog_calibration_scan scan --autoroute-calibrate "$probe" --batch-pipeline --autoroute-gpu --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate "$probe" $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         stdin)
-            run_keyhog_calibration_scan scan --autoroute-calibrate --stdin --batch-pipeline --autoroute-gpu --format json -o "$out" < "$probe" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --stdin $autoroute_scan_flags --format json -o "$out" < "$probe" >/dev/null 2>"$errfile" &
             ;;
         git-history)
-            run_keyhog_calibration_scan scan --autoroute-calibrate --git-history "$probe" --max-commits 1 --batch-pipeline --autoroute-gpu --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --git-history "$probe" --max-commits 1 $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         git-blobs)
-            run_keyhog_calibration_scan scan --autoroute-calibrate --git-blobs "$probe" --max-commits 2 --batch-pipeline --autoroute-gpu --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --git-blobs "$probe" --max-commits 2 $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         git-diff)
-            run_keyhog_calibration_scan scan --autoroute-calibrate --git-diff HEAD --git-diff-path "$probe" --batch-pipeline --autoroute-gpu --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --git-diff HEAD --git-diff-path "$probe" $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         url)
-            run_keyhog_calibration_scan scan --autoroute-calibrate --url "$probe" --batch-pipeline --autoroute-gpu --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --url "$probe" $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         docker-image)
-            run_keyhog_calibration_scan scan --autoroute-calibrate --docker-image "$probe" --batch-pipeline --autoroute-gpu --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --docker-image "$probe" $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         *)
             (

@@ -183,8 +183,12 @@ fn write_tampered_decision_cache(
     let mut cache: AutorouteCache =
         serde_json::from_slice(&std::fs::read(path).expect("autoroute cache JSON"))
             .expect("cache should deserialize before tampering");
-    cache.decisions.clear();
-    cache.decisions.push((key, bad_decision));
+    let config = cache
+        .configs
+        .first_mut()
+        .expect("saved single-config cache has one config entry");
+    config.decisions.clear();
+    config.decisions.push((key, bad_decision));
     std::fs::write(
         path,
         serde_json::to_vec_pretty(&cache).expect("tampered cache serializes"),
@@ -522,6 +526,186 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 }
 
+#[test]
+fn multi_config_cache_accumulates_buckets_across_sequential_saves() {
+    // Keystone regression. Each install-time calibration probe runs as a
+    // SEPARATE process persisting one workload bucket. With the old overwrite
+    // save, probe 2 evicted probe 1's bucket, so every other-sized scan failed
+    // closed (exit 2). The merge save must UNION buckets for the same resolved
+    // config across sequential saves.
+    let dir = tempfile::TempDir::new().expect("tempdir for accumulation");
+    let path = dir.path().join("accumulate-autoroute-cache.json");
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+
+    let small_key = test_workload_key();
+    let mut large_key = small_key;
+    large_key.bytes_bucket = large_key.bytes_bucket.saturating_add(3);
+    assert_ne!(small_key, large_key, "test needs two distinct workload buckets");
+
+    let mut first = HashMap::new();
+    first.insert(
+        small_key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
+    );
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &first,
+    )
+    .expect("first sequential calibration persists");
+
+    let mut second = HashMap::new();
+    second.insert(
+        large_key,
+        AutorouteDecision::new(ScanBackend::CpuFallback, 8 * 1024 * 1024, 1, 13, Some(7), None),
+    );
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &second,
+    )
+    .expect("second sequential calibration persists");
+
+    let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
+        .expect("accumulated cache reloads");
+    assert!(
+        loaded.contains_key(&small_key),
+        "merge save must not evict the first probe's bucket"
+    );
+    assert!(
+        loaded.contains_key(&large_key),
+        "merge save must persist the second probe's bucket"
+    );
+    assert_eq!(
+        loaded.len(),
+        2,
+        "both sequentially-calibrated buckets must coexist in one config entry"
+    );
+}
+
+#[test]
+fn multi_config_cache_keeps_distinct_presets_side_by_side() {
+    // The default scan policy and a `--fast`/`--deep`/`--precision` preset
+    // resolve to DIFFERENT config digests. Calibrating one must not evict the
+    // other, or a documented preset fails closed after a clean install.
+    let dir = tempfile::TempDir::new().expect("tempdir for preset coexistence");
+    let path = dir.path().join("coexist-autoroute-cache.json");
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let default_config = 0xD3FA_0117_D3FA_0117u64;
+    let fast_config = 0xFA57_FA57_FA57_FA57u64;
+    let host = test_host(None);
+    let key = test_workload_key();
+
+    let mut default_decisions = HashMap::new();
+    default_decisions.insert(
+        key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
+    );
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        default_config,
+        &host,
+        &default_decisions,
+    )
+    .expect("default-config calibration persists");
+
+    let mut fast_decisions = HashMap::new();
+    fast_decisions.insert(
+        key,
+        AutorouteDecision::new(ScanBackend::CpuFallback, 8 * 1024 * 1024, 1, 13, Some(7), None),
+    );
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        fast_config,
+        &host,
+        &fast_decisions,
+    )
+    .expect("fast-preset calibration persists");
+
+    let default_loaded =
+        load_autoroute_cache(&path, digest, test_rules_digest(), default_config, &host)
+            .expect("default config still resolves after calibrating the fast preset");
+    assert_eq!(
+        default_loaded.get(&key).and_then(AutorouteDecision::backend),
+        Some(ScanBackend::SimdCpu),
+        "calibrating the fast preset must not overwrite the default config's decision"
+    );
+    let fast_loaded = load_autoroute_cache(&path, digest, test_rules_digest(), fast_config, &host)
+        .expect("fast preset resolves");
+    assert_eq!(
+        fast_loaded.get(&key).and_then(AutorouteDecision::backend),
+        Some(ScanBackend::CpuFallback),
+        "the fast preset keeps its own calibrated decision"
+    );
+}
+
+#[test]
+fn multi_config_cache_upserts_same_bucket_without_duplicating() {
+    // Re-measuring the SAME (config, bucket) replaces the decision in place; the
+    // merge must not append a duplicate (load rejects duplicate workload keys).
+    let dir = tempfile::TempDir::new().expect("tempdir for upsert");
+    let path = dir.path().join("upsert-autoroute-cache.json");
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let key = test_workload_key();
+
+    let mut first = HashMap::new();
+    first.insert(
+        key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
+    );
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &first,
+    )
+    .unwrap();
+
+    let mut second = HashMap::new();
+    second.insert(
+        key,
+        AutorouteDecision::new(ScanBackend::CpuFallback, 8 * 1024 * 1024, 1, 13, Some(7), None),
+    );
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &second,
+    )
+    .unwrap();
+
+    let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
+        .expect("re-measured cache reloads without a duplicate-key rejection");
+    assert_eq!(
+        loaded.len(),
+        1,
+        "re-measuring a bucket must upsert in place, not append a duplicate"
+    );
+    assert_eq!(
+        loaded.get(&key).and_then(AutorouteDecision::backend),
+        Some(ScanBackend::CpuFallback),
+        "the newer measurement must win the upsert"
+    );
+}
+
 // F2 regression: on a fast host the routes tie within measurement precision, so
 // no single backend is statistically separated. Calibration must still persist a
 // SOUND decision (route to the lowest-overhead tied backend) instead of failing
@@ -748,12 +932,16 @@ fn autoroute_cache_rejects_duplicate_workload_decisions() {
     let mut cache: AutorouteCache =
         serde_json::from_slice(&std::fs::read(&path).expect("autoroute cache JSON"))
             .expect("cache should deserialize before tampering");
-    let duplicate = cache
+    let config = cache
+        .configs
+        .first_mut()
+        .expect("saved single-config cache has one config entry");
+    let duplicate = config
         .decisions
         .first()
         .expect("saved cache contains one decision")
         .clone();
-    cache.decisions.push(duplicate);
+    config.decisions.push(duplicate);
     std::fs::write(
         &path,
         serde_json::to_vec_pretty(&cache).expect("tampered cache serializes"),
@@ -800,7 +988,12 @@ fn autoroute_cache_rejects_empty_decision_set() {
     let mut cache: AutorouteCache =
         serde_json::from_slice(&std::fs::read(&path).expect("autoroute cache JSON"))
             .expect("cache should deserialize before tampering");
-    cache.decisions.clear();
+    cache
+        .configs
+        .first_mut()
+        .expect("saved single-config cache has one config entry")
+        .decisions
+        .clear();
     std::fs::write(
         &path,
         serde_json::to_vec_pretty(&cache).expect("tampered cache serializes"),
