@@ -315,8 +315,13 @@ pub(crate) fn require_non_empty_detectors(
     Ok(())
 }
 
-/// Load detectors from a directory, falling back to the embedded TOML
-/// corpus when the directory is empty / non-existent / all-rejected.
+/// Load detectors from a directory, falling back to the embedded TOML corpus
+/// when `--detectors` is omitted (the default `detectors` path is absent).
+///
+/// An EXPLICIT `--detectors <path>` that is missing or not a directory is NOT
+/// silently substituted with the embedded corpus: `validate_detector_path_for_scan`
+/// fails closed (Law 10) so the operator never scans/lists with a different
+/// corpus than they named, and the error points them at the omit-flag remedy.
 ///
 /// `pub(crate)` so the per-subcommand modules (`watch`, `explain`,
 /// `scan_system`, `detectors`) can each call this one helper instead of
