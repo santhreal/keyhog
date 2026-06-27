@@ -339,6 +339,138 @@ fn read_autoroute_cache_file(path: &std::path::Path) -> std::io::Result<Vec<u8>>
     Ok(data)
 }
 
+// --- Bucket resolution (exact, else sound CPU-class interpolation) ----------
+//
+// A scan looks its workload bucket up in the calibrated decisions. An EXACT hit
+// is a zero-cost table lookup. A miss historically failed closed (Law 10: never
+// guess a backend). #34 adds ONE generalization that is not a guess: if the
+// requested bucket lies strictly between two calibrated buckets that
+//   (a) match it on every workload dimension EXCEPT one SIZE axis (bytes_bucket
+//       or max_file_bucket), and
+//   (b) BOTH resolved to the SAME CPU-class backend (SimdCpu / CpuFallback),
+// then the choice is provably stable across that interval. CPU-class backends
+// are exact-match — their findings are identical regardless of input size, so no
+// GPU/MoE score divergence can flip recall across the span (cf. #18) — and the
+// faster CPU backend is monotonic in size, so two agreeing endpoints bracket an
+// interval that resolves to the same backend. GPU buckets NEVER interpolate
+// (their correctness can vary with size). A non-bracketed or disagreeing miss
+// stays Unresolved (fail closed). Every interpolation is surfaced LOUDLY by the
+// caller (Law 10) — it is recall-safe and recorded, never a silent fallback.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum BucketResolution {
+    /// The exact workload bucket was calibrated.
+    Exact(ScanBackend),
+    /// Not directly calibrated, but bracketed by two calibrated CPU-class buckets
+    /// that agree on the backend along one size axis — a sound interpolation.
+    Interpolated {
+        backend: ScanBackend,
+        lo: WorkloadKey,
+        hi: WorkloadKey,
+    },
+    /// No sound resolution exists — the caller must fail closed.
+    Unresolved,
+}
+
+pub(super) fn resolve_bucket(
+    decisions: &HashMap<WorkloadKey, AutorouteDecision>,
+    key: &WorkloadKey,
+) -> BucketResolution {
+    if let Some(backend) = decisions.get(key).and_then(AutorouteDecision::backend) {
+        return BucketResolution::Exact(backend);
+    }
+    for axis in [BucketAxis::Bytes, BucketAxis::MaxFile] {
+        if let Some(resolution) = interpolate_cpu_class(decisions, key, axis) {
+            return resolution;
+        }
+    }
+    BucketResolution::Unresolved
+}
+
+#[derive(Clone, Copy)]
+enum BucketAxis {
+    Bytes,
+    MaxFile,
+}
+
+impl BucketAxis {
+    fn value(self, key: &WorkloadKey) -> u8 {
+        match self {
+            BucketAxis::Bytes => key.bytes_bucket,
+            BucketAxis::MaxFile => key.max_file_bucket,
+        }
+    }
+
+    /// True when `other` matches `key` on EVERY workload dimension except this
+    /// one size axis — the precondition for interpolating along it.
+    fn matches_except_axis(self, key: &WorkloadKey, other: &WorkloadKey) -> bool {
+        let bytes_ok = matches!(self, BucketAxis::Bytes) || other.bytes_bucket == key.bytes_bucket;
+        let max_file_ok =
+            matches!(self, BucketAxis::MaxFile) || other.max_file_bucket == key.max_file_bucket;
+        bytes_ok
+            && max_file_ok
+            && other.chunks_bucket == key.chunks_bucket
+            && other.pattern_bucket == key.pattern_bucket
+            && other.decode_density_bucket == key.decode_density_bucket
+            && other.source_class_hash == key.source_class_hash
+    }
+}
+
+fn interpolate_cpu_class(
+    decisions: &HashMap<WorkloadKey, AutorouteDecision>,
+    key: &WorkloadKey,
+    axis: BucketAxis,
+) -> Option<BucketResolution> {
+    let target = axis.value(key);
+    let mut nearest_lo: Option<(u8, ScanBackend, WorkloadKey)> = None;
+    let mut nearest_hi: Option<(u8, ScanBackend, WorkloadKey)> = None;
+
+    for (candidate_key, decision) in decisions {
+        if !axis.matches_except_axis(key, candidate_key) {
+            continue;
+        }
+        let Some(backend) = decision.backend() else {
+            continue;
+        };
+        // GPU correctness can vary with input size — never bracket across it.
+        if super::is_gpu_backend(backend) {
+            continue;
+        }
+        let value = axis.value(candidate_key);
+        if value < target {
+            let replace = match nearest_lo {
+                Some((best, _, _)) => value > best,
+                None => true,
+            };
+            if replace {
+                nearest_lo = Some((value, backend, *candidate_key));
+            }
+        } else if value > target {
+            let replace = match nearest_hi {
+                Some((best, _, _)) => value < best,
+                None => true,
+            };
+            if replace {
+                nearest_hi = Some((value, backend, *candidate_key));
+            }
+        }
+    }
+
+    match (nearest_lo, nearest_hi) {
+        (Some((_, lo_backend, lo_key)), Some((_, hi_backend, hi_key)))
+            if lo_backend == hi_backend =>
+        {
+            Some(BucketResolution::Interpolated {
+                backend: lo_backend,
+                lo: lo_key,
+                hi: hi_key,
+            })
+        }
+        // Bracketing pair disagrees, or only one side exists -> not sound.
+        _ => None,
+    }
+}
+
 // --- Read-only inspection ---------------------------------------------------
 //
 // `keyhog backend --autoroute` renders the persisted cache so an operator who hit
@@ -518,7 +650,9 @@ pub(crate) fn inspect_autoroute_cache(
 /// Render a workload bucket in the same field layout as the fail-closed
 /// "no persisted decision for workload bucket ..." error, so an operator can
 /// match the bucket they were refused against the buckets that ARE calibrated.
-fn render_workload_key(key: &WorkloadKey) -> String {
+/// Shared by the inspection view and the interpolation notice — one bucket
+/// rendering, never a drifting second copy.
+pub(super) fn render_workload_key(key: &WorkloadKey) -> String {
     format!(
         "bytes_log2={} chunks_log2={} max_file_log2={} patterns_log2={} \
          decode_density_log2={} source_hash={:016x}",

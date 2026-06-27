@@ -85,9 +85,12 @@ pipeline flags; the documented presets each change scan-policy fields. The
 - **#33 preset calibration** — sweep `default,fast,deep,precision` (and the
   Docker-matrix profiles: no-ml, no-entropy, no-gpu, threads-1). They coexist in
   the v20 multi-config cache.
-- **#34 bucket generalization** — a calibrated decision must cover near-miss
-  workloads (loud, recorded nearest-bucket fallback — never silent) or prove the
-  sweep tiles densely.
+- **#34 bucket generalization** — SHIPPED as sound CPU-class bracket
+  interpolation (`store::resolve_bucket`): a near-miss bucket resolves to a
+  backend only when it lies between two calibrated buckets that agree along ONE
+  size axis AND are both CPU-class (exact-match → recall-uniform across size; GPU
+  never interpolates, cf. #18). Loud once-per-process notice, never silent. A
+  disagreeing/un-bracketed miss still fails closed.
 - **#35 measurement rigor** — already multi-trial + SIMD-parity-checked
   (`backend/calibration.rs`); audit warmup/reps/margin and record margins.
 - **#36 Docker matrix** — bake the preset calibration into the image so the auto

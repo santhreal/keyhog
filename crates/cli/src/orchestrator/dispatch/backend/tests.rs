@@ -4,7 +4,8 @@ use super::evidence::{
 };
 use super::host::AutorouteHostProfile;
 use super::store::{
-    load_autoroute_cache, save_autoroute_cache, AutorouteCache, AUTOROUTE_CACHE_FILE_BYTES,
+    load_autoroute_cache, resolve_bucket, save_autoroute_cache, AutorouteCache, BucketResolution,
+    AUTOROUTE_CACHE_FILE_BYTES,
 };
 use super::workload::{
     autoroute_stable_bucket, autoroute_stable_density_bucket, source_class_hash, workload_key,
@@ -2374,4 +2375,218 @@ fn autoroute_cache_rejects_selected_backend_with_overlapping_confidence() {
     );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+// --- #34 bucket resolution: exact hit, else sound CPU-class interpolation ----
+
+fn cpu_decision(backend: ScanBackend) -> AutorouteDecision {
+    match backend {
+        ScanBackend::SimdCpu => {
+            AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None)
+        }
+        ScanBackend::CpuFallback => {
+            AutorouteDecision::new(ScanBackend::CpuFallback, 8 * 1024 * 1024, 1, 13, Some(7), None)
+        }
+        other => panic!("cpu_decision only builds CPU-class backends, got {other:?}"),
+    }
+}
+
+fn gpu_decision() -> AutorouteDecision {
+    AutorouteDecision::new(ScanBackend::Gpu, 8 * 1024 * 1024, 1, 20, None, Some(20))
+}
+
+#[test]
+fn bucket_resolution_exact_hit_wins() {
+    let key = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(key, cpu_decision(ScanBackend::SimdCpu));
+    assert_eq!(
+        resolve_bucket(&decisions, &key),
+        BucketResolution::Exact(ScanBackend::SimdCpu)
+    );
+}
+
+#[test]
+fn bucket_resolution_interpolates_between_agreeing_cpu_neighbours() {
+    // Calibrated at bytes_log2 8 and 12, both SimdCpu; request 10 (every other
+    // dimension equal) resolves to SimdCpu by sound interpolation.
+    let base = test_workload_key();
+    let lo = WorkloadKey {
+        bytes_bucket: 8,
+        ..base
+    };
+    let hi = WorkloadKey {
+        bytes_bucket: 12,
+        ..base
+    };
+    let mut decisions = HashMap::new();
+    decisions.insert(lo, cpu_decision(ScanBackend::SimdCpu));
+    decisions.insert(hi, cpu_decision(ScanBackend::SimdCpu));
+    let requested = WorkloadKey {
+        bytes_bucket: 10,
+        ..base
+    };
+    match resolve_bucket(&decisions, &requested) {
+        BucketResolution::Interpolated {
+            backend,
+            lo: got_lo,
+            hi: got_hi,
+        } => {
+            assert_eq!(backend, ScanBackend::SimdCpu);
+            assert_eq!(got_lo, lo);
+            assert_eq!(got_hi, hi);
+        }
+        other => panic!("expected interpolation between agreeing CPU neighbours, got {other:?}"),
+    }
+}
+
+#[test]
+fn bucket_resolution_also_interpolates_along_max_file_axis() {
+    // The same soundness holds on the max_file size axis, not only total bytes.
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        WorkloadKey {
+            max_file_bucket: 4,
+            ..base
+        },
+        cpu_decision(ScanBackend::CpuFallback),
+    );
+    decisions.insert(
+        WorkloadKey {
+            max_file_bucket: 10,
+            ..base
+        },
+        cpu_decision(ScanBackend::CpuFallback),
+    );
+    let requested = WorkloadKey {
+        max_file_bucket: 7,
+        ..base
+    };
+    assert!(
+        matches!(
+            resolve_bucket(&decisions, &requested),
+            BucketResolution::Interpolated {
+                backend: ScanBackend::CpuFallback,
+                ..
+            }
+        ),
+        "an agreeing CPU bracket along max_file must interpolate"
+    );
+}
+
+#[test]
+fn bucket_resolution_fails_closed_when_cpu_neighbours_disagree() {
+    // SimdCpu below, CpuFallback above: the backend choice is NOT stable across
+    // the interval, so the in-between bucket must fail closed — never guess one.
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 8,
+            ..base
+        },
+        cpu_decision(ScanBackend::SimdCpu),
+    );
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 12,
+            ..base
+        },
+        cpu_decision(ScanBackend::CpuFallback),
+    );
+    let requested = WorkloadKey {
+        bytes_bucket: 10,
+        ..base
+    };
+    assert_eq!(
+        resolve_bucket(&decisions, &requested),
+        BucketResolution::Unresolved
+    );
+}
+
+#[test]
+fn bucket_resolution_never_interpolates_across_gpu_buckets() {
+    // GPU correctness can vary with input size (cf. #18), so even two agreeing
+    // GPU neighbours must NOT generalize — the in-between bucket fails closed.
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 8,
+            ..base
+        },
+        gpu_decision(),
+    );
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 12,
+            ..base
+        },
+        gpu_decision(),
+    );
+    let requested = WorkloadKey {
+        bytes_bucket: 10,
+        ..base
+    };
+    assert_eq!(
+        resolve_bucket(&decisions, &requested),
+        BucketResolution::Unresolved
+    );
+}
+
+#[test]
+fn bucket_resolution_requires_both_brackets() {
+    // Only a lower neighbour exists (nothing above the requested size): the
+    // bucket is not bracketed, so there is no sound interpolation.
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 8,
+            ..base
+        },
+        cpu_decision(ScanBackend::SimdCpu),
+    );
+    let requested = WorkloadKey {
+        bytes_bucket: 10,
+        ..base
+    };
+    assert_eq!(
+        resolve_bucket(&decisions, &requested),
+        BucketResolution::Unresolved
+    );
+}
+
+#[test]
+fn bucket_resolution_does_not_cross_non_size_dimensions() {
+    // Neighbours that differ on a NON-size dimension (here source_class_hash)
+    // describe a different workload shape and must not bracket the request.
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 8,
+            source_class_hash: 0x1111_1111_1111_1111,
+            ..base
+        },
+        cpu_decision(ScanBackend::SimdCpu),
+    );
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 12,
+            source_class_hash: 0x1111_1111_1111_1111,
+            ..base
+        },
+        cpu_decision(ScanBackend::SimdCpu),
+    );
+    let requested = WorkloadKey {
+        bytes_bucket: 10,
+        source_class_hash: 0x2222_2222_2222_2222,
+        ..base
+    };
+    assert_eq!(
+        resolve_bucket(&decisions, &requested),
+        BucketResolution::Unresolved
+    );
 }
