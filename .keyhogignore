@@ -313,33 +313,32 @@ hash:f9b149f9188fb49b28ee28794382c1d4bc655f6b5086e01da4d5308372fbb87e
 # findings, not live secrets - same rationale as CHANGELOG.md / analysis docs.
 path:docs/EXECUTION_PLAN.md
 # Fabricated test/probe fixtures the pinned v0.5.37 dogfood binary surfaces from
-# inline-test and ML-probe SOURCE (not live secrets; literal shapes deliberately
-# NOT pasted - this file is itself scanned). Dedup is by value, so one hash entry
-# covers every occurrence:
-#   * crates/sources/src/hosted_git/sanitize.rs redaction-test fixtures - the
+# inline-test and ML-probe SOURCE. These three source files contain ONLY
+# fabricated detector-shape fixtures (no real credential ever belongs in them),
+# and because the self-scan walks full git history (`fetch-depth: 0`), each
+# finding is attributed with a value hash that varies by historical blob AND by
+# detector match-extent - canonical.rs alone produced two different hashes for
+# the same fixture line across two runs. Value-hash suppression is therefore a
+# moving target here, so path-suppress them like the other engine/parser fixture
+# sources above (reverse.rs, path_filter.rs); the gate stays deterministically
+# green regardless of which historical form is surfaced:
+#   * crates/sources/src/hosted_git/sanitize.rs - the
 #     redacts_every_credential_shape / url_credential_exact_output /
 #     missing_pattern_fails_closed cases feed deliberately fake gitlab-PAT,
 #     stripe, slack-bot, AWS-access-key, and github-classic-PAT shapes THROUGH the
-#     git stderr redactor to PROVE every shape is scrubbed. The credentials exist
-#     only to be redacted.
-#   * crates/scanner/src/suppression/shape/canonical.rs shape-classifier tests -
-#     the canonical jwt.io JWT example plus a fabricated github-classic-PAT used
-#     to prove the dotted-token / url-safe-blob shape gates accept/reject.
-#   * crates/scanner/src/gpu/backend.rs ML feature-probe table - canonical vendor
-#     example tokens used only to warm the GPU-batch ML scorer's feature
-#     extractor before the first real batch.
-#   * crates/verifier/src/verify/aws.rs (attributed) - an aws-access-key shape the
-#     pinned binary re-emits from a git-history / decode-through buffer attributed
-#     to that path. No AWS access-key value has ever lived in that file's history
-#     and the HEAD binary does not surface it; suppressed by value hash like the
-#     other reassembled-fragment artifacts above.
-hash:21017a7322a948583f64870370480f0ca891297fbff5808ef64b9dbc04e10bcf
+#     git stderr redactor to PROVE every shape is scrubbed. Real secrets only flow
+#     through this file at runtime; none is stored in it.
+#   * crates/scanner/src/suppression/shape/canonical.rs - shape-classifier
+#     accept/reject fixtures (the canonical jwt.io JWT plus a fabricated
+#     github-classic-PAT for the dotted-token / url-safe-blob gates).
+#   * crates/scanner/src/gpu/backend.rs - canonical vendor example tokens used
+#     only to warm the GPU-batch ML scorer's feature extractor.
+path:crates/sources/src/hosted_git/sanitize.rs
+path:crates/scanner/src/suppression/shape/canonical.rs
+path:crates/scanner/src/gpu/backend.rs
+# crates/verifier/src/verify/aws.rs (attributed) - an aws-access-key shape the
+# pinned binary re-emits from a git-history / decode-through buffer attributed to
+# that path. No AWS access-key value has ever lived in that file's history (so
+# there is no source line to path-suppress, and the real verifier logic stays
+# scanned); the reassembled buffer value is suppressed by hash, stable across runs.
 hash:26e4e47b31d8cefa746fc6bb298ad3f846e293c9c10243418d28b747155e1207
-hash:4d4966799223157dba92bc3bfe502bd94c0771b7c11f825b34d2c4887e0b02c1
-hash:730613e039494f9328db3fa140fcf79600d7f632a0faf52e621476cedb9862f4
-hash:743554670c6065b3f7f13ac4f07e392f977b3556ceb7457411633c454bcbece8
-hash:76063ea328e351e4aee6899303adb27c18e1739753108bac98aa5c6b46175205
-hash:7b85310a29300230c865bc48ca1836f15b81bd50ac85e8c0785e8145e98ff175
-hash:8708d89275941b1e8aa9866c3d0fc98c78cfb74e5f98c2d700f4ee90c84341f9
-hash:ba94fef946060f5e556722d1f1f4e5e6de65a57de8a3f830c8f130b58031e523
-hash:e4b78f83e32d6ea27cfde4144bf090c52c6191af4662e75b2fb5f99fd2fe7435
