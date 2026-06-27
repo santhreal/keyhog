@@ -518,10 +518,18 @@ fn git_diff_source_chunk_metadata_carries_path_and_commit() {
         .date
         .as_deref()
         .expect("commit date must be set");
-    let timezone_sign = date.as_bytes().get(date.len().saturating_sub(6)).copied();
+    // A strict-ISO (`%aI`) author date carries either a `Z` UTC designator --
+    // some git builds / UTC hosts render a zero offset as `...T15:00:11Z`, as
+    // GitHub's runners do -- or a numeric `±HH:MM` offset. Both are valid RFC
+    // 3339 timezones; accept either instead of byte-poking a fixed `+`/`-` slot,
+    // which red-failed deterministically on the UTC CI runner.
+    let has_timezone = date.ends_with('Z') || {
+        let tz = date.as_bytes().get(date.len().saturating_sub(6)).copied();
+        matches!(tz, Some(b'+') | Some(b'-'))
+    };
     assert!(
-        date.contains('T') && matches!(timezone_sign, Some(b'+') | Some(b'-')),
-        "git-diff metadata must carry ISO author date; got {date:?}"
+        date.contains('T') && has_timezone,
+        "git-diff metadata must carry an ISO author date with a timezone designator; got {date:?}"
     );
     assert!(
         chunks[0]
