@@ -42,11 +42,20 @@ fn seven_zip_text_entry_is_unpacked_and_scanned_with_inner_path() {
 
 #[test]
 fn seven_zip_binary_strings_entry_is_scanned() {
+    // The member must be GENUINELY binary so the canonical entry decoder
+    // (`decode_text_file_owned_or_bytes`, shared with the plain filesystem read
+    // path) classifies it as binary and falls back to printable-strings rather
+    // than lossy text. A real binary carries a NUL run / high control density —
+    // a couple of stray high bytes around clean ASCII decode as lossy *text*
+    // (and would still surface the secret, just tagged `filesystem/archive`).
+    // The 4+ NUL run here trips `has_repeated_nul_run`, the same binary signal a
+    // loose `.bin` file would hit, keeping archive/binary classification in
+    // parity with the filesystem path.
     let chunks = scan_file(
         "binary.7z",
         crate::support::archive::build_seven_zip(&[(
             "payload.bin",
-            b"\x00\xffKEYHOG_7Z_BINARY_STRING_SECRET_1234567890\xfe\x00",
+            b"\x00\x00\x00\x00\xffKEYHOG_7Z_BINARY_STRING_SECRET_1234567890\xff\x00\x00\x00\x00",
         )]),
     );
     assert!(

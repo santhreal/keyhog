@@ -97,6 +97,63 @@ pub(super) fn record_default_excluded_archive_entry(archive_display: &str, entry
     );
 }
 
+/// Decode an extracted archive/compressed entry's bytes into a chunk using the
+/// SAME canonical decoder as the filesystem read path
+/// (`decode_text_file_owned_or_bytes`), so a UTF-16-BOM entry — a Windows
+/// config/log/transcript packed inside a zip / tar / 7z / gz — is transcoded to
+/// contiguous UTF-8 and its ASCII secrets stay scannable. Raw `String::from_utf8`
+/// fails on the `FF FE` BOM, and the NUL-separated ASCII bytes (`g\0h\0p\0…`)
+/// can't reform an 8-char printable run, so the secret vanished as a silent
+/// false "clean". Returns:
+///   * `Some(Ok(text chunk))` tagged `text_source_type`;
+///   * `Some(Ok(printable-strings chunk))` tagged `binary_source_type` when the
+///     entry is genuine binary yet holds >=8-char printable runs;
+///   * `None` for an empty entry, or for a binary entry with no printable run —
+///     the latter recorded as a binary coverage skip so it is never a silent
+///     clean (LAW10).
+///
+/// One canonical decoder replaces five divergent `String::from_utf8` entry
+/// decoders across the zip / tar / 7z / compressed extractors (NO DUPLICATION,
+/// Law 10 recall parity with the walker read path).
+pub(super) fn chunk_from_extracted_entry(
+    content: Vec<u8>,
+    entry_path: String,
+    text_source_type: &str,
+    binary_source_type: &str,
+) -> Option<Result<Chunk, SourceError>> {
+    match read::decode_text_file_owned_or_bytes(content) {
+        Ok(text) if !text.is_empty() => Some(Ok(Chunk {
+            data: text.into(),
+            metadata: ChunkMetadata {
+                source_type: text_source_type.to_string(),
+                path: Some(entry_path),
+                ..Default::default()
+            },
+        })),
+        Ok(_) => None, // empty entry: nothing to scan, not a coverage gap
+        Err(bytes) => {
+            let strings = crate::strings::extract_printable_strings(&bytes, 8);
+            if strings.is_empty() {
+                record_binary_without_printable_strings(&entry_path);
+                None
+            } else {
+                tracing::info!(
+                    entry = %entry_path,
+                    "archive/compressed entry is not decodable text; scanning printable strings"
+                );
+                Some(Ok(Chunk {
+                    data: crate::strings::join_sensitive_strings(&strings, "\n"),
+                    metadata: ChunkMetadata {
+                        source_type: binary_source_type.to_string(),
+                        path: Some(entry_path),
+                        ..Default::default()
+                    },
+                }))
+            }
+        }
+    }
+}
+
 pub(super) fn report_archive_truncation(
     archive_display: &str,
     attempted_total: u64,

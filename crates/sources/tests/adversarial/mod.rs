@@ -47,6 +47,7 @@ mod git_traversal_parent_path_without_git_rejected;
 mod gzip_bomb_caps;
 mod gzip_single_member_secret_survives;
 mod http_redirect_limit_constant_is_five;
+mod utf16_archive_member_secret_survives;
 mod jar_oversized_entry_metadata_skipped;
 mod lz4_random_bytes_no_panic;
 mod max_file_size_skips_oversize_plain_file;

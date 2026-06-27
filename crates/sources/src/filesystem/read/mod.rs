@@ -23,6 +23,12 @@ pub(super) use bytes::read_file_for_compressed_input;
 /// walker, rather than each one inventing its own weaker read (Law 10 recall
 /// parity + no-duplication).
 pub(crate) use decode::decode_text_file;
+/// Owning sibling of [`decode_text_file`] for callers holding the bytes in a
+/// `Vec<u8>` (buffered reads, archive/compressed entry extraction). Decodes
+/// UTF-16-BOM input identically to the walker's read path so a UTF-16 entry
+/// packed in an archive keeps recall parity (Law 10) instead of each extractor
+/// reinventing a weaker `String::from_utf8` decode (no-duplication).
+pub(in crate::filesystem) use decode::decode_text_file_owned_or_bytes;
 pub(in crate::filesystem) use decode::looks_binary_prefix;
 pub(crate) use raw::open_file_safe;
 pub(super) use raw::{

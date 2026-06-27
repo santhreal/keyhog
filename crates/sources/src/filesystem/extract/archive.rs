@@ -1,10 +1,9 @@
 //! Zip/APK/IPA/CRX/JAR + OOXML/ODF office-document archive extraction.
 
 use super::{
-    display_path, extraction_total_budget, is_symlink, record_binary_without_printable_strings,
-    record_default_excluded_archive_entry,
+    display_path, extraction_total_budget, is_symlink, record_default_excluded_archive_entry,
 };
-use keyhog_core::{Chunk, ChunkMetadata, SourceError};
+use keyhog_core::{Chunk, SourceError};
 use std::fmt::Display;
 use std::path::{Component, Path};
 
@@ -211,45 +210,14 @@ pub(super) fn extract_openpack_archive(
                                 }
                                 break;
                             }
-                            let entry_path =
-                                || format!("{}//{}", archive_display, archive_entry.name);
-                            let chunk = match String::from_utf8(content) {
-                                Ok(s) if !s.is_empty() => Some(Ok(Chunk {
-                                    data: s.into(),
-                                    metadata: ChunkMetadata {
-                                        source_type: "filesystem/archive".into(),
-                                        path: Some(entry_path()),
-                                        ..Default::default()
-                                    },
-                                })),
-                                Ok(_) => None,
-                                Err(error) => {
-                                    tracing::info!(
-                                        archive = %path.display(),
-                                        entry = %archive_entry.name,
-                                        %error,
-                                        "archive entry is not valid UTF-8; scanning printable strings"
-                                    );
-                                    let content = error.into_bytes();
-                                    let strings =
-                                        crate::strings::extract_printable_strings(&content, 8);
-                                    if strings.is_empty() {
-                                        record_binary_without_printable_strings(&entry_path());
-                                        None
-                                    } else {
-                                        Some(Ok(Chunk {
-                                            data: crate::strings::join_sensitive_strings(
-                                                &strings, "\n",
-                                            ),
-                                            metadata: ChunkMetadata {
-                                                source_type: "filesystem/archive-binary".into(),
-                                                path: Some(entry_path()),
-                                                ..Default::default()
-                                            },
-                                        }))
-                                    }
-                                }
-                            };
+                            // Canonical UTF-16-aware entry decode shared with
+                            // every other extractor (zip/tar/7z/compressed).
+                            let chunk = super::chunk_from_extracted_entry(
+                                content,
+                                format!("{}//{}", archive_display, archive_entry.name),
+                                "filesystem/archive",
+                                "filesystem/archive-binary",
+                            );
                             if let Some(chunk) = chunk {
                                 if !emit(chunk) {
                                     return;
@@ -440,35 +408,13 @@ fn chunk_from_archive_content_inner(
     entry_name: &str,
     content: Vec<u8>,
 ) -> Option<Result<Chunk, SourceError>> {
-    let entry_path = || format!("{archive_display}//{entry_name}");
-    match String::from_utf8(content) {
-        Ok(s) if !s.is_empty() => Some(Ok(Chunk {
-            data: s.into(),
-            metadata: ChunkMetadata {
-                source_type: "filesystem/archive".into(),
-                path: Some(entry_path()),
-                ..Default::default()
-            },
-        })),
-        Ok(_) => None,
-        Err(error) => {
-            let content = error.into_bytes();
-            let strings = crate::strings::extract_printable_strings(&content, 8);
-            if strings.is_empty() {
-                record_binary_without_printable_strings(&entry_path());
-                None
-            } else {
-                Some(Ok(Chunk {
-                    data: crate::strings::join_sensitive_strings(&strings, "\n"),
-                    metadata: ChunkMetadata {
-                        source_type: "filesystem/archive-binary".into(),
-                        path: Some(entry_path()),
-                        ..Default::default()
-                    },
-                }))
-            }
-        }
-    }
+    // Canonical UTF-16-aware entry decode shared with every other extractor.
+    super::chunk_from_extracted_entry(
+        content,
+        format!("{archive_display}//{entry_name}"),
+        "filesystem/archive",
+        "filesystem/archive-binary",
+    )
 }
 
 pub(super) fn validate_scan_archive_entry_name(name: &str) -> Result<(), &'static str> {

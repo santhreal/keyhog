@@ -5,10 +5,9 @@ use super::archive::{
     validate_scan_archive_entry_name,
 };
 use super::{
-    display_path, extraction_total_budget, is_symlink, read,
-    record_binary_without_printable_strings, record_default_excluded_archive_entry,
+    display_path, extraction_total_budget, is_symlink, read, record_default_excluded_archive_entry,
 };
-use keyhog_core::{Chunk, ChunkMetadata, SourceError};
+use keyhog_core::{Chunk, SourceError};
 use sevenz_rust2::{ArchiveReader, EncoderMethod, Password};
 use std::io::{Cursor, Read};
 use std::path::Path;
@@ -372,32 +371,11 @@ fn chunk_from_entry_content(
     content: Vec<u8>,
     entry_path: String,
 ) -> Option<Result<Chunk, SourceError>> {
-    match String::from_utf8(content) {
-        Ok(s) if !s.is_empty() => Some(Ok(Chunk {
-            data: s.into(),
-            metadata: ChunkMetadata {
-                source_type: "filesystem/archive".into(),
-                path: Some(entry_path),
-                ..Default::default()
-            },
-        })),
-        Ok(_) => None,
-        Err(error) => {
-            let bytes = error.into_bytes();
-            let strings = crate::strings::extract_printable_strings(&bytes, 8);
-            if strings.is_empty() {
-                record_binary_without_printable_strings(&entry_path);
-                None
-            } else {
-                Some(Ok(Chunk {
-                    data: crate::strings::join_sensitive_strings(&strings, "\n"),
-                    metadata: ChunkMetadata {
-                        source_type: "filesystem/archive-binary".into(),
-                        path: Some(entry_path),
-                        ..Default::default()
-                    },
-                }))
-            }
-        }
-    }
+    // Canonical UTF-16-aware entry decode shared with every other extractor.
+    super::chunk_from_extracted_entry(
+        content,
+        entry_path,
+        "filesystem/archive",
+        "filesystem/archive-binary",
+    )
 }

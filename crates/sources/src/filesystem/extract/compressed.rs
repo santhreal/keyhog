@@ -3,9 +3,9 @@
 use super::archive::{emit_archive_unreadable_error, validate_scan_archive_entry_name};
 use super::{
     display_path, extraction_total_budget, extraction_total_budget_usize, is_symlink, read,
-    record_binary_without_printable_strings, record_default_excluded_archive_entry,
+    record_default_excluded_archive_entry,
 };
-use keyhog_core::{Chunk, ChunkMetadata, SourceError};
+use keyhog_core::{Chunk, SourceError};
 use std::path::Path;
 
 /// The single-stream compression format of a `.gz` / `.zst` / `.lz4` / `.sz` /
@@ -374,34 +374,13 @@ fn emit_tar_entries_with_state(
         }
 
         let entry_path = format!("{container_display}//{entry_name}");
-        let chunk = match String::from_utf8(content) {
-            Ok(s) if !s.is_empty() => Some(Ok(Chunk {
-                data: s.into(),
-                metadata: ChunkMetadata {
-                    source_type: "filesystem/archive".into(),
-                    path: Some(entry_path),
-                    ..Default::default()
-                },
-            })),
-            Ok(_) => None,
-            Err(error) => {
-                let bytes = error.into_bytes();
-                let strings = crate::strings::extract_printable_strings(&bytes, 8);
-                if strings.is_empty() {
-                    record_binary_without_printable_strings(&entry_path);
-                    None
-                } else {
-                    Some(Ok(Chunk {
-                        data: crate::strings::join_sensitive_strings(&strings, "\n"),
-                        metadata: ChunkMetadata {
-                            source_type: "filesystem/archive-binary".into(),
-                            path: Some(entry_path),
-                            ..Default::default()
-                        },
-                    }))
-                }
-            }
-        };
+        // Canonical UTF-16-aware entry decode shared with every other extractor.
+        let chunk = super::chunk_from_extracted_entry(
+            content,
+            entry_path,
+            "filesystem/archive",
+            "filesystem/archive-binary",
+        );
         if let Some(chunk) = chunk {
             if !emit(chunk) {
                 return;
@@ -527,32 +506,18 @@ pub(super) fn extract_compressed_chunks(
         return;
     }
 
-    let (data, source_type) = match String::from_utf8(decompressed) {
-        Ok(s) if !s.is_empty() => (s.into(), "filesystem/compressed"),
-        Ok(_) => return,
-        Err(error) => {
-            let bytes = error.into_bytes();
-            let strings = crate::strings::extract_printable_strings(&bytes, 8);
-            if strings.is_empty() {
-                record_binary_without_printable_strings(&path_display);
-                return;
-            }
-            (
-                crate::strings::join_sensitive_strings(&strings, "\n"),
-                "filesystem/compressed-binary",
-            )
+    // Canonical UTF-16-aware decode shared with every other extractor: a UTF-16
+    // file compressed as `foo.txt.gz` keeps recall parity with the uncompressed
+    // read path instead of being dropped as NUL-separated bytes.
+    if let Some(chunk) = super::chunk_from_extracted_entry(
+        decompressed,
+        path_display,
+        "filesystem/compressed",
+        "filesystem/compressed-binary",
+    ) {
+        if !emit(chunk) {
+            tracing::debug!("compressed chunk consumer stopped before final chunk");
         }
-    };
-
-    if !emit(Ok(Chunk {
-        data,
-        metadata: ChunkMetadata {
-            source_type: source_type.into(),
-            path: Some(path_display),
-            ..Default::default()
-        },
-    })) {
-        tracing::debug!("compressed chunk consumer stopped before final chunk");
     }
 }
 
