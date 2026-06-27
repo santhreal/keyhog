@@ -395,6 +395,13 @@ pub(super) fn resolve_bucket(
             return resolution;
         }
     }
+    // A single file BETWEEN two calibrated single-file rungs can't be bracketed by
+    // the per-axis interpolation above (its two size axes move together), so try
+    // the diagonal companion before the below-floor clamp — see
+    // `interpolate_single_file_diagonal`.
+    if let Some(resolution) = interpolate_single_file_diagonal(decisions, key) {
+        return resolution;
+    }
     // A query smaller than every calibrated bucket in its class has no lower
     // bracket to interpolate from (the common `keyhog scan small.env` case: a
     // single file below the ladder's smallest single-file probe). Clamp it to
@@ -486,6 +493,98 @@ fn interpolate_cpu_class(
     }
 }
 
+// Between-rung single-file interpolation (#46) — the diagonal companion to #34's
+// per-axis interpolation, and the third sound generalization after the #44
+// below-floor clamp.
+//
+// A SINGLE file's `bytes_bucket` and `max_file_bucket` are the SAME quantity (the
+// one file's size) bucketed twice, so two different-sized single files differ on
+// BOTH size axes at once. `interpolate_cpu_class` holds one axis fixed while
+// varying the other, so it can never bracket them — the exact correlation that
+// also forced the #44 clamp. The everyday `keyhog scan mid.env` whose size lands
+// strictly between two calibrated single-file rungs (e.g. 16 KiB between the
+// 4 KiB and 64 KiB probes) therefore used to fail closed (exit 2).
+//
+// This brackets along the size DIAGONAL instead: when the query is itself a
+// single-file point (`bytes_bucket == max_file_bucket`) of a calibrated class,
+// sitting strictly between two calibrated single-file rungs that AGREE on a CPU
+// backend, that backend is the sound choice between them. A single file's size is
+// ONE degree of freedom, so this is exactly #34's agreeing-CPU-bracket
+// monotonicity applied to the true single-file size axis: under the linear
+// setup+throughput cost model, a backend that is fastest-correct at a smaller AND
+// a larger single-file size is fastest-correct in between, and CPU backends are
+// reference-correct at every size (recall preserved). GPU is never bracketed (its
+// correctness varies with size). Like every generalized resolution it is surfaced
+// LOUDLY by the caller as an `Interpolated` route, not a silent default.
+fn interpolate_single_file_diagonal(
+    decisions: &HashMap<WorkloadKey, AutorouteDecision>,
+    key: &WorkloadKey,
+) -> Option<BucketResolution> {
+    // Only a single-file query lives on the diagonal. A multi-file workload's two
+    // size axes are independent and is owned by the per-axis interpolation above.
+    if key.bytes_bucket != key.max_file_bucket {
+        return None;
+    }
+    let target = key.bytes_bucket;
+    let mut nearest_lo: Option<(u8, ScanBackend, WorkloadKey)> = None;
+    let mut nearest_hi: Option<(u8, ScanBackend, WorkloadKey)> = None;
+
+    for (candidate_key, decision) in decisions {
+        // The candidate must itself be a single-file point of the SAME non-size
+        // class (chunks/pattern/density/source all equal). Requiring chunks equal
+        // keeps the bracket within one chunk regime — a rung across a chunk-count
+        // change is not a sound single-file neighbour and is left fail-closed.
+        if candidate_key.bytes_bucket != candidate_key.max_file_bucket
+            || candidate_key.chunks_bucket != key.chunks_bucket
+            || candidate_key.pattern_bucket != key.pattern_bucket
+            || candidate_key.decode_density_bucket != key.decode_density_bucket
+            || candidate_key.source_class_hash != key.source_class_hash
+        {
+            continue;
+        }
+        let Some(backend) = decision.backend() else {
+            continue;
+        };
+        // GPU correctness can vary with input size — never bracket across it.
+        if super::is_gpu_backend(backend) {
+            continue;
+        }
+        let value = candidate_key.bytes_bucket;
+        if value < target {
+            let replace = match nearest_lo {
+                Some((best, _, _)) => value > best,
+                None => true,
+            };
+            if replace {
+                nearest_lo = Some((value, backend, *candidate_key));
+            }
+        } else if value > target {
+            let replace = match nearest_hi {
+                Some((best, _, _)) => value < best,
+                None => true,
+            };
+            if replace {
+                nearest_hi = Some((value, backend, *candidate_key));
+            }
+        }
+    }
+
+    match (nearest_lo, nearest_hi) {
+        (Some((_, lo_backend, lo_key)), Some((_, hi_backend, hi_key)))
+            if lo_backend == hi_backend =>
+        {
+            Some(BucketResolution::Interpolated {
+                backend: lo_backend,
+                lo: lo_key,
+                hi: hi_key,
+            })
+        }
+        // Bracketing pair disagrees, only one side exists, or the query is above
+        // every rung (a between-floor clamp owns below; above stays fail-closed).
+        _ => None,
+    }
+}
+
 // Below-floor extrapolation (the second sound generalization, after #34's
 // interpolation). A single small file — `keyhog scan small.env`, by far the most
 // common scan — lands in a size bucket BELOW the ladder's smallest single-file
@@ -508,12 +607,15 @@ fn interpolate_cpu_class(
 // preserved. GPU is never the anchor (its correctness varies with size).
 //
 // Strict on BOTH axes is deliberate: a query equal to a calibrated bucket on one
-// axis (same total bytes, fewer/larger files) is NOT unambiguously smaller, and a
-// query BETWEEN calibrated single-file buckets is an interpolation gap, not a
-// floor — both stay fail-closed rather than risk a slower route. The class must
-// have at least one calibrated CPU bucket (proof the class itself was
-// calibrated); a wholly uncalibrated class still fails closed. Surfaced LOUDLY by
-// the caller, like interpolation.
+// axis (same total bytes, fewer/larger files) is NOT unambiguously smaller, so it
+// stays fail-closed here rather than risk a slower route. A query BETWEEN two
+// calibrated single-file rungs is not a floor either — it is owned by the
+// diagonal interpolation (`interpolate_single_file_diagonal`, #46) which runs
+// before this clamp; by the time the clamp is reached, the query is genuinely
+// below the whole single-file frontier. The class must have at least one
+// calibrated CPU bucket (proof the class itself was calibrated); a wholly
+// uncalibrated class still fails closed. Surfaced LOUDLY by the caller, like
+// interpolation.
 fn clamp_below_calibrated_floor(
     decisions: &HashMap<WorkloadKey, AutorouteDecision>,
     key: &WorkloadKey,

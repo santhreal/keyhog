@@ -2691,11 +2691,58 @@ fn bucket_resolution_clamps_below_floor_to_cpu_fallback() {
 }
 
 #[test]
-fn bucket_resolution_does_not_clamp_between_single_file_buckets() {
-    // A single file BETWEEN two calibrated single-file buckets (here bytes/max_file
-    // 7, between 6 and 8) is an interpolation gap, not a below-floor case: a lower
-    // calibrated bucket exists, so the clamp must NOT fire and it stays fail-closed
-    // (the strict "smaller than every calibrated bucket on both axes" guard).
+fn bucket_resolution_interpolates_between_single_file_rungs() {
+    // #46: a single file BETWEEN two calibrated single-file rungs (bytes/max_file
+    // moving together: query 7, between agreeing-SimdCpu rungs 6 and 8) is bracketed
+    // along the size DIAGONAL and resolves to SimdCpu — the per-axis interpolation
+    // can't see it (both size axes move at once), and it is NOT below the floor, so
+    // before #46 it failed closed. CpuFallback is reference-correct so recall holds.
+    let base = test_workload_key();
+    let lo = WorkloadKey {
+        bytes_bucket: 6,
+        max_file_bucket: 6,
+        ..base
+    };
+    let hi = WorkloadKey {
+        bytes_bucket: 8,
+        max_file_bucket: 8,
+        ..base
+    };
+    let mut decisions = HashMap::new();
+    decisions.insert(lo, cpu_decision(ScanBackend::SimdCpu));
+    decisions.insert(hi, cpu_decision(ScanBackend::SimdCpu));
+    let requested = WorkloadKey {
+        bytes_bucket: 7,
+        max_file_bucket: 7,
+        ..base
+    };
+    match resolve_bucket(&decisions, &requested) {
+        BucketResolution::Interpolated {
+            backend,
+            lo: got_lo,
+            hi: got_hi,
+        } => {
+            assert_eq!(backend, ScanBackend::SimdCpu);
+            assert_eq!(
+                got_lo, lo,
+                "diagonal interpolation must report the lower rung"
+            );
+            assert_eq!(
+                got_hi, hi,
+                "diagonal interpolation must report the upper rung"
+            );
+        }
+        other => panic!(
+            "expected diagonal interpolation between agreeing single-file rungs, got {other:?}"
+        ),
+    }
+}
+
+#[test]
+fn bucket_resolution_does_not_interpolate_between_disagreeing_single_file_rungs() {
+    // The diagonal bracket is only sound when both single-file rungs AGREE: a query
+    // between a SimdCpu rung and a CpuFallback rung has no single fastest-correct
+    // answer, so it must stay fail-closed (Unresolved), never guess one side.
     let base = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
@@ -2712,7 +2759,7 @@ fn bucket_resolution_does_not_clamp_between_single_file_buckets() {
             max_file_bucket: 8,
             ..base
         },
-        cpu_decision(ScanBackend::SimdCpu),
+        cpu_decision(ScanBackend::CpuFallback),
     );
     let requested = WorkloadKey {
         bytes_bucket: 7,
@@ -2721,7 +2768,44 @@ fn bucket_resolution_does_not_clamp_between_single_file_buckets() {
     };
     assert_eq!(
         resolve_bucket(&decisions, &requested),
-        BucketResolution::Unresolved
+        BucketResolution::Unresolved,
+        "disagreeing single-file brackets must fail closed, not pick a side"
+    );
+}
+
+#[test]
+fn bucket_resolution_does_not_interpolate_single_file_across_a_gpu_rung() {
+    // GPU correctness varies with input size, so it can never anchor a diagonal
+    // bracket: a single-file query whose only upper neighbour is GPU has just one
+    // CPU side (the lower rung) and stays fail-closed — never a one-sided guess and
+    // never a clamp toward GPU.
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 6,
+            max_file_bucket: 6,
+            ..base
+        },
+        cpu_decision(ScanBackend::SimdCpu),
+    );
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 8,
+            max_file_bucket: 8,
+            ..base
+        },
+        gpu_decision(),
+    );
+    let requested = WorkloadKey {
+        bytes_bucket: 7,
+        max_file_bucket: 7,
+        ..base
+    };
+    assert_eq!(
+        resolve_bucket(&decisions, &requested),
+        BucketResolution::Unresolved,
+        "a GPU rung must not anchor a single-file diagonal bracket"
     );
 }
 

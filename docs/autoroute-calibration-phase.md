@@ -91,6 +91,18 @@ pipeline flags; the documented presets each change scan-policy fields. The
   size axis AND are both CPU-class (exact-match → recall-uniform across size; GPU
   never interpolates, cf. #18). Loud once-per-process notice, never silent. A
   disagreeing/un-bracketed miss still fails closed.
+  - **#44 below-floor clamp** — a single file SMALLER than every calibrated
+    single-file rung on BOTH size axes (the everyday `keyhog scan small.env`)
+    clamps to setup-free CpuFallback (an input too small to amortize any
+    backend's setup cannot be beaten by one that pays it; CpuFallback is
+    reference-correct). Strict on both axes; an uncalibrated class still fails
+    closed. Loud `ClampedBelowFloor` notice.
+  - **#46 diagonal interpolation** — a single file BETWEEN two calibrated
+    single-file rungs (its `bytes`/`max_file` buckets move together, so #34's
+    per-axis bracket can't see it) resolves along the size diagonal when the two
+    rungs agree on a CPU backend. Same monotonicity soundness as #34 applied to
+    the one-degree-of-freedom single-file size axis; GPU never anchors;
+    disagreeing/one-sided brackets still fail closed.
 - **#35 measurement rigor** — already multi-trial + SIMD-parity-checked
   (`backend/calibration.rs`); audit warmup/reps/margin and record margins.
 - **#36 Docker matrix** — bake the preset calibration into the image so the auto
