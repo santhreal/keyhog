@@ -77,6 +77,11 @@ pub(crate) struct DefaultScanRuntime {
     scanner: Arc<CompiledScanner>,
     router: CachedBackendRouter,
     detector_count: usize,
+    /// Explicit backend forced by the caller (e.g. `keyhog watch --backend cpu`).
+    /// `None` => use the persisted autoroute decision (which requires
+    /// calibration). When `Some`, the per-file scan never consults the autoroute
+    /// cache, so the runtime works on an uncalibrated binary.
+    backend_override: Option<keyhog_scanner::ScanBackend>,
 }
 
 impl DefaultScanRuntime {
@@ -86,7 +91,21 @@ impl DefaultScanRuntime {
             scanner,
             router,
             detector_count: detectors.len(),
+            backend_override: None,
         }
+    }
+
+    /// Force a specific scan backend instead of the persisted autoroute decision,
+    /// mirroring `keyhog scan --backend`. With an explicit backend the per-file
+    /// scan never consults the autoroute calibration cache, so `keyhog watch`
+    /// works on an uncalibrated binary and the autoroute error's `--backend`
+    /// diagnostic advice is actionable for `watch` too.
+    pub(crate) fn with_backend_override(
+        mut self,
+        backend: Option<keyhog_scanner::ScanBackend>,
+    ) -> Self {
+        self.backend_override = backend;
+        self
     }
 
     pub(crate) fn detector_count(&self) -> usize {
@@ -98,7 +117,9 @@ impl DefaultScanRuntime {
     }
 
     pub(crate) fn scan_chunk(&self, chunk: &Chunk) -> Result<Vec<RawMatch>> {
-        let backend = self.router.choose(None, std::slice::from_ref(chunk))?;
+        let backend = self
+            .router
+            .choose(self.backend_override, std::slice::from_ref(chunk))?;
         Ok(self.scanner.scan_with_backend(chunk, backend))
     }
 
@@ -738,3 +759,56 @@ fn filesystem_auto_scan_cannot_route_gpu(args: &ScanArgs) -> bool {
 // `reporting::dump_dogfood_trace` is consumed by sibling `run.rs` via
 // `use reporting::{dump_dogfood_trace, …};` directly. The re-export
 // that lived here was unused and tripped the unused-imports lint.
+
+#[cfg(test)]
+mod backend_override_tests {
+    use super::*;
+
+    /// Regression (dogfood): `keyhog watch` had no `--backend` escape hatch, so an
+    /// uncalibrated binary failed EVERY change scan with "autoroute calibration
+    /// required" -- and the error even advised `--backend`, a flag watch did not
+    /// accept. With an explicit backend the per-file scan must FORCE that backend
+    /// and never consult the autoroute decision cache, so watch works uncalibrated.
+    ///
+    /// Host-independent: `cpu` => `CpuFallback` (the scalar regex tier, always
+    /// available without Hyperscan), forced unconditionally -- it never depends on
+    /// the host's persisted autoroute decisions the way a bare auto scan would.
+    #[test]
+    fn watch_runtime_backend_override_scans_without_autoroute_calibration() {
+        let detectors =
+            keyhog_core::load_embedded_detectors_or_fail().expect("load embedded detectors");
+        let forced = explicit_backend_override(Some("cpu"))
+            .expect("parse cpu backend")
+            .expect("cpu is an explicit backend, not auto");
+        let runtime = compile_default_scan_runtime(detectors, |e| anyhow::anyhow!("{e}"))
+            .expect("compile default scan runtime")
+            .with_backend_override(Some(forced));
+
+        let body = "AWS_ACCESS_KEY_ID=AKIA2E0A8F3B244C9986\n".to_string();
+        let chunk = Chunk {
+            data: body.into(),
+            metadata: keyhog_core::ChunkMetadata {
+                base_offset: 0,
+                base_line: 0,
+                source_type: "filesystem".into(),
+                path: Some("watched.env".to_string()),
+                commit: None,
+                author: None,
+                date: None,
+                mtime_ns: None,
+                size_bytes: None,
+                decoded_span: None,
+            },
+        };
+
+        let matches = runtime
+            .scan_chunk(&chunk)
+            .expect("a forced-backend watch scan must not require autoroute calibration");
+        assert!(
+            matches
+                .iter()
+                .any(|m| m.detector_id.as_ref() == "aws-access-key"),
+            "forced-cpu watch scan must still detect the planted AWS key; got {matches:?}"
+        );
+    }
+}

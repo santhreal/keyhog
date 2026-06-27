@@ -56,13 +56,19 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
         );
     }
 
+    // Parse the explicit backend BEFORE compiling the scanner so an invalid
+    // value fails fast. With it set, the per-file scan forces that backend and
+    // never consults the autoroute cache -- so watch works on an uncalibrated
+    // binary (and the autoroute error's `--backend` advice is actionable here).
+    let backend_override = crate::orchestrator::explicit_backend_override(args.backend.as_deref())?;
     let scan_runtime = setup_default_scan_runtime(
         &args.detectors,
         args.cache_dir.clone(),
         None,
         "keyhog watch",
         false,
-    )?;
+    )?
+    .with_backend_override(backend_override);
     let detector_count = scan_runtime.detector_count();
 
     if !args.quiet {
