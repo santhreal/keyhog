@@ -119,7 +119,15 @@ hardware — stdin, small/large files, many-file trees, decode-heavy input, git
 history/blobs/diff, a loopback web URL, and a live container image — timing each
 backend per class and persisting only a route it can prove fastest (or the sound
 lowest-overhead tie-break when two routes are statistically tied). The install
-refuses to finish unless every class calibrates:
+refuses to finish unless every class calibrates.
+
+Because a scan-policy preset (`--fast`, `--deep`, `--precision`) changes the
+scanner fields hashed into the routing digest, each preset resolves a *different*
+decision than the default policy. The installer therefore calibrates the default
+policy **and** every preset the binary exposes, so `keyhog scan . --fast` (or
+`--deep`/`--precision`) resolves a persisted fastest-correct decision instead of
+failing closed. The decisions for the default policy and every preset coexist in
+one cache file (each keyed by its own resolved-config digest):
 
 <p align="center">
   <img src="demo/keyhog-calibrate.gif" alt="install.sh --calibrate streaming the 16-probe autoroute sweep — empty/64 KiB stdin, 4/64 KiB and 1/8/32 MiB files, decode-heavy, many-file trees, git history/blobs/diff, web URL, and a live docker image — each workload class measuring every backend and landing PASS, then the persisted decisions summary and 'Autoroute calibration phase complete'" width="860" />

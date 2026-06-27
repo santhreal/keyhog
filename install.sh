@@ -1343,6 +1343,24 @@ prime_autoroute_cache() {
     # failed closed (exit 2). Default calibration now matches the default scan
     # path; GPU/coalesced calibration is a separate, explicit opt-in digest.
     autoroute_scan_flags=""
+    # Calibrate the documented scan-policy presets too. Each preset changes
+    # scanner fields hashed into the autoroute config digest, so `keyhog scan .
+    # --fast` resolves a DIFFERENT digest than the default and needs its own
+    # calibrated decisions or it fails closed (exit 2). The v20 multi-config
+    # cache lets the default policy and every preset coexist in one file. The
+    # empty first entry is the default policy; only presets the installed binary
+    # actually exposes are calibrated (a released build may predate one).
+    autoroute_presets=""
+    for preset_flag in --fast --deep --precision; do
+        if printf '%s' "$scan_help" | grep -q -- "$preset_flag"; then
+            autoroute_presets="$autoroute_presets $preset_flag"
+        fi
+    done
+    # Count: default policy + each supported preset.
+    preset_count=1
+    for _preset_flag in $autoroute_presets; do
+        preset_count=$((preset_count + 1))
+    done
     unavailable_calibrations=""
     git_calibration=0
     git_bin=""
@@ -1388,19 +1406,23 @@ prime_autoroute_cache() {
     kib_sizes="4 64"
     mib_sizes="1 8 32"
     many_file_counts="4 16 32"
-    total=0
-    total=$((total + 1)) # empty stdin
-    total=$((total + 1)) # stdin 64 KiB
+    # The stdin + filesystem "core" probes run once per scan-policy preset
+    # (default + each supported preset); the external-source probes
+    # (git/docker/web) calibrate the default policy only.
+    core_total=0
+    core_total=$((core_total + 1)) # empty stdin
+    core_total=$((core_total + 1)) # stdin 64 KiB
     for _kib in $kib_sizes; do
-        total=$((total + 1))
+        core_total=$((core_total + 1))
     done
     for _mib in $mib_sizes; do
-        total=$((total + 1))
+        core_total=$((core_total + 1))
     done
-    total=$((total + 1)) # decode-heavy 256 KiB
+    core_total=$((core_total + 1)) # decode-heavy 256 KiB
     for _count in $many_file_counts; do
-        total=$((total + 1))
+        core_total=$((core_total + 1))
     done
+    total=$((core_total * preset_count))
     if [ "$git_calibration" = "1" ]; then
         total=$((total + 3))
     fi
@@ -1412,6 +1434,12 @@ prime_autoroute_cache() {
     fi
     idx=0
     failed=0
+
+    # Calibrate the core stdin + filesystem workloads once per scan-policy preset.
+    # The default policy (empty flags) runs first; `autoroute_scan_flags` carries
+    # the preset into run_keyhog_calibration_scan, so each pass resolves and
+    # persists the exact digest a real `keyhog scan <path> [preset]` requests.
+    for autoroute_scan_flags in "" $autoroute_presets; do
 
     idx=$((idx + 1))
     probe="$tmpdir/probe-stdin-empty.txt"
@@ -1497,6 +1525,11 @@ prime_autoroute_cache() {
             failed=1
         fi
     done
+
+    done # end per-preset core workload sweep
+
+    # External-source probes (git/docker/web) calibrate the default policy only.
+    autoroute_scan_flags=""
 
     if [ "$git_calibration" = "1" ]; then
         git_repo="$tmpdir/git-source"
