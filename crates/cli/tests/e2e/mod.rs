@@ -1,8 +1,8 @@
 pub mod action_ci_contract;
 pub mod autoroute_preset_resolution;
 pub mod backend_autoroute_inspect;
-pub mod calibrate_autoroute_subcommand;
 pub mod backend_prints_selected_backend;
+pub mod calibrate_autoroute_subcommand;
 pub mod calibrate_show_header;
 pub mod calibration_cache_strict;
 pub mod cli_precision_boundaries;

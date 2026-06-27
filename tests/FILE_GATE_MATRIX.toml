@@ -23,6 +23,13 @@ adversarial = true
 e2e_linked = true
 
 [[module]]
+path = "crates/cli/src/args/calibrate_autoroute.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
 path = "crates/cli/src/atomic_file.rs"
 boundary = true
 error = true
@@ -332,6 +339,20 @@ e2e_linked = true
 
 [[module]]
 path = "crates/cli/src/subcommands/calibrate.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/subcommands/calibrate_autoroute.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/subcommands/calibrate_autoroute/tests.rs"
 boundary = true
 error = true
 adversarial = true

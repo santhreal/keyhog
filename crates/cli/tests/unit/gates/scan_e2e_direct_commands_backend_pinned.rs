@@ -43,17 +43,24 @@ fn scan_e2e_direct_commands_backend_pinned() {
             let block = &src[start..end];
             let is_scan = block.contains("\"scan\"") || block.contains(".arg(\"scan\")");
             // Explicit routing evidence the gate accepts: a pinned `--backend`, a
-            // forced `--daemon=on`, or an explicit `--daemon=auto`. The hazard
-            // this gate guards is a BARE `scan` that silently rides the implicit
-            // default route with no declared intent — an explicit `--daemon=auto`
-            // flag is a declared intent, not that hazard, and is exactly what the
-            // daemon auto-route contract tests must use to assert the in-process
-            // path reports "autoroute calibration required".
+            // forced `--daemon=on`, an explicit `--daemon=auto`, or the
+            // `--autoroute-calibrate` writer flag. The hazard this gate guards is a
+            // BARE `scan` that silently rides the implicit default route with no
+            // declared intent — an explicit `--daemon=auto` flag is a declared
+            // intent, not that hazard, and is exactly what the daemon auto-route
+            // contract tests must use to assert the in-process path reports
+            // "autoroute calibration required". `--autoroute-calibrate` is the
+            // strongest declared intent of all: it IS the calibration writer that
+            // measures every backend to PICK the fastest, so pinning `--backend`
+            // on it would be self-contradictory (you cannot calibrate a forced
+            // backend) — the calibration path is exactly why auto exists.
             let pinned = block.contains("\"--backend\"")
                 || block.contains("\"--daemon=on\"")
                 || block.contains(".arg(\"--daemon=on\")")
                 || block.contains("\"--daemon=auto\"")
-                || block.contains(".arg(\"--daemon=auto\")");
+                || block.contains(".arg(\"--daemon=auto\")")
+                || block.contains("\"--autoroute-calibrate\"")
+                || block.contains(".arg(\"--autoroute-calibrate\")");
             if is_scan && !pinned {
                 problems.push(format!(
                     "{} has a direct keyhog scan subprocess without explicit backend evidence",

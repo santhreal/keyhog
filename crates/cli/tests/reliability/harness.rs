@@ -51,6 +51,7 @@ pub const SUBCOMMANDS: &[&str] = &[
     "uninstall",
     "scan-system",
     "daemon",
+    "calibrate-autoroute",
 ];
 
 /// A hostile-environment profile. Each variant flips a real runtime branch

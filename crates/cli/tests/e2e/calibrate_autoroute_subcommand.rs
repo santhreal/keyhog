@@ -121,8 +121,7 @@ fn calibrate_autoroute_rejects_cache_off_up_front() {
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("disables persistence")
-            && stderr.contains("calibrate-autoroute exists to"),
+        stderr.contains("disables persistence") && stderr.contains("calibrate-autoroute exists to"),
         "the rejection must explain why `off` is incompatible with calibration; stderr={stderr}"
     );
     // Fail-fast: it must NOT have flooded per-probe failures before bailing.

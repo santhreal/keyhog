@@ -283,7 +283,9 @@ fn run_probe(
 
     let out = workspace.join(format!("probe-{idx}.json"));
     let mut cmd = Command::new(exe);
-    cmd.arg("scan").arg("--autoroute-calibrate").arg("--no-config");
+    cmd.arg("scan")
+        .arg("--autoroute-calibrate")
+        .arg("--no-config");
     if let Some(cache) = autoroute_cache {
         cmd.arg("--autoroute-cache").arg(cache);
     }
@@ -376,62 +378,4 @@ fn materialize_probe(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn plain_block_is_exactly_one_kib() {
-        assert_eq!(calibration_block(PLAIN_SEED).len(), 1024);
-        assert_eq!(calibration_block(DECODE_HEAVY_SEED).len(), 1024);
-    }
-
-    #[test]
-    fn calibration_bytes_are_whole_kib_runs() {
-        assert!(calibration_bytes(PLAIN_SEED, 0).is_empty());
-        assert_eq!(calibration_bytes(PLAIN_SEED, 4 * 1024).len(), 4 * 1024);
-        assert_eq!(calibration_bytes(PLAIN_SEED, 64 * 1024).len(), 64 * 1024);
-        // The first 1024 bytes equal one block (probes are block runs, not noise).
-        let buf = calibration_bytes(PLAIN_SEED, 8 * 1024);
-        assert_eq!(&buf[..1024], calibration_block(PLAIN_SEED).as_slice());
-    }
-
-    #[test]
-    fn workload_plan_matches_the_installer_ladder() {
-        let plan = core_workload_plan();
-        // 2 stdin + 5 single-file (incl. decode-heavy) + 3 file-tree workloads.
-        assert_eq!(plan.len(), 11);
-        let labels: Vec<&str> = plan.iter().map(Workload::label).collect();
-        assert!(labels.contains(&"empty stdin workload"));
-        assert!(labels.contains(&"decode-heavy 256 KiB workload"));
-        assert!(labels.contains(&"32 MiB workload"));
-        assert!(labels.contains(&"32 x 4 KiB files workload"));
-    }
-
-    #[test]
-    fn decode_heavy_block_is_denser_than_plain() {
-        // The decode-heavy seed must carry materially more base64-alphabet run
-        // content than the plain seed, or the two probes collapse into the same
-        // decode-density bucket and the decode-through path is never timed.
-        fn longest_b64_run(bytes: &[u8]) -> usize {
-            let mut best = 0usize;
-            let mut run = 0usize;
-            for &b in bytes {
-                let b64 = b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'=');
-                if b64 {
-                    run += 1;
-                    best = best.max(run);
-                } else {
-                    run = 0;
-                }
-            }
-            best
-        }
-        let plain = longest_b64_run(calibration_block(PLAIN_SEED).as_slice());
-        let heavy = longest_b64_run(calibration_block(DECODE_HEAVY_SEED).as_slice());
-        assert!(
-            heavy >= plain + 24,
-            "decode-heavy block (longest b64 run {heavy}) must clear the plain block \
-             (longest run {plain}) by the encoded-run threshold"
-        );
-    }
-}
+mod tests;

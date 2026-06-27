@@ -53,4 +53,5 @@ crate::kh_matrix!(
     uninstall => "uninstall",
     scan_system => "scan-system",
     daemon => "daemon",
+    calibrate_autoroute => "calibrate-autoroute",
 );
