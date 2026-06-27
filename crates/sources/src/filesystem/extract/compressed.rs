@@ -11,7 +11,7 @@ use std::path::Path;
 /// The single-stream compression format of a `.gz` / `.zst` / `.lz4` / `.sz` /
 /// `.bz2` / `.xz` (or `.tgz`) file, inferred from its extension.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum CompressedFormat {
+pub(super) enum CompressedFormat {
     Gzip,
     Zstd,
     Lz4,
@@ -159,7 +159,7 @@ pub(super) fn emit_tar_entries(
     );
 }
 
-fn emit_tar_entries_with_state(
+pub(super) fn emit_tar_entries_with_state(
     tar_bytes: &[u8],
     container_display: &str,
     max_size: u64,
@@ -373,6 +373,41 @@ fn emit_tar_entries_with_state(
             continue;
         }
 
+        // A compressed member (`.gz` / `.tgz` / `.zst` / `.lz4` / `.sz` /
+        // `.bz2` / `.xz`) inside this tar must be decompressed and its TRUE
+        // bytes scanned, exactly as the same file is when scanned standalone.
+        // Without this it fell through to the leaf decode below: the compressed
+        // bytes are not valid text, so they were routed to the
+        // printable-strings path and a secret in the compressed payload was a
+        // SILENT false-clean (Law 10) -- `archive.tar//inner.txt.gz` reported
+        // "clean" with no coverage gap. Recursion into a decompressed tar is
+        // bounded by `nested_depth`; output size by the shared tar-bomb budget.
+        if let Some(format) = compressed_member_format(&entry_name) {
+            let nested_display = format!("{container_display}//{entry_name}");
+            if nested_depth >= MAX_EMBEDDED_TAR_DEPTH {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit(Err(SourceError::Other(format!(
+                    "failed to scan compressed archive member '{nested_display}': maximum nested archive depth {MAX_EMBEDDED_TAR_DEPTH} exceeded; member was not scanned"
+                )))) {
+                    return;
+                }
+                continue;
+            }
+            if !emit_decompressed_member(
+                format,
+                &content,
+                &nested_display,
+                max_size,
+                total_uncompressed,
+                nested_depth,
+                respect_default_excludes,
+                emit,
+            ) {
+                return;
+            }
+            continue;
+        }
+
         let entry_path = format!("{container_display}//{entry_name}");
         // Canonical UTF-16-aware entry decode shared with every other extractor.
         let chunk = super::chunk_from_extracted_entry(
@@ -389,12 +424,116 @@ fn emit_tar_entries_with_state(
     }
 }
 
-fn entry_is_embedded_tar(entry_name: &str, content: &[u8]) -> bool {
+pub(super) fn entry_is_embedded_tar(entry_name: &str, content: &[u8]) -> bool {
     let has_tar_ext = Path::new(entry_name)
         .extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("tar"));
     has_tar_ext && looks_like_tar(content)
+}
+
+/// Return the single-stream compression format of a tar/zip MEMBER whose name
+/// carries a recognized compressed extension (`.gz` / `.tgz` / `.zst` / `.lz4`
+/// / `.sz` / `.bz2` / `.xz`). A member with such an extension must be
+/// decompressed and its true bytes scanned -- routing the compressed bytes to
+/// the printable-strings path SILENTLY loses a secret in the payload (Law 10).
+pub(super) fn compressed_member_format(entry_name: &str) -> Option<CompressedFormat> {
+    let ext = Path::new(entry_name).extension().and_then(|e| e.to_str())?;
+    CompressedFormat::from_ext(ext)
+}
+
+/// Decompress a compressed archive MEMBER in memory and scan its TRUE bytes:
+/// untar if the decompressed stream is a tar container, else emit it as one
+/// UTF-16-aware chunk -- exactly what the standalone compressed-file path does.
+///
+/// This closes a Law-10 silent false-clean. Previously a `.gz` member inside a
+/// `.tar` (or `.zip`) fell through to the printable-strings path, so a secret
+/// in its compressed payload was reported "clean" with no coverage gap.
+/// Recursion into a decompressed tar is bounded by `nested_depth`; total
+/// decompressed output is bounded by the shared tar/zip-bomb `total_uncompressed`
+/// budget and the per-member decompress cap. Every drop (decompress failure,
+/// recovered-prefix, bomb-cap truncation) is surfaced and counted, never
+/// silent. Returns `true` to keep scanning, `false` when the consumer stopped.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn emit_decompressed_member(
+    format: CompressedFormat,
+    content: &[u8],
+    nested_display: &str,
+    max_size: u64,
+    total_uncompressed: &mut u64,
+    nested_depth: usize,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let budget = extraction_total_budget_usize(max_size);
+    let decompressed = match decompress_to_bytes(format, content, budget) {
+        Some(d) => d,
+        None => {
+            // Law 10: the compressed member could not be decompressed => its
+            // content was NOT scanned. Surface + count; never a silent clean.
+            tracing::warn!(member = %nested_display, "failed to decompress archive member; not scanned");
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return emit(Err(SourceError::Other(format!(
+                "failed to scan compressed archive member '{nested_display}': failed to decompress member; member was not scanned"
+            ))));
+        }
+    };
+    if decompressed.recovered_after_error {
+        // Law 10: only the recovered prefix was scanned; surface the partial.
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+        if !emit(Err(SourceError::Other(format!(
+            "decompression of archive member '{nested_display}' failed after recovering {} bytes; only the recovered prefix was scanned and the rest was not scanned",
+            decompressed.bytes.len()
+        )))) {
+            return false;
+        }
+    }
+    let decompressed = decompressed.bytes;
+    if decompressed.len() > budget {
+        // Law 10: the decompressed stream hit the per-member bomb cap; only the
+        // prefix is scanned, the tail is NOT. Surface loudly + count.
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+        if !emit(Err(SourceError::Other(format!(
+            "decompression of archive member '{nested_display}' was truncated at {} bytes by the zip-bomb guard (budget {budget}); the remaining compressed stream was not scanned",
+            decompressed.len()
+        )))) {
+            return false;
+        }
+    }
+    *total_uncompressed = (*total_uncompressed).saturating_add(decompressed.len() as u64);
+    let total_budget = extraction_total_budget(max_size);
+    if total_budget > 0 && *total_uncompressed > total_budget {
+        // Law 10: the cumulative tar/zip-bomb budget is exhausted; surface the
+        // partial-coverage abort (counted by report_archive_truncation).
+        let error =
+            super::report_archive_truncation(nested_display, *total_uncompressed, total_budget);
+        return emit(Err(error));
+    }
+
+    if looks_like_tar(&decompressed) {
+        emit_tar_entries_with_state(
+            &decompressed,
+            nested_display,
+            max_size,
+            total_uncompressed,
+            nested_depth + 1,
+            respect_default_excludes,
+            emit,
+        );
+        return true;
+    }
+
+    // Leaf: scan the true decompressed bytes (UTF-16-aware), identical to the
+    // standalone compressed-file path so recall is parity across the two.
+    match super::chunk_from_extracted_entry(
+        decompressed,
+        nested_display.to_string(),
+        "filesystem/archive",
+        "filesystem/archive-binary",
+    ) {
+        Some(chunk) => emit(chunk),
+        None => true,
+    }
 }
 
 fn emit_tar_entry_error(

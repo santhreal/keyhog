@@ -389,6 +389,55 @@ pub(super) fn emit_archive_content_with_depth(
         );
     }
 
+    // A tar member inside this zip (`bundle.zip//layer.tar`, the dominant
+    // docker/helm layout) must be untarred so a secret in the tarball is found,
+    // not leaf-scanned as printable strings -- which silently missed it (Law 10).
+    if super::compressed::entry_is_embedded_tar(entry_name, &content) {
+        let nested_display = format!("{archive_display}//{entry_name}");
+        if nested_depth >= MAX_EMBEDDED_ARCHIVE_DEPTH {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return emit(Err(SourceError::Other(format!(
+                "failed to scan embedded tar archive '{nested_display}': maximum nested archive depth {MAX_EMBEDDED_ARCHIVE_DEPTH} exceeded; embedded archive was not scanned"
+            ))));
+        }
+        super::compressed::emit_tar_entries_with_state(
+            &content,
+            &nested_display,
+            per_entry_cap,
+            total_uncompressed,
+            nested_depth + 1,
+            respect_default_excludes,
+            emit,
+        );
+        return true;
+    }
+
+    // A compressed member inside this zip (`.gz` / `.tgz` / `.zst` / `.lz4` /
+    // `.sz` / `.bz2` / `.xz`): decompress and scan its TRUE bytes, exactly as
+    // the standalone compressed-file path does. Previously the compressed bytes
+    // were routed to the printable-strings path and a secret in the payload was
+    // a SILENT false-clean (Law 10). Bounded by depth + the shared zip-bomb
+    // budget; every drop is surfaced and counted.
+    if let Some(format) = super::compressed::compressed_member_format(entry_name) {
+        let nested_display = format!("{archive_display}//{entry_name}");
+        if nested_depth >= MAX_EMBEDDED_ARCHIVE_DEPTH {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return emit(Err(SourceError::Other(format!(
+                "failed to scan compressed archive member '{nested_display}': maximum nested archive depth {MAX_EMBEDDED_ARCHIVE_DEPTH} exceeded; member was not scanned"
+            ))));
+        }
+        return super::compressed::emit_decompressed_member(
+            format,
+            &content,
+            &nested_display,
+            per_entry_cap,
+            total_uncompressed,
+            nested_depth,
+            respect_default_excludes,
+            emit,
+        );
+    }
+
     match chunk_from_archive_content_inner(archive_display, entry_name, content) {
         Some(chunk) => emit(chunk),
         None => true,
