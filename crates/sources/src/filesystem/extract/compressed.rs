@@ -168,8 +168,6 @@ pub(super) fn emit_tar_entries_with_state(
     respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
-    const MAX_EMBEDDED_TAR_DEPTH: usize = 8;
-
     let mut archive = tar::Archive::new(std::io::Cursor::new(tar_bytes));
     let entries = match archive.entries() {
         Ok(e) => e,
@@ -350,97 +348,24 @@ pub(super) fn emit_tar_entries_with_state(
         }
         let content = read.bytes;
 
-        if entry_is_embedded_tar(&entry_name, &content) {
-            let nested_display = format!("{container_display}//{entry_name}");
-            if nested_depth >= MAX_EMBEDDED_TAR_DEPTH {
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                if !emit(Err(SourceError::Other(format!(
-                    "failed to scan embedded tar archive '{nested_display}': maximum nested archive depth {MAX_EMBEDDED_TAR_DEPTH} exceeded; embedded archive was not scanned"
-                )))) {
-                    return;
-                }
-                continue;
-            }
-            emit_tar_entries_with_state(
-                &content,
-                &nested_display,
-                max_size,
-                total_uncompressed,
-                nested_depth + 1,
-                respect_default_excludes,
-                emit,
-            );
-            continue;
-        }
-
-        // A zip-family member inside this tar (`bundle.tar//app.jar`, common for
-        // docker layers and JARs) must be unzipped so a DEFLATE-compressed
-        // secret in it is found, not leaf-scanned as printable strings -- which
-        // silently missed it (Law 10). Symmetric with the zip extractor
-        // recursing into tar members. `content` is moved only on this branch.
-        if super::archive::member_is_embedded_zip(&entry_name, &content) {
-            let nested_display = format!("{container_display}//{entry_name}");
-            if !super::archive::emit_embedded_zip_member(
-                content,
-                &nested_display,
-                max_size,
-                total_uncompressed,
-                nested_depth,
-                respect_default_excludes,
-                emit,
-            ) {
-                return;
-            }
-            continue;
-        }
-
-        // A compressed member (`.gz` / `.tgz` / `.zst` / `.lz4` / `.sz` /
-        // `.bz2` / `.xz`) inside this tar must be decompressed and its TRUE
-        // bytes scanned, exactly as the same file is when scanned standalone.
-        // Without this it fell through to the leaf decode below: the compressed
-        // bytes are not valid text, so they were routed to the
-        // printable-strings path and a secret in the compressed payload was a
-        // SILENT false-clean (Law 10) -- `archive.tar//inner.txt.gz` reported
-        // "clean" with no coverage gap. Recursion into a decompressed tar is
-        // bounded by `nested_depth`; output size by the shared tar-bomb budget.
-        if let Some(format) = compressed_member_format(&entry_name) {
-            let nested_display = format!("{container_display}//{entry_name}");
-            if nested_depth >= MAX_EMBEDDED_TAR_DEPTH {
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                if !emit(Err(SourceError::Other(format!(
-                    "failed to scan compressed archive member '{nested_display}': maximum nested archive depth {MAX_EMBEDDED_TAR_DEPTH} exceeded; member was not scanned"
-                )))) {
-                    return;
-                }
-                continue;
-            }
-            if !emit_decompressed_member(
-                format,
-                &content,
-                &nested_display,
-                max_size,
-                total_uncompressed,
-                nested_depth,
-                respect_default_excludes,
-                emit,
-            ) {
-                return;
-            }
-            continue;
-        }
-
-        let entry_path = format!("{container_display}//{entry_name}");
-        // Canonical UTF-16-aware entry decode shared with every other extractor.
-        let chunk = super::chunk_from_extracted_entry(
+        // Re-dispatch every member through the canonical handler: a tar / zip /
+        // compressed member is recursed (its TRUE bytes scanned), anything else
+        // is leaf-scanned with the shared UTF-16-aware decoder. One dispatch
+        // point shared with the zip and 7z extractors -- see
+        // `super::emit_archive_member` -- so a nested archive is never silently
+        // leaf-scanned as printable strings (Law 10).
+        let member_display = format!("{container_display}//{entry_name}");
+        if !super::emit_archive_member(
+            &entry_name,
             content,
-            entry_path,
-            "filesystem/archive",
-            "filesystem/archive-binary",
-        );
-        if let Some(chunk) = chunk {
-            if !emit(chunk) {
-                return;
-            }
+            &member_display,
+            max_size,
+            total_uncompressed,
+            nested_depth,
+            respect_default_excludes,
+            emit,
+        ) {
+            return;
         }
     }
 }

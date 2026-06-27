@@ -154,6 +154,101 @@ pub(super) fn chunk_from_extracted_entry(
     }
 }
 
+/// Maximum archive-within-archive nesting any extractor will descend. Shared by
+/// the canonical member dispatcher below so tar/zip/7z all cap nesting at the
+/// same depth (each extractor previously hard-coded its own `= 8`).
+pub(super) const MAX_NESTED_ARCHIVE_DEPTH: usize = 8;
+
+/// Canonical re-dispatch for an archive MEMBER already read into memory: untar a
+/// tar, unzip a zip-family container, decompress a single-stream compressed file
+/// (then untar or scan its true bytes), else leaf-scan the bytes with the shared
+/// UTF-16-aware decoder. EVERY container extractor (tar, zip, 7z, ...) routes its
+/// members through here, so a nested archive's contents are scanned no matter
+/// which outer format carried it -- one dispatch point, not one copy per
+/// extractor.
+///
+/// LAW10: before this existed, a compressed/archived member (`tar//x.gz`,
+/// `app.7z//layer.tar`, ...) fell through to the printable-strings leaf and a
+/// secret in its payload was a SILENT false-clean. Recursion is bounded by
+/// `nested_depth` (cap [`MAX_NESTED_ARCHIVE_DEPTH`]) and the shared
+/// `total_uncompressed` archive-bomb budget; the depth-exceeded case is surfaced
+/// and counted, never a silent clean. Returns false when the consumer stopped.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn emit_archive_member(
+    entry_name: &str,
+    content: Vec<u8>,
+    member_display: &str,
+    max_size: u64,
+    total_uncompressed: &mut u64,
+    nested_depth: usize,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let is_tar = compressed::entry_is_embedded_tar(entry_name, &content);
+    let is_zip = !is_tar && archive::member_is_embedded_zip(entry_name, &content);
+    let compressed_format = if is_tar || is_zip {
+        None
+    } else {
+        compressed::compressed_member_format(entry_name)
+    };
+
+    if (is_tar || is_zip || compressed_format.is_some()) && nested_depth >= MAX_NESTED_ARCHIVE_DEPTH
+    {
+        // LAW10: a nested archive we refuse to descend is NOT scanned -- surface
+        // and count it so the depth cap can never read as a silent clean.
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        return emit(Err(SourceError::Other(format!(
+            "failed to scan embedded archive '{member_display}': maximum nested archive depth {MAX_NESTED_ARCHIVE_DEPTH} exceeded; embedded archive was not scanned"
+        ))));
+    }
+
+    if is_tar {
+        compressed::emit_tar_entries_with_state(
+            &content,
+            member_display,
+            max_size,
+            total_uncompressed,
+            nested_depth + 1,
+            respect_default_excludes,
+            emit,
+        );
+        return true;
+    }
+    if is_zip {
+        return archive::emit_embedded_zip_member(
+            content,
+            member_display,
+            max_size,
+            total_uncompressed,
+            nested_depth,
+            respect_default_excludes,
+            emit,
+        );
+    }
+    if let Some(format) = compressed_format {
+        return compressed::emit_decompressed_member(
+            format,
+            &content,
+            member_display,
+            max_size,
+            total_uncompressed,
+            nested_depth,
+            respect_default_excludes,
+            emit,
+        );
+    }
+
+    match chunk_from_extracted_entry(
+        content,
+        member_display.to_string(),
+        "filesystem/archive",
+        "filesystem/archive-binary",
+    ) {
+        Some(chunk) => emit(chunk),
+        None => true,
+    }
+}
+
 pub(super) fn report_archive_truncation(
     archive_display: &str,
     attempted_total: u64,

@@ -136,6 +136,26 @@ fn tar_with_deflated_zip_member_secret_survives() {
 }
 
 #[test]
+fn seven_zip_with_gz_member_secret_survives() {
+    // `bundle.7z` -> `secret.txt.gz` -> secret. Previously a SILENT clean: the 7z
+    // extractor leaf-scanned the gz member's compressed bytes. Every container
+    // extractor now routes members through the shared `emit_archive_member`.
+    use sevenz_rust2::{ArchiveEntry, ArchiveWriter};
+    let gz = gzip(format!("{SECRET}\n").as_bytes());
+    let mut writer = ArchiveWriter::new(std::io::Cursor::new(Vec::new())).expect("7z writer");
+    let entry = ArchiveEntry::new_file("secret.txt.gz");
+    writer
+        .push_archive_entry(entry, Some(std::io::Cursor::new(gz.as_slice())))
+        .expect("push gz member");
+    let sevenz = writer.finish().expect("finish 7z").into_inner();
+    let chunks = scan_bytes("bundle.7z", &sevenz);
+    assert!(
+        chunks.iter().any(|c| c.data.contains(SECRET)),
+        "secret inside bundle.7z//secret.txt.gz must be decompressed and found; got {chunks:?}"
+    );
+}
+
+#[test]
 fn tar_with_benign_gz_member_stays_clean_without_error() {
     // Negative twin: a benign gz member must decompress, scan clean, and emit NO
     // SourceError coverage-gap row -- the recursion must not turn a clean member

@@ -280,12 +280,23 @@ pub(super) fn extract_seven_zip_chunks(
         }
         total_uncompressed = total_uncompressed.saturating_add(content.len() as u64);
 
-        let entry_path = format!("{archive_display}//{entry_name}");
-        if let Some(chunk) = chunk_from_entry_content(content, entry_path) {
-            if !emit(chunk) {
-                consumer_stopped = true;
-                return Ok(false);
-            }
+        // Re-dispatch the member through the canonical archive-member handler so
+        // a tar/zip/gz nested inside the 7z is recursed, not leaf-scanned as
+        // printable strings -- which silently missed a secret in its compressed
+        // payload (Law 10). A 7z member starts at nesting depth 0.
+        let member_display = format!("{archive_display}//{entry_name}");
+        if !super::emit_archive_member(
+            &entry_name,
+            content,
+            &member_display,
+            per_entry_cap,
+            &mut total_uncompressed,
+            0,
+            respect_default_excludes,
+            emit,
+        ) {
+            consumer_stopped = true;
+            return Ok(false);
         }
         Ok(true)
     });
@@ -365,17 +376,4 @@ fn drain_entry_or_stop(
             false
         }
     }
-}
-
-fn chunk_from_entry_content(
-    content: Vec<u8>,
-    entry_path: String,
-) -> Option<Result<Chunk, SourceError>> {
-    // Canonical UTF-16-aware entry decode shared with every other extractor.
-    super::chunk_from_extracted_entry(
-        content,
-        entry_path,
-        "filesystem/archive",
-        "filesystem/archive-binary",
-    )
 }
