@@ -2,7 +2,7 @@
 #
 # Builds the Hyperscan-accelerated keyhog (`--features ci-lean`: full
 # ML/entropy/decode/multiline/simdsieve + Hyperscan SIMD, GPU stack OFF) and
-# bakes in a small corpus under /test/corpus so the scenario runner can drive
+# bakes in a small corpus under /data/corpus so the scenario runner can drive
 # the real binary under spoofed hardware/env.
 #
 # Feature set: `--no-default-features --features ci-lean`, NOT default. The cli
@@ -43,10 +43,61 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /build/target/release-fast/keyhog /usr/local/bin/keyhog
 COPY --from=builder /build/detectors /usr/share/keyhog/detectors
-COPY tests/docker/corpus /test/corpus
+# Bake the scan corpus at /data/corpus — a NEUTRAL path with no `test`/`tests`/
+# `fixtures`/`spec`/`testdata` component (see crates/scanner/data/test-path-rules.toml).
+# Under `--precision` keyhog's test-path heuristic penalises credentials sitting in
+# a `/test/...` path (treating them as fixtures), dropping the planted AWS key below
+# the 0.85 high-precision floor — which would break scenarios.sh's invariant that the
+# key is found under EVERY profile. A `/data/...` path is not penalised, so the
+# invariant holds for `--precision` too; the calibration bake below covers each
+# profile's resolved config digest at these exact paths.
+COPY tests/docker/corpus /data/corpus
 # Non-root, mirroring the production image: scans of mounted volumes must
 # not require root.
 RUN useradd --system --create-home --uid 1000 keyhog
 USER keyhog
-WORKDIR /test
+WORKDIR /data
+
+# Bake the autoroute calibration into the image. The ci-lean build has BOTH the
+# Hyperscan/SIMD backend and the scalar CPU backend, so an auto scan must choose
+# between them — and a missing decision fails closed (exit 2), which is exactly
+# what every auto-backend scenario hit before this step. Autoroute keys a decision
+# on (resolved config digest × workload bucket); scenarios.sh exercises SEVERAL of
+# each, so this bake must cover EVERY auto-backend (workload, config) pair the
+# matrix runs, or that scenario fail-closes. The coverage, mirroring scenarios.sh:
+#   - policy profiles × the 3 corpus files: the Layer-1 invariance grid
+#     ("" --fast --deep --precision --no-entropy --no-ml --no-gpu --threads 1).
+#   - the corpus DIRECTORY  (surf:scan-dir): a different workload bucket than a file.
+#   - --min-confidence 0.0  (surf:scan-min-confidence): a distinct config digest.
+#   - --threads 64          (surf:scan-threads-64): a distinct config digest.
+#   - stdin fed aws_leak.env (special:stdin-scan): the stdin source class + this
+#     exact byte stream; scenarios.sh pipes the SAME file so the bucket matches.
+# Explicit `--backend cpu|simd` scenarios bypass autoroute (no decision needed);
+# --require-gpu fails closed on GPU-absence (exit 12, cache-independent); an empty
+# dir (scan /tmp) has zero files and routes to exit 0 without a decision. If a NEW
+# matrix scenario introduces an uncalibrated (workload, config) pair, run.sh sees a
+# LOUD exit 2 against the built image — drift fails the test, never ships silent.
+# Decisions accumulate in the v20 multi-config cache at ~/.cache/keyhog/autoroute.json,
+# baked into this layer and read by every later `docker run --rm`.
+# NOTE on exit codes: `--autoroute-calibrate` runs calibration THEN scans, so it
+# returns the SCAN code — 0 (clean) or 1 (aws_leak.env found the key). Only exit
+# >=2 (autoroute/calibration error) is a real failure; the calib() helper aborts
+# the build loudly on >=2 (Law 10: never ship a silently-uncalibrated image) and
+# treats 0/1 as success. No `set -e`: exit 1 (a found secret) is success here.
+RUN calib() { \
+        keyhog scan --autoroute-calibrate "$@" --format json >/dev/null; \
+        rc=$?; \
+        if [ "$rc" != 0 ] && [ "$rc" != 1 ]; then \
+            echo "autoroute calibration failed (exit $rc): keyhog scan --autoroute-calibrate $*" >&2; \
+            exit 1; \
+        fi; \
+    }; \
+    for prof in "" "--fast" "--deep" "--precision" "--no-entropy" "--no-ml" "--no-gpu" "--threads 1"; do \
+        for f in aws_leak.env clean.txt fp_trap.txt; do calib "/data/corpus/$f" $prof; done; \
+    done; \
+    calib /data/corpus; \
+    calib /data/corpus/aws_leak.env --min-confidence 0.0; \
+    calib /data/corpus/aws_leak.env --threads 64; \
+    calib --stdin < /data/corpus/aws_leak.env
+
 ENTRYPOINT []

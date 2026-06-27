@@ -19,8 +19,16 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates git libgcc
 COPY --from=builder /build/target/release/keyhog /usr/local/bin/keyhog
 COPY --from=builder /build/detectors /usr/share/keyhog/detectors
-COPY tests/docker/corpus /test/corpus
+# Bake the scan corpus at /data/corpus — a NEUTRAL path with no `test`/`tests`/
+# `fixtures`/`spec`/`testdata` component. Under `--precision` keyhog's test-path
+# heuristic penalises credentials sitting in a `/test/...` path (treating them as
+# fixtures), which would drop the planted AWS key below the high-precision floor
+# and break scenarios.sh's "the key is found under EVERY profile" invariant. A
+# `/data/...` path is not penalised, so the invariant holds for `--precision`
+# too. (portable is single-backend, so unlike the glibc/ci-lean image it needs
+# no autoroute calibration bake — an auto scan has only one backend to pick.)
+COPY tests/docker/corpus /data/corpus
 RUN adduser -S -u 1000 keyhog
 USER keyhog
-WORKDIR /test
+WORKDIR /data
 ENTRYPOINT []
