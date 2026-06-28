@@ -29,12 +29,17 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// A planted GitHub classic PAT shape (valid checksum-free format that the
-/// embedded `github-classic-pat` detector fires on at CRITICAL). Split so this
-/// test file is not itself a self-scan hit.
+/// A planted GitHub classic PAT the embedded `github-classic-pat` detector fires
+/// on at CRITICAL. The token carries a VALID 6-char base62 CRC32 checksum over
+/// its 30-char entropy, the format `crates/scanner/src/checksum/github.rs`
+/// enforces: a `ghp_` token whose checksum does not verify is silently dropped,
+/// so the prior fabricated suffix (`ghp_0123…wxyz1234`, no valid checksum) made
+/// this verification-shape test exit 0 instead of 1 on every backend. This exact
+/// token is the known-good fixture the gpu backend tests already rely on. Split
+/// so this test file is not itself a self-scan hit.
 const PLANTED_GH: &str = concat!(
     "GITHUB_TOKEN=ghp_",
-    "0123456789abcdefghijklmnopqrstuvwxyz1234\n"
+    "1234567890123456789012345678902PDSiF\n"
 );
 
 const VERIFICATION_DOC: &str = include_str!(concat!(
