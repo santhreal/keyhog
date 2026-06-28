@@ -451,22 +451,51 @@ fn xml_assignment_tag(line: &str) -> Option<&str> {
     if tag.is_empty() || tag.starts_with('/') {
         return None;
     }
-    let close = format!("</{tag}>");
-    trimmed[start + 1 + tag_end + 1..]
-        .contains(&close)
+    // Zero-alloc close-tag search instead of `contains(&format!("</{tag}>"))`
+    // (Law 7: this runs per XML-shaped line, and xml_assignment_value rebuilt
+    // the same needle a second time). Byte-identical: the search matches exactly
+    // the `</` + tag-name + `>` byte sequence.
+    find_xml_close_tag(&trimmed[start + 1 + tag_end + 1..], tag)
+        .is_some()
         .then_some(tag)
 }
 
-fn xml_assignment_value(line: &str) -> Option<&str> {
+pub(crate) fn xml_assignment_value(line: &str) -> Option<&str> {
     let tag = xml_assignment_tag(line)?;
     let trimmed = line.trim();
     let open_start = trimmed.find('<')?;
     let open_end = trimmed[open_start..].find('>')? + open_start;
-    let close = format!("</{tag}>");
-    let close_start = trimmed[open_end + 1..].find(&close)? + open_end + 1;
+    // Reuse the same zero-alloc close-tag search (was a second `format!`). The
+    // returned offset is relative to the post-open-tag slice, so add it back.
+    let close_start = open_end + 1 + find_xml_close_tag(&trimmed[open_end + 1..], tag)?;
     let normalized = normalize_assignment_keyword(tag)?;
     normalized_assignment_keyword_is_credential(&normalized)
         .then_some(trimmed[open_end + 1..close_start].trim())
+}
+
+/// Byte offset of the `</tag>` closing tag within `haystack`, or `None`.
+/// Replaces `haystack.find(&format!("</{tag}>"))` with no per-call allocation:
+/// `tag` is a tag NAME (it stopped at `>` and was split on whitespace, so it
+/// contains no `<`/`>`/space), so matching `</` + the exact name bytes + `>`
+/// from each `<` is byte-for-byte equivalent to substring-finding the formatted
+/// `</tag>` needle.
+fn find_xml_close_tag(haystack: &str, tag: &str) -> Option<usize> {
+    let bytes = haystack.as_bytes();
+    let tag_bytes = tag.as_bytes();
+    let mut cursor = 0;
+    while let Some(rel) = memchr::memchr(b'<', &bytes[cursor..]) {
+        let open = cursor + rel;
+        let name_start = open + 2;
+        let name_end = name_start + tag_bytes.len();
+        if bytes.get(open + 1) == Some(&b'/')
+            && bytes.get(name_start..name_end) == Some(tag_bytes)
+            && bytes.get(name_end) == Some(&b'>')
+        {
+            return Some(open);
+        }
+        cursor = open + 1;
+    }
+    None
 }
 
 fn is_likely_concatenation_fragment(line: &str) -> bool {

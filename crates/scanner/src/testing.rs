@@ -1275,6 +1275,10 @@ pub mod entropy_keywords {
         crate::entropy::keywords::authorization_header_value(line).map(str::to_string)
     }
 
+    pub fn xml_assignment_value(line: &str) -> Option<String> {
+        crate::entropy::keywords::xml_assignment_value(line).map(str::to_string)
+    }
+
     #[cfg(test)]
     pub(crate) fn is_candidate_plausible(value: &str, placeholder_keywords: &[String]) -> bool {
         crate::entropy::plausibility::is_candidate_plausible(

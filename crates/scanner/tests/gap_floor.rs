@@ -26,6 +26,8 @@ mod context_false_positive_inline_tests_in_src;
 mod context_example_suffix_ascii_ci;
 #[path = "gap/entropy_authorization_scheme_ci.rs"]
 mod entropy_authorization_scheme_ci;
+#[path = "gap/entropy_xml_close_tag_search.rs"]
+mod entropy_xml_close_tag_search;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]
