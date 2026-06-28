@@ -392,17 +392,15 @@ pub(crate) fn strip_interior_evasion_controls(text: &str) -> std::borrow::Cow<'_
 
 /// Check if text contains potential evasion
 pub(crate) fn contains_evasion(text: &str) -> bool {
+    // A char is "evasive" exactly when `normalized_char` would not Keep it
+    // (Replace covers the cyrillic/greek/fullwidth homoglyphs; Drop covers
+    // zero-width/RTL/separator/combining/ascii-control). Delegating here keeps
+    // `normalized_char` the single owner of that classification, so a new
+    // evasion category added there can never silently desync this detector.
     contains_ascii_evasion(text.as_bytes())
-        || text.chars().any(|ch| {
-            cyrillic_to_latin(ch).is_some()
-                || greek_to_latin(ch).is_some()
-                || is_fullwidth(ch)
-                || is_zero_width(ch)
-                || is_rtl_override(ch)
-                || is_unicode_separator_evasion(ch)
-                || is_combining_mark(ch)
-                || is_ascii_evasion_control(ch)
-        })
+        || text
+            .chars()
+            .any(|ch| !matches!(normalized_char(ch), NormalizedChar::Keep))
 }
 
 fn contains_ascii_evasion(bytes: &[u8]) -> bool {
