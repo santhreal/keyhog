@@ -96,6 +96,8 @@ mod gitlab_checksum_body_length_floors;
 mod npm_checksum_token_structure;
 #[path = "gap/slack_checksum_token_shapes.rs"]
 mod slack_checksum_token_shapes;
+#[path = "gap/static_intern_seed_source_types.rs"]
+mod static_intern_seed_source_types;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]

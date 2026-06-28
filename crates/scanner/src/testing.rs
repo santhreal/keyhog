@@ -153,6 +153,20 @@ pub fn slack_checksum_verdict_for_test(credential: &str) -> &'static str {
     }
 }
 
+/// Probe the static interner's frozen source-type seed contract: build an
+/// interner from zero detector strings (so its arena is exactly the seed
+/// universe), then return the full `SEED_SOURCE_TYPES` list, whether each entry
+/// is pre-interned (a `lookup` hit), and whether an unknown string is wrongly
+/// interned. Lets a gap test pin the exact seed list so the module doc and the
+/// constant cannot drift apart again.
+pub fn static_interner_seed_probe_for_test() -> (Vec<&'static str>, Vec<bool>, bool) {
+    let interner = crate::static_intern::StaticInterner::from_detector_strings(Vec::<&str>::new());
+    let seeds: Vec<&'static str> = crate::static_intern::SEED_SOURCE_TYPES.to_vec();
+    let interned: Vec<bool> = seeds.iter().map(|&s| interner.lookup(s).is_some()).collect();
+    let unknown_interned = interner.lookup("definitely-not-a-source-type").is_some();
+    (seeds, interned, unknown_interned)
+}
+
 #[cfg(feature = "simd")]
 pub fn scan_coalesced_phase2_with_admission_for_test(
     scanner: &crate::CompiledScanner,

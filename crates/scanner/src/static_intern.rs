@@ -2,9 +2,9 @@
 //!
 //! Built once at scanner construction from the universe of metadata
 //! strings that are stable across a scan run - every detector's
-//! `id`, `name`, `service`, plus the small set of `source_type`
-//! literals every source backend uses (`filesystem`, `git`,
-//! `git/history`, `stdin`, `s3`, `docker`, `web`, `github`, `slack`).
+//! `id`, `name`, `service`, plus the seed `source_type` literals every
+//! source backend emits ([`SEED_SOURCE_TYPES`], kept in sync with
+//! `keyhog_sources::Source::name()`).
 //!
 //! At scan time, `lookup(s)` returns a pre-allocated `Arc<str>` for
 //! known strings without touching the global allocator. Unknown
