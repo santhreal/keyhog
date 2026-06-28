@@ -81,34 +81,17 @@ impl CompiledScanner {
                 // `active_patterns` is the SPARSE list of active phase-2 indices,
                 // so we touch only the patterns that can fire on this chunk rather
                 // than the full `phase2_patterns.len()` vector.
-                for (tested, &index) in active_patterns.iter().enumerate() {
-                    if let Some(deadline) = deadline {
-                        if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
-                            break;
-                        }
-                    }
-                    let (entry, _keywords) = &this.phase2_patterns[index];
-                    let t0 = if prof { Some(Instant::now()) } else { None };
-                    this.extract_matches(
-                        entry,
-                        preprocessed,
-                        line_offsets,
-                        code_lines,
-                        documentation_lines,
-                        chunk,
-                        scan_state,
-                        0,
-                        0,
-                        deadline,
-                    );
-                    if let Some(t0) = t0 {
-                        phase2_pattern_prof_record(
-                            this.phase2_patterns.len(),
-                            index,
-                            t0.elapsed().as_nanos() as u64,
-                        );
-                    }
-                }
+                this.extract_active_phase2_patterns(
+                    active_patterns,
+                    preprocessed,
+                    line_offsets,
+                    code_lines,
+                    documentation_lines,
+                    chunk,
+                    scan_state,
+                    deadline,
+                    prof,
+                );
             },
         );
     }
@@ -475,6 +458,56 @@ impl CompiledScanner {
         }
     }
 
+    /// Run per-pattern phase-2 extraction over the SPARSE active set: the
+    /// deadline-cadence (`is_multiple_of(16)`) + per-pattern profiling loop that
+    /// the small-chunk (`scan_phase2_patterns`) and large-chunk
+    /// (`scan_large_phase2_patterns`) whole-chunk paths share. Keeping it in one
+    /// place means the abort cadence and profiling stay in lockstep between the
+    /// two paths. (The decode-focus path keeps its own loop because it is
+    /// cursor-bounded via `extract_matches_inner`.)
+    #[allow(clippy::too_many_arguments)]
+    fn extract_active_phase2_patterns(
+        &self,
+        active_patterns: &[usize],
+        preprocessed: &ScannerPreprocessedText<'_>,
+        line_offsets: &[usize],
+        code_lines: &[&str],
+        documentation_lines: &[bool],
+        chunk: &Chunk,
+        scan_state: &mut ScanState,
+        deadline: Option<std::time::Instant>,
+        prof: bool,
+    ) {
+        for (tested, &index) in active_patterns.iter().enumerate() {
+            if let Some(deadline) = deadline {
+                if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
+                    break;
+                }
+            }
+            let (entry, _) = &self.phase2_patterns[index];
+            let t0 = if prof { Some(Instant::now()) } else { None };
+            self.extract_matches(
+                entry,
+                preprocessed,
+                line_offsets,
+                code_lines,
+                documentation_lines,
+                chunk,
+                scan_state,
+                0,
+                0,
+                deadline,
+            );
+            if let Some(t0) = t0 {
+                phase2_pattern_prof_record(
+                    self.phase2_patterns.len(),
+                    index,
+                    t0.elapsed().as_nanos() as u64,
+                );
+            }
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn scan_large_phase2_patterns(
         &self,
@@ -497,34 +530,17 @@ impl CompiledScanner {
                 // we iterate only the patterns that can fire - no second
                 // `Vec<&CompiledPattern>` collect and no scan over the inactive
                 // entries of the full phase-2 vector.
-                for (tested, &index) in active_set.iter().enumerate() {
-                    if let Some(deadline) = deadline {
-                        if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
-                            break;
-                        }
-                    }
-                    let (entry, _) = &this.phase2_patterns[index];
-                    let t0 = if prof { Some(Instant::now()) } else { None };
-                    this.extract_matches(
-                        entry,
-                        preprocessed,
-                        line_offsets,
-                        code_lines,
-                        documentation_lines,
-                        chunk,
-                        scan_state,
-                        0,
-                        0,
-                        deadline,
-                    );
-                    if let Some(t0) = t0 {
-                        phase2_pattern_prof_record(
-                            this.phase2_patterns.len(),
-                            index,
-                            t0.elapsed().as_nanos() as u64,
-                        );
-                    }
-                }
+                this.extract_active_phase2_patterns(
+                    active_set,
+                    preprocessed,
+                    line_offsets,
+                    code_lines,
+                    documentation_lines,
+                    chunk,
+                    scan_state,
+                    deadline,
+                    prof,
+                );
             },
         );
     }

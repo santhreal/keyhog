@@ -41,6 +41,7 @@ pub mod backend_dispatch_cpu_path_single_owner;
 pub mod value_shaped_group_shared_heuristic;
 pub mod alphabet_targets_no_per_pattern_clone;
 pub mod bigram_bloom_log_bit_count_coherence;
+pub mod phase2_extract_loop_single_owner;
 pub mod entropy_keyword_only_requires_keyword_line;
 pub mod entropy_keywords_inline_tests_in_src;
 pub mod file_gate_matrix_scanner_adversarial_unmarked;
