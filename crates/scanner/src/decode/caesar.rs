@@ -29,6 +29,12 @@ pub(crate) struct CaesarDecoder;
 pub(crate) const MIN_CAESAR_LEN: usize = 16;
 const MIN_ALNUM_RUN: usize = 8;
 
+/// Number of letters in the ASCII alphabet — the modulus for a Caesar/ROT-N
+/// letter rotation (and the base for the `26 - k` inverse shift). This is the
+/// rotation modulus ONLY; the `[bool; 26]` shift table is sized `25 shifts + 1`
+/// (a coincidental 26) and must NOT be folded into this constant.
+const ALPHABET_LEN: u8 = 26;
+
 /// Aho-Corasick over the "rotated known-prefix" needle set: for every
 /// [`crate::confidence::KNOWN_PREFIXES`] entry `P` and every non-trivial shift
 /// `k` in `1..=25`, the string `caesar_shift(P, 26 - k)` — i.e. `P` with its
@@ -53,7 +59,7 @@ static ROTATED_PREFIX_AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
     for prefix in crate::confidence::KNOWN_PREFIXES {
         for k in 1..=25u8 {
             // rot_{-k}(P) == caesar_shift(P, 26 - k); k in 1..=25 => 26-k in 1..=25.
-            needles.push(caesar_shift(prefix, 26 - k));
+            needles.push(caesar_shift(prefix, ALPHABET_LEN - k));
         }
     }
     match AhoCorasick::new(&needles) {
@@ -492,12 +498,12 @@ pub(crate) fn caesar_shift(input: &str, shift: u8) -> String {
         let shifted = match ch {
             'A'..='Z' => {
                 let base = b'A';
-                let off = (ch as u8 - base + shift) % 26;
+                let off = (ch as u8 - base + shift) % ALPHABET_LEN;
                 (base + off) as char
             }
             'a'..='z' => {
                 let base = b'a';
-                let off = (ch as u8 - base + shift) % 26;
+                let off = (ch as u8 - base + shift) % ALPHABET_LEN;
                 (base + off) as char
             }
             _ => ch,

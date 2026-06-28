@@ -1,6 +1,7 @@
 pub mod adversarial_bulk_lacks_per_detector_hostile_twins;
 pub mod analyze_keyword_only_must_assert;
 pub mod backend_worst_case_parity_sample_only;
+pub mod caesar_shift_rotation_exact;
 pub mod checksum_github;
 pub mod checksum_gitlab_npm_slack_stripe;
 pub mod compiler_inline_tests_in_src;

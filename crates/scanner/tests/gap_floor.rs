@@ -6,6 +6,8 @@ mod adversarial_bulk_lacks_per_detector_hostile_twins;
 mod analyze_keyword_only_must_assert;
 #[path = "gap/backend_worst_case_parity_sample_only.rs"]
 mod backend_worst_case_parity_sample_only;
+#[path = "gap/caesar_shift_rotation_exact.rs"]
+mod caesar_shift_rotation_exact;
 #[path = "gap/checksum_github.rs"]
 mod checksum_github;
 #[path = "gap/checksum_gitlab_npm_slack_stripe.rs"]

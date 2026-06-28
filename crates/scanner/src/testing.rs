@@ -107,6 +107,15 @@ pub fn placeholder_word_suppresses_for_test(
     )
 }
 
+/// Test seam for the Caesar/ROT-N letter rotation: shift `input`'s ASCII
+/// letters forward by `shift` (mod the alphabet length), leaving digits and
+/// punctuation untouched. Lets a gap test pin the exact rotated string,
+/// including wraparound and the digit/punct identity.
+#[cfg(feature = "decode")]
+pub fn caesar_shift_for_test(input: &str, shift: u8) -> String {
+    crate::decode::caesar::caesar_shift(input, shift)
+}
+
 /// Test seam for the decode-splice core: splice `decoded_text` into the bounded
 /// `[start, end)` window of `parent`, keeping `SPLICE_CONTEXT_WINDOW` bytes of
 /// companion context on each side. Returns `(window_start, spliced_payload,
