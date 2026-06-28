@@ -306,7 +306,7 @@ impl CompiledScanner {
             crate::bigram_bloom::BigramBloom::from_literal_prefixes(&alphabet_targets);
         tracing::debug!(
             popcount = bigram_bloom.popcount(),
-            "bigram bloom built (4096 bits, lower popcount = stronger filter)"
+            "bigram bloom built (65536 slots / 8 KB direct table, lower popcount = stronger filter)"
         );
 
         // Pre-intern detector metadata strings into a CHD perfect
