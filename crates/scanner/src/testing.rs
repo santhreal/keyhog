@@ -638,6 +638,16 @@ pub fn suffix_gate_literals_for_test(src: &str) -> Vec<String> {
 pub fn new_trigger_bitmap_for_test(n_patterns: usize) -> Vec<u64> {
     crate::engine::trigger_bitmap::new_trigger_bitmap(n_patterns)
 }
+/// Build a `CsrU32` from per-row index lists and read every row back out via
+/// the public `get`, so a test can pin that the (now exactly-capacity-reserved)
+/// build reconstructs the input rows byte-for-byte — including empty rows, the
+/// case CSR specifically collapses to zero data bytes.
+pub fn csr_from_rows_roundtrip_for_test(rows: Vec<Vec<usize>>) -> Vec<Vec<u32>> {
+    let csr = crate::engine::CsrU32::from(rows.clone());
+    (0..rows.len())
+        .map(|i| csr.get(i).expect("row in range").to_vec())
+        .collect()
+}
 pub use crate::pipeline::compute_line_offsets;
 pub fn normalize_chunk_data(data: &str) -> std::borrow::Cow<'_, str> {
     crate::normalize_chunk_data(data)

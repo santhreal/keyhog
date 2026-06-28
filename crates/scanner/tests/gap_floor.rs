@@ -50,6 +50,8 @@ mod fragment_prefilter_single_source;
 mod pattern_signals_keyword_invariant_hoisted;
 #[path = "gap/windowed_triggered_slice_no_per_window_clone.rs"]
 mod windowed_triggered_slice_no_per_window_clone;
+#[path = "gap/csr_build_exact_capacity.rs"]
+mod csr_build_exact_capacity;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]

@@ -46,8 +46,28 @@ impl CsrU32 {
         R: IntoIterator<Item = I>,
         I: IntoIterator<Item = usize>,
     {
-        let mut data = Vec::new();
-        let mut offsets = vec![0u32];
+        // Reserve `offsets` from the outer iterator's size hint (exact for the
+        // `Vec<Vec<_>>` builders, whose `into_iter` reports `(n, Some(n))`), so
+        // the row-count-proportional growth is a single allocation. The total
+        // element count isn't knowable generically, so `data` is left to grow;
+        // the `From<Vec<Vec<usize>>>` path below supplies an exact `data`
+        // reservation since it can sum the row lengths up front.
+        let rows = rows.into_iter();
+        let offsets_cap = rows.size_hint().0.saturating_add(1);
+        Self::from_rows_sized(rows, 0, offsets_cap)
+    }
+
+    /// Single CSR build loop. Both entry points funnel through here with their
+    /// best capacity knowledge so there is exactly one place that concatenates
+    /// rows into `data` and records `offsets`.
+    fn from_rows_sized<R, I>(rows: R, data_cap: usize, offsets_cap: usize) -> Self
+    where
+        R: IntoIterator<Item = I>,
+        I: IntoIterator<Item = usize>,
+    {
+        let mut data = Vec::with_capacity(data_cap);
+        let mut offsets = Vec::with_capacity(offsets_cap);
+        offsets.push(0u32);
         for row in rows {
             for v in row {
                 data.push(v as u32);
@@ -69,7 +89,13 @@ impl CsrU32 {
 
 impl From<Vec<Vec<usize>>> for CsrU32 {
     fn from(rows: Vec<Vec<usize>>) -> Self {
-        Self::from_rows(rows)
+        // Both capacities are exactly knowable here, so the build does exactly
+        // two allocations (one `data`, one `offsets`) with zero reallocation —
+        // making the "exactly two allocations" claim in the type doc literally
+        // true on the construction path the four real builders take.
+        let data_cap: usize = rows.iter().map(Vec::len).sum();
+        let offsets_cap = rows.len().saturating_add(1);
+        Self::from_rows_sized(rows, data_cap, offsets_cap)
     }
 }
 
