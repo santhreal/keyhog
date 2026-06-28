@@ -1239,6 +1239,14 @@ pub mod entropy_scanner {
         .map(|stage| stage.as_str())
     }
 
+    /// True iff the model-authoritative canonical-shape lift releases this exact
+    /// `value` shape under this exact `keyword`. Exposed so the compact-keyword
+    /// matcher (the zero-alloc key-material substring check) is pinned through
+    /// its real entry point.
+    pub fn canonical_shape_lift_allowed(value: &str, keyword: &str) -> bool {
+        crate::entropy::scanner::canonical_shape_lift_allowed(value, keyword)
+    }
+
     pub fn is_canonical_non_secret_shape(value: &str) -> bool {
         crate::entropy::scanner::is_canonical_non_secret_shape(value)
     }

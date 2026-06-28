@@ -28,6 +28,8 @@ mod context_example_suffix_ascii_ci;
 mod entropy_authorization_scheme_ci;
 #[path = "gap/entropy_xml_close_tag_search.rs"]
 mod entropy_xml_close_tag_search;
+#[path = "gap/entropy_canonical_lift_keyword_material.rs"]
+mod entropy_canonical_lift_keyword_material;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]

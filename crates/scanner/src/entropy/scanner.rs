@@ -513,7 +513,6 @@ pub(crate) fn canonical_shape_lift_allowed(value: &str, keyword: &str) -> bool {
 }
 
 fn keyword_is_crypto_key_material(keyword: &str) -> bool {
-    let compact = compact_keyword(keyword);
     [
         "encryptionkey",
         "masterkey",
@@ -530,11 +529,10 @@ fn keyword_is_crypto_key_material(keyword: &str) -> bool {
         "seed",
     ]
     .iter()
-    .any(|needle| compact.contains(needle))
+    .any(|needle| compact_keyword_contains(keyword, needle.as_bytes()))
 }
 
 fn keyword_is_key_material(keyword: &str) -> bool {
-    let compact = compact_keyword(keyword);
     [
         "apikey",
         "accesskey",
@@ -553,15 +551,53 @@ fn keyword_is_key_material(keyword: &str) -> bool {
         "seed",
     ]
     .iter()
-    .any(|needle| compact.contains(needle))
+    .any(|needle| compact_keyword_contains(keyword, needle.as_bytes()))
 }
 
-fn compact_keyword(keyword: &str) -> String {
-    keyword
-        .bytes()
-        .filter(|b| !matches!(b, b'_' | b'-' | b'.'))
-        .map(|b| b.to_ascii_lowercase() as char)
-        .collect()
+/// True iff `needle` (already separator-free and ASCII-lowercase, as every
+/// key-material literal above is) appears as a contiguous substring of `keyword`
+/// once `keyword` is compacted the same way the literals were authored: `_`/`-`/
+/// `.` dropped and ASCII-lowercased. Byte-identical to the old
+/// `compact_keyword(keyword).contains(needle)` but with NO per-call `String`
+/// allocation (Law 7: this runs per canonical-lift candidate). Mirrors the
+/// compact-keyword matcher family in `engine::phase2_generic::keywords`
+/// (`compact_keyword_eq`/`_ends_with`); see the backlog DEDUP task to hoist that
+/// family to a shared low layer — `entropy` must not import `engine`.
+fn compact_keyword_contains(keyword: &str, needle: &[u8]) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    let bytes = keyword.as_bytes();
+    let len = bytes.len();
+    let mut start = 0;
+    while start < len {
+        if matches!(bytes[start], b'_' | b'-' | b'.') {
+            start += 1;
+            continue;
+        }
+        // Attempt to match `needle` beginning at this compacted character,
+        // skipping separators between matched bytes exactly as the compacted
+        // string would have collapsed them.
+        let mut ki = start;
+        let mut ni = 0;
+        while ni < needle.len() && ki < len {
+            let byte = bytes[ki];
+            if matches!(byte, b'_' | b'-' | b'.') {
+                ki += 1;
+                continue;
+            }
+            if byte.to_ascii_lowercase() != needle[ni] {
+                break;
+            }
+            ki += 1;
+            ni += 1;
+        }
+        if ni == needle.len() {
+            return true;
+        }
+        start += 1;
+    }
+    false
 }
 
 fn keyword_context(
