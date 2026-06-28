@@ -133,7 +133,7 @@ fn reject_multiple_scan_roots(args: &ScanArgs) -> Result<()> {
         .as_deref()
         .or(args.path.as_deref())
         .map(|p| p.display().to_string())
-        .unwrap_or_else(|| ".".to_string());
+        .unwrap_or_else(|| ".".to_string()); // LAW10: input is always Some when extra_paths is non-empty (clap fills the first positional first); "." is a display-only error-text default, recall-irrelevant
     let extras: Vec<String> = args
         .extra_paths
         .iter()
@@ -818,12 +818,12 @@ mod multi_root_guard_tests {
             Some("a"),
             "the first positional is the scan root"
         );
-        let extras: Vec<&str> = args
-            .extra_paths
-            .iter()
-            .filter_map(|p| p.to_str())
-            .collect();
-        assert_eq!(extras, vec!["b", "c"], "surplus positionals land in extra_paths");
+        let extras: Vec<&str> = args.extra_paths.iter().filter_map(|p| p.to_str()).collect();
+        assert_eq!(
+            extras,
+            vec!["b", "c"],
+            "surplus positionals land in extra_paths"
+        );
     }
 
     /// The surplus is rejected by KEYHOG (not clap) with actionable guidance that
@@ -831,8 +831,7 @@ mod multi_root_guard_tests {
     #[test]
     fn multiple_roots_fail_closed_with_actionable_message() {
         let args = ScanArgs::try_parse_from(["scan", "src", "tests", "config"]).unwrap();
-        let err = reject_multiple_scan_roots(&args)
-            .expect_err("multiple roots must fail closed");
+        let err = reject_multiple_scan_roots(&args).expect_err("multiple roots must fail closed");
         let msg = format!("{err:#}");
         assert!(
             msg.contains("keyhog scans one root path per invocation"),
@@ -856,7 +855,10 @@ mod multi_root_guard_tests {
             "offers the per-path workaround: {msg}"
         );
         // 2 extras => plural agreement.
-        assert!(msg.contains("2 extra paths were given"), "plural agreement: {msg}");
+        assert!(
+            msg.contains("2 extra paths were given"),
+            "plural agreement: {msg}"
+        );
     }
 
     /// Singular agreement when exactly one surplus path is present.
@@ -865,7 +867,10 @@ mod multi_root_guard_tests {
         let args = ScanArgs::try_parse_from(["scan", "a", "b"]).unwrap();
         let err = reject_multiple_scan_roots(&args).expect_err("two roots must fail closed");
         let msg = format!("{err:#}");
-        assert!(msg.contains("1 extra path was given"), "singular agreement: {msg}");
+        assert!(
+            msg.contains("1 extra path was given"),
+            "singular agreement: {msg}"
+        );
     }
 
     /// The common case — exactly one root — passes the guard untouched.
