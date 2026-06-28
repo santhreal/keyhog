@@ -91,6 +91,12 @@ pub(crate) fn process_entry_with_recorded_size_for_test(
         size: recorded_size,
         is_binary: false,
     };
+    // This helper drives `process_entry` directly (no gated `chunks()`), and a
+    // refused symlink / unreadable entry records an Unreadable skip. Hold the
+    // scan read lease across it so a counter-asserting test's exclusive scope
+    // serializes the recording. A no-op in production where the gate is never
+    // armed; see `skip::gate_scan`.
+    let _scan_lease = crate::acquire_scan_read_lease();
     extract::process_entry(
         entry,
         &None,
@@ -121,6 +127,12 @@ pub(crate) fn process_entry_with_merkle_for_test(
         size: recorded_size,
         is_binary: false,
     };
+    // This helper drives `process_entry` directly (no gated `chunks()`), and a
+    // refused symlink / unreadable entry records an Unreadable skip. Hold the
+    // scan read lease across it so a counter-asserting test's exclusive scope
+    // serializes the recording. A no-op in production where the gate is never
+    // armed; see `skip::gate_scan`.
+    let _scan_lease = crate::acquire_scan_read_lease();
     extract::process_entry(
         entry,
         &Some(merkle),
