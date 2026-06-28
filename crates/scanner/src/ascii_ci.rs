@@ -309,8 +309,17 @@ pub(crate) fn contains_path_segment(path: &str, segment: &str) -> bool {
     let bytes = path.as_bytes();
     let seg = segment.as_bytes();
     let n = seg.len();
-    if n == 0 || bytes.len() < n + 2 {
+    if n == 0 || bytes.len() < n + 1 {
         return false;
+    }
+    // Leading segment at offset 0 of a RELATIVE path (`node_modules/foo`): there
+    // is no preceding separator, so the separator-anchored loop below — which
+    // only inspects bytes AFTER a `/` or `\\` - would never test it, silently
+    // skipping vendored-tree suppression on relative roots (`keyhog scan
+    // node_modules`). Require an immediately-following separator so a prefix like
+    // `node_modules2/` does NOT match (preserves the substring-safety contract).
+    if bytes[..n].eq_ignore_ascii_case(seg) && matches!(bytes[n], b'/' | b'\\') {
+        return true;
     }
     for sep_idx in memchr::memchr2_iter(b'/', b'\\', bytes) {
         let body_start = sep_idx + 1;
@@ -338,8 +347,25 @@ pub(crate) fn contains_path_segment_two(path: &str, a: &str, b: &str) -> bool {
         return false;
     }
     let total = a_b.len() + b_b.len();
-    if bytes.len() < total + 3 {
+    if bytes.len() < total + 2 {
         return false;
+    }
+    // Leading `a/b/` at offset 0 of a relative path (`public/plugins/foo`): no
+    // preceding separator, so the loop below would miss it (same start-of-path
+    // gap as `contains_path_segment`). Both inner separators are still required
+    // so `publicX/plugins/` cannot false-match.
+    {
+        let a_end = a_b.len();
+        let b_start = a_end + 1;
+        let b_end = b_start + b_b.len();
+        if b_end < bytes.len()
+            && bytes[..a_end].eq_ignore_ascii_case(a_b)
+            && matches!(bytes[a_end], b'/' | b'\\')
+            && bytes[b_start..b_end].eq_ignore_ascii_case(b_b)
+            && matches!(bytes[b_end], b'/' | b'\\')
+        {
+            return true;
+        }
     }
     for sep_idx in memchr::memchr2_iter(b'/', b'\\', bytes) {
         let a_start = sep_idx + 1;

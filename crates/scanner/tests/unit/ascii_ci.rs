@@ -168,6 +168,61 @@ fn contains_path_segment_negative() {
 }
 
 #[test]
+fn contains_path_segment_leading_relative_posix() {
+    // Bug (Gemini Iter-3 / µ-ci-15): a segment at the absolute START of a
+    // relative path had no preceding separator, so the separator-anchored loop
+    // skipped it and vendored-tree suppression silently failed on relative roots
+    // (`keyhog scan node_modules`). The leading non-`.min.js` file must match.
+    assert!(contains_path_segment("node_modules/foo/index.js", "node_modules"));
+    assert!(contains_path_segment("site-packages/pkg/mod.py", "site-packages"));
+    // Windows-shape relative path.
+    assert!(contains_path_segment(
+        "node_modules\\foo\\index.js",
+        "node_modules"
+    ));
+    // The directory itself with a trailing separator still counts.
+    assert!(contains_path_segment("node_modules/", "node_modules"));
+}
+
+#[test]
+fn contains_path_segment_leading_negative_twin() {
+    // The leading fix must NOT introduce a substring false-match: a prefix that
+    // merely STARTS with the segment but is a different directory name must not
+    // suppress. `node_modules2/` and `node_modulesX/` are real directories.
+    assert!(!contains_path_segment("node_modules2/foo.js", "node_modules"));
+    assert!(!contains_path_segment("nodemodules/foo.js", "node_modules"));
+    // Bare segment with nothing after (no trailing separator) is not a tree.
+    assert!(!contains_path_segment("node_modules", "node_modules"));
+}
+
+#[test]
+fn contains_path_segment_two_leading_relative() {
+    // Two-segment start-of-path twin: `public/plugins/...` at offset 0.
+    assert!(contains_path_segment_two(
+        "public/plugins/foo/foo.js",
+        "public",
+        "plugins"
+    ));
+    assert!(contains_path_segment_two(
+        "public\\plugins\\foo\\foo.js",
+        "public",
+        "plugins"
+    ));
+    // Negative twin: first segment is a prefix but a distinct directory.
+    assert!(!contains_path_segment_two(
+        "publicX/plugins/foo.js",
+        "public",
+        "plugins"
+    ));
+    // Negative twin: right first segment, wrong second.
+    assert!(!contains_path_segment_two(
+        "public/themes/foo.js",
+        "public",
+        "plugins"
+    ));
+}
+
+#[test]
 fn contains_path_segment_two_posix() {
     assert!(contains_path_segment_two(
         "/var/www/wp-content/plugins/foo/foo.js",
