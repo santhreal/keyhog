@@ -27,6 +27,7 @@ pub mod subcommands_detectors;
 pub mod subcommands_doctor;
 pub mod subcommands_explain;
 pub mod subcommands_hook;
+pub mod subcommands_scan_multi_root;
 pub mod subcommands_scan_system;
 pub mod test_fixture_suppressions;
 pub mod value_parsers;
