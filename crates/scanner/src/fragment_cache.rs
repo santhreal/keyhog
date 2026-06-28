@@ -180,7 +180,8 @@ impl FragmentCache {
                         f1.path == f2.path && (f1.line as isize - f2.line as isize).abs() < 100;
 
                     if near {
-                        let mut joined = Zeroizing::new(String::new());
+                        let mut joined =
+                            Zeroizing::new(String::with_capacity(f1.value.len() + f2.value.len()));
                         joined.push_str(f1.value.as_str());
                         joined.push_str(f2.value.as_str());
                         candidates.push(joined);
@@ -252,7 +253,8 @@ impl FragmentCache {
                         f1.path == f2.path && (f1.line as isize - f2.line as isize).abs() < 100;
 
                     if near {
-                        let mut joined = Zeroizing::new(String::new());
+                        let mut joined =
+                            Zeroizing::new(String::with_capacity(f1.value.len() + f2.value.len()));
                         joined.push_str(f1.value.as_str());
                         joined.push_str(f2.value.as_str());
                         candidates.push(ReassembledCandidate {

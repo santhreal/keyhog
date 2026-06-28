@@ -86,6 +86,8 @@ mod prefix_trie_propagation_move_on_last;
 mod resolution_known_prefix_service_bonus_named;
 #[path = "gap/resolution_service_detector_predicate_dedup.rs"]
 mod resolution_service_detector_predicate_dedup;
+#[path = "gap/fragment_cache_reassemble_join.rs"]
+mod fragment_cache_reassemble_join;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]

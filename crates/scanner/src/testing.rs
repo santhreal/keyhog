@@ -58,6 +58,33 @@ pub fn is_service_anchored_detector_for_test(detector_id: &str) -> bool {
     crate::detector_ids::is_service_anchored_detector(detector_id)
 }
 
+/// Drive the cross-chunk fragment reassembler: record each `(prefix, value,
+/// line, path)` fragment in order, return the glued candidates from the LAST
+/// record call as plain `String`s (the `Zeroizing` wrapper unwrapped for
+/// assertion). Lets a gap test pin the exact reassembly output that the
+/// `with_capacity` join build must preserve.
+pub fn fragment_reassemble_for_test(
+    fragments: &[(&str, &str, usize, Option<&str>)],
+) -> Vec<String> {
+    let cache = crate::fragment_cache::FragmentCache::new(1024);
+    let mut last = Vec::new();
+    for &(prefix, value, line, path) in fragments {
+        let fragment = crate::fragment_cache::SecretFragment {
+            prefix: prefix.to_string(),
+            var_name: String::new(),
+            value: zeroize::Zeroizing::new(value.to_string()),
+            line,
+            path: path.map(std::sync::Arc::from),
+        };
+        last = cache
+            .record_and_reassemble(fragment)
+            .into_iter()
+            .map(|joined| joined.as_str().to_string())
+            .collect();
+    }
+    last
+}
+
 #[cfg(feature = "simd")]
 pub fn scan_coalesced_phase2_with_admission_for_test(
     scanner: &crate::CompiledScanner,
