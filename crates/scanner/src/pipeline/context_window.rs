@@ -131,6 +131,11 @@ pub(crate) fn find_companion(
     primary_line: usize,
     companion: &CompiledCompanion,
 ) -> Option<String> {
+    // Companion matches/capture-groups longer than this are skipped on both the
+    // no-group `find_iter` path and the capture-group path: a multi-kilobyte
+    // "match" is never a real adjacent credential, so scanning it past this cap
+    // only wastes the worker. One named owner keeps the two paths in lockstep.
+    const MAX_COMPANION_MATCH_BYTES: usize = 4096;
     // `primary_line` is 1-based (the return of `match_line_number` is
     // a 1-based partition_point index). Clamp the lower bound at
     // FIRST_LINE_NUMBER so a primary on line 1 with within=3 starts
@@ -158,7 +163,7 @@ pub(crate) fn find_companion(
     // companion lookup in every scan.
     if companion.capture_group.is_none() {
         for m in companion.regex.find_iter(haystack) {
-            if m.len() > 4096 {
+            if m.len() > MAX_COMPANION_MATCH_BYTES {
                 continue;
             }
             if let Some(line) = preprocessed.line_for_offset(window_start + m.start()) {
@@ -198,7 +203,7 @@ pub(crate) fn find_companion(
         cursor = next;
 
         if let Some((s, e)) = locs.get(group) {
-            if e.saturating_sub(s) <= 4096 {
+            if e.saturating_sub(s) <= MAX_COMPANION_MATCH_BYTES {
                 if let Some(line) = preprocessed.line_for_offset(window_start + s) {
                     if line_range.contains(&line) {
                         return Some(haystack[s..e].to_string());

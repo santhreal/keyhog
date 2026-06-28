@@ -58,6 +58,15 @@ pub fn is_service_anchored_detector_for_test(detector_id: &str) -> bool {
     crate::detector_ids::is_service_anchored_detector(detector_id)
 }
 
+/// Test seam for the per-finding context-window slicer. Borrows the
+/// `[line - radius, line + radius]` window (1-based `line`) out of `text` and
+/// returns it owned so a gap test can pin the exact byte slice: the trailing
+/// newline of the last window line is excluded, neighbours stay `\n`-joined,
+/// and a window that would start before line 1 clamps to the file start.
+pub fn local_context_window_for_test(text: &str, line: usize, radius: usize) -> String {
+    crate::pipeline::local_context_window(text, line, radius).to_string()
+}
+
 /// Drive the cross-chunk fragment reassembler: record each `(prefix, value,
 /// line, path)` fragment in order, return the glued candidates from the LAST
 /// record call as plain `String`s (the `Zeroizing` wrapper unwrapped for

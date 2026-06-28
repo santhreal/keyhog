@@ -120,6 +120,8 @@ mod context_inference_cfg_test_string_breaks_gate;
 mod context_sequential_placeholder_strips_prefix;
 #[path = "gap/context_tokio_async_fn_test_body_is_test_code.rs"]
 mod context_tokio_async_fn_test_body_is_test_code;
+#[path = "gap/context_window_local_slice.rs"]
+mod context_window_local_slice;
 #[path = "gap/cross_platform_cfg_gates_absent.rs"]
 mod cross_platform_cfg_gates_absent;
 #[path = "gap/csr_hot_maps_adopted.rs"]
