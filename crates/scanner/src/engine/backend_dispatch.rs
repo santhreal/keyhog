@@ -17,13 +17,7 @@ impl CompiledScanner {
         // each half too short to match) — load-bearing recall, not optional.
         let gpu_path = matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan);
         if !gpu_path || chunks.is_empty() {
-            use rayon::prelude::*;
-            let mut results: Vec<Vec<RawMatch>> = chunks
-                .par_iter()
-                .map(|chunk| self.scan_with_backend(chunk, backend))
-                .collect();
-            super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
-            return results;
+            return self.scan_chunks_cpu_parallel(chunks, backend);
         }
 
         // The batched region-presence literal set is the SINGLE on-GPU trigger
@@ -39,14 +33,27 @@ impl CompiledScanner {
         // path, preserving cross-chunk boundary recall.
         #[cfg(not(feature = "gpu"))]
         {
-            use rayon::prelude::*;
-            let mut results: Vec<Vec<RawMatch>> = chunks
-                .par_iter()
-                .map(|chunk| self.scan_with_backend(chunk, backend))
-                .collect();
-            super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
-            results
+            self.scan_chunks_cpu_parallel(chunks, backend)
         }
+    }
+
+    /// Parallel per-chunk CPU scan + cross-chunk boundary reassembly. The single
+    /// owner of this path: it is taken both for any non-GPU backend (and empty
+    /// batches) and as the GPU-compiled-out / GPU-request degrade, which were
+    /// otherwise two byte-identical copies that could drift apart (the
+    /// `scan_chunk_boundaries` seam pass is load-bearing recall on both).
+    fn scan_chunks_cpu_parallel(
+        &self,
+        chunks: &[Chunk],
+        backend: ScanBackend,
+    ) -> Vec<Vec<RawMatch>> {
+        use rayon::prelude::*;
+        let mut results: Vec<Vec<RawMatch>> = chunks
+            .par_iter()
+            .map(|chunk| self.scan_with_backend(chunk, backend))
+            .collect();
+        super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
+        results
     }
 
     pub(crate) fn prepare_chunk<'a>(&self, chunk: &'a Chunk) -> PreparedChunk<'a> {
