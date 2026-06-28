@@ -50,13 +50,17 @@ pub(crate) fn keyword_is_credential_anchor(keyword: &str) -> bool {
     if keyword == "none (high-entropy)" {
         return false;
     }
-    let lower = keyword.to_ascii_lowercase();
+    // The normalized-keyword path is checked first and reads `keyword`
+    // directly, so defer the `to_ascii_lowercase()` allocation until after it:
+    // a credential keyword (`api_key`, `token`, …) returns here without ever
+    // allocating the lowercase copy (Law 7).
     if crate::engine::phase2_generic::keywords::normalize_assignment_keyword(keyword)
         .as_deref()
         .is_some_and(crate::entropy::keywords::normalized_assignment_keyword_is_credential)
     {
         return true;
     }
+    let lower = keyword.to_ascii_lowercase();
     super::scan_filters::GENERIC_ASSIGNMENT_KEYWORDS
         .iter()
         .any(|anchor| lower.contains(anchor))

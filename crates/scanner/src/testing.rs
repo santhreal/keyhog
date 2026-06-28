@@ -638,6 +638,14 @@ pub fn suffix_gate_literals_for_test(src: &str) -> Vec<String> {
 pub fn new_trigger_bitmap_for_test(n_patterns: usize) -> Vec<u64> {
     crate::engine::trigger_bitmap::new_trigger_bitmap(n_patterns)
 }
+/// Whether an entropy candidate's keyword reads as a strong credential anchor
+/// (admits the candidate past the file-extension gate). Reachable from
+/// integration tests so the lazy-`to_ascii_lowercase` refactor can be pinned by
+/// its real true/false outputs, not just source shape.
+#[cfg(feature = "entropy")]
+pub fn keyword_is_credential_anchor_for_test(keyword: &str) -> bool {
+    crate::engine::phase2_entropy::helpers::keyword_is_credential_anchor(keyword)
+}
 /// Drive the shared `resolve_value_shaped_group` variable-name fallback through
 /// a real compiled regex: compile `pattern`, match it against `text`, take the
 /// configured `group`'s range as the starting credential, and return the range
