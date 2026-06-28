@@ -220,24 +220,18 @@ impl CompiledScanner {
             let mut credential = &search_text[credential_range.0..credential_range.1];
 
             // Variable-name heuristic: if the captured group looks like a
-            // variable name rather than a secret, scan the other groups for
-            // a value-shaped candidate. Same semantics as before, just
-            // reading from CaptureLocations directly.
-            if looks_like_variable_name(credential) && groups_total > 2 {
-                for g in 1..groups_total {
-                    if g == group {
-                        continue;
-                    }
-                    if let Some((s, e)) = locs.get(g) {
-                        let candidate_str = &search_text[s..e];
-                        if !looks_like_variable_name(candidate_str) && candidate_str.len() >= 8 {
-                            credential_range = (s, e);
-                            credential = candidate_str;
-                            break;
-                        }
-                    }
-                }
-            }
+            // variable name rather than a secret, scan the other groups for a
+            // value-shaped candidate. Shared with `extract_anchored` via
+            // `resolve_value_shaped_group` so the heuristic has one definition.
+            credential_range =
+                super::scan_filters::resolve_value_shaped_group(
+                    &locs,
+                    search_text,
+                    group,
+                    groups_total,
+                    credential_range,
+                );
+            credential = &search_text[credential_range.0..credential_range.1];
 
             let &(keyword_nearby, sensitive_file) = signals.get_or_init(|| {
                 super::scan_filters::compute_pattern_signals(entry, detector, chunk, preprocessed)

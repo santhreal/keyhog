@@ -638,6 +638,30 @@ pub fn suffix_gate_literals_for_test(src: &str) -> Vec<String> {
 pub fn new_trigger_bitmap_for_test(n_patterns: usize) -> Vec<u64> {
     crate::engine::trigger_bitmap::new_trigger_bitmap(n_patterns)
 }
+/// Drive the shared `resolve_value_shaped_group` variable-name fallback through
+/// a real compiled regex: compile `pattern`, match it against `text`, take the
+/// configured `group`'s range as the starting credential, and return the range
+/// the heuristic resolves to (the value-shaped sibling, or the original group).
+/// Lets a test pin the heuristic behaviour both `extract_grouped_matches` and
+/// `extract_anchored` now share.
+pub fn resolve_value_shaped_group_for_test(
+    pattern: &str,
+    text: &str,
+    group: usize,
+) -> Option<(usize, usize)> {
+    let re = regex::Regex::new(pattern).ok()?;
+    let mut locs = re.capture_locations();
+    re.captures_read(&mut locs, text)?;
+    let current = locs.get(group)?;
+    let groups_total = locs.len();
+    Some(crate::engine::scan_filters::resolve_value_shaped_group(
+        &locs,
+        text,
+        group,
+        groups_total,
+        current,
+    ))
+}
 /// Build a `CsrU32` from per-row index lists and read every row back out via
 /// the public `get`, so a test can pin that the (now exactly-capacity-reserved)
 /// build reconstructs the input rows byte-for-byte — including empty rows, the

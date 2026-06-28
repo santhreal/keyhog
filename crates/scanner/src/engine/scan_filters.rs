@@ -263,6 +263,42 @@ pub(super) fn looks_like_variable_name(s: &str) -> bool {
         .all(|&b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
+/// Variable-name fallback for grouped detectors: when the configured capture
+/// `group` looks like a variable name rather than a secret, scan the other
+/// capture groups for the first value-shaped sibling (itself NOT variable-name
+/// shaped, length >= 8) and return its `(start, end)` byte range; otherwise
+/// return `current` unchanged.
+///
+/// Shared by `extract_grouped_matches` (whole-chunk walk) and `extract_anchored`
+/// (phase-2 anchored verification) so this detection-load-bearing heuristic has
+/// exactly one definition instead of two copies that could drift apart. Offsets
+/// are relative to `text`, which each caller supplies as its own search base —
+/// the full preprocessed text for the whole-chunk walk, or the anchored `slice`
+/// for the phase-2 path — so the returned range re-slices correctly on either.
+pub(crate) fn resolve_value_shaped_group(
+    locs: &regex::CaptureLocations,
+    text: &str,
+    group: usize,
+    groups_total: usize,
+    current: (usize, usize),
+) -> (usize, usize) {
+    if !looks_like_variable_name(&text[current.0..current.1]) || groups_total <= 2 {
+        return current;
+    }
+    for g in 1..groups_total {
+        if g == group {
+            continue;
+        }
+        if let Some((s, e)) = locs.get(g) {
+            let candidate = &text[s..e];
+            if !looks_like_variable_name(candidate) && candidate.len() >= 8 {
+                return (s, e);
+            }
+        }
+    }
+    current
+}
+
 pub(crate) fn extend_known_prefix_credential<'a>(
     data: &'a str,
     credential: &'a str,

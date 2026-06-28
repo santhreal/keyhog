@@ -7,7 +7,6 @@
 //! emitting byte-identical matches via `process_match`. See `phase2_anchor.rs`
 //! for the soundness argument (every match starts at a required-prefix literal,
 //! so anchoring at every AC-reported position finds every whole-chunk match).
-use super::scan_filters::looks_like_variable_name;
 use super::CompiledScanner;
 use crate::anchored_regex::AnchoredRegex;
 use crate::types::*;
@@ -156,23 +155,16 @@ impl CompiledScanner {
                     if use_left_context && group == 0 {
                         cs = left_context_len;
                     }
-                    let mut cred = &slice[cs..ce];
-                    if looks_like_variable_name(cred) && groups_total > 2 {
-                        for g in 1..groups_total {
-                            if g == group {
-                                continue;
-                            }
-                            if let Some((s, e)) = locs.get(g) {
-                                let cand = &slice[s..e];
-                                if !looks_like_variable_name(cand) && cand.len() >= 8 {
-                                    cs = s;
-                                    ce = e;
-                                    cred = cand;
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                    // Shared with `extract_grouped_matches`: a variable-name
+                    // group falls back to a value-shaped sibling group.
+                    (cs, ce) = super::scan_filters::resolve_value_shaped_group(
+                        locs,
+                        slice,
+                        group,
+                        groups_total,
+                        (cs, ce),
+                    );
+                    let cred = &slice[cs..ce];
                     (cred, context_start + cs, context_start + ce)
                 }
                 None => (&slice[left_context_len..whole.end()], full_start, full_end),
