@@ -13,6 +13,12 @@ use keyhog_core::DetectorSpec;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+/// Minimum normalized service-name length for a named detector to contribute
+/// owned assignment keywords. Two-character service markers (`ci`, `db`, `io`)
+/// are too generic to safely claim ownership of a `KEY=value` anchor, so they
+/// are skipped rather than suppressing the broad generic bridge.
+const MIN_SERVICE_NAME_LEN: usize = 3;
+
 pub(crate) fn build_generic_named_assignment_keywords(detectors: &[DetectorSpec]) -> Vec<Arc<str>> {
     let mut owned = BTreeSet::<String>::new();
     for detector in detectors {
@@ -22,7 +28,7 @@ pub(crate) fn build_generic_named_assignment_keywords(detectors: &[DetectorSpec]
         let Some(service) = normalize_assignment_keyword(&detector.service) else {
             continue;
         };
-        if service.len() < 3 {
+        if service.len() < MIN_SERVICE_NAME_LEN {
             continue;
         }
         for keyword in &detector.keywords {

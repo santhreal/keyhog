@@ -100,6 +100,8 @@ mod slack_checksum_token_shapes;
 mod static_intern_seed_source_types;
 #[path = "gap/github_checksum_token_structure.rs"]
 mod github_checksum_token_structure;
+#[path = "gap/generic_keyword_owner_service_name_floor.rs"]
+mod generic_keyword_owner_service_name_floor;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]

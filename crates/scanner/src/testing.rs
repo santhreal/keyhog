@@ -177,6 +177,27 @@ pub fn github_fine_grained_checksum_verdict_for_test(credential: &str) -> &'stat
     }
 }
 
+/// Build the named-detector-owned assignment-key set from a single synthetic
+/// detector (`service` + `keywords`) and return the owned keywords as plain
+/// strings. Lets a gap test pin `build_generic_named_assignment_keywords`,
+/// including the `MIN_SERVICE_NAME_LEN` service-name-length floor (a 2-char
+/// service contributes nothing; a 3-char service can own a matching anchor).
+pub fn generic_named_owned_keywords_for_test(service: &str, keywords: &[&str]) -> Vec<String> {
+    let detector = keyhog_core::DetectorSpec {
+        id: "acme-secret".to_string(),
+        name: "Acme Secret".to_string(),
+        service: service.to_string(),
+        keywords: keywords.iter().map(|k| k.to_string()).collect(),
+        ..Default::default()
+    };
+    crate::generic_keyword_owner::build_generic_named_assignment_keywords(std::slice::from_ref(
+        &detector,
+    ))
+    .into_iter()
+    .map(|owned| owned.to_string())
+    .collect()
+}
+
 /// Probe the static interner's frozen source-type seed contract: build an
 /// interner from zero detector strings (so its arena is exactly the seed
 /// universe), then return the full `SEED_SOURCE_TYPES` list, whether each entry

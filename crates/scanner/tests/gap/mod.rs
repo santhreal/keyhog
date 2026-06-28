@@ -61,6 +61,7 @@ pub mod npm_checksum_token_structure;
 pub mod slack_checksum_token_shapes;
 pub mod static_intern_seed_source_types;
 pub mod github_checksum_token_structure;
+pub mod generic_keyword_owner_service_name_floor;
 pub mod entropy_keyword_only_requires_keyword_line;
 pub mod entropy_keywords_inline_tests_in_src;
 pub mod file_gate_matrix_scanner_adversarial_unmarked;
