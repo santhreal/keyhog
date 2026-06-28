@@ -623,6 +623,9 @@ pub(crate) use crate::homoglyph::expand_homoglyphs;
 pub fn code_lines_from_offsets_for_test<'a>(text: &'a str, line_offsets: &[usize]) -> Vec<&'a str> {
     crate::engine::code_lines_from_offsets(text, line_offsets)
 }
+pub fn ascii_fold_regex_src_for_test(src: &str) -> String {
+    crate::engine::phase2::ascii_fold_regex_src(src)
+}
 pub use crate::pipeline::compute_line_offsets;
 pub fn normalize_chunk_data(data: &str) -> std::borrow::Cow<'_, str> {
     crate::normalize_chunk_data(data)

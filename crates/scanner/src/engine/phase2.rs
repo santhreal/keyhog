@@ -428,6 +428,20 @@ pub(crate) fn gate_prefix_literals(src: &str) -> Option<Vec<Vec<u8>>> {
     Some(out)
 }
 
+/// ASCII-fold a regex source: drop every non-ASCII codepoint, order preserved.
+///
+/// This is the EXACT folded form the plain (homoglyph) phase-2 matchers compile
+/// and run on pure-ASCII chunks. The prefilter's gate literals
+/// (`pattern_gate_literals`), the RegexSet alternate (`build_ascii_alternate` /
+/// `ascii_folded_sources`), and the shared-anchor localizer
+/// (`phase2_anchor::build`) MUST all fold identically — that is the soundness
+/// contract that the folded gate/literals describe the matcher that actually
+/// runs. Centralized here so the fold is one definition instead of three
+/// hand-kept copies that could silently drift apart.
+pub(crate) fn ascii_fold_regex_src(src: &str) -> String {
+    src.chars().filter(char::is_ascii).collect()
+}
+
 thread_local! {
     /// Per-thread pool for the active phase-2 scratch. Pool one per worker;
     /// it is grown once and reused thereafter (no per-chunk allocation).

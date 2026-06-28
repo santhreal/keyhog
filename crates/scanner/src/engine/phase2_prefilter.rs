@@ -244,14 +244,10 @@ impl Phase2AlwaysActivePrefilter {
             gate_prefix_literals(pattern.regex.as_str())
         } else {
             // Plain batch: gate on the ASCII-folded form (the matcher used on
-            // ASCII chunks). `ascii_fold_src` must equal what `build_ascii_
-            // alternate` compiles so the gate describes the running matcher.
-            let folded: String = pattern
-                .regex
-                .as_str()
-                .chars()
-                .filter(char::is_ascii)
-                .collect();
+            // ASCII chunks). The fold MUST equal what `build_ascii_alternate`
+            // compiles so the gate describes the running matcher — hence the one
+            // shared `ascii_fold_regex_src`.
+            let folded = ascii_fold_regex_src(pattern.regex.as_str());
             gate_prefix_literals(&folded)
         }
     }
@@ -520,12 +516,7 @@ impl Phase2AlwaysActivePrefilter {
         let mut folded = Vec::with_capacity(indices.len());
         for &index in indices {
             let (pattern, _) = &phase2_patterns[index];
-            let source: String = pattern
-                .regex
-                .as_str()
-                .chars()
-                .filter(char::is_ascii)
-                .collect();
+            let source = ascii_fold_regex_src(pattern.regex.as_str());
             if truncate {
                 folded.push(truncate_for_prefilter(&source).unwrap_or(source)); // LAW10: truncation is a prefilter perf-opt over a SUPERSET; un-truncatable => full form, recall-safe (never under-matches)
             } else {

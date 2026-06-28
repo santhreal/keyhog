@@ -33,7 +33,7 @@
 //! char-class bodies, homoglyph unicode cross-products) is NOT eligible and
 //! keeps the whole-chunk path — never a silent recall trade.
 
-use super::phase2::{gate_prefix_literals, MIN_PREFIX_BYTES};
+use super::phase2::{ascii_fold_regex_src, gate_prefix_literals, MIN_PREFIX_BYTES};
 use super::phase2_first_bigram::FirstBigramSet;
 use crate::anchored_regex::AnchoredRegex;
 use crate::types::*;
@@ -177,13 +177,9 @@ impl Phase2AnchorIndex {
             // path from the FOLDED leading literals instead.
             if !ci {
                 // Fold out non-ASCII ONCE: the same fold drives the leading
-                // -literal AC and the anchored verify regex.
-                let folded_src: String = pattern
-                    .regex
-                    .as_str()
-                    .chars()
-                    .filter(char::is_ascii)
-                    .collect();
+                // -literal AC and the anchored verify regex. Shared
+                // `ascii_fold_regex_src` so this matches the prefilter's fold.
+                let folded_src = ascii_fold_regex_src(pattern.regex.as_str());
                 match leading_literals_of_folded(&folded_src) {
                     Some(lits) => {
                         for lit in &lits {
