@@ -69,16 +69,22 @@ impl Source for SlackSource {
         // (dropping its internal runtime in an async context aborts the
         // process). Collection is eager, so run it on a scoped std thread with
         // no ambient tokio runtime.
-        let result = std::thread::scope(|s| match s.spawn(|| self.collect_chunks()).join() {
-            Ok(result) => result,
-            Err(_panic) => Err(SourceError::Other(
-                "slack fetch thread panicked".to_string(),
-            )),
-        });
-        match result {
-            Ok(chunks) => Box::new(chunks.into_iter()),
-            Err(e) => Box::new(std::iter::once(Err(e))),
-        }
+        // Hold the scan read lease across the synchronous fetch so a
+        // counter-asserting test's exclusive scope serializes this source's skip
+        // recording (transport errors). A no-op in production where the gate is
+        // never armed; see `skip::gate_scan`.
+        crate::gate_scan(|| {
+            let result = std::thread::scope(|s| match s.spawn(|| self.collect_chunks()).join() {
+                Ok(result) => result,
+                Err(_panic) => Err(SourceError::Other(
+                    "slack fetch thread panicked".to_string(),
+                )),
+            });
+            match result {
+                Ok(chunks) => Box::new(chunks.into_iter()),
+                Err(e) => Box::new(std::iter::once(Err(e))),
+            }
+        })
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

@@ -110,28 +110,34 @@ impl Source for S3Source {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        // `reqwest::blocking` must run off the CLI's `#[tokio::main]` thread
-        // (dropping its internal runtime in an async context aborts the
-        // process). Collection is eager, so run it on a scoped std thread with
-        // no ambient tokio runtime.
-        let result = crate::cloud::collect_on_blocking_thread("s3", || {
-            collect_s3_chunks(
-                &self.bucket,
-                self.prefix.as_deref(),
-                self.endpoint.as_deref(),
-                match self.max_objects {
-                    Some(max_objects) => max_objects,
-                    None => self.limits.cloud_max_objects, // LAW10: no explicit per-source object-count override => use resolved Tier-A SourceLimits default
-                },
-                self.limits,
-                &self.http,
-                self.allow_credential_forward,
-            )
-        });
-        match result {
-            Ok(rows) => Box::new(rows.into_iter()),
-            Err(error) => Box::new(std::iter::once(Err(error))),
-        }
+        // Hold the scan read lease across the synchronous object listing so a
+        // counter-asserting test's exclusive scope serializes this source's skip
+        // recording (unreadable objects). A no-op in production where the gate is
+        // never armed; see `skip::gate_scan`.
+        crate::gate_scan(|| {
+            // `reqwest::blocking` must run off the CLI's `#[tokio::main]` thread
+            // (dropping its internal runtime in an async context aborts the
+            // process). Collection is eager, so run it on a scoped std thread with
+            // no ambient tokio runtime.
+            let result = crate::cloud::collect_on_blocking_thread("s3", || {
+                collect_s3_chunks(
+                    &self.bucket,
+                    self.prefix.as_deref(),
+                    self.endpoint.as_deref(),
+                    match self.max_objects {
+                        Some(max_objects) => max_objects,
+                        None => self.limits.cloud_max_objects, // LAW10: no explicit per-source object-count override => use resolved Tier-A SourceLimits default
+                    },
+                    self.limits,
+                    &self.http,
+                    self.allow_credential_forward,
+                )
+            });
+            match result {
+                Ok(rows) => Box::new(rows.into_iter()),
+                Err(error) => Box::new(std::iter::once(Err(error))),
+            }
+        })
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self

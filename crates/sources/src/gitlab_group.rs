@@ -63,30 +63,36 @@ impl Source for GitLabGroupSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        let result = thread::scope(|s| {
-            match s
-                .spawn(|| {
-                    collect_group_chunks(
-                        &self.group,
-                        &self.token,
-                        &self.endpoint,
-                        &self.http,
-                        self.limits,
-                        self.respect_default_excludes,
-                    )
-                })
-                .join()
-            {
-                Ok(result) => result,
-                Err(_panic) => Err(SourceError::Other(
-                    "gitlab-group fetch thread panicked".to_string(),
-                )),
+        // Hold the scan read lease across the synchronous fetch so a
+        // counter-asserting test's exclusive scope serializes this source's skip
+        // recording (unreachable API / bad token). A no-op in production where the
+        // gate is never armed; see `skip::gate_scan`.
+        crate::gate_scan(|| {
+            let result = thread::scope(|s| {
+                match s
+                    .spawn(|| {
+                        collect_group_chunks(
+                            &self.group,
+                            &self.token,
+                            &self.endpoint,
+                            &self.http,
+                            self.limits,
+                            self.respect_default_excludes,
+                        )
+                    })
+                    .join()
+                {
+                    Ok(result) => result,
+                    Err(_panic) => Err(SourceError::Other(
+                        "gitlab-group fetch thread panicked".to_string(),
+                    )),
+                }
+            });
+            match result {
+                Ok(rows) => Box::new(rows.into_iter()),
+                Err(err) => Box::new(std::iter::once(Err(err))),
             }
-        });
-        match result {
-            Ok(rows) => Box::new(rows.into_iter()),
-            Err(err) => Box::new(std::iter::once(Err(err))),
-        }
+        })
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

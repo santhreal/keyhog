@@ -162,14 +162,24 @@ impl Source for WebSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        // `reqwest::blocking` must run off the CLI's `#[tokio::main]` thread:
-        // dropping its internal runtime inside an async context aborts the
-        // process. `fetch_all` is eager, so run it on a scoped std thread that
-        // carries no ambient tokio runtime.
-        match crate::blocking_thread::collect_on_blocking_thread("web", || Ok(self.fetch_all())) {
-            Ok(all) => Box::new(all.into_iter()),
-            Err(error) => Box::new(std::iter::once(Err(error))),
-        }
+        // Hold the scan read lease across the whole scan so a counter-asserting
+        // test's exclusive scope serializes this source's skip-counter recording
+        // (a blocked/SSRF-refused URL records `Unreadable`). `fetch_all` is
+        // synchronous, so the lease taken here is held for the entire recording
+        // window. A no-op in production (the gate is never armed); see
+        // `skip::gate_scan`. Without it, a concurrent web scan's `Unreadable`
+        // increment pollutes another test's `reset -> scan -> read` window.
+        crate::gate_scan(|| {
+            // `reqwest::blocking` must run off the CLI's `#[tokio::main]` thread:
+            // dropping its internal runtime inside an async context aborts the
+            // process. `fetch_all` is eager, so run it on a scoped std thread that
+            // carries no ambient tokio runtime.
+            match crate::blocking_thread::collect_on_blocking_thread("web", || Ok(self.fetch_all()))
+            {
+                Ok(all) => Box::new(all.into_iter()),
+                Err(error) => Box::new(std::iter::once(Err(error))),
+            }
+        })
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self

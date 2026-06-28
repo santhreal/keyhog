@@ -57,22 +57,28 @@ impl Source for AzureBlobSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        let result = crate::cloud::collect_on_blocking_thread("azure blob", || {
-            collect_azure_blob_chunks(
-                &self.container_url,
-                self.prefix.as_deref(),
-                match self.max_objects {
-                    Some(max_objects) => max_objects,
-                    None => self.limits.cloud_max_objects, // LAW10: no explicit per-source object-count override => use resolved Tier-A SourceLimits default
-                },
-                self.limits,
-                &self.http,
-            )
-        });
-        match result {
-            Ok(rows) => Box::new(rows.into_iter()),
-            Err(error) => Box::new(std::iter::once(Err(error))),
-        }
+        // Hold the scan read lease across the synchronous object listing so a
+        // counter-asserting test's exclusive scope serializes this source's skip
+        // recording (unreadable objects). A no-op in production where the gate is
+        // never armed; see `skip::gate_scan`.
+        crate::gate_scan(|| {
+            let result = crate::cloud::collect_on_blocking_thread("azure blob", || {
+                collect_azure_blob_chunks(
+                    &self.container_url,
+                    self.prefix.as_deref(),
+                    match self.max_objects {
+                        Some(max_objects) => max_objects,
+                        None => self.limits.cloud_max_objects, // LAW10: no explicit per-source object-count override => use resolved Tier-A SourceLimits default
+                    },
+                    self.limits,
+                    &self.http,
+                )
+            });
+            match result {
+                Ok(rows) => Box::new(rows.into_iter()),
+                Err(error) => Box::new(std::iter::once(Err(error))),
+            }
+        })
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

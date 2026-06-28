@@ -74,10 +74,17 @@ impl Source for DockerImageSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        match collect_docker_chunks(&self.image, self.limits, self.respect_default_excludes) {
-            Ok(rows) => Box::new(rows.into_iter()),
-            Err(error) => Box::new(std::iter::once(Err(error))),
-        }
+        // Hold the scan read lease across collection so a counter-asserting test's
+        // exclusive scope serializes this source's skip recording (unreadable
+        // layers / manifests). `collect_docker_chunks` is synchronous, so the
+        // lease covers its whole recording window. A no-op in production where the
+        // gate is never armed; see `skip::gate_scan`.
+        crate::gate_scan(|| {
+            match collect_docker_chunks(&self.image, self.limits, self.respect_default_excludes) {
+                Ok(rows) => Box::new(rows.into_iter()),
+                Err(error) => Box::new(std::iter::once(Err(error))),
+            }
+        })
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self

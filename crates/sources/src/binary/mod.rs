@@ -456,16 +456,23 @@ impl Source for BinarySource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        let rows = if let Some(ghidra_bin) = &self.ghidra_path {
-            match self.ghidra_chunks(ghidra_bin) {
-                Ok(rows) => rows,
-                Err(e) => vec![Err(e)],
-            }
-        } else {
-            self.strings_chunks()
-        };
+        // Hold the scan read lease across collection so a counter-asserting test's
+        // exclusive scope serializes this source's skip recording (unresolved
+        // section names, unreadable binaries). The collect is synchronous, so the
+        // lease covers its whole recording window. A no-op in production where the
+        // gate is never armed; see `skip::gate_scan`.
+        crate::gate_scan(|| {
+            let rows = if let Some(ghidra_bin) = &self.ghidra_path {
+                match self.ghidra_chunks(ghidra_bin) {
+                    Ok(rows) => rows,
+                    Err(e) => vec![Err(e)],
+                }
+            } else {
+                self.strings_chunks()
+            };
 
-        Box::new(rows.into_iter())
+            Box::new(rows.into_iter())
+        })
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
