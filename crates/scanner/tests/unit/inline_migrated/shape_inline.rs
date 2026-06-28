@@ -36,6 +36,28 @@ fn public_evidence_identifier_stays_case_insensitive_after_zero_alloc_rewrite() 
 }
 
 #[test]
+fn public_evidence_crypto_and_fixture_subshapes_stay_case_insensitive() {
+    // Password-KDF algorithm names (crypto arm, now eq_ignore_ascii_case — was
+    // to_ascii_lowercase) — match in any case, exact (not substring).
+    assert!(looks_like_public_evidence_identifier("argon2id"));
+    assert!(looks_like_public_evidence_identifier("Argon2"));
+    assert!(looks_like_public_evidence_identifier("BCRYPT"));
+    assert!(looks_like_public_evidence_identifier("pbkdf2"));
+    // Not in the KDF set.
+    assert!(!looks_like_public_evidence_identifier("argon3"));
+    assert!(!looks_like_public_evidence_identifier("sha256")); // a digest, not a KDF
+
+    // `<PREFIX>-…-fixture` provenance labels (fixture arm, now
+    // ends_with_ignore_ascii_case for the suffix — body parts still lowercase).
+    assert!(looks_like_public_evidence_identifier("AB7-foo-fixture"));
+    assert!(looks_like_public_evidence_identifier("X9-bar-baz-fixture"));
+    // Prefix must be uppercase-led + carry a digit; a lowercase prefix fails.
+    assert!(!looks_like_public_evidence_identifier("lower-test-fixture"));
+    // No `-fixture` suffix at all.
+    assert!(!looks_like_public_evidence_identifier("AB7-foo-bar"));
+}
+
+#[test]
 fn dotted_source_identifier_stays_case_insensitive_after_zero_alloc_rewrite() {
     // Receiver match (now eq_ignore_ascii_case, no to_ascii_lowercase alloc):
     // a known source receiver in ANY case suppresses.

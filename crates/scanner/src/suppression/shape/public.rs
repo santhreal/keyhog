@@ -214,15 +214,24 @@ pub(crate) fn looks_like_public_evidence_identifier(value: &str) -> bool {
 }
 
 fn looks_like_public_crypto_algorithm_identifier(value: &str) -> bool {
-    matches!(
-        value.to_ascii_lowercase().as_str(),
-        "argon2" | "argon2d" | "argon2i" | "argon2id" | "bcrypt" | "scrypt" | "pbkdf2"
-    )
+    // Case-insensitive exact match without allocating a lowercased copy (Law 7).
+    // `eq_ignore_ascii_case` is byte-identical to the prior
+    // `value.to_ascii_lowercase().as_str() == <lowercase literal>` form.
+    const ALGORITHMS: &[&str] = &[
+        "argon2", "argon2d", "argon2i", "argon2id", "bcrypt", "scrypt", "pbkdf2",
+    ];
+    ALGORITHMS
+        .iter()
+        .any(|algo| value.eq_ignore_ascii_case(algo))
 }
 
 fn looks_like_public_fixture_identifier(value: &str) -> bool {
-    let lower = value.to_ascii_lowercase();
-    if !lower.ends_with("-fixture") || !lower.contains('-') {
+    // Zero-alloc: the `-fixture` suffix is a case-insensitive byte compare and
+    // the `-` presence is case-irrelevant, so neither needs the prior
+    // `value.to_ascii_lowercase()` allocation (Law 7). The rest of the function
+    // already reads `value`, not the lowered copy.
+    let bytes = value.as_bytes();
+    if !crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b"-fixture") || !bytes.contains(&b'-') {
         return false;
     }
     let mut parts = value.split('-');
