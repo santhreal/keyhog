@@ -2,6 +2,14 @@ use super::{ChecksumResult, ChecksumValidator};
 
 const BASE62_DIGITS: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
+/// GitHub/npm CRC32 token checksums are a 6-character base62 encoding of the
+/// body's CRC32. Single owner so the classic and fine-grained validators agree
+/// on the checksum width.
+const CHECKSUM_LEN: usize = 6;
+/// GitHub classic PAT body: a fixed entropy run followed by the checksum.
+const GITHUB_CLASSIC_ENTROPY_LEN: usize = 30;
+const GITHUB_CLASSIC_BODY_LEN: usize = GITHUB_CLASSIC_ENTROPY_LEN + CHECKSUM_LEN;
+
 /// Compute the standard CRC32 checksum of `data`.
 pub(crate) fn crc32(data: &[u8]) -> u32 {
     const TABLE: [u32; 256] = {
@@ -60,18 +68,18 @@ impl ChecksumValidator for GithubClassicPatValidator {
             Some(p) => p,
             None => return ChecksumResult::NotApplicable,
         };
-        if payload.len() > 36 {
+        if payload.len() > GITHUB_CLASSIC_BODY_LEN {
             return ChecksumResult::Invalid;
         }
-        if payload.len() != 36 {
+        if payload.len() != GITHUB_CLASSIC_BODY_LEN {
             return ChecksumResult::NotApplicable;
         }
         if !payload.chars().all(|c| c.is_ascii_alphanumeric()) {
             return ChecksumResult::Invalid;
         }
-        let entropy = &payload[..30];
-        let checksum_str = &payload[30..];
-        let expected = base62_encode_u32(crc32(entropy.as_bytes()), 6);
+        let entropy = &payload[..GITHUB_CLASSIC_ENTROPY_LEN];
+        let checksum_str = &payload[GITHUB_CLASSIC_ENTROPY_LEN..];
+        let expected = base62_encode_u32(crc32(entropy.as_bytes()), CHECKSUM_LEN);
         if expected == checksum_str {
             ChecksumResult::Valid
         } else {
@@ -94,12 +102,12 @@ pub(crate) struct GithubFineGrainedPatValidator;
 
 impl GithubFineGrainedPatValidator {
     fn try_payload(payload: &str) -> ChecksumResult {
-        if payload.len() < 7 {
+        if payload.len() < CHECKSUM_LEN + 1 {
             return ChecksumResult::Invalid;
         }
-        let entropy = &payload[..payload.len() - 6];
-        let checksum_str = &payload[payload.len() - 6..];
-        let expected = base62_encode_u32(crc32(entropy.as_bytes()), 6);
+        let entropy = &payload[..payload.len() - CHECKSUM_LEN];
+        let checksum_str = &payload[payload.len() - CHECKSUM_LEN..];
+        let expected = base62_encode_u32(crc32(entropy.as_bytes()), CHECKSUM_LEN);
         if expected == checksum_str {
             ChecksumResult::Valid
         } else {

@@ -153,6 +153,30 @@ pub fn slack_checksum_verdict_for_test(credential: &str) -> &'static str {
     }
 }
 
+/// GitHub classic-PAT structural+checksum verdict for `credential`, as a stable
+/// string. Lets a gap test pin the 36-char body gate and the 30/6 split.
+pub fn github_classic_checksum_verdict_for_test(credential: &str) -> &'static str {
+    use crate::checksum::ChecksumValidator;
+    match crate::checksum::github::GithubClassicPatValidator.validate(credential) {
+        crate::checksum::ChecksumResult::Valid => "valid",
+        crate::checksum::ChecksumResult::StructurallyValid => "structurally-valid",
+        crate::checksum::ChecksumResult::Invalid => "invalid",
+        crate::checksum::ChecksumResult::NotApplicable => "not-applicable",
+    }
+}
+
+/// GitHub fine-grained-PAT structural+checksum verdict for `credential`, as a
+/// stable string.
+pub fn github_fine_grained_checksum_verdict_for_test(credential: &str) -> &'static str {
+    use crate::checksum::ChecksumValidator;
+    match crate::checksum::github::GithubFineGrainedPatValidator.validate(credential) {
+        crate::checksum::ChecksumResult::Valid => "valid",
+        crate::checksum::ChecksumResult::StructurallyValid => "structurally-valid",
+        crate::checksum::ChecksumResult::Invalid => "invalid",
+        crate::checksum::ChecksumResult::NotApplicable => "not-applicable",
+    }
+}
+
 /// Probe the static interner's frozen source-type seed contract: build an
 /// interner from zero detector strings (so its arena is exactly the seed
 /// universe), then return the full `SEED_SOURCE_TYPES` list, whether each entry
