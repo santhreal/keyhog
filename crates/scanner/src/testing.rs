@@ -158,6 +158,17 @@ pub mod confidence {
             .collect()
     }
 
+    /// The entropy-plausibility placeholder/decoy marker gate
+    /// (`bytes_contain_entropy_placeholder_marker`), exposed so the integration
+    /// tree can pin its exact suppression decisions. This is a SECOND, hardcoded
+    /// marker vocabulary distinct from `placeholder_words()` (it carries
+    /// heterogeneous match semantics: substring, length-gated, compound AKIA,
+    /// angle-bracket, and whole-value-exact), so a behavioral lock is the
+    /// prerequisite for any future move to Tier-B data without a recall change.
+    pub fn entropy_placeholder_marker(bytes: &[u8]) -> bool {
+        crate::placeholder_words::bytes_contain_entropy_placeholder_marker(bytes)
+    }
+
     #[cfg(test)]
     pub(crate) fn parse_placeholder_words_for_test(raw: &str) -> Result<Vec<String>, String> {
         crate::placeholder_words::parse_placeholder_words(raw).map(|words| {

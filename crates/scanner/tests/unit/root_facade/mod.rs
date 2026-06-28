@@ -14,6 +14,7 @@ mod decode_focus_parity;
 mod decode_recursion_profile;
 mod decode_test;
 mod detector_registry_truth_matrix;
+mod entropy_placeholder_marker_truth_table;
 mod fullscan_throughput;
 mod generic_named_pending_coverage;
 #[cfg(feature = "gpu")]
