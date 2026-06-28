@@ -180,3 +180,4 @@ pub(super) use splice::{
     decode_candidate_refs_exact, decode_candidate_spans_exact, push_decoded_text_chunk,
     push_decoded_text_chunk_spliced, push_decoded_text_chunk_spliced_at,
 };
+pub(crate) use splice::{bytecount_newlines, splice_decoded_payload_at};

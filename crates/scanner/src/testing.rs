@@ -58,6 +58,28 @@ pub fn is_service_anchored_detector_for_test(detector_id: &str) -> bool {
     crate::detector_ids::is_service_anchored_detector(detector_id)
 }
 
+/// Test seam for the decode-splice newline counter (now a `memchr` SIMD count):
+/// the per-decoded-candidate parent-prefix newline tally that fixes the spliced
+/// chunk's `base_line`. Lets a gap test pin that the count is exact.
+pub fn bytecount_newlines_for_test(bytes: &[u8]) -> usize {
+    crate::decode::bytecount_newlines(bytes)
+}
+
+/// Test seam for the decode-splice core: splice `decoded_text` into the bounded
+/// `[start, end)` window of `parent`, keeping `SPLICE_CONTEXT_WINDOW` bytes of
+/// companion context on each side. Returns `(window_start, spliced_payload,
+/// decoded_offset_within_payload)` or `None` when the span is out of bounds or
+/// lands off a char boundary. Lets a gap test pin the exact spliced bytes.
+pub fn splice_decoded_payload_at_for_test(
+    parent: &str,
+    start: usize,
+    end: usize,
+    decoded_text: &str,
+    decoder_name: &str,
+) -> Option<(usize, String, usize)> {
+    crate::decode::splice_decoded_payload_at(parent, start, end, decoded_text, decoder_name)
+}
+
 /// Test seam for the per-finding context-window slicer. Borrows the
 /// `[line - radius, line + radius]` window (1-based `line`) out of `text` and
 /// returns it owned so a gap test can pin the exact byte slice: the trailing

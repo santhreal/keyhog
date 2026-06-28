@@ -18,6 +18,7 @@ pub mod cross_platform_cfg_gates_absent;
 pub mod csr_hot_maps_adopted;
 pub mod decode_pipeline_exceeds_modularity_cap;
 pub mod decode_pipeline_layers;
+pub mod decode_splice_payload_window;
 pub mod degraded_batch_paths_preserve_boundaries;
 pub mod detector_contract_coverage_100pct;
 pub mod detector_precision_decoys;

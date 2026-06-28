@@ -121,8 +121,12 @@ pub(in crate::decode) fn push_decoded_text_chunk_spliced_at(
     });
 }
 
-fn bytecount_newlines(bytes: &[u8]) -> usize {
-    bytes.iter().filter(|&&b| b == b'\n').count()
+pub(crate) fn bytecount_newlines(bytes: &[u8]) -> usize {
+    // SIMD newline count via `memchr_iter`, the same idiom `compute_line_offsets`
+    // uses (~4x a scalar byte loop on inputs over a KiB). This runs on the parent
+    // prefix up to the splice point per decoded candidate, so the prefix can be
+    // large; the scalar `.iter().filter().count()` was the slow path here.
+    memchr::memchr_iter(b'\n', bytes).count()
 }
 
 /// Bytes of surrounding parent text kept on each side of the spliced-in decoded
@@ -142,7 +146,7 @@ fn splice_decoded_payload(
     splice_decoded_payload_at(parent, start, end, decoded_text, decoder_name)
 }
 
-fn splice_decoded_payload_at(
+pub(crate) fn splice_decoded_payload_at(
     parent: &str,
     start: usize,
     end: usize,

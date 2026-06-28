@@ -128,6 +128,8 @@ mod cross_platform_cfg_gates_absent;
 mod csr_hot_maps_adopted;
 #[path = "gap/decode_pipeline_exceeds_modularity_cap.rs"]
 mod decode_pipeline_exceeds_modularity_cap;
+#[path = "gap/decode_splice_payload_window.rs"]
+mod decode_splice_payload_window;
 #[path = "gap/detector_contract_coverage_100pct.rs"]
 mod detector_contract_coverage_100pct;
 #[path = "gap/detector_precision_decoys.rs"]

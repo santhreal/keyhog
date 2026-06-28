@@ -20,7 +20,8 @@ pub use hex::{find_hex_strings, hex_decode};
 pub(crate) use pipeline::decode_chunk;
 pub use pipeline::register_decoder;
 pub(crate) use pipeline::{
-    decoder_profile_dump, decoder_profile_reset, extract_profile_dump, extract_profile_reset,
+    bytecount_newlines, decoder_profile_dump, decoder_profile_reset, extract_profile_dump,
+    extract_profile_reset, splice_decoded_payload_at,
 };
 #[cfg(test)]
 pub(crate) use pipeline::{register_thread_decoder, ScopedDecoderRegistration};
