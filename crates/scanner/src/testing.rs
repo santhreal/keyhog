@@ -676,6 +676,14 @@ pub mod fragment_cache {
 pub mod multiline {
     pub use crate::multiline::MultilineConfig;
 
+    /// Test seam for the multiline concatenation-indicator pre-scan, so a gap
+    /// test can pin the `LARGE_FILE_KEYWORD_GATE_BYTES` (4096) threshold: under
+    /// it the structural scan runs unconditionally; over it a secret-related
+    /// keyword must be present or the chunk passes through unpreprocessed.
+    pub fn has_concatenation_indicators_for_test(text: &str) -> bool {
+        crate::multiline::has_concatenation_indicators(text)
+    }
+
     #[derive(Debug, Clone)]
     pub struct LineMapping {
         pub start_offset: usize,

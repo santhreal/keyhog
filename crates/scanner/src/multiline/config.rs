@@ -7,6 +7,12 @@ use std::sync::LazyLock;
 const MAX_MULTILINE_PREPROCESS_BYTES: usize = 2 * 1024 * 1024;
 #[cfg(feature = "multiline")]
 const MAX_MULTILINE_LINE_BYTES: usize = 64 * 1024;
+/// File-size threshold above which multiline concatenation preprocessing only
+/// runs when a secret-related keyword is present — below it the cheap structural
+/// scan runs unconditionally, above it the keyword gate avoids preprocessing
+/// large non-secret blobs.
+#[cfg(feature = "multiline")]
+const LARGE_FILE_KEYWORD_GATE_BYTES: usize = 4096;
 pub(crate) const DEFAULT_MAX_JOIN_LINES: usize = 64;
 
 #[cfg(feature = "multiline")]
@@ -244,7 +250,7 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     let bytes = text.as_bytes();
 
     // For large files, only preprocess if secret-related keywords are present.
-    if bytes.len() > 4096 {
+    if bytes.len() > LARGE_FILE_KEYWORD_GATE_BYTES {
         let has_secret_keyword = memchr::memmem::find(bytes, b"ecret").is_some()
             || memchr::memmem::find(bytes, b"oken").is_some()
             || memchr::memmem::find(bytes, b"assword").is_some()
