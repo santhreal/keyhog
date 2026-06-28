@@ -12,25 +12,37 @@ use keyhog_scanner::testing::shape::{
 #[test]
 fn public_evidence_identifier_stays_case_insensitive_after_zero_alloc_rewrite() {
     // Taxonomy infixes (was upper.contains, now ci_find) — match in ANY case.
-    assert!(looks_like_public_evidence_identifier("CWE_79-input-validation"));
-    assert!(looks_like_public_evidence_identifier("cwe_79-input-validation"));
+    assert!(looks_like_public_evidence_identifier(
+        "CWE_79-input-validation"
+    ));
+    assert!(looks_like_public_evidence_identifier(
+        "cwe_79-input-validation"
+    ));
     assert!(looks_like_public_evidence_identifier("RFC_7519-spec-ref"));
     assert!(looks_like_public_evidence_identifier("doc-OWASP_A03-note"));
     // `-ISSUE-` / `_ISSUE_` infix, case-insensitive.
     assert!(looks_like_public_evidence_identifier("project-ISSUE-1024"));
     assert!(looks_like_public_evidence_identifier("project-issue-1024"));
     // Authority prose markers (was lower.contains, now ci_find) — any case.
-    assert!(looks_like_public_evidence_identifier("authority-attestation"));
-    assert!(looks_like_public_evidence_identifier("Authority-Attestation"));
+    assert!(looks_like_public_evidence_identifier(
+        "authority-attestation"
+    ));
+    assert!(looks_like_public_evidence_identifier(
+        "Authority-Attestation"
+    ));
     // `pw.`-prefixed (was lower.starts_with, now starts_with_ignore_ascii_case).
     assert!(looks_like_public_evidence_identifier("PW.row-range-1"));
 
     // Negatives: no taxonomy/authority marker, and the alphabet guard rejects
     // out-of-set bytes.
-    assert!(!looks_like_public_evidence_identifier("issuetracker-onlypage"));
+    assert!(!looks_like_public_evidence_identifier(
+        "issuetracker-onlypage"
+    ));
     assert!(!looks_like_public_evidence_identifier("plainrandomtoken"));
     // Contains a space (outside [A-Za-z0-9_-.:/=]) — rejected by the guard.
-    assert!(!looks_like_public_evidence_identifier("CWE_79 input validation"));
+    assert!(!looks_like_public_evidence_identifier(
+        "CWE_79 input validation"
+    ));
     // Too short (<6).
     assert!(!looks_like_public_evidence_identifier("cwe_1"));
 }

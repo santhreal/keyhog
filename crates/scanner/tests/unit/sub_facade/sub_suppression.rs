@@ -12,8 +12,8 @@ use keyhog_scanner::testing::shape::{
     looks_like_syntactic_punctuation_marker,
 };
 // `looks_like_standard_base64_blob` is exposed directly in `testing`.
-use keyhog_scanner::testing::looks_like_standard_base64_blob;
 use keyhog_scanner::testing::looks_like_prose_whitespace_run;
+use keyhog_scanner::testing::looks_like_standard_base64_blob;
 
 // ---------------------------------------------------------------------------
 // looks_like_syntactic_punctuation_marker (Tier A)

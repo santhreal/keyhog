@@ -39,9 +39,7 @@ fn malformed_bot_token_is_invalid() {
 fn user_token_is_valid_and_malformed_is_invalid() {
     // xoxp-{10-15 d}-{10-15 d}(-{10-13 d})?-{24-40 alnum}
     assert_eq!(
-        slack_checksum_verdict_for_test(
-            "xoxp-1234567890-0987654321-abcdefghijklmnopqrstuvwx"
-        ),
+        slack_checksum_verdict_for_test("xoxp-1234567890-0987654321-abcdefghijklmnopqrstuvwx"),
         "valid"
     );
     // Missing the required second numeric segment.

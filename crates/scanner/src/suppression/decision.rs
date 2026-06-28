@@ -536,4 +536,3 @@ fn decoded_looks_like_template_placeholder(decoded: &str) -> bool {
         || (decoded.starts_with("${") && decoded.ends_with('}'));
     bracketed && decoded.len() <= 80
 }
-

@@ -1,5 +1,5 @@
-use crate::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD};
 use crate::entropy::unique_byte_count;
+use crate::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD};
 
 /// Feature vector dimensionality. Each feature captures one signal:
 /// 4 length features + 4 entropy features + 4 character class features +

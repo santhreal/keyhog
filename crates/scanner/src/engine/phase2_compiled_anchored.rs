@@ -100,7 +100,11 @@ impl CompiledScanner {
                 ),
             }
             if let Some(t0) = t0 {
-                phase2_pattern_prof_record(self.phase2_patterns.len(), pat, t0.elapsed().as_nanos() as u64);
+                phase2_pattern_prof_record(
+                    self.phase2_patterns.len(),
+                    pat,
+                    t0.elapsed().as_nanos() as u64,
+                );
             }
             i = j;
         }

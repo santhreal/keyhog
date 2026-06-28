@@ -15,8 +15,7 @@
 //! The decode pipeline is portable (no feature gate), so neither is this test.
 
 use keyhog_scanner::testing::{
-    bytecount_newlines_for_test as count_newlines,
-    splice_decoded_payload_at_for_test as splice_at,
+    bytecount_newlines_for_test as count_newlines, splice_decoded_payload_at_for_test as splice_at,
 };
 
 #[test]

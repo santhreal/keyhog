@@ -25,7 +25,9 @@ fn context_example_suffix_matches_case_insensitively_without_unicode_uppercase()
     // The suffix is END-anchored: EXAMPLE not at the end does not trip this arm
     // (and the body here is otherwise non-placeholder), and a non-ASCII tail is
     // not the ASCII suffix.
-    assert!(!is_known_example_credential("EXAMPLE_prod_live_token_9f3k2"));
+    assert!(!is_known_example_credential(
+        "EXAMPLE_prod_live_token_9f3k2"
+    ));
     assert!(!is_known_example_credential("realtokenbody0123456789"));
     assert!(!is_known_example_credential("secret_value_café"));
 }

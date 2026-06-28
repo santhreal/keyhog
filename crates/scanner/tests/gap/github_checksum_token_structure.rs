@@ -68,7 +68,10 @@ fn fine_grained_right_segment_checksum_validates() {
     // trailing 6 chars are the correct base62 CRC32 of its first 53 chars.
     let left = entropy(22);
     let right_entropy = entropy(53);
-    let right = format!("{right_entropy}{}", npm_expected_checksum_for_test(&right_entropy));
+    let right = format!(
+        "{right_entropy}{}",
+        npm_expected_checksum_for_test(&right_entropy)
+    );
     assert_eq!(right.len(), 59);
     let token = format!("github_pat_{left}_{right}");
     assert_eq!(

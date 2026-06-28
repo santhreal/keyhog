@@ -223,14 +223,13 @@ impl CompiledScanner {
             // variable name rather than a secret, scan the other groups for a
             // value-shaped candidate. Shared with `extract_anchored` via
             // `resolve_value_shaped_group` so the heuristic has one definition.
-            credential_range =
-                super::scan_filters::resolve_value_shaped_group(
-                    &locs,
-                    search_text,
-                    group,
-                    groups_total,
-                    credential_range,
-                );
+            credential_range = super::scan_filters::resolve_value_shaped_group(
+                &locs,
+                search_text,
+                group,
+                groups_total,
+                credential_range,
+            );
             credential = &search_text[credential_range.0..credential_range.1];
 
             let &(keyword_nearby, sensitive_file) = signals.get_or_init(|| {

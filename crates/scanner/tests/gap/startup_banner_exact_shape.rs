@@ -41,7 +41,16 @@ fn caps(
 #[test]
 fn high_end_box_banner_is_exact() {
     // Real GPU + AVX-512 + Hyperscan + io_uring.
-    let c = caps(16, Some("NVIDIA GeForce RTX 4090"), false, true, true, false, true, true);
+    let c = caps(
+        16,
+        Some("NVIDIA GeForce RTX 4090"),
+        false,
+        true,
+        true,
+        false,
+        true,
+        true,
+    );
     assert_eq!(
         startup_banner(&c, 42, 1234),
         "16 cores | GPU: NVIDIA GeForce RTX 4090 | SIMD: AVX-512 | Hyperscan | 42 detectors (1234 patterns) io_uring"

@@ -75,8 +75,16 @@ fn tfstate_numeric_index_key_renders_bare_via_shared_literal() {
     assert_eq!(
         pairs,
         vec![
-            ("aws_secret.db[0].token".to_string(), "tok-zero-0123".to_string(), 7),
-            ("aws_secret.db[1].token".to_string(), "tok-one-4567".to_string(), 8),
+            (
+                "aws_secret.db[0].token".to_string(),
+                "tok-zero-0123".to_string(),
+                7
+            ),
+            (
+                "aws_secret.db[1].token".to_string(),
+                "tok-one-4567".to_string(),
+                8
+            ),
         ],
         "numeric index_key must render bare in the context via json_scalar_literal"
     );

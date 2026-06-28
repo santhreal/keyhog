@@ -185,7 +185,9 @@ fn collect_heredoc(lines: &[&str], content_start: usize, marker: &str) -> Option
 /// names, assignment LHS keys, and heredoc markers — so the three call sites
 /// can never drift on what counts as a valid identifier.
 fn is_hcl_identifier(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 fn parse_variable_header(line: &str) -> Option<String> {

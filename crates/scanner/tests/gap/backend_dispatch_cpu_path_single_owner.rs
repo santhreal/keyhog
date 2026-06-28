@@ -45,7 +45,9 @@ fn cpu_scan_and_boundary_path_has_single_owner() {
     );
 
     // Both branches must delegate to the helper rather than open-code the scan.
-    let delegations = src.matches("self.scan_chunks_cpu_parallel(chunks, backend)").count();
+    let delegations = src
+        .matches("self.scan_chunks_cpu_parallel(chunks, backend)")
+        .count();
     assert_eq!(
         delegations, 2,
         "both the non-GPU branch and the GPU-compiled-out branch must call the helper, found {delegations}"

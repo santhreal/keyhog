@@ -21,8 +21,14 @@ fn suffix_gate_literals_extracts_only_long_finite_suffixes() {
     assert_eq!(suffix_lits("short1"), vec!["short1".to_string()]);
 
     // Below the 6-byte floor -> not selective enough -> empty (run the pattern).
-    assert!(suffix_lits("short").is_empty(), "5-byte suffix is below MIN_LEN");
-    assert!(suffix_lits("abc").is_empty(), "3-byte suffix is below MIN_LEN");
+    assert!(
+        suffix_lits("short").is_empty(),
+        "5-byte suffix is below MIN_LEN"
+    );
+    assert!(
+        suffix_lits("abc").is_empty(),
+        "3-byte suffix is below MIN_LEN"
+    );
 
     // No finite required suffix literal (trailing variable char-class) -> empty.
     assert!(
@@ -31,5 +37,8 @@ fn suffix_gate_literals_extracts_only_long_finite_suffixes() {
     );
 
     // Empty pattern -> empty (no panic, no synthesized literal).
-    assert!(suffix_lits("").is_empty(), "empty source yields no suffix literal");
+    assert!(
+        suffix_lits("").is_empty(),
+        "empty source yields no suffix literal"
+    );
 }

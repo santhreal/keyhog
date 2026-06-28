@@ -22,7 +22,11 @@ fn docker_compose_environment_mapping_extracts_exact_pairs() {
     assert_eq!(
         pairs,
         vec![
-            ("API_KEY".to_string(), "sk_live_abcdef0123456789".to_string(), 4),
+            (
+                "API_KEY".to_string(),
+                "sk_live_abcdef0123456789".to_string(),
+                4
+            ),
             ("REGION".to_string(), "us-east-1".to_string(), 5),
         ],
         "environment mapping must surface each scalar key/value at its anchored line"
@@ -62,7 +66,9 @@ fn both_surfaces_route_through_one_owner() {
         src.contains("fn push_scalar_mapping_pairs("),
         "the single-owner scalar-mapping extractor must exist"
     );
-    let delegations = src.matches("push_scalar_mapping_pairs(map, pending)").count();
+    let delegations = src
+        .matches("push_scalar_mapping_pairs(map, pending)")
+        .count();
     assert_eq!(
         delegations, 2,
         "stringData and environment-mapping must both delegate to the one owner"

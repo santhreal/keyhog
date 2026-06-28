@@ -23,7 +23,11 @@ fn ml_score_is_deterministic_across_cache_hits_and_evictions() {
     );
 
     // Immediate repeat hits the memoized entry and must equal the first call.
-    assert_eq!(ml_score(text, context), first, "cache hit must be identical");
+    assert_eq!(
+        ml_score(text, context),
+        first,
+        "cache hit must be identical"
+    );
 
     // Drive >256 distinct keys to force the cap-256 wholesale eviction inside
     // memoize_by_hash, then re-score the original input: it recomputes from

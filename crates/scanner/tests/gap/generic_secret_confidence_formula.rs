@@ -55,5 +55,8 @@ fn low_entropy_lowers_confidence_below_the_unboosted_base() {
         low_entropy < baseline,
         "low-entropy generic value should score below the base, got {low_entropy}"
     );
-    assert!(low_entropy > 0.0, "confidence stays positive, got {low_entropy}");
+    assert!(
+        low_entropy > 0.0,
+        "confidence stays positive, got {low_entropy}"
+    );
 }

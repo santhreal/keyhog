@@ -11,7 +11,9 @@
 //! allocated bitmap is `words_for(n)` zeroed words — so a future word-width
 //! change (or an off-by-one in the ceiling) is caught with concrete integers.
 
-use keyhog_scanner::testing::{new_trigger_bitmap_for_test as new_bitmap, trigger_bitmap_words_for_test as words_for};
+use keyhog_scanner::testing::{
+    new_trigger_bitmap_for_test as new_bitmap, trigger_bitmap_words_for_test as words_for,
+};
 
 #[test]
 fn words_for_is_ceil_div_64_and_sizes_the_bitmap() {

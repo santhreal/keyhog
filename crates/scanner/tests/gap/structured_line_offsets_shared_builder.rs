@@ -45,7 +45,11 @@ fn structured_line_resolver_uses_shared_offset_builder() {
     );
 
     // The resolver's partition_point lookup over that table -> 1-based line.
-    assert_eq!(line_number_for_offset(&offsets, 0), 1, "offset 0 is line 1 (start of 'alpha')");
+    assert_eq!(
+        line_number_for_offset(&offsets, 0),
+        1,
+        "offset 0 is line 1 (start of 'alpha')"
+    );
     assert_eq!(
         line_number_for_offset(&offsets, 11),
         3,
@@ -56,7 +60,11 @@ fn structured_line_resolver_uses_shared_offset_builder() {
         3,
         "offset 17 (mid 'secret') still resolves to line 3, not the next line"
     );
-    assert_eq!(line_number_for_offset(&offsets, 24), 4, "offset 24 is line 4 (start of 'delta')");
+    assert_eq!(
+        line_number_for_offset(&offsets, 24),
+        4,
+        "offset 24 is line 4 (start of 'delta')"
+    );
     assert_eq!(
         line_number_for_offset(&offsets, 30),
         5,

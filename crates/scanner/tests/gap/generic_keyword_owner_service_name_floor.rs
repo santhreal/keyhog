@@ -42,7 +42,6 @@ fn min_service_name_len_floor_is_exactly_three() {
 fn bare_service_marker_without_secret_suffix_is_not_owned() {
     // "segment" embeds the service but lacks a credential suffix, so it is NOT
     // owned; only "segment_write_key" (suffix "key") is claimed.
-    let owned =
-        generic_named_owned_keywords_for_test("segment", &["segment_write_key", "segment"]);
+    let owned = generic_named_owned_keywords_for_test("segment", &["segment_write_key", "segment"]);
     assert_eq!(owned, vec!["segment_write_key".to_string()]);
 }

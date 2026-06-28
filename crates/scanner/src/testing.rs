@@ -21,7 +21,11 @@ pub fn pattern_regex_strs(scanner: &crate::CompiledScanner) -> Vec<&str> {
 /// `resolution::match_priority` so a behavioral gap test can pin the named
 /// weight constants (in particular `KNOWN_PREFIX_SERVICE_BONUS`) from the
 /// observable priority difference between two otherwise-identical matches.
-pub fn match_priority_for_test(detector_id: &str, credential: &str, confidence: Option<f64>) -> f64 {
+pub fn match_priority_for_test(
+    detector_id: &str,
+    credential: &str,
+    confidence: Option<f64>,
+) -> f64 {
     let m = keyhog_core::RawMatch {
         detector_id: std::sync::Arc::from(detector_id),
         detector_name: std::sync::Arc::from(detector_id),
@@ -192,11 +196,7 @@ pub fn cadence_tick_for_test(iteration: usize, cadence: usize) -> bool {
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.
 pub fn expired_on_cadence_now_for_test(iteration: usize, cadence: usize) -> bool {
-    crate::deadline::expired_on_cadence(
-        Some(std::time::Instant::now()),
-        iteration,
-        cadence,
-    )
+    crate::deadline::expired_on_cadence(Some(std::time::Instant::now()), iteration, cadence)
 }
 
 /// `loop_expired_on_cadence` driven with an already-reached deadline (zero
@@ -235,7 +235,10 @@ pub fn npm_checksum_verdict_for_test(credential: &str) -> &'static str {
 /// prefix, so a gap test can build a genuinely-valid `npm_` token and pin the
 /// entropy/checksum split (30 + 6) through the Valid path.
 pub fn npm_expected_checksum_for_test(entropy: &str) -> String {
-    crate::checksum::github::base62_encode_u32(crate::checksum::github::crc32(entropy.as_bytes()), 6)
+    crate::checksum::github::base62_encode_u32(
+        crate::checksum::github::crc32(entropy.as_bytes()),
+        6,
+    )
 }
 
 /// Slack structural-checksum verdict for `credential`, as a stable string. Lets
@@ -305,7 +308,10 @@ pub fn generic_named_owned_keywords_for_test(service: &str, keywords: &[&str]) -
 pub fn static_interner_seed_probe_for_test() -> (Vec<&'static str>, Vec<bool>, bool) {
     let interner = crate::static_intern::StaticInterner::from_detector_strings(Vec::<&str>::new());
     let seeds: Vec<&'static str> = crate::static_intern::SEED_SOURCE_TYPES.to_vec();
-    let interned: Vec<bool> = seeds.iter().map(|&s| interner.lookup(s).is_some()).collect();
+    let interned: Vec<bool> = seeds
+        .iter()
+        .map(|&s| interner.lookup(s).is_some())
+        .collect();
     let unknown_interned = interner.lookup("definitely-not-a-source-type").is_some();
     (seeds, interned, unknown_interned)
 }

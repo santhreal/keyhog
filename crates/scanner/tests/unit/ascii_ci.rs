@@ -173,8 +173,14 @@ fn contains_path_segment_leading_relative_posix() {
     // relative path had no preceding separator, so the separator-anchored loop
     // skipped it and vendored-tree suppression silently failed on relative roots
     // (`keyhog scan node_modules`). The leading non-`.min.js` file must match.
-    assert!(contains_path_segment("node_modules/foo/index.js", "node_modules"));
-    assert!(contains_path_segment("site-packages/pkg/mod.py", "site-packages"));
+    assert!(contains_path_segment(
+        "node_modules/foo/index.js",
+        "node_modules"
+    ));
+    assert!(contains_path_segment(
+        "site-packages/pkg/mod.py",
+        "site-packages"
+    ));
     // Windows-shape relative path.
     assert!(contains_path_segment(
         "node_modules\\foo\\index.js",
@@ -189,7 +195,10 @@ fn contains_path_segment_leading_negative_twin() {
     // The leading fix must NOT introduce a substring false-match: a prefix that
     // merely STARTS with the segment but is a different directory name must not
     // suppress. `node_modules2/` and `node_modulesX/` are real directories.
-    assert!(!contains_path_segment("node_modules2/foo.js", "node_modules"));
+    assert!(!contains_path_segment(
+        "node_modules2/foo.js",
+        "node_modules"
+    ));
     assert!(!contains_path_segment("nodemodules/foo.js", "node_modules"));
     // Bare segment with nothing after (no trailing separator) is not a tree.
     assert!(!contains_path_segment("node_modules", "node_modules"));

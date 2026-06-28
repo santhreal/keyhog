@@ -135,7 +135,8 @@ impl ChecksumValidator for GithubFineGrainedPatValidator {
         let Some((left, right)) = split_fine_grained_payload(payload) else {
             return ChecksumResult::Invalid;
         };
-        if left.len() != GITHUB_FINE_GRAINED_LEFT_LEN || right.len() != GITHUB_FINE_GRAINED_RIGHT_LEN
+        if left.len() != GITHUB_FINE_GRAINED_LEFT_LEN
+            || right.len() != GITHUB_FINE_GRAINED_RIGHT_LEN
         {
             return ChecksumResult::Invalid;
         }

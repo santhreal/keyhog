@@ -33,7 +33,11 @@ fn expand_homoglyphs_produces_exact_class_expansion() {
     assert_eq!(expand("z"), "z", "an unmapped char is emitted as-is");
 
     // A bare regex-special char with no mapping is escaped.
-    assert_eq!(expand("."), "\\.", "a special char with no mapping is escaped");
+    assert_eq!(
+        expand("."),
+        "\\.",
+        "a special char with no mapping is escaped"
+    );
 
     // Empty input yields empty output.
     assert_eq!(expand(""), "", "empty pattern expands to empty");
@@ -42,7 +46,8 @@ fn expand_homoglyphs_produces_exact_class_expansion() {
 #[test]
 fn expand_homoglyphs_reserves_output_capacity() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let src = std::fs::read_to_string(root.join("src/homoglyph.rs")).expect("homoglyph source readable");
+    let src =
+        std::fs::read_to_string(root.join("src/homoglyph.rs")).expect("homoglyph source readable");
     assert!(
         src.contains("String::with_capacity(pattern.len() * 8)"),
         "expand_homoglyphs must pre-reserve its output capacity (no realloc growth)"

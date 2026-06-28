@@ -170,15 +170,15 @@ pub(crate) fn decode_chunk(
 mod extractor;
 mod registry;
 mod splice;
+pub(crate) use extractor::with_extracted_value_spans;
 pub(crate) use extractor::{extract_profile_dump, extract_profile_reset};
 pub(super) use extractor::{hash_fast, ExtractedValue};
-pub(crate) use extractor::with_extracted_value_spans;
 pub use registry::register_decoder;
 pub(crate) use registry::{decoder_profile_dump, decoder_profile_reset};
 #[cfg(test)]
 pub(crate) use registry::{register_thread_decoder, ScopedDecoderRegistration};
+pub(crate) use splice::{bytecount_newlines, splice_decoded_payload_at};
 pub(super) use splice::{
     decode_candidate_refs_exact, decode_candidate_spans_exact, push_decoded_text_chunk,
     push_decoded_text_chunk_spliced, push_decoded_text_chunk_spliced_at,
 };
-pub(crate) use splice::{bytecount_newlines, splice_decoded_payload_at};

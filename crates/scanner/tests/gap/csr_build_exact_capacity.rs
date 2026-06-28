@@ -59,7 +59,8 @@ fn csr_build_is_byte_identical_and_exactly_reserved() {
         "From<Vec<Vec<usize>>> must compute the exact data capacity from row lengths"
     );
     assert!(
-        src.contains("Vec::with_capacity(data_cap)") && src.contains("Vec::with_capacity(offsets_cap)"),
+        src.contains("Vec::with_capacity(data_cap)")
+            && src.contains("Vec::with_capacity(offsets_cap)"),
         "both data and offsets must be capacity-reserved (exactly two allocations on the build)"
     );
     // The old grow-from-empty seeds must be gone from the build.

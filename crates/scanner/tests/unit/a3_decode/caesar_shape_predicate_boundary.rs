@@ -6,7 +6,7 @@
 //! two callers can never drift on the thresholds after the DEDUP.
 
 use keyhog_scanner::testing::decode_caesar::{
-    candidate_shape_invariant, caesar_shift, looks_credential_shaped, KNOWN_PREFIXES,
+    caesar_shift, candidate_shape_invariant, looks_credential_shaped, KNOWN_PREFIXES,
 };
 
 #[test]
@@ -51,7 +51,13 @@ fn candidate_shape_invariant_is_invariant_under_every_caesar_shift() {
     // The shared shape (digit + alnum run + has-letter) is preserved by
     // caesar_shift (letters->letters, digits/punctuation fixed), so evaluating
     // it ONCE on the raw candidate is sound for all 25 shifts. Prove it.
-    for sample in ["AKIA1234ABCD", "abcdefg1", "abc-defg-1234", "12345678", "abcdefgh"] {
+    for sample in [
+        "AKIA1234ABCD",
+        "abcdefg1",
+        "abc-defg-1234",
+        "12345678",
+        "abcdefgh",
+    ] {
         let raw = candidate_shape_invariant(sample);
         for k in 1..=25u8 {
             assert_eq!(

@@ -43,7 +43,8 @@ fn non_variable_name_group_is_left_unchanged() {
     let pattern = r"([\w-]+) \w+=(\w+)";
     let resolved = resolve(pattern, text, 1).expect("match");
     assert_eq!(
-        &text[resolved.0..resolved.1], "sk-abcdefghij",
+        &text[resolved.0..resolved.1],
+        "sk-abcdefghij",
         "a non-variable-name group must be returned unchanged"
     );
 }
@@ -57,7 +58,8 @@ fn short_sibling_does_not_qualify_so_original_group_is_kept() {
     let pattern = r"(\w+)=([\w-]+)";
     let resolved = resolve(pattern, text, 1).expect("match");
     assert_eq!(
-        &text[resolved.0..resolved.1], "token",
+        &text[resolved.0..resolved.1],
+        "token",
         "a sub-8-byte sibling must not be picked; the original group stays"
     );
 }
@@ -70,7 +72,8 @@ fn two_or_fewer_groups_never_scans_siblings() {
     let pattern = r"\w+=(\w+)";
     let resolved = resolve(pattern, text, 1).expect("match");
     assert_eq!(
-        &text[resolved.0..resolved.1], "mypassword",
+        &text[resolved.0..resolved.1],
+        "mypassword",
         "with <= 2 total groups the heuristic must not scan for siblings"
     );
 }

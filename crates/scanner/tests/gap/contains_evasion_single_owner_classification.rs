@@ -75,7 +75,8 @@ fn contains_evasion_matches_normalized_char_classification() {
 #[test]
 fn contains_evasion_delegates_to_normalized_char_single_owner() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let src = std::fs::read_to_string(root.join("src/unicode_hardening.rs")).expect("source readable");
+    let src =
+        std::fs::read_to_string(root.join("src/unicode_hardening.rs")).expect("source readable");
     let start = src
         .find("pub(crate) fn contains_evasion(")
         .expect("contains_evasion present");

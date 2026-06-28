@@ -32,7 +32,10 @@ fn authorization_scheme_matched_case_insensitively_token_from_original() {
     );
 
     // Unknown scheme -> None (neither bearer nor basic).
-    assert_eq!(authorization_header_value("Authorization: Digest abc"), None);
+    assert_eq!(
+        authorization_header_value("Authorization: Digest abc"),
+        None
+    );
     // Not an Authorization header -> None.
     assert_eq!(authorization_header_value("X-Custom: Bearer tok"), None);
     // No scheme value -> None.

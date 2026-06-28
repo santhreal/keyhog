@@ -29,7 +29,11 @@ fn finding_metadata_surfaces_exact_claims_for_real_jwt() {
     assert_eq!(meta.get("jwt.exp").map(String::as_str), Some("9999999999"));
     // HS256 is a known alg, typ=JWT is standard, exp is far future: no anomalies,
     // so exactly the four claim keys above.
-    assert_eq!(meta.len(), 4, "no spurious anomaly keys for a clean HS256 JWT");
+    assert_eq!(
+        meta.len(),
+        4,
+        "no spurious anomaly keys for a clean HS256 JWT"
+    );
 }
 
 #[test]

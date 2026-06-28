@@ -127,8 +127,22 @@ fn is_bare_ambiguous_fragment_owner(normalized: &str) -> bool {
 /// suffix lists can never drift apart. The `part<digits>` numeric form is
 /// handled separately by each stripper (it is a pattern, not a fixed literal).
 const FRAGMENT_SUFFIXES: [&str; 16] = [
-    "prefix", "suffix", "head", "tail", "left", "right", "chunk", "piece", "frag", "fragment",
-    "part", "chunks", "pieces", "frags", "fragments", "parts",
+    "prefix",
+    "suffix",
+    "head",
+    "tail",
+    "left",
+    "right",
+    "chunk",
+    "piece",
+    "frag",
+    "fragment",
+    "part",
+    "chunks",
+    "pieces",
+    "frags",
+    "fragments",
+    "parts",
 ];
 
 fn strip_separated_fragment_suffix(normalized: &str) -> Option<&str> {

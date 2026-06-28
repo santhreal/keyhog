@@ -27,7 +27,11 @@ const F_EXTRA_COMMENT: usize = 38;
 fn comment_context_sets_both_comment_features_to_one() {
     // 20-char AWS access-key id (starts with AKIA) inside a `#` comment line.
     let text = "AKIAIOSFODNN7EXAMPLE";
-    assert_eq!(text.len(), 20, "fixture must hit the len>=20 boundary exactly");
+    assert_eq!(
+        text.len(),
+        20,
+        "fixture must hit the len>=20 boundary exactly"
+    );
     let context = "# AKIAIOSFODNN7EXAMPLE";
 
     let f = compute_features_with_config(text, context, &[], &[], &[], &[]);
