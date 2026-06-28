@@ -85,6 +85,29 @@ pub fn fragment_reassemble_for_test(
     last
 }
 
+/// The extracted cadence gate shared by the deadline cadence wrappers.
+pub fn cadence_tick_for_test(iteration: usize, cadence: usize) -> bool {
+    crate::deadline::cadence_tick(iteration, cadence)
+}
+
+/// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
+/// result is exactly the cadence gate — pins that the wrapper ANDs
+/// `cadence_tick` with the deadline check.
+pub fn expired_on_cadence_now_for_test(iteration: usize, cadence: usize) -> bool {
+    crate::deadline::expired_on_cadence(
+        Some(std::time::Instant::now()),
+        iteration,
+        cadence,
+    )
+}
+
+/// `loop_expired_on_cadence` driven with an already-reached deadline (zero
+/// budget), so the result is exactly the cadence gate for the loop variant.
+pub fn loop_expired_on_cadence_now_for_test(iteration: usize, cadence: usize) -> bool {
+    let deadline = crate::deadline::LoopDeadline::from_deadline(Some(std::time::Instant::now()));
+    crate::deadline::loop_expired_on_cadence(deadline, iteration, cadence)
+}
+
 #[cfg(feature = "simd")]
 pub fn scan_coalesced_phase2_with_admission_for_test(
     scanner: &crate::CompiledScanner,

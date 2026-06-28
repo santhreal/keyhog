@@ -5,13 +5,21 @@ pub(crate) fn expired(deadline: Option<Instant>) -> bool {
     deadline.is_some_and(|deadline| Instant::now() >= deadline)
 }
 
+/// Whether `iteration` lands on a cadence boundary worth re-checking the
+/// deadline: a non-zero iteration that is a multiple of `cadence`. Single owner
+/// for the gate so the `expired`/`loop_expired` cadence wrappers can't drift.
+#[inline]
+pub(crate) fn cadence_tick(iteration: usize, cadence: usize) -> bool {
+    iteration > 0 && iteration.is_multiple_of(cadence)
+}
+
 #[inline]
 pub(crate) fn expired_on_cadence(
     deadline: Option<Instant>,
     iteration: usize,
     cadence: usize,
 ) -> bool {
-    iteration > 0 && iteration.is_multiple_of(cadence) && expired(deadline)
+    cadence_tick(iteration, cadence) && expired(deadline)
 }
 
 #[derive(Clone, Copy)]
@@ -49,5 +57,5 @@ pub(crate) fn loop_expired_on_cadence(
     iteration: usize,
     cadence: usize,
 ) -> bool {
-    iteration > 0 && iteration.is_multiple_of(cadence) && loop_expired(deadline)
+    cadence_tick(iteration, cadence) && loop_expired(deadline)
 }
