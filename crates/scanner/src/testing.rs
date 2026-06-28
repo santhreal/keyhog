@@ -2520,6 +2520,15 @@ pub fn parse_k8s_secret_tuples(text: &str) -> Vec<(String, String, usize)> {
         .collect()
 }
 
+/// Integration-test facade: parse Terraform/HCL (`variable` blocks, flat
+/// assignments, heredocs) into `(context, value, line)` tuples.
+pub fn parse_hcl_tuples(text: &str) -> Vec<(String, String, usize)> {
+    crate::structured::parsers::parse_hcl(text)
+        .into_iter()
+        .map(|pair| (pair.context, pair.value, pair.line))
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg(test)]
 pub(crate) struct StructuredPair {

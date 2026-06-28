@@ -180,6 +180,14 @@ fn collect_heredoc(lines: &[&str], content_start: usize, marker: &str) -> Option
     None
 }
 
+/// True when `s` is a non-empty HCL identifier: every character is ASCII
+/// alphanumeric, `_`, or `-`. One owner for the char-class shared by variable
+/// names, assignment LHS keys, and heredoc markers — so the three call sites
+/// can never drift on what counts as a valid identifier.
+fn is_hcl_identifier(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 fn parse_variable_header(line: &str) -> Option<String> {
     let rest = line.strip_prefix("variable")?;
     if !rest.starts_with(|c: char| c.is_ascii_whitespace()) {
@@ -193,11 +201,7 @@ fn parse_variable_header(line: &str) -> Option<String> {
         rest.split(|c: char| c.is_ascii_whitespace() || c == '{')
             .next()?
     };
-    if name.is_empty()
-        || !name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-    {
+    if !is_hcl_identifier(name) {
         return None;
     }
     Some(name.to_string())
@@ -242,11 +246,7 @@ fn parse_hcl_assignment(line: &str) -> Option<(String, HclValue)> {
     }
     if let Some((name_part, value_part)) = line.split_once('=') {
         let name = name_part.trim();
-        if name.is_empty()
-            || !name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-        {
+        if !is_hcl_identifier(name) {
             return None;
         }
         let value = parse_hcl_value(value_part.trim_start())?;
@@ -281,11 +281,7 @@ fn parse_heredoc_marker(s: &str) -> Option<String> {
         .next()?
         .trim_matches('"')
         .trim_matches('\'');
-    if marker.is_empty()
-        || !marker
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-    {
+    if !is_hcl_identifier(marker) {
         return None;
     }
     Some(marker.to_string())
