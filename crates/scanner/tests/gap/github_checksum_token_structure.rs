@@ -90,3 +90,27 @@ fn fine_grained_wrong_segment_lengths_and_missing_prefix() {
         "not-applicable"
     );
 }
+
+#[test]
+fn fine_grained_segment_length_boundaries_are_exact() {
+    // Named GITHUB_FINE_GRAINED_LEFT_LEN (22) / _RIGHT_LEN (59): one char off on
+    // either segment is Invalid.
+    assert_eq!(
+        github_fine_grained_checksum_verdict_for_test(&format!(
+            "github_pat_{}_{}",
+            entropy(23),
+            entropy(59)
+        )),
+        "invalid",
+        "a 23-char left segment is not the 22-char format"
+    );
+    assert_eq!(
+        github_fine_grained_checksum_verdict_for_test(&format!(
+            "github_pat_{}_{}",
+            entropy(22),
+            entropy(58)
+        )),
+        "invalid",
+        "a 58-char right segment is not the 59-char format"
+    );
+}

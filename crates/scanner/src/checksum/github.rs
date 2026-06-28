@@ -9,6 +9,9 @@ const CHECKSUM_LEN: usize = 6;
 /// GitHub classic PAT body: a fixed entropy run followed by the checksum.
 const GITHUB_CLASSIC_ENTROPY_LEN: usize = 30;
 const GITHUB_CLASSIC_BODY_LEN: usize = GITHUB_CLASSIC_ENTROPY_LEN + CHECKSUM_LEN;
+/// GitHub fine-grained PAT payload segments: `{LEFT}_{RIGHT}`.
+const GITHUB_FINE_GRAINED_LEFT_LEN: usize = 22;
+const GITHUB_FINE_GRAINED_RIGHT_LEN: usize = 59;
 
 /// Compute the standard CRC32 checksum of `data`.
 pub(crate) fn crc32(data: &[u8]) -> u32 {
@@ -132,7 +135,8 @@ impl ChecksumValidator for GithubFineGrainedPatValidator {
         let Some((left, right)) = split_fine_grained_payload(payload) else {
             return ChecksumResult::Invalid;
         };
-        if left.len() != 22 || right.len() != 59 {
+        if left.len() != GITHUB_FINE_GRAINED_LEFT_LEN || right.len() != GITHUB_FINE_GRAINED_RIGHT_LEN
+        {
             return ChecksumResult::Invalid;
         }
         if !left.chars().all(|c| c.is_ascii_alphanumeric())
