@@ -626,6 +626,12 @@ pub fn code_lines_from_offsets_for_test<'a>(text: &'a str, line_offsets: &[usize
 pub fn ascii_fold_regex_src_for_test(src: &str) -> String {
     crate::engine::phase2::ascii_fold_regex_src(src)
 }
+pub fn trigger_bitmap_words_for_test(n_patterns: usize) -> usize {
+    crate::engine::trigger_bitmap::words_for(n_patterns)
+}
+pub fn new_trigger_bitmap_for_test(n_patterns: usize) -> Vec<u64> {
+    crate::engine::trigger_bitmap::new_trigger_bitmap(n_patterns)
+}
 pub use crate::pipeline::compute_line_offsets;
 pub fn normalize_chunk_data(data: &str) -> std::borrow::Cow<'_, str> {
     crate::normalize_chunk_data(data)

@@ -38,6 +38,8 @@ mod ml_score_cache_memoized;
 mod structured_line_offsets_shared_builder;
 #[path = "gap/phase2_ascii_fold_shared.rs"]
 mod phase2_ascii_fold_shared;
+#[path = "gap/trigger_bitmap_words_for_single_source.rs"]
+mod trigger_bitmap_words_for_single_source;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]

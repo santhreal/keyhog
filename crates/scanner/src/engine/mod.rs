@@ -121,7 +121,7 @@ mod scan_postprocess_profile;
 #[path = "scan_postprocess/suffix_gate.rs"]
 mod scan_postprocess_suffix_gate;
 pub(crate) mod segment_attribution;
-mod trigger_bitmap;
+pub(crate) mod trigger_bitmap;
 mod windowed;
 mod windowed_support;
 

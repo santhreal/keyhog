@@ -142,7 +142,7 @@ impl CompiledScanner {
     ) -> Vec<Option<Vec<u64>>> {
         use rayon::prelude::*;
         let ac_len = self.ac_map.len();
-        let words_needed = ac_len.div_ceil(64);
+        let words_needed = super::trigger_bitmap::words_for(ac_len);
         let triggers: Vec<Option<Vec<u64>>> = chunks
             .par_iter()
             .map(|chunk| {

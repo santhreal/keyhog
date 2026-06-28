@@ -13,10 +13,21 @@
 //! to the same code the open-coded loops did — this is a deduplication, not an
 //! abstraction that costs cycles.
 
+/// Number of `u64` words a trigger bitmap needs for `n_patterns` bits.
+///
+/// THE single source of the `div_ceil(64)` sizing the module doc promises lives
+/// "in exactly one place": both `new_trigger_bitmap` (fresh alloc) and the
+/// pooled scratch path (`scan_coalesced`) derive their length from here, so a
+/// future word-width change updates one expression, not several.
+#[inline(always)]
+pub(crate) fn words_for(n_patterns: usize) -> usize {
+    n_patterns.div_ceil(64)
+}
+
 /// Allocate a zeroed trigger bitmap with one bit per pattern index.
 #[inline]
 pub(crate) fn new_trigger_bitmap(n_patterns: usize) -> Vec<u64> {
-    vec![0u64; n_patterns.div_ceil(64)]
+    vec![0u64; words_for(n_patterns)]
 }
 
 /// Invoke `f` with the pattern index of every set bit, ascending.
