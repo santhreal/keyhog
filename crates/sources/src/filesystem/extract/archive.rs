@@ -2,6 +2,7 @@
 
 use super::{
     display_path, extraction_total_budget, is_symlink, record_default_excluded_archive_entry,
+    MAX_NESTED_ARCHIVE_DEPTH,
 };
 use keyhog_core::{Chunk, SourceError};
 use std::fmt::Display;
@@ -359,14 +360,12 @@ pub(super) fn emit_archive_content_with_depth(
     nested_depth: usize,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
-    const MAX_EMBEDDED_ARCHIVE_DEPTH: usize = 8;
-
     if entry_is_embedded_openpack_archive(entry_name, &content) {
         let nested_display = format!("{archive_display}//{entry_name}");
-        if nested_depth >= MAX_EMBEDDED_ARCHIVE_DEPTH {
+        if nested_depth >= MAX_NESTED_ARCHIVE_DEPTH {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             return emit(Err(SourceError::Other(format!(
-                "failed to scan embedded ZIP archive '{nested_display}': maximum nested archive depth {MAX_EMBEDDED_ARCHIVE_DEPTH} exceeded; embedded archive was not scanned"
+                "failed to scan embedded ZIP archive '{nested_display}': maximum nested archive depth {MAX_NESTED_ARCHIVE_DEPTH} exceeded; embedded archive was not scanned"
             ))));
         }
         return zip_scan::extract_embedded_zip_archive(
@@ -386,10 +385,10 @@ pub(super) fn emit_archive_content_with_depth(
     // not leaf-scanned as printable strings -- which silently missed it (Law 10).
     if super::compressed::entry_is_embedded_tar(entry_name, &content) {
         let nested_display = format!("{archive_display}//{entry_name}");
-        if nested_depth >= MAX_EMBEDDED_ARCHIVE_DEPTH {
+        if nested_depth >= MAX_NESTED_ARCHIVE_DEPTH {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             return emit(Err(SourceError::Other(format!(
-                "failed to scan embedded tar archive '{nested_display}': maximum nested archive depth {MAX_EMBEDDED_ARCHIVE_DEPTH} exceeded; embedded archive was not scanned"
+                "failed to scan embedded tar archive '{nested_display}': maximum nested archive depth {MAX_NESTED_ARCHIVE_DEPTH} exceeded; embedded archive was not scanned"
             ))));
         }
         super::compressed::emit_tar_entries_with_state(
@@ -412,10 +411,10 @@ pub(super) fn emit_archive_content_with_depth(
     // budget; every drop is surfaced and counted.
     if let Some(format) = super::compressed::compressed_member_format(entry_name) {
         let nested_display = format!("{archive_display}//{entry_name}");
-        if nested_depth >= MAX_EMBEDDED_ARCHIVE_DEPTH {
+        if nested_depth >= MAX_NESTED_ARCHIVE_DEPTH {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             return emit(Err(SourceError::Other(format!(
-                "failed to scan compressed archive member '{nested_display}': maximum nested archive depth {MAX_EMBEDDED_ARCHIVE_DEPTH} exceeded; member was not scanned"
+                "failed to scan compressed archive member '{nested_display}': maximum nested archive depth {MAX_NESTED_ARCHIVE_DEPTH} exceeded; member was not scanned"
             ))));
         }
         return super::compressed::emit_decompressed_member(
@@ -468,11 +467,10 @@ pub(super) fn emit_embedded_zip_member(
     respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
-    const MAX_EMBEDDED_ARCHIVE_DEPTH: usize = 8;
-    if nested_depth >= MAX_EMBEDDED_ARCHIVE_DEPTH {
+    if nested_depth >= MAX_NESTED_ARCHIVE_DEPTH {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
         return emit(Err(SourceError::Other(format!(
-            "failed to scan embedded ZIP archive '{nested_display}': maximum nested archive depth {MAX_EMBEDDED_ARCHIVE_DEPTH} exceeded; embedded archive was not scanned"
+            "failed to scan embedded ZIP archive '{nested_display}': maximum nested archive depth {MAX_NESTED_ARCHIVE_DEPTH} exceeded; embedded archive was not scanned"
         ))));
     }
     let total_budget = super::extraction_total_budget(per_entry_cap);

@@ -54,6 +54,7 @@ mod max_path_length_component_handled;
 mod mmap_toctou_sanity_cap_counted;
 mod nested_archive;
 mod nested_archive_compressed_member_secret_survives;
+mod nested_archive_depth_cap_unified_across_families;
 mod nested_zip_bomb_budget_enforced;
 mod oversize_compressed_input_refused;
 mod pdf_magic_file_not_scanned_as_text;
