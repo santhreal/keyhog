@@ -21,6 +21,15 @@ path = "../crates/core"
 
 [dependencies.keyhog-scanner]
 path = "../crates/scanner"
+# Fuzz the scan LOGIC (panics / hangs / OOM), not the GPU backend. The default
+# feature set pulls `gpu`, whose scanner init probes Vulkan and acquires a wgpu
+# backend. On GPU-less hosted CI runners that "GPU" is llvmpipe (software
+# rasterization), so init + any GPU-routed work is catastrophically slow — the
+# scanner_target OnceLock init alone (run #0, the empty input) blew past
+# libFuzzer's 1200s per-unit timeout. CPU/SIMD covers the fuzz goal fully and
+# deterministically; drop `gpu` so the targets never touch a software Vulkan.
+default-features = false
+features = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd"]
 
 [[bin]]
 name = "fuzz_target_1"

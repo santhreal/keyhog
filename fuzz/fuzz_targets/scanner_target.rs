@@ -42,7 +42,26 @@ fn scanner() -> &'static CompiledScanner {
         let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         d.pop(); // .../keyhog/fuzz -> .../keyhog
         d.push("detectors");
-        let detectors = keyhog_core::load_detectors(&d).expect("detectors");
+        let all = keyhog_core::load_detectors(&d).expect("detectors");
+
+        // Fuzz the scan PIPELINE, not the full ~900-detector corpus. Compiling
+        // every detector's Hyperscan database is the dominant cost of this
+        // target's one-time init, and under libFuzzer's ASan instrumentation it
+        // runs ~15s / ~1.6GB locally — but that init executes INSIDE fuzz unit
+        // #0 (the empty input), so on core/memory-constrained hosted CI runners
+        // it ballooned ~80x and blew past libFuzzer's 1200s per-unit timeout,
+        // failing the smoke before a single real input was fuzzed. A
+        // representative, stride-sampled subset keeps init sub-second and
+        // deterministic on any runner while still driving the whole pipeline
+        // (decode-through, suppression, scoring, reporting). Full-corpus
+        // compile + cross-backend scan parity is covered by the non-fuzz
+        // `worst_case_backend_parity` test, which is not under a per-unit
+        // timeout — this smoke is for panics/hangs/OOM in `scan()`, not corpus
+        // breadth.
+        const FUZZ_DETECTOR_CAP: usize = 64;
+        let stride = (all.len() / FUZZ_DETECTOR_CAP).max(1);
+        let detectors: Vec<_> = all.into_iter().step_by(stride).take(FUZZ_DETECTOR_CAP).collect();
+
         CompiledScanner::compile(detectors).expect("scanner compile")
     })
 }
