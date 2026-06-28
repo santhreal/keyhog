@@ -108,6 +108,8 @@ mod gpu_routing_profile_tier_table;
 mod gpu_threshold_mib_units;
 #[path = "gap/startup_banner_exact_shape.rs"]
 mod startup_banner_exact_shape;
+#[path = "gap/scan_error_display_messages.rs"]
+mod scan_error_display_messages;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]
