@@ -104,6 +104,8 @@ mod github_checksum_token_structure;
 mod generic_keyword_owner_service_name_floor;
 #[path = "gap/gpu_routing_profile_tier_table.rs"]
 mod gpu_routing_profile_tier_table;
+#[path = "gap/gpu_threshold_mib_units.rs"]
+mod gpu_threshold_mib_units;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]
