@@ -17,6 +17,12 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CC: ""
+  # crates.io downloads on the hosted runners intermittently drop mid-stream
+  # ("curl failed: [55] ... OpenSSL SSL_read: SSL_ERROR_SYSCALL"), which cargo's
+  # default of 3 retries does not reliably survive — it has red-failed otherwise
+  # green Test runs on unrelated crates (base64, gix-protocol). Ten retries makes
+  # a transient peer reset a non-event for every cargo invocation in every job.
+  CARGO_NET_RETRY: "10"
 
 jobs:
   # Prevention-gate aggregator. `scripts/gates/run_all.sh` is the ONE entrypoint

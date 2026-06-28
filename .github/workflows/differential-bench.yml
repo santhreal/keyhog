@@ -28,6 +28,11 @@ on:
         required: false
         default: "12000"
 
+env:
+  # Survive intermittent mid-stream crates.io download drops on hosted runners
+  # (curl [55] SSL_ERROR_SYSCALL); cargo's default of 3 retries is not enough.
+  CARGO_NET_RETRY: "10"
+
 jobs:
   gate:
     name: keyhog vs required competitors (F1 gate)
