@@ -35,6 +35,77 @@ impl CompiledScanner {
         })
     }
 
+    /// Verify a run of anchored `(pattern, pos)` candidates, grouped by pattern
+    /// (each pattern's contiguous run verified together so its per-pattern signal
+    /// cache builds at most once). A pattern whose anchored regex compiled runs
+    /// `extract_anchored` at its candidate positions; one whose anchored regex
+    /// failed to compile falls back LOUDLY to the cursor-bounded whole-chunk walk
+    /// so recall is preserved. Shared by the main shared-anchor candidate pass
+    /// and the localized-homoglyph plain candidate pass — the two passes ran
+    /// byte-identical copies of this loop, a drift hazard for the
+    /// anchored-vs-fallback verify logic.
+    #[allow(clippy::too_many_arguments)]
+    fn verify_anchored_candidates(
+        &self,
+        anchor_idx: &phase2_anchor::Phase2AnchorIndex,
+        cands: &[(u32, u32)],
+        preprocessed: &ScannerPreprocessedText<'_>,
+        line_offsets: &[usize],
+        code_lines: &[&str],
+        documentation_lines: &[bool],
+        chunk: &Chunk,
+        scan_state: &mut ScanState,
+        cursor: Option<(usize, usize)>,
+        deadline: Option<std::time::Instant>,
+        prof: bool,
+    ) {
+        let mut i = 0usize;
+        while i < cands.len() {
+            if crate::deadline::expired(deadline) {
+                break;
+            }
+            let pat = cands[i].0 as usize;
+            let mut j = i + 1;
+            while j < cands.len() && cands[j].0 as usize == pat {
+                j += 1;
+            }
+            let group = &cands[i..j];
+            let (entry, _) = &self.phase2_patterns[pat];
+            let t0 = if prof { Some(Instant::now()) } else { None };
+            match anchor_idx.anchored_regex(pat) {
+                Some(re) => self.extract_anchored(
+                    entry,
+                    re,
+                    group,
+                    preprocessed,
+                    line_offsets,
+                    code_lines,
+                    documentation_lines,
+                    chunk,
+                    scan_state,
+                    deadline,
+                ),
+                None => self.extract_matches_inner(
+                    entry,
+                    preprocessed,
+                    line_offsets,
+                    code_lines,
+                    documentation_lines,
+                    chunk,
+                    scan_state,
+                    0,
+                    0,
+                    cursor,
+                    deadline,
+                ),
+            }
+            if let Some(t0) = t0 {
+                phase2_pattern_prof_record(self.phase2_patterns.len(), pat, t0.elapsed().as_nanos() as u64);
+            }
+            i = j;
+        }
+    }
+
     /// Shared-anchor phase-2 scan. Computes the active set once, then:
     ///   1. runs ONE Aho-Corasick pass over the chunk for every eligible
     ///      pattern's required-prefix literals, collecting `(pattern, pos)`
@@ -116,58 +187,19 @@ impl CompiledScanner {
                     // pattern's contiguous run together so its per-pattern
                     // signal cache is built at most once.
                     let _verify_g = super::profile::span(super::profile::P::Phase2AnchoredVerify);
-                    let mut i = 0usize;
-                    while i < cands.len() {
-                        if crate::deadline::expired(deadline) {
-                            break;
-                        }
-                        let pat = cands[i].0 as usize;
-                        let mut j = i + 1;
-                        while j < cands.len() && cands[j].0 as usize == pat {
-                            j += 1;
-                        }
-                        let group = &cands[i..j];
-                        let (entry, _) = &this.phase2_patterns[pat];
-                        let t0 = if prof { Some(Instant::now()) } else { None };
-                        match anchor_idx.anchored_regex(pat) {
-                            Some(re) => this.extract_anchored(
-                                entry,
-                                re,
-                                group,
-                                preprocessed,
-                                line_offsets,
-                                code_lines,
-                                documentation_lines,
-                                chunk,
-                                scan_state,
-                                deadline,
-                            ),
-                            // Anchored regex failed to compile (logged once in
-                            // `AnchoredRegex::get`): fall back LOUDLY to the
-                            // whole-chunk walk so recall is preserved.
-                            None => this.extract_matches_inner(
-                                entry,
-                                preprocessed,
-                                line_offsets,
-                                code_lines,
-                                documentation_lines,
-                                chunk,
-                                scan_state,
-                                0,
-                                0,
-                                cursor,
-                                deadline,
-                            ),
-                        }
-                        if let Some(t0) = t0 {
-                            phase2_pattern_prof_record(
-                                this.phase2_patterns.len(),
-                                pat,
-                                t0.elapsed().as_nanos() as u64,
-                            );
-                        }
-                        i = j;
-                    }
+                    this.verify_anchored_candidates(
+                        anchor_idx,
+                        &cands[..],
+                        preprocessed,
+                        line_offsets,
+                        code_lines,
+                        documentation_lines,
+                        chunk,
+                        scan_state,
+                        cursor,
+                        deadline,
+                        prof,
+                    );
                 });
 
                 // Localized homoglyph path (ASCII chunks): the prefilter skipped
@@ -188,55 +220,19 @@ impl CompiledScanner {
                                 c.1 += shift;
                             }
                         }
-                        let mut i = 0usize;
-                        while i < cands.len() {
-                            if crate::deadline::expired(deadline) {
-                                break;
-                            }
-                            let pat = cands[i].0 as usize;
-                            let mut j = i + 1;
-                            while j < cands.len() && cands[j].0 as usize == pat {
-                                j += 1;
-                            }
-                            let group = &cands[i..j];
-                            let (entry, _) = &this.phase2_patterns[pat];
-                            let t0 = if prof { Some(Instant::now()) } else { None };
-                            match anchor_idx.anchored_regex(pat) {
-                                Some(re) => this.extract_anchored(
-                                    entry,
-                                    re,
-                                    group,
-                                    preprocessed,
-                                    line_offsets,
-                                    code_lines,
-                                    documentation_lines,
-                                    chunk,
-                                    scan_state,
-                                    deadline,
-                                ),
-                                None => this.extract_matches_inner(
-                                    entry,
-                                    preprocessed,
-                                    line_offsets,
-                                    code_lines,
-                                    documentation_lines,
-                                    chunk,
-                                    scan_state,
-                                    0,
-                                    0,
-                                    cursor,
-                                    deadline,
-                                ),
-                            }
-                            if let Some(t0) = t0 {
-                                phase2_pattern_prof_record(
-                                    this.phase2_patterns.len(),
-                                    pat,
-                                    t0.elapsed().as_nanos() as u64,
-                                );
-                            }
-                            i = j;
-                        }
+                        this.verify_anchored_candidates(
+                            anchor_idx,
+                            &cands[..],
+                            preprocessed,
+                            line_offsets,
+                            code_lines,
+                            documentation_lines,
+                            chunk,
+                            scan_state,
+                            cursor,
+                            deadline,
+                            prof,
+                        );
                     });
                     for &idx in anchor_idx.plain_always_mark() {
                         if crate::deadline::expired(deadline) {
