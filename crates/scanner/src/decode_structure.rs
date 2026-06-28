@@ -385,7 +385,7 @@ fn magic_format(b: &[u8]) -> Option<&'static str> {
 /// buffer is consumed by >= 3 valid (tag, value) fields with valid wire types -
 /// the profile of a real serialized message, which random bytes hit < 0.5% of
 /// the time.
-fn parse_protobuf_wire(data: &[u8]) -> bool {
+pub(crate) fn parse_protobuf_wire(data: &[u8]) -> bool {
     const FIXED_WIRE_WIDTHS: [usize; 8] = [0, 8, 0, 0, 0, 4, 0, 0];
 
     let n = data.len();
@@ -412,8 +412,10 @@ fn parse_protobuf_wire(data: &[u8]) -> bool {
                 };
                 i = next;
             }
-            1 => {
-                // 64-bit fixed
+            1 | 5 => {
+                // Fixed-width value: 64-bit (wire 1) or 32-bit (wire 5). The
+                // width is looked up from FIXED_WIRE_WIDTHS by the runtime wire
+                // type, so both share one bounds-checked advance.
                 match i.checked_add(FIXED_WIRE_WIDTHS[wire as usize]) {
                     Some(x) if x <= n => i = x,
                     _ => return false,
@@ -428,13 +430,6 @@ fn parse_protobuf_wire(data: &[u8]) -> bool {
                     Some(x) if x <= n => x,
                     _ => return false,
                 };
-            }
-            5 => {
-                // 32-bit fixed
-                match i.checked_add(FIXED_WIRE_WIDTHS[wire as usize]) {
-                    Some(x) if x <= n => i = x,
-                    _ => return false,
-                }
             }
             _ => return false, // 3,4 (groups, deprecated) and 6,7 (invalid)
         }

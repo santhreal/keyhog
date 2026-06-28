@@ -134,6 +134,8 @@ mod decode_encoded_value_extraction;
 mod decode_pipeline_exceeds_modularity_cap;
 #[path = "gap/decode_splice_payload_window.rs"]
 mod decode_splice_payload_window;
+#[path = "gap/decode_structure_protobuf_fixed_width_fields.rs"]
+mod decode_structure_protobuf_fixed_width_fields;
 #[path = "gap/detector_contract_coverage_100pct.rs"]
 mod detector_contract_coverage_100pct;
 #[path = "gap/detector_precision_decoys.rs"]

@@ -78,6 +78,15 @@ pub fn bytecount_newlines_for_test(bytes: &[u8]) -> usize {
     crate::decode::bytecount_newlines(bytes)
 }
 
+/// Test seam for the protobuf-wire decode-structure verdict: parse `data` as a
+/// protobuf wire stream and return whether it consumes the whole buffer as
+/// >= 3 valid (tag, value) fields. Lets a gap test pin that fixed-width fields
+/// (wire 1 = 64-bit, wire 5 = 32-bit) share one bounds-checked advance and that
+/// truncation / too-few-fields fail closed.
+pub fn parse_protobuf_wire_for_test(data: &[u8]) -> bool {
+    crate::decode_structure::parse_protobuf_wire(data)
+}
+
 /// Test seam for the decode-splice core: splice `decoded_text` into the bounded
 /// `[start, end)` window of `parent`, keeping `SPLICE_CONTEXT_WINDOW` bytes of
 /// companion context on each side. Returns `(window_start, spliced_payload,
