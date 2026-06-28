@@ -82,6 +82,8 @@ mod homoglyph_expand_exact_and_reserved;
 mod jwt_finding_metadata_reserve_and_typ_coherence;
 #[path = "gap/prefix_trie_propagation_move_on_last.rs"]
 mod prefix_trie_propagation_move_on_last;
+#[path = "gap/resolution_known_prefix_service_bonus_named.rs"]
+mod resolution_known_prefix_service_bonus_named;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]

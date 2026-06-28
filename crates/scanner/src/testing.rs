@@ -17,6 +17,34 @@ pub fn pattern_regex_strs(scanner: &crate::CompiledScanner) -> Vec<&str> {
     scanner.pattern_regex_strs()
 }
 
+/// Resolver tie-break priority for a synthetic match. Exposes the private
+/// `resolution::match_priority` so a behavioral gap test can pin the named
+/// weight constants (in particular `KNOWN_PREFIX_SERVICE_BONUS`) from the
+/// observable priority difference between two otherwise-identical matches.
+pub fn match_priority_for_test(detector_id: &str, credential: &str, confidence: Option<f64>) -> f64 {
+    let m = keyhog_core::RawMatch {
+        detector_id: std::sync::Arc::from(detector_id),
+        detector_name: std::sync::Arc::from(detector_id),
+        service: std::sync::Arc::from("test"),
+        severity: keyhog_core::Severity::High,
+        credential: keyhog_core::SensitiveString::from(credential),
+        credential_hash: [0u8; 32].into(),
+        companions: std::collections::HashMap::new(),
+        location: keyhog_core::MatchLocation {
+            source: std::sync::Arc::from("unit"),
+            file_path: Some(std::sync::Arc::from("unit.env")),
+            line: Some(1),
+            offset: 0,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: None,
+        confidence,
+    };
+    crate::resolution::match_priority(&m)
+}
+
 #[cfg(feature = "simd")]
 pub fn scan_coalesced_phase2_with_admission_for_test(
     scanner: &crate::CompiledScanner,

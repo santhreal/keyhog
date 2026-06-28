@@ -15,6 +15,7 @@ const CONFIDENCE_WEIGHT: f64 = 5.0;
 const DETECTOR_ID_LENGTH_WEIGHT: f64 = 0.1;
 const MAX_CREDENTIAL_PRIORITY_LENGTH: usize = 200;
 const CREDENTIAL_LENGTH_WEIGHT: f64 = 0.01;
+const KNOWN_PREFIX_SERVICE_BONUS: f64 = 5.0;
 
 /// Resolve overlapping matches: for each credential text region,
 /// keep only the best match. Also suppress entropy findings when
@@ -208,7 +209,7 @@ fn best_matches_for_group(group: Vec<RawMatch>) -> Vec<RawMatch> {
 }
 
 /// Compute the resolver priority used to break ties between overlapping matches.
-fn match_priority(m: &RawMatch) -> f64 {
+pub(crate) fn match_priority(m: &RawMatch) -> f64 {
     let mut priority = ENTROPY_MATCH_PRIORITY;
 
     // Service-specific detectors beat generic/entropy fallbacks. A
@@ -236,7 +237,7 @@ fn match_priority(m: &RawMatch) -> f64 {
     if crate::confidence::known_prefix_confidence_floor(&m.credential).is_some()
         && crate::detector_ids::is_service_anchored_detector(m.detector_id.as_ref())
     {
-        priority += 5.0;
+        priority += KNOWN_PREFIX_SERVICE_BONUS;
     }
 
     priority
