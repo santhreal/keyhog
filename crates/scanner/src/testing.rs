@@ -2539,6 +2539,14 @@ pub fn parse_tfstate_tuples(text: &str) -> Vec<(String, String, usize)> {
         .collect()
 }
 
+/// Integration-test facade: expand a regex pattern to a homoglyph-aware regex
+/// (ASCII chars become `[<ascii><glyphs>]` classes; regex-special chars are
+/// escaped). Plain `pub` so the out-of-crate tests/gap suite can pin the exact
+/// expansion.
+pub fn expand_homoglyphs_str(pattern: &str) -> String {
+    crate::homoglyph::expand_homoglyphs(pattern)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg(test)]
 pub(crate) struct StructuredPair {

@@ -76,6 +76,8 @@ mod hcl_identifier_single_owner;
 mod json_scalar_literal_single_owner;
 #[path = "gap/profile_relaxed_ordering_single_reference.rs"]
 mod profile_relaxed_ordering_single_reference;
+#[path = "gap/homoglyph_expand_exact_and_reserved.rs"]
+mod homoglyph_expand_exact_and_reserved;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]

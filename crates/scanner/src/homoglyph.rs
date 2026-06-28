@@ -52,10 +52,13 @@ fn homoglyph_map() -> &'static HashMap<char, Vec<char>> {
 }
 
 /// Expand a regex pattern to include homoglyphs.
-/// e.g. "ghp_" -> "[gｇ][hнｈ][pрｐ]_"
+/// e.g. "ghp_" -> "[gɡｇ][hнһｈ][pрρｐ]_"
 pub(crate) fn expand_homoglyphs(pattern: &str) -> String {
     let map = homoglyph_map();
-    let mut expanded = String::new();
+    // Every mapped ASCII char becomes a `[<ascii><glyphs>]` class (~8 bytes);
+    // reserve up front so expansion over all detector prefixes does not realloc
+    // as it grows. Byte-identical to building from an empty String.
+    let mut expanded = String::with_capacity(pattern.len() * 8);
 
     // Simple implementation: replace ASCII chars with character classes
     for ch in pattern.chars() {
