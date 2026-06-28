@@ -491,7 +491,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
                 let mut matches = self.scan_prepared_with_triggered(
                     prepared,
                     live_backend,
-                    triggered,
+                    &triggered,
                     deadline,
                     None,
                     None,

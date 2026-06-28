@@ -60,7 +60,7 @@ impl CompiledScanner {
             return Vec::new();
         }
         self.scan_prepared_with_triggered(
-            prepared, backend, triggered, deadline, None, None, None, None,
+            prepared, backend, &triggered, deadline, None, None, None, None,
         )
     }
 }

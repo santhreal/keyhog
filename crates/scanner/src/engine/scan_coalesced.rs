@@ -358,7 +358,7 @@ impl CompiledScanner {
                         self.scan_prepared_with_triggered(
                             prepared,
                             ScanBackend::SimdCpu,
-                            triggered,
+                            &triggered,
                             None,
                             keyword_hints,
                             always_anchor_present,
@@ -403,7 +403,7 @@ impl CompiledScanner {
                 let mut matches = self.scan_prepared_with_triggered(
                     prepared,
                     ScanBackend::SimdCpu,
-                    triggered,
+                    &triggered,
                     None,
                     keyword_hints,
                     always_anchor_present,

@@ -48,6 +48,8 @@ mod suffix_gate_literals_contract;
 mod fragment_prefilter_single_source;
 #[path = "gap/pattern_signals_keyword_invariant_hoisted.rs"]
 mod pattern_signals_keyword_invariant_hoisted;
+#[path = "gap/windowed_triggered_slice_no_per_window_clone.rs"]
+mod windowed_triggered_slice_no_per_window_clone;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]

@@ -8,7 +8,7 @@ impl CompiledScanner {
         &self,
         prepared: PreparedChunk<'_>,
         _backend: ScanBackend,
-        triggered_patterns: Vec<u64>,
+        triggered_patterns: &[u64],
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_anchor_present: Option<bool>,
@@ -45,7 +45,7 @@ impl CompiledScanner {
             return scan_state.into_matches();
         }
 
-        let expanded_patterns = self.expand_triggered_patterns(&triggered_patterns);
+        let expanded_patterns = self.expand_triggered_patterns(triggered_patterns);
         // GPU presence rows are produced from raw chunk bytes. A negative
         // always-anchor row is only a sound skip proof when phase-2 scans the
         // same bytes; unicode/multiline preprocessing can introduce ASCII
