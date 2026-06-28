@@ -175,36 +175,42 @@ pub(crate) fn looks_like_public_evidence_identifier(value: &str) -> bool {
         return true;
     }
 
-    let upper = value.to_ascii_uppercase();
-    if upper.contains("CWE_")
-        || upper.contains("RFC_")
-        || upper.contains("OWASP_")
-        || upper.contains("NIST_")
-        || upper.contains("CISA_")
+    // Case-insensitive byte scans instead of allocating BOTH an uppercased AND a
+    // lowercased copy of every candidate (Law 7). `value` is already constrained
+    // to the ASCII alphabet [A-Za-z0-9_-.:/=] by the guard above, so `ci_find`
+    // (case-insensitive, pre-lowered needles) is byte-identical to the prior
+    // to_ascii_uppercase()/to_ascii_lowercase()-then-contains form. The OR arms
+    // all short-circuit to `true`, so reordering the upper/lower checks into one
+    // pass does not change the boolean result.
+    use crate::ascii_ci::{ci_find, starts_with_ignore_ascii_case};
+    if ci_find(bytes, b"cwe_")
+        || ci_find(bytes, b"rfc_")
+        || ci_find(bytes, b"owasp_")
+        || ci_find(bytes, b"nist_")
+        || ci_find(bytes, b"cisa_")
     {
         return true;
     }
-    if upper.contains("-ISSUE-") || upper.contains("_ISSUE_") {
+    if ci_find(bytes, b"-issue-") || ci_find(bytes, b"_issue_") {
         return true;
     }
     if looks_like_caesar_shifted_public_issue_reference(value) {
         return true;
     }
 
-    let lower = value.to_ascii_lowercase();
-    if lower.contains("gate-evidence-consumption")
-        || lower.contains("authority-attestation")
-        || lower.contains("authority-elimination")
-        || lower.contains("authority-map")
-        || (lower.contains("dead-pass")
-            && lower.contains("capability")
-            && lower.contains("transform"))
+    if ci_find(bytes, b"gate-evidence-consumption")
+        || ci_find(bytes, b"authority-attestation")
+        || ci_find(bytes, b"authority-elimination")
+        || ci_find(bytes, b"authority-map")
+        || (ci_find(bytes, b"dead-pass")
+            && ci_find(bytes, b"capability")
+            && ci_find(bytes, b"transform"))
     {
         return true;
     }
-    lower.contains("row-range-vx-")
-        || lower.contains("through-vx-")
-        || (lower.starts_with("pw.") && lower.contains('-'))
+    ci_find(bytes, b"row-range-vx-")
+        || ci_find(bytes, b"through-vx-")
+        || (starts_with_ignore_ascii_case(bytes, b"pw.") && bytes.contains(&b'-'))
 }
 
 fn looks_like_public_crypto_algorithm_identifier(value: &str) -> bool {

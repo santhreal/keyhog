@@ -4,10 +4,36 @@ use keyhog_scanner::testing::shape::{
     generic_base64_candidate_is_ambiguous, looks_like_credential_colliding_punctuation,
     looks_like_dotted_source_identifier, looks_like_filename_reference,
     looks_like_generic_random_base64_blob_decoy, looks_like_kebab_config_identifier,
-    looks_like_punctuation_decorated_identifier, looks_like_syntactic_punctuation_marker,
-    looks_like_train_case_prose_identifier, public_noncredential_shape_full,
-    public_noncredential_shape_weak_anchor,
+    looks_like_public_evidence_identifier, looks_like_punctuation_decorated_identifier,
+    looks_like_syntactic_punctuation_marker, looks_like_train_case_prose_identifier,
+    public_noncredential_shape_full, public_noncredential_shape_weak_anchor,
 };
+
+#[test]
+fn public_evidence_identifier_stays_case_insensitive_after_zero_alloc_rewrite() {
+    // Taxonomy infixes (was upper.contains, now ci_find) — match in ANY case.
+    assert!(looks_like_public_evidence_identifier("CWE_79-input-validation"));
+    assert!(looks_like_public_evidence_identifier("cwe_79-input-validation"));
+    assert!(looks_like_public_evidence_identifier("RFC_7519-spec-ref"));
+    assert!(looks_like_public_evidence_identifier("doc-OWASP_A03-note"));
+    // `-ISSUE-` / `_ISSUE_` infix, case-insensitive.
+    assert!(looks_like_public_evidence_identifier("project-ISSUE-1024"));
+    assert!(looks_like_public_evidence_identifier("project-issue-1024"));
+    // Authority prose markers (was lower.contains, now ci_find) — any case.
+    assert!(looks_like_public_evidence_identifier("authority-attestation"));
+    assert!(looks_like_public_evidence_identifier("Authority-Attestation"));
+    // `pw.`-prefixed (was lower.starts_with, now starts_with_ignore_ascii_case).
+    assert!(looks_like_public_evidence_identifier("PW.row-range-1"));
+
+    // Negatives: no taxonomy/authority marker, and the alphabet guard rejects
+    // out-of-set bytes.
+    assert!(!looks_like_public_evidence_identifier("issuetracker-onlypage"));
+    assert!(!looks_like_public_evidence_identifier("plainrandomtoken"));
+    // Contains a space (outside [A-Za-z0-9_-.:/=]) — rejected by the guard.
+    assert!(!looks_like_public_evidence_identifier("CWE_79 input validation"));
+    // Too short (<6).
+    assert!(!looks_like_public_evidence_identifier("cwe_1"));
+}
 
 #[test]
 fn dotted_source_identifier_stays_case_insensitive_after_zero_alloc_rewrite() {
