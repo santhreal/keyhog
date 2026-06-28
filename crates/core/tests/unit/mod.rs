@@ -143,6 +143,7 @@ pub mod sarif_security_severity_mapping;
 pub mod sarif_skip_notifications;
 pub mod sarif_uri_absolute_under_root_relativizes;
 pub mod sarif_uri_full_run_with_absolute_path;
+pub mod sarif_uri_leading_colon_segment_disambiguated;
 pub mod sarif_uri_percent_encodes_unsafe_bytes;
 pub mod sarif_uri_posix_absolute_gets_file_scheme;
 pub mod sarif_uri_relative_path_passes_through;

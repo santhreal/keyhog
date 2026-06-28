@@ -15,7 +15,7 @@ use std::sync::OnceLock;
 /// `file://` uri so they are at least unambiguous.
 pub(crate) fn file_path_to_sarif_uri(path: &str) -> String {
     if let Some(rel) = relative_to_scan_root(path) {
-        return percent_encode_path(&rel);
+        return render_relative_uri(&rel);
     }
     if path.starts_with('/') {
         format!("file://{}", percent_encode_path(path))
@@ -24,7 +24,35 @@ pub(crate) fn file_path_to_sarif_uri(path: &str) -> String {
         format!("file:///{}", percent_encode_path(&normalised))
     } else {
         // Already relative - percent-encode so spaces/specials stay valid.
-        percent_encode_path(path)
+        render_relative_uri(path)
+    }
+}
+
+/// Percent-encode a repo-relative path for a SARIF `artifactLocation.uri`, then
+/// disambiguate the leading-colon case. Per RFC 3986 §4.2 a relative-path
+/// reference whose FIRST segment contains a `:` is indistinguishable from an
+/// absolute URI with a scheme — `a:b.env` parses as scheme `a`, opaque part
+/// `b.env`, so a consumer like GitHub code-scanning never resolves it against the
+/// checkout and the alert is dropped or mis-mapped. Colons are legal in POSIX
+/// filenames, so this is reachable from a real scan. Prefix such a path with
+/// `./` (a no-op dot-segment) to force the colon to stay inside a path segment.
+/// A colon in a LATER segment (`dir/a:b`) is already unambiguous and passes
+/// through unchanged, as does the colon-free common case.
+fn render_relative_uri(rel: &str) -> String {
+    let encoded = percent_encode_path(rel);
+    if first_segment_has_colon(&encoded) {
+        format!("./{encoded}")
+    } else {
+        encoded
+    }
+}
+
+/// True when the path segment before the first `/` (or the whole reference, if
+/// there is no `/`) contains a `:` — the RFC 3986 §4.2 scheme-ambiguity trigger.
+fn first_segment_has_colon(uri: &str) -> bool {
+    match uri.split_once('/') {
+        Some((first, _)) => first.contains(':'),
+        None => uri.contains(':'),
     }
 }
 
