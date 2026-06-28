@@ -410,10 +410,10 @@ pub(crate) fn forced_backend_override_for_test() -> Option<ScanBackend> {
 }
 
 pub(super) fn test_backend_override() -> Option<ScanBackend> {
-    match TEST_BACKEND_OVERRIDE.with(|cell| *cell.borrow()) {
-        Some(backend) => backend,
-        None => None,
-    }
+    // The thread-local holds `Option<Option<ScanBackend>>` (outer = "is an
+    // override set", inner = "the forced backend, or None for forced-CPU);
+    // collapsing the two layers is exactly `Option::flatten`.
+    TEST_BACKEND_OVERRIDE.with(|cell| *cell.borrow()).flatten()
 }
 
 /// Operator-facing `--backend` values accepted by the CLI.

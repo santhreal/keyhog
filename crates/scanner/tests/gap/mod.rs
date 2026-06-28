@@ -66,6 +66,7 @@ pub mod gpu_routing_profile_tier_table;
 pub mod gpu_threshold_mib_units;
 pub mod startup_banner_exact_shape;
 pub mod scan_error_display_messages;
+pub mod backend_override_values_parse_coherence;
 pub mod entropy_keyword_only_requires_keyword_line;
 pub mod entropy_keywords_inline_tests_in_src;
 pub mod file_gate_matrix_scanner_adversarial_unmarked;
