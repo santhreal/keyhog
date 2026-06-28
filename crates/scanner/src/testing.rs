@@ -999,7 +999,11 @@ pub fn resolve_value_shaped_group_for_test(
     text: &str,
     group: usize,
 ) -> Option<(usize, usize)> {
-    let re = regex::Regex::new(pattern).ok()?;
+    let re = regex::Regex::new(pattern).expect(
+        "resolve_value_shaped_group_for_test: caller-supplied `pattern` must be a valid \
+         regex (a malformed test pattern is a test-authoring bug, not a no-match result; \
+         fix the pattern). `None` is reserved for the real no-match path below.",
+    );
     let mut locs = re.capture_locations();
     re.captures_read(&mut locs, text)?;
     let current = locs.get(group)?;
