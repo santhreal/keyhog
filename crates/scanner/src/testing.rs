@@ -121,6 +121,25 @@ pub fn gitlab_checksum_verdict_for_test(credential: &str) -> &'static str {
     }
 }
 
+/// npm checksum verdict for `credential`, as a stable string. Lets a gap test
+/// pin the 36-char body length gate and the Valid path end to end.
+pub fn npm_checksum_verdict_for_test(credential: &str) -> &'static str {
+    use crate::checksum::ChecksumValidator;
+    match crate::checksum::npm::NpmTokenValidator.validate(credential) {
+        crate::checksum::ChecksumResult::Valid => "valid",
+        crate::checksum::ChecksumResult::StructurallyValid => "structurally-valid",
+        crate::checksum::ChecksumResult::Invalid => "invalid",
+        crate::checksum::ChecksumResult::NotApplicable => "not-applicable",
+    }
+}
+
+/// The correct 6-char base62 CRC32 checksum for an npm token's `entropy`
+/// prefix, so a gap test can build a genuinely-valid `npm_` token and pin the
+/// entropy/checksum split (30 + 6) through the Valid path.
+pub fn npm_expected_checksum_for_test(entropy: &str) -> String {
+    crate::checksum::github::base62_encode_u32(crate::checksum::github::crc32(entropy.as_bytes()), 6)
+}
+
 #[cfg(feature = "simd")]
 pub fn scan_coalesced_phase2_with_admission_for_test(
     scanner: &crate::CompiledScanner,

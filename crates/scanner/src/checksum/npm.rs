@@ -9,21 +9,28 @@ use base64::Engine as _;
 /// `npm_` + 30-character entropy + 6-character base62 CRC32 checksum.
 pub(crate) struct NpmTokenValidator;
 
+/// npm token body layout: entropy chars followed by a base62 CRC32 checksum.
+/// The total body length is derived from the parts so the length gate and the
+/// entropy/checksum slice boundary can never disagree.
+const NPM_ENTROPY_LEN: usize = 30;
+const NPM_CHECKSUM_LEN: usize = 6;
+const NPM_BODY_LEN: usize = NPM_ENTROPY_LEN + NPM_CHECKSUM_LEN;
+
 impl ChecksumValidator for NpmTokenValidator {
     fn validate(&self, credential: &str) -> ChecksumResult {
         let payload = match credential.strip_prefix("npm_") {
             Some(p) => p,
             None => return ChecksumResult::NotApplicable,
         };
-        if payload.len() != 36 {
+        if payload.len() != NPM_BODY_LEN {
             return ChecksumResult::NotApplicable;
         }
         if !payload.chars().all(|c| c.is_ascii_alphanumeric()) {
             return ChecksumResult::Invalid;
         }
-        let entropy = &payload[..30];
-        let checksum_str = &payload[30..];
-        let expected = base62_encode_u32(crc32(entropy.as_bytes()), 6);
+        let entropy = &payload[..NPM_ENTROPY_LEN];
+        let checksum_str = &payload[NPM_ENTROPY_LEN..];
+        let expected = base62_encode_u32(crc32(entropy.as_bytes()), NPM_CHECKSUM_LEN);
         if expected == checksum_str {
             ChecksumResult::Valid
         } else {

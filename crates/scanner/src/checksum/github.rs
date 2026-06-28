@@ -3,7 +3,7 @@ use super::{ChecksumResult, ChecksumValidator};
 const BASE62_DIGITS: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 /// Compute the standard CRC32 checksum of `data`.
-pub(super) fn crc32(data: &[u8]) -> u32 {
+pub(crate) fn crc32(data: &[u8]) -> u32 {
     const TABLE: [u32; 256] = {
         let mut table = [0u32; 256];
         let mut i = 0;
@@ -32,7 +32,7 @@ pub(super) fn crc32(data: &[u8]) -> u32 {
 }
 
 /// Encode a `u32` as base62, left-padded with `'0'` to `width` characters.
-pub(super) fn base62_encode_u32(mut value: u32, width: usize) -> String {
+pub(crate) fn base62_encode_u32(mut value: u32, width: usize) -> String {
     if value == 0 {
         return "0".repeat(width);
     }
