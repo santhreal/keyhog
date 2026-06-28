@@ -16,6 +16,12 @@ pub(crate) struct ReverseDecoder;
 
 const MIN_REVERSE_LEN: usize = 16;
 
+/// Minimum contiguous ASCII-alphanumeric run (scanned in the reversed
+/// direction) for a candidate to be worth reverse-decoding. Filters
+/// `a-b-c-d-…` and other punctuated prose whose longest run is short. The
+/// sibling Caesar decoder names the same kind of gate `MIN_ALNUM_RUN`.
+const MIN_REVERSE_ALNUM_RUN: usize = 12;
+
 /// Reverse-prefix needles for [`looks_reversible`].
 ///
 /// SOUNDNESS: `reverse(candidate).contains(prefix)` iff
@@ -84,7 +90,7 @@ pub(crate) fn looks_reversible(candidate: &str) -> bool {
     for &b in bytes.iter().rev() {
         if b.is_ascii_alphanumeric() {
             run += 1;
-            if run >= 12 {
+            if run >= MIN_REVERSE_ALNUM_RUN {
                 saw_long_run = true;
                 break;
             }

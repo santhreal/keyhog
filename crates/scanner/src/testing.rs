@@ -116,6 +116,22 @@ pub fn caesar_shift_for_test(input: &str, shift: u8) -> String {
     crate::decode::caesar::caesar_shift(input, shift)
 }
 
+/// Test seam for the reverse decoder's string reversal: reverse `s` by
+/// Unicode scalar (not byte), so a gap test can pin the exact reversed string.
+#[cfg(feature = "decode")]
+pub fn reverse_str_for_test(s: &str) -> String {
+    crate::decode::reverse::reverse_str(s)
+}
+
+/// Test seam for the reverse decoder's admission gate: a candidate is worth
+/// reverse-decoding only when it has a `MIN_REVERSE_ALNUM_RUN`+ contiguous
+/// ASCII-alphanumeric run AND its reversed form would contain a known provider
+/// prefix. Lets a gap test pin both gates exactly.
+#[cfg(feature = "decode")]
+pub fn looks_reversible_for_test(candidate: &str) -> bool {
+    crate::decode::reverse::looks_reversible(candidate)
+}
+
 /// Test seam for the decode-splice core: splice `decoded_text` into the bounded
 /// `[start, end)` window of `parent`, keeping `SPLICE_CONTEXT_WINDOW` bytes of
 /// companion context on each side. Returns `(window_start, spliced_payload,

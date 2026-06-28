@@ -61,6 +61,7 @@ pub mod placeholder_word_entropy_collision_threshold;
 pub mod prefix_trie_propagation_move_on_last;
 pub mod resolution_known_prefix_service_bonus_named;
 pub mod resolution_service_detector_predicate_dedup;
+pub mod reverse_decoder_admission_gate;
 pub mod fragment_cache_reassemble_join;
 pub mod deadline_cadence_tick_dedup;
 pub mod gitlab_checksum_body_length_floors;

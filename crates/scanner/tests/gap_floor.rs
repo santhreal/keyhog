@@ -92,6 +92,8 @@ mod placeholder_word_entropy_collision_threshold;
 mod resolution_known_prefix_service_bonus_named;
 #[path = "gap/resolution_service_detector_predicate_dedup.rs"]
 mod resolution_service_detector_predicate_dedup;
+#[path = "gap/reverse_decoder_admission_gate.rs"]
+mod reverse_decoder_admission_gate;
 #[path = "gap/fragment_cache_reassemble_join.rs"]
 mod fragment_cache_reassemble_join;
 #[path = "gap/deadline_cadence_tick_dedup.rs"]
