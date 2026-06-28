@@ -22,9 +22,8 @@
 /// starts, so `row(i) == &data[offsets[i]..offsets[i + 1]]`. Empty rows cost
 /// zero data bytes instead of a header, element width halves to `u32`, and
 /// lookups are contiguous. Build it once from the existing
-/// `Vec<Vec<usize>>`-producing builders via `From` (or directly with
-/// `from_rows`); reads go through [`CsrU32::get`], mirroring the slice/`Vec`
-/// API the old field type exposed.
+/// `Vec<Vec<usize>>`-producing builders via `From`; reads go through
+/// [`CsrU32::get`], mirroring the slice/`Vec` API the old field type exposed.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CsrU32 {
     /// All rows concatenated, in row order.
@@ -35,31 +34,9 @@ pub(crate) struct CsrU32 {
 }
 
 impl CsrU32 {
-    /// Build a CSR table from per-row index lists in a single pass.
-    ///
-    /// Accepts any iterator of rows so the existing builders can feed their
-    /// `Vec<Vec<usize>>` (or borrowed slices) straight in without an
-    /// intermediate allocation. Values are narrowed to `u32`; a corpus index
-    /// can never exceed the pattern count, which is far below `u32::MAX`.
-    pub(crate) fn from_rows<R, I>(rows: R) -> Self
-    where
-        R: IntoIterator<Item = I>,
-        I: IntoIterator<Item = usize>,
-    {
-        // Reserve `offsets` from the outer iterator's size hint (exact for the
-        // `Vec<Vec<_>>` builders, whose `into_iter` reports `(n, Some(n))`), so
-        // the row-count-proportional growth is a single allocation. The total
-        // element count isn't knowable generically, so `data` is left to grow;
-        // the `From<Vec<Vec<usize>>>` path below supplies an exact `data`
-        // reservation since it can sum the row lengths up front.
-        let rows = rows.into_iter();
-        let offsets_cap = rows.size_hint().0.saturating_add(1);
-        Self::from_rows_sized(rows, 0, offsets_cap)
-    }
-
-    /// Single CSR build loop. Both entry points funnel through here with their
-    /// best capacity knowledge so there is exactly one place that concatenates
-    /// rows into `data` and records `offsets`.
+    /// Single CSR build loop. The `From<Vec<Vec<usize>>>` impl funnels through
+    /// here with its exact capacity knowledge so there is exactly one place that
+    /// concatenates rows into `data` and records `offsets`.
     fn from_rows_sized<R, I>(rows: R, data_cap: usize, offsets_cap: usize) -> Self
     where
         R: IntoIterator<Item = I>,
