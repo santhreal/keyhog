@@ -110,6 +110,10 @@ pub(crate) fn with_extracted_value_spans<R>(
 }
 
 fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
+    // Minimum length for a quoted-string or assignment value to be worth keeping
+    // as a decode candidate. Both extraction paths apply the same floor; one
+    // owner so they can never drift to different cutoffs.
+    const MIN_EXTRACTED_VALUE_LEN: usize = 4;
     let _prof = extract_prof_enabled().then(|| {
         use std::sync::atomic::Ordering::Relaxed;
         EXTRACT_CALLS.fetch_add(1, Relaxed);
@@ -235,7 +239,7 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
                     value_end = current_idx + current.len_utf8();
                     escaping = true;
                 } else if current == quote {
-                    if cleaned.len() >= 4 {
+                    if cleaned.len() >= MIN_EXTRACTED_VALUE_LEN {
                         if let Some(start) = value_start {
                             values.push(ExtractedValue::new(cleaned, start, value_end));
                         }
@@ -278,7 +282,7 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
                 cleaned.push(c);
                 chars.next();
             }
-            if cleaned.len() >= 4 {
+            if cleaned.len() >= MIN_EXTRACTED_VALUE_LEN {
                 if let Some(start) = value_start {
                     values.push(ExtractedValue::new(cleaned, start, value_end));
                 }

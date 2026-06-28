@@ -16,6 +16,7 @@ pub mod context_tokio_async_fn_test_body_is_test_code;
 pub mod context_window_local_slice;
 pub mod cross_platform_cfg_gates_absent;
 pub mod csr_hot_maps_adopted;
+pub mod decode_encoded_value_extraction;
 pub mod decode_pipeline_exceeds_modularity_cap;
 pub mod decode_pipeline_layers;
 pub mod decode_splice_payload_window;

@@ -58,6 +58,19 @@ pub fn is_service_anchored_detector_for_test(detector_id: &str) -> bool {
     crate::detector_ids::is_service_anchored_detector(detector_id)
 }
 
+/// Test seam for the pre-decode encoded-value extractor: returns each extracted
+/// candidate as `(value, start, end)` so a gap test can pin the exact spans the
+/// single-pass scan pulls from quoted strings and `key = value` assignments,
+/// including the minimum-length floor that drops sub-4-char values.
+pub fn extract_encoded_value_spans_for_test(text: &str) -> Vec<(String, usize, usize)> {
+    crate::decode::with_extracted_value_spans(text, |spans| {
+        spans
+            .iter()
+            .filter_map(|v| v.span().map(|(s, e)| (v.value.clone(), s, e)))
+            .collect()
+    })
+}
+
 /// Test seam for the decode-splice newline counter (now a `memchr` SIMD count):
 /// the per-decoded-candidate parent-prefix newline tally that fixes the spliced
 /// chunk's `base_line`. Lets a gap test pin that the count is exact.

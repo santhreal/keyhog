@@ -126,6 +126,8 @@ mod context_window_local_slice;
 mod cross_platform_cfg_gates_absent;
 #[path = "gap/csr_hot_maps_adopted.rs"]
 mod csr_hot_maps_adopted;
+#[path = "gap/decode_encoded_value_extraction.rs"]
+mod decode_encoded_value_extraction;
 #[path = "gap/decode_pipeline_exceeds_modularity_cap.rs"]
 mod decode_pipeline_exceeds_modularity_cap;
 #[path = "gap/decode_splice_payload_window.rs"]

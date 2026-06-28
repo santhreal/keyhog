@@ -171,7 +171,8 @@ mod extractor;
 mod registry;
 mod splice;
 pub(crate) use extractor::{extract_profile_dump, extract_profile_reset};
-pub(super) use extractor::{hash_fast, with_extracted_value_spans, ExtractedValue};
+pub(super) use extractor::{hash_fast, ExtractedValue};
+pub(crate) use extractor::with_extracted_value_spans;
 pub use registry::register_decoder;
 pub(crate) use registry::{decoder_profile_dump, decoder_profile_reset};
 #[cfg(test)]
