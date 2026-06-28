@@ -108,6 +108,19 @@ pub fn loop_expired_on_cadence_now_for_test(iteration: usize, cadence: usize) ->
     crate::deadline::loop_expired_on_cadence(deadline, iteration, cadence)
 }
 
+/// GitLab structural-checksum verdict for `credential`, as a stable string
+/// (`"valid"` / `"structurally-valid"` / `"invalid"` / `"not-applicable"`). Lets
+/// a gap test pin the classic (20) and routable (16) body-length floors.
+pub fn gitlab_checksum_verdict_for_test(credential: &str) -> &'static str {
+    use crate::checksum::ChecksumValidator;
+    match crate::checksum::gitlab::GitlabTokenValidator.validate(credential) {
+        crate::checksum::ChecksumResult::Valid => "valid",
+        crate::checksum::ChecksumResult::StructurallyValid => "structurally-valid",
+        crate::checksum::ChecksumResult::Invalid => "invalid",
+        crate::checksum::ChecksumResult::NotApplicable => "not-applicable",
+    }
+}
+
 #[cfg(feature = "simd")]
 pub fn scan_coalesced_phase2_with_admission_for_test(
     scanner: &crate::CompiledScanner,

@@ -22,6 +22,10 @@ pub(crate) struct GitlabTokenValidator;
 /// tokens run longer (random + base64 CRC trailer). 64 is a generous ceiling
 /// that still rejects pathological inputs.
 const GITLAB_BODY_MIN: usize = 20;
+/// Routable CI-build / runner tokens (`glcbt-`, `glrt-`) have no fixed classic
+/// length; 16 is the floor below which the encoded body is too short to be a
+/// real token. Named so the band check and the too-short guard cannot drift.
+const GITLAB_ROUTABLE_BODY_MIN: usize = 16;
 const GITLAB_BODY_MAX: usize = 64;
 
 fn gitlab_body_charset_ok(payload: &str) -> bool {
@@ -63,8 +67,8 @@ impl ChecksumValidator for GitlabTokenValidator {
             // CI-build / runner tokens have no fixed classic length; 16 is the
             // floor below which the body is too short to be real.
             return match payload.len() {
-                16..=GITLAB_BODY_MAX => ChecksumResult::StructurallyValid,
-                n if n < 16 => ChecksumResult::Invalid,
+                GITLAB_ROUTABLE_BODY_MIN..=GITLAB_BODY_MAX => ChecksumResult::StructurallyValid,
+                n if n < GITLAB_ROUTABLE_BODY_MIN => ChecksumResult::Invalid,
                 _ => ChecksumResult::NotApplicable,
             };
         }

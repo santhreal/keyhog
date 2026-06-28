@@ -56,6 +56,7 @@ pub mod resolution_known_prefix_service_bonus_named;
 pub mod resolution_service_detector_predicate_dedup;
 pub mod fragment_cache_reassemble_join;
 pub mod deadline_cadence_tick_dedup;
+pub mod gitlab_checksum_body_length_floors;
 pub mod entropy_keyword_only_requires_keyword_line;
 pub mod entropy_keywords_inline_tests_in_src;
 pub mod file_gate_matrix_scanner_adversarial_unmarked;
