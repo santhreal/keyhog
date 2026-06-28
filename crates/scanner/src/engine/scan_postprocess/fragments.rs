@@ -166,12 +166,13 @@ impl CompiledScanner {
         }
     }
 
-    fn has_fragment_assignment_syntax(data: &[u8]) -> bool {
-        let has_assignment =
-            memchr::memchr(b'=', data).is_some() || memchr::memchr(b':', data).is_some();
-        let has_quote = memchr::memchr(b'"', data).is_some()
-            || memchr::memchr(b'\'', data).is_some()
-            || memchr::memchr(b'`', data).is_some();
+    pub(crate) fn has_fragment_assignment_syntax(data: &[u8]) -> bool {
+        // One SIMD pass per byte-class instead of one per byte: `memchr2`/
+        // `memchr3` find the first occurrence of ANY of their needles, so
+        // `.is_some()` is true iff at least one is present — byte-identical to
+        // the OR-of-`memchr` chain, but 2 passes over `data` instead of 5.
+        let has_assignment = memchr::memchr2(b'=', b':', data).is_some();
+        let has_quote = memchr::memchr3(b'"', b'\'', b'`', data).is_some();
         has_assignment && has_quote
     }
 }
