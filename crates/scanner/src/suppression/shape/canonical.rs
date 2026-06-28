@@ -445,12 +445,22 @@ pub(crate) fn looks_like_prefixed_masked_sequence(body: &str) -> bool {
     if body.ends_with("...") || body.ends_with('…') {
         return true;
     }
-    let upper = body.to_ascii_uppercase();
-    let starts_with_mask = upper.starts_with("XXX") || upper.starts_with("***");
-    let contains_fake_sequence = ["1234567890", "0123456789", "ABCDEFGH", "ABCDEFGHIJ"]
-        .iter()
-        .any(|seq| upper.contains(seq));
-    starts_with_mask && contains_fake_sequence
+    // Case-insensitive byte scans instead of allocating an uppercased copy of
+    // EVERY candidate — this runs per-match in the suppression hot path, where an
+    // avoidable allocation is a production bug at scale (Law 7). The same
+    // ci_find / starts_with_ignore_ascii_case primitives path_filter uses to
+    // dodge this exact `to_ascii_uppercase()` cost. `ci_find` needles MUST be
+    // pre-lowercased; "abcdefghij" is subsumed by "abcdefgh" so the redundant
+    // longer literal is dropped (the two digit runs stay distinct — different
+    // first byte). Semantics are identical to the prior upper-then-contains form.
+    use crate::ascii_ci::{ci_find, starts_with_ignore_ascii_case};
+    let bytes = body.as_bytes();
+    let starts_with_mask = starts_with_ignore_ascii_case(bytes, b"xxx")
+        || starts_with_ignore_ascii_case(bytes, b"***");
+    if !starts_with_mask {
+        return false;
+    }
+    ci_find(bytes, b"1234567890") || ci_find(bytes, b"0123456789") || ci_find(bytes, b"abcdefgh")
 }
 
 pub(crate) fn has_repeated_block_mask(s: &str) -> bool {
@@ -571,9 +581,41 @@ pub(crate) fn is_dash_segmented_alnum_decoy_with_randomness(
 mod tests {
     use super::{
         is_structured_dotted_token, looks_like_aws_iam_arn, looks_like_dashed_serial_key,
-        looks_like_entropy_canonical_non_secret_shape, looks_like_random_byte_base64_blob,
-        looks_like_trimmed_aws_iam_arn,
+        looks_like_entropy_canonical_non_secret_shape, looks_like_prefixed_masked_sequence,
+        looks_like_random_byte_base64_blob, looks_like_trimmed_aws_iam_arn,
     };
+
+    #[test]
+    fn prefixed_masked_sequence_matches_mask_plus_fake_run_case_insensitively() {
+        // Mask prefix (XXX / *** / xxx) AND a fake ascending run, in any case.
+        assert!(looks_like_prefixed_masked_sequence("XXXXX1234567890"));
+        assert!(looks_like_prefixed_masked_sequence("xxx_abcdefgh_key"));
+        assert!(looks_like_prefixed_masked_sequence("***0123456789zz"));
+        // "ABCDEFGHIJ" must still match via the subsuming "abcdefgh" needle.
+        assert!(looks_like_prefixed_masked_sequence("XXXabcdefghij"));
+        // Uppercase fake run under an uppercase mask (the old to_ascii_uppercase
+        // path) must remain a match through the case-insensitive ci_find.
+        assert!(looks_like_prefixed_masked_sequence("XXXABCDEFGH"));
+    }
+
+    #[test]
+    fn prefixed_masked_sequence_matches_trailing_ellipsis() {
+        assert!(looks_like_prefixed_masked_sequence("ghp_1a2b3c4..."));
+        assert!(looks_like_prefixed_masked_sequence("sk_live_abcd1234…"));
+    }
+
+    #[test]
+    fn prefixed_masked_sequence_rejects_partial_signals() {
+        // Mask prefix but NO fake sequence: not a placeholder.
+        assert!(!looks_like_prefixed_masked_sequence("XXXrandomtokenbody"));
+        // Fake sequence but NO mask prefix: a real-looking token containing a
+        // run must not be suppressed by this gate.
+        assert!(!looks_like_prefixed_masked_sequence("1234567890realbody"));
+        assert!(!looks_like_prefixed_masked_sequence("abcdefghkey"));
+        // Empty / short bodies.
+        assert!(!looks_like_prefixed_masked_sequence(""));
+        assert!(!looks_like_prefixed_masked_sequence("xx"));
+    }
 
     #[test]
     fn structured_dotted_token_accepts_jwt_like_shape() {
