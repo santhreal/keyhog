@@ -45,6 +45,7 @@ pub mod phase2_extract_loop_single_owner;
 pub mod anchored_candidate_verify_single_owner;
 pub mod entropy_keyword_anchor_lazy_lowercase;
 pub mod contains_evasion_single_owner_classification;
+pub mod yaml_scalar_mapping_single_owner;
 pub mod entropy_keyword_only_requires_keyword_line;
 pub mod entropy_keywords_inline_tests_in_src;
 pub mod file_gate_matrix_scanner_adversarial_unmarked;

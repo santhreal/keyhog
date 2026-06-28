@@ -104,22 +104,7 @@ fn extract_k8s_secret_maps(
     }
 
     if let Some(serde_yaml::Value::Mapping(map)) = value.get("stringData") {
-        for (k, v) in map {
-            let key = k.as_str().unwrap_or_default(); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
-            let Some(secret_value) = yaml_scalar_value_text(v) else {
-                continue;
-            };
-            if key.is_empty() {
-                continue;
-            }
-            let (line_anchor, fallback_anchor) = yaml_mapping_anchors(key, &secret_value);
-            pending.push(PendingExtractedPair::owned_anchor_with_fallback(
-                key,
-                secret_value,
-                line_anchor,
-                fallback_anchor,
-            ));
-        }
+        push_scalar_mapping_pairs(map, pending);
     }
 }
 
@@ -287,24 +272,7 @@ fn find_environment_pairs(
 
 fn extract_environment_block(value: &serde_yaml::Value, pending: &mut Vec<PendingExtractedPair>) {
     match value {
-        serde_yaml::Value::Mapping(map) => {
-            for (k, v) in map {
-                let key = k.as_str().unwrap_or_default(); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
-                let Some(val) = yaml_scalar_value_text(v) else {
-                    continue;
-                };
-                if key.is_empty() {
-                    continue;
-                }
-                let (line_anchor, fallback_anchor) = yaml_mapping_anchors(key, &val);
-                pending.push(PendingExtractedPair::owned_anchor_with_fallback(
-                    key,
-                    val,
-                    line_anchor,
-                    fallback_anchor,
-                ));
-            }
-        }
+        serde_yaml::Value::Mapping(map) => push_scalar_mapping_pairs(map, pending),
         serde_yaml::Value::Sequence(seq) => {
             for item in seq {
                 if let Some(s) = item.as_str() {
@@ -335,5 +303,29 @@ fn yaml_scalar_value_text(value: &serde_yaml::Value) -> Option<String> {
         serde_yaml::Value::Number(n) => Some(n.to_string()),
         serde_yaml::Value::Bool(b) => Some(b.to_string()),
         _ => None,
+    }
+}
+
+/// Push every `<key>: <scalar>` entry of a YAML mapping as a pending pair with
+/// the standard `<key>: <value>` line anchor and `<key>:` fallback anchor.
+/// Shared by the k8s `stringData:` block and the docker-compose `environment:`
+/// mapping form — both surface raw (non-base64) scalar values identically, so
+/// the extraction lives in one owner instead of two byte-identical loops.
+fn push_scalar_mapping_pairs(map: &serde_yaml::Mapping, pending: &mut Vec<PendingExtractedPair>) {
+    for (k, v) in map {
+        let key = k.as_str().unwrap_or_default(); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
+        let Some(value) = yaml_scalar_value_text(v) else {
+            continue;
+        };
+        if key.is_empty() {
+            continue;
+        }
+        let (line_anchor, fallback_anchor) = yaml_mapping_anchors(key, &value);
+        pending.push(PendingExtractedPair::owned_anchor_with_fallback(
+            key,
+            value,
+            line_anchor,
+            fallback_anchor,
+        ));
     }
 }

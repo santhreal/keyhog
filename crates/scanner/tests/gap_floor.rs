@@ -68,6 +68,8 @@ mod anchored_candidate_verify_single_owner;
 mod entropy_keyword_anchor_lazy_lowercase;
 #[path = "gap/contains_evasion_single_owner_classification.rs"]
 mod contains_evasion_single_owner_classification;
+#[path = "gap/yaml_scalar_mapping_single_owner.rs"]
+mod yaml_scalar_mapping_single_owner;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]

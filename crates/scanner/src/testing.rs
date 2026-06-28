@@ -2499,6 +2499,27 @@ pub(crate) fn hot_pattern_slot_presence(scanner: &crate::CompiledScanner) -> Vec
         .collect()
 }
 
+/// Integration-test facade: parse a docker-compose `environment:` block into
+/// `(context, value, line)` tuples on the original-file (non-decode-derived)
+/// path. Plain `pub` (unlike the `cfg(test)` StructuredPair variant) so the
+/// out-of-crate tests/gap suite can reach it.
+pub fn parse_docker_compose_tuples(text: &str) -> Vec<(String, String, usize)> {
+    crate::structured::parsers::parse_docker_compose(text, false)
+        .into_iter()
+        .map(|pair| (pair.context, pair.value, pair.line))
+        .collect()
+}
+
+/// Integration-test facade: parse a Kubernetes Secret into `(context, value,
+/// line)` tuples on the original-file path. `stringData:` values surface raw;
+/// `data:` values are base64-decoded.
+pub fn parse_k8s_secret_tuples(text: &str) -> Vec<(String, String, usize)> {
+    crate::structured::parsers::parse_k8s_secret(text, false)
+        .into_iter()
+        .map(|pair| (pair.context, pair.value, pair.line))
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg(test)]
 pub(crate) struct StructuredPair {
