@@ -899,6 +899,32 @@ pub fn apply_named_detector_anchor_floor(
     )
 }
 
+/// Test seam for [`crate::confidence::policy::generic_secret_confidence`].
+/// `context_label` selects the `CodeContext` ("test" / "comment" / "doc" /
+/// anything else = ordinary source) so a gap test can pin the exact confidence
+/// formula without depending on the crate-internal `CodeContext` enum.
+pub fn generic_secret_confidence_for_test(
+    context_label: &str,
+    scan_comments: bool,
+    penalize_test_paths: bool,
+    entropy: f64,
+    value_len: usize,
+) -> f64 {
+    let context = match context_label {
+        "test" => crate::context::CodeContext::TestCode,
+        "comment" => crate::context::CodeContext::Comment,
+        "doc" => crate::context::CodeContext::Documentation,
+        _ => crate::context::CodeContext::Unknown,
+    };
+    crate::confidence::policy::generic_secret_confidence(
+        context,
+        scan_comments,
+        penalize_test_paths,
+        entropy,
+        value_len,
+    )
+}
+
 /// Test seam for [`crate::suppression::shape::is_canonical_service_hex_key`]: the
 /// predicate that exempts a service-anchored detector's canonical-length pure-hex
 /// capture from the bare-hex-digest shape gate.
