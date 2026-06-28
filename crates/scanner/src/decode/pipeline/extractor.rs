@@ -156,9 +156,9 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
     // terminates the run.
     let is_pct_run_char = |ch: char| -> bool { ch == '%' || ch.is_ascii_hexdigit() };
 
-    // Flush a pending percent run if it covers at least 2 triplets
-    // (6 chars). Shorter runs are usually printf/URL noise; 2 triplets
-    // is enough for compact percent-encoded dev IDs in contracts.
+    // Flush a pending base64 block: push it as a candidate only if it reached at
+    // least 16 chars (a credential-length run), otherwise discard it. Shorter
+    // alphanumeric runs are ordinary identifiers/words, not encoded secrets.
     fn flush_b64(
         values: &mut Vec<ExtractedValue>,
         b64_block: &mut String,
@@ -187,10 +187,10 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
         pct_start: &mut Option<usize>,
         pct_end: usize,
     ) {
-        // Two triplets (6 decoded bytes) covers short numeric dev IDs and
-        // other compact secrets that `encoding_explosion_runner` percent-
-        // encodes wholesale. Three triplets remains the default bar for
-        // freestanding runs to keep `%2F`-style URL noise out.
+        // One triplet (3 chars, e.g. `%41`) is the floor: short percent-encoded
+        // dev IDs and other compact secrets that `encoding_explosion_runner`
+        // percent-encodes wholesale can be a single triplet, so accept a run of
+        // at least one `%`-triplet rather than gating freestanding runs higher.
         const MIN_PCT_TRIPLETS: usize = 1;
         if pct_block.len() >= MIN_PCT_TRIPLETS * 3
             && pct_block.matches('%').count() >= MIN_PCT_TRIPLETS

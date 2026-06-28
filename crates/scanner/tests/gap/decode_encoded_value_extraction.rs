@@ -37,3 +37,26 @@ fn minimum_length_floor_drops_sub_four_char_values() {
     // ...but exactly four chars is kept, span [4, 8).
     assert_eq!(extract("a = abcd"), vec![("abcd".to_string(), 4, 8)]);
 }
+
+#[test]
+fn freestanding_base64_run_needs_sixteen_chars() {
+    // The base64 accumulator only emits a candidate at >= 16 chars: a fifteen-
+    // char freestanding alphanumeric run is discarded as an ordinary word...
+    assert_eq!(
+        extract("abcdefghijklmno"),
+        Vec::<(String, usize, usize)>::new()
+    );
+    // ...exactly sixteen chars is kept, span [0, 16).
+    assert_eq!(
+        extract("abcdefghijklmnop"),
+        vec![("abcdefghijklmnop".to_string(), 0, 16)]
+    );
+}
+
+#[test]
+fn a_single_percent_triplet_is_kept() {
+    // One `%`-triplet is the percent-run floor (MIN_PCT_TRIPLETS = 1), so `%41`
+    // alone surfaces as a url-decode candidate, span [0, 3). The hex bytes are
+    // NOT also accumulated as a base64 candidate.
+    assert_eq!(extract("%41"), vec![("%41".to_string(), 0, 3)]);
+}
