@@ -684,6 +684,13 @@ pub mod multiline {
         crate::multiline::has_concatenation_indicators(text)
     }
 
+    /// Test seam for the fragment-name prefix extractor: strips `_`/`-`
+    /// separators and `part` segments, lowercases, and trims a trailing numeric
+    /// run so split-credential fragment names collapse to a shared base prefix.
+    pub fn extract_prefix_for_test(var_name: &str) -> String {
+        crate::multiline::extract_prefix(var_name)
+    }
+
     /// Test seam for the multiline preprocessor join pass, returning the joined
     /// text and the preserved original-region length so a gap test can pin its
     /// contract: a passthrough chunk is carried through byte-identically while a

@@ -151,6 +151,8 @@ mod findings_registry_integrity;
 mod inline_gate;
 #[path = "gap/inline_migrated_tests_not_wired.rs"]
 mod inline_migrated_tests_not_wired;
+#[path = "gap/multiline_fragment_prefix_extraction.rs"]
+mod multiline_fragment_prefix_extraction;
 #[path = "gap/multiline_large_file_keyword_gate.rs"]
 mod multiline_large_file_keyword_gate;
 #[path = "gap/multiline_preprocess_join_contract.rs"]

@@ -122,54 +122,29 @@ fn is_bare_ambiguous_fragment_owner(normalized: &str) -> bool {
     )
 }
 
+/// Fragment-name suffixes shared by the separated (`base_part`) and compact
+/// (`basepart`) credential-fragment strippers below. A single owner so the two
+/// suffix lists can never drift apart. The `part<digits>` numeric form is
+/// handled separately by each stripper (it is a pattern, not a fixed literal).
+const FRAGMENT_SUFFIXES: [&str; 16] = [
+    "prefix", "suffix", "head", "tail", "left", "right", "chunk", "piece", "frag", "fragment",
+    "part", "chunks", "pieces", "frags", "fragments", "parts",
+];
+
 fn strip_separated_fragment_suffix(normalized: &str) -> Option<&str> {
     let (base, suffix) = normalized.rsplit_once('_')?;
     if base.is_empty() {
         return None;
     }
-    let suffix_is_fragment = matches!(
-        suffix,
-        "prefix"
-            | "suffix"
-            | "head"
-            | "tail"
-            | "left"
-            | "right"
-            | "chunk"
-            | "piece"
-            | "frag"
-            | "fragment"
-            | "part"
-            | "chunks"
-            | "pieces"
-            | "frags"
-            | "fragments"
-            | "parts"
-    ) || suffix
-        .strip_prefix("part")
-        .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()));
+    let suffix_is_fragment = FRAGMENT_SUFFIXES.contains(&suffix)
+        || suffix
+            .strip_prefix("part")
+            .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()));
     suffix_is_fragment.then_some(base)
 }
 
 fn strip_compact_fragment_suffix(compact: &str) -> Option<&str> {
-    for suffix in [
-        "prefix",
-        "suffix",
-        "head",
-        "tail",
-        "left",
-        "right",
-        "chunk",
-        "piece",
-        "frag",
-        "fragment",
-        "part",
-        "chunks",
-        "pieces",
-        "frags",
-        "fragments",
-        "parts",
-    ] {
+    for suffix in FRAGMENT_SUFFIXES {
         if let Some(base) = compact.strip_suffix(suffix) {
             if !base.is_empty() {
                 return Some(base);
