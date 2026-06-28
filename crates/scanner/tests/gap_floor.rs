@@ -165,6 +165,8 @@ mod multiline_large_file_keyword_gate;
 mod multiline_preprocess_join_contract;
 #[path = "gap/multiline_reassembly.rs"]
 mod multiline_reassembly;
+#[path = "gap/multiline_structural_template_resolve.rs"]
+mod multiline_structural_template_resolve;
 #[path = "gap/nightly_exports_all_strict_env_vars.rs"]
 mod nightly_exports_all_strict_env_vars;
 #[path = "gap/nightly_matrix_has_fourteen_runner_binaries.rs"]

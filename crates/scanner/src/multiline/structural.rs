@@ -54,6 +54,13 @@ pub(super) fn collect_structural_fragments(
         return (Vec::new(), Vec::new());
     };
 
+    // Minimum length for a reassembled cross-line fragment (parenthesized
+    // implicit block, `+`-concat reference, template interpolation, or
+    // prefix-grouped cluster) to be worth emitting. All four structural passes
+    // share this floor; one owner so they can never drift apart. The inline
+    // ARRAY path uses its own larger `16` cutoff and is intentionally separate.
+    const MIN_STRUCTURAL_FRAGMENT_LEN: usize = 12;
+
     let mut current_struct_offset = initial_offset;
     let mut structural_joined = Vec::new();
     let mut structural_mappings = Vec::new();
@@ -136,7 +143,7 @@ pub(super) fn collect_structural_fragments(
     // this structural pass owns the cross-line block shape.
     for (start_line, joined) in collect_parenthesized_implicit_blocks(lines)
         .into_iter()
-        .filter(|(_, joined)| joined.len() >= 12)
+        .filter(|(_, joined)| joined.len() >= MIN_STRUCTURAL_FRAGMENT_LEN)
     {
         structural_joined.push(joined.clone());
         structural_mappings.push(LineMapping {
@@ -169,7 +176,7 @@ pub(super) fn collect_structural_fragments(
         .iter()
         .enumerate()
         .filter_map(|(i, line)| resolve_concat_reference(line, &var_values).map(|j| (i, j)))
-        .filter(|(_, j)| j.len() >= 12)
+        .filter(|(_, j)| j.len() >= MIN_STRUCTURAL_FRAGMENT_LEN)
         .enumerate()
     {
         structural_joined.push(joined.clone());
@@ -198,7 +205,7 @@ pub(super) fn collect_structural_fragments(
             .filter_map(|(index, line)| {
                 resolve_template_reference(line, &tmpl_vars).map(|joined| (index, joined))
             })
-            .filter(|(_, joined)| joined.len() >= 12)
+            .filter(|(_, joined)| joined.len() >= MIN_STRUCTURAL_FRAGMENT_LEN)
         {
             structural_joined.push(joined.clone());
             structural_mappings.push(LineMapping {
@@ -214,7 +221,7 @@ pub(super) fn collect_structural_fragments(
     for cluster in clusters {
         if cluster.len() >= 2 {
             let joined: String = cluster.iter().map(|(_, _, value)| value.as_str()).collect();
-            if joined.len() >= 12 {
+            if joined.len() >= MIN_STRUCTURAL_FRAGMENT_LEN {
                 let start_line = cluster[0].0 + 1;
                 structural_joined.push(joined.clone());
                 structural_mappings.push(LineMapping {
@@ -296,7 +303,7 @@ fn inline_array_assignment_name(line: &str) -> Option<&str> {
 /// in the template is kept verbatim. Returns `None` if any interpolation is an
 /// unresolved reference (so a partial/garbage candidate is never emitted) or if
 /// nothing was resolved.
-fn resolve_template_reference(
+pub(crate) fn resolve_template_reference(
     line: &str,
     vars: &std::collections::HashMap<String, String>,
 ) -> Option<String> {

@@ -19,6 +19,8 @@ pub(crate) use config::{LineMapping, PreprocessedText};
 #[cfg(feature = "multiline")]
 pub(crate) use preprocessor::preprocess_multiline;
 pub(crate) use string_extract::{extract_prefix, fragment_assignment_name_is_credential_like};
+#[cfg(feature = "multiline")]
+pub(crate) use structural::resolve_template_reference;
 
 #[cfg(feature = "multiline")]
 pub(crate) fn collect_structural_fragments_for_test(

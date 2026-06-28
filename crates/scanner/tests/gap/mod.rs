@@ -92,6 +92,7 @@ pub mod multiline_fragment_prefix_extraction;
 pub mod multiline_large_file_keyword_gate;
 pub mod multiline_preprocess_join_contract;
 pub mod multiline_reassembly;
+pub mod multiline_structural_template_resolve;
 pub mod nightly_exports_all_strict_env_vars;
 pub mod nightly_matrix_has_fourteen_runner_binaries;
 pub mod no_inline_tests_in_a3_slice;

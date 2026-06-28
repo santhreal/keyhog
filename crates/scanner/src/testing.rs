@@ -728,6 +728,22 @@ pub mod multiline {
         crate::multiline::has_concatenation_indicators(text)
     }
 
+    /// Test seam for the structural template-interpolation resolver. Resolves a
+    /// `` `${a}${b}` `` / `` `${"lit"}` `` template RHS against the given
+    /// `(name, value)` variable bindings, returning the concatenated literal —
+    /// or `None` if any interpolation is an unresolved reference (so a partial
+    /// candidate is never emitted). Lets a gap test pin the exact reassembly.
+    pub fn resolve_template_reference_for_test(
+        line: &str,
+        vars: &[(&str, &str)],
+    ) -> Option<String> {
+        let map: std::collections::HashMap<String, String> = vars
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        crate::multiline::resolve_template_reference(line, &map)
+    }
+
     /// Test seam for the fragment-name prefix extractor: strips `_`/`-`
     /// separators and `part` segments, lowercases, and trims a trailing numeric
     /// run so split-credential fragment names collapse to a shared base prefix.
