@@ -56,7 +56,7 @@ pub enum JwtAnomaly {
     /// rare and frequently indicate fake / handcrafted tokens.
     UnknownAlg(String),
     /// `typ` present but not in the standard set (`JWT`, `at+jwt`, `id+jwt`,
-    /// `dpop+jwt`).
+    /// `dpop+jwt`, `logout+jwt`).
     NonStandardTyp(String),
     /// Token already expired.
     Expired,
@@ -106,7 +106,11 @@ pub(crate) fn anomalies_to_metadata(analysis: &JwtAnalysis) -> Option<BTreeMap<S
 /// `HashMap<String, String>` metadata can absorb them directly.
 pub fn finding_metadata(credential: &str) -> Option<std::collections::HashMap<String, String>> {
     let analysis = analyze(credential)?;
-    let mut meta = std::collections::HashMap::new();
+    // At most eight keys: jwt.alg + up to four claim keys (iss/sub/aud/exp) +
+    // up to three anomaly keys (one alg anomaly, non_standard_typ, expired).
+    // Reserve up front so this per-finding map never rehashes. Byte-identical
+    // output (capacity does not affect HashMap contents or equality).
+    let mut meta = std::collections::HashMap::with_capacity(8);
 
     // The algorithm is the primary structural evidence and is always present
     // (`analyze` substitutes `<missing>` when the header omits it), so surface
