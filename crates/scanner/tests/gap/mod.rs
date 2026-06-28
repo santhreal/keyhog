@@ -23,6 +23,7 @@ pub mod detector_precision_decoys;
 pub mod detector_recall_prefixes;
 pub mod docs_megakernel_env_claim_matches_engine;
 pub mod engine_backend_parity;
+pub mod entropy_authorization_scheme_ci;
 pub mod entropy_keyword_only_requires_keyword_line;
 pub mod entropy_keywords_inline_tests_in_src;
 pub mod file_gate_matrix_scanner_adversarial_unmarked;

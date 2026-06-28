@@ -415,16 +415,23 @@ fn clean_candidate_value(raw: &str) -> &str {
     trimmed[..end].trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == ';' || c == ',')
 }
 
-fn authorization_header_value(line: &str) -> Option<&str> {
+pub(crate) fn authorization_header_value(line: &str) -> Option<&str> {
     let (name, rhs) = line.trim().split_once(':')?;
     if !name.trim().eq_ignore_ascii_case("authorization") {
         return None;
     }
     let rhs = rhs.trim();
-    let lower = rhs.to_ascii_lowercase();
-    let token = if lower.starts_with("bearer ") {
+    // Match the scheme case-insensitively against the raw bytes instead of
+    // allocating a full lowercase copy of the header value per line (Law 7:
+    // authorization_header_value runs in the per-line entropy keyword scan).
+    // Byte-identical: the schemes are ASCII, and the returned token is sliced
+    // from `rhs` (not the lowercased copy), so `lower.starts_with("bearer ")`
+    // holds iff the raw bytes start with `bearer ` ignoring ASCII case. The 7/6
+    // byte offsets are char boundaries because the matched prefix is all ASCII.
+    let bytes = rhs.as_bytes();
+    let token = if crate::ascii_ci::starts_with_ignore_ascii_case(bytes, b"bearer ") {
         &rhs[7..]
-    } else if lower.starts_with("basic ") {
+    } else if crate::ascii_ci::starts_with_ignore_ascii_case(bytes, b"basic ") {
         &rhs[6..]
     } else {
         return None;

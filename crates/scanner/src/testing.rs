@@ -1268,6 +1268,13 @@ pub mod entropy_keywords {
         crate::suppression::shape::is_dash_segmented_alnum_decoy(value)
     }
 
+    /// The token extracted from an `Authorization: Bearer|Basic <token>` line,
+    /// or `None` for a non-authorization header / unknown scheme. Exposed so the
+    /// zero-alloc case-insensitive scheme match has a direct regression.
+    pub fn authorization_header_value(line: &str) -> Option<String> {
+        crate::entropy::keywords::authorization_header_value(line).map(str::to_string)
+    }
+
     #[cfg(test)]
     pub(crate) fn is_candidate_plausible(value: &str, placeholder_keywords: &[String]) -> bool {
         crate::entropy::plausibility::is_candidate_plausible(
