@@ -111,7 +111,7 @@ pub(super) fn resolve_line_number_options(text: &str, needles: &[&str]) -> Vec<O
         }
     };
 
-    let line_starts = build_line_starts(text);
+    let line_starts = crate::compute_line_offsets(text);
     let mut found = vec![false; patterns.len()];
     let mut remaining = patterns.len();
     for mat in ac.find_overlapping_iter(text) {
@@ -168,16 +168,6 @@ pub(super) fn finalize_pending_pairs(
         });
     }
     pairs
-}
-
-fn build_line_starts(text: &str) -> Vec<usize> {
-    let bytes = text.as_bytes();
-    let mut starts = Vec::with_capacity(bytes.len() / 40 + 1);
-    starts.push(0);
-    for pos in memchr::memchr_iter(b'\n', bytes) {
-        starts.push(pos + 1);
-    }
-    starts
 }
 
 fn line_number_for_offset(line_starts: &[usize], offset: usize) -> usize {

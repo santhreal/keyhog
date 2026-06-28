@@ -29,7 +29,7 @@ fn structured_json_line_lookup_batched() {
     assert!(
         line.contains("AhoCorasick::new(patterns.iter().copied())")
             && line.contains("find_overlapping_iter(text)")
-            && line.contains("build_line_starts(text)"),
-        "structured line resolver must use one multi-pattern pass plus one line-start index"
+            && line.contains("compute_line_offsets(text)"),
+        "structured line resolver must use one multi-pattern pass plus one line-start index (shared crate::compute_line_offsets builder)"
     );
 }
