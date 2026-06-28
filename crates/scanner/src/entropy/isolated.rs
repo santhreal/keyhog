@@ -15,8 +15,14 @@ pub(crate) fn has_isolated_bare_secret_candidate(
     entropy_threshold: f64,
     placeholder_keywords: &[String],
 ) -> bool {
-    let lines: Vec<&str> = text.lines().collect();
-    has_isolated_bare_secret_candidate_with_lines(&lines, entropy_threshold, placeholder_keywords)
+    // Stream `text.lines()` straight into `.any()` instead of collecting a
+    // `Vec<&str>` first (Law 7: this runs twice per coalesced chunk in
+    // scan_coalesced.rs — the temporary line vector was a pure per-call
+    // allocation). `text.lines()` yields exactly the same `&str` sequence the
+    // collected slice did, so this is byte-for-byte equivalent.
+    let threshold = isolated_bare_entropy_threshold(entropy_threshold);
+    text.lines()
+        .any(|line| line_has_isolated_bare_secret_candidate(line, threshold, placeholder_keywords))
 }
 
 #[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
@@ -26,17 +32,28 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_lines(
     placeholder_keywords: &[String],
 ) -> bool {
     let threshold = isolated_bare_entropy_threshold(entropy_threshold);
-    lines.iter().any(|line| {
-        if is_likely_innocuous_line(line) {
-            return false;
-        }
-        let mut found = false;
-        visit_isolated_bare_candidates(line, KEYWORD_FREE_ISOLATED_MIN_LEN, |candidate, _| {
-            found |=
-                isolated_bare_secret_entropy(candidate, threshold, placeholder_keywords).is_some();
-        });
-        found
-    })
+    lines
+        .iter()
+        .any(|line| line_has_isolated_bare_secret_candidate(line, threshold, placeholder_keywords))
+}
+
+/// Per-line predicate shared by the `&str` and `&[&str]` entry points so the
+/// innocuous-line skip + candidate-visit logic has one definition. `threshold`
+/// is already resolved by [`isolated_bare_entropy_threshold`] at the caller.
+#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
+fn line_has_isolated_bare_secret_candidate(
+    line: &str,
+    threshold: f64,
+    placeholder_keywords: &[String],
+) -> bool {
+    if is_likely_innocuous_line(line) {
+        return false;
+    }
+    let mut found = false;
+    visit_isolated_bare_candidates(line, KEYWORD_FREE_ISOLATED_MIN_LEN, |candidate, _| {
+        found |= isolated_bare_secret_entropy(candidate, threshold, placeholder_keywords).is_some();
+    });
+    found
 }
 
 fn isolated_bare_entropy_threshold(entropy_threshold: f64) -> f64 {
