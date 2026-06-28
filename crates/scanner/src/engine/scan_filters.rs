@@ -377,10 +377,16 @@ pub(super) fn compute_pattern_signals(
     preprocessed: &crate::types::ScannerPreprocessedText<'_>,
 ) -> (bool, bool) {
     let kw = entry.match_proves_keyword_nearby || {
+        // `text_differs` is invariant across keywords, so compute it ONCE rather
+        // than re-comparing the whole preprocessed buffer against `chunk.data`
+        // inside the `any` loop. On the passthrough common path the two buffers
+        // are the same bytes (a `Cow::Borrowed`), so the slice `!=` is an O(len)
+        // memcmp — doing it per keyword made the keyword-nearby probe
+        // O(keywords × len) for nothing.
+        let text_differs = preprocessed.text.as_bytes() != chunk.data.as_bytes();
         detector.keywords.iter().any(|keyword| {
-            chunk.data.contains(keyword.as_str())
-                || (preprocessed.text.as_bytes() != chunk.data.as_bytes()
-                    && preprocessed.text.contains(keyword.as_str()))
+            let needle = keyword.as_str();
+            chunk.data.contains(needle) || (text_differs && preprocessed.text.contains(needle))
         })
     };
     let sf = chunk
