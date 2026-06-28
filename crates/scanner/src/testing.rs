@@ -2547,6 +2547,13 @@ pub fn expand_homoglyphs_str(pattern: &str) -> String {
     crate::homoglyph::expand_homoglyphs(pattern)
 }
 
+/// Integration-test facade: build the prefix-superstring propagation table for a
+/// set of literal prefixes (entry `i` lists the indices whose prefix is a strict
+/// superstring of `prefixes[i]`). Plain `pub` for the out-of-crate tests/gap suite.
+pub fn build_propagation_table_for_test(prefixes: &[String]) -> Vec<Vec<usize>> {
+    crate::prefix_trie::build_propagation_table(prefixes)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg(test)]
 pub(crate) struct StructuredPair {

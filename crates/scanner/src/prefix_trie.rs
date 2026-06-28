@@ -58,8 +58,14 @@ fn collect_propagation(node: &TrieNode, propagation: &mut [Vec<usize>]) -> Vec<u
         subtree_indices.extend_from_slice(&child_subtree);
     }
 
-    for &idx in &node.pattern_indices {
-        propagation[idx] = descendant_indices.clone();
+    // Each pattern ending at this node gets the descendant superstrings. The
+    // last one moves `descendant_indices` (it is unused after this), so the
+    // common single-pattern-per-node trie does zero clones here.
+    if let Some((&last, rest)) = node.pattern_indices.split_last() {
+        for &idx in rest {
+            propagation[idx] = descendant_indices.clone();
+        }
+        propagation[last] = descendant_indices;
     }
 
     subtree_indices

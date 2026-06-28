@@ -51,6 +51,7 @@ pub mod json_scalar_literal_single_owner;
 pub mod profile_relaxed_ordering_single_reference;
 pub mod homoglyph_expand_exact_and_reserved;
 pub mod jwt_finding_metadata_reserve_and_typ_coherence;
+pub mod prefix_trie_propagation_move_on_last;
 pub mod entropy_keyword_only_requires_keyword_line;
 pub mod entropy_keywords_inline_tests_in_src;
 pub mod file_gate_matrix_scanner_adversarial_unmarked;

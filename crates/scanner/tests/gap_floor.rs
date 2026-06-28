@@ -80,6 +80,8 @@ mod profile_relaxed_ordering_single_reference;
 mod homoglyph_expand_exact_and_reserved;
 #[path = "gap/jwt_finding_metadata_reserve_and_typ_coherence.rs"]
 mod jwt_finding_metadata_reserve_and_typ_coherence;
+#[path = "gap/prefix_trie_propagation_move_on_last.rs"]
+mod prefix_trie_propagation_move_on_last;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]
