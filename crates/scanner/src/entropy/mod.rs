@@ -67,19 +67,34 @@ fn shannon_entropy_uncached(data: &[u8]) -> f64 {
     crate::entropy::fast::shannon_entropy_simd(data)
 }
 
+/// Number of DISTINCT byte values present in `data` (`0..=256`), via a single
+/// pass over a 256-entry presence table.
+///
+/// The shared primitive behind three byte-identical copies of this loop:
+/// [`normalized_entropy`]'s `log2(unique)` denominator, the confidence shape
+/// gate `confidence::penalties::char_diversity`, and the ML feature
+/// `ml_scorer::ml_features::unique_byte_count`. Both consumers live downstream
+/// of `entropy` (each already imports from it), so this is the natural home.
+pub(crate) fn unique_byte_count(data: &[u8]) -> usize {
+    let mut seen = [false; 256];
+    let mut count = 0usize;
+    for &byte in data {
+        let slot = &mut seen[byte as usize];
+        if !*slot {
+            *slot = true;
+            count += 1;
+        }
+    }
+    count
+}
+
 /// Shannon entropy rescaled to `0.0..=1.0` by dividing by `log2(unique_bytes)`.
 pub fn normalized_entropy(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
     }
 
-    let unique_chars = {
-        let mut seen = [false; 256];
-        for &byte in data {
-            seen[byte as usize] = true;
-        }
-        seen.iter().filter(|&&value| value).count()
-    };
+    let unique_chars = unique_byte_count(data);
 
     if unique_chars <= 1 {
         return 0.0;

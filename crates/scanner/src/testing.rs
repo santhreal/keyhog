@@ -184,6 +184,12 @@ pub mod confidence {
         crate::confidence::penalties::char_diversity(credential)
     }
 
+    /// Distinct-byte-count primitive shared by normalized_entropy /
+    /// char_diversity / the ML unique_byte_count feature (DEDUP'd to one impl).
+    pub fn unique_byte_count(data: &[u8]) -> usize {
+        crate::entropy::unique_byte_count(data)
+    }
+
     #[cfg(test)]
     pub(crate) fn max_repeat_run(credential: &str) -> f64 {
         crate::confidence::penalties::max_repeat_run(credential)

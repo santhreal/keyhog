@@ -66,16 +66,7 @@ pub(crate) fn char_diversity(credential: &str) -> f64 {
     if len == 0 {
         return 1.0;
     }
-    let mut seen = [false; 256];
-    let mut unique = 0usize;
-    for &byte in credential.as_bytes() {
-        let slot = &mut seen[byte as usize];
-        if !*slot {
-            *slot = true;
-            unique += 1;
-        }
-    }
-    unique as f64 / len as f64
+    crate::entropy::unique_byte_count(credential.as_bytes()) as f64 / len as f64
 }
 
 /// Length of the longest run of identical bytes in `credential`.

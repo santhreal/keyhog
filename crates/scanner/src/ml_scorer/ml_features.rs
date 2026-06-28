@@ -1,4 +1,5 @@
 use crate::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD};
+use crate::entropy::unique_byte_count;
 
 /// Feature vector dimensionality. Each feature captures one signal:
 /// 4 length features + 4 entropy features + 4 character class features +
@@ -375,19 +376,6 @@ fn has_assignment_operator(value: &str) -> bool {
         return true;
     }
     value.contains(": ")
-}
-
-fn unique_byte_count(bytes: &[u8]) -> usize {
-    let mut seen = [false; 256];
-    let mut count = 0usize;
-    for byte in bytes {
-        let slot = &mut seen[*byte as usize];
-        if !*slot {
-            *slot = true;
-            count += 1;
-        }
-    }
-    count
 }
 
 fn unique_bigram_stats(bytes: &[u8]) -> (usize, usize) {
