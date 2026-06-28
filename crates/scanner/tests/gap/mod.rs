@@ -33,6 +33,7 @@ pub mod phase2_ascii_fold_shared;
 pub mod trigger_bitmap_words_for_single_source;
 pub mod fragment_assignment_syntax_prefilter;
 pub mod suffix_gate_literals_contract;
+pub mod fragment_prefilter_single_source;
 pub mod entropy_keyword_only_requires_keyword_line;
 pub mod entropy_keywords_inline_tests_in_src;
 pub mod file_gate_matrix_scanner_adversarial_unmarked;

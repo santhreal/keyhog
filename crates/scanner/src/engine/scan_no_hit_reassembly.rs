@@ -13,13 +13,10 @@ impl CompiledScanner {
         if matches.is_empty() {
             return;
         }
-        let data = chunk.data.as_bytes();
-        let has_assignment =
-            memchr::memchr(b'=', data).is_some() || memchr::memchr(b':', data).is_some();
-        let has_quote = memchr::memchr(b'"', data).is_some()
-            || memchr::memchr(b'\'', data).is_some()
-            || memchr::memchr(b'`', data).is_some();
-        if !(has_assignment && has_quote) {
+        // Same assignment+quote prefilter as the in-chunk fragment scan — route
+        // it through the one shared predicate (which itself uses memchr2/memchr3,
+        // two SIMD passes) instead of re-open-coding five `memchr` calls here.
+        if !Self::has_fragment_assignment_syntax(chunk.data.as_bytes()) {
             return;
         }
 
