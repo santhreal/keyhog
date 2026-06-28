@@ -133,6 +133,7 @@ mod windowed_support;
 pub(crate) use backend_prepared::build_simd_scanner;
 pub(crate) use backend_prepared::code_lines_from_offsets;
 pub(crate) use backend_prepared::PreparedChunk;
+pub(crate) use scan_postprocess_suffix_gate::suffix_gate_literals;
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries;
 pub use gpu_artifacts::{

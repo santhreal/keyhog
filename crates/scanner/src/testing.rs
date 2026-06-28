@@ -632,6 +632,9 @@ pub fn trigger_bitmap_words_for_test(n_patterns: usize) -> usize {
 pub fn has_fragment_assignment_syntax_for_test(data: &[u8]) -> bool {
     crate::engine::CompiledScanner::has_fragment_assignment_syntax(data)
 }
+pub fn suffix_gate_literals_for_test(src: &str) -> Vec<String> {
+    crate::engine::suffix_gate_literals(src)
+}
 pub fn new_trigger_bitmap_for_test(n_patterns: usize) -> Vec<u64> {
     crate::engine::trigger_bitmap::new_trigger_bitmap(n_patterns)
 }

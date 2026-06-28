@@ -42,6 +42,8 @@ mod phase2_ascii_fold_shared;
 mod trigger_bitmap_words_for_single_source;
 #[path = "gap/fragment_assignment_syntax_prefilter.rs"]
 mod fragment_assignment_syntax_prefilter;
+#[path = "gap/suffix_gate_literals_contract.rs"]
+mod suffix_gate_literals_contract;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]

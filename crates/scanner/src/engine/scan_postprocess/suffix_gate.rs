@@ -18,7 +18,7 @@ use crate::types::*;
 /// the ASCII-case-insensitive gate AC) so the suffix doesn't case-explode.
 /// `None`/empty unless the suffix is a finite set of <=4 literals each >= 6
 /// bytes (selective enough to be worth gating); lowercased for the caseless AC.
-fn suffix_gate_literals(src: &str) -> Vec<String> {
+pub(crate) fn suffix_gate_literals(src: &str) -> Vec<String> {
     use regex_syntax::hir::literal::{ExtractKind, Extractor};
     const MIN_LEN: usize = 6;
     const MAX_LITS: usize = 4;
@@ -71,7 +71,11 @@ pub(crate) fn build_confirmed_suffix_gate(
         let lits = src_cache
             .entry(src)
             .or_insert_with(|| suffix_gate_literals(src));
-        for lit in lits.clone() {
+        // Iterate the cached literals by reference; the HashMap/Vec below still
+        // clone each `String` they OWN, but cloning the whole `Vec<String>` per
+        // pattern just to loop over it was pure waste (~one deep Vec clone per
+        // ac_map entry at build).
+        for lit in lits.iter() {
             let id = *literal_id.entry(lit.clone()).or_insert_with(|| {
                 literals.push(lit.clone());
                 literals.len() - 1
