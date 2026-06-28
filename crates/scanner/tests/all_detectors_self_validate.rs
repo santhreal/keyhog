@@ -209,23 +209,36 @@ fn every_detector_has_metadata_and_patterns() {
 /// --write` to auto-generate stubs for the simple-shape detectors.
 #[test]
 fn detector_contract_coverage_meets_floor() {
-    let detectors_on_disk = detector_ids_on_disk();
+    // Compare detector INTERNAL IDS (the runtime-canonical identifier the
+    // scanner, findings, SARIF rule ids, and the contracts_runner all key on)
+    // to the contract stems - NOT filenames. 10 detectors carry a filename
+    // that drifts from their internal id (e.g. file `data-gov-api.toml` with
+    // `id = "data-gov-api-key"`, file `npm-token.toml` with
+    // `id = "npm-access-token"`); the contract is correctly named by the id,
+    // so the old filename-based comparison falsely reported those 10 as
+    // uncovered (892/902) when their by-id contract exists. By id, coverage is
+    // exact.
+    let detector_ids: BTreeSet<String> = keyhog_core::load_detectors(&detector_dir())
+        .expect("load")
+        .into_iter()
+        .map(|d| d.id.to_string())
+        .collect();
     let contracts = contract_ids_on_disk();
-    let covered = detectors_on_disk
-        .intersection(&contracts)
-        .collect::<Vec<_>>()
-        .len();
-    let total = detectors_on_disk.len();
+    let covered = detector_ids.intersection(&contracts).count();
+    let total = detector_ids.len();
     let ratio = covered as f64 / total.max(1) as f64;
-    // Floor: 38% (current ~346/899). Raising this floor is a separate
-    // patch - adding a detector without raising the floor lets recall
-    // regressions slip in; raising the floor without first writing
-    // contracts breaks CI.
-    let floor = 0.38;
+    // Floor 1.0: every detector id MUST have a contract under
+    // tests/contracts/<id>.toml. This was a stale, toothless 0.38 (it predated
+    // the contract backfill); a regression could silently drop hundreds of
+    // contracts and stay green. Now adding a detector without a contract -
+    // or renaming a detector id without renaming its contract - fails closed.
+    let floor = 1.0;
+    let missing: Vec<&String> = detector_ids.difference(&contracts).collect();
     assert!(
         ratio >= floor,
-        "detector → contract coverage {covered}/{total} = {ratio:.3} below floor {floor:.3}; \
-         add contracts under tests/contracts/ for the missing detectors"
+        "detector(id) → contract coverage {covered}/{total} = {ratio:.4} below floor {floor:.4}; \
+         {} detector ids lack a tests/contracts/<id>.toml: {missing:?}",
+        missing.len()
     );
 }
 
