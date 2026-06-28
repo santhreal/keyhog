@@ -2,11 +2,36 @@
 
 use keyhog_scanner::testing::shape::{
     generic_base64_candidate_is_ambiguous, looks_like_credential_colliding_punctuation,
-    looks_like_filename_reference, looks_like_generic_random_base64_blob_decoy,
-    looks_like_kebab_config_identifier, looks_like_punctuation_decorated_identifier,
-    looks_like_syntactic_punctuation_marker, looks_like_train_case_prose_identifier,
-    public_noncredential_shape_full, public_noncredential_shape_weak_anchor,
+    looks_like_dotted_source_identifier, looks_like_filename_reference,
+    looks_like_generic_random_base64_blob_decoy, looks_like_kebab_config_identifier,
+    looks_like_punctuation_decorated_identifier, looks_like_syntactic_punctuation_marker,
+    looks_like_train_case_prose_identifier, public_noncredential_shape_full,
+    public_noncredential_shape_weak_anchor,
 };
+
+#[test]
+fn dotted_source_identifier_stays_case_insensitive_after_zero_alloc_rewrite() {
+    // Receiver match (now eq_ignore_ascii_case, no to_ascii_lowercase alloc):
+    // a known source receiver in ANY case suppresses.
+    assert!(looks_like_dotted_source_identifier("this.apiToken"));
+    assert!(looks_like_dotted_source_identifier("THIS.apiToken"));
+    assert!(looks_like_dotted_source_identifier("Config.serviceKey"));
+    assert!(looks_like_dotted_source_identifier("PROCESS.env"));
+
+    // Non-receiver path: needs BOTH a camelCase segment AND a credential word
+    // (now via ci_find, case-insensitive) — uppercase keyword still matches.
+    assert!(looks_like_dotted_source_identifier("svc.getSecretKey"));
+    assert!(looks_like_dotted_source_identifier("auth.parseTOKENvalue"));
+
+    // Negatives unchanged: a 6th segment is out of the 2..=5 range; a dotted
+    // value with a camel segment but NO credential word is not suppressed; an
+    // empty segment is rejected.
+    assert!(!looks_like_dotted_source_identifier("a.b.c.d.e.f"));
+    assert!(!looks_like_dotted_source_identifier("foo.getUserName"));
+    assert!(!looks_like_dotted_source_identifier("foo..bar"));
+    // A real dotted token with non-identifier bytes is not a source identifier.
+    assert!(!looks_like_dotted_source_identifier("sk-live.AbC+9/dEf"));
+}
 
 #[test]
 fn tier_a_markers_are_syntactic_only() {

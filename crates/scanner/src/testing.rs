@@ -1844,6 +1844,11 @@ pub mod shape {
     }
 
     #[cfg(test)]
+    pub(crate) fn looks_like_dotted_source_identifier(credential: &str) -> bool {
+        crate::suppression::shape::looks_like_dotted_source_identifier(credential)
+    }
+
+    #[cfg(test)]
     pub(crate) fn looks_like_generic_random_base64_blob_decoy(
         credential: &str,
         entropy: f64,

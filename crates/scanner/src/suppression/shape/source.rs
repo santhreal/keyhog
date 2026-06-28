@@ -287,11 +287,15 @@ pub(crate) fn looks_like_dotted_source_identifier(value: &str) -> bool {
         return false;
     }
 
-    let source_receiver = matches!(
-        segments[0].to_ascii_lowercase().as_str(),
-        "this" | "self" | "window" | "process" | "global" | "config" | "client" | "service"
-    );
-    if source_receiver {
+    // Receiver match without allocating a lowercased copy of the first segment
+    // (Law 7: this runs per-candidate in a suppression predicate).
+    const SOURCE_RECEIVERS: &[&str] = &[
+        "this", "self", "window", "process", "global", "config", "client", "service",
+    ];
+    if SOURCE_RECEIVERS
+        .iter()
+        .any(|recv| segments[0].eq_ignore_ascii_case(recv))
+    {
         return true;
     }
 
@@ -301,11 +305,22 @@ pub(crate) fn looks_like_dotted_source_identifier(value: &str) -> bool {
             .windows(2)
             .any(|pair| pair[0].is_ascii_lowercase() && pair[1].is_ascii_uppercase())
     });
+    // Case-insensitive substring search instead of a per-segment
+    // `to_ascii_lowercase()` allocation (Law 7); `ci_find` needles are
+    // pre-lowered. Behaviour is identical to the prior lower-then-contains form.
+    const CREDENTIAL_WORDS: &[&[u8]] = &[
+        b"token",
+        b"secret",
+        b"key",
+        b"auth",
+        b"password",
+        b"credential",
+    ];
     let has_credential_word = segments.iter().any(|segment| {
-        let lower = segment.to_ascii_lowercase();
-        ["token", "secret", "key", "auth", "password", "credential"]
+        let seg = segment.as_bytes();
+        CREDENTIAL_WORDS
             .iter()
-            .any(|needle| lower.contains(needle))
+            .any(|needle| crate::ascii_ci::ci_find(seg, needle))
     });
     has_camel_segment && has_credential_word
 }
