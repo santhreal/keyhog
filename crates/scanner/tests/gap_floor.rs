@@ -32,6 +32,8 @@ mod entropy_xml_close_tag_search;
 mod entropy_canonical_lift_keyword_material;
 #[path = "gap/entropy_unique_byte_count_dedup.rs"]
 mod entropy_unique_byte_count_dedup;
+#[path = "gap/ml_score_cache_memoized.rs"]
+mod ml_score_cache_memoized;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]

@@ -27,6 +27,7 @@ pub mod entropy_authorization_scheme_ci;
 pub mod entropy_xml_close_tag_search;
 pub mod entropy_canonical_lift_keyword_material;
 pub mod entropy_unique_byte_count_dedup;
+pub mod ml_score_cache_memoized;
 pub mod entropy_keyword_only_requires_keyword_line;
 pub mod entropy_keywords_inline_tests_in_src;
 pub mod file_gate_matrix_scanner_adversarial_unmarked;

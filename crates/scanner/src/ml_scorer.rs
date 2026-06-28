@@ -94,27 +94,23 @@ pub(crate) fn score_with_config(
         h.finish()
     };
 
-    if let Some(score) = SCORE_CACHE.with(|cache| cache.borrow().get(&cache_key).copied()) {
-        return score;
-    }
-
-    let features = compute_features_with_config(
-        text,
-        context,
-        known_prefixes,
-        secret_keywords,
-        test_keywords,
-        placeholder_keywords,
-    );
-    let score = forward_pass(&features) as f64;
-    SCORE_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        if cache.len() >= 256 {
-            cache.clear();
-        }
-        cache.insert(cache_key, score);
-    });
-    score
+    // Shared bounded-cache idiom (`util_hash::memoize_by_hash`) instead of a
+    // hand-rolled get / compute / clear-at-cap / insert. This is the migration
+    // util_hash.rs's doc already names (it lists `ml_scorer::score_with_config`
+    // as a memoize_by_hash consumer); the cap stays 256 (one file's matches),
+    // and on a miss the same features→forward_pass→f64 is computed, so the
+    // observable score is byte-identical to the hand-rolled cache.
+    crate::util_hash::memoize_by_hash(&SCORE_CACHE, cache_key, 256, || {
+        let features = compute_features_with_config(
+            text,
+            context,
+            known_prefixes,
+            secret_keywords,
+            test_keywords,
+            placeholder_keywords,
+        );
+        forward_pass(&features) as f64
+    })
 }
 
 /// Score pending ML matches on the CPU using the same candidate/context fields
