@@ -54,6 +54,22 @@ pub(super) fn lazy_decoded_prefix<'a>(
     })
 }
 
+/// Combine a UTF-16 surrogate PAIR into its astral-plane scalar `char`.
+///
+/// `high` must be a high surrogate (`0xD800..=0xDBFF`) and `low` a low surrogate
+/// (`0xDC00..=0xDFFF`); the caller validates those ranges. Returns `None` only
+/// if the combined scalar is not a valid `char` (unreachable for in-range
+/// surrogates, but checked rather than unwrapped).
+///
+/// Shared by the `json` and `unicode_escape` decoders so the surrogate bit-math
+/// (the part most prone to silent drift) has exactly ONE definition. The
+/// per-decoder code still reads `\u` + the low code unit itself, because the two
+/// callers walk different iterators (`Chars` vs `CharIndices`).
+pub(crate) fn surrogate_pair_to_char(high: u32, low: u32) -> Option<char> {
+    let scalar = 0x10000 + (((high - 0xD800) << 10) | (low - 0xDC00));
+    char::from_u32(scalar)
+}
+
 #[allow(clippy::result_unit_err)]
 pub(crate) fn hex_val(byte: u8) -> Result<u8, ()> {
     match byte {

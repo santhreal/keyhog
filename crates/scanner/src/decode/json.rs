@@ -149,8 +149,7 @@ fn json_escape_codepoint(
         if !(0xDC00..=0xDFFF).contains(&low) {
             return Err(());
         }
-        let scalar = 0x10000 + (((code - 0xD800) << 10) | (low - 0xDC00));
-        return char::from_u32(scalar).ok_or(());
+        return super::util::surrogate_pair_to_char(code, low).ok_or(());
     }
 
     if (0xDC00..=0xDFFF).contains(&code) {

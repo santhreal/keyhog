@@ -25,8 +25,30 @@ pub(super) fn unicode_escape_decode(input: &str) -> Result<String, ()> {
         match chars.next().map(|(_, escaped)| escaped) {
             Some('u') => {
                 let code = take_hex_digits_indexed(&mut chars, 4)?;
-                lazy_decoded_prefix(&mut decoded_text, input, idx)
-                    .push(char::from_u32(code).ok_or(())?);
+                let resolved = if (0xD800..=0xDBFF).contains(&code) {
+                    // High surrogate: a `\uXXXX` code unit in this range is only
+                    // half of an astral-plane character (e.g. an emoji written
+                    // `😀` in a JS/source string). It MUST be followed
+                    // by `\u` + a low surrogate, which we combine into the real
+                    // scalar. Previously this returned Err (char::from_u32 on a
+                    // lone surrogate is None), so surrogate-encoded payloads lost
+                    // their decode-through entirely. Mirrors json::json_escape_codepoint.
+                    match (chars.next(), chars.next()) {
+                        (Some((_, '\\')), Some((_, 'u'))) => {}
+                        _ => return Err(()),
+                    }
+                    let low = take_hex_digits_indexed(&mut chars, 4)?;
+                    if !(0xDC00..=0xDFFF).contains(&low) {
+                        return Err(());
+                    }
+                    super::util::surrogate_pair_to_char(code, low).ok_or(())?
+                } else if (0xDC00..=0xDFFF).contains(&code) {
+                    // A lone low surrogate is never valid on its own.
+                    return Err(());
+                } else {
+                    char::from_u32(code).ok_or(())?
+                };
+                lazy_decoded_prefix(&mut decoded_text, input, idx).push(resolved);
             }
             Some('x') => {
                 let code = take_hex_digits_indexed(&mut chars, 2)?;
