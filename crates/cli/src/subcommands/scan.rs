@@ -46,6 +46,7 @@ use std::process::ExitCode;
 
 pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
     crate::runtime_preflight::validate_scan_runtime_config()?;
+    reject_multiple_scan_roots(&args)?;
 
     // On Windows, the daemon route is never available (the `crate::daemon`
     // module is cfg(unix)). If the user explicitly passed `--daemon`,
@@ -112,6 +113,46 @@ enum DaemonRoute {
     Opportunistic,
     Forbidden,
     Rejected(String),
+}
+
+/// Fail closed with actionable single-root guidance when the user passes more
+/// than one positional scan path (`keyhog scan a/ b/ c/`).
+///
+/// keyhog scans a single root per invocation (the source/walker, the
+/// allowlist self-protection boundary, and the scan-metadata header are all
+/// single-root). clap captures the surplus positionals into
+/// [`ScanArgs::extra_paths`] — a hidden catch-all — so that instead of clap's
+/// bare `unexpected argument 'b/' found` the operator gets a message that
+/// names the offending paths AND the three real workarounds. No scan runs.
+fn reject_multiple_scan_roots(args: &ScanArgs) -> Result<()> {
+    if args.extra_paths.is_empty() {
+        return Ok(());
+    }
+    let first = args
+        .input
+        .as_deref()
+        .or(args.path.as_deref())
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| ".".to_string());
+    let extras: Vec<String> = args
+        .extra_paths
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect();
+    bail!(
+        "keyhog scans one root path per invocation, but {n} extra path{plural} \
+         {was} given after `{first}`: {extra_list}.\n\
+         To cover several locations in a single run:\n  \
+         • point keyhog at a common parent directory — it walks recursively \
+         (e.g. `keyhog scan <parent>`), and narrow with `--exclude-paths <glob>` if needed; or\n  \
+         • run keyhog once per path (`keyhog scan {first}`, then `keyhog scan {one_extra}`).",
+        n = extras.len(),
+        plural = if extras.len() == 1 { "" } else { "s" },
+        was = if extras.len() == 1 { "was" } else { "were" },
+        first = first,
+        extra_list = extras.join(", "),
+        one_extra = extras[0],
+    );
 }
 
 /// The routing-relevant policy AFTER merging `.keyhog.toml`, so the daemon
@@ -757,5 +798,90 @@ fn load_daemon_rule_suppressor(args: &ScanArgs) -> Result<RuleSuppressor> {
              with silently ignored suppression rules.",
             toml_path.display()
         ),
+    }
+}
+
+#[cfg(test)]
+mod multi_root_guard_tests {
+    use super::*;
+    use crate::args::ScanArgs;
+    use clap::Parser;
+
+    /// `keyhog scan a/ b/` must split into one root + the rest as extras, so the
+    /// hidden catch-all actually captures the surplus instead of clap erroring.
+    #[test]
+    fn extra_positional_paths_are_captured_not_rejected_by_clap() {
+        let args = ScanArgs::try_parse_from(["scan", "a", "b", "c"])
+            .expect("clap must accept multiple positionals via the hidden catch-all");
+        assert_eq!(
+            args.input.as_deref().and_then(|p| p.to_str()),
+            Some("a"),
+            "the first positional is the scan root"
+        );
+        let extras: Vec<&str> = args
+            .extra_paths
+            .iter()
+            .filter_map(|p| p.to_str())
+            .collect();
+        assert_eq!(extras, vec!["b", "c"], "surplus positionals land in extra_paths");
+    }
+
+    /// The surplus is rejected by KEYHOG (not clap) with actionable guidance that
+    /// names the offending paths and every documented workaround.
+    #[test]
+    fn multiple_roots_fail_closed_with_actionable_message() {
+        let args = ScanArgs::try_parse_from(["scan", "src", "tests", "config"]).unwrap();
+        let err = reject_multiple_scan_roots(&args)
+            .expect_err("multiple roots must fail closed");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("keyhog scans one root path per invocation"),
+            "states the single-root model: {msg}"
+        );
+        assert!(msg.contains("`src`"), "names the first root: {msg}");
+        assert!(
+            msg.contains("tests") && msg.contains("config"),
+            "names the surplus roots: {msg}"
+        );
+        assert!(
+            msg.contains("common parent directory"),
+            "offers the common-parent workaround: {msg}"
+        );
+        assert!(
+            msg.contains("--exclude-paths"),
+            "offers the narrow-with-exclude workaround: {msg}"
+        );
+        assert!(
+            msg.contains("once per path"),
+            "offers the per-path workaround: {msg}"
+        );
+        // 2 extras => plural agreement.
+        assert!(msg.contains("2 extra paths were given"), "plural agreement: {msg}");
+    }
+
+    /// Singular agreement when exactly one surplus path is present.
+    #[test]
+    fn single_surplus_path_uses_singular_agreement() {
+        let args = ScanArgs::try_parse_from(["scan", "a", "b"]).unwrap();
+        let err = reject_multiple_scan_roots(&args).expect_err("two roots must fail closed");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("1 extra path was given"), "singular agreement: {msg}");
+    }
+
+    /// The common case — exactly one root — passes the guard untouched.
+    #[test]
+    fn single_root_is_accepted() {
+        let args = ScanArgs::try_parse_from(["scan", "only/one"]).unwrap();
+        assert!(args.extra_paths.is_empty());
+        reject_multiple_scan_roots(&args).expect("a single root must pass the guard");
+    }
+
+    /// No positional path (directory-less invocation, e.g. defaults to `.`) also
+    /// passes the guard.
+    #[test]
+    fn no_path_is_accepted() {
+        let args = ScanArgs::try_parse_from(["scan"]).unwrap();
+        assert!(args.extra_paths.is_empty());
+        reject_multiple_scan_roots(&args).expect("no path must pass the guard");
     }
 }

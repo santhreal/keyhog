@@ -92,6 +92,17 @@ pub struct ScanArgs {
     #[arg(value_name = "PATH", conflicts_with = "path")]
     pub input: Option<PathBuf>,
 
+    /// Catch-all for positional paths BEYOND the first. keyhog scans a single
+    /// root per invocation; clap would otherwise reject `keyhog scan a/ b/`
+    /// with a bare `unexpected argument 'b/'`. Capturing the extras here lets
+    /// [`crate::subcommands::scan::reject_multiple_scan_roots`] emit actionable
+    /// single-root guidance (common-parent / per-path / `--exclude-paths`)
+    /// instead. `hide = true` keeps the documented surface at `[PATH]` and out
+    /// of `--help`; it carries no `long`, so the CLI-08 long-flag snapshot gate
+    /// never sees it. Real multi-root support is tracked separately.
+    #[arg(value_name = "EXTRA_PATH", hide = true, conflicts_with = "path")]
+    pub extra_paths: Vec<PathBuf>,
+
     /// Scan a directory or file
     #[arg(short, long)]
     pub path: Option<PathBuf>,
