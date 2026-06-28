@@ -22,6 +22,8 @@ mod confidence_floor_policy;
 mod confidence_penalties_inline_tests_in_src;
 #[path = "gap/context_false_positive_inline_tests_in_src.rs"]
 mod context_false_positive_inline_tests_in_src;
+#[path = "gap/context_example_suffix_ascii_ci.rs"]
+mod context_example_suffix_ascii_ci;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]

@@ -13,10 +13,18 @@
 /// No hardcoded credential lists - every suppression is based on a structural
 /// property that generalizes to all credentials of that shape.
 pub(crate) fn is_known_example_credential(credential: &str) -> bool {
-    let upper = credential.to_uppercase();
-
-    // EXAMPLE/EXAMPLEKEY is a universal documentation convention.
-    if upper.ends_with("EXAMPLE") || upper.ends_with("EXAMPLEKEY") {
+    // EXAMPLE/EXAMPLEKEY is a universal documentation convention. Compare the
+    // ASCII suffix case-insensitively against the raw bytes instead of
+    // allocating a full Unicode `to_uppercase()` copy per candidate (Law 7:
+    // this runs in five per-candidate suppression sites — adjudicate generic/
+    // entropy/mod + suppression::decision x2). The result is byte-identical:
+    // the suffixes are pure ASCII, and no non-ASCII char's Unicode uppercase is
+    // a bare ASCII letter, so `to_uppercase().ends_with("EXAMPLE")` holds iff
+    // the raw bytes end with `example` ignoring ASCII case.
+    let bytes = credential.as_bytes();
+    if crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b"EXAMPLE")
+        || crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b"EXAMPLEKEY")
+    {
         return true;
     }
 

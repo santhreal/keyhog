@@ -9,6 +9,7 @@ pub mod confidence_calibration_uncalibrated_passthrough;
 pub mod confidence_floor_policy;
 pub mod confidence_penalties_inline_tests_in_src;
 pub mod context_false_positive_inline_tests_in_src;
+pub mod context_example_suffix_ascii_ci;
 pub mod context_inference_cfg_test_string_breaks_gate;
 pub mod context_sequential_placeholder_strips_prefix;
 pub mod context_tokio_async_fn_test_body_is_test_code;
