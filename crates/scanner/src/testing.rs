@@ -1164,6 +1164,15 @@ pub(crate) fn looks_like_program_identifier(value: &str) -> bool {
     crate::suppression::shape::looks_like_program_identifier(value)
 }
 
+/// The single shared prose-whitespace predicate behind BOTH the direct
+/// `prose_whitespace` suppression gate and the base64-decoded
+/// `decoded_prose_whitespace` twin (DEDUP, µ-dcn-12). Exposed so a test can pin
+/// the one threshold both paths now share.
+#[cfg(test)]
+pub(crate) fn looks_like_prose_whitespace_run(value: &str) -> bool {
+    crate::suppression::decision::looks_like_prose_whitespace_run(value)
+}
+
 /// Internal entropy shape-classification predicates, exposed for the
 /// canonical-shape unit tests migrated out of `src/entropy/scanner.rs`
 /// (KH-GAP-004). `credential_keyword_context` builds the production

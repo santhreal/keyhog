@@ -13,6 +13,7 @@ use keyhog_scanner::testing::shape::{
 };
 // `looks_like_standard_base64_blob` is exposed directly in `testing`.
 use keyhog_scanner::testing::looks_like_standard_base64_blob;
+use keyhog_scanner::testing::looks_like_prose_whitespace_run;
 
 // ---------------------------------------------------------------------------
 // looks_like_syntactic_punctuation_marker (Tier A)
@@ -192,4 +193,41 @@ fn standard_base64_blob_detected() {
 fn short_token_is_not_base64_blob() {
     // A short service token is not a long uniform base64 blob.
     assert!(!looks_like_standard_base64_blob("ghp_short"));
+}
+
+// ---------------------------------------------------------------------------
+// looks_like_prose_whitespace_run — the ONE predicate now shared by the direct
+// `prose_whitespace` gate and the base64-decoded `decoded_prose_whitespace`
+// twin (DEDUP, µ-dcn-12). Pin the exact >30-byte / ≥2-whitespace / lowercase-
+// word≥3 threshold so the two paths can never drift apart again.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn prose_whitespace_run_matches_multiword_english_prose() {
+    // >30 bytes, ≥2 spaces, a 3+ char all-lowercase word.
+    assert!(looks_like_prose_whitespace_run(
+        "Session opened with handle XYZ here"
+    ));
+    assert!(looks_like_prose_whitespace_run(
+        "TOKEN=the quick brown fox jumps over"
+    ));
+}
+
+#[test]
+fn prose_whitespace_run_rejects_credentials_and_boundaries() {
+    // No interior whitespace: an opaque token is never prose, however long.
+    assert!(!looks_like_prose_whitespace_run(
+        "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789AB"
+    ));
+    // Under the strict `> 30` floor: prose-shaped (≥2 spaces + lowercase words)
+    // but only 20 bytes, so the length gate alone rejects it.
+    assert!(!looks_like_prose_whitespace_run("the cat sat on a mat"));
+    // Only one whitespace char: needs ≥2.
+    assert!(!looks_like_prose_whitespace_run(
+        "oneword_thenonelongspace value"
+    ));
+    // ≥2 spaces but no 3+ char all-lowercase token (all UPPERCASE words).
+    assert!(!looks_like_prose_whitespace_run(
+        "AAAA BBBB CCCC DDDD EEEE FFFF GGGG"
+    ));
 }

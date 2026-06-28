@@ -18,6 +18,25 @@ fn suppress(reason: &'static str) -> Option<StageId> {
     Some(StageId::ShapeGate(reason))
 }
 
+/// True when `s` is multi-word English prose carrying an interior whitespace run
+/// — the dotenv/properties/log-line extractor sometimes captures an entire RHS
+/// like `Session opened with handle XYZ. See documentation.` as the credential.
+/// Cheap word-run sanity check: >30 bytes, ≥2 whitespace chars, and at least one
+/// 3+ char all-lowercase token between spaces — characteristic of prose, not a
+/// credential.
+///
+/// ONE definition shared by the direct gate (5e0) and the base64-decoded twin
+/// (`decoded_benign_text_reason`), which previously carried byte-identical copies
+/// of this predicate that could silently drift apart (DEDUP, µ-dcn-12). This is
+/// deliberately NOT the same as `shape::looks_like_english_prose` (that one has a
+/// 16-byte floor and an all-lowercase arm) — the two thresholds differ by design.
+pub(crate) fn looks_like_prose_whitespace_run(s: &str) -> bool {
+    s.len() > 30
+        && s.chars().filter(|c| c.is_whitespace()).count() >= 2
+        && s.split_whitespace()
+            .any(|tok| tok.len() >= 3 && tok.chars().all(|c| c.is_ascii_lowercase()))
+}
+
 pub(super) fn suppression_stage_inner(
     credential: &str,
     path: Option<&str>,
@@ -269,16 +288,8 @@ pub(super) fn suppression_stage_inner(
     //          prose with a high-entropy substring is never a
     //          real credential. SecretBench-medium 15k seed-0:
     //          68 FPs from lorem-with-high-entropy.
-    if credential.len() > 30 && credential.chars().filter(|c| c.is_whitespace()).count() >= 2 {
-        // Cheap English-word sanity check: at least one lowercase
-        // alphabetic run of length 3+ between whitespace tokens -
-        // characteristic of prose, not credentials.
-        let has_word_run = credential
-            .split_whitespace()
-            .any(|tok| tok.len() >= 3 && tok.chars().all(|c| c.is_ascii_lowercase()));
-        if has_word_run {
-            return suppress("prose_whitespace");
-        }
+    if looks_like_prose_whitespace_run(credential) {
+        return suppress("prose_whitespace");
     }
 
     // ── 5e1. AWS IAM resource ARNs (`arn:aws:iam::ACCT:role/...`,
@@ -487,7 +498,7 @@ pub(crate) fn decoded_benign_text_reason(credential: &str) -> Option<&'static st
     if decoded_looks_like_template_placeholder(decoded) {
         return Some("decoded_template_placeholder");
     }
-    if decoded_looks_like_prose(decoded) {
+    if looks_like_prose_whitespace_run(decoded) {
         return Some("decoded_prose_whitespace");
     }
     if crate::context::is_known_example_credential(decoded)
@@ -526,10 +537,3 @@ fn decoded_looks_like_template_placeholder(decoded: &str) -> bool {
     bracketed && decoded.len() <= 80
 }
 
-fn decoded_looks_like_prose(decoded: &str) -> bool {
-    decoded.len() > 30
-        && decoded.chars().filter(|c| c.is_whitespace()).count() >= 2
-        && decoded
-            .split_whitespace()
-            .any(|tok| tok.len() >= 3 && tok.chars().all(|c| c.is_ascii_lowercase()))
-}
