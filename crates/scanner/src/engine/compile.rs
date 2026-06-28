@@ -280,8 +280,19 @@ impl CompiledScanner {
         log_quality_warnings(&state.quality_warnings);
 
         let mut alphabet_targets = state.ac_literals.clone();
+        // Reserve the exact keyword total up front and clone each keyword
+        // straight in (`iter().cloned()`), instead of materializing a throwaway
+        // `Vec<String>` per phase-2 pattern via `keywords.clone()` and growing
+        // `alphabet_targets` by repeated reallocation (Law 7). Byte-identical:
+        // the same keyword strings land in the same order.
+        let extra_keyword_count: usize = state
+            .phase2_patterns
+            .iter()
+            .map(|(_, keywords)| keywords.len())
+            .sum();
+        alphabet_targets.reserve(extra_keyword_count);
         for (_, keywords) in &state.phase2_patterns {
-            alphabet_targets.extend(keywords.clone());
+            alphabet_targets.extend(keywords.iter().cloned());
         }
         let alphabet_screen = if alphabet_targets.is_empty() {
             None

@@ -39,6 +39,7 @@ pub mod windowed_triggered_slice_no_per_window_clone;
 pub mod csr_build_exact_capacity;
 pub mod backend_dispatch_cpu_path_single_owner;
 pub mod value_shaped_group_shared_heuristic;
+pub mod alphabet_targets_no_per_pattern_clone;
 pub mod entropy_keyword_only_requires_keyword_line;
 pub mod entropy_keywords_inline_tests_in_src;
 pub mod file_gate_matrix_scanner_adversarial_unmarked;

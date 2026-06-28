@@ -56,6 +56,8 @@ mod csr_build_exact_capacity;
 mod backend_dispatch_cpu_path_single_owner;
 #[path = "gap/value_shaped_group_shared_heuristic.rs"]
 mod value_shaped_group_shared_heuristic;
+#[path = "gap/alphabet_targets_no_per_pattern_clone.rs"]
+mod alphabet_targets_no_per_pattern_clone;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]
