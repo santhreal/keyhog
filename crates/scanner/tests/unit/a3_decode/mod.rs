@@ -5,6 +5,7 @@ mod base64_decode_rejects_oversized_input;
 mod base64_decode_standard_padding;
 mod base64_decode_urlsafe_nopad;
 mod caesar_rejects_prose_without_prefix;
+mod caesar_shape_predicate_boundary;
 mod caesar_round_trips_aws_shaped_token;
 mod caesar_skips_kernel_config_paths;
 mod caesar_skips_source_code_paths;

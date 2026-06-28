@@ -454,11 +454,22 @@ pub(crate) fn matched_caesar_shifts(candidate: &str) -> [bool; 26] {
 /// letters into a prefix (e.g. `BLJB`+25 -> `AKIA`), so it stays in the loop.
 pub(crate) fn candidate_shape_invariant(s: &str) -> bool {
     let bytes = s.as_bytes();
+    // Must contain at least one letter for any shift to do anything, AND the
+    // shift-invariant ">=1 digit + an 8+ alphanumeric run" shape that
+    // `looks_credential_shaped` also requires (the one gate it adds — a
+    // KNOWN_PREFIXES substring — is the only thing a shift can newly satisfy, so
+    // it stays out of this precondition).
+    bytes.iter().any(|b| b.is_ascii_alphabetic()) && has_digit_and_long_alnum_run(bytes)
+}
+
+/// `true` iff `bytes` contains at least one ASCII digit AND a contiguous run of
+/// at least [`MIN_ALNUM_RUN`] ASCII-alphanumeric bytes. This is the structural
+/// half shared verbatim by [`candidate_shape_invariant`] (evaluated once on the
+/// raw candidate) and [`looks_credential_shaped`] (evaluated per shift) — both
+/// are shift-invariant under `caesar_shift`, so factoring them here keeps the two
+/// callers from drifting on the digit/run thresholds.
+fn has_digit_and_long_alnum_run(bytes: &[u8]) -> bool {
     if !bytes.iter().any(|b| b.is_ascii_digit()) {
-        return false;
-    }
-    // Must also contain at least one letter for any shift to do anything.
-    if !bytes.iter().any(|b| b.is_ascii_alphabetic()) {
         return false;
     }
     let mut run = 0usize;
@@ -497,24 +508,7 @@ pub(crate) fn caesar_shift(input: &str, shift: u8) -> String {
 }
 
 pub(crate) fn looks_credential_shaped(s: &str) -> bool {
-    let bytes = s.as_bytes();
-    if !bytes.iter().any(|b| b.is_ascii_digit()) {
-        return false;
-    }
-    let mut run = 0usize;
-    let mut saw_long_run = false;
-    for &b in bytes {
-        if b.is_ascii_alphanumeric() {
-            run += 1;
-            if run >= MIN_ALNUM_RUN {
-                saw_long_run = true;
-                break;
-            }
-        } else {
-            run = 0;
-        }
-    }
-    if !saw_long_run {
+    if !has_digit_and_long_alnum_run(s.as_bytes()) {
         return false;
     }
     // Same rationale as `reverse::looks_reversible`: gate on a known
