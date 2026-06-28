@@ -242,6 +242,31 @@ fn detector_contract_coverage_meets_floor() {
     );
 }
 
+/// Every detector's filename stem must equal its internal `[detector] id`.
+/// The id is the runtime-canonical key (findings, SARIF rule ids, the site
+/// catalog, and tests/contracts/<id>.toml all key on it); a filename that
+/// drifts from the id (e.g. `npm-token.toml` carrying `id = "npm-access-token"`)
+/// is invisible to filename-based tooling and silently breaks the
+/// filename==id convention 892 detectors already follow. This gate makes the
+/// drift fail closed: the set of filename stems must equal the set of ids.
+#[test]
+fn every_detector_filename_matches_internal_id() {
+    let ids: BTreeSet<String> = keyhog_core::load_detectors(&detector_dir())
+        .expect("load")
+        .into_iter()
+        .map(|d| d.id.to_string())
+        .collect();
+    let stems = detector_ids_on_disk();
+    let id_without_file: Vec<&String> = ids.difference(&stems).collect();
+    let file_without_id: Vec<&String> = stems.difference(&ids).collect();
+    assert!(
+        id_without_file.is_empty() && file_without_id.is_empty(),
+        "detector filename↔internal-id drift:\n  ids with no matching <id>.toml: {id_without_file:?}\n  \
+         files whose stem is not a detector id: {file_without_id:?}\n  \
+         rename each file to match its `[detector] id`."
+    );
+}
+
 /// Smoke: a single bench-emitted shape per category must fire SOMETHING.
 /// This is the "engine produces findings" backstop - if a regression
 /// silently breaks the entire scanner, this test goes red.
