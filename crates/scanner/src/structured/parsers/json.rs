@@ -190,7 +190,7 @@ fn tfstate_instance_context(
     fallback_idx: usize,
     include_index: bool,
 ) -> String {
-    match instance.get("index_key").and_then(json_index_key_literal) {
+    match instance.get("index_key").and_then(json_scalar_literal) {
         Some(index_key) => format!("{base_context}[{index_key}]"),
         None if include_index => format!("{base_context}[{fallback_idx}]"),
         None => base_context.to_string(),
@@ -493,16 +493,11 @@ fn json_mapping_anchors(key: &str, value: &serde_json::Value) -> Option<(String,
     ))
 }
 
+/// Render a JSON scalar (string/number/bool) as its literal form: strings are
+/// JSON-quoted, numbers/bools rendered as-is, everything else `None`. One owner
+/// for both the `<key>: <value>` mapping anchor and the instance `index_key`
+/// rendering — they need identical scalar-literal semantics.
 fn json_scalar_literal(value: &serde_json::Value) -> Option<String> {
-    match value {
-        serde_json::Value::String(s) => Some(json_string_literal(s)),
-        serde_json::Value::Number(n) => Some(n.to_string()),
-        serde_json::Value::Bool(b) => Some(b.to_string()),
-        _ => None,
-    }
-}
-
-fn json_index_key_literal(value: &serde_json::Value) -> Option<String> {
     match value {
         serde_json::Value::String(s) => Some(json_string_literal(s)),
         serde_json::Value::Number(n) => Some(n.to_string()),

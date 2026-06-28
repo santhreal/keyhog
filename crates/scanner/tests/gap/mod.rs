@@ -47,6 +47,7 @@ pub mod entropy_keyword_anchor_lazy_lowercase;
 pub mod contains_evasion_single_owner_classification;
 pub mod yaml_scalar_mapping_single_owner;
 pub mod hcl_identifier_single_owner;
+pub mod json_scalar_literal_single_owner;
 pub mod entropy_keyword_only_requires_keyword_line;
 pub mod entropy_keywords_inline_tests_in_src;
 pub mod file_gate_matrix_scanner_adversarial_unmarked;

@@ -2529,6 +2529,16 @@ pub fn parse_hcl_tuples(text: &str) -> Vec<(String, String, usize)> {
         .collect()
 }
 
+/// Integration-test facade: parse Terraform state JSON into `(context, value,
+/// line)` tuples on the original-file path. Resource instance contexts carry the
+/// rendered `index_key` (e.g. `aws_secret.db["primary"].password`).
+pub fn parse_tfstate_tuples(text: &str) -> Vec<(String, String, usize)> {
+    crate::structured::parsers::parse_tfstate(text, false)
+        .into_iter()
+        .map(|pair| (pair.context, pair.value, pair.line))
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg(test)]
 pub(crate) struct StructuredPair {
