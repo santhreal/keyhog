@@ -88,33 +88,40 @@ const SOURCE_CODE_FILENAMES: &[&str] = &["kconfig", "makefile", "cmakelists.txt"
 /// not inherit a Caesar-specific broad definition of "source".
 const CAESAR_TEXT_NOISE_EXTENSIONS: &[&str] = &[".md", ".rst", ".txt", ".adoc"];
 
-fn source_path_matches(lower: &str, extensions: &[&str], filenames: &[&str]) -> bool {
-    if let Some(file_name) = lower.rsplit('/').next() {
-        if filenames.contains(&file_name) {
+/// Zero-allocation path classification. The previous form built TWO heap
+/// allocations per call — `p.replace('\\', "/").to_ascii_lowercase()` — on a
+/// path that runs once per chunk per decoder pass (Law 7). The extension check
+/// is a case-insensitive suffix compare (`ends_with_ignore_ascii_case`, and the
+/// `\`/`/` distinction is irrelevant to a suffix like `.rs`); the filename
+/// check extracts the basename over BOTH separators via `path_basename_bytes`
+/// (no allocation) and compares case-insensitively against the (lowercase)
+/// constant filenames. Behaviour is identical to the lowered-string form.
+fn source_path_matches(path: &str, extensions: &[&str], filenames: &[&str]) -> bool {
+    use crate::ascii_ci::ends_with_ignore_ascii_case;
+    let bytes = path.as_bytes();
+    if !filenames.is_empty() {
+        let base = crate::platform_compat::path_basename_bytes(bytes);
+        if filenames
+            .iter()
+            .any(|name| base.eq_ignore_ascii_case(name.as_bytes()))
+        {
             return true;
         }
     }
-    extensions.iter().any(|ext| lower.ends_with(ext))
+    extensions
+        .iter()
+        .any(|ext| ends_with_ignore_ascii_case(bytes, ext.as_bytes()))
 }
 
 pub(crate) fn is_program_source_code_path(path: Option<&str>) -> bool {
     let Some(p) = path else { return false };
-    let lower = p.replace('\\', "/").to_ascii_lowercase();
-    source_path_matches(
-        &lower,
-        PROGRAM_SOURCE_CODE_EXTENSIONS,
-        SOURCE_CODE_FILENAMES,
-    )
+    source_path_matches(p, PROGRAM_SOURCE_CODE_EXTENSIONS, SOURCE_CODE_FILENAMES)
 }
 
 pub(crate) fn is_source_code_path(path: Option<&str>) -> bool {
     let Some(p) = path else { return false };
-    let lower = p.replace('\\', "/").to_ascii_lowercase();
-    source_path_matches(
-        &lower,
-        PROGRAM_SOURCE_CODE_EXTENSIONS,
-        SOURCE_CODE_FILENAMES,
-    ) || source_path_matches(&lower, CAESAR_TEXT_NOISE_EXTENSIONS, &[])
+    source_path_matches(p, PROGRAM_SOURCE_CODE_EXTENSIONS, SOURCE_CODE_FILENAMES)
+        || source_path_matches(p, CAESAR_TEXT_NOISE_EXTENSIONS, &[])
 }
 
 /// True when `line` contains a `scheme://user:pass@host` URL with embedded

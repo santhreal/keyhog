@@ -1967,6 +1967,10 @@ pub mod decode_caesar {
     pub fn is_source_code_path(path: Option<&str>) -> bool {
         crate::decode::caesar::is_source_code_path(path)
     }
+
+    pub fn is_program_source_code_path(path: Option<&str>) -> bool {
+        crate::decode::caesar::is_program_source_code_path(path)
+    }
 }
 
 #[cfg(test)]

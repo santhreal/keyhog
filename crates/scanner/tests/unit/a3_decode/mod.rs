@@ -8,6 +8,7 @@ mod caesar_rejects_prose_without_prefix;
 mod caesar_round_trips_aws_shaped_token;
 mod caesar_skips_kernel_config_paths;
 mod caesar_skips_source_code_paths;
+mod caesar_source_path_zero_alloc_parity;
 mod decode_chunk_base64_splice_consumes_padding;
 mod decode_chunk_base64_splices_companion_anchor;
 mod decode_chunk_dedups_identical_outputs;
