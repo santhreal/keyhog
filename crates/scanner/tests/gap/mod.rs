@@ -86,6 +86,7 @@ pub mod gpu_tests_fail_not_skip;
 pub mod inline_gate;
 pub mod inline_migrated_tests_not_wired;
 pub mod multiline_large_file_keyword_gate;
+pub mod multiline_preprocess_join_contract;
 pub mod multiline_reassembly;
 pub mod nightly_exports_all_strict_env_vars;
 pub mod nightly_matrix_has_fourteen_runner_binaries;

@@ -153,6 +153,8 @@ mod inline_gate;
 mod inline_migrated_tests_not_wired;
 #[path = "gap/multiline_large_file_keyword_gate.rs"]
 mod multiline_large_file_keyword_gate;
+#[path = "gap/multiline_preprocess_join_contract.rs"]
+mod multiline_preprocess_join_contract;
 #[path = "gap/multiline_reassembly.rs"]
 mod multiline_reassembly;
 #[path = "gap/nightly_exports_all_strict_env_vars.rs"]

@@ -684,6 +684,18 @@ pub mod multiline {
         crate::multiline::has_concatenation_indicators(text)
     }
 
+    /// Test seam for the multiline preprocessor join pass, returning the joined
+    /// text and the preserved original-region length so a gap test can pin its
+    /// contract: a passthrough chunk is carried through byte-identically while a
+    /// real concatenation reassembles split string literals, and `original_end`
+    /// always equals the input byte length on every path.
+    pub fn preprocess_multiline_for_test(text: &str) -> (String, usize) {
+        let config = MultilineConfig::default();
+        let cache = crate::fragment_cache::FragmentCache::new(1024);
+        let result = crate::multiline::preprocess_multiline(text, &config, &cache);
+        (result.text.into_owned(), result.original_end)
+    }
+
     #[derive(Debug, Clone)]
     pub struct LineMapping {
         pub start_offset: usize,

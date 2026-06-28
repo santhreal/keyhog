@@ -46,7 +46,12 @@ pub(crate) fn preprocess_multiline<'a>(
         return passthrough_text(text_owned);
     }
 
-    let mut result_lines = Vec::new();
+    // `result_lines` gets exactly one push per outer-loop iteration and the loop
+    // advances `index` by at least 1 each time, so it never holds more than
+    // `lines.len()` entries — reserve that upper bound up front to skip the
+    // doubling reallocations as the join walk fills it (the capacity is
+    // unobservable in the returned `PreprocessedText`).
+    let mut result_lines = Vec::with_capacity(lines.len());
     let mut mappings = Vec::new();
     let source_line_offsets = crate::compute_line_offsets(text);
     let mut current_offset = 0usize;
