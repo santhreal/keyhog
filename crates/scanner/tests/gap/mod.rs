@@ -30,6 +30,7 @@ pub mod entropy_authorization_scheme_ci;
 pub mod entropy_xml_close_tag_search;
 pub mod entropy_canonical_lift_keyword_material;
 pub mod entropy_unique_byte_count_dedup;
+pub mod ml_features_comment_context_single_owner;
 pub mod ml_score_cache_memoized;
 pub mod structured_line_offsets_shared_builder;
 pub mod phase2_ascii_fold_shared;

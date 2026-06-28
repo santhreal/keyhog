@@ -199,9 +199,7 @@ fn apply_decode_structure_feature(features: &mut [f32; NUM_FEATURES], text: &str
 const TEST_FILE_CONTEXT_FRAGMENTS: &[&[u8]] = &[b"test", b"mock", b"fixture", b"spec"];
 
 fn apply_extra_features(features: &mut [f32; NUM_FEATURES], context: &str, context_bytes: &[u8]) {
-    let is_in_comment = COMMENT_PREFIXES
-        .iter()
-        .any(|prefix| context.trim().starts_with(prefix));
+    let is_in_comment = context_starts_with_comment_prefix(context);
     let has_assignment = has_assignment_operator(context);
     let is_test_file_context = TEST_FILE_CONTEXT_FRAGMENTS
         .iter()
@@ -261,11 +259,7 @@ fn apply_context_features(
         context_bytes,
         test_keywords,
     ));
-    features[19] = binary_feature(
-        COMMENT_PREFIXES
-            .iter()
-            .any(|prefix| context.trim().starts_with(prefix)),
-    );
+    features[19] = binary_feature(context_starts_with_comment_prefix(context));
 }
 
 fn apply_placeholder_features(
@@ -376,6 +370,17 @@ fn has_assignment_operator(value: &str) -> bool {
         return true;
     }
     value.contains(": ")
+}
+
+/// Whether `context`, trimmed, begins with one of the recognized comment
+/// markers. Both the context-feature comment signal (feature 19) and the
+/// extra-feature comment signal (feature 38, `COMMENT_CONTEXT_FEATURE_INDEX`)
+/// derive from this same check; it lives in one place so the two features can
+/// never drift to different comment definitions.
+fn context_starts_with_comment_prefix(context: &str) -> bool {
+    COMMENT_PREFIXES
+        .iter()
+        .any(|prefix| context.trim().starts_with(prefix))
 }
 
 fn unique_bigram_stats(bytes: &[u8]) -> (usize, usize) {
