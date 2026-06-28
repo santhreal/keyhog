@@ -22,6 +22,10 @@ pub(crate) enum GpuTier {
     Low,
 }
 
+/// Number of [`GpuTier`] variants (High, Mid, Low) — the width of the
+/// [`gpu_routing_profiles`] table that surfaces one profile per tier.
+const GPU_TIER_COUNT: usize = 3;
+
 /// Classify a GPU adapter name into a performance tier. Pure
 /// substring heuristics - bumped only when a new high-volume part
 /// ships (or the user reports a misclassification).
@@ -121,7 +125,7 @@ pub fn gpu_routing_profile(adapter_name: Option<&str>) -> GpuRoutingProfile {
 }
 
 #[must_use]
-pub fn gpu_routing_profiles() -> [GpuRoutingProfile; 3] {
+pub fn gpu_routing_profiles() -> [GpuRoutingProfile; GPU_TIER_COUNT] {
     [
         profile_for_tier(GpuTier::High),
         profile_for_tier(GpuTier::Mid),
