@@ -351,10 +351,14 @@ impl ScannerConfig {
         } else {
             self.min_confidence = self.min_confidence.clamp(0.0, 1.0);
         }
-        // Shannon entropy: 8.0 is the upper bound for byte-level
-        // entropy. NaN / negative → conservative default.
+        // Shannon entropy: 8.0 is the mathematical upper bound for byte-level
+        // entropy (a genuine constant, not a config default). NaN / negative →
+        // the CANONICAL `ScanConfig::default()` floor, read from `canon` like the
+        // `ml_weight` / `min_confidence` scrubs above — NOT a forked literal, so a
+        // future change to the shipped entropy default can never silently diverge
+        // on the corrupt-config path (single source of truth).
         if !self.entropy_threshold.is_finite() || self.entropy_threshold < 0.0 {
-            self.entropy_threshold = 4.5;
+            self.entropy_threshold = canon.entropy_threshold;
         } else if self.entropy_threshold > 8.0 {
             self.entropy_threshold = 8.0;
         }

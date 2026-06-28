@@ -270,6 +270,63 @@ fn scanner_config_sanitise_nan_min_confidence() {
     );
 }
 
+/// Test: sanitise() NaN/negative scrubs read the CANONICAL ScanConfig default,
+/// never a forked literal.
+///
+/// Regression for the entropy_threshold drift hazard: the NaN/negative branch
+/// hardcoded `4.5` while `ml_weight`/`min_confidence` correctly read from
+/// `ScanConfig::default()`. The values happened to coincide, so a future change
+/// to the shipped entropy default would have silently diverged on the
+/// corrupt-config path. This asserts every scrubbed field equals the canonical
+/// default by IDENTITY — if the shipped default moves, sanitise() moves with it.
+#[test]
+fn scanner_config_sanitise_nan_reads_canonical_defaults() {
+    use keyhog_core::ScanConfig;
+    use keyhog_scanner::ScannerConfig;
+
+    let canon = ScanConfig::default();
+
+    // NaN every user-influenced float; sanitise must restore the canonical value.
+    let mut nan_cfg = ScannerConfig::default();
+    nan_cfg.entropy_threshold = f64::NAN;
+    nan_cfg.ml_weight = f64::NAN;
+    nan_cfg.min_confidence = f64::NAN;
+    nan_cfg.sanitise();
+
+    assert_eq!(
+        nan_cfg.entropy_threshold, canon.entropy_threshold,
+        "NaN entropy_threshold must restore the CANONICAL default ({}), not a forked literal",
+        canon.entropy_threshold
+    );
+    assert_eq!(
+        nan_cfg.ml_weight, canon.ml_weight,
+        "NaN ml_weight must restore the canonical default"
+    );
+    assert_eq!(
+        nan_cfg.min_confidence, canon.min_confidence,
+        "NaN min_confidence must restore the canonical default"
+    );
+
+    // Negative entropy_threshold takes the same canonical-default branch.
+    let mut neg_cfg = ScannerConfig::default();
+    neg_cfg.entropy_threshold = -3.0;
+    neg_cfg.sanitise();
+    assert_eq!(
+        neg_cfg.entropy_threshold, canon.entropy_threshold,
+        "negative entropy_threshold must restore the canonical default"
+    );
+
+    // Above the 8.0 byte-entropy ceiling clamps to 8.0 (a true mathematical
+    // bound, legitimately a constant — NOT a config default).
+    let mut hi_cfg = ScannerConfig::default();
+    hi_cfg.entropy_threshold = 99.0;
+    hi_cfg.sanitise();
+    assert_eq!(
+        hi_cfg.entropy_threshold, 8.0,
+        "entropy_threshold above the byte-entropy ceiling must clamp to 8.0"
+    );
+}
+
 /// Test: Confidence threshold boundary at exactly 0.85 in high-precision.
 ///
 /// Asserts the >= semantics: 0.85 passes, 0.849999 fails.
