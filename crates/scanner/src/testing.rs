@@ -45,6 +45,19 @@ pub fn match_priority_for_test(detector_id: &str, credential: &str, confidence: 
     crate::resolution::match_priority(&m)
 }
 
+/// Resolution's "service-specific detector" predicate, exposed so a gap test can
+/// pin that it stays identical to the canonical `is_service_anchored_detector`
+/// (the two were a duplicated, drift-prone predicate before consolidation).
+pub fn is_service_specific_detector_for_test(detector_id: &str) -> bool {
+    crate::resolution::is_service_specific_detector(detector_id)
+}
+
+/// The canonical detector-anchoring predicate that the resolution predicate now
+/// delegates to.
+pub fn is_service_anchored_detector_for_test(detector_id: &str) -> bool {
+    crate::detector_ids::is_service_anchored_detector(detector_id)
+}
+
 #[cfg(feature = "simd")]
 pub fn scan_coalesced_phase2_with_admission_for_test(
     scanner: &crate::CompiledScanner,

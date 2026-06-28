@@ -141,20 +141,19 @@ fn suppress_entropy_matches_near_named_detectors(matches: &mut Vec<RawMatch>) {
     });
 }
 
-fn is_entropy_detector(detector_id: &str) -> bool {
-    crate::detector_ids::is_entropy_detector(detector_id)
-}
-
-fn is_generic_detector(detector_id: &str) -> bool {
-    crate::detector_ids::is_generic_or_private_key_detector(detector_id)
-}
-
 fn is_private_key_block_detector(detector_id: &str) -> Result<bool, String> {
     crate::detector_ids::is_private_key_block_detector(detector_id)
 }
 
-fn is_service_specific_detector(detector_id: &str) -> bool {
-    !is_entropy_detector(detector_id) && !is_generic_detector(detector_id)
+/// Whether a detector carries a service contract — not generic, not entropy,
+/// and not the private-key fallback. Single owner:
+/// `detector_ids::is_service_anchored_detector`. This previously recomputed the
+/// same boolean through local `is_entropy_detector` / `is_generic_detector`
+/// wrappers (`!entropy && !(generic || private_key_fallback)`), algebraically
+/// identical to the canonical `!generic && !entropy && !private_key_fallback`
+/// but a silent-drift hazard if either definition changed independently.
+pub(crate) fn is_service_specific_detector(detector_id: &str) -> bool {
+    crate::detector_ids::is_service_anchored_detector(detector_id)
 }
 
 fn resolve_match_groups(mut matches: Vec<RawMatch>) -> Vec<RawMatch> {

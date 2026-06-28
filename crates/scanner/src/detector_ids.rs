@@ -57,11 +57,6 @@ pub(crate) fn is_private_key_fallback(detector_id: &str) -> bool {
 }
 
 #[inline]
-pub(crate) fn is_generic_or_private_key_detector(detector_id: &str) -> bool {
-    is_generic_detector(detector_id) || is_private_key_fallback(detector_id)
-}
-
-#[inline]
 pub(crate) fn is_generic_or_entropy_detector(detector_id: &str) -> bool {
     is_generic_detector(detector_id) || is_entropy_detector(detector_id)
 }
