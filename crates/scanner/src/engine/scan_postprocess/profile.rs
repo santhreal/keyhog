@@ -5,7 +5,9 @@
 //! `scan_postprocess.rs`) pokes them inline as it measures; the dumps stay on
 //! the public interface, re-exported through `scan_postprocess`. Pure move.
 use std::sync::atomic::AtomicU64;
-#[cfg(any(feature = "decode", feature = "ml"))]
+// One `Relaxed` reference for the whole module: the always-compiled
+// confirmed-pass counters use it too, so the import is unconditional (no cfg
+// gate) and every atomic op spells the ordering the same way.
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -33,18 +35,15 @@ pub(crate) enum ConfirmedStage {
 
 pub(crate) fn confirmed_prof_record(stage: ConfirmedStage, elapsed: Duration) {
     let idx = stage as usize;
-    CONFIRMED_STAGE_NS[idx].fetch_add(
-        elapsed.as_nanos() as u64,
-        std::sync::atomic::Ordering::Relaxed,
-    );
-    CONFIRMED_STAGE_RUNS[idx].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    CONFIRMED_STAGE_NS[idx].fetch_add(elapsed.as_nanos() as u64, Relaxed);
+    CONFIRMED_STAGE_RUNS[idx].fetch_add(1, Relaxed);
 }
 
 pub(crate) fn confirmed_prof_stage_take() -> [(u64, u64); 3] {
     std::array::from_fn(|idx| {
         (
-            CONFIRMED_STAGE_NS[idx].swap(0, std::sync::atomic::Ordering::Relaxed),
-            CONFIRMED_STAGE_RUNS[idx].swap(0, std::sync::atomic::Ordering::Relaxed),
+            CONFIRMED_STAGE_NS[idx].swap(0, Relaxed),
+            CONFIRMED_STAGE_RUNS[idx].swap(0, Relaxed),
         )
     })
 }
@@ -58,16 +57,16 @@ pub(crate) fn confirmed_prof_vecs(len: usize) -> (&'static [AtomicU64], &'static
 pub(crate) fn confirmed_prof_reset(len: usize) {
     let (ns, runs) = confirmed_prof_vecs(len);
     for n in ns {
-        n.store(0, std::sync::atomic::Ordering::Relaxed);
+        n.store(0, Relaxed);
     }
     for r in runs {
-        r.store(0, std::sync::atomic::Ordering::Relaxed);
+        r.store(0, Relaxed);
     }
     for n in &CONFIRMED_STAGE_NS {
-        n.store(0, std::sync::atomic::Ordering::Relaxed);
+        n.store(0, Relaxed);
     }
     for r in &CONFIRMED_STAGE_RUNS {
-        r.store(0, std::sync::atomic::Ordering::Relaxed);
+        r.store(0, Relaxed);
     }
 }
 
@@ -77,13 +76,7 @@ impl super::CompiledScanner {
         let total = self.ac_map.len() + self.phase2_patterns.len();
         let (ns, runs) = confirmed_prof_vecs(total);
         let mut rows: Vec<(usize, u64, u64)> = (0..total)
-            .map(|i| {
-                (
-                    i,
-                    ns[i].swap(0, std::sync::atomic::Ordering::Relaxed),
-                    runs[i].swap(0, std::sync::atomic::Ordering::Relaxed),
-                )
-            })
+            .map(|i| (i, ns[i].swap(0, Relaxed), runs[i].swap(0, Relaxed)))
             .filter(|&(_, n, _)| n > 0)
             .collect();
         rows.sort_unstable_by(|a, b| b.1.cmp(&a.1));
