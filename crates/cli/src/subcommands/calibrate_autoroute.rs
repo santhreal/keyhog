@@ -279,7 +279,7 @@ fn run_probe(
             dim = p.dim,
             reset = p.reset,
         );
-        // LAW10: no_runtime_effect — a failed progress-line flush is cosmetic; stdout flushes at exit.
+        // LAW10: no runtime effect — a progress-line flush error is cosmetic; stdout flushes at exit.
         std::io::stdout().flush().ok();
     }
 
@@ -326,7 +326,7 @@ fn run_probe(
         let reason = stderr
             .lines()
             .find(|line| !line.trim().is_empty())
-            // LAW10: reporting_only — placeholder when the failed child wrote no stderr.
+            // LAW10: reporting-only error-message string; placeholder for a child that wrote no stderr.
             .unwrap_or("no error output");
         anyhow::bail!("{label} ({policy_label}): {reason}");
     }

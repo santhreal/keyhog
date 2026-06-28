@@ -72,6 +72,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "config",
     "create-baseline",
     "daemon",
+    "daemon-socket",
     "decode-depth",
     "decode-size-limit",
     "dedup",
