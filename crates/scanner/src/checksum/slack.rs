@@ -24,31 +24,31 @@ pub(crate) struct SlackTokenValidator;
 // `xoxb-…` finding. Widening the numeric/secret bounds to `{10,15}`/`{15,40}`
 // keeps the wider validator superset of the detector while still anchoring (`$`)
 // and rejecting wrong character classes and too-short/too-long segments.
-static SLACK_BOT_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
-    match regex::Regex::new(r"^xoxb-[0-9]{10,15}(?:-[0-9]{10,15})?-[a-zA-Z0-9]{15,40}$") {
+/// Compile one of the structural Slack-token gate regexes, surfacing a loud
+/// degrade (and returning `None`) if the compile-time-constant pattern ever
+/// fails to build. Single owner so the two token-shape regexes share identical
+/// failure handling instead of duplicating the `match Regex::new {…}` block.
+fn compile_slack_re(pattern: &str, site: &str) -> Option<regex::Regex> {
+    match regex::Regex::new(pattern) {
         Ok(re) => Some(re),
         Err(error) => {
-            crate::prefilter_degrade::warn_prefilter_disabled(
-                "slack bot-token checksum regex (SLACK_BOT_RE)",
-                &error,
-            );
+            crate::prefilter_degrade::warn_prefilter_disabled(site, &error);
             None
         }
     }
+}
+
+static SLACK_BOT_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
+    compile_slack_re(
+        r"^xoxb-[0-9]{10,15}(?:-[0-9]{10,15})?-[a-zA-Z0-9]{15,40}$",
+        "slack bot-token checksum regex (SLACK_BOT_RE)",
+    )
 });
 static SLACK_USER_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
-    match regex::Regex::new(
+    compile_slack_re(
         r"^xoxp-[0-9]{10,15}-[0-9]{10,15}(?:-[0-9]{10,13})?-[a-zA-Z0-9]{24,40}$",
-    ) {
-        Ok(re) => Some(re),
-        Err(error) => {
-            crate::prefilter_degrade::warn_prefilter_disabled(
-                "slack user-token checksum regex (SLACK_USER_RE)",
-                &error,
-            );
-            None
-        }
-    }
+        "slack user-token checksum regex (SLACK_USER_RE)",
+    )
 });
 
 pub(crate) fn warm_runtime_regexes() {

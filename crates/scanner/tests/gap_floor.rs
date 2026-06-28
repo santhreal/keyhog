@@ -94,6 +94,8 @@ mod deadline_cadence_tick_dedup;
 mod gitlab_checksum_body_length_floors;
 #[path = "gap/npm_checksum_token_structure.rs"]
 mod npm_checksum_token_structure;
+#[path = "gap/slack_checksum_token_shapes.rs"]
+mod slack_checksum_token_shapes;
 #[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
 mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]

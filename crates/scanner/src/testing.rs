@@ -140,6 +140,19 @@ pub fn npm_expected_checksum_for_test(entropy: &str) -> String {
     crate::checksum::github::base62_encode_u32(crate::checksum::github::crc32(entropy.as_bytes()), 6)
 }
 
+/// Slack structural-checksum verdict for `credential`, as a stable string. Lets
+/// a gap test pin both bot-token shapes (3-segment and 2-segment) and the user
+/// token shape through the shared `compile_slack_re` regexes.
+pub fn slack_checksum_verdict_for_test(credential: &str) -> &'static str {
+    use crate::checksum::ChecksumValidator;
+    match crate::checksum::slack::SlackTokenValidator.validate(credential) {
+        crate::checksum::ChecksumResult::Valid => "valid",
+        crate::checksum::ChecksumResult::StructurallyValid => "structurally-valid",
+        crate::checksum::ChecksumResult::Invalid => "invalid",
+        crate::checksum::ChecksumResult::NotApplicable => "not-applicable",
+    }
+}
+
 #[cfg(feature = "simd")]
 pub fn scan_coalesced_phase2_with_admission_for_test(
     scanner: &crate::CompiledScanner,
