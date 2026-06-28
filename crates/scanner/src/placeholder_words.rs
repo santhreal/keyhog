@@ -113,7 +113,7 @@ pub(crate) fn bytes_contain_entropy_placeholder_marker(bytes: &[u8]) -> bool {
         )
 }
 
-fn placeholder_word_suppresses(
+pub(crate) fn placeholder_word_suppresses(
     credential: &str,
     upper: &str,
     token: &str,
@@ -135,6 +135,11 @@ fn placeholder_word_suppresses(
 }
 
 fn looks_like_high_entropy_marker_collision(credential: &str, entropy_hint: Option<f64>) -> bool {
+    // Shannon-entropy floor (bits per byte) at or above which a long, `+`/`/`
+    // bearing credential is treated as a genuine high-entropy secret that merely
+    // COLLIDES with a placeholder substring rather than an actual placeholder.
+    // Below it, a one-sided placeholder-word match still suppresses.
+    const HIGH_ENTROPY_MARKER_COLLISION_ENTROPY: f64 = 4.8;
     if credential.len() < 40 || !(credential.contains('+') || credential.contains('/')) {
         return false;
     }
@@ -142,7 +147,7 @@ fn looks_like_high_entropy_marker_collision(credential: &str, entropy_hint: Opti
         Some(entropy) => entropy,
         None => crate::entropy::shannon_entropy(credential.as_bytes()),
     };
-    entropy >= 4.8
+    entropy >= HIGH_ENTROPY_MARKER_COLLISION_ENTROPY
 }
 
 pub(crate) fn parse_placeholder_words(raw: &str) -> Result<Vec<PlaceholderWord>, String> {

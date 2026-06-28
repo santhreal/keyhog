@@ -87,6 +87,26 @@ pub fn parse_protobuf_wire_for_test(data: &[u8]) -> bool {
     crate::decode_structure::parse_protobuf_wire(data)
 }
 
+/// Test seam for the placeholder-word boundary + entropy-collision gate: does
+/// `token_upper` (an already-uppercased placeholder word, e.g. `"EXAMPLE"`)
+/// suppress `credential`? Pins that a both-sided word boundary always
+/// suppresses, a one-sided match suppresses only when the credential is NOT a
+/// long high-entropy `+`/`/` secret, and the exact entropy threshold at which a
+/// one-sided match flips from suppress to collision (driven by `entropy_hint`).
+pub fn placeholder_word_suppresses_for_test(
+    credential: &str,
+    token_upper: &str,
+    entropy_hint: Option<f64>,
+) -> bool {
+    let upper = credential.to_ascii_uppercase();
+    crate::placeholder_words::placeholder_word_suppresses(
+        credential,
+        &upper,
+        token_upper,
+        entropy_hint,
+    )
+}
+
 /// Test seam for the decode-splice core: splice `decoded_text` into the bounded
 /// `[start, end)` window of `parent`, keeping `SPLICE_CONTEXT_WINDOW` bytes of
 /// companion context on each side. Returns `(window_start, spliced_payload,

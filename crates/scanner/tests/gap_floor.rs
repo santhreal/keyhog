@@ -84,6 +84,8 @@ mod homoglyph_expand_exact_and_reserved;
 mod jwt_finding_metadata_reserve_and_typ_coherence;
 #[path = "gap/prefix_trie_propagation_move_on_last.rs"]
 mod prefix_trie_propagation_move_on_last;
+#[path = "gap/placeholder_word_entropy_collision_threshold.rs"]
+mod placeholder_word_entropy_collision_threshold;
 #[path = "gap/resolution_known_prefix_service_bonus_named.rs"]
 mod resolution_known_prefix_service_bonus_named;
 #[path = "gap/resolution_service_detector_predicate_dedup.rs"]
