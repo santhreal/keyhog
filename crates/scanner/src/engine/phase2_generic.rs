@@ -137,7 +137,11 @@ impl CompiledScanner {
         let mut preprocessed_code_lines_cache: Option<Vec<&str>> = None;
         let mut preprocessed_documentation_lines_cache: Option<Vec<bool>> = None;
         for line_iter in 0..lines_with_keyword.len() {
-            if crate::deadline::expired_on_cadence(deadline, line_iter, 64) {
+            if crate::deadline::expired_on_cadence(
+                deadline,
+                line_iter,
+                crate::deadline::HOT_LOOP_DEADLINE_CADENCE,
+            ) {
                 metrics::record_extract_ns(extract_start);
                 KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
                 return;
@@ -174,7 +178,11 @@ impl CompiledScanner {
             let line: &str = &normalized_line;
 
             for (capture_iter, caps) in generic_re.captures_iter(line).enumerate() {
-                if crate::deadline::expired_on_cadence(deadline, capture_iter, 64) {
+                if crate::deadline::expired_on_cadence(
+                    deadline,
+                    capture_iter,
+                    crate::deadline::HOT_LOOP_DEADLINE_CADENCE,
+                ) {
                     metrics::record_extract_ns(extract_start);
                     KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
                     return;

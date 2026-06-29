@@ -91,7 +91,11 @@ impl CompiledScanner {
             if iters >= MAX_INNER_LOOP_ITERS {
                 break;
             }
-            if crate::deadline::loop_expired_on_cadence(loop_deadline, iters, 64) {
+            if crate::deadline::loop_expired_on_cadence(
+                loop_deadline,
+                iters,
+                crate::deadline::HOT_LOOP_DEADLINE_CADENCE,
+            ) {
                 break;
             }
             iters += 1;

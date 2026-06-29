@@ -69,6 +69,7 @@ pub mod gpu_tests_fail_not_skip;
 pub mod gpu_threshold_mib_units;
 pub mod hcl_identifier_single_owner;
 pub mod homoglyph_expand_exact_and_reserved;
+pub mod hot_loop_deadline_cadence_single_owner;
 pub mod inline_gate;
 pub mod inline_migrated_tests_not_wired;
 pub mod json_scalar_literal_single_owner;

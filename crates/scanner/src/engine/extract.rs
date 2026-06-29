@@ -175,7 +175,11 @@ impl CompiledScanner {
             if match_count >= MAX_INNER_LOOP_ITERS {
                 break;
             }
-            if crate::deadline::loop_expired_on_cadence(loop_deadline, match_count, 64) {
+            if crate::deadline::loop_expired_on_cadence(
+                loop_deadline,
+                match_count,
+                crate::deadline::HOT_LOOP_DEADLINE_CADENCE,
+            ) {
                 break;
             }
             match_count += 1;
@@ -314,7 +318,11 @@ impl CompiledScanner {
             if match_count >= MAX_INNER_LOOP_ITERS {
                 break;
             }
-            if crate::deadline::loop_expired_on_cadence(loop_deadline, match_count, 64) {
+            if crate::deadline::loop_expired_on_cadence(
+                loop_deadline,
+                match_count,
+                crate::deadline::HOT_LOOP_DEADLINE_CADENCE,
+            ) {
                 break;
             }
             let Some(matched) = rx.find_at(search_text, cursor) else {

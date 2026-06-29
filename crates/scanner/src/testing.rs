@@ -252,6 +252,13 @@ pub fn cadence_tick_for_test(iteration: usize, cadence: usize) -> bool {
     crate::deadline::cadence_tick(iteration, cadence)
 }
 
+/// The single hot-loop deadline re-check cadence the generic-assignment, regex
+/// extract, and anchor scan loops all share. Lets a gap test pin its exact value
+/// (and that those loops tick on the same boundary).
+pub fn hot_loop_deadline_cadence_for_test() -> usize {
+    crate::deadline::HOT_LOOP_DEADLINE_CADENCE
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.

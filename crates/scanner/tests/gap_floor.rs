@@ -118,6 +118,8 @@ mod gpu_threshold_mib_units;
 mod hcl_identifier_single_owner;
 #[path = "gap/homoglyph_expand_exact_and_reserved.rs"]
 mod homoglyph_expand_exact_and_reserved;
+#[path = "gap/hot_loop_deadline_cadence_single_owner.rs"]
+mod hot_loop_deadline_cadence_single_owner;
 #[allow(dead_code)]
 #[path = "gap/inline_gate.rs"]
 mod inline_gate;

@@ -13,6 +13,15 @@ pub(crate) fn cadence_tick(iteration: usize, cadence: usize) -> bool {
     iteration > 0 && iteration.is_multiple_of(cadence)
 }
 
+/// Default re-check cadence for the hot per-iteration scan loops (generic
+/// assignment extraction, the regex extract loops, the anchor scan). Each of
+/// those loops is bounded by `MAX_INNER_LOOP_ITERS` and re-checks the wall-clock
+/// deadline once every `HOT_LOOP_DEADLINE_CADENCE` iterations so the timeout is
+/// honored without paying an `Instant::now()` per iteration. One owner for the
+/// value so the loops cannot drift apart (the compiled-anchored phase uses its
+/// own tighter cadence on purpose and is intentionally NOT this constant).
+pub(crate) const HOT_LOOP_DEADLINE_CADENCE: usize = 64;
+
 #[inline]
 pub(crate) fn expired_on_cadence(
     deadline: Option<Instant>,
