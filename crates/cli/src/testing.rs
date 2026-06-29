@@ -128,6 +128,8 @@ pub trait CliTestApi {
     fn merge_scan_ignore_paths(&self, args: &ScanArgs, allowlist_paths: Vec<String>)
         -> Vec<String>;
     fn validate_cli_path_arg(&self, path: &Path, name: &str) -> Result<()>;
+    fn resolve_scan_roots(&self, requested: &[PathBuf]) -> Result<Vec<PathBuf>>;
+    fn guard_multi_root_combinations(&self, args: &ScanArgs) -> Result<()>;
     fn report_findings(
         &self,
         findings: &[VerifiedFinding],
@@ -518,6 +520,12 @@ impl CliTestApi for TestApi {
     }
     fn validate_cli_path_arg(&self, path: &Path, name: &str) -> Result<()> {
         crate::path_validation::validate_cli_path_arg(path, name)
+    }
+    fn resolve_scan_roots(&self, requested: &[PathBuf]) -> Result<Vec<PathBuf>> {
+        crate::sources::resolve_scan_roots(requested)
+    }
+    fn guard_multi_root_combinations(&self, args: &ScanArgs) -> Result<()> {
+        crate::subcommands::scan::guard_multi_root_combinations(args)
     }
     fn report_findings(
         &self,

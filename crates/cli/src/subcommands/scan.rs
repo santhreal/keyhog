@@ -46,7 +46,7 @@ use std::process::ExitCode;
 
 pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
     crate::runtime_preflight::validate_scan_runtime_config()?;
-    reject_multiple_scan_roots(&args)?;
+    guard_multi_root_combinations(&args)?;
 
     // On Windows, the daemon route is never available (the `crate::daemon`
     // module is cfg(unix)). If the user explicitly passed `--daemon`,
@@ -115,44 +115,41 @@ enum DaemonRoute {
     Rejected(String),
 }
 
-/// Fail closed with actionable single-root guidance when the user passes more
-/// than one positional scan path (`keyhog scan a/ b/ c/`).
+/// Fail closed when several positional roots are combined with a mode that has
+/// no unambiguous meaning over more than one root.
 ///
-/// keyhog scans a single root per invocation (the source/walker, the
-/// allowlist self-protection boundary, and the scan-metadata header are all
-/// single-root). clap captures the surplus positionals into
-/// [`ScanArgs::extra_paths`] — a hidden catch-all — so that instead of clap's
-/// bare `unexpected argument 'b/' found` the operator gets a message that
-/// names the offending paths AND the three real workarounds. No scan runs.
-fn reject_multiple_scan_roots(args: &ScanArgs) -> Result<()> {
-    if args.extra_paths.is_empty() {
+/// keyhog now scans multiple roots per invocation (`keyhog scan a/ b/ c/`):
+/// each becomes its own filesystem source and the engine merges the multi-
+/// source `Vec` it already consumes. The only positional-root mode that breaks
+/// is `--git-staged`, whose staged-file set is resolved from a SINGLE repository
+/// working tree (`get_staged_files(first_root)`); with several roots there is no
+/// one repo to read, and silently staged-filtering only the first root while
+/// walking the rest in full would be a confusing, asymmetric result (Law 10).
+/// Every other source (`--stdin`, `--git-blobs/-diff/-history`, the remote
+/// providers, `--binary`) carries its own origin and composes cleanly, so they
+/// are deliberately NOT rejected here.
+pub(crate) fn guard_multi_root_combinations(args: &ScanArgs) -> Result<()> {
+    let roots = args.scan_roots();
+    if roots.len() <= 1 {
         return Ok(());
     }
-    let first = args
-        .input
-        .as_deref()
-        .or(args.path.as_deref())
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| ".".to_string()); // LAW10: input is always Some when extra_paths is non-empty (clap fills the first positional first); "." is a display-only error-text default, recall-irrelevant
-    let extras: Vec<String> = args
-        .extra_paths
-        .iter()
-        .map(|p| p.display().to_string())
-        .collect();
-    bail!(
-        "keyhog scans one root path per invocation, but {n} extra path{plural} \
-         {was} given after `{first}`: {extra_list}.\n\
-         To cover several locations in a single run:\n  \
-         • point keyhog at a common parent directory — it walks recursively \
-         (e.g. `keyhog scan <parent>`), and narrow with `--exclude-paths <glob>` if needed; or\n  \
-         • run keyhog once per path (`keyhog scan {first}`, then `keyhog scan {one_extra}`).",
-        n = extras.len(),
-        plural = if extras.len() == 1 { "" } else { "s" },
-        was = if extras.len() == 1 { "was" } else { "were" },
-        first = first,
-        extra_list = extras.join(", "),
-        one_extra = extras[0],
-    );
+    #[cfg(feature = "git")]
+    if args.git_staged {
+        let list = roots
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        bail!(
+            "`--git-staged` resolves staged files from one repository working \
+             tree, so it cannot span the {n} roots given ({list}).\n\
+             Run `keyhog scan --git-staged <repo>` once per repository, or drop \
+             `--git-staged` to walk every root on disk.",
+            n = roots.len(),
+            list = list,
+        );
+    }
+    Ok(())
 }
 
 /// The routing-relevant policy AFTER merging `.keyhog.toml`, so the daemon
@@ -506,6 +503,12 @@ fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
 
 #[cfg(unix)]
 fn effective_single_file_path(args: &ScanArgs) -> Result<Option<&Path>> {
+    // Several positional roots are never a daemon single-file candidate. Reading
+    // only `path`/`input` here would see the FIRST root, route the scan over the
+    // single-path daemon protocol, and silently drop every surplus root (Law 10).
+    if !args.extra_paths.is_empty() {
+        return Ok(None);
+    }
     let Some(raw) = args.path.as_deref().or(args.input.as_deref()) else {
         return Ok(None);
     };

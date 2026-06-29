@@ -88,18 +88,21 @@ pub struct ScanArgs {
     #[arg(skip)]
     pub(crate) detectors_cli_explicit: bool,
 
-    /// Positional shorthand for `--path`
+    /// Path(s) to scan. Pass several to scan multiple roots in one run
+    /// (`keyhog scan a/ b/ c/`); nested or duplicate roots fold into their
+    /// covering parent. Positional shorthand for `--path` (single root only).
     #[arg(value_name = "PATH", conflicts_with = "path")]
     pub input: Option<PathBuf>,
 
-    /// Catch-all for positional paths BEYOND the first. keyhog scans a single
-    /// root per invocation; clap would otherwise reject `keyhog scan a/ b/`
-    /// with a bare `unexpected argument 'b/'`. Capturing the extras here lets
-    /// [`crate::subcommands::scan::reject_multiple_scan_roots`] emit actionable
-    /// single-root guidance (common-parent / per-path / `--exclude-paths`)
-    /// instead. `hide = true` keeps the documented surface at `[PATH]` and out
-    /// of `--help`; it carries no `long`, so the CLI-08 long-flag snapshot gate
-    /// never sees it. Real multi-root support is tracked separately.
+    /// Additional positional roots BEYOND the first: `keyhog scan a/ b/ c/`
+    /// binds `a` to [`Self::input`] and `b`, `c` here. Together with `input`
+    /// these form the ordered root set resolved by [`ScanArgs::scan_roots`];
+    /// each becomes its own filesystem source (the scan engine already merges a
+    /// multi-source `Vec`), with overlapping/nested roots folded into their
+    /// covering parent. `hide = true` keeps the documented surface at `[PATH]…`
+    /// and out of `--help`; it carries no `long`, so the CLI-08 long-flag
+    /// snapshot gate never sees it. `conflicts_with = "path"` keeps the
+    /// single-target `--path` flag mutually exclusive with positional roots.
     #[arg(value_name = "EXTRA_PATH", hide = true, conflicts_with = "path")]
     pub extra_paths: Vec<PathBuf>,
 
@@ -888,5 +891,33 @@ impl ScanArgs {
             return DaemonMode::Off;
         }
         self.daemon.unwrap_or(DaemonMode::Auto) // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
+    }
+
+    /// The ordered set of filesystem roots this invocation scans, the single
+    /// source of truth for "which paths" across source construction, daemon
+    /// routing, and the scan-target header.
+    ///
+    /// `keyhog scan a/ b/ c/` binds `a` to [`Self::input`] and `b`, `c` to the
+    /// hidden [`Self::extra_paths`] catch-all, so a non-empty `extra_paths`
+    /// unambiguously means a positional multi-root request — and clap's
+    /// `conflicts_with = "path"` guarantees `--path` is absent there. Checking
+    /// `extra_paths` FIRST also makes this robust to the orchestrator's internal
+    /// `input -> path` promotion (`ScanOrchestrator::new`): that copy fills
+    /// `path` with the FIRST root only, so reading `path` first would silently
+    /// drop every surplus root. The single-root branch then resolves the one
+    /// root from `--path` (explicit) or the lone positional `input`.
+    #[must_use]
+    pub fn scan_roots(&self) -> Vec<PathBuf> {
+        if !self.extra_paths.is_empty() {
+            let mut roots = Vec::with_capacity(1 + self.extra_paths.len());
+            roots.extend(self.input.clone());
+            roots.extend(self.extra_paths.iter().cloned());
+            return roots;
+        }
+        self.path
+            .clone()
+            .or_else(|| self.input.clone())
+            .into_iter()
+            .collect()
     }
 }

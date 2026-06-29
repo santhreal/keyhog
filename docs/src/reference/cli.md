@@ -1,17 +1,21 @@
 # CLI reference
 
-## `keyhog scan [PATH]`
+## `keyhog scan [PATH]...`
 
-The main subcommand. Scans `PATH` (default: current directory) and
-emits findings. Exit code: `0` clean, `1` findings present, `2`
-user error, `3` system error, `10` live credential, `11` scanner panic,
-`12` required GPU unavailable, `13` requested source failed or coverage incomplete.
+The main subcommand. Scans one or more `PATH` roots (default: current
+directory) and emits findings. Pass several roots in a single run —
+`keyhog scan src/ tests/ config/` — and each is walked as its own source;
+a root nested inside another is folded into its covering parent (announced
+on stderr) so no subtree is scanned twice. Exit code: `0` clean, `1` findings
+present, `2` user error, `3` system error, `10` live credential, `11` scanner
+panic, `12` required GPU unavailable, `13` requested source failed or coverage
+incomplete.
 
 ### Input selection
 
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
-| `<PATH>`                      | Positional path. File or directory.            |
+| `<PATH>...`                   | One or more positional roots. Each may be a file or directory; nested/duplicate roots are folded into their covering parent. `--git-staged` requires a single root. |
 | `--stdin`                     | Read from stdin instead. Default 10 MiB cap; tune with `--limit-stdin-bytes`. |
 | `--exclude-paths <GLOB>...`   | Skip files matching glob. Space-separated list, repeatable. |
 | `--git-staged`                | Scan git-staged files only (pre-commit mode).  |

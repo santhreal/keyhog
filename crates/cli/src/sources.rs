@@ -2,7 +2,6 @@
 
 use crate::args::ScanArgs;
 use crate::orchestrator_config::ResolvedScanConfig;
-#[cfg(feature = "git")]
 use anyhow::Context;
 use anyhow::Result;
 use keyhog_core::Source;
@@ -11,7 +10,8 @@ use keyhog_core::{Chunk, MerkleIndex, SourceError};
 use std::borrow::Cow;
 use std::num::NonZeroUsize;
 #[cfg(feature = "git")]
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 struct EmptySource {
@@ -86,6 +86,69 @@ fn source_http_config(_args: &ScanArgs, ua_suffix: &str) -> keyhog_sources::http
     }
 }
 
+/// Validate, then de-overlap, the requested filesystem scan roots.
+///
+/// Every root is first validated as a CLI path argument and canonicalized. A
+/// root is then folded away when it is an exact duplicate of an earlier root or
+/// nested inside another requested root: that subtree is already walked
+/// recursively by its covering parent, so keeping it would double-report every
+/// file under it. Exact duplicates keep their first occurrence; a nested root is
+/// always absorbed by its ancestor regardless of argument order. Folds are
+/// announced on stderr — never silent (Law 10) — and the surviving roots are
+/// returned in first-seen order so finding output stays deterministic. An empty
+/// request yields an empty result (the caller then builds no filesystem source,
+/// exactly as a path-less `--stdin`/remote-only scan expects).
+pub(crate) fn resolve_scan_roots(requested: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    if requested.is_empty() {
+        return Ok(Vec::new());
+    }
+    for root in requested {
+        crate::path_validation::validate_cli_path_arg(root, "scan path")?;
+    }
+    let canonical: Vec<PathBuf> = requested
+        .iter()
+        .map(|root| {
+            root.canonicalize().with_context(|| {
+                format!(
+                    "canonicalize scan root {} for overlap detection",
+                    root.display()
+                )
+            })
+        })
+        .collect::<Result<_>>()?;
+
+    let mut kept: Vec<PathBuf> = Vec::new();
+    let mut folded: Vec<(PathBuf, PathBuf)> = Vec::new();
+    'roots: for i in 0..requested.len() {
+        for j in 0..requested.len() {
+            if i == j {
+                continue;
+            }
+            let earlier_duplicate = canonical[i] == canonical[j] && j < i;
+            let nested_in_other =
+                canonical[i] != canonical[j] && canonical[i].starts_with(&canonical[j]);
+            if earlier_duplicate || nested_in_other {
+                folded.push((requested[i].clone(), requested[j].clone()));
+                continue 'roots;
+            }
+        }
+        kept.push(requested[i].clone());
+    }
+
+    if !folded.is_empty() {
+        let palette = crate::style::for_stderr();
+        for (child, parent) in &folded {
+            eprintln!(
+                "{}: folding overlapping scan root {} into {} (already walked recursively)",
+                crate::style::warn("keyhog", &palette),
+                child.display(),
+                parent.display(),
+            );
+        }
+    }
+    Ok(kept)
+}
+
 pub(crate) fn build_sources(
     args: &ScanArgs,
     resolved: &ResolvedScanConfig,
@@ -94,8 +157,9 @@ pub(crate) fn build_sources(
 ) -> Result<Vec<Box<dyn Source>>> {
     let mut sources: Vec<Box<dyn Source>> = Vec::new();
     let source_limits = resolved.source_limits;
-    let scan_path = args.path.as_ref().or(args.input.as_ref());
-    validate_source_flag_combinations(args, scan_path.is_some())?;
+    let requested_roots = args.scan_roots();
+    let scan_path = requested_roots.first();
+    validate_source_flag_combinations(args, !requested_roots.is_empty())?;
 
     #[cfg(feature = "git")]
     let mut staged_files = if args.git_staged {
@@ -118,32 +182,44 @@ pub(crate) fn build_sources(
 
     if staged_include_set_exhausted {
         sources.push(Box::new(EmptySource::new("git-staged/excluded")));
-    } else if let Some(path) = scan_path {
-        crate::path_validation::validate_cli_path_arg(path, "scan path")?;
-        let mut fs_source = keyhog_sources::FilesystemSource::new(path.clone())
-            .with_ignore_paths(merged_ignore_paths)
-            // Default excludes are source-owned. `--no-default-excludes` must
-            // toggle the actual file classifier, not a CLI-side glob mirror.
-            .with_default_excludes(!resolved.no_default_excludes);
-        if let Some(limit) = resolved.max_file_size {
-            fs_source = fs_source.with_max_file_size(limit as u64);
-        }
-        if let Some(threads) = resolved.reader_threads.and_then(NonZeroUsize::new) {
-            fs_source = fs_source.with_reader_threads(threads);
-        }
-        if let Some(idx) = merkle.as_ref() {
-            fs_source = fs_source.with_merkle_skip(idx.clone());
-        }
+    } else {
+        // Each requested root becomes its own filesystem source — the scan
+        // engine already merges this `Vec<Box<dyn Source>>`, so multi-root
+        // (`keyhog scan a/ b/ c/`) needs no engine change. Overlapping/nested
+        // roots are folded into their covering parent (loudly) so a subtree is
+        // never walked twice.
+        let roots = resolve_scan_roots(&requested_roots)?;
         #[cfg(feature = "git")]
-        if args.git_staged && !staged_files.is_empty() {
-            fs_source = fs_source.with_include_paths(staged_files);
-        }
-        sources.push(Box::new(fs_source));
-        #[cfg(feature = "binary")]
-        if args.binary {
-            sources.push(Box::new(
-                keyhog_sources::BinarySource::new(path.clone()).with_limits(source_limits),
-            ));
+        let mut staged_files = staged_files;
+        for root in &roots {
+            let mut fs_source = keyhog_sources::FilesystemSource::new(root.clone())
+                .with_ignore_paths(merged_ignore_paths.clone())
+                // Default excludes are source-owned. `--no-default-excludes` must
+                // toggle the actual file classifier, not a CLI-side glob mirror.
+                .with_default_excludes(!resolved.no_default_excludes);
+            if let Some(limit) = resolved.max_file_size {
+                fs_source = fs_source.with_max_file_size(limit as u64);
+            }
+            if let Some(threads) = resolved.reader_threads.and_then(NonZeroUsize::new) {
+                fs_source = fs_source.with_reader_threads(threads);
+            }
+            if let Some(idx) = merkle.as_ref() {
+                fs_source = fs_source.with_merkle_skip(idx.clone());
+            }
+            #[cfg(feature = "git")]
+            if args.git_staged && !staged_files.is_empty() {
+                // `--git-staged` is single-root (guarded upstream in
+                // `guard_multi_root_combinations`), so this consumes the staged
+                // set on the sole iteration without re-applying it per root.
+                fs_source = fs_source.with_include_paths(std::mem::take(&mut staged_files));
+            }
+            sources.push(Box::new(fs_source));
+            #[cfg(feature = "binary")]
+            if args.binary {
+                sources.push(Box::new(
+                    keyhog_sources::BinarySource::new(root.clone()).with_limits(source_limits),
+                ));
+            }
         }
     }
 

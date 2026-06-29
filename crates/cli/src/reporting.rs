@@ -226,8 +226,13 @@ fn coverage_gap_summary() -> Vec<(String, usize)> {
 
 fn scan_targets(args: &ScanArgs) -> Vec<String> {
     let mut targets = Vec::new();
-    push_path_target(&mut targets, "input", args.input.as_ref());
-    push_path_target(&mut targets, "path", args.path.as_ref());
+    // Every filesystem root the run actually scans, deduplicated by
+    // `scan_roots` (which also absorbs the orchestrator's internal
+    // `input -> path` promotion), so the header lists each root once whether the
+    // invocation was `--path`, a single positional, or `keyhog scan a/ b/ c/`.
+    for root in args.scan_roots() {
+        push_path_target(&mut targets, "path", Some(&root));
+    }
     if args.stdin {
         targets.push("stdin".to_string());
     }
