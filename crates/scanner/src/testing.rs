@@ -366,6 +366,15 @@ pub fn normalized_assignment_keyword_has_secret_suffix_for_test(normalized: &str
     )
 }
 
+/// The strong-keyword hex-key anchor (`engine::phase2_generic::keywords`) — true
+/// only when the value is a 32/48-char hex key AND the keyword (case-folded,
+/// `_`/`-`/`.` dropped) is in the strong cryptographic-key family or ends with
+/// `key`/`secret`, with `licensekey` explicitly excluded. Lets a gap test pin the
+/// full decision tree (value gate, exact family, exclusion, suffix fallback).
+pub fn is_strong_keyword_anchored_hex_key_for_test(keyword: &str, value: &str) -> bool {
+    crate::engine::phase2_generic::keywords::is_strong_keyword_anchored_hex_key(keyword, value)
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.
