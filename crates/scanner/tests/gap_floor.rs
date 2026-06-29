@@ -223,6 +223,8 @@ mod scan_error_display_messages;
 mod scan_filters_grouped;
 #[path = "gap/scanner_src_files_exceed_standard_500_loc.rs"]
 mod scanner_src_files_exceed_standard_500_loc;
+#[path = "gap/shared_assign_regex_contract.rs"]
+mod shared_assign_regex_contract;
 #[path = "gap/simd_no_hit_multiline_fast_path.rs"]
 mod simd_no_hit_multiline_fast_path;
 #[path = "gap/single_line_implicit_concat_not_appended.rs"]

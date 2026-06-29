@@ -123,6 +123,7 @@ pub mod santh_contract_dir_exists;
 pub mod scan_error_display_messages;
 pub mod scan_filters_grouped;
 pub mod scanner_src_files_exceed_standard_500_loc;
+pub mod shared_assign_regex_contract;
 pub mod simd_no_hit_multiline_fast_path;
 pub mod single_line_implicit_concat_not_appended;
 pub mod slack_checksum_token_shapes;

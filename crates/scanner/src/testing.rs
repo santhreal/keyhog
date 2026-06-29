@@ -136,6 +136,21 @@ pub fn looks_reversible_for_test(candidate: &str) -> bool {
     crate::decode::reverse::looks_reversible(candidate)
 }
 
+/// Test seam for the shared `ASSIGN_RE` assignment-detection regex (the single
+/// `key = "value"` source consumed by BOTH `engine` fragment reassembly and the
+/// `multiline::structural` preprocessor). Returns the `(key, value)` capture
+/// groups for one line, or `None` when the line is not a quoted assignment the
+/// regex admits. Lets a gap test pin the shared detection contract exactly so a
+/// future edit to the one regex source can't silently shift either scan path.
+pub fn assign_re_captures_for_test(line: &str) -> Option<(String, String)> {
+    let re = crate::shared_regexes::ASSIGN_RE.as_ref()?;
+    let caps = re.captures(line)?;
+    Some((
+        caps.get(1)?.as_str().to_string(),
+        caps.get(2)?.as_str().to_string(),
+    ))
+}
+
 /// Test seam for the decode-splice core: splice `decoded_text` into the bounded
 /// `[start, end)` window of `parent`, keeping `SPLICE_CONTEXT_WINDOW` bytes of
 /// companion context on each side. Returns `(window_start, spliced_payload,
