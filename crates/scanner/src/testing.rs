@@ -385,6 +385,31 @@ pub fn generic_keyword_prefilter_stem_for_test(keyword: &'static str) -> String 
     crate::engine::phase2_generic::keywords::generic_keyword_prefilter_stem(keyword).to_string()
 }
 
+/// `compact_keyword_eq` (`engine::phase2_generic::keywords`) driven with the real
+/// assignment separator set (`_`/`-`/`.`) — true iff the keyword, case-folded
+/// with those separators dropped, EXACTLY equals the needle. Lets a gap test pin
+/// the exact-equality contract (no trailing/leading slop) that the strong-key
+/// anchor's exact-family check relies on.
+pub fn compact_keyword_eq_for_test(keyword: &str, needle: &str) -> bool {
+    crate::engine::phase2_generic::keywords::compact_keyword_eq(
+        keyword,
+        needle.as_bytes(),
+        crate::engine::phase2_generic::keywords::is_assignment_compact_separator,
+    )
+}
+
+/// `compact_keyword_ends_with` (`engine::phase2_generic::keywords`) driven with
+/// the real separator set — true iff the case-folded, separator-stripped keyword
+/// ends with the suffix. Lets a gap test pin that it is a SUFFIX match (so
+/// `keyvault` does not end with `key`), distinct from the exact-equality helper.
+pub fn compact_keyword_ends_with_for_test(keyword: &str, suffix: &str) -> bool {
+    crate::engine::phase2_generic::keywords::compact_keyword_ends_with(
+        keyword,
+        suffix.as_bytes(),
+        crate::engine::phase2_generic::keywords::is_assignment_compact_separator,
+    )
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.

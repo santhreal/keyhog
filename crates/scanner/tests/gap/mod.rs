@@ -13,6 +13,7 @@ pub mod byte_distribution_base64_blob_admit_policy_exact;
 pub mod caesar_shift_rotation_exact;
 pub mod checksum_github;
 pub mod checksum_gitlab_npm_slack_stripe;
+pub mod compact_keyword_eq_and_ends_with_exact;
 pub mod compiler_inline_tests_in_src;
 pub mod compiler_prefix_inline_tests_in_src;
 pub mod compiler_prefix_tuning_thresholds_exact;

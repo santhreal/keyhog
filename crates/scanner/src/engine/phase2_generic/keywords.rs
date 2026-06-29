@@ -257,7 +257,7 @@ const ENCODED_TEXT_SECRET_ANCHORS: &[&[u8]] = &[
     b"credential",
 ];
 
-fn is_assignment_compact_separator(byte: u8) -> bool {
+pub(crate) fn is_assignment_compact_separator(byte: u8) -> bool {
     matches!(byte, b'_' | b'-' | b'.')
 }
 
@@ -265,7 +265,11 @@ fn is_normalized_compact_separator(byte: u8) -> bool {
     byte == b'_'
 }
 
-fn compact_keyword_eq(keyword: &str, needle: &[u8], is_separator: fn(u8) -> bool) -> bool {
+pub(crate) fn compact_keyword_eq(
+    keyword: &str,
+    needle: &[u8],
+    is_separator: fn(u8) -> bool,
+) -> bool {
     let mut bytes = keyword
         .bytes()
         .filter(|byte| !is_separator(*byte))
@@ -278,7 +282,11 @@ fn compact_keyword_eq(keyword: &str, needle: &[u8], is_separator: fn(u8) -> bool
     bytes.next().is_none()
 }
 
-fn compact_keyword_ends_with(keyword: &str, suffix: &[u8], is_separator: fn(u8) -> bool) -> bool {
+pub(crate) fn compact_keyword_ends_with(
+    keyword: &str,
+    suffix: &[u8],
+    is_separator: fn(u8) -> bool,
+) -> bool {
     let mut suffix_index = suffix.len();
     for byte in keyword
         .bytes()

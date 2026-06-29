@@ -30,6 +30,8 @@ mod caesar_shift_rotation_exact;
 mod checksum_github;
 #[path = "gap/checksum_gitlab_npm_slack_stripe.rs"]
 mod checksum_gitlab_npm_slack_stripe;
+#[path = "gap/compact_keyword_eq_and_ends_with_exact.rs"]
+mod compact_keyword_eq_and_ends_with_exact;
 #[path = "gap/compiler_inline_tests_in_src.rs"]
 mod compiler_inline_tests_in_src;
 #[path = "gap/compiler_prefix_inline_tests_in_src.rs"]
