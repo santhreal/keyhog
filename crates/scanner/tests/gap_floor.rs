@@ -20,6 +20,8 @@ mod backend_worst_case_parity_sample_only;
 mod bigram_bloom_log_bit_count_coherence;
 #[path = "gap/boundary_guard_split_lossless_and_precise.rs"]
 mod boundary_guard_split_lossless_and_precise;
+#[path = "gap/byte_distribution_base64_blob_admit_policy_exact.rs"]
+mod byte_distribution_base64_blob_admit_policy_exact;
 #[path = "gap/caesar_shift_rotation_exact.rs"]
 mod caesar_shift_rotation_exact;
 #[path = "gap/checksum_github.rs"]

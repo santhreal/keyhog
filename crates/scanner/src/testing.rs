@@ -309,6 +309,17 @@ pub fn kernel_supports_io_uring_for_test(osrelease: &str) -> bool {
     crate::hw_probe::platform::kernel_supports_io_uring(osrelease)
 }
 
+/// The emit-drop byte-distribution base64 gate (decode_structure.rs). Lets a gap
+/// test pin its exact admit policy (requires both `+` and `/`, or padding with
+/// one) without going through the suppression callers.
+pub fn is_byte_distribution_base64_blob_for_test(
+    value: &str,
+    min_len: usize,
+    max_len: usize,
+) -> bool {
+    crate::decode_structure::is_byte_distribution_base64_blob(value, min_len, max_len)
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.
