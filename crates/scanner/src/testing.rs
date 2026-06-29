@@ -410,6 +410,27 @@ pub fn compact_keyword_ends_with_for_test(keyword: &str, suffix: &str) -> bool {
     )
 }
 
+/// `normalized_assignment_keyword_owned_by_named_detector` (`generic_keyword_
+/// owner`) — the binary-search owner check. The facade sorts and dedups the
+/// supplied keywords through the same `BTreeSet` the real builder uses, so a gap
+/// test can pass an UNSORTED list and still pin the EXACT-match contract (a
+/// prefix, superstring, substring, or differently-cased query is NOT owned).
+pub fn assignment_keyword_owned_by_named_detector_for_test(
+    owned: &[&str],
+    normalized: &str,
+) -> bool {
+    let sorted: Vec<std::sync::Arc<str>> = owned
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<&str>>()
+        .into_iter()
+        .map(std::sync::Arc::from)
+        .collect();
+    crate::generic_keyword_owner::normalized_assignment_keyword_owned_by_named_detector(
+        &sorted, normalized,
+    )
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.

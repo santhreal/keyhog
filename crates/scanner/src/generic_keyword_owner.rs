@@ -126,7 +126,7 @@ pub(crate) fn keyword_span_owned_by_named_detector(
         && assignment_keyword_owned_by_named_detector(owned_keywords, &line[start..end])
 }
 
-fn normalized_assignment_keyword_owned_by_named_detector(
+pub(crate) fn normalized_assignment_keyword_owned_by_named_detector(
     owned_keywords: &[Arc<str>],
     normalized: &str,
 ) -> bool {
