@@ -34,6 +34,14 @@ weak_anchor = [
   "foundation-api-key",
   "getresponse-api-key",
   "rudder-api-token",
+  # Context-prefix password detectors: a strong syntactic anchor
+  # (`IDENTIFIED BY '<x>'`, `--password <x>`) proves a credential SLOT, but the
+  # captured value still collides with dictionary placeholders (`'password'`,
+  # `--password changeme`). Keep the Tier-B shape gates engaged so the shared
+  # random-vs-dictionary discriminator surfaces real random secrets while
+  # dropping the placeholders, exactly as the generic keyword bridge does.
+  "sql-password",
+  "cli-password-flag",
 ]
 
 private_key_block = [

@@ -1,7 +1,7 @@
 # Detectors
 
 A **detector** is a single TOML file that teaches KeyHog one shape of
-credential. There are 902 of them in the embedded corpus today,
+credential. There are 904 of them in the embedded corpus today,
 spread across `detectors/*.toml`.
 
 ## Anatomy of a detector
@@ -105,7 +105,7 @@ makes the documented API call with the captured credential and:
 keyhog detectors                  # human-readable list, grouped by service
 keyhog detectors --json           # one JSON object per detector
 keyhog detectors --json | jq length
-902
+904
 ```
 
 Filter by service:
