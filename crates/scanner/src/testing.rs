@@ -259,6 +259,32 @@ pub fn hot_loop_deadline_cadence_for_test() -> usize {
     crate::deadline::HOT_LOOP_DEADLINE_CADENCE
 }
 
+/// Minimum literal-prefix byte length before a homoglyph phase-2 variant is
+/// generated (compiler_build.rs). Lets a gap test pin its exact value.
+pub fn compiler_min_homoglyph_prefix_len_for_test() -> usize {
+    crate::compiler::compiler_build::MIN_HOMOGLYPH_PREFIX_LEN
+}
+
+/// Minimum byte length of a standalone inner literal kept in the AC set
+/// (compiler_prefix.rs). Lets a gap test pin its exact value.
+pub fn compiler_min_inner_literal_chars_for_test() -> usize {
+    crate::compiler::compiler_prefix::MIN_INNER_LITERAL_CHARS
+}
+
+/// Minimum distinctive-infix length before a pattern is treated as having a
+/// usable required literal run (compiler_prefix.rs). Lets a gap test pin its
+/// exact value.
+pub fn compiler_min_distinctive_infix_chars_for_test() -> usize {
+    crate::compiler::compiler_prefix::MIN_DISTINCTIVE_INFIX_CHARS
+}
+
+/// Maximum char-class cardinality still enumerated into AC prefixes before the
+/// class is treated as a body matcher (compiler_prefix.rs). Lets a gap test pin
+/// its exact value.
+pub fn compiler_max_charclass_prefix_expansion_for_test() -> usize {
+    crate::compiler::compiler_prefix::MAX_CHARCLASS_PREFIX_EXPANSION
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.

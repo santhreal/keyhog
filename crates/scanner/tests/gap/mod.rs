@@ -12,6 +12,7 @@ pub mod checksum_github;
 pub mod checksum_gitlab_npm_slack_stripe;
 pub mod compiler_inline_tests_in_src;
 pub mod compiler_prefix_inline_tests_in_src;
+pub mod compiler_prefix_tuning_thresholds_exact;
 pub mod confidence_calibration_uncalibrated_passthrough;
 pub mod confidence_floor_policy;
 pub mod confidence_penalties_inline_tests_in_src;

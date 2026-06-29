@@ -28,6 +28,8 @@ mod checksum_gitlab_npm_slack_stripe;
 mod compiler_inline_tests_in_src;
 #[path = "gap/compiler_prefix_inline_tests_in_src.rs"]
 mod compiler_prefix_inline_tests_in_src;
+#[path = "gap/compiler_prefix_tuning_thresholds_exact.rs"]
+mod compiler_prefix_tuning_thresholds_exact;
 #[path = "gap/confidence_calibration_uncalibrated_passthrough.rs"]
 mod confidence_calibration_uncalibrated_passthrough;
 #[path = "gap/confidence_floor_policy.rs"]

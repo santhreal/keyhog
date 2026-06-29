@@ -35,6 +35,17 @@ struct PatternArtifacts {
     no_literal_no_keyword: bool,
 }
 
+/// Minimum byte length of a literal prefix before it is worth generating a
+/// homoglyph phase-2 variant. A 1-2 byte prefix carries too little signal: its
+/// homoglyph expansion would broaden the AC set for almost no spoof-coverage
+/// gain. This is deliberately SHORTER than `MIN_INNER_LITERAL_CHARS` — a
+/// homoglyph variant still splices back into the FULL regex (the rest of the
+/// pattern must match), whereas an inner literal stands alone in the AC set and
+/// needs more distinctiveness to avoid flooding the prefilter. Named to match
+/// the prefix-compiler's other tuning thresholds (`MIN_INNER_LITERAL_CHARS`,
+/// `MIN_DISTINCTIVE_INFIX_CHARS`, `MAX_CHARCLASS_PREFIX_EXPANSION`).
+pub(crate) const MIN_HOMOGLYPH_PREFIX_LEN: usize = 3;
+
 pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
     use rayon::prelude::*;
 
@@ -92,7 +103,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                 // anchor would turn every detector into "fires on `<prefix>*`").
                 let mut homoglyph_phase2 = Vec::new();
                 for prefix in &prefixes {
-                    if prefix.len() < 3 {
+                    if prefix.len() < MIN_HOMOGLYPH_PREFIX_LEN {
                         continue;
                     }
                     let expanded_prefix = crate::homoglyph::expand_homoglyphs(prefix);
