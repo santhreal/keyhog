@@ -75,7 +75,7 @@ fn passes_plausibility_checks(
     true
 }
 
-fn matches_universal_rejection(value: &str) -> bool {
+pub(crate) fn matches_universal_rejection(value: &str) -> bool {
     value.contains("://")
         || value.starts_with('/')
         || value.starts_with("./")

@@ -320,6 +320,14 @@ pub fn is_byte_distribution_base64_blob_for_test(
     crate::decode_structure::is_byte_distribution_base64_blob(value, min_len, max_len)
 }
 
+/// The universal-rejection prefix gate (entropy::plausibility) — the first gate
+/// in the plausibility checks that drops obvious non-secrets (URLs, paths,
+/// template vars, JWTs, key/PEM/age/vault envelopes, Windows drive paths,
+/// markdown fences). Lets a gap test pin its exact reject/accept decisions.
+pub fn entropy_matches_universal_rejection_for_test(value: &str) -> bool {
+    crate::entropy::plausibility::matches_universal_rejection(value)
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.
