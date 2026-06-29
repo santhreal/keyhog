@@ -274,6 +274,8 @@ pub trait CliTestApi {
         second: u64,
         elapsed: std::time::Duration,
     ) -> (bool, bool);
+    fn watch_resolve_roots(&self, requested: &[PathBuf]) -> Result<Vec<PathBuf>>;
+    fn watch_roots_hint(&self, roots: &[PathBuf]) -> String;
 
     fn max_resident_findings(&self) -> usize;
     fn parse_macos_mount_table_for_test(
@@ -837,6 +839,12 @@ impl CliTestApi for TestApi {
         elapsed: std::time::Duration,
     ) -> (bool, bool) {
         crate::subcommands::watch::testing::duplicate_findings_decisions(first, second, elapsed)
+    }
+    fn watch_resolve_roots(&self, requested: &[PathBuf]) -> Result<Vec<PathBuf>> {
+        crate::subcommands::watch::testing::resolve_watch_roots(requested)
+    }
+    fn watch_roots_hint(&self, roots: &[PathBuf]) -> String {
+        crate::subcommands::watch::testing::roots_hint(roots)
     }
 
     fn max_resident_findings(&self) -> usize {

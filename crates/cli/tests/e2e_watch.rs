@@ -4,8 +4,10 @@
 //! as they change. This test verifies that watch activates, detects changes,
 //! and can be run in quiet mode.
 
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -154,6 +156,109 @@ fn watch_detectors_flag_overrides_detector_directory() {
             || stderr.to_lowercase().contains("not found")
             || stderr.to_lowercase().contains("corpus"),
         "error should identify the missing detector corpus; stderr: {stderr}"
+    );
+}
+
+/// Drain a child pipe line-by-line into a shared buffer until EOF. Returning
+/// on EOF (which the OS signals when the killed child's pipe closes) keeps the
+/// child from blocking on a full pipe while the test polls the buffer.
+fn drain_pipe<R: std::io::Read + Send + 'static>(pipe: R) -> Arc<Mutex<String>> {
+    let captured = Arc::new(Mutex::new(String::new()));
+    let writer = Arc::clone(&captured);
+    thread::spawn(move || {
+        let mut reader = BufReader::new(pipe);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => writer.lock().expect("buffer lock").push_str(&line),
+            }
+        }
+    });
+    captured
+}
+
+/// Poll `buffer` until `needles` all appear, or `deadline` elapses. Returns the
+/// outcome so the caller asserts on a concrete readiness fact, not a fixed
+/// sleep that races the ~3 s detector compile.
+fn wait_until_contains(buffer: &Arc<Mutex<String>>, needles: &[&str], deadline: Duration) -> bool {
+    let start = std::time::Instant::now();
+    while start.elapsed() < deadline {
+        {
+            let seen = buffer.lock().expect("buffer lock");
+            if needles.iter().all(|needle| seen.contains(needle)) {
+                return true;
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    false
+}
+
+/// `keyhog watch A B` registers BOTH roots on a single daemon and a secret
+/// written under EACH root is detected. This proves multi-root watch is real
+/// end to end and not a first-root-only illusion: the second root's finding
+/// would never print if only `A` were registered.
+///
+/// The test is readiness-gated, not sleep-timed: it waits for the per-root
+/// `watching:` banner (which prints only after the scanner finishes its cold
+/// compile) before writing, then polls stdout for both findings. inotify
+/// delivery is sub-millisecond, so the generous deadlines never flake.
+#[test]
+fn watch_detects_changes_under_every_root() {
+    let root_a = TempDir::new().expect("tempdir a");
+    let root_b = TempDir::new().expect("tempdir b");
+    let canon_a = root_a.path().canonicalize().expect("canonical a");
+    let canon_b = root_b.path().canonicalize().expect("canonical b");
+
+    // An explicit backend is required: an uncalibrated binary's watch fails
+    // closed on autoroute, so `--backend cpu` is what lets a finding print.
+    // No `--quiet`: the `watching:` banner is the readiness signal.
+    let mut child = Command::new(binary())
+        .arg("watch")
+        .arg(root_a.path())
+        .arg(root_b.path())
+        .args(["--backend", "cpu"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn keyhog watch A B");
+
+    let stdout_buf = drain_pipe(child.stdout.take().expect("stdout piped"));
+    let stderr_buf = drain_pipe(child.stderr.take().expect("stderr piped"));
+
+    // Gate on registration: both roots must appear in the banner before we
+    // write, so the inotify watches are live when the files land.
+    let registered = wait_until_contains(
+        &stderr_buf,
+        &[
+            &canon_a.display().to_string(),
+            &canon_b.display().to_string(),
+        ],
+        Duration::from_secs(20),
+    );
+    assert!(
+        registered,
+        "watch must register BOTH roots in its banner; stderr={}",
+        stderr_buf.lock().expect("buffer lock")
+    );
+
+    // Plant a real (valid-checksum) AWS access key under each root.
+    const PLANTED: &str = "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n";
+    std::fs::write(root_a.path().join("a.env"), PLANTED).expect("write under root A");
+    std::fs::write(root_b.path().join("b.env"), PLANTED).expect("write under root B");
+
+    // Both findings must reach stdout — the first AND the second root.
+    let both_found = wait_until_contains(&stdout_buf, &["a.env", "b.env"], Duration::from_secs(15));
+    let _ = child.kill();
+
+    assert!(
+        both_found,
+        "a change under EVERY watched root must be scanned (multi-root, not \
+         first-only); stdout={} stderr={}",
+        stdout_buf.lock().expect("buffer lock"),
+        stderr_buf.lock().expect("buffer lock"),
     );
 }
 

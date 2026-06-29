@@ -54,16 +54,11 @@ struct WatchDedupeState {
 }
 
 pub(crate) fn run(args: WatchArgs) -> Result<()> {
-    let watch_root = std::fs::canonicalize(&args.path)
-        .with_context(|| format!("canonicalize {}", args.path.display()))?;
-    if !watch_root.is_dir() {
-        anyhow::bail!(
-            "watch path '{}' is not a directory. \
-             Fix: pass a directory to monitor, or run `keyhog scan {}` for a one-shot file scan.",
-            watch_root.display(),
-            watch_root.display()
-        );
-    }
+    let watch_roots = resolve_watch_roots(&args.paths)?;
+    // The space-joined root list doubles as actionable advice: `keyhog scan`
+    // accepts the same multi-root form, so every "run keyhog scan <roots>"
+    // hint below stays copy-pasteable for one, two, or many watched trees.
+    let roots_hint = roots_hint(&watch_roots);
 
     // Parse the explicit backend BEFORE compiling the scanner so an invalid
     // value fails fast. With it set, the per-file scan forces that backend and
@@ -85,17 +80,24 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
             "\u{1F441}  keyhog watch (\u{2630} {} detectors compiled)",
             detector_count
         );
-        eprintln!("    watching: {}", watch_root.display());
+        // One status line per watched root so the operator can confirm every
+        // tree the daemon is actually monitoring, not just the first.
+        for root in &watch_roots {
+            eprintln!("    watching: {}", root.display());
+        }
         eprintln!("    Ctrl-C to exit");
         eprintln!();
     }
 
     let (tx, rx) = channel::<notify::Result<Event>>();
     let notify_channel_closed_for_callback = AtomicBool::new(false);
-    let watch_root_for_callback = watch_root.clone();
+    let roots_hint_for_callback = roots_hint.clone();
 
     // Hold the watcher for the duration of the daemon. The `notify` crate
     // requires us to keep the handle alive; dropping it stops the watcher.
+    // ONE watcher serves every root — `notify` lets us register additional
+    // paths on the same handle below — so all roots share this channel and the
+    // single dedup/scan loop, with no per-root thread or state divergence.
     let mut watcher = notify::recommended_watcher(move |res| {
         // notify hands events on its own thread; forward to the main loop.
         if tx.send(res).is_err()
@@ -107,31 +109,34 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
                  event could not be delivered and the changed path was NOT re-scanned. \
                  Restart watch, or run `keyhog scan {}` for a full one-shot rescan.",
                 style::warn("WARN", &palette),
-                watch_root_for_callback.display()
+                roots_hint_for_callback
             );
         }
     })
     .map_err(|e| {
         anyhow::anyhow!(
-            "failed to build filesystem watcher for {root}: {e}\n  \
+            "failed to build filesystem watcher for {roots}: {e}\n  \
              Fix: on Linux raise watcher limits with:\n    \
              sudo sysctl fs.inotify.max_user_instances=1024 fs.inotify.max_user_watches=524288\n  \
-             then retry, or run `keyhog scan {root}` for a one-shot scan.",
-            root = watch_root.display(),
+             then retry, or run `keyhog scan {roots}` for a one-shot scan.",
+            roots = roots_hint,
         )
     })?;
 
-    watcher
-        .watch(&watch_root, RecursiveMode::Recursive)
-        .map_err(|e| {
+    // Register every resolved root on the shared watcher. A failure names the
+    // exact root that could not be watched (not the whole set), so the inotify
+    // remediation hint stays specific even with multiple trees.
+    for root in &watch_roots {
+        watcher.watch(root, RecursiveMode::Recursive).map_err(|e| {
             anyhow::anyhow!(
                 "failed to watch {root}: {e}\n  \
              On Linux a large tree usually exhausts the inotify watch limit — raise it with:\n    \
              sudo sysctl fs.inotify.max_user_watches=524288   (persist in /etc/sysctl.conf)\n  \
              or run a one-shot `keyhog scan {root}` instead of watch.",
-                root = watch_root.display(),
+                root = root.display(),
             )
         })?;
+    }
 
     // Per-path dedupe state: last (scan time, content hash) seen for a path.
     // notify fires Create then Modify for a single new-file write, which
@@ -158,7 +163,7 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
                      fs.inotify.max_queued_events or run `keyhog scan {}` for a \
                      full one-shot rescan.",
                     style::warn("WARN", &palette),
-                    watch_root.display()
+                    roots_hint
                 );
                 continue;
             }
@@ -179,6 +184,58 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Resolve the requested watch roots into the canonical directory set the
+/// daemon will monitor.
+///
+/// Shares [`crate::sources::resolve_scan_roots`] with `keyhog scan` so both
+/// entry points validate, canonicalize, fold nested/duplicate roots (loudly,
+/// Law 10), and preserve first-seen order through one resolution contract — no
+/// drift between what `scan` and `watch` consider the same root set. Watch then
+/// adds the single constraint `scan` does not impose: every root must be a
+/// *directory*, because the filesystem watcher monitors trees, not single
+/// files. A non-directory root fails closed with the same actionable message
+/// the original single-root path used, naming the offending root and pointing
+/// at `keyhog scan` for a one-shot file scan.
+fn resolve_watch_roots(requested: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    let folded = crate::sources::resolve_scan_roots(requested)?;
+    let mut roots = Vec::with_capacity(folded.len());
+    for root in folded {
+        // Canonicalize each surviving root so the watcher registers — and every
+        // finding reports — the absolute real path, exactly as the historical
+        // single-root `watch` did. `resolve_scan_roots` keeps the user's
+        // spelling (relative, `.`/`..`), which is fine for a one-shot scan but
+        // would leave a live daemon printing `./foo` paths. Existence was
+        // already validated upstream, so this only normalizes the spelling; a
+        // failure here is a genuine TOCTOU race, surfaced loudly (Law 10),
+        // never swallowed.
+        let canonical = root
+            .canonicalize()
+            .with_context(|| format!("canonicalize watch root {}", root.display()))?;
+        if !canonical.is_dir() {
+            anyhow::bail!(
+                "watch path '{}' is not a directory. \
+                 Fix: pass a directory to monitor, or run `keyhog scan {}` for a one-shot file scan.",
+                canonical.display(),
+                canonical.display()
+            );
+        }
+        roots.push(canonical);
+    }
+    Ok(roots)
+}
+
+/// Format the watched roots as a single space-joined string for error-message
+/// remediation hints. `keyhog scan` accepts the same multi-root positional
+/// form, so the result is always a copy-pasteable `keyhog scan <hint>` command
+/// regardless of how many roots are being watched.
+fn roots_hint(roots: &[PathBuf]) -> String {
+    roots
+        .iter()
+        .map(|root| root.display().to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// FNV-1a hash of the file contents. Cheap, allocation-free, and good
@@ -370,11 +427,23 @@ fn suppress_duplicate_findings(
 }
 
 pub(crate) mod testing {
-    use std::path::Path;
+    use anyhow::Result;
+    use std::path::{Path, PathBuf};
     use std::time::{Duration, Instant};
 
     pub(crate) fn content_hash(data: &[u8]) -> u64 {
         super::content_hash(data)
+    }
+
+    /// Resolve watch roots exactly as `keyhog watch` does at startup: shared
+    /// scan-root folding plus the directory-only constraint.
+    pub(crate) fn resolve_watch_roots(requested: &[PathBuf]) -> Result<Vec<PathBuf>> {
+        super::resolve_watch_roots(requested)
+    }
+
+    /// Format watched roots into the `keyhog scan <hint>` remediation string.
+    pub(crate) fn roots_hint(roots: &[PathBuf]) -> String {
+        super::roots_hint(roots)
     }
 
     pub(crate) fn duplicate_event_decisions(

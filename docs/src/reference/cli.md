@@ -144,13 +144,17 @@ companion rules, and verification endpoint.
 keyhog explain stripe-secret-key
 ```
 
-## `keyhog watch [PATH]`
+## `keyhog watch [PATH]...`
 
-Daemon-mode subcommand that watches a directory for file changes and
-re-scans on each one. Useful for IDE-side feedback. Unix only.
+Daemon-mode subcommand that watches one or more directories for file
+changes and re-scans on each one. Useful for IDE-side feedback. Unix only.
+Pass several roots to monitor them with a single daemon; nested or
+duplicate roots fold into their covering parent, mirroring `keyhog scan`.
+Every root must be a directory.
 
 ```sh
 keyhog watch src/                 # watch the source tree
+keyhog watch src/ config/         # watch several roots in one daemon
 keyhog watch                      # watch the current directory
 ```
 

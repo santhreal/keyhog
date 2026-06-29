@@ -7,7 +7,9 @@ use keyhog::args::{Cli, Command};
 fn watch_subcommand_path_defaults_to_cwd() {
     let cli = Cli::try_parse_from(["keyhog", "watch", "."]).unwrap();
     match cli.command {
-        Some(Command::Watch(args)) => assert_eq!(args.path, std::path::PathBuf::from(".")),
+        Some(Command::Watch(args)) => {
+            assert_eq!(args.paths, vec![std::path::PathBuf::from(".")])
+        }
         _ => panic!("expected Watch subcommand"),
     }
 }
