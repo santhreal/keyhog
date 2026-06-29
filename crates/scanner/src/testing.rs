@@ -151,6 +151,29 @@ pub fn assign_re_captures_for_test(line: &str) -> Option<(String, String)> {
     ))
 }
 
+/// Test seams for the Tier-B detector-classification query API
+/// (crates/scanner/src/detector_classification.rs). These four `pub(crate)`
+/// query functions drive real suppression/resolution decisions (weak-anchor
+/// shape gates, private-key-block nesting, the Stripe hot-path dedup) but have
+/// no behavioral coverage — the module's own `#[cfg(test)]` tests exercise only
+/// `parse_classification_rules`, never the cached query path. Each facade
+/// forwards verbatim to the live, bundled-TOML-backed query.
+pub fn detector_is_residual_weak_anchor_for_test(detector_id: &str) -> Result<bool, String> {
+    crate::detector_classification::is_residual_weak_anchor(detector_id)
+}
+
+pub fn detector_is_private_key_block_for_test(detector_id: &str) -> Result<bool, String> {
+    crate::detector_classification::is_private_key_block_detector(detector_id)
+}
+
+pub fn detector_stripe_hot_confirmed_prefixes_for_test() -> Result<Vec<String>, String> {
+    crate::detector_classification::stripe_hot_confirmed_prefixes().map(<[String]>::to_vec)
+}
+
+pub fn detector_classification_validate_for_test() -> Result<(), String> {
+    crate::detector_classification::validate()
+}
+
 /// Test seam for the decode-splice core: splice `decoded_text` into the bounded
 /// `[start, end)` window of `parent`, keeping `SPLICE_CONTEXT_WINDOW` bytes of
 /// companion context on each side. Returns `(window_start, spliced_payload,
