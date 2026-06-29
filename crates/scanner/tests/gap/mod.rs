@@ -2,6 +2,7 @@ pub mod adversarial_bulk_lacks_per_detector_hostile_twins;
 pub mod alphabet_targets_no_per_pattern_clone;
 pub mod analyze_keyword_only_must_assert;
 pub mod anchored_candidate_verify_single_owner;
+pub mod assignment_keyword_normalize_and_secret_suffix_exact;
 pub mod aws_finding_metadata_reexport_decodes;
 pub mod backend_dispatch_cpu_path_single_owner;
 pub mod backend_override_values_parse_coherence;

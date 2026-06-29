@@ -346,6 +346,26 @@ pub fn leading_assignment_key_for_test(candidate: &str) -> Option<String> {
     crate::generic_keyword_owner::leading_assignment_key(candidate).map(str::to_owned)
 }
 
+/// The assignment-keyword normalizer (`engine::phase2_generic::keywords`) —
+/// folds `SEGMENT_WRITE_KEY` / `segment-write-key` / `segment.write.key` into
+/// one comparable `segment_write_key` token. Lets a gap test pin the exact
+/// normalized string (case-fold, separator collapse, leading/trailing-separator
+/// trim, drop of unrecognized bytes) and the empty -> `None` boundary.
+pub fn normalize_assignment_keyword_for_test(keyword: &str) -> Option<String> {
+    crate::engine::phase2_generic::keywords::normalize_assignment_keyword(keyword)
+}
+
+/// The secret-suffix classifier (`engine::phase2_generic::keywords`) — true when
+/// a normalized assignment key claims a credential slot. Lets a gap test pin the
+/// exact split between the last-`_`-segment match set (`key`/`secret`/`token`/
+/// `password`/`passwd`/`pwd`) and the `ends_with` suffix set
+/// (`key`/`secret`/`token`/`password`).
+pub fn normalized_assignment_keyword_has_secret_suffix_for_test(normalized: &str) -> bool {
+    crate::engine::phase2_generic::keywords::normalized_assignment_keyword_has_secret_suffix(
+        normalized,
+    )
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.

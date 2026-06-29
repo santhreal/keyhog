@@ -8,6 +8,8 @@ mod alphabet_targets_no_per_pattern_clone;
 mod analyze_keyword_only_must_assert;
 #[path = "gap/anchored_candidate_verify_single_owner.rs"]
 mod anchored_candidate_verify_single_owner;
+#[path = "gap/assignment_keyword_normalize_and_secret_suffix_exact.rs"]
+mod assignment_keyword_normalize_and_secret_suffix_exact;
 #[path = "gap/aws_finding_metadata_reexport_decodes.rs"]
 mod aws_finding_metadata_reexport_decodes;
 #[path = "gap/backend_dispatch_cpu_path_single_owner.rs"]
