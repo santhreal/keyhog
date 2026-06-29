@@ -328,6 +328,15 @@ pub fn entropy_matches_universal_rejection_for_test(value: &str) -> bool {
     crate::entropy::plausibility::matches_universal_rejection(value)
 }
 
+/// The fast probabilistic noise gate (`probabilistic_gate`) — rejects obvious
+/// high-entropy non-secrets (UUIDs, low-diversity pads) before heavy ML scoring.
+/// Lets a gap test pin its exact promising/not-promising decisions, in
+/// particular the bigram-distribution branch that the diversity-count and UUID
+/// branches shadow on simpler inputs.
+pub fn probabilistic_gate_looks_promising_for_test(value: &str) -> bool {
+    crate::probabilistic_gate::ProbabilisticGate::looks_promising(value)
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.
