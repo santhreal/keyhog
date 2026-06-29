@@ -512,6 +512,16 @@ pub fn entropy_candidate_owned_by_named_assignment_for_test(
     )
 }
 
+/// `is_strong_keyword_anchored_encoded_text_secret`: true when the keyword is a
+/// strong credential anchor (a secret suffix, or one of the encoded-text-secret
+/// anchors like `credential`/`passphrase`) AND the value decodes to printable
+/// text. Short value (<24) or a value containing `.` is rejected up front.
+pub fn is_strong_keyword_anchored_encoded_text_secret_for_test(keyword: &str, value: &str) -> bool {
+    crate::engine::phase2_generic::keywords::is_strong_keyword_anchored_encoded_text_secret(
+        keyword, value,
+    )
+}
+
 /// `candidate_starts_with_owned_assignment_key` driven with an explicit owned
 /// set: true iff the candidate normalizes to a STRICTLY longer key that begins
 /// with one of the owned keys AND that owned key carries a credential suffix.

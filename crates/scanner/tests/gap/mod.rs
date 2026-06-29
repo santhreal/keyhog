@@ -153,6 +153,7 @@ pub mod slack_checksum_token_shapes;
 pub mod startup_banner_exact_shape;
 pub mod static_intern_seed_source_types;
 pub mod stripe_token_checksum_contract;
+pub mod strong_keyword_anchored_encoded_text_secret_exact;
 pub mod strong_keyword_anchored_hex_key_decision_tree_exact;
 pub mod structured_line_offsets_shared_builder;
 pub mod suffix_gate_literals_contract;

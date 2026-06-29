@@ -283,6 +283,8 @@ mod startup_banner_exact_shape;
 mod static_intern_seed_source_types;
 #[path = "gap/stripe_token_checksum_contract.rs"]
 mod stripe_token_checksum_contract;
+#[path = "gap/strong_keyword_anchored_encoded_text_secret_exact.rs"]
+mod strong_keyword_anchored_encoded_text_secret_exact;
 #[path = "gap/strong_keyword_anchored_hex_key_decision_tree_exact.rs"]
 mod strong_keyword_anchored_hex_key_decision_tree_exact;
 #[path = "gap/structured_line_offsets_shared_builder.rs"]
