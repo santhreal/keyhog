@@ -151,6 +151,7 @@ pub mod shared_assign_regex_contract;
 pub mod simd_no_hit_multiline_fast_path;
 pub mod single_line_implicit_concat_not_appended;
 pub mod slack_checksum_token_shapes;
+pub mod standard_base64_shape_classification_exact;
 pub mod startup_banner_exact_shape;
 pub mod static_intern_seed_source_types;
 pub mod stripe_token_checksum_contract;

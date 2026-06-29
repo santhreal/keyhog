@@ -531,6 +531,23 @@ pub fn is_likely_concatenation_fragment_for_test(line: &str) -> bool {
     crate::entropy::keywords::is_likely_concatenation_fragment(line)
 }
 
+/// `standard_base64_shape`: classifies a candidate as standard (non-url-safe)
+/// base64 and returns its shape, or `None` when it mixes alphabets, is url-safe,
+/// has `=` in an invalid position, or has a length remainder incompatible with
+/// its padding. The owned tuple is
+/// `(has_padding, length_multiple_of_four, has_plus, has_slash, distinct_alnum)`.
+pub fn standard_base64_shape_for_test(candidate: &str) -> Option<(bool, bool, bool, bool, u32)> {
+    crate::decode::standard_base64_shape(candidate).map(|shape| {
+        (
+            shape.has_padding,
+            shape.length_multiple_of_four,
+            shape.has_plus,
+            shape.has_slash,
+            shape.distinct_alnum,
+        )
+    })
+}
+
 /// `candidate_starts_with_owned_assignment_key` driven with an explicit owned
 /// set: true iff the candidate normalizes to a STRICTLY longer key that begins
 /// with one of the owned keys AND that owned key carries a credential suffix.

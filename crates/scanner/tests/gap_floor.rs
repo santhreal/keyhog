@@ -279,6 +279,8 @@ mod simd_no_hit_multiline_fast_path;
 mod single_line_implicit_concat_not_appended;
 #[path = "gap/slack_checksum_token_shapes.rs"]
 mod slack_checksum_token_shapes;
+#[path = "gap/standard_base64_shape_classification_exact.rs"]
+mod standard_base64_shape_classification_exact;
 #[path = "gap/startup_banner_exact_shape.rs"]
 mod startup_banner_exact_shape;
 #[path = "gap/static_intern_seed_source_types.rs"]
