@@ -487,6 +487,15 @@ pub fn candidate_starts_with_owned_assignment_key_for_test(
     crate::generic_keyword_owner::candidate_starts_with_owned_assignment_key(&keys, candidate)
 }
 
+/// `normalized_assignment_keyword_is_credential` on an already-normalized key:
+/// true via either the separated-secret-suffix branch (`*_key`/`*_secret`/...
+/// where the LAST `_`-segment is the credential word, which requires a `_`) or
+/// the compact branch (exact membership in the credential list, or a
+/// `salt`/`nonce`/`seed` suffix).
+pub fn normalized_assignment_keyword_is_credential_for_test(normalized: &str) -> bool {
+    crate::entropy::keywords::normalized_assignment_keyword_is_credential(normalized)
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.

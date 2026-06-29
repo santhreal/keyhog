@@ -177,6 +177,8 @@ mod nightly_exports_all_strict_env_vars;
 mod nightly_matrix_has_fourteen_runner_binaries;
 #[path = "gap/no_suppress_test_fixtures_clears_generic_fallback_haircut.rs"]
 mod no_suppress_test_fixtures_clears_generic_fallback_haircut;
+#[path = "gap/normalized_assignment_keyword_is_credential_exact.rs"]
+mod normalized_assignment_keyword_is_credential_exact;
 #[path = "gap/npm_checksum_token_structure.rs"]
 mod npm_checksum_token_structure;
 #[path = "gap/orphan_github_pat_contract.rs"]

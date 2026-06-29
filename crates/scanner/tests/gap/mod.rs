@@ -100,6 +100,7 @@ pub mod nightly_matrix_has_fourteen_runner_binaries;
 pub mod no_inline_tests_in_a3_slice;
 pub mod no_inline_tests_in_src;
 pub mod no_suppress_test_fixtures_clears_generic_fallback_haircut;
+pub mod normalized_assignment_keyword_is_credential_exact;
 pub mod npm_checksum_token_structure;
 pub mod orphan_github_pat_contract;
 pub mod pattern_signals_keyword_invariant_hoisted;
