@@ -169,6 +169,30 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // contract evasions. See task #41 + the 2026-05-27 audit.
     let apply_tier_b = is_generic_or_entropy(detector_id, weak_anchor);
 
+    // The `url-credentials` strong anchor skips the Tier-B randomness floor
+    // below, so a value sitting in the `scheme://user:<x>@host` userinfo SLOT
+    // surfaces regardless of how dictionary-like it is. That is correct for a
+    // random password (`://user:pxidztpv@host`) but wrong for the literal
+    // placeholder word (`://user:password@host`, `://user:secret@host`). Drop
+    // the captured value when the bigram model is CONFIDENT it is a pronounceable
+    // English word — never a random token (below the English threshold), never a
+    // short fail-safe (model returns None), never a hex digest (no g..z letter).
+    // Scoped to this one structural detector: a service-anchored detector's
+    // structured capture (hex / prefixed key) is never a free-form word, and
+    // applying the gate to all strong anchors wrongly suppressed hex keys whose
+    // a..f bigrams read as English (rollbar, steam, matomo, …).
+    if crate::detector_ids::is_url_userinfo_detector(detector_id)
+        && super::token_randomness::is_confident_dictionary_word(credential)
+    {
+        crate::adjudicate::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "dictionary_word_placeholder",
+        );
+        return shape_stage("dictionary_word_placeholder");
+    }
+
     if apply_tier_b && source_type.is_some_and(|source| source.contains("/caesar")) {
         crate::adjudicate::record_example_suppression(
             "pipeline",

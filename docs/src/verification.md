@@ -157,7 +157,7 @@ partial verification pass cannot look complete.
 
 ## Detectors without verification
 
-Not every detector has a `verify` block. 344 of the 904 detectors do
+Not every detector has a `verify` block. 344 of the 905 detectors do
 (about 38%). The rest are:
 
 - Format-only detectors (private keys, certificates, JWTs) where the

@@ -168,6 +168,38 @@ pub(crate) fn is_random_token(value: &str) -> bool {
     RandomTokenEvidence::analyze(value).is_random_token()
 }
 
+/// `true` iff the bigram model is CONFIDENT that `value` is a pronounceable
+/// English dictionary word — it has at least [`MIN_ALPHA`] alphabetic chars AND
+/// its mean adjacent-bigram log-probability sits ABOVE the random threshold
+/// (`password`, `secret`, `welcome`, `admin1234`).
+///
+/// This is the deliberate mirror image of [`is_random_token`], NOT merely its
+/// negation: `!is_random_token` is also true for a SHORT token the model cannot
+/// judge (`mean_bigram_logprob == None`, the fail-safe). This predicate stays
+/// `false` there, so it can only ever DROP a value the model is sure is English
+/// — it never suppresses a short random password on a fail-safe, and a random
+/// token (`pxidztpv`, score ≤ −6.85) is below the threshold so it is kept.
+///
+/// Used by the strong-anchor structural detectors (e.g. `url-credentials`,
+/// whose regex proves a `scheme://user:<x>@host` credential SLOT but cannot
+/// itself tell the literal placeholder word `password` from a real secret) to
+/// drop the dictionary-word placeholders the Tier-B randomness floor would have
+/// caught — without that floor's length penalty on short random passwords.
+pub(crate) fn is_confident_dictionary_word(value: &str) -> bool {
+    // A real English word carries at least one letter OUTSIDE the hex alphabet
+    // (`g..=z`). A pure-hex digest (`08c0fee0abeb…`) is built only from `a..f`
+    // plus digits, yet its `a..f` adjacencies (`ab`, `be`, `de`, `ea`) score as
+    // probable English — without this guard the model misreads every hex key as
+    // a dictionary word and the placeholder gate would suppress real hex secrets.
+    let has_non_hex_letter = value
+        .bytes()
+        .any(|b| (b'g'..=b'z').contains(&b.to_ascii_lowercase()));
+    has_non_hex_letter
+        && RandomTokenEvidence::analyze(value)
+            .mean_bigram_logprob()
+            .is_some_and(|score| score > RANDOM_LOGPROB_THRESHOLD)
+}
+
 /// Shared decision for the CONTIGUOUS identifier/type-name shape gates
 /// (KH-L-0413): keep the gate engaged (`true` ⇒ the value stays suppressed)
 /// UNLESS the value reads as a random token, in which case lift it (`false` ⇒
@@ -214,4 +246,103 @@ pub(crate) fn keep_word_separated_gate_with_randomness(
         return true;
     }
     !randomness.is_random_token(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_confident_dictionary_word, is_random_token, MIN_ALPHA};
+
+    // ── is_confident_dictionary_word: confident English words ⇒ true ───────
+
+    #[test]
+    fn password_is_confident_dictionary_word() {
+        assert!(is_confident_dictionary_word("password"));
+    }
+
+    #[test]
+    fn secret_six_chars_is_confident_dictionary_word() {
+        // Exactly MIN_ALPHA chars — the model is evaluated and `secret` reads
+        // as English, so it is confidently a dictionary word.
+        assert_eq!("secret".len(), MIN_ALPHA);
+        assert!(is_confident_dictionary_word("secret"));
+    }
+
+    #[test]
+    fn welcome_is_confident_dictionary_word() {
+        assert!(is_confident_dictionary_word("welcome"));
+    }
+
+    #[test]
+    fn username_is_confident_dictionary_word() {
+        assert!(is_confident_dictionary_word("username"));
+    }
+
+    // ── random tokens ⇒ false (kept) ───────────────────────────────────────
+
+    #[test]
+    fn lowercase_random_token_is_not_dictionary_word() {
+        // The exact CredData userinfo passwords the strong anchor must recover.
+        for token in ["pxidztpv", "zavvfuco", "vvaitgiz", "nxruoapftabufvcsa"] {
+            assert!(
+                !is_confident_dictionary_word(token),
+                "{token} is a random token, not a confident dictionary word"
+            );
+            assert!(is_random_token(token), "{token} must read as a random token");
+        }
+    }
+
+    #[test]
+    fn six_char_random_token_is_not_dictionary_word() {
+        // `hjxzyi` is exactly MIN_ALPHA chars and scores BELOW the English
+        // threshold — random, not dictionary, so it is kept.
+        assert!(!is_confident_dictionary_word("hjxzyi"));
+        assert!(is_random_token("hjxzyi"));
+    }
+
+    #[test]
+    fn mixed_case_random_token_is_not_dictionary_word() {
+        assert!(!is_confident_dictionary_word("Kc4mLp9Rt8Vy3Bn6"));
+    }
+
+    // ── short tokens (< MIN_ALPHA) ⇒ false on the FAIL-SAFE, never suppressed ─
+
+    #[test]
+    fn short_tokens_are_not_confident_dictionary_words() {
+        // Below MIN_ALPHA the bigram model returns None: the predicate must be
+        // false (it can only DROP what the model is SURE is English), so a short
+        // random userinfo value is never suppressed by this gate — the regex
+        // `{6,128}` floor, not this predicate, is what bounds the short case.
+        for token in ["pass", "admin", "root", "user", "pwd"] {
+            assert!(
+                !is_confident_dictionary_word(token),
+                "{token} is below MIN_ALPHA — the predicate must fail-safe to false"
+            );
+        }
+    }
+
+    #[test]
+    fn empty_and_nonalpha_are_not_dictionary_words() {
+        assert!(!is_confident_dictionary_word(""));
+        assert!(!is_confident_dictionary_word("123456"));
+        assert!(!is_confident_dictionary_word("h%40co"));
+    }
+
+    #[test]
+    fn hex_digests_are_not_dictionary_words() {
+        // The exact ripple cause: a pure-hex key's `a..f` adjacencies (`ab`,
+        // `be`, `de`, `ea`) read as probable English, but a hex digest carries
+        // NO `g..z` letter, so the predicate must reject it — otherwise the
+        // placeholder gate would suppress real hex secrets (rollbar/steam/…).
+        for hex in [
+            "08c0fee0abeb7224113fd958de7528ab",
+            "24ed7c1290d4ed5e45bd69c30994238c",
+            "533b30a72eee83f00d7436071027b88f",
+            "deadbeefcafebabe",
+        ] {
+            assert!(
+                !is_confident_dictionary_word(hex),
+                "{hex} is a hex digest (no g..z letter), not a dictionary word"
+            );
+        }
+    }
 }

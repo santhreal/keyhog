@@ -43,6 +43,16 @@ weak_anchor = [
   "sql-password",
   "cli-password-flag",
 ]
+# NOTE: `url-credentials` is deliberately NOT weak_anchor. Unlike the SQL/CLI
+# context-prefix detectors, the URL userinfo slot (`scheme://user:<x>@host`) is
+# strong STRUCTURAL evidence: the bulk of the real CredData userinfo passwords
+# are SHORT all-lowercase random strings (`pxidztpv`, `zavvfuco`) that the
+# random-vs-dictionary floor declines — yet they ARE credentials by URI
+# structure. Keeping it strong-anchor skips the Tier-B randomness floor
+# (`apply_tier_b=false`) so those surface, while the Tier-A
+# `syntactic_punctuation_marker` gate (`:$VAR@`) and the known-example decoy
+# gate (`:password@`, `:changeme@`) still drop placeholders, and the regex
+# itself excludes `<>` so `:<password>@` templates never match.
 
 private_key_block = [
   "private-key",

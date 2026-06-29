@@ -25,7 +25,7 @@ keyhog/
     sources/          # Filesystem, git, web, docker, S3/GCS/Azure Blob, hosted-git backends
     verifier/         # Live credential verification
     cli/              # The `keyhog` binary, subcommand dispatch
-  detectors/          # 904 service-specific detector TOMLs
+  detectors/          # 905 service-specific detector TOMLs
   crates/cli/data/
     suppressions/     # Test-fixture suppression list, baked into the binary
   docs/               # This documentation (mdBook source)
