@@ -183,6 +183,19 @@ pub fn default_decoder_names_for_test() -> Vec<&'static str> {
     crate::decode::default_decoder_names()
 }
 
+/// Test seam for the scanner's hard-exit code constants
+/// (crates/scanner/src/process_exit.rs). Returns
+/// `(REQUIRE_GPU_UNMET_EXIT_CODE, BACKEND_UNAVAILABLE_EXIT_CODE)`, which must
+/// mirror `keyhog::exit_codes::{EXIT_REQUIRE_GPU_UNMET, EXIT_SYSTEM_ERROR}`.
+/// Lets a scanner-side gap test pin the compiled values (the CLI contract test
+/// only source-string-checks them).
+pub fn process_exit_codes_for_test() -> (i32, i32) {
+    (
+        crate::process_exit::REQUIRE_GPU_UNMET_EXIT_CODE,
+        crate::process_exit::BACKEND_UNAVAILABLE_EXIT_CODE,
+    )
+}
+
 /// Test seam for the decode-splice core: splice `decoded_text` into the bounded
 /// `[start, end)` window of `parent`, keeping `SPLICE_CONTEXT_WINDOW` bytes of
 /// companion context on each side. Returns `(window_start, spliced_payload,

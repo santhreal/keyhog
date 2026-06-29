@@ -167,6 +167,8 @@ mod pipeline_hot_path_allocs;
 mod placeholder_word_entropy_collision_threshold;
 #[path = "gap/prefix_trie_propagation_move_on_last.rs"]
 mod prefix_trie_propagation_move_on_last;
+#[path = "gap/process_exit_code_contract.rs"]
+mod process_exit_code_contract;
 #[path = "gap/profile_relaxed_ordering_single_reference.rs"]
 mod profile_relaxed_ordering_single_reference;
 #[path = "gap/r5_adversarial_expansion_total_floor_155.rs"]

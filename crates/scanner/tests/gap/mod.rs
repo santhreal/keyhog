@@ -95,6 +95,7 @@ pub mod pipeline_exceeds_modularity_cap;
 pub mod pipeline_hot_path_allocs;
 pub mod placeholder_word_entropy_collision_threshold;
 pub mod prefix_trie_propagation_move_on_last;
+pub mod process_exit_code_contract;
 pub mod profile_relaxed_ordering_single_reference;
 pub mod r5_adversarial_expansion_total_floor_155;
 pub mod r5_adversarial_one_test_per_file;
