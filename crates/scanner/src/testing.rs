@@ -285,6 +285,22 @@ pub fn compiler_max_charclass_prefix_expansion_for_test() -> usize {
     crate::compiler::compiler_prefix::MAX_CHARCLASS_PREFIX_EXPANSION
 }
 
+/// Split a leading non-capturing boundary-guard group `(?:^|[^...])` into
+/// `(guard, rest)`; `None` when the leading group is anything other than an
+/// all-boundary-token alternation (compiler_prefix.rs). Returns owned `String`s
+/// so the borrow does not leak the internal lifetime to an integration test.
+pub fn split_leading_boundary_guard_for_test(pattern: &str) -> Option<(String, String)> {
+    crate::compiler::compiler_prefix::split_leading_boundary_guard(pattern)
+        .map(|(guard, rest)| (guard.to_string(), rest.to_string()))
+}
+
+/// The `rest` half of [`split_leading_boundary_guard_for_test`] — the slice past
+/// the boundary guard (compiler_prefix.rs `strip_leading_boundary_guard`). Lets
+/// a gap test pin that strip == split's rest.
+pub fn strip_leading_boundary_guard_for_test(pattern: &str) -> Option<String> {
+    crate::compiler::compiler_prefix::strip_leading_boundary_guard(pattern).map(str::to_string)
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.

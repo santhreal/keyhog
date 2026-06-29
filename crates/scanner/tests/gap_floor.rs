@@ -18,6 +18,8 @@ mod backend_override_values_parse_coherence;
 mod backend_worst_case_parity_sample_only;
 #[path = "gap/bigram_bloom_log_bit_count_coherence.rs"]
 mod bigram_bloom_log_bit_count_coherence;
+#[path = "gap/boundary_guard_split_lossless_and_precise.rs"]
+mod boundary_guard_split_lossless_and_precise;
 #[path = "gap/caesar_shift_rotation_exact.rs"]
 mod caesar_shift_rotation_exact;
 #[path = "gap/checksum_github.rs"]
