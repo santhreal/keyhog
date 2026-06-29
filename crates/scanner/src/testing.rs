@@ -474,6 +474,22 @@ pub fn candidate_embeds_owned_assignment_key_for_test(owned: &[&str], candidate:
     crate::generic_keyword_owner::candidate_embeds_owned_assignment_key(&keys, candidate)
 }
 
+/// `line_assignment_owned_by_named_detector` driven with an explicit owned set:
+/// extracts the line's assignment keyword (`assignment_keyword_for_line`, which
+/// applies the credential-first selection) and checks whether THAT keyword is
+/// owned. The facade rebuilds the owned slice through a sorted `BTreeSet` because
+/// the membership check is a `binary_search`.
+pub fn line_assignment_owned_by_named_detector_for_test(owned: &[&str], line: &str) -> bool {
+    let keys: Vec<std::sync::Arc<str>> = owned
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<&str>>()
+        .into_iter()
+        .map(std::sync::Arc::from)
+        .collect();
+    crate::generic_keyword_owner::line_assignment_owned_by_named_detector(&keys, line)
+}
+
 /// `candidate_starts_with_owned_assignment_key` driven with an explicit owned
 /// set: true iff the candidate normalizes to a STRICTLY longer key that begins
 /// with one of the owned keys AND that owned key carries a credential suffix.
