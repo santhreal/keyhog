@@ -147,7 +147,7 @@ pub(crate) fn leading_assignment_key(candidate: &str) -> Option<&str> {
     matches!(bytes[end], b'=' | b':' | b'~').then_some(&candidate[..end])
 }
 
-fn candidate_starts_with_owned_assignment_key(
+pub(crate) fn candidate_starts_with_owned_assignment_key(
     owned_keywords: &[Arc<str>],
     candidate: &str,
 ) -> bool {

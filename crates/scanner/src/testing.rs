@@ -459,6 +459,19 @@ pub fn keyword_span_owned_by_named_detector_for_test(
     )
 }
 
+/// `candidate_starts_with_owned_assignment_key` driven with an explicit owned
+/// set: true iff the candidate normalizes to a STRICTLY longer key that begins
+/// with one of the owned keys AND that owned key carries a credential suffix.
+/// The facade maps `&[&str]` to `Arc<str>` (the real fn uses `.any()`, so the
+/// owned order does not matter).
+pub fn candidate_starts_with_owned_assignment_key_for_test(
+    owned: &[&str],
+    candidate: &str,
+) -> bool {
+    let keys: Vec<std::sync::Arc<str>> = owned.iter().copied().map(std::sync::Arc::from).collect();
+    crate::generic_keyword_owner::candidate_starts_with_owned_assignment_key(&keys, candidate)
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.
