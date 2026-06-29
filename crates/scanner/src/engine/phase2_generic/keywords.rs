@@ -132,7 +132,7 @@ fn generic_stem_matches_at(bytes: &[u8], start: usize, stem_set: &GenericKeyword
     false
 }
 
-fn generic_keyword_prefilter_stem(keyword: &'static str) -> &'static str {
+pub(crate) fn generic_keyword_prefilter_stem(keyword: &'static str) -> &'static str {
     if keyword.contains("secret") {
         "secret"
     } else if keyword.contains("pass") {

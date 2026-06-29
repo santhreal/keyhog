@@ -375,6 +375,16 @@ pub fn is_strong_keyword_anchored_hex_key_for_test(keyword: &str, value: &str) -
     crate::engine::phase2_generic::keywords::is_strong_keyword_anchored_hex_key(keyword, value)
 }
 
+/// The generic-keyword prefilter-stem classifier (`engine::phase2_generic::
+/// keywords`) — collapses a detector keyword to the single literal the prefilter
+/// scans for, via a PRIORITY-ORDERED `contains` chain
+/// (`secret`>`pass`>`pwd`>`token`>`webhook`>`key`>`auth`>`credential`), falling
+/// back to the keyword itself. Returns owned so a gap test can pin the precedence
+/// (e.g. `secret_key` -> `secret`, `auth_key` -> `key`).
+pub fn generic_keyword_prefilter_stem_for_test(keyword: &'static str) -> String {
+    crate::engine::phase2_generic::keywords::generic_keyword_prefilter_stem(keyword).to_string()
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.

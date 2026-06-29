@@ -116,6 +116,8 @@ mod fragment_cache_reassemble_join;
 mod fragment_prefilter_single_source;
 #[path = "gap/generic_keyword_owner_service_name_floor.rs"]
 mod generic_keyword_owner_service_name_floor;
+#[path = "gap/generic_keyword_prefilter_stem_precedence_exact.rs"]
+mod generic_keyword_prefilter_stem_precedence_exact;
 #[path = "gap/generic_secret_confidence_formula.rs"]
 mod generic_secret_confidence_formula;
 #[path = "gap/github_checksum_token_structure.rs"]

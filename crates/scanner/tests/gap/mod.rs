@@ -58,6 +58,7 @@ pub mod fragment_assignment_syntax_prefilter;
 pub mod fragment_cache_reassemble_join;
 pub mod fragment_prefilter_single_source;
 pub mod generic_keyword_owner_service_name_floor;
+pub mod generic_keyword_prefilter_stem_precedence_exact;
 pub mod generic_secret_confidence_formula;
 pub mod github_checksum_token_structure;
 pub mod gitlab_checksum_body_length_floors;
