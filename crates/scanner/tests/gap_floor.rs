@@ -235,6 +235,8 @@ mod slack_checksum_token_shapes;
 mod startup_banner_exact_shape;
 #[path = "gap/static_intern_seed_source_types.rs"]
 mod static_intern_seed_source_types;
+#[path = "gap/stripe_token_checksum_contract.rs"]
+mod stripe_token_checksum_contract;
 #[path = "gap/structured_line_offsets_shared_builder.rs"]
 mod structured_line_offsets_shared_builder;
 #[path = "gap/suffix_gate_literals_contract.rs"]

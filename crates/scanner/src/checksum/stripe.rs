@@ -8,6 +8,14 @@ use super::{ChecksumResult, ChecksumValidator};
 /// matches only. They must not receive the embedded-checksum confidence floor.
 pub(crate) struct StripeTokenValidator;
 
+/// Inclusive length window for the post-prefix payload of a Stripe key. The
+/// lower bound is the documented "24+ alphanumeric chars" of the key format;
+/// the upper bound is a sanity ceiling that rejects an over-long run the
+/// boundary extender may have grabbed. A payload outside `[MIN, MAX]` is
+/// `Invalid` (wrong family shape), not merely unverifiable.
+const MIN_STRIPE_PAYLOAD_LEN: usize = 24;
+const MAX_STRIPE_PAYLOAD_LEN: usize = 128;
+
 impl ChecksumValidator for StripeTokenValidator {
     fn validate(&self, credential: &str) -> ChecksumResult {
         let prefixes = [
@@ -19,7 +27,7 @@ impl ChecksumValidator for StripeTokenValidator {
         // Stripe does not publish a checksum. Keep this validator aligned
         // with the detector contract: enforce the family and alphabet, but
         // do not claim checksum proof for long live keys that satisfy the regex.
-        if payload.len() < 24 || payload.len() > 128 {
+        if payload.len() < MIN_STRIPE_PAYLOAD_LEN || payload.len() > MAX_STRIPE_PAYLOAD_LEN {
             return ChecksumResult::Invalid;
         }
         if !payload.chars().all(|c| c.is_ascii_alphanumeric()) {
