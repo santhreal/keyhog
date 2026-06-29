@@ -30,6 +30,7 @@ pub mod decode_pipeline_exceeds_modularity_cap;
 pub mod decode_pipeline_layers;
 pub mod decode_splice_payload_window;
 pub mod decode_structure_protobuf_fixed_width_fields;
+pub mod decoder_registry_default_composition;
 pub mod degraded_batch_paths_preserve_boundaries;
 pub mod detector_classification_query_contract;
 pub mod detector_contract_coverage_100pct;

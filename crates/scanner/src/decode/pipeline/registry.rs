@@ -28,17 +28,25 @@ pub(super) fn profile_enabled() -> bool {
     crate::engine::profile::enabled()
 }
 
-static DECODER_NS: [std::sync::atomic::AtomicU64; 16] = {
+/// Fixed number of per-decoder profiler slots. The `DECODER_NS` / `DECODER_PRODUCED`
+/// accumulators and every index/clamp into them share this one capacity. There
+/// are 13 default decoders today, so the cap carries headroom; a decoder past
+/// slot `MAX_PROFILED_DECODERS` is simply not profiled (`record_decoder_run`
+/// drops it) — the `decoder_registry_within_profiler_capacity` gap test guards
+/// the default set against silently outgrowing this.
+const MAX_PROFILED_DECODERS: usize = 16;
+
+static DECODER_NS: [std::sync::atomic::AtomicU64; MAX_PROFILED_DECODERS] = {
     const Z: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    [Z; 16]
+    [Z; MAX_PROFILED_DECODERS]
 };
 
 /// Sub-chunks EMITTED per decoder (pre-dedup/screen). The sub-chunk COUNT - not
 /// gen time - is what drives the dominant decode-rescan + per-sub-chunk fixed
 /// phase-1 cost, so this isolates which decoders to gate with a sound prune.
-static DECODER_PRODUCED: [std::sync::atomic::AtomicU64; 16] = {
+static DECODER_PRODUCED: [std::sync::atomic::AtomicU64; MAX_PROFILED_DECODERS] = {
     const Z: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    [Z; 16]
+    [Z; MAX_PROFILED_DECODERS]
 };
 
 pub(super) fn record_decoder_run(
@@ -46,7 +54,7 @@ pub(super) fn record_decoder_run(
     elapsed: std::time::Duration,
     produced: usize,
 ) {
-    if decoder_index >= 16 {
+    if decoder_index >= MAX_PROFILED_DECODERS {
         return;
     }
     use std::sync::atomic::Ordering::Relaxed;
@@ -60,7 +68,7 @@ pub(crate) fn decoder_profile_dump() {
     use std::sync::atomic::Ordering::Relaxed;
     let decoders = active_decoders();
     let names: Vec<&str> = decoders.iter().map(|d| d.name()).collect();
-    let mut rows: Vec<(String, f64)> = (0..names.len().min(16))
+    let mut rows: Vec<(String, f64)> = (0..names.len().min(MAX_PROFILED_DECODERS))
         .map(|i| {
             (
                 names[i].to_string(),
@@ -70,7 +78,7 @@ pub(crate) fn decoder_profile_dump() {
         .collect();
     rows.sort_by(|a, b| b.1.total_cmp(&a.1));
     let total: f64 = rows.iter().map(|r| r.1).sum();
-    let mut prod: Vec<(String, u64)> = (0..names.len().min(16))
+    let mut prod: Vec<(String, u64)> = (0..names.len().min(MAX_PROFILED_DECODERS))
         .map(|i| (names[i].to_string(), DECODER_PRODUCED[i].swap(0, Relaxed)))
         .collect();
     prod.sort_by(|a, b| b.1.cmp(&a.1));
@@ -125,6 +133,15 @@ fn default_decoders() -> Vec<Arc<dyn Decoder>> {
         Arc::new(ReverseDecoder),
         Arc::new(CaesarDecoder),
     ]
+}
+
+/// The `name()` of each default decoder, in registration order. This is the
+/// canonical decode-pipeline composition — the order is load-bearing (the
+/// `reverse` and `caesar` decoders deliberately run last, after the structural
+/// decoders) — and is pinned by `decoder_registry_default_order` so a reorder
+/// or addition can't silently shift the pipeline.
+pub(crate) fn default_decoder_names() -> Vec<&'static str> {
+    default_decoders().iter().map(|d| d.name()).collect()
 }
 
 fn decoder_registry() -> &'static RwLock<Vec<Arc<dyn Decoder>>> {

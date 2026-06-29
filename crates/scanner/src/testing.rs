@@ -174,6 +174,15 @@ pub fn detector_classification_validate_for_test() -> Result<(), String> {
     crate::detector_classification::validate()
 }
 
+/// Test seam for the decode-pipeline registry's default decoder composition.
+/// Returns each default decoder's `name()` in registration ORDER — the order is
+/// load-bearing (reverse/caesar run last) and the count must stay within the
+/// profiler's fixed slot capacity, neither of which was pinned anywhere.
+#[cfg(feature = "decode")]
+pub fn default_decoder_names_for_test() -> Vec<&'static str> {
+    crate::decode::default_decoder_names()
+}
+
 /// Test seam for the decode-splice core: splice `decoded_text` into the bounded
 /// `[start, end)` window of `parent`, keeping `SPLICE_CONTEXT_WINDOW` bytes of
 /// companion context on each side. Returns `(window_start, spliced_payload,

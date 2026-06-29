@@ -62,6 +62,8 @@ mod decode_pipeline_exceeds_modularity_cap;
 mod decode_splice_payload_window;
 #[path = "gap/decode_structure_protobuf_fixed_width_fields.rs"]
 mod decode_structure_protobuf_fixed_width_fields;
+#[path = "gap/decoder_registry_default_composition.rs"]
+mod decoder_registry_default_composition;
 #[path = "gap/detector_classification_query_contract.rs"]
 mod detector_classification_query_contract;
 #[path = "gap/detector_contract_coverage_100pct.rs"]
