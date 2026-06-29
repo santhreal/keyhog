@@ -431,6 +431,34 @@ pub fn assignment_keyword_owned_by_named_detector_for_test(
     )
 }
 
+/// `keyword_span_owned_by_named_detector` (`generic_keyword_owner`) — checks
+/// whether the assignment key under `[keyword_start, keyword_end)` (or the
+/// `is_assignment_key_byte` run it sits inside, after expanding left/right) is
+/// owned by a named detector. Lets a gap test pin the bounds guard, the
+/// exact-span hit, the left/right boundary expansion, and that a non-expanding
+/// unowned span stays unowned. The owned keywords are sorted/deduped via the
+/// same `BTreeSet` the real builder uses.
+pub fn keyword_span_owned_by_named_detector_for_test(
+    owned: &[&str],
+    line: &str,
+    keyword_start: usize,
+    keyword_end: usize,
+) -> bool {
+    let sorted: Vec<std::sync::Arc<str>> = owned
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<&str>>()
+        .into_iter()
+        .map(std::sync::Arc::from)
+        .collect();
+    crate::generic_keyword_owner::keyword_span_owned_by_named_detector(
+        &sorted,
+        line,
+        keyword_start,
+        keyword_end,
+    )
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.

@@ -84,6 +84,7 @@ pub mod inline_migrated_tests_not_wired;
 pub mod io_uring_kernel_version_gate_exact;
 pub mod json_scalar_literal_single_owner;
 pub mod jwt_finding_metadata_reserve_and_typ_coherence;
+pub mod keyword_span_owner_boundary_expansion_exact;
 pub mod leading_assignment_key_terminator_and_bounds_exact;
 pub mod ml_features_comment_context_single_owner;
 pub mod ml_score_cache_memoized;

@@ -149,6 +149,8 @@ mod io_uring_kernel_version_gate_exact;
 mod json_scalar_literal_single_owner;
 #[path = "gap/jwt_finding_metadata_reserve_and_typ_coherence.rs"]
 mod jwt_finding_metadata_reserve_and_typ_coherence;
+#[path = "gap/keyword_span_owner_boundary_expansion_exact.rs"]
+mod keyword_span_owner_boundary_expansion_exact;
 #[path = "gap/leading_assignment_key_terminator_and_bounds_exact.rs"]
 mod leading_assignment_key_terminator_and_bounds_exact;
 #[path = "gap/ml_features_comment_context_single_owner.rs"]
