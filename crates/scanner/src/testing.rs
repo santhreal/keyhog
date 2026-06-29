@@ -496,6 +496,15 @@ pub fn normalized_assignment_keyword_is_credential_for_test(normalized: &str) ->
     crate::entropy::keywords::normalized_assignment_keyword_is_credential(normalized)
 }
 
+/// `assignment_keyword_for_line` extracts the assignment keyword a line is most
+/// likely keying on: an XML tag takes precedence, else the `=`/`:` separators
+/// are scanned right-to-left, the first credential key short-circuits, and the
+/// rightmost non-credential key is the fallback. Returns the owned normalized
+/// keyword (already `Option<String>`, so this is a passthrough).
+pub fn assignment_keyword_for_line_for_test(line: &str) -> Option<String> {
+    crate::entropy::keywords::assignment_keyword_for_line(line)
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.

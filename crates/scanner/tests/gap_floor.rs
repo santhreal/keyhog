@@ -8,6 +8,8 @@ mod alphabet_targets_no_per_pattern_clone;
 mod analyze_keyword_only_must_assert;
 #[path = "gap/anchored_candidate_verify_single_owner.rs"]
 mod anchored_candidate_verify_single_owner;
+#[path = "gap/assignment_keyword_for_line_selection_exact.rs"]
+mod assignment_keyword_for_line_selection_exact;
 #[path = "gap/assignment_keyword_normalize_and_secret_suffix_exact.rs"]
 mod assignment_keyword_normalize_and_secret_suffix_exact;
 #[path = "gap/assignment_keyword_owned_binary_search_exact.rs"]
