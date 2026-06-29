@@ -490,6 +490,28 @@ pub fn line_assignment_owned_by_named_detector_for_test(owned: &[&str], line: &s
     crate::generic_keyword_owner::line_assignment_owned_by_named_detector(&keys, line)
 }
 
+/// `entropy_candidate_owned_by_named_assignment` driven with an explicit owned
+/// set: the candidate is owned if it embeds an owned assignment key OR (when a
+/// `same_line` is supplied) that line's assignment keyword is owned. The facade
+/// rebuilds the owned slice through a sorted `BTreeSet` because both inner paths
+/// use a `binary_search`.
+pub fn entropy_candidate_owned_by_named_assignment_for_test(
+    owned: &[&str],
+    candidate: &str,
+    same_line: Option<&str>,
+) -> bool {
+    let keys: Vec<std::sync::Arc<str>> = owned
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<&str>>()
+        .into_iter()
+        .map(std::sync::Arc::from)
+        .collect();
+    crate::generic_keyword_owner::entropy_candidate_owned_by_named_assignment(
+        &keys, candidate, same_line,
+    )
+}
+
 /// `candidate_starts_with_owned_assignment_key` driven with an explicit owned
 /// set: true iff the candidate normalizes to a STRICTLY longer key that begins
 /// with one of the owned keys AND that owned key carries a credential suffix.

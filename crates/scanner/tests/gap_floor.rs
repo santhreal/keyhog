@@ -98,6 +98,8 @@ mod docs_megakernel_env_claim_matches_engine;
 mod engine_backend_parity;
 #[path = "gap/entropy_authorization_scheme_ci.rs"]
 mod entropy_authorization_scheme_ci;
+#[path = "gap/entropy_candidate_owned_by_named_assignment_composition_exact.rs"]
+mod entropy_candidate_owned_by_named_assignment_composition_exact;
 #[path = "gap/entropy_canonical_lift_keyword_material.rs"]
 mod entropy_canonical_lift_keyword_material;
 #[path = "gap/entropy_keyword_anchor_lazy_lowercase.rs"]
