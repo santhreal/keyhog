@@ -28,6 +28,8 @@ mod boundary_guard_split_lossless_and_precise;
 mod byte_distribution_base64_blob_admit_policy_exact;
 #[path = "gap/caesar_shift_rotation_exact.rs"]
 mod caesar_shift_rotation_exact;
+#[path = "gap/candidate_embeds_owned_assignment_key_composition_exact.rs"]
+mod candidate_embeds_owned_assignment_key_composition_exact;
 #[path = "gap/candidate_starts_with_owned_assignment_key_prefix_exact.rs"]
 mod candidate_starts_with_owned_assignment_key_prefix_exact;
 #[path = "gap/checksum_github.rs"]

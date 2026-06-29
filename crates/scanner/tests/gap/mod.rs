@@ -12,6 +12,7 @@ pub mod bigram_bloom_log_bit_count_coherence;
 pub mod boundary_guard_split_lossless_and_precise;
 pub mod byte_distribution_base64_blob_admit_policy_exact;
 pub mod caesar_shift_rotation_exact;
+pub mod candidate_embeds_owned_assignment_key_composition_exact;
 pub mod candidate_starts_with_owned_assignment_key_prefix_exact;
 pub mod checksum_github;
 pub mod checksum_gitlab_npm_slack_stripe;
