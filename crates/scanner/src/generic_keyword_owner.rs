@@ -135,7 +135,7 @@ fn normalized_assignment_keyword_owned_by_named_detector(
         .is_ok()
 }
 
-fn leading_assignment_key(candidate: &str) -> Option<&str> {
+pub(crate) fn leading_assignment_key(candidate: &str) -> Option<&str> {
     let bytes = candidate.as_bytes();
     let mut end = 0usize;
     while end < bytes.len() && is_assignment_key_byte(bytes[end]) {

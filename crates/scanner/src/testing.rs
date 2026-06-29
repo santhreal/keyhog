@@ -337,6 +337,15 @@ pub fn probabilistic_gate_looks_promising_for_test(value: &str) -> bool {
     crate::probabilistic_gate::ProbabilisticGate::looks_promising(value)
 }
 
+/// The leading-assignment-key extractor (`generic_keyword_owner`) — pulls the
+/// `key` out of a `key=`/`key:`/`key~` candidate prefix so named-detector owner
+/// attribution can test it. Returns an owned copy so a gap test can pin the
+/// exact key slice and the `None` boundaries (no terminator, leading non-key
+/// byte, non-`=`/`:`/`~` terminator).
+pub fn leading_assignment_key_for_test(candidate: &str) -> Option<String> {
+    crate::generic_keyword_owner::leading_assignment_key(candidate).map(str::to_owned)
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.
