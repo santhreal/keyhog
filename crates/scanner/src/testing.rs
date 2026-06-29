@@ -522,6 +522,15 @@ pub fn is_strong_keyword_anchored_encoded_text_secret_for_test(keyword: &str, va
     )
 }
 
+/// `is_likely_concatenation_fragment`: true when a trimmed line looks like a
+/// string-concatenation fragment — it opens with a single balanced quoted run
+/// whose trailing text is empty or a concat glue (`+`/`\`/`,`/`)`), or the line
+/// ends with `\"` or `-\`. Such lines are dropped from entropy candidate
+/// extraction (treated as code, not a secret-bearing assignment).
+pub fn is_likely_concatenation_fragment_for_test(line: &str) -> bool {
+    crate::entropy::keywords::is_likely_concatenation_fragment(line)
+}
+
 /// `candidate_starts_with_owned_assignment_key` driven with an explicit owned
 /// set: true iff the candidate normalizes to a STRICTLY longer key that begins
 /// with one of the owned keys AND that owned key carries a credential suffix.

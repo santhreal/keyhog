@@ -498,7 +498,7 @@ fn find_xml_close_tag(haystack: &str, tag: &str) -> Option<usize> {
     None
 }
 
-fn is_likely_concatenation_fragment(line: &str) -> bool {
+pub(crate) fn is_likely_concatenation_fragment(line: &str) -> bool {
     let trimmed = line.trim();
     if trimmed.starts_with('"') || trimmed.starts_with('\'') {
         let double_quotes = trimmed.matches('"').count();

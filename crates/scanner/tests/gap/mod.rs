@@ -86,6 +86,7 @@ pub mod hot_loop_deadline_cadence_single_owner;
 pub mod inline_gate;
 pub mod inline_migrated_tests_not_wired;
 pub mod io_uring_kernel_version_gate_exact;
+pub mod is_likely_concatenation_fragment_exact;
 pub mod json_scalar_literal_single_owner;
 pub mod jwt_finding_metadata_reserve_and_typ_coherence;
 pub mod keyword_span_owner_boundary_expansion_exact;
