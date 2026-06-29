@@ -301,6 +301,14 @@ pub fn strip_leading_boundary_guard_for_test(pattern: &str) -> Option<String> {
     crate::compiler::compiler_prefix::strip_leading_boundary_guard(pattern).map(str::to_string)
 }
 
+/// Whether a `/proc/sys/kernel/osrelease` string reports an io_uring-capable
+/// kernel (Linux 5.1+); pure parse, so a gap test can pin the version gate
+/// without a real kernel (hw_probe::platform).
+#[cfg(target_os = "linux")]
+pub fn kernel_supports_io_uring_for_test(osrelease: &str) -> bool {
+    crate::hw_probe::platform::kernel_supports_io_uring(osrelease)
+}
+
 /// `expired_on_cadence` driven with an already-reached (`now`) deadline, so the
 /// result is exactly the cadence gate — pins that the wrapper ANDs
 /// `cadence_tick` with the deadline check.

@@ -195,21 +195,30 @@ pub(crate) fn linux_total_memory_mb_from_meminfo(content: &str) -> Option<u64> {
     None
 }
 
+/// Whether a `/proc/sys/kernel/osrelease` string reports a kernel new enough for
+/// io_uring (5.1+, when `IORING_OP`/the syscall surface landed). Pure parse of
+/// the version string so it is testable without a kernel: trims, splits on `.`,
+/// and is conservative — any shape it cannot parse (fewer than two dotted
+/// components, a non-numeric major/minor) returns `false`, matching the original
+/// `.ok()? … .unwrap_or(false)` fail-closed chain.
+#[cfg(target_os = "linux")]
+pub(crate) fn kernel_supports_io_uring(osrelease: &str) -> bool {
+    let parts: Vec<&str> = osrelease.trim().split('.').collect();
+    if parts.len() < 2 {
+        return false;
+    }
+    let (Ok(major), Ok(minor)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) else {
+        return false; // LAW10: malformed osrelease => conservative false; perf-only, recall-irrelevant
+    };
+    major > 5 || (major == 5 && minor >= 1)
+}
+
 pub(super) fn detect_io_uring() -> bool {
     #[cfg(target_os = "linux")]
     {
         let kernel_ok = std::fs::read_to_string("/proc/sys/kernel/osrelease")
             .ok() // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-            .and_then(|s| {
-                let parts: Vec<&str> = s.trim().split('.').collect();
-                if parts.len() >= 2 {
-                    let major = parts[0].parse::<u32>().ok()?; // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-                    let minor = parts[1].parse::<u32>().ok()?; // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-                    Some(major > 5 || (major == 5 && minor >= 1))
-                } else {
-                    None
-                }
-            })
+            .map(|s| kernel_supports_io_uring(&s))
             .unwrap_or(false); // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
         if !kernel_ok {
             return false;

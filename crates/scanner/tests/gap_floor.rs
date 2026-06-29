@@ -131,6 +131,8 @@ mod hot_loop_deadline_cadence_single_owner;
 mod inline_gate;
 #[path = "gap/inline_migrated_tests_not_wired.rs"]
 mod inline_migrated_tests_not_wired;
+#[path = "gap/io_uring_kernel_version_gate_exact.rs"]
+mod io_uring_kernel_version_gate_exact;
 #[path = "gap/json_scalar_literal_single_owner.rs"]
 mod json_scalar_literal_single_owner;
 #[path = "gap/jwt_finding_metadata_reserve_and_typ_coherence.rs"]

@@ -19,7 +19,7 @@
 use std::sync::OnceLock;
 
 mod banner;
-mod platform;
+pub(crate) mod platform;
 pub(crate) mod select;
 mod tier;
 
