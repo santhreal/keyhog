@@ -439,7 +439,7 @@ pub(crate) fn authorization_header_value(line: &str) -> Option<&str> {
     token.split_whitespace().next()
 }
 
-fn xml_assignment_tag(line: &str) -> Option<&str> {
+pub(crate) fn xml_assignment_tag(line: &str) -> Option<&str> {
     let trimmed = line.trim();
     let start = trimmed.find('<')?;
     let after_open = &trimmed[start + 1..];

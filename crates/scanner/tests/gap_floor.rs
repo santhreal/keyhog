@@ -309,5 +309,7 @@ mod value_shaped_group_shared_heuristic;
 mod vyre_usage_matches_workspace_pin;
 #[path = "gap/windowed_triggered_slice_no_per_window_clone.rs"]
 mod windowed_triggered_slice_no_per_window_clone;
+#[path = "gap/xml_assignment_tag_open_close_match_exact.rs"]
+mod xml_assignment_tag_open_close_match_exact;
 #[path = "gap/yaml_scalar_mapping_single_owner.rs"]
 mod yaml_scalar_mapping_single_owner;

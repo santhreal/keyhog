@@ -166,4 +166,5 @@ pub mod unicode_homoglyph_matrix;
 pub mod value_shaped_group_shared_heuristic;
 pub mod vyre_usage_matches_workspace_pin;
 pub mod windowed_triggered_slice_no_per_window_clone;
+pub mod xml_assignment_tag_open_close_match_exact;
 pub mod yaml_scalar_mapping_single_owner;

@@ -531,6 +531,15 @@ pub fn is_likely_concatenation_fragment_for_test(line: &str) -> bool {
     crate::entropy::keywords::is_likely_concatenation_fragment(line)
 }
 
+/// `xml_assignment_tag`: returns the opening tag name of an XML-shaped line that
+/// has a matching `</tag>` close, for ANY well-formed element (NOT just
+/// credential-named ones — that filter lives in `xml_assignment_value`). Returns
+/// `None` for close/comment/PI markers (`</`,`<!`,`<?`), an empty/whitespace tag,
+/// a missing `>` or `<`, or a close-tag whose name does not match the open tag.
+pub fn xml_assignment_tag_for_test(line: &str) -> Option<String> {
+    crate::entropy::keywords::xml_assignment_tag(line).map(str::to_string)
+}
+
 /// `standard_base64_shape`: classifies a candidate as standard (non-url-safe)
 /// base64 and returns its shape, or `None` when it mixes alphabets, is url-safe,
 /// has `=` in an invalid position, or has a length remainder incompatible with
