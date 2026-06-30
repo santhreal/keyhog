@@ -131,6 +131,7 @@ pub mod unicode_combining_mark_blocks;
 pub mod unicode_combining_marks_normalization;
 pub mod unicode_evasion_anchor_parser;
 pub mod unicode_fast_path_borrowed;
+pub mod unicode_fullwidth_range_precision;
 pub mod unicode_greek_homoglyph_normalization;
 pub mod unicode_hardening;
 pub mod unicode_invisible_format_evasion;

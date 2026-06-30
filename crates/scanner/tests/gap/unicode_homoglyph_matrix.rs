@@ -262,20 +262,24 @@ fn fullwidth_punctuation_boundaries_ff01_and_ff5e() {
 
 #[test]
 fn fullwidth_outside_convertible_window_is_kept_verbatim() {
-    // is_fullwidth covers U+FF00..=U+FFEF, but fullwidth_to_ascii only converts
-    // U+FF01..=U+FF5E. Codepoints in [FF00..=FFEF] OUTSIDE that window are
-    // returned UNCHANGED (the `else { ch }` branch), so they survive in output.
-    // U+FFE0 (fullwidth cent sign) is in is_fullwidth's range but not converted.
+    // `is_fullwidth` is scoped to the ASCII-mappable window U+FF01..=U+FF5E
+    // (every fullwidth form of a printable ASCII char). Codepoints in the
+    // Halfwidth-and-Fullwidth-Forms block OUTSIDE that window are not fullwidth
+    // ASCII variants, so the strip takes the Keep branch and they survive in
+    // output unchanged.
+    // U+FFE0 (fullwidth cent sign, a CJK currency sign, not an ASCII twin) is
+    // kept verbatim.
     assert_eq!(norm("\u{FFE0}"), "\u{FFE0}");
-    // U+FF00 itself (just below FF01) is also not converted.
+    // U+FF00 (just below the range, unassigned) is kept verbatim.
     assert_eq!(norm("\u{FF00}"), "\u{FF00}");
-    // U+FFEF (top of range) -> not converted, kept verbatim.
+    // U+FFEF (top of the block) is kept verbatim.
     assert_eq!(norm("\u{FFEF}"), "\u{FFEF}");
 }
 
 #[test]
 fn fullwidth_space_ff5f_boundary_not_converted() {
-    // U+FF5F is above FF5E, still within is_fullwidth, so NOT converted.
+    // U+FF5F (FULLWIDTH LEFT WHITE PARENTHESIS) is one past the FF5E range end,
+    // so it is outside `is_fullwidth` and kept verbatim.
     assert_eq!(norm("\u{FF5F}"), "\u{FF5F}");
 }
 

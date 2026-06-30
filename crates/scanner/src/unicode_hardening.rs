@@ -20,7 +20,7 @@ pub(crate) enum EvasionKind {
     CyrillicHomoglyph,
     /// Greek characters that look like Latin
     GreekHomoglyph,
-    /// Fullwidth ASCII variants (U+FF00-FFEF)
+    /// Fullwidth ASCII variants (U+FF01-FF5E)
     Fullwidth,
     /// Zero-width characters (joiners, spaces)
     ZeroWidth,
@@ -485,22 +485,34 @@ fn greek_to_latin(ch: char) -> Option<char> {
     }
 }
 
-/// Fullwidth ASCII variants (U+FF00-FFEF)
+/// Fullwidth ASCII variants: U+FF01..=U+FF5E, the fullwidth forms of printable
+/// ASCII `!`..`~` (each maps to its ASCII twin via `- 0xFEE0`, see
+/// [`fullwidth_to_ascii`]).
+///
+/// The surrounding Halfwidth-and-Fullwidth-Forms block (U+FF00..=U+FFEF) also
+/// holds halfwidth katakana (U+FF61–FF9F), halfwidth hangul, fullwidth white
+/// brackets (U+FF5F–FF60), and CJK currency signs (U+FFE0–FFE6) — NONE of which
+/// are ASCII variants. Matching the whole block falsely flagged legitimate CJK
+/// text as "fullwidth evasion" and pushed it onto the slow normalization path
+/// with a `Replace(self)` no-op rebuild allocation. Every fullwidth form of the
+/// credential charset (A–Z, a–z, 0–9, `_ + / = . -`) lives in U+FF01–FF5E, so
+/// narrowing to it preserves all credential normalization while keeping real
+/// CJK text on the zero-allocation fast path.
 fn is_fullwidth(ch: char) -> bool {
-    matches!(ch, '\u{FF00}'..='\u{FFEF}')
+    matches!(ch, '\u{FF01}'..='\u{FF5E}')
 }
 
-/// Convert fullwidth to ASCII
+/// Convert a fullwidth ASCII variant (U+FF01..=U+FF5E) to its ASCII twin;
+/// any other char is returned unchanged.
 fn fullwidth_to_ascii(ch: char) -> char {
     if is_fullwidth(ch) {
-        // Fullwidth forms are at U+FF00-U+FF5E for ASCII equivalents
-        // The offset is 0xFEE0 (FF01 - 0021 = FE00, roughly)
+        // Each fullwidth form sits exactly 0xFEE0 above its ASCII twin
+        // (U+FF01 '!' = 0x21 + 0xFEE0 … U+FF5E '~' = 0x7E + 0xFEE0). `is_fullwidth`
+        // already bounds `code` to this range, so the subtraction is always a
+        // valid scalar; `unwrap_or(ch)` keeps the identity on the impossible
+        // failure rather than panicking (LAW10: recall-safe, never a silent drop).
         let code = ch as u32;
-        if (0xFF01..=0xFF5E).contains(&code) {
-            std::char::from_u32(code - 0xFEE0).unwrap_or(ch) // LAW10: no transform / invalid codepoint => original text/char unchanged; recall-safe identity
-        } else {
-            ch
-        }
+        std::char::from_u32(code - 0xFEE0).unwrap_or(ch)
     } else {
         ch
     }
