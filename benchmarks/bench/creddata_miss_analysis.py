@@ -350,7 +350,7 @@ def _redact(s: str) -> str:
     return "****" if len(s) <= 8 else s[:4] + "..." + s[-4:]
 
 
-def cmd_decompose(root: pathlib.Path, scanner_bin: str) -> int:
+def cmd_decompose(root: pathlib.Path, scanner_bin: str, backend: str = "simd") -> int:
     """Bucket every CredData T-positive into TP / SUPPRESSED-by-gate / NEVER-
     CANDIDATE using the scanner's ``--dogfood`` suppression trace (KH-L-0408/
     0409/0412). Answers *where* recall is lost: a value that no detector emits
@@ -391,9 +391,13 @@ def cmd_decompose(root: pathlib.Path, scanner_bin: str) -> int:
             dst = tmp / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(root / rel, dst)
+        # Force an explicit backend: a default `auto` scan fail-closes demanding
+        # autoroute calibration (no persisted decision for this workload bucket),
+        # which would abort the diagnostic. Findings are backend-invariant, so
+        # `simd` gives the same recall map without priming the autoroute cache.
         proc = subprocess.run(
-            [scanner_bin, "scan", "--path", str(tmp), "--dogfood",
-             "--show-secrets", "--format", "jsonl"],
+            [scanner_bin, "scan", "--path", str(tmp), "--backend", backend,
+             "--dogfood", "--show-secrets", "--format", "jsonl"],
             capture_output=True, text=True,
         )
         if proc.returncode not in (0, 1):
@@ -472,6 +476,9 @@ def main(argv: list[str] | None = None) -> int:
                     default="crypto_key_hex")
     ap.add_argument("--scanner-bin", default="keyhog",
                     help="keyhog binary for `decompose` (uses --dogfood trace)")
+    ap.add_argument("--backend", default="simd",
+                    help="explicit scan backend for `decompose` (default simd; "
+                         "avoids the auto-backend autoroute-calibration fail-closed)")
     args = ap.parse_args(argv)
     root = pathlib.Path(args.root)
     if not (root / "meta").is_dir():
@@ -482,7 +489,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "keywords":
         return cmd_keywords(root)
     if args.command == "decompose":
-        return cmd_decompose(root, args.scanner_bin)
+        return cmd_decompose(root, args.scanner_bin, args.backend)
     return cmd_simulate(root, args.candidate)
 
 
