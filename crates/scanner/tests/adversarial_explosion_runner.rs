@@ -181,6 +181,19 @@ impl Wrapper {
         }
     }
 
+    /// A DECODE-THROUGH wrapper re-encodes the positive into base64/hex/url so
+    /// the decode pipeline must recover the ORIGINAL bytes before scanning. The
+    /// decoded chunk is byte-identical to the unwrapped positive (which fires by
+    /// contract), so a miss here is a real decode-through recall bug — there is
+    /// no "the format shifted confidence" excuse the structured wrappers have.
+    /// These therefore get a strict 0-miss gate, not the soft long-tail band.
+    fn is_decode_through(self) -> bool {
+        matches!(
+            self,
+            Wrapper::Base64Evasion | Wrapper::HexEvasion | Wrapper::UrlEvasion
+        )
+    }
+
     /// Wrap `text` (the full positive-context blob) in this format.
     /// The original text is preserved verbatim somewhere inside the
     /// output so a detector that scans line-by-line OR span-by-span
@@ -282,7 +295,10 @@ fn every_contract_positive_fires_under_every_format_wrapper() {
 
     for (path, c) in &contracts {
         for (pi, p) in c.positive.iter().enumerate() {
-            for wrapper in Wrapper::ALL {
+            // Structured/context wrappers only — the decode-through wrappers
+            // (base64/hex/url) are gated strictly and separately by
+            // `every_contract_positive_fires_through_decode_wrappers` below.
+            for wrapper in Wrapper::ALL.iter().copied().filter(|w| !w.is_decode_through()) {
                 cases_run += 1;
                 scanner.clear_fragment_cache();
                 let wrapped = wrapper.wrap(&p.text);
@@ -361,4 +377,87 @@ fn every_contract_positive_fires_under_every_format_wrapper() {
              detector - the corpus is wrapper-tight."
         );
     }
+}
+
+/// STRICT decode-through recall gate (task #107). Each contract positive is
+/// re-encoded into base64 / hex / url-percent, then scanned: the decode pipeline
+/// must recover the ORIGINAL bytes and the detector must fire on the SAME
+/// credential. Unlike the structured wrappers above, the decoded chunk is
+/// byte-identical to the unwrapped positive (which fires by contract), so there
+/// is no legitimate "the format shifted confidence" miss — the ONLY tolerated
+/// miss is a positive whose encoded form falls below the decoder's extraction
+/// floor. Those are enumerated explicitly in `allowed` so any *new* miss fails
+/// loudly instead of hiding under the 1.5% band the structured gate allows.
+#[test]
+fn every_contract_positive_fires_through_decode_wrappers() {
+    let scanner = scanner();
+    let contracts = load_contracts();
+    assert!(
+        !contracts.is_empty(),
+        "tests/contracts/ has no *.toml - the decode-through gate has nothing to drive"
+    );
+
+    let decode_wrappers: Vec<Wrapper> = Wrapper::ALL
+        .iter()
+        .copied()
+        .filter(|w| w.is_decode_through())
+        .collect();
+    assert_eq!(
+        decode_wrappers.len(),
+        3,
+        "expected exactly the base64/hex/url decode-through wrappers"
+    );
+
+    let mut cases_run = 0usize;
+    let mut misses: Vec<String> = Vec::new();
+    for (path, c) in &contracts {
+        for (pi, p) in c.positive.iter().enumerate() {
+            for wrapper in &decode_wrappers {
+                cases_run += 1;
+                scanner.clear_fragment_cache();
+                let wrapped = wrapper.wrap(&p.text);
+                let chunk = make_chunk(&wrapped, "decode-wrapped-positive");
+                let matches = scanner.scan(&chunk);
+                if !any_credential_contains(&matches, &p.credential) {
+                    misses.push(format!(
+                        "{detector} :: positive #{pi} :: {wrap}: credential {cred:?} not \
+                         recovered through decode-through. Contract: {path}",
+                        detector = c.detector_id,
+                        wrap = wrapper.label(),
+                        cred = p.credential,
+                        path = path.display(),
+                    ));
+                }
+            }
+        }
+    }
+    eprintln!(
+        "decode-through gate: ran {cases_run} (contract × positive × decode-wrapper) cases \
+         against {} contracts × 3 decode wrappers",
+        contracts.len(),
+    );
+
+    // Genuine decode-floor exceptions: a positive whose re-encoded form is too
+    // short to be recognised as a base64/hex run (so the decode pipeline never
+    // hands the plaintext back). Each entry is "<detector-id> :: ... :: <wrapper>"
+    // substring with a one-line reason. Empty until a run proves a specific
+    // contract legitimately cannot survive re-encoding.
+    let allowed: &[&str] = &[];
+    let unexpected: Vec<&String> = misses
+        .iter()
+        .filter(|m| !allowed.iter().any(|a| m.contains(a)))
+        .collect();
+    assert!(
+        unexpected.is_empty(),
+        "{} of {cases_run} decode-through variants lost the credential (NOT in the documented \
+         decode-floor allowlist). Decode-through must reproduce the firing plaintext, so each is \
+         a real recall regression:\n{}",
+        unexpected.len(),
+        unexpected
+            .iter()
+            .take(40)
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
 }
