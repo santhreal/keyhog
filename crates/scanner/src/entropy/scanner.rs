@@ -5,7 +5,8 @@ pub(crate) use super::isolated::{
 };
 #[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
 pub(crate) use super::isolated::{
-    lower_dash_app_password_floor_met, mixed_separator_token_floor_met,
+    lower_dash_app_password_floor_met, mixed_contiguous_token_floor_met,
+    mixed_separator_token_floor_met,
 };
 use super::{
     keywords::*, shannon_entropy, EntropyMatch, HIGH_ENTROPY_THRESHOLD, LOW_ENTROPY_THRESHOLD,

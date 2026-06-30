@@ -2158,6 +2158,23 @@ pub mod entropy_isolated {
     pub fn lower_dash_app_password_floor_met(candidate: &str, entropy: f64) -> bool {
         crate::entropy::scanner::lower_dash_app_password_floor_met(candidate, entropy)
     }
+
+    /// `entropy >= 3.65`, `len >= 20`, every byte ASCII-alphanumeric (no
+    /// separator), upper + lower + digit, NOT all-hex, AND the token reads as a
+    /// random secret rather than a pronounceable identifier — the looser
+    /// no-separator sibling of [`mixed_separator_token_floor_met`], which trades
+    /// the `_`-structure signal for the `!all_hex` + randomness gates.
+    pub fn mixed_contiguous_token_floor_met(candidate: &str, entropy: f64) -> bool {
+        crate::entropy::scanner::mixed_contiguous_token_floor_met(candidate, entropy)
+    }
+
+    /// The randomness gate the contiguous floor depends on, exposed so a boundary
+    /// test can self-validate its positive/negative candidates' precondition —
+    /// if the English-bigram model ever reclassifies a fixture, the precondition
+    /// assert fails loudly instead of the floor test passing for the wrong reason.
+    pub fn is_random_token(value: &str) -> bool {
+        crate::suppression::token_randomness::is_random_token(value)
+    }
 }
 
 /// Entropy plausibility and shape predicates exposed for unit tests migrated

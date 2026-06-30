@@ -76,6 +76,7 @@ pub mod engine_cases;
 pub mod engine_gpu_routing_cases;
 pub mod entropy;
 pub mod entropy_cargo_toml_not_appropriate;
+pub mod entropy_contiguous_floor;
 pub mod entropy_credentials_env_exact_or_config;
 pub mod entropy_dash_segmented_decoy;
 pub mod entropy_data_uri_rejected;

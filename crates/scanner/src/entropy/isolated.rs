@@ -140,7 +140,7 @@ pub(crate) fn lower_dash_app_password_floor_met(candidate: &str, entropy: f64) -
     group_count == 4 && has_non_hex
 }
 
-fn mixed_contiguous_token_floor_met(candidate: &str, entropy: f64) -> bool {
+pub(crate) fn mixed_contiguous_token_floor_met(candidate: &str, entropy: f64) -> bool {
     const MIXED_CONTIGUOUS_TOKEN_THRESHOLD: f64 = 3.65;
     if entropy < MIXED_CONTIGUOUS_TOKEN_THRESHOLD || candidate.len() < 20 {
         return false;
