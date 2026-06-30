@@ -1534,6 +1534,9 @@ path = "crates/sources/src/filesystem/read/window.rs"
 path = "crates/sources/src/filesystem/reader.rs"
 
 [[module]]
+path = "crates/sources/src/filesystem/special_file_test_support.rs"
+
+[[module]]
 path = "crates/sources/src/api.rs"
 
 [[module]]
