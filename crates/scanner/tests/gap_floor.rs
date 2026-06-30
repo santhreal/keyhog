@@ -303,6 +303,8 @@ mod suppression_shape_gate_pipeline_twins_incomplete;
 mod trigger_bitmap_words_for_single_source;
 #[path = "gap/unicode_homoglyph_matrix.rs"]
 mod unicode_homoglyph_matrix;
+#[path = "gap/value_shaped_group_boundaries.rs"]
+mod value_shaped_group_boundaries;
 #[path = "gap/value_shaped_group_shared_heuristic.rs"]
 mod value_shaped_group_shared_heuristic;
 #[path = "gap/vyre_usage_matches_workspace_pin.rs"]

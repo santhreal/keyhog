@@ -13,7 +13,6 @@
 //! every surviving candidate. Their shared per-pattern signal cache
 //! is built from `super::scan_filters::compute_pattern_signals`.
 
-use super::scan_filters::*;
 use super::CompiledScanner;
 use crate::types::*;
 use keyhog_core::{Chunk, DetectorSpec};
@@ -220,21 +219,24 @@ impl CompiledScanner {
             // Resolve the configured capture group, falling back to the full
             // match when the group didn't participate (e.g. a top-level
             // alternation where one branch lacks the inner group).
-            let mut credential_range = locs.get(group).unwrap_or((full_start, full_end)); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
-            let mut credential = &search_text[credential_range.0..credential_range.1];
+            let initial_range = locs.get(group).unwrap_or((full_start, full_end)); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
 
             // Variable-name heuristic: if the captured group looks like a
             // variable name rather than a secret, scan the other groups for a
             // value-shaped candidate. Shared with `extract_anchored` via
             // `resolve_value_shaped_group` so the heuristic has one definition.
-            credential_range = super::scan_filters::resolve_value_shaped_group(
+            // Bind `credential` once from the resolved range: the heuristic always
+            // returns a range, so a pre-resolution slice would be a dead store
+            // (overwritten before any read) — exactly the `unused_assignments`
+            // warning this single binding eliminates.
+            let credential_range = super::scan_filters::resolve_value_shaped_group(
                 &locs,
                 search_text,
                 group,
                 groups_total,
-                credential_range,
+                initial_range,
             );
-            credential = &search_text[credential_range.0..credential_range.1];
+            let credential = &search_text[credential_range.0..credential_range.1];
 
             let &(keyword_nearby, sensitive_file) = signals.get_or_init(|| {
                 super::scan_filters::compute_pattern_signals(entry, detector, chunk, preprocessed)
