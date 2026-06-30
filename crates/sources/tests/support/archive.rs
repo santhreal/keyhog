@@ -158,6 +158,20 @@ pub fn tar_with_file(name: &str, content: &[u8]) -> Vec<u8> {
     tar_with_entries(&[(name, content)])
 }
 
+/// gzip-compress raw bytes (for bare `.gz` fixtures, e.g. a gzipped PEM file).
+pub fn gzip_bytes(plaintext: &[u8]) -> Vec<u8> {
+    let mut encoder =
+        flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(plaintext).expect("write gzip input");
+    encoder.finish().expect("finish gzip")
+}
+
+/// Build a gzipped tarball (`.tgz` / `.tar.gz`) from named entries — the dominant
+/// real-world package/release container (npm tarballs, source releases).
+pub fn tgz_with_entries(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    gzip_bytes(&tar_with_entries(entries))
+}
+
 fn write_u16(out: &mut Vec<u8>, value: u16) {
     out.extend_from_slice(&value.to_le_bytes());
 }
