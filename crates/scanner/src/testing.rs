@@ -2503,6 +2503,84 @@ pub fn ml_score(text: &str, context: &str) -> f64 {
     crate::ml_scorer::score(text, context)
 }
 
+/// Score a candidate through the MoE with an explicit detector-config view
+/// (known prefixes, secret/test/placeholder keyword lists) instead of the
+/// shipped defaults `ml_score` uses. Exposed so the `ml_scorer` unit suite can
+/// hold the prefix/keyword inputs fixed and assert the model's behavior in
+/// isolation — in particular the clean separation between real secrets (high)
+/// and structured non-secrets such as UUIDs, hashes, and JWT headers (low).
+pub fn ml_score_with_config_for_test(
+    text: &str,
+    context: &str,
+    known_prefixes: &[String],
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+) -> f64 {
+    crate::ml_scorer::score_with_config(
+        text,
+        context,
+        known_prefixes,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+    )
+}
+
+/// Score a candidate through the MoE using the shipped default detector-config
+/// lists (`keyhog_core::ScanConfig::default()`'s `known_prefixes` /
+/// `secret_keywords` / `test_keywords` / `placeholder_keywords`) — the exact
+/// lists the scanner passes to `score_with_config` at runtime for generic and
+/// entropy-fallback candidates (see `gpu.rs`). This is the production serve
+/// config, so a test using it reproduces the model's real scoring behavior, and
+/// it mirrors the `ml/probe_entropy_separation.py` go/no-go oracle (whose
+/// `config_lists.DEFAULT_LISTS` are these same lists). The lists are read from
+/// the canonical config — no list is duplicated into the test.
+pub fn ml_score_default_config_for_test(text: &str, context: &str) -> f64 {
+    let cfg = keyhog_core::ScanConfig::default();
+    crate::ml_scorer::score_with_config(
+        text,
+        context,
+        &cfg.known_prefixes,
+        &cfg.secret_keywords,
+        &cfg.test_keywords,
+        &cfg.placeholder_keywords,
+    )
+}
+
+/// The shipped default detector-config lists used for ML scoring, exposed so a
+/// coherence test can assert the battery it scores against actually exercises
+/// real default secret keywords (guarding train/serve list parity with
+/// `ml/config_lists.py`). Order: known prefixes, secret keywords, test
+/// keywords, placeholder keywords.
+pub fn ml_default_config_lists_for_test() -> (Vec<String>, Vec<String>, Vec<String>, Vec<String>) {
+    let cfg = keyhog_core::ScanConfig::default();
+    (
+        cfg.known_prefixes,
+        cfg.secret_keywords,
+        cfg.test_keywords,
+        cfg.placeholder_keywords,
+    )
+}
+
+/// The MoE input feature vector for `(text, context)` with no detector-config
+/// keyword lists — i.e. the same inputs `compute_features_public` produces for
+/// feature-extraction unit tests. Exposed so unit tests can pin individual
+/// feature semantics (e.g. the file-type one-hot indices and the
+/// very-high-entropy flag) at the index level. Returned as a `Vec` so the
+/// internal `NUM_FEATURES` width stays a crate-private detail.
+///
+/// This mirrors `ml_features::compute_features_public` (empty candidate -> all
+/// zeros, otherwise the public `compute_features_with_config` serve extractor
+/// with empty lists) rather than calling it, because that helper is gated to
+/// `#[cfg(test)]` and so is invisible to an external integration-test binary.
+pub fn ml_features_for_test(text: &str, context: &str) -> Vec<f32> {
+    if text.is_empty() {
+        return vec![0.0; crate::ml_scorer::NUM_FEATURES];
+    }
+    crate::ml_scorer::compute_features_with_config(text, context, &[], &[], &[], &[]).to_vec()
+}
+
 pub mod unicode_hardening {
     use std::borrow::Cow;
 
