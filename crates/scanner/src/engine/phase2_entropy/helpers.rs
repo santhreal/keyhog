@@ -24,11 +24,19 @@ pub(crate) const ENTROPY_DETECTOR_METADATA: [(&str, &str, &str); 4] = [
 #[cfg(feature = "entropy")]
 #[inline]
 pub(crate) fn classify_entropy_detector_index(keyword: &str) -> usize {
+    // The keyword is the captured assignment key and preserves its source case
+    // (`PASSWORD=`, `Api_Key=`, `SEGMENT_WRITE_KEY=`) — the sibling
+    // `keyword_is_credential_anchor` lowercases it for exactly this reason. Match
+    // case-insensitively so an all-caps `PASSWORD`/`TOKEN` anchor is labelled
+    // Password/Token, not defaulted to the API-Key bucket. `ci_find` jumps to
+    // first-byte candidates with memchr2 and allocates nothing (Law 7).
+    use crate::ascii_ci::ci_find;
+    let bytes = keyword.as_bytes();
     if keyword == "none (high-entropy)" {
         0
-    } else if keyword.contains("password") || keyword.contains("pwd") {
+    } else if ci_find(bytes, b"password") || ci_find(bytes, b"pwd") {
         1
-    } else if keyword.contains("token") {
+    } else if ci_find(bytes, b"token") {
         2
     } else {
         3

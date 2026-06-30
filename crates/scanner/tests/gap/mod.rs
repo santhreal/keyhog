@@ -51,6 +51,7 @@ pub mod engine_backend_parity;
 pub mod entropy_authorization_scheme_ci;
 pub mod entropy_candidate_owned_by_named_assignment_composition_exact;
 pub mod entropy_canonical_lift_keyword_material;
+pub mod entropy_detector_index_case_insensitive;
 pub mod entropy_keyword_anchor_lazy_lowercase;
 pub mod entropy_keyword_only_requires_keyword_line;
 pub mod entropy_keywords_inline_tests_in_src;
