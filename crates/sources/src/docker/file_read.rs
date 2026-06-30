@@ -1,9 +1,13 @@
 use keyhog_core::SourceError;
-use std::fs::File;
 use std::path::Path;
 
 pub(super) fn read_capped_file(path: &Path, kind: &str, cap: u64) -> Result<Vec<u8>, SourceError> {
-    let file = File::open(path).map_err(|error| {
+    // Route through the crate's safe-open boundary (O_NOFOLLOW + O_NONBLOCK +
+    // post-open fd fstat). A malicious OCI layout can plant a blob path that is a
+    // symlink (`blobs/sha256/<digest> -> /etc/shadow`); a raw `File::open` would
+    // follow it and scan the off-target file. O_NOFOLLOW refuses it; the read is
+    // never redirected off the layout.
+    let file = crate::filesystem::open_file_safe(path).map_err(|error| {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
         SourceError::Io(error)
     })?;

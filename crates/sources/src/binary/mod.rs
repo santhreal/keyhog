@@ -218,7 +218,17 @@ impl BinarySource {
         &self,
         output_path: &Path,
     ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
-        let metadata = std::fs::metadata(output_path).map_err(SourceError::Io)?;
+        // Open the decompiler output through the safe-open boundary FIRST, then
+        // fstat the OPENED descriptor for the size cap. The previous
+        // `metadata(path)` → `File::open(path)` was a stat-then-open: between the
+        // size check and the read an attacker who can write the decompiler's output
+        // directory could swap the path for an over-cap file (defeating the cap) or
+        // a symlink to an off-target file (redirecting the read). fstat'ing the fd
+        // we just opened — never re-stat'ing the path — closes that window, the same
+        // fd-not-path discipline `open_file_safe` applies (O_NOFOLLOW also refuses a
+        // symlinked output path outright).
+        let file = crate::filesystem::open_file_safe(output_path).map_err(SourceError::Io)?;
+        let metadata = file.metadata().map_err(SourceError::Io)?;
         if metadata.len() > self.limits.binary_decompiled_bytes {
             // Law 10: loud, not silent — the deep-analysis output was discarded
             // (too large to process) and we fall back to shallow strings. Same
@@ -235,7 +245,8 @@ impl BinarySource {
             return Ok(self.strings_chunks());
         }
 
-        let file = std::fs::File::open(output_path).map_err(SourceError::Io)?;
+        // Reuse the descriptor opened above (positioned at offset 0) — no second
+        // open of `output_path`, so there is no stat→open or open→open race.
         let reader = std::io::BufReader::new(file);
 
         let mut decompiled_text = String::new();
@@ -486,7 +497,15 @@ struct CappedBinaryRead {
 }
 
 fn read_binary_capped(path: &Path, cap: usize) -> std::io::Result<CappedBinaryRead> {
-    let file = std::fs::File::open(path)?;
+    // Open through the crate's single safe-open boundary (O_NOFOLLOW + O_NONBLOCK
+    // + post-open fd fstat + advisory shared lock), the same one every filesystem
+    // content read uses. A raw `File::open` here would (a) BLOCK FOREVER on a FIFO
+    // target (no O_NONBLOCK and no reader), (b) follow a symlinked binary path to
+    // an off-target file, and (c) stream a character device (`/dev/zero`) until the
+    // read cap. The binary source is constructed with an explicit path, but the
+    // FIFO-hang and special-file reads are robustness bugs regardless of trust, and
+    // one open boundary keeps every content read consistent (NO DUPLICATION).
+    let file = crate::filesystem::open_file_safe(path)?;
     let capacity_hint = file.metadata()?.len();
     let cap = u64::try_from(cap).map_err(|_| {
         std::io::Error::new(
