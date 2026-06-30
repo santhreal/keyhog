@@ -68,8 +68,15 @@ pub(super) fn check_markers(
                 || upper.ends_with(example.upper())
                 || upper_contains_token(upper, "EXAMPLEKEY")
                 || upper.ends_with("EXAMPLEKEY"))
-            && !credential.contains("example.com")
-            && !credential.contains("example.org")
+            // Reserved-domain carve-out, case-INSENSITIVE to match the marker
+            // detection above (which runs on `upper`). Domains are
+            // case-insensitive, so a title-case `Example.com` or upper
+            // `EXAMPLE.COM` is the same RFC 2606 reserved domain as the lower
+            // form; matching `credential` case-sensitively let those mentions
+            // slip past the carve-out and over-suppressed real secrets sitting
+            // beside them. Reuse the already-computed `upper` (no allocation).
+            && !upper.contains("EXAMPLE.COM")
+            && !upper.contains("EXAMPLE.ORG")
         {
             return MarkerVerdict::Suppress("contains_EXAMPLE_token");
         }
@@ -167,10 +174,11 @@ pub(super) fn check_markers(
         "SAMPLE_KEY",
         "SAMPLEKEY",
     ];
-    if !from_evasion_decoder
-        && !credential.contains("example.com")
-        && !credential.contains("example.org")
-    {
+    // Case-INSENSITIVE reserved-domain carve-out (the marker scan below runs on
+    // `upper`); see the `contains_EXAMPLE_token` site for why matching
+    // `credential` case-sensitively over-suppressed secrets beside an
+    // `Example.com` / `EXAMPLE.COM` mention.
+    if !from_evasion_decoder && !upper.contains("EXAMPLE.COM") && !upper.contains("EXAMPLE.ORG") {
         for marker in DOC_MARKER_SUBSTRINGS {
             if upper.contains(marker) {
                 if credential.starts_with("TESTKEY_")

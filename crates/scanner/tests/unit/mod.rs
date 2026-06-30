@@ -72,6 +72,7 @@ pub mod crate_source_helper;
 pub mod decode;
 pub mod decode_caesar_shift_selection;
 pub mod decode_structure;
+pub mod doc_marker_example_domain_case_insensitive;
 pub mod engine;
 pub mod engine_backend;
 pub mod engine_cases;
