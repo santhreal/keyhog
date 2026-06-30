@@ -52,7 +52,7 @@ static BIGRAM_LOGPROB: LazyLock<[f32; 676]> = LazyLock::new(|| {
 /// Below this, English bigram statistics are too sparse to separate a short
 /// random password from a short identifier, so we return `false` (NOT random ⇒
 /// the identifier gate keeps suppressing — fail safe toward precision).
-const MIN_ALPHA: usize = 6;
+pub(crate) const MIN_ALPHA: usize = 6;
 
 /// Mean adjacent-bigram log-probability at or below which a token's letters are
 /// collectively too improbable for English ⇒ a random token, not a dictionary
@@ -71,7 +71,7 @@ const RANDOM_LOGPROB_THRESHOLD: f32 = -6.85;
 /// discriminator recovers have ≥ 4 distinct letters (min 4, e.g. `ttqqrqjt`),
 /// while every blind-spot pattern has ≤ 2 — so 3 separates them with margin and
 /// drops no real password.
-const MIN_DISTINCT_LETTERS: usize = 3;
+pub(crate) const MIN_DISTINCT_LETTERS: usize = 3;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RandomTokenEvidence {
@@ -269,174 +269,4 @@ pub(crate) fn keep_word_separated_gate_with_randomness(
         return true;
     }
     !randomness.is_random_token(value)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        has_low_letter_diversity, is_confident_dictionary_word, is_random_token, MIN_ALPHA,
-        MIN_DISTINCT_LETTERS,
-    };
-
-    // ── is_confident_dictionary_word: confident English words ⇒ true ───────
-
-    #[test]
-    fn password_is_confident_dictionary_word() {
-        assert!(is_confident_dictionary_word("password"));
-    }
-
-    #[test]
-    fn secret_six_chars_is_confident_dictionary_word() {
-        // Exactly MIN_ALPHA chars — the model is evaluated and `secret` reads
-        // as English, so it is confidently a dictionary word.
-        assert_eq!("secret".len(), MIN_ALPHA);
-        assert!(is_confident_dictionary_word("secret"));
-    }
-
-    #[test]
-    fn welcome_is_confident_dictionary_word() {
-        assert!(is_confident_dictionary_word("welcome"));
-    }
-
-    #[test]
-    fn username_is_confident_dictionary_word() {
-        assert!(is_confident_dictionary_word("username"));
-    }
-
-    // ── random tokens ⇒ false (kept) ───────────────────────────────────────
-
-    #[test]
-    fn lowercase_random_token_is_not_dictionary_word() {
-        // The exact CredData userinfo passwords the strong anchor must recover.
-        for token in ["pxidztpv", "zavvfuco", "vvaitgiz", "nxruoapftabufvcsa"] {
-            assert!(
-                !is_confident_dictionary_word(token),
-                "{token} is a random token, not a confident dictionary word"
-            );
-            assert!(is_random_token(token), "{token} must read as a random token");
-        }
-    }
-
-    #[test]
-    fn six_char_random_token_is_not_dictionary_word() {
-        // `hjxzyi` is exactly MIN_ALPHA chars and scores BELOW the English
-        // threshold — random, not dictionary, so it is kept.
-        assert!(!is_confident_dictionary_word("hjxzyi"));
-        assert!(is_random_token("hjxzyi"));
-    }
-
-    #[test]
-    fn mixed_case_random_token_is_not_dictionary_word() {
-        assert!(!is_confident_dictionary_word("Kc4mLp9Rt8Vy3Bn6"));
-    }
-
-    // ── short tokens (< MIN_ALPHA) ⇒ false on the FAIL-SAFE, never suppressed ─
-
-    #[test]
-    fn short_tokens_are_not_confident_dictionary_words() {
-        // Below MIN_ALPHA the bigram model returns None: the predicate must be
-        // false (it can only DROP what the model is SURE is English), so a short
-        // random userinfo value is never suppressed by this gate — the regex
-        // `{6,128}` floor, not this predicate, is what bounds the short case.
-        for token in ["pass", "admin", "root", "user", "pwd"] {
-            assert!(
-                !is_confident_dictionary_word(token),
-                "{token} is below MIN_ALPHA — the predicate must fail-safe to false"
-            );
-        }
-    }
-
-    #[test]
-    fn empty_and_nonalpha_are_not_dictionary_words() {
-        assert!(!is_confident_dictionary_word(""));
-        assert!(!is_confident_dictionary_word("123456"));
-        assert!(!is_confident_dictionary_word("h%40co"));
-    }
-
-    // ── has_low_letter_diversity: repetitive / digit-only MASKS ⇒ true ─────
-
-    #[test]
-    fn single_letter_mask_is_low_diversity() {
-        // The exact strong-anchor blind spot: `xxxxxxxx` has improbable English
-        // bigrams (so it is NOT a confident dictionary word) but only ONE distinct
-        // letter — a redaction mask, never a real password. The family gate must
-        // drop it on this predicate, since the Tier-B repetitive-run gate is
-        // skipped for the service-anchored family.
-        for mask in ["xxxxxxxx", "aaaaaa", "XXXXXXXX", "00000000", "zzzzzz"] {
-            assert!(
-                has_low_letter_diversity(mask),
-                "{mask} is a ≤1-distinct-letter mask, not a password"
-            );
-        }
-    }
-
-    #[test]
-    fn alternating_two_letter_mask_is_low_diversity() {
-        // `ababab` / `xyxyxy` have exactly 2 distinct letters — below the floor of
-        // 3 — so they are alternating patterns, not random passwords.
-        for mask in ["ababab", "xyxyxyxy", "a1a1a1a1"] {
-            assert!(
-                has_low_letter_diversity(mask),
-                "{mask} has < {MIN_DISTINCT_LETTERS} distinct letters"
-            );
-        }
-    }
-
-    #[test]
-    fn digit_and_symbol_only_values_are_low_diversity() {
-        // Pure-digit / pure-symbol values have ZERO distinct letters — a sequence
-        // or punctuation run in a password slot, dropped by the diversity floor.
-        for mask in ["12345678", "00000000", "!@#$%^&*", "--------"] {
-            assert!(
-                has_low_letter_diversity(mask),
-                "{mask} has zero distinct letters and must be low-diversity"
-            );
-        }
-    }
-
-    #[test]
-    fn genuine_random_passwords_clear_the_diversity_floor() {
-        // The recall the family must KEEP: a real short/low-alpha password has ≥ 3
-        // distinct letters and must NOT be flagged as a low-diversity mask.
-        for pw in [
-            "i8cr1w!",            // 4 distinct letters (i,c,r,w) — the recovery case
-            "pxidztpv",           // userinfo random
-            "argriyjqr",          // SQL IDENTIFIED BY random
-            "Rcuhxw1486",         // PowerShell -Password random
-            "Qx7Kp2Vn9Rm4Lt8w",  // long mixed random
-        ] {
-            assert!(
-                !has_low_letter_diversity(pw),
-                "{pw} has ≥ {MIN_DISTINCT_LETTERS} distinct letters — a real password, not a mask"
-            );
-        }
-    }
-
-    #[test]
-    fn exactly_three_distinct_letters_is_not_low_diversity() {
-        // Boundary: MIN_DISTINCT_LETTERS = 3 is the KEEP floor, so a value with
-        // exactly 3 distinct letters clears it (the predicate is strict `<`).
-        assert_eq!(MIN_DISTINCT_LETTERS, 3);
-        assert!(!has_low_letter_diversity("abcabc")); // a,b,c = 3 distinct
-        assert!(has_low_letter_diversity("abab")); //   a,b   = 2 distinct
-    }
-
-    #[test]
-    fn hex_digests_are_not_dictionary_words() {
-        // The exact ripple cause: a pure-hex key's `a..f` adjacencies (`ab`,
-        // `be`, `de`, `ea`) read as probable English, but a hex digest carries
-        // NO `g..z` letter, so the predicate must reject it — otherwise the
-        // placeholder gate would suppress real hex secrets (rollbar/steam/…).
-        for hex in [
-            "08c0fee0abeb7224113fd958de7528ab",
-            "24ed7c1290d4ed5e45bd69c30994238c",
-            "533b30a72eee83f00d7436071027b88f",
-            "deadbeefcafebabe",
-        ] {
-            assert!(
-                !is_confident_dictionary_word(hex),
-                "{hex} is a hex digest (no g..z letter), not a dictionary word"
-            );
-        }
-    }
 }

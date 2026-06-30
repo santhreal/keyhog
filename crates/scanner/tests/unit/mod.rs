@@ -122,6 +122,7 @@ pub mod shape_canonical;
 pub mod structured_parsers;
 pub mod sub_facade;
 mod telemetry_serial;
+pub mod token_randomness;
 pub mod unicode_combining_marks_normalization;
 pub mod unicode_evasion_anchor_parser;
 pub mod unicode_fast_path_borrowed;
