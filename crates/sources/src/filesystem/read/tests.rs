@@ -154,6 +154,170 @@ fn looks_binary_short_circuit_matches_full_scan() {
     }
 }
 
+// ── NUL-run boundary (BINARY_NUL_RUN = 4 consecutive NULs) ─────────────────
+// A run of >= 4 consecutive NULs is binary; fewer (or non-consecutive NULs at
+// low density) stay text so a planted ASCII secret beside a stray NUL is still
+// scanned. These pin the exact run length so a future edit to BINARY_NUL_RUN is
+// caught.
+
+/// Pad `core` with `filler` 'x' bytes so its control density is well under 5%,
+/// isolating the NUL-run logic from the density gate.
+fn diluted(core: &[u8], filler: usize) -> Vec<u8> {
+    let mut bytes = core.to_vec();
+    bytes.resize(bytes.len() + filler, b'x');
+    bytes
+}
+
+#[test]
+fn looks_binary_three_consecutive_nuls_is_text() {
+    assert!(!looks_binary(b"prefix\0\0\0suffix"));
+}
+
+#[test]
+fn looks_binary_four_consecutive_nuls_is_binary() {
+    assert!(looks_binary(b"prefix\0\0\0\0suffix"));
+}
+
+#[test]
+fn looks_binary_five_consecutive_nuls_is_binary() {
+    assert!(looks_binary(b"x\0\0\0\0\0y"));
+}
+
+#[test]
+fn looks_binary_four_nuls_at_buffer_end_is_binary() {
+    assert!(looks_binary(b"trailing\0\0\0\0"));
+}
+
+#[test]
+fn looks_binary_three_nuls_at_buffer_end_is_text() {
+    // No 4-run, and three controls is below the SUSPICIOUS_CONTROL_BINARY_MIN
+    // floor, so a short tail of three NULs stays text.
+    assert!(!looks_binary(b"trailing\0\0\0"));
+}
+
+#[test]
+fn looks_binary_non_consecutive_nuls_low_density_is_text() {
+    // Six scattered single NULs, none consecutive, diluted well below 5%.
+    assert!(!looks_binary(&diluted(b"a\0b\0c\0d\0e\0f\0g", 1000)));
+}
+
+#[test]
+fn looks_binary_separated_nul_pairs_low_density_is_text() {
+    // Two 2-NUL runs (each below the 4-run threshold), diluted below 5%.
+    assert!(!looks_binary(&diluted(b"ab\0\0cd\0\0ef", 1000)));
+}
+
+// ── C0 control-exemption set ───────────────────────────────────────────────
+// looks_binary counts a byte as a binary-control signal iff it is < 0x20 and is
+// NOT one of the text-layout whitespace bytes \n \r \t and form-feed (0x0C).
+// These pin which dense single-byte fills stay text vs flip to binary.
+
+#[test]
+fn looks_binary_dense_form_feed_is_text() {
+    // 0x0C (form feed) is exempt layout whitespace.
+    assert!(!looks_binary(&vec![0x0C; 1000]));
+}
+
+#[test]
+fn looks_binary_dense_newline_is_text() {
+    assert!(!looks_binary(&vec![b'\n'; 1000]));
+}
+
+#[test]
+fn looks_binary_dense_carriage_return_is_text() {
+    assert!(!looks_binary(&vec![b'\r'; 1000]));
+}
+
+#[test]
+fn looks_binary_dense_tab_is_text() {
+    assert!(!looks_binary(&vec![b'\t'; 1000]));
+}
+
+#[test]
+fn looks_binary_mixed_layout_whitespace_is_text() {
+    let bytes: Vec<u8> = b"\n\r\t\x0C".iter().copied().cycle().take(1000).collect();
+    assert!(!looks_binary(&bytes));
+}
+
+#[test]
+fn looks_binary_dense_vertical_tab_is_binary() {
+    // 0x0B (vertical tab) is < 0x20 and NOT in the exempt set.
+    assert!(looks_binary(&vec![0x0B; 1000]));
+}
+
+#[test]
+fn looks_binary_dense_escape_is_binary() {
+    // 0x1B (ESC) is a binary-control signal.
+    assert!(looks_binary(&vec![0x1B; 1000]));
+}
+
+#[test]
+fn looks_binary_dense_bell_is_binary() {
+    // 0x07 (BEL) is a binary-control signal.
+    assert!(looks_binary(&vec![0x07; 1000]));
+}
+
+#[test]
+fn looks_binary_dense_high_bytes_is_text() {
+    // 0xFF is not < 0x20, so it is not a C0-control signal; UTF-8 validity is a
+    // separate downstream concern, not looks_binary's job.
+    assert!(!looks_binary(&vec![0xFF; 1000]));
+}
+
+#[test]
+fn looks_binary_dense_del_is_text() {
+    // DEL (0x7F) is not < 0x20, so looks_binary does not count it.
+    assert!(!looks_binary(&vec![0x7F; 1000]));
+}
+
+// ── density gate: exact absolute verdict at the 5% / min-4 edges ────────────
+
+#[test]
+fn looks_binary_just_over_five_percent_is_binary() {
+    // 51 controls of 1000 ⇒ 51*20 = 1020 > 1000.
+    let mut bytes = vec![b'a'; 1000];
+    bytes[..51].fill(0x03);
+    assert!(looks_binary(&bytes));
+}
+
+#[test]
+fn looks_binary_exactly_five_percent_is_text() {
+    // 50 of 1000 ⇒ 50*20 = 1000, not strictly greater ⇒ text.
+    let mut bytes = vec![b'a'; 1000];
+    bytes[..50].fill(0x03);
+    assert!(!looks_binary(&bytes));
+}
+
+#[test]
+fn looks_binary_just_under_five_percent_is_text() {
+    let mut bytes = vec![b'a'; 1000];
+    bytes[..49].fill(0x03);
+    assert!(!looks_binary(&bytes));
+}
+
+#[test]
+fn looks_binary_three_controls_high_density_is_text() {
+    // 3 controls in a 10-byte file is 30% density, but below the four-control
+    // minimum, so a short file with a few controls stays text.
+    assert!(!looks_binary(b"a\x03b\x03c\x03defg"));
+}
+
+#[test]
+fn looks_binary_four_controls_over_threshold_is_binary() {
+    // 4 controls in 79 bytes ⇒ 4*20 = 80 > 79 and meets the four-control floor.
+    let mut bytes = vec![b'a'; 79];
+    bytes[..4].fill(0x03);
+    assert!(looks_binary(&bytes));
+}
+
+#[test]
+fn looks_binary_four_controls_low_density_is_text() {
+    // 4 controls in a 1000-byte file clears the count floor but is under 5%.
+    let mut bytes = vec![b'a'; 1000];
+    bytes[..4].fill(0x03);
+    assert!(!looks_binary(&bytes));
+}
+
 #[test]
 fn decode_utf16_le_round_trip() {
     let s = "hello, 世界! 🌍";
@@ -942,7 +1106,10 @@ mod higher_read_path_special_files {
         let dir = tempfile::tempdir().unwrap();
         let target = write_regular(dir.path(), "real.txt", b"secret = abc123def456");
         let link = symlink_to(dir.path(), "link.txt", &target);
-        assert!(read_file_buffered(&link, 0).is_none(), "buffered read must refuse a symlink");
+        assert!(
+            read_file_buffered(&link, 0).is_none(),
+            "buffered read must refuse a symlink"
+        );
     }
 
     #[test]
@@ -987,7 +1154,10 @@ mod higher_read_path_special_files {
         let dir = tempfile::tempdir().unwrap();
         let target = write_regular(dir.path(), "real.gz", b"\x1f\x8b\x08\x00");
         let link = symlink_to(dir.path(), "a.gz", &target);
-        assert!(compressed_input(&link, CAP).is_none(), "must refuse a symlinked archive");
+        assert!(
+            compressed_input(&link, CAP).is_none(),
+            "must refuse a symlinked archive"
+        );
     }
 
     #[test]
@@ -1023,7 +1193,11 @@ mod higher_read_path_special_files {
         let dir = tempfile::tempdir().unwrap();
         let fifo = make_fifo(dir.path(), "pipe");
         let result = within_timeout(move || windowed_len(&fifo, 1024, 32));
-        assert_eq!(result, Some(0), "a FIFO must yield zero windows, never hang");
+        assert_eq!(
+            result,
+            Some(0),
+            "a FIFO must yield zero windows, never hang"
+        );
     }
 
     #[test]
@@ -1031,7 +1205,11 @@ mod higher_read_path_special_files {
         let dir = tempfile::tempdir().unwrap();
         let target = write_regular(dir.path(), "real.txt", b"x".repeat(4096).as_slice());
         let link = symlink_to(dir.path(), "link.txt", &target);
-        assert_eq!(windowed_len(&link, 1024, 32), Some(0), "a symlink must yield zero windows");
+        assert_eq!(
+            windowed_len(&link, 1024, 32),
+            Some(0),
+            "a symlink must yield zero windows"
+        );
     }
 
     #[test]
@@ -1048,7 +1226,10 @@ mod higher_read_path_special_files {
             b"password = hunter2longvalue\n".repeat(64).as_slice(),
         );
         let n = windowed_len(&path, 1024, 32).expect("regular file must mmap");
-        assert!(n > 0, "a non-empty regular file must produce at least one window");
+        assert!(
+            n > 0,
+            "a non-empty regular file must produce at least one window"
+        );
     }
 
     // ── read_file_mmap_for_test ─────────────────────────────────────────
@@ -1083,7 +1264,10 @@ mod higher_read_path_special_files {
         let dir = tempfile::tempdir().unwrap();
         let target = write_regular(dir.path(), "real.txt", b"hello");
         let link = symlink_to(dir.path(), "link.txt", &target);
-        assert!(safe_capped(&link, CAP).is_err(), "capped read must refuse a symlink");
+        assert!(
+            safe_capped(&link, CAP).is_err(),
+            "capped read must refuse a symlink"
+        );
     }
 
     #[test]
