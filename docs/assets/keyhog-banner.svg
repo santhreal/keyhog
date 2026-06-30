@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 414" width="720" height="414" role="img" aria-label="keyhog - secret scanner - 908 detectors - gpu">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 414" width="720" height="414" role="img" aria-label="keyhog - secret scanner - 909 detectors - gpu">
   <!-- Self-contained banner: an opaque dark card plus inline fill colors, so
        it renders identically on GitHub's light AND dark README themes. We do
        NOT use a <style> block / @media query: GitHub sanitizes SVGs served
@@ -26,6 +26,6 @@
       <g transform="translate(134.400,0) scale(0.056000,-0.056000)"><path d="M300 -8Q199 -8 139.5 50.0Q80 108 80 212V338Q80 442 139.5 500.0Q199 558 300 558Q401 558 460.5 500.0Q520 442 520 338V212Q520 108 460.5 50.0Q401 -8 300 -8ZM300 79Q356 79 388.5 110.5Q421 142 421 203V347Q421 408 388.5 439.5Q356 471 300 471Q244 471 211.5 439.5Q179 408 179 347V203Q179 142 211.5 110.5Q244 79 300 79Z"/></g>
       <g transform="translate(168.000,0) scale(0.056000,-0.056000)"><path d="M159 -180V-92H314Q359 -92 386.0 -66.5Q413 -41 413 3V49L415 144H414Q404 93 365.5 65.0Q327 37 267 37Q182 37 133.0 91.5Q84 146 84 241V354Q84 449 133.0 504.5Q182 560 267 560Q325 560 363.5 532.0Q402 504 413 455H414V550H511V2Q511 -82 458.0 -131.0Q405 -180 314 -180ZM298 120Q351 120 382.0 153.0Q413 186 413 246V349Q413 408 382.0 441.0Q351 474 298 474Q243 474 213.0 442.5Q183 411 183 357V237Q183 183 213.0 151.5Q243 120 298 120Z"/></g>
     </g>
-    <text fill="#8b92a6" x="360" y="404" font-family="'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="13" letter-spacing="2">v0.5.40  ·  secret scanner  ·  908 detectors  ·  gpu</text>
+    <text fill="#8b92a6" x="360" y="404" font-family="'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="13" letter-spacing="2">v0.5.40  ·  secret scanner  ·  909 detectors  ·  gpu</text>
   </g>
 </svg>
