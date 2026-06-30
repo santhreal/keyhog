@@ -250,13 +250,18 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     let bytes = text.as_bytes();
 
     // For large files, only preprocess if secret-related keywords are present.
+    // The match is ASCII-case-insensitive: env-style credentials use all-caps
+    // keys (`SECRET=`, `API_TOKEN=`, `DB_PASSWORD=`) at least as often as the
+    // title/lowercase forms, and skipping their multiline-concat reassembly was
+    // a silent recall hole. `ci_find` jumps to first-byte candidates with
+    // memchr2 and only full-compares there, so this stays a fast prefilter.
     if bytes.len() > LARGE_FILE_KEYWORD_GATE_BYTES {
-        let has_secret_keyword = memchr::memmem::find(bytes, b"ecret").is_some()
-            || memchr::memmem::find(bytes, b"oken").is_some()
-            || memchr::memmem::find(bytes, b"assword").is_some()
-            || memchr::memmem::find(bytes, b"api_key").is_some()
-            || memchr::memmem::find(bytes, b"API_KEY").is_some()
-            || memchr::memmem::find(bytes, b"redential").is_some();
+        use crate::ascii_ci::ci_find;
+        let has_secret_keyword = ci_find(bytes, b"secret")
+            || ci_find(bytes, b"token")
+            || ci_find(bytes, b"password")
+            || ci_find(bytes, b"api_key")
+            || ci_find(bytes, b"credential");
         if !has_secret_keyword {
             return false;
         }

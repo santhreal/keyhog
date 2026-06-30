@@ -117,6 +117,7 @@ pub mod low_alnum_ratio_char_units;
 pub mod mark_stats;
 pub mod ml_scorer;
 pub mod multiline;
+pub mod multiline_large_file_keyword_gate;
 pub mod phase2_entropy_helpers;
 pub mod pipeline;
 pub mod prefix_trie;
