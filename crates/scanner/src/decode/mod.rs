@@ -15,7 +15,10 @@ mod url;
 pub(crate) mod util;
 
 pub use base64::{base64_decode, find_base64_strings, z85_decode};
-pub(crate) use base64::{is_base64_candidate_byte, is_standard_base64_byte, standard_base64_shape};
+pub(crate) use base64::{
+    contains_non_padding_equals, is_base64_candidate_byte, is_standard_base64_byte,
+    standard_base64_shape,
+};
 pub use hex::{find_hex_strings, hex_decode};
 pub(crate) use pipeline::decode_chunk;
 pub use pipeline::register_decoder;

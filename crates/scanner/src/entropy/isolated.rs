@@ -320,7 +320,7 @@ fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
     if !has_alpha || (!has_digit && !no_digit_symbolic_token) {
         return None;
     }
-    let has_assignment_equals = has_non_padding_equals(candidate);
+    let has_assignment_equals = crate::decode::contains_non_padding_equals(candidate);
     let standard_token = !candidate.contains("://")
         && !has_assignment_equals
         && !candidate.contains('<')
@@ -427,12 +427,4 @@ fn symbolic_isolated_bare_candidate(candidate: &str) -> bool {
         }
     }
     symbol_count >= 2
-}
-
-fn has_non_padding_equals(candidate: &str) -> bool {
-    let padding = candidate.bytes().rev().take_while(|&b| b == b'=').count();
-    if padding > 2 {
-        return true;
-    }
-    candidate[..candidate.len() - padding].contains('=')
 }

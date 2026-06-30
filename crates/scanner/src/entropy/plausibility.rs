@@ -190,10 +190,13 @@ fn is_isolated_leading_slash_base64_secret(value: &str, placeholder_keywords: &[
     {
         return false;
     }
-    let padding = body.bytes().rev().take_while(|&b| b == b'=').count();
-    if padding > 2 || body[..body.len() - padding].contains('=') {
+    if crate::decode::contains_non_padding_equals(body) {
         return false;
     }
+    // Every `=` is now confirmed valid trailing padding; its length (0 ⇒
+    // unpadded) distinguishes url-safe-shaped bodies below. Recounting the
+    // padding run rescans only the ≤2 trailing `=`, a rounding error.
+    let padding = body.bytes().rev().take_while(|&b| b == b'=').count();
     if body.contains('/') && !body.contains('+') && padding == 0 {
         return false;
     }

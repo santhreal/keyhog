@@ -596,6 +596,14 @@ pub fn standard_base64_shape_for_test(candidate: &str) -> Option<(bool, bool, bo
     })
 }
 
+/// `contains_non_padding_equals`: the single base64-padding discriminator shared
+/// by the isolated-bare entropy candidate gate and the leading-slash secret gate
+/// — `true` iff the value holds an `=` that is not valid trailing base64 padding
+/// (a third-or-later trailing `=`, or any `=` before the padding run).
+pub fn contains_non_padding_equals(value: &str) -> bool {
+    crate::decode::contains_non_padding_equals(value)
+}
+
 /// `candidate_starts_with_owned_assignment_key` driven with an explicit owned
 /// set: true iff the candidate normalizes to a STRICTLY longer key that begins
 /// with one of the owned keys AND that owned key carries a credential suffix.

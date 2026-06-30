@@ -96,6 +96,21 @@ pub(crate) fn is_standard_base64_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=')
 }
 
+/// `true` iff `value` contains an `=` that is NOT valid base64 padding.
+///
+/// In base64 the only legal `=` is trailing padding, of which there are at most
+/// two. So a non-padding `=` is either a third (or later) trailing `=`, or any
+/// `=` that appears before the trailing padding run — both signal that the `=`
+/// is an assignment / key-value separator rather than base64 padding. This is
+/// the discriminator the isolated-bare entropy path uses to tell an opaque
+/// base64 token (`AbC123…==`, kept) from an embedded `key=value` fragment
+/// (rejected). `=` is single-byte ASCII, so the prefix slice is always on a char
+/// boundary regardless of any multibyte content before the padding run.
+pub(crate) fn contains_non_padding_equals(value: &str) -> bool {
+    let padding = value.bytes().rev().take_while(|&b| b == b'=').count();
+    padding > 2 || value[..value.len() - padding].contains('=')
+}
+
 pub(crate) fn standard_base64_shape(candidate: &str) -> Option<StandardBase64Shape> {
     let facts = scan_base64_candidate(candidate)?;
     let has_urlsafe = facts.has_urlsafe;

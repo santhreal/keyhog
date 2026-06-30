@@ -5,6 +5,7 @@ pub mod a4_lr2;
 pub mod adjudicate;
 pub mod alphabet_filter;
 pub mod ascii_ci;
+pub mod base64_non_padding_equals;
 pub mod bigram_bloom;
 pub mod checksum;
 pub mod checksum_extended;
