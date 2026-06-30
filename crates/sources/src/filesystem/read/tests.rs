@@ -676,3 +676,256 @@ fn read_file_windowed_mmap_handles_empty_file() {
         assert!(v.is_empty());
     }
 }
+
+/// Special-file safety at the single read-open boundary (`open_file_safe`).
+///
+/// A content scanner that walks untrusted trees must (1) NEVER block opening a
+/// FIFO with no writer — a plain `open(O_RDONLY)` hangs forever — and (2) refuse
+/// every non-regular file (FIFO, socket, char/block device) rather than read
+/// from it. The fix is `O_NONBLOCK` on the open plus an fstat of the OPENED fd
+/// that fails closed unless `is_file()`. These tests are Unix-only because they
+/// fabricate FIFOs / sockets / devices; the portable `is_file()` refusal they
+/// exercise is the same code path on every platform, and the regular-file cases
+/// below prove the guard does not regress ordinary reads.
+#[cfg(unix)]
+mod special_files {
+    use crate::filesystem::read::raw::{
+        open_file_safe, read_file_mmap, read_file_prefix_safe, read_file_safe,
+    };
+    use std::io::Read;
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::{Path, PathBuf};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// Run `f` on a worker thread and REQUIRE it to finish within 10s. A bare
+    /// blocking `open(O_RDONLY)` of a writer-less FIFO never returns, so this is
+    /// the regression guard proving `open_file_safe` returns instead of hanging.
+    fn within_timeout<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        rx.recv_timeout(Duration::from_secs(10))
+            .expect("open must NOT block on a special file (missing O_NONBLOCK?)")
+    }
+
+    fn make_fifo(dir: &Path, name: &str) -> PathBuf {
+        let path = dir.join(name);
+        let c = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        // SAFETY: standard mkfifo(2) with an owner-only mode on a fresh temp path.
+        let rc = unsafe { libc::mkfifo(c.as_ptr(), 0o600) };
+        assert_eq!(rc, 0, "mkfifo failed: {}", std::io::Error::last_os_error());
+        path
+    }
+
+    fn regular(dir: &Path, name: &str, bytes: &[u8]) -> PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    // ── FIFO: refused, and never blocks ─────────────────────────────────
+
+    #[test]
+    fn open_file_safe_refuses_fifo_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "pipe");
+        let err = within_timeout(move || open_file_safe(&fifo)).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn open_file_safe_fifo_error_names_non_regular() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "pipe");
+        let err = within_timeout(move || open_file_safe(&fifo)).unwrap_err();
+        assert!(
+            err.to_string().contains("non-regular"),
+            "error must name the cause, got: {err}"
+        );
+    }
+
+    #[test]
+    fn read_file_safe_refuses_fifo_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "pipe");
+        let result = within_timeout(move || read_file_safe(&fifo, 0));
+        assert!(result.is_err(), "read_file_safe must refuse a FIFO");
+    }
+
+    #[test]
+    fn read_file_prefix_safe_refuses_fifo_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "pipe");
+        let result = within_timeout(move || {
+            let mut buf = [0u8; 64];
+            read_file_prefix_safe(&fifo, &mut buf)
+        });
+        assert!(result.is_err(), "read_file_prefix_safe must refuse a FIFO");
+    }
+
+    #[test]
+    fn read_file_mmap_returns_none_for_fifo_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "pipe");
+        let result = within_timeout(move || read_file_mmap(&fifo));
+        assert!(result.is_none(), "read_file_mmap must skip (None) a FIFO");
+    }
+
+    #[test]
+    fn fifo_refused_by_type_even_with_writer_present() {
+        // A keep-alive O_RDWR fd means a blocking open WOULD succeed, proving the
+        // refusal is by file TYPE (is_file == false), not merely the no-writer
+        // hang the O_NONBLOCK flag covers.
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "pipe");
+        let c = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        // SAFETY: open(2) the FIFO read-write non-blocking; closed below.
+        let keepalive = unsafe { libc::open(c.as_ptr(), libc::O_RDWR | libc::O_NONBLOCK) };
+        assert!(keepalive >= 0, "keep-alive open failed");
+        let probe = fifo.clone();
+        let err = within_timeout(move || open_file_safe(&probe)).unwrap_err();
+        // SAFETY: closing the descriptor opened just above.
+        unsafe { libc::close(keepalive) };
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    // ── Devices: refused (no streaming /dev/zero, no /dev/null read) ─────
+
+    #[test]
+    fn open_file_safe_refuses_dev_null() {
+        let err = open_file_safe(Path::new("/dev/null")).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn open_file_safe_refuses_dev_zero_so_it_cannot_stream() {
+        // /dev/zero would otherwise stream up to the read cap of zero bytes; the
+        // boundary refusal means we never enter the read at all.
+        let err = open_file_safe(Path::new("/dev/zero")).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn read_file_safe_refuses_dev_null() {
+        assert!(read_file_safe(Path::new("/dev/null"), 0).is_err());
+    }
+
+    // ── Unix domain socket: refused ─────────────────────────────────────
+
+    #[test]
+    fn open_file_safe_refuses_unix_socket() {
+        // A socket is refused at the `open(2)` syscall itself (ENXIO, surfaced as
+        // an `Uncategorized` kind) BEFORE the metadata guard runs — a FIFO/device
+        // instead opens then trips the `is_file()` guard (`InvalidInput`). Either
+        // way the contract is the same: a non-regular file never reaches a read.
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("sock");
+        let _listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
+        assert!(
+            open_file_safe(&sock).is_err(),
+            "a unix-domain socket must be refused"
+        );
+    }
+
+    #[test]
+    fn read_file_safe_refuses_unix_socket() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("sock");
+        let _listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
+        assert!(read_file_safe(&sock, 0).is_err());
+    }
+
+    // ── Directory: refused by the is_file() guard (never a content read) ─
+
+    #[test]
+    fn open_file_safe_refuses_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = open_file_safe(dir.path()).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    // ── Symlinks: O_NOFOLLOW refusal preserved (regular + FIFO targets) ──
+
+    #[test]
+    fn open_file_safe_refuses_symlink_to_regular_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = regular(dir.path(), "real.txt", b"secret = abc123def456");
+        let link = dir.path().join("link.txt");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(
+            open_file_safe(&link).is_err(),
+            "O_NOFOLLOW must refuse a symlinked regular file"
+        );
+    }
+
+    #[test]
+    fn open_file_safe_refuses_symlink_to_fifo_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "pipe");
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&fifo, &link).unwrap();
+        let result = within_timeout(move || open_file_safe(&link));
+        assert!(result.is_err(), "a symlink to a FIFO must be refused");
+    }
+
+    // ── Regular files: the guard does NOT regress ordinary reads ─────────
+
+    #[test]
+    fn open_file_safe_accepts_regular_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = regular(dir.path(), "ok.txt", b"hello");
+        assert!(open_file_safe(&path).is_ok());
+    }
+
+    #[test]
+    fn open_file_safe_regular_file_reads_back_contents() {
+        // Proves O_NONBLOCK did not break a normal regular-file read.
+        let dir = tempfile::tempdir().unwrap();
+        let path = regular(dir.path(), "ok.txt", b"token = ghp_example");
+        let mut file = open_file_safe(&path).unwrap();
+        let mut s = String::new();
+        file.read_to_string(&mut s).unwrap();
+        assert_eq!(s, "token = ghp_example");
+    }
+
+    #[test]
+    fn read_file_safe_regular_file_returns_exact_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = regular(dir.path(), "ok.txt", b"AKIAIOSFODNN7EXAMPLE");
+        let bytes = read_file_safe(&path, 20).unwrap();
+        assert_eq!(bytes, b"AKIAIOSFODNN7EXAMPLE");
+    }
+
+    #[test]
+    fn read_file_prefix_safe_regular_file_returns_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = regular(dir.path(), "ok.txt", b"0123456789abcdef");
+        let mut buf = [0u8; 8];
+        let n = read_file_prefix_safe(&path, &mut buf).unwrap();
+        assert_eq!(&buf[..n], b"01234567");
+    }
+
+    #[test]
+    fn read_file_mmap_regular_file_returns_some() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = regular(dir.path(), "ok.txt", b"password = hunter2longvalue");
+        assert!(read_file_mmap(&path).is_some());
+    }
+
+    #[test]
+    fn open_file_safe_accepts_empty_regular_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = regular(dir.path(), "empty.txt", b"");
+        assert!(open_file_safe(&path).is_ok());
+    }
+
+    #[test]
+    fn read_file_safe_empty_regular_file_is_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = regular(dir.path(), "empty.txt", b"");
+        let bytes = read_file_safe(&path, 0).unwrap();
+        assert!(bytes.is_empty());
+    }
+}

@@ -66,19 +66,41 @@ pub(in crate::filesystem) fn read_file_buffered(
     }
 }
 
-/// Open `path` in a symlink-resistant way. POSIX gets `O_NOFOLLOW`;
-/// Windows must classify the path with `symlink_metadata` before open (small
-/// TOCTOU window, but acceptable for a defensive scanner - the attacker would
-/// have to win a race they don't see initiated). The shipped Windows contract
-/// is explicit refusal of symlink paths and fail-closed refusal when the file
-/// type cannot be classified before the standard-library open.
+/// Open `path` in a symlink-resistant, special-file-resistant way.
+///
+/// POSIX gets `O_NOFOLLOW` (never traverse a final symlink component) AND
+/// `O_NONBLOCK`. The latter is load-bearing for a scanner that walks untrusted
+/// trees: a plain `open(O_RDONLY)` of a FIFO with no writer BLOCKS FOREVER, so a
+/// single named pipe anywhere in the scan set would hang the whole scan. With
+/// `O_NONBLOCK` the open returns immediately for a FIFO, and the regular-file
+/// check below then refuses it. `O_NONBLOCK` is inert on regular-file reads
+/// (POSIX never returns `EAGAIN` for a regular file), so it does not change the
+/// hot read path.
+///
+/// After the open succeeds we fstat the OPENED descriptor (not the path) and
+/// refuse anything that is not a regular file — FIFO, socket, block/char device.
+/// fstat'ing the fd we just opened, rather than re-stat'ing the path, closes the
+/// TOCTOU window where the walker stats a regular file and an attacker swaps it
+/// for a FIFO before this open (`O_NOFOLLOW` does not help — a FIFO is not a
+/// symlink). A content scanner must never read from a special file; failing
+/// closed here is surfaced loudly by the caller as a skip error, never silently.
+///
+/// Windows has no `O_NOFOLLOW`/`O_NONBLOCK` on `OpenOptions`, so it classifies
+/// the path with `symlink_metadata` before open (small TOCTOU window, acceptable
+/// for a defensive scanner) and the post-open regular-file check below still
+/// applies. The shipped Windows contract is explicit refusal of symlink paths,
+/// refusal of non-regular files, and fail-closed refusal when the file type
+/// cannot be classified before the standard-library open.
 pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW);
+        // O_NONBLOCK so a FIFO/device open returns immediately instead of
+        // blocking on a missing writer; O_NOFOLLOW so the final path component
+        // is never a followed symlink.
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
     // Windows has no equivalent of O_NOFOLLOW on `OpenOptions`. Without an
     // explicit symlink check, a scan could be tricked into following a
@@ -100,6 +122,19 @@ pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
         }
     }
     let file = options.open(path)?;
+    // Fail closed on any non-regular file. fstat the OPENED fd (the same object
+    // the O_NONBLOCK open returned) so a FIFO/socket/device cannot reach the read
+    // path: a FIFO read would hang, a device (`/dev/zero`) would stream until the
+    // read cap, and neither is a scan target. Checking the fd — not the path —
+    // also closes the regular-file→FIFO TOCTOU swap. `is_file()` is true ONLY for
+    // a regular file on every platform, so this one check covers all special
+    // types (and a directory, which never reaches a content read anyway).
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "refusing to read a non-regular file (FIFO, socket, or device)",
+        ));
+    }
     #[cfg(unix)]
     {
         use std::os::unix::io::AsRawFd;
