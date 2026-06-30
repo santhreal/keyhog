@@ -48,6 +48,7 @@ pub mod lib;
     feature = "bitbucket"
 ))]
 pub mod process_excerpt;
+pub mod src_inline_skip_counter_isolation;
 pub mod timeouts;
 #[cfg(feature = "web")]
 pub mod web_redact_url_userinfo_boundary;

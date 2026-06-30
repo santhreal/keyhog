@@ -205,16 +205,32 @@ jobs:
         run: cargo test -p keyhog-scanner --test adversarial_suite --no-default-features --features ci-lean --profile release-fast
       - name: sources all_tests
         run: cargo test -p keyhog-sources --test all_tests --profile release-fast
-      # The `binary` source backend (ELF/PE/Mach-O section reader + Ghidra
-      # decompiler literal extraction) is NOT in `default` features, and no other
-      # job builds it (feature-matrix only `cargo check`s `--features full`, which
-      # excludes Ghidra). Without this step the binary backend's unit/regression
-      # tests — including the byte-exact C-string unescaper that secret recall on
-      # compiled binaries depends on — never execute in CI. Re-running the
-      # aggregator with `binary` enabled guards that decoder. No Ghidra binary is
-      # required: the covered tests are pure byte parsing + source inspection.
-      - name: sources all_tests (binary backend)
+      # The opt-in source backends (binary ELF/PE/Mach-O + Ghidra literal
+      # extraction; the github/gitlab/bitbucket hosted-Git clients; the slack,
+      # azure, gcs, s3 cloud backends; docker image/layer unpacking) are NOT in
+      # `default` features, and no other job runs their tests: feature-matrix only
+      # `cargo check`s `--features full`, which compiles but never executes them.
+      # These two steps run them. No network, daemon, or Ghidra is required:
+      # every covered test is in-memory fixtures, mock HTTP (httpmock), a
+      # fake-binary script, or source inspection.
+      #
+      # 1) The binary backend aggregator: ELF/PE/Mach-O section reader + the
+      #    byte-exact C-string unescaper that secret recall on compiled binaries
+      #    depends on. Deterministic in parallel.
+      - name: sources binary backend (all_tests)
         run: cargo test -p keyhog-sources --test all_tests --features binary --profile release-fast
+      # 2) Every opt-in backend's `--lib` inline unit tests: hosted-Git SSRF +
+      #    credential redaction, cloud request construction, slack/docker helpers.
+      #    Restricted to `--lib` on purpose: the `all_tests` aggregator with these
+      #    features is NOT yet parallel-deterministic — some integration tests bump
+      #    the process-global skip counters through non-`gate_scan` helper calls
+      #    that escape the exclusive scan scope, so they race a concurrent
+      #    counter-asserting test (e.g. corrupt_zip). The `--lib` inline tests
+      #    carry no process-global counter assertions, so they ARE race-free.
+      #    (Tracked: route every counter-bumping test path through the scan gate
+      #    so the full aggregator can run all backends in parallel.)
+      - name: sources opt-in backends (inline unit tests)
+        run: cargo test -p keyhog-sources --lib --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile release-fast
       - name: verifier all_tests
         run: cargo test -p keyhog-verifier --test all_tests --profile release-fast
       - name: cli all_tests

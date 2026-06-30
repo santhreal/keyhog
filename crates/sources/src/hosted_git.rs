@@ -186,19 +186,11 @@ pub(crate) fn repo_listing_unreadable_error(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Mutex, MutexGuard};
-
     use keyhog_core::{Chunk, SourceError};
 
     use super::{
         merge_hosted_repo_results, validate_clone_url_for_origin, ExpectedCloneOrigin, HostedRepo,
     };
-
-    static COUNTER_LOCK: Mutex<()> = Mutex::new(());
-
-    fn counter_guard() -> MutexGuard<'static, ()> {
-        COUNTER_LOCK.lock().expect("hosted git counter lock")
-    }
 
     fn repo(name: &str) -> HostedRepo {
         HostedRepo {
@@ -210,9 +202,6 @@ mod tests {
 
     #[test]
     fn repo_failure_keeps_sibling_chunks_and_counts_unreadable() {
-        let _guard = counter_guard();
-        crate::reset_skip_counters();
-
         let chunk = Chunk::from("found-secret");
         let rows = merge_hosted_repo_results(
             "github",
@@ -238,11 +227,12 @@ mod tests {
                 && error.contains("repository was not scanned"),
             "repo error must identify the unscanned sibling, got {error}"
         );
-        assert_eq!(
-            crate::skip_counts().unreadable,
-            1,
-            "one failed hosted repo must count one unreadable skip"
-        );
+        // The error ROW is the deterministic proof that the failed repo was
+        // accounted unreadable: `merge_hosted_repo_results` bumps the global
+        // unreadable counter in the same `repo_unreadable_error` call that builds
+        // this row. Reading that process-global counter here would race the other
+        // backends' `--lib` tests, so the counter-delta contract is asserted in
+        // the process-isolated `regression_hosted_git_api_failures_counted.rs`.
     }
 
     #[test]
@@ -312,9 +302,6 @@ mod tests {
 
     #[test]
     fn hosted_git_api_json_cap_is_counted_unreadable() {
-        let _guard = counter_guard();
-        crate::reset_skip_counters();
-        let before = crate::skip_counts();
         let cap = 16;
         let server = httpmock::MockServer::start();
         let _api = server.mock(|when, then| {
@@ -338,12 +325,10 @@ mod tests {
                 && message.contains(&cap.to_string()),
             "hosted Git API cap error must be visible, got {message}"
         );
-        let after = crate::skip_counts();
-        assert_eq!(
-            after.unreadable,
-            before.unreadable + 1,
-            "hosted Git API cap must bump SKIPPED_UNREADABLE exactly once"
-        );
+        // The unreadable-counter delta for the API response cap is asserted
+        // process-isolated in `regression_hosted_git_api_failures_counted.rs`
+        // (gitlab/bitbucket oversized-response tests, same `read_api_json` path);
+        // re-reading the process-global counter here would race the `--lib` run.
     }
 
     #[test]
@@ -460,9 +445,6 @@ mod tests {
     #[cfg(any(feature = "gitlab", feature = "bitbucket"))]
     #[test]
     fn api_endpoint_and_pagination_errors_redact_query_fragment_and_userinfo() {
-        let _guard = counter_guard();
-        crate::reset_skip_counters();
-
         let endpoint_err =
             super::validated_api_endpoint("gitlab", "https://gitlab.example/api/v4?token=SECRET")
                 .expect_err("API endpoints with query material must be refused")
