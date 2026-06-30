@@ -2214,6 +2214,27 @@ pub mod entropy_isolated {
     pub fn is_random_token(value: &str) -> bool {
         crate::suppression::token_randomness::is_random_token(value)
     }
+
+    /// Shape gate: exactly one `:` (not `://`), left half >= 20 and right half
+    /// >= 16, each all-alphanumeric with at least one letter and one digit — the
+    /// `user:token` opaque-credential admission gate.
+    pub fn colon_separated_opaque(candidate: &str) -> bool {
+        crate::entropy::scanner::colon_separated_opaque_candidate(candidate)
+    }
+
+    /// Shape gate: len >= 18, no digits, every byte graphic and not a quote,
+    /// upper + lower, >= 3 punctuation bytes, alpha is at least half the length,
+    /// AND the token reads as random — the symbolic alpha-only opaque gate.
+    pub fn symbolic_alpha_only_opaque(candidate: &str) -> bool {
+        crate::entropy::scanner::symbolic_alpha_only_opaque_candidate(candidate)
+    }
+
+    /// Shape gate: no `://`, no `:` or `,`, every byte graphic and not a quote,
+    /// with at least two non-alphanumeric symbol bytes — the symbolic bare-token
+    /// admission gate.
+    pub fn symbolic_bare(candidate: &str) -> bool {
+        crate::entropy::scanner::symbolic_isolated_bare_candidate(candidate)
+    }
 }
 
 /// Entropy plausibility and shape predicates exposed for unit tests migrated

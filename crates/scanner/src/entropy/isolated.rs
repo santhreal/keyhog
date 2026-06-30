@@ -359,7 +359,7 @@ fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
     None
 }
 
-fn colon_separated_opaque_candidate(candidate: &str) -> bool {
+pub(crate) fn colon_separated_opaque_candidate(candidate: &str) -> bool {
     if candidate.contains("://") || candidate.bytes().filter(|&b| b == b':').count() != 1 {
         return false;
     }
@@ -383,7 +383,7 @@ fn colon_separated_opaque_candidate(candidate: &str) -> bool {
     })
 }
 
-fn symbolic_alpha_only_opaque_candidate(candidate: &str) -> bool {
+pub(crate) fn symbolic_alpha_only_opaque_candidate(candidate: &str) -> bool {
     if candidate.len() < 18 || candidate.contains("://") {
         return false;
     }
@@ -413,7 +413,7 @@ fn symbolic_alpha_only_opaque_candidate(candidate: &str) -> bool {
         && crate::suppression::token_randomness::is_random_token(candidate)
 }
 
-fn symbolic_isolated_bare_candidate(candidate: &str) -> bool {
+pub(crate) fn symbolic_isolated_bare_candidate(candidate: &str) -> bool {
     if candidate.contains("://") || candidate.bytes().any(|b| matches!(b, b':' | b',')) {
         return false;
     }

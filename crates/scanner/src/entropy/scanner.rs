@@ -1,12 +1,13 @@
 use super::isolated::{collect_isolated_bare_candidates, isolated_bare_keyword_context};
 #[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
 pub(crate) use super::isolated::{
-    has_isolated_bare_secret_candidate, has_isolated_bare_secret_candidate_with_lines,
+    colon_separated_opaque_candidate, lower_dash_app_password_floor_met,
+    mixed_contiguous_token_floor_met, mixed_separator_token_floor_met,
+    symbolic_alpha_only_opaque_candidate, symbolic_isolated_bare_candidate,
 };
 #[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
 pub(crate) use super::isolated::{
-    lower_dash_app_password_floor_met, mixed_contiguous_token_floor_met,
-    mixed_separator_token_floor_met,
+    has_isolated_bare_secret_candidate, has_isolated_bare_secret_candidate_with_lines,
 };
 use super::{
     keywords::*, shannon_entropy, EntropyMatch, HIGH_ENTROPY_THRESHOLD, LOW_ENTROPY_THRESHOLD,

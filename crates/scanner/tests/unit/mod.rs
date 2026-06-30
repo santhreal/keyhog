@@ -112,6 +112,7 @@ pub mod hw_probe;
 pub mod hw_probe_cases;
 pub mod inline_migrated;
 pub mod is_sequential_placeholder_robustness;
+pub mod isolated_bare_shape_gates;
 pub mod jwt_analysis;
 pub mod low_alnum_ratio_char_units;
 pub mod mark_stats;
