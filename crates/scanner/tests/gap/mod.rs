@@ -101,6 +101,7 @@ pub mod multiline_reassembly;
 pub mod multiline_structural_template_resolve;
 pub mod nightly_exports_all_strict_env_vars;
 pub mod nightly_matrix_has_fourteen_runner_binaries;
+pub mod no_cwd_relative_source_reads;
 pub mod no_inline_tests_in_a3_slice;
 pub mod no_inline_tests_in_src;
 pub mod no_suppress_test_fixtures_clears_generic_fallback_haircut;

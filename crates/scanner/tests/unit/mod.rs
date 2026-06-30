@@ -66,6 +66,7 @@ pub mod context_tier_b_disclaimer_parser;
 pub mod context_tier_b_test_path_parser;
 pub mod context_tokio_test_attribute;
 pub mod context_unknown_no_quotes_no_assignment;
+pub mod crate_source_helper;
 pub mod decode;
 pub mod decode_caesar_shift_selection;
 pub mod decode_structure;

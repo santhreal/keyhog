@@ -13,6 +13,37 @@ use crate::{
     Severity, SpecError, VerifiedFinding,
 };
 
+/// The absolute path to a source file given a path **relative to this crate's
+/// manifest root** (`crates/core/`). Anchored to the compile-time
+/// `CARGO_MANIFEST_DIR`, so it is independent of the process working directory.
+/// Accepts crate-escaping relatives (e.g. `"../cli/src/..."`) for the few tests
+/// that introspect a sibling crate's source. Pairs with [`read_crate_source`]
+/// for callers that need the path itself rather than the contents.
+pub fn crate_source_path(rel: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(rel)
+}
+
+/// Read a source file by its manifest-root-relative path, independent of the
+/// process working directory.
+///
+/// Source-introspection tests read crate source off disk. A bare
+/// `read_to_string` of a `"src/..."` literal resolves against the *process*
+/// CWD, which only equals the package root under a plain `cargo test`; it
+/// `NotFound`-flakes under `cargo-nextest` (CWD = workspace root), a raw
+/// test-binary run, or a sibling test that mutates the global CWD. Anchoring to
+/// [`crate_source_path`] (compile-time `CARGO_MANIFEST_DIR`) makes the read
+/// deterministic from any CWD and runner. This is the ONE canonical
+/// crate-source reader for core tests; the `no_cwd_relative_source_reads` gate
+/// forbids re-open-coding the CWD-relative form.
+///
+/// Panics with the resolved absolute path when the file is missing, so a typo
+/// in `rel` is an obvious failure rather than a silent empty string.
+pub fn read_crate_source(rel: &str) -> String {
+    let path = crate_source_path(rel);
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read crate source {}: {e}", path.display()))
+}
+
 pub struct TestApi;
 
 pub trait CoreTestApi {

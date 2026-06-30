@@ -31,7 +31,9 @@ fn ascii_letters() -> impl Iterator<Item = char> {
 
 /// The mapped letters (those expand wraps in a class).
 fn mapped_letters() -> Vec<char> {
-    ascii_letters().filter(|&c| class_members(c).is_some()).collect()
+    ascii_letters()
+        .filter(|&c| class_members(c).is_some())
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -165,7 +167,10 @@ fn key_appears_exactly_once_per_class() {
     for c in mapped_letters() {
         let members = class_members(c).unwrap();
         let count = members.iter().filter(|&&m| m == c).count();
-        assert_eq!(count, 1, "key '{c}' must appear once in its class, found {count}");
+        assert_eq!(
+            count, 1,
+            "key '{c}' must appear once in its class, found {count}"
+        );
     }
 }
 
@@ -184,7 +189,10 @@ fn no_duplicate_members_in_any_class() {
 fn every_class_has_at_least_one_glyph() {
     for c in mapped_letters() {
         let members = class_members(c).unwrap();
-        assert!(members.len() >= 2, "map['{c}'] must have key + >=1 glyph, got {members:?}");
+        assert!(
+            members.len() >= 2,
+            "map['{c}'] must have key + >=1 glyph, got {members:?}"
+        );
     }
 }
 

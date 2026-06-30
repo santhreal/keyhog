@@ -92,8 +92,7 @@ fn persisted_cache_entries_are_sorted_by_cache_key() {
 
 #[test]
 fn save_lock_and_cap_source_contract() {
-    let storage_source =
-        std::fs::read_to_string("src/merkle_index/storage.rs").expect("read merkle storage");
+    let storage_source = keyhog_core::testing::read_crate_source("src/merkle_index/storage.rs");
 
     assert!(storage_source.contains("use fs2::FileExt;"));
     assert!(storage_source.contains("struct CacheWriteLock"));

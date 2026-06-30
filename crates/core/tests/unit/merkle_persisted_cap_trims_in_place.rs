@@ -124,8 +124,7 @@ fn save_cap_evicts_oldest_disk_entry_before_newer_disk_entry() {
 
 #[test]
 fn persisted_cap_enforcement_does_not_replace_the_merged_map() {
-    let source =
-        std::fs::read_to_string("src/merkle_index/storage.rs").expect("read merkle storage source");
+    let source = keyhog_core::testing::read_crate_source("src/merkle_index/storage.rs");
     let cap_fn = source
         .split("fn enforce_persisted_cap(")
         .nth(1)

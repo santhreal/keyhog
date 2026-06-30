@@ -401,8 +401,7 @@ fn grouped_companion_literal_satisfies_context_anchor() {
 
 #[test]
 fn regex_validator_uses_one_iterative_ast_walk() {
-    let source = std::fs::read_to_string("src/spec/validate/regex_complexity.rs")
-        .expect("read regex complexity source");
+    let source = keyhog_core::testing::read_crate_source("src/spec/validate/regex_complexity.rs");
 
     assert!(source.contains("struct RegexWalkFrame"));
     assert!(source.contains("fn collect_regex_stats"));
@@ -414,7 +413,7 @@ fn regex_validator_uses_one_iterative_ast_walk() {
 
 #[test]
 fn literal_specificity_uses_ast_not_raw_regex_scans() {
-    let source = std::fs::read_to_string("src/spec/validate.rs").expect("read validate source");
+    let source = keyhog_core::testing::read_crate_source("src/spec/validate.rs");
 
     assert!(source.contains("fn ast_literal_runs("));
     assert!(source.contains("enum LiteralFrame"));
@@ -434,7 +433,7 @@ fn literal_specificity_uses_ast_not_raw_regex_scans() {
 
 #[test]
 fn regex_validation_uses_typed_kinds_not_string_labels() {
-    let source = std::fs::read_to_string("src/spec/validate.rs").expect("read validate source");
+    let source = keyhog_core::testing::read_crate_source("src/spec/validate.rs");
 
     assert!(source.contains("enum RegexKind"));
     assert!(source.contains("RegexKind::Pattern"));
@@ -446,7 +445,7 @@ fn regex_validation_uses_typed_kinds_not_string_labels() {
 
 #[test]
 fn pattern_group_bounds_are_validated_before_scanner_compile() {
-    let source = std::fs::read_to_string("src/spec/validate.rs").expect("read validate source");
+    let source = keyhog_core::testing::read_crate_source("src/spec/validate.rs");
 
     assert!(source.contains("fn validate_pattern_groups<'a>("));
     assert!(source.contains("fn ast_captures_len(ast: &ast::Ast) -> usize"));
@@ -460,7 +459,7 @@ fn pattern_group_bounds_are_validated_before_scanner_compile() {
 
 #[test]
 fn spec_field_bounds_are_named_and_validated() {
-    let source = std::fs::read_to_string("src/spec/validate.rs").expect("read validate source");
+    let source = keyhog_core::testing::read_crate_source("src/spec/validate.rs");
 
     assert!(source.contains("const MAX_COMPANION_WITHIN_LINES: usize = 100;"));
     assert!(source.contains("const MIN_HTTP_STATUS: u16 = 100;"));
@@ -471,7 +470,7 @@ fn spec_field_bounds_are_named_and_validated() {
 
 #[test]
 fn verify_template_checks_use_one_field_visitor() {
-    let source = std::fs::read_to_string("src/spec/validate.rs").expect("read validate source");
+    let source = keyhog_core::testing::read_crate_source("src/spec/validate.rs");
 
     assert!(source.contains("struct VerifyTemplateField"));
     assert!(source.contains("fn visit_verify_template_fields"));

@@ -17,6 +17,45 @@ pub fn pattern_regex_strs(scanner: &crate::CompiledScanner) -> Vec<&str> {
     scanner.pattern_regex_strs()
 }
 
+/// The absolute path to a crate source file given a path **relative to this
+/// crate's manifest root** (`crates/scanner/`).
+///
+/// The value is anchored to the compile-time [`CARGO_MANIFEST_DIR`] constant,
+/// so it is fully independent of the process working directory. Exposed
+/// alongside [`read_crate_source`] for tests that need the path itself
+/// (existence checks, `Path` operations) rather than the contents.
+///
+/// [`CARGO_MANIFEST_DIR`]: https://doc.rust-lang.org/cargo/reference/environment-variables.html
+pub fn crate_source_path(rel: &str) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(rel)
+}
+
+/// Read a crate source file by its manifest-root-relative path, independent of
+/// the process working directory.
+///
+/// Source-introspection tests (e.g. "this module routes through the shared
+/// predicate", "this file keeps exactly one copy of the helper") read crate
+/// source files off disk. A bare `read_to_string("src/...")` resolves the
+/// relative path against the *process* CWD, which only equals the package root
+/// under a plain `cargo test`. That makes the read break when the test binary
+/// is run directly, under `cargo-nextest` (which sets CWD to the workspace
+/// root, not the package), or whenever a sibling test mutates the global CWD —
+/// turning a deterministic structural check into a parallel-load `NotFound`
+/// flake. Anchoring to [`crate_source_path`] (compile-time `CARGO_MANIFEST_DIR`)
+/// makes the read deterministic from any CWD and under any runner.
+///
+/// This is the ONE canonical crate-source reader for tests; the
+/// `no_cwd_relative_source_reads` gate forbids re-open-coding
+/// `read_to_string("src/...")` so the bug class cannot return.
+///
+/// Panics with the resolved absolute path when the file is missing, so a typo
+/// in `rel` is an obvious failure rather than a silent empty string.
+pub fn read_crate_source(rel: &str) -> String {
+    let path = crate_source_path(rel);
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read crate source {}: {e}", path.display()))
+}
+
 /// Resolver tie-break priority for a synthetic match. Exposes the private
 /// `resolution::match_priority` so a behavioral gap test can pin the named
 /// weight constants (in particular `KNOWN_PREFIX_SERVICE_BONUS`) from the

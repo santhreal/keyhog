@@ -69,8 +69,7 @@ fn save_and_load_preserves_multiple_offsets_for_one_path() {
 
 #[test]
 fn merkle_chunk_offset_source_contract_is_on_production_path() {
-    let root_source =
-        std::fs::read_to_string("src/merkle_index.rs").expect("read merkle index source");
+    let root_source = keyhog_core::testing::read_crate_source("src/merkle_index.rs");
     assert!(root_source.contains("const SCHEMA_VERSION: u32 = 4"));
     assert!(root_source.contains("struct CacheKey"));
     assert!(root_source.contains("struct CacheKeyRef<'a>"));
@@ -91,20 +90,19 @@ fn merkle_chunk_offset_source_contract_is_on_production_path() {
         "borrowed chunk recording must not allocate the owned key before checking existing entries"
     );
 
-    let storage_source =
-        std::fs::read_to_string("src/merkle_index/storage.rs").expect("read merkle storage");
+    let storage_source = keyhog_core::testing::read_crate_source("src/merkle_index/storage.rs");
     assert!(storage_source.contains("entries: Vec<EntryV4>"));
     assert!(storage_source.contains("chunk_offset"));
     assert!(storage_source.contains("CacheKey::chunk"));
 
-    let dispatch_source = std::fs::read_to_string("../cli/src/orchestrator/dispatch.rs")
-        .expect("read dispatch source");
+    let dispatch_source =
+        keyhog_core::testing::read_crate_source("../cli/src/orchestrator/dispatch.rs");
     assert!(dispatch_source.contains("record_chunk_path_at_offset_and_check_unchanged"));
     assert!(dispatch_source.contains("c.metadata.base_offset as u64"));
     assert!(!dispatch_source.contains("PathBuf::from(path_str)"));
 
-    let fused_source = std::fs::read_to_string("../cli/src/orchestrator/dispatch/fused.rs")
-        .expect("read fused dispatch source");
+    let fused_source =
+        keyhog_core::testing::read_crate_source("../cli/src/orchestrator/dispatch/fused.rs");
     assert!(fused_source.contains("record_chunk_path_at_offset_and_check_unchanged"));
     assert!(fused_source.contains("c.metadata.base_offset as u64"));
     assert!(!fused_source.contains("PathBuf::from(path_str)"));

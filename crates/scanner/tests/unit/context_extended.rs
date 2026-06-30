@@ -128,8 +128,11 @@ fn uppercase_hex_sequence_still_suppresses_without_allocating_lowercase_copy() {
 
 #[test]
 fn hex_pair_column_source_uses_shared_step_helper() {
-    let source =
-        std::fs::read_to_string("src/context/placeholder.rs").expect("read placeholder source");
+    // Anchored to CARGO_MANIFEST_DIR via the canonical helper, not a bare
+    // CWD-relative read of a "src/..." literal — the latter resolved against the
+    // process working directory and only worked under a plain `cargo test`,
+    // failing under nextest / raw-binary runs as a NotFound "flake".
+    let source = keyhog_scanner::testing::read_crate_source("src/context/placeholder.rs");
     assert!(
         source.contains("fn hex_pair_column_step(")
             && source.matches("fn hex_pair_column_step(").count() == 1
