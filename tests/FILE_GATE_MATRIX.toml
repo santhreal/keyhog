@@ -1902,6 +1902,11 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/scanner/src/engine/phase2/hs_mark_timing.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/engine/phase2/mark_stats.rs"
 error = true
 adversarial = true
