@@ -10,11 +10,19 @@ service = "github"
 severity = "critical"
 keywords = ["-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN OPENSSH PRIVATE KEY-----", "GitHub App"]
 
+# The inter-marker body is restricted to the PEM base64 alphabet plus
+# whitespace (`[A-Za-z0-9+/=\s]`) rather than `[\s\S]`. A real GitHub App key
+# is unencrypted PKCS#1, so its body is pure base64. Excluding `-` is what makes
+# the `{200,}` minimum SOUND: with `[\s\S]` the body could consume a too-short
+# block's `-----END … -----BEGIN` dashes and span TWO adjacent keys to satisfy
+# the 200-char floor, producing one merged finding across two distinct keys. A
+# base64-only body cannot contain those dashes, so the match always terminates
+# at the FIRST `-----END`, never crossing a block boundary.
 [[detector.patterns]]
-regex = "-----BEGIN (RSA|OPENSSH) PRIVATE KEY-----[\\s\\S]{200,}?-----END (RSA|OPENSSH) PRIVATE KEY-----"
+regex = "-----BEGIN (RSA|OPENSSH) PRIVATE KEY-----[A-Za-z0-9+/=\\s]{200,}?-----END (RSA|OPENSSH) PRIVATE KEY-----"
 description = "PEM-encoded private key for GitHub App authentication"
 
 [[detector.patterns]]
-regex = "(?:github[_-]?app|GITHUB[_-]?APP)[=:\\s\"'']+(-----BEGIN (?:RSA|OPENSSH) PRIVATE KEY-----[\\s\\S]{200,}?-----END (?:RSA|OPENSSH) PRIVATE KEY-----)"
+regex = "(?:github[_-]?app|GITHUB[_-]?APP)[=:\\s\"'']+(-----BEGIN (?:RSA|OPENSSH) PRIVATE KEY-----[A-Za-z0-9+/=\\s]{200,}?-----END (?:RSA|OPENSSH) PRIVATE KEY-----)"
 description = "GitHub App private key with context anchor"
 group = 1
