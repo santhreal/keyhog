@@ -1,8 +1,7 @@
+use keyhog_core::ScanConfig;
 use keyhog_scanner::entropy::{shannon_entropy, VERY_HIGH_ENTROPY_THRESHOLD};
-use keyhog_scanner::testing::{
-    ml_default_config_lists_for_test, ml_features_for_test, ml_score_default_config_for_test,
-    ml_score_with_config_for_test,
-};
+use keyhog_scanner::ml_scorer::score_with_config;
+use keyhog_scanner::testing::compute_features_public;
 
 const FILE_TYPE_OFFSET: usize = 32;
 const CONFIG_FILE_TYPE_INDEX: usize = FILE_TYPE_OFFSET;
@@ -10,7 +9,7 @@ const CI_FILE_TYPE_INDEX: usize = FILE_TYPE_OFFSET + 2;
 const VERY_HIGH_ENTROPY_FEATURE_INDEX: usize = 7;
 
 fn test_score(text: &str, context: &str) -> f64 {
-    ml_score_with_config_for_test(
+    score_with_config(
         text,
         context,
         &["ghp_".to_string(), "sk-".to_string()],
@@ -101,7 +100,7 @@ fn base64_binary_scores_below_real_secret() {
 
 #[test]
 fn file_type_context_markers_are_ascii_case_insensitive() {
-    let ci = ml_features_for_test(
+    let ci = compute_features_public(
         concat!("gh", "p_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"),
         "path=.GITHUB/WORKFLOWS/build.yml\nJOBS:\n  scan:",
     );
@@ -110,7 +109,7 @@ fn file_type_context_markers_are_ascii_case_insensitive() {
         "mixed-case CI markers must classify as CI context"
     );
 
-    let config = ml_features_for_test(
+    let config = compute_features_public(
         "sk-proj-EXAMPLE000000000000000000000000000000000000000000000000000000000000",
         "OPENAI_API_KEY=value\nsource=SETTINGS.YAML",
     );
@@ -129,7 +128,7 @@ fn very_high_entropy_feature_uses_canonical_scanner_threshold() {
         "fixture entropy {entropy:.4} must sit between the old drifted 5.5 cutoff and canonical {VERY_HIGH_ENTROPY_THRESHOLD}"
     );
 
-    let features = ml_features_for_test(text, "API_KEY=");
+    let features = compute_features_public(text, "API_KEY=");
     assert_eq!(
         features[VERY_HIGH_ENTROPY_FEATURE_INDEX], 0.0,
         "ML feature[7] must use canonical VERY_HIGH_ENTROPY_THRESHOLD={VERY_HIGH_ENTROPY_THRESHOLD}, not the old private 5.5 cutoff"
@@ -168,9 +167,9 @@ fn inference_is_fast() {
 // extractor with `config_lists.DEFAULT_LISTS` (which mirror
 // `ScanConfig::default()`), reporting clean separation (real secrets ~0.98,
 // non-secrets ~0.02, gap ~0.95). These tests are the CI mirror of that oracle:
-// the SAME battery and the SAME default-config scoring path
-// (`ml_score_default_config_for_test`), so the property the probe validates
-// once cannot regress unnoticed.
+// the SAME battery and the SAME default-config scoring path (`battery_score`,
+// which scores through `ScanConfig::default()`'s lists), so the property the
+// probe validates once cannot regress unnoticed.
 //
 // Two deliberate fidelity choices keep this honest:
 //  * scoring goes through the real default keyword/prefix lists, NOT the
@@ -221,9 +220,23 @@ fn structured_nonsecret_battery() -> Vec<(&'static str, String, &'static str)> {
     ]
 }
 
-/// Score a battery entry through the production default-config MoE path.
+/// Score a battery entry through the production default-config MoE path: the
+/// real `ScanConfig::default()` keyword/prefix lists the scanner passes to
+/// `score_with_config` at runtime for generic/entropy candidates. These are the
+/// exact lists `ml/probe_entropy_separation.py` scores with (its
+/// `config_lists.DEFAULT_LISTS` mirror `ScanConfig::default()`), so this test is
+/// a faithful CI mirror of that oracle. No list is duplicated into the test —
+/// it reads the canonical config.
 fn battery_score(value: &str, context: &str) -> f64 {
-    ml_score_default_config_for_test(value, context)
+    let cfg = ScanConfig::default();
+    score_with_config(
+        value,
+        context,
+        &cfg.known_prefixes,
+        &cfg.secret_keywords,
+        &cfg.test_keywords,
+        &cfg.placeholder_keywords,
+    )
 }
 
 /// Recall side: every real high-entropy secret scores above 0.5.
@@ -433,7 +446,7 @@ fn score_is_deterministic_across_calls() {
 /// instead of the separation tests passing for the wrong reason.
 #[test]
 fn default_config_secret_keywords_anchor_every_real_secret_context() {
-    let (_, secret_keywords, _, _) = ml_default_config_lists_for_test();
+    let secret_keywords = ScanConfig::default().secret_keywords;
     for (label, _v, ctx) in real_secret_battery() {
         let lc = ctx.to_ascii_lowercase();
         assert!(
