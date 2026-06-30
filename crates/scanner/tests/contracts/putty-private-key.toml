@@ -1,0 +1,53 @@
+# Per-detector contract: putty-private-key
+#
+# PuTTY `.ppk` private-key file. Captured credential is the WHOLE block
+# (header -> Private-Lines body -> trailing Private-MAC hex). The expected
+# `credential` below is the private-body substring, which the full-block
+# capture contains.
+
+schema_version = 1
+detector_id = "putty-private-key"
+service = "ssh"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "PuTTY-User-Key-File-2: ssh-ed25519\nEncryption: none\nComment: deploy-key-prod\nPublic-Lines: 2\nAAAAC3NzaC1lZDI1NTE5AAAAIPubBlobPubBlobPubBlobPubBlobPubB0001\nPrivate-Lines: 1\nAAAAIPRIVBODYprivbodyprivbodyprivbodyprivbodyprivbody98765=\nPrivate-MAC: 6f3b2a1c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1"
+credential = "AAAAIPRIVBODYprivbodyprivbodyprivbodyprivbodyprivbody98765="
+reason = "Unencrypted v2 .ppk; capture spans header through Private-MAC and contains the Private-Lines secret body."
+
+[[positive]]
+text = "PuTTY-User-Key-File-3: ssh-rsa\nEncryption: aes256-cbc\nComment: enc-key\nPublic-Lines: 2\nAAAAB3NzaC1yc2EAAAADAQABAAABPubBlobPubBlobPubBlobPubB0002\nKey-Derivation: Argon2id\nArgon2-Memory: 8192\nArgon2-Salt: 00112233445566778899\nPrivate-Lines: 1\nENCPRIVBODYencbodyencbodyencbodyencbodyencbody54321=\nPrivate-MAC: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44"
+credential = "ENCPRIVBODYencbodyencbodyencbodyencbodyencbody54321="
+reason = "Encrypted v3 .ppk with Argon2 KDF header lines between the public blob and Private-Lines."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "PuTTY-User-Key-File-2: ssh-rsa"
+reason = "Header line only, no Private-Lines/Private-MAC body — not a key file."
+
+[[negative]]
+text = "See the PuTTY-User-Key-File-2 format in AppendixC for the header layout."
+reason = "Documentation mention of the format keyword, no key material."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "export PPK=\"PuTTY-User-Key-File-2: ssh-ed25519\nEncryption: none\nComment: c\nPublic-Lines: 1\nAAAAC3NzaPubBlob0003\nPrivate-Lines: 1\nEVADEPRIVBODYevadebodyevadebody98765=\nPrivate-MAC: bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55\""
+credential = "EVADEPRIVBODYevadebodyevadebody98765="
+reason = "Shell env-var envelope around a full .ppk — credential must still surface."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Single .ppk block; lazy unbounded capture is linear in the regex engine."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted .ppk block."

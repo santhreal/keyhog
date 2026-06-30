@@ -1,0 +1,52 @@
+# Per-detector contract: npmrc-auth-token
+#
+# The `.npmrc` `_authToken=<token>` slot. Captured credential is the token
+# (group 1) only, not the `//host/:` registry prefix. Targets the opaque /
+# legacy / CI tokens the `npm_<36>`-only npm-access-token misses.
+
+schema_version = 1
+detector_id = "npmrc-auth-token"
+service = "npm"
+severity = "high"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "//registry.npmjs.org/:_authToken=YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo="
+credential = "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo="
+reason = "Legacy base64 registry token in the canonical .npmrc _authToken slot."
+
+[[positive]]
+text = "_authToken=s0meL3gacyT0kenValue12345"
+credential = "s0meL3gacyT0kenValue12345"
+reason = "Bare _authToken assignment (no //host/: scope) — still a credential."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "//registry.npmjs.org/:_authToken=${NPM_TOKEN}"
+reason = "Env-var template, not a literal token — the value class excludes ${}."
+
+[[negative]]
+text = "_authToken=abc1234"
+reason = "Body shorter than the 8-char floor."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# stashed .npmrc\n//npm.pkg.example.com/:_authToken=Zk9Lm2Qw7Rt4Yp1Xc8Vb3Nh6Jf5Dg0SaWe"
+credential = "Zk9Lm2Qw7Rt4Yp1Xc8Vb3Nh6Jf5Dg0SaWe"
+reason = "Opaque CI token on a shell-commented .npmrc line — credential must still surface."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Single-line anchored extraction; fast."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted _authToken line."
