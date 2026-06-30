@@ -18,6 +18,14 @@ use crate::verify::{
 const MAX_VERIFY_ATTEMPTS: usize = 3;
 const RETRY_DELAY_MS: u64 = 500;
 
+/// Operator-facing reason when the retry loop exhausts every attempt. Leads with
+/// the legacy `max retries exceeded` phrase (back-compat for downstream
+/// `.contains` checks) then states the likely cause and the fix.
+pub const MAX_RETRIES_ERROR: &str = "max retries exceeded: every verification \
+     attempt returned a retryable error (rate-limit, 5xx, or transport failure). \
+     Fix: the host may be rate-limiting or flapping — retry later, or lower \
+     verification concurrency so the endpoint is not overwhelmed";
+
 /// Process-lifetime guard so the OOB-required-but-no-session warning
 /// fires once per process, not once per finding. A detector corpus
 /// often has dozens of OOB-bound specs and they'd each warn on every
@@ -170,7 +178,7 @@ where
     last_attempt.unwrap_or_else(|| {
         // LAW10: exhausted retry loop emits an operator-visible Error finding; fail-closed.
         (
-            VerificationResult::Error("max retries exceeded".into()),
+            VerificationResult::Error(MAX_RETRIES_ERROR.into()),
             HashMap::new(),
         )
     })

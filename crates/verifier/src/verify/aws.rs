@@ -15,6 +15,14 @@ const AWS_VALID_ACCESS_KEY_PREFIXES: &[&str] = &["AKIA", "ASIA", "AROA", "AIDA",
 const AWS_ACCESS_KEY_LEN: usize = 20;
 const AWS_MIN_SECRET_KEY_LEN: usize = 40;
 
+/// Operator-facing reason when the region fails the SigV4 region-format check.
+/// Leads with the legacy `invalid AWS region` phrase, then names the exact format
+/// requirement and where to correct it.
+pub const INVALID_AWS_REGION_ERROR: &str = "invalid AWS region: the region must be \
+     non-empty, at most 30 characters, and contain only letters, digits, and \
+     hyphens (e.g. us-east-1). Fix: correct the AWS region in the detector \
+     verification spec or the credential's companion fields";
+
 pub(crate) async fn build_aws_probe(
     access_key: &str,
     secret_key: &str,
@@ -165,7 +173,7 @@ pub(crate) fn validate_aws_region(region: &str) -> std::result::Result<(), Verif
     {
         Ok(())
     } else {
-        Err(VerificationResult::Error("invalid AWS region".into()))
+        Err(VerificationResult::Error(INVALID_AWS_REGION_ERROR.into()))
     }
 }
 

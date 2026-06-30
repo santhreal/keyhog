@@ -9,8 +9,8 @@
 //! - Response bodies are capped at 1 MB.
 
 mod auth;
-mod aws;
-mod credential;
+pub(crate) mod aws;
+pub(crate) mod credential;
 mod multi_step;
 pub(crate) mod request;
 mod response;

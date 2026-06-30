@@ -260,6 +260,8 @@ pub mod testing {
     use std::time::Duration;
 
     pub use crate::oob::redact_interactsh_error;
+    pub use crate::verify::aws::INVALID_AWS_REGION_ERROR;
+    pub use crate::verify::credential::MAX_RETRIES_ERROR;
     pub use crate::verify::request::{
         CONNECTION_FAILED_ERROR, REDIRECT_LIMIT_ERROR, REQUEST_FAILED_ERROR, TIMEOUT_ERROR,
     };
