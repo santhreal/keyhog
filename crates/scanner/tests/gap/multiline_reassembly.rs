@@ -949,3 +949,213 @@ fn lone_mid_line_backtick_lacks_per_line_indicator_passthrough() {
     assert_eq!(p.text, text);
     assert_eq!(p.original_end, text.len());
 }
+
+// ---------------------------------------------------------------------------
+// Quote-aware `+`-concatenation split (string_extract::split_concatenation_operators)
+//
+// extract_plus_concatenation must split ONLY on the `+` that JOIN string
+// literals (outside any quoted span). A `+` INSIDE a quoted literal is part of
+// the value — base64 uses `+` in its alphabet and a fragment can even end in
+// one — so a blind `split('+')` truncated those secrets and broke reassembly.
+// `result_lines` rebuilds every line of a chunk, so any chunk that carries a
+// real concat indicator routes its other lines (e.g. a base64 value) through
+// this splitter; the bug therefore corrupts real-world config files mixing a
+// concatenation with a base64 string.
+// ---------------------------------------------------------------------------
+
+/// The reassembled/joined region the preprocessor appends after the original
+/// text (empty when nothing was appended).
+fn appended(p: &PreprocessedText<'_>) -> String {
+    p.text[p.original_end..].to_string()
+}
+
+#[test]
+fn plus_concat_two_double_quote_literals_still_join() {
+    let p = pre("a = \"AKIA\" + \"IOSFODNN7EXAMPLE\"\n");
+    assert!(p.text.contains("AKIAIOSFODNN7EXAMPLE"), "{:?}", p.text);
+}
+
+#[test]
+fn plus_concat_three_literals_single_line_still_join() {
+    let p = pre("k = \"sk-\" + \"part2-\" + \"part3xyz\"\n");
+    assert!(p.text.contains("sk-part2-part3xyz"), "{:?}", p.text);
+}
+
+#[test]
+fn plus_concat_single_quote_literals_join() {
+    // `' +` is itself a concatenation indicator, so this self-triggers.
+    let p = pre("a = 'AKIA' + 'IOSFODNN7EXAMPLE'\n");
+    assert!(p.text.contains("AKIAIOSFODNN7EXAMPLE"), "{:?}", p.text);
+}
+
+#[test]
+fn ordinary_join_with_no_interior_plus_unchanged() {
+    let p = pre("a = \"AKIA\" + \"REST\"\n");
+    assert!(p.text.contains("AKIAREST"), "{:?}", p.text);
+}
+
+#[test]
+fn base64_operands_with_interior_plus_join_same_line() {
+    // The `+` inside each quoted operand is base64 data, NOT a join; only the
+    // `+` between the operands joins them.
+    let p = pre("t = \"aGVsbG8+\" + \"d29ybGQ=\"\n");
+    assert!(
+        p.text.contains("aGVsbG8+d29ybGQ="),
+        "interior '+' must survive; got {:?}",
+        p.text
+    );
+}
+
+#[test]
+fn base64_fragment_ending_in_plus_reassembles_across_lines() {
+    // line 1 value ends with a base64 '+', THEN a real join '+' continues onto
+    // line 2. The contiguous secret only appears if the in-quote '+' is kept.
+    let p = pre("key = \"aGVsbG8+\" +\n\"d29ybGQ=\"\n");
+    assert!(
+        p.text.contains("aGVsbG8+d29ybGQ="),
+        "cross-line base64 with trailing '+' must reassemble; got {:?}",
+        p.text
+    );
+}
+
+#[test]
+fn two_literals_each_with_interior_plus_join() {
+    let p = pre("x = \"a+b\" + \"c+d\"\n");
+    assert!(p.text.contains("a+bc+d"), "{:?}", p.text);
+}
+
+#[test]
+fn base64_value_with_plus_and_slash_joins() {
+    let p = pre("s = \"aB+/cd\" + \"Ef+/gh\"\n");
+    assert!(p.text.contains("aB+/cdEf+/gh"), "{:?}", p.text);
+}
+
+#[test]
+fn single_quoted_values_with_interior_plus_join() {
+    let p = pre("s = 'aB+cd' + 'Ef+gh'\n");
+    assert!(p.text.contains("aB+cdEf+gh"), "{:?}", p.text);
+}
+
+#[test]
+fn cross_line_two_interior_plus_fragments_reassemble() {
+    let p = pre("t = \"ab+cd+\" +\n\"ef+gh\"\n");
+    assert!(p.text.contains("ab+cd+ef+gh"), "{:?}", p.text);
+}
+
+#[test]
+fn interior_plus_value_then_trailing_join_plus_cross_line() {
+    let p = pre("key = \"a+b\" +\n\"c+d\"\n");
+    assert!(p.text.contains("a+bc+d"), "{:?}", p.text);
+}
+
+#[test]
+fn base64_operands_uppercase_join_same_line() {
+    let p = pre("cfg = \"QUtJQQ+\" + \"QllMUE0=\"\n");
+    assert!(p.text.contains("QUtJQQ+QllMUE0="), "{:?}", p.text);
+}
+
+#[test]
+fn escaped_quote_keeps_span_open_across_interior_plus() {
+    // `"a\"+b"` is ONE literal: the escaped quote does not close it, so the `+`
+    // after it is in-quote and must not split. Value tail `b` then joins `cd`.
+    let p = pre("x = \"a\\\"+b\" + \"cd\"\n");
+    assert!(
+        p.text.contains("bcd"),
+        "escaped-quote span must keep '+b' attached so it joins 'cd'; got {:?}",
+        p.text
+    );
+}
+
+#[test]
+fn standalone_base64_in_concat_chunk_is_not_corrupted() {
+    // The `url` line supplies the chunk's concat indicator; the base64 line is
+    // routed through extract_plus_concatenation but must NOT be split.
+    let p = pre("url = \"ab\" + \"cd\"\nsecret = \"aGVsbG8+d29ybGQ=\"\n");
+    let app = appended(&p);
+    assert!(
+        app.contains("aGVsbG8+d29ybGQ="),
+        "base64 in a concat chunk must stay intact in the reassembled region; appended={app:?}"
+    );
+}
+
+#[test]
+fn co_occurring_real_join_still_works_in_mixed_chunk() {
+    let p = pre("url = \"ab\" + \"cd\"\nsecret = \"aGVsbG8+d29ybGQ=\"\n");
+    let app = appended(&p);
+    assert!(
+        app.contains("abcd"),
+        "the genuine `\"ab\" + \"cd\"` join must still reassemble; appended={app:?}"
+    );
+}
+
+#[test]
+fn base64_without_padding_interior_plus_in_concat_chunk_intact() {
+    let p = pre("url = \"ab\" + \"cd\"\ntoken = \"aGVsbG8+d29ybG8\"\n");
+    let app = appended(&p);
+    assert!(
+        app.contains("aGVsbG8+d29ybG8"),
+        "unpadded base64 with interior '+' must stay intact; appended={app:?}"
+    );
+}
+
+#[test]
+fn interior_plus_only_value_is_not_treated_as_concatenation() {
+    // A single literal whose only `+` are in-quote is NOT a concatenation: it
+    // must pass through verbatim (no truncated `"abc"` fragment).
+    let p = pre("url = \"ab\" + \"cd\"\nx = \"a+b+c\"\n");
+    let app = appended(&p);
+    assert!(
+        app.contains("a+b+c"),
+        "interior-only '+' value must not be split; appended={app:?}"
+    );
+}
+
+#[test]
+fn plus_concat_lhs_keyword_not_in_appended_region() {
+    let p = pre("const secret = \"sk-aaaa\" + \"bbbbcccc\"\n");
+    assert!(p.text.contains("sk-aaaabbbbcccc"), "{:?}", p.text);
+    let app = appended(&p);
+    assert!(!app.contains("const"), "appended={app:?}");
+    assert!(!app.contains("secret ="), "appended={app:?}");
+}
+
+#[test]
+fn trailing_join_plus_continuation_still_reassembles() {
+    let p = pre("v = \"AKIA\" +\n\"REST00\"\n");
+    assert!(p.text.contains("AKIAREST00"), "{:?}", p.text);
+}
+
+#[test]
+fn mixed_base64_and_real_join_same_chunk_both_correct() {
+    let p = pre("url = \"https://\" + \"ex.com\"\nblob = \"aGVsbG8+d29ybGQ=\"\n");
+    assert!(p.text.contains("https://ex.com"), "{:?}", p.text);
+    let app = appended(&p);
+    assert!(
+        app.contains("aGVsbG8+d29ybGQ="),
+        "base64 must survive alongside a real join; appended={app:?}"
+    );
+}
+
+#[test]
+fn python_implicit_adjacency_still_joins() {
+    // Regression: the quote-aware change must not affect implicit concatenation.
+    let p = pre("key = \"AKIA\" \"IOSFODNN7\"\n");
+    assert!(p.text.contains("AKIAIOSFODNN7"), "{:?}", p.text);
+}
+
+#[test]
+fn var_ref_concatenation_still_resolves() {
+    // Regression: variable-reference joins are handled by the structural pass,
+    // not the string splitter, and must still reassemble.
+    let text = concat!(
+        "aws_prefix = \"AKIAIOSFODNN7\"\n",
+        "aws_suffix = \"EXAMPLEKEY01234\"\n",
+        "aws_key = aws_prefix + aws_suffix\n",
+    );
+    let p = pre(text);
+    assert!(
+        p.text.contains("AKIAIOSFODNN7EXAMPLEKEY01234"),
+        "{:?}",
+        p.text
+    );
+}

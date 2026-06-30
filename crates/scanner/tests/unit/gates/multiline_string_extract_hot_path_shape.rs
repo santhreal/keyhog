@@ -13,14 +13,29 @@ fn plus_concatenation_does_not_collect_split_parts() {
         .collect::<Vec<_>>()
         .join("\n");
 
+    // Quote-aware split: extraction must stream segments from the lazy
+    // `split_concatenation_operators` iterator (which only breaks on `+` outside
+    // quoted spans), counting parts inline — NOT collect a Vec. A blind
+    // `content_to_split.split('+')` is forbidden because it shreds base64 values
+    // whose alphabet contains `+`.
     assert!(
         production.contains("let mut part_count = 0usize;")
-            && production.contains("for part in content_to_split.split('+')"),
-        "plus-concat extraction must stream split parts directly"
+            && production.contains("for part in split_concatenation_operators(content_to_split)"),
+        "plus-concat extraction must stream segments from the quote-aware iterator"
+    );
+    assert!(
+        !production.contains("content_to_split.split('+')"),
+        "plus-concat extraction must not blind-split on '+' (it shreds in-quote base64 '+')"
+    );
+    assert!(
+        production
+            .contains("fn split_concatenation_operators(expr: &str) -> impl Iterator<Item = &str>"),
+        "the quote-aware splitter must yield a lazy iterator, not allocate"
     );
     assert!(
         !production.contains(".split('+').collect()")
-            && !production.contains("let parts: Vec<&str>"),
+            && !production.contains("let parts: Vec<&str>")
+            && !production.contains("-> Vec<&str>"),
         "plus-concat extraction must not allocate a Vec of split parts"
     );
     let extract_prefix = production

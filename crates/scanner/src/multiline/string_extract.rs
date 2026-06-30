@@ -331,6 +331,54 @@ fn filter_line_content(line: &str) -> String {
     line.to_string()
 }
 
+/// Iterate the literal segments of a string-concatenation expression, splitting
+/// ONLY on the `+` that sit OUTSIDE any quoted span. A `+` inside a quoted
+/// literal is part of the value, not a join operator: base64 uses `+` in its
+/// alphabet (`"aGVsbG8+d29ybGQ="`) and a fragment can even end in one
+/// (`"aGVsbG8+" + "d29ybGQ="`). A blind `split('+')` shredded those values,
+/// truncating the secret and breaking reassembly. Quote state honors backslash
+/// escapes so an escaped quote inside a literal does not end the span early.
+///
+/// Yields borrowed slices LAZILY via `from_fn` — no `Vec` allocation, so the hot
+/// path stays allocation-light. `+`, `"`, `'` and `` ` `` are all single-byte
+/// ASCII, so every segment boundary lands on a char boundary and the slices are
+/// always valid UTF-8.
+#[cfg(feature = "multiline")]
+fn split_concatenation_operators(expr: &str) -> impl Iterator<Item = &str> {
+    let bytes = expr.as_bytes();
+    let mut start = 0usize;
+    let mut i = 0usize;
+    let mut quote: Option<u8> = None;
+    let mut escaped = false;
+    let mut finished = false;
+    std::iter::from_fn(move || {
+        if finished {
+            return None;
+        }
+        while i < bytes.len() {
+            let b = bytes[i];
+            i += 1;
+            if let Some(q) = quote {
+                if escaped {
+                    escaped = false;
+                } else if b == b'\\' {
+                    escaped = true;
+                } else if b == q {
+                    quote = None;
+                }
+            } else if matches!(b, b'"' | b'\'' | b'`') {
+                quote = Some(b);
+            } else if b == b'+' {
+                let segment = &expr[start..i - 1];
+                start = i;
+                return Some(segment);
+            }
+        }
+        finished = true;
+        Some(&expr[start..])
+    })
+}
+
 #[cfg(feature = "multiline")]
 fn extract_plus_concatenation(line: &str) -> Option<(String, bool)> {
     let trimmed = line.trim();
@@ -361,9 +409,13 @@ fn extract_plus_concatenation(line: &str) -> Option<(String, bool)> {
         return None;
     }
 
+    // Split only on join `+` (outside quotes); stream the segments so a single
+    // literal that merely contains a `+` (e.g. a base64 value) yields one
+    // segment and — absent a trailing join `+` — is correctly rejected below as
+    // "not a concatenation".
     let mut result = String::new();
     let mut part_count = 0usize;
-    for part in content_to_split.split('+') {
+    for part in split_concatenation_operators(content_to_split) {
         part_count += 1;
         let content = extract_string_content(part.trim());
         if !content.is_empty() {
