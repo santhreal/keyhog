@@ -1,5 +1,5 @@
 title = "Architecture"
-description = "How keyhog compiles 902 detectors, scans sources, and uses persisted calibrated backend routing."
+description = "How keyhog compiles 908 detectors, scans sources, and uses persisted calibrated backend routing."
 ---
 <h1>Architecture</h1>
 <p class="lede">
@@ -38,7 +38,7 @@ description = "How keyhog compiles 902 detectors, scans sources, and uses persis
 
 <h2>Two-phase coalesced scan</h2>
 
-<p>Naive multi-pattern regex blows up at 902 detectors. The trick is to
+<p>Naive multi-pattern regex blows up at 908 detectors. The trick is to
 split the work:</p>
 
 <p><strong>Phase 1 — broad-spectrum NFA over all files.</strong> Hyperscan

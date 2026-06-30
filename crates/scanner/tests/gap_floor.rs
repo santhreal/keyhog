@@ -102,6 +102,8 @@ mod entropy_authorization_scheme_ci;
 mod entropy_candidate_owned_by_named_assignment_composition_exact;
 #[path = "gap/entropy_canonical_lift_keyword_material.rs"]
 mod entropy_canonical_lift_keyword_material;
+#[path = "gap/entropy_detector_index_case_insensitive.rs"]
+mod entropy_detector_index_case_insensitive;
 #[path = "gap/entropy_keyword_anchor_lazy_lowercase.rs"]
 mod entropy_keyword_anchor_lazy_lowercase;
 #[path = "gap/entropy_keyword_only_requires_keyword_line.rs"]
@@ -183,6 +185,8 @@ mod multiline_structural_template_resolve;
 mod nightly_exports_all_strict_env_vars;
 #[path = "gap/nightly_matrix_has_fourteen_runner_binaries.rs"]
 mod nightly_matrix_has_fourteen_runner_binaries;
+#[path = "gap/no_cwd_relative_source_reads.rs"]
+mod no_cwd_relative_source_reads;
 #[path = "gap/no_suppress_test_fixtures_clears_generic_fallback_haircut.rs"]
 mod no_suppress_test_fixtures_clears_generic_fallback_haircut;
 #[path = "gap/normalized_assignment_keyword_is_credential_exact.rs"]

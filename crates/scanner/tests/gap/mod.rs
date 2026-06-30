@@ -165,6 +165,7 @@ pub mod suppression_postprocess_exceeds_modularity_cap;
 pub mod suppression_shape_gate_pipeline_twins_incomplete;
 pub mod trigger_bitmap_words_for_single_source;
 pub mod unicode_homoglyph_matrix;
+pub mod value_shaped_group_boundaries;
 pub mod value_shaped_group_shared_heuristic;
 pub mod vyre_usage_matches_workspace_pin;
 pub mod windowed_triggered_slice_no_per_window_clone;

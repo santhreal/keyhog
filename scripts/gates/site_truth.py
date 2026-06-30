@@ -72,7 +72,7 @@ def self_test() -> int:
     expected = current_version()
     stale_version = "v0.0.0" if expected != "v0.0.0" else "v9.9.9"
     bad = f"keyhog {stale_version} | 899 detectors | 96 % recall | picks the fastest backend"
-    good = f"keyhog {expected} | 902 detectors | persisted autoroute calibration"
+    good = f"keyhog {expected} | 908 detectors | persisted autoroute calibration"
     bad_hits = [label for label, pattern in STALE_PATTERNS if pattern.search(bad)]
     good_hits = [label for label, pattern in STALE_PATTERNS if pattern.search(good)]
     bad_hits.extend(

@@ -112,7 +112,7 @@ SURFACES=(
   "scan-threads-64|-|scan --threads 64 --format json /data/corpus/aws_leak.env|1|aws-access-key|-"
   "require-gpu-fails-closed|-|scan --require-gpu /data/corpus/aws_leak.env|12|-|-"
   "doctor-self-test|-|doctor|0|PASS|-"
-  "detectors-count|-|detectors|0|Loaded 902 detectors|-"
+  "detectors-count|-|detectors|0|Loaded 908 detectors|-"
   "explain-detector|-|explain aws-access-key|0|AWS Access Key|-"
   "completion-bash|-|completion bash|0|_keyhog|-"
   "completion-zsh|-|completion zsh|0|#compdef|-"

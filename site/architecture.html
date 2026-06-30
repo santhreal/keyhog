@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Architecture · keyhog</title>
-  <meta name="description" content="How keyhog compiles 902 detectors, scans sources, and uses persisted calibrated backend routing.">
+  <meta name="description" content="How keyhog compiles 908 detectors, scans sources, and uses persisted calibrated backend routing.">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -98,7 +98,7 @@
 
 <h2>Two-phase coalesced scan</h2>
 
-<p>Naive multi-pattern regex blows up at 902 detectors. The trick is to
+<p>Naive multi-pattern regex blows up at 908 detectors. The trick is to
 split the work:</p>
 
 <p><strong>Phase 1 — broad-spectrum NFA over all files.</strong> Hyperscan
