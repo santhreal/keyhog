@@ -192,8 +192,8 @@ thread_local! {
 pub(crate) struct PrefilterBatch {
     pub(crate) set: regex::RegexSet,
     /// For PLAIN (homoglyph-variant) batches: an ASCII-folded RegexSet (the
-    /// homoglyph regex with non-ASCII stripped: `[sѕｓ]`→`[s]`, `[lіІιΙｌΟοоOo]`→
-    /// `[lOo]`), in the SAME entry order as `set`. On a pure-ASCII chunk the
+    /// homoglyph regex with non-ASCII stripped: `[sѕｓ]`→`[s]`, `[lіІιΙｌΟοо]`→
+    /// `[l]`), in the SAME entry order as `set`. On a pure-ASCII chunk the
     /// fold is match-equivalent to the unicode form, so `matches()` returns the
     /// IDENTICAL set of entry ids — identical marking, identical active-set
     /// order — but evaluates faster. `None` for case-insensitive batches and on

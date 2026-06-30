@@ -89,8 +89,8 @@ pub(crate) struct Phase2AnchorIndex {
 
     // --- Localized homoglyph path (ASCII chunks only) ---
     /// Case-SENSITIVE Aho-Corasick over the plain (homoglyph) patterns' FOLDED
-    /// leading literals (`[sѕｓ][kкκｋ]_…` → fold `[s][k]_[lOo]…` → `{sk_live_,
-    /// sk_Oive_, sk_oive_}`). On a pure-ASCII chunk every homoglyph match begins
+    /// leading literals (`[sѕｓ][kкκｋ]_…` → fold `[s][k]_[l]…` → `{sk_live_}`).
+    /// On a pure-ASCII chunk every homoglyph match begins
     /// with one of these, so the AC gives candidate START positions; each is
     /// verified by `extract_anchored` (O(match), so dense over-marking from a
     /// short literal is cheap quick-fails, NOT whole-chunk scans). Replaces the
@@ -278,7 +278,8 @@ impl Phase2AnchorIndex {
             }
         };
         // Case-SENSITIVE AC for the plain folded literals (the fold keeps exact
-        // ASCII members, e.g. `[lOo]`, so case-sensitivity is already encoded).
+        // ASCII members, e.g. `[s]` from `[sѕｓ]`, so case-sensitivity is already
+        // encoded).
         let plain_anchor_first_bigram = (!plain_literals.is_empty()).then(|| {
             FirstBigramSet::from_literals(plain_literals.iter().map(String::as_bytes), false)
         });
@@ -447,7 +448,7 @@ impl Phase2AnchorIndex {
 }
 
 /// Required-prefix literals of an already-folded (non-ASCII-stripped) plain
-/// regex `folded` (`[sѕｓ]`→`[s]`, `[lіІιΙｌΟοоOo]`→`[lOo]`). Every match of the
+/// regex `folded` (`[sѕｓ]`→`[s]`, `[lіІιΙｌΟοо]`→`[l]`). Every match of the
 /// homoglyph variant on pure-ASCII text begins with one of these. Case
 /// -SENSITIVE parse (plain variants match case-sensitively; the fold's ASCII
 /// members carry the case). `None` for an infinite/oversized seq, a member

@@ -27,7 +27,16 @@ fn homoglyph_map() -> &'static HashMap<char, Vec<char>> {
         m.insert('s', vec!['ѕ', 'ｓ']);
         m.insert('t', vec!['т', 'τ', 'ｔ']);
         m.insert('u', vec!['υ', 'ｕ']);
-        m.insert('l', vec!['і', 'І', 'ι', 'Ι', 'ｌ', 'Ο', 'ο', 'о', 'O', 'o']);
+        // 'l' confuses with the I/1/| cluster (Cyrillic/Greek dotless i, fullwidth
+        // l). The ASCII 'O'/'o' previously here were invalid: a homoglyph maps an
+        // ASCII char to its NON-ASCII lookalikes, so ASCII glyphs add no obfuscation
+        // coverage — they only made the ASCII-folded class `[l...Oo]→[lOo]` match a
+        // literal 'O'/'o' in the 'l' position (pure false-positive surface +
+        // automaton bloat). Removed; the load-bearing 'l' member is preserved.
+        // (The non-ASCII O-lookalikes Ο/ο/о are also a wrong cluster for 'l' but
+        // trimming them changes non-ASCII matching, so that is deferred to a
+        // differential-bench-validated pass.)
+        m.insert('l', vec!['і', 'І', 'ι', 'Ι', 'ｌ', 'Ο', 'ο', 'о']);
         m.insert('x', vec!['х', 'χ', 'ｘ']);
         m.insert('y', vec!['у', 'ｙ']);
         m.insert('L', vec!['Ｌ']);
