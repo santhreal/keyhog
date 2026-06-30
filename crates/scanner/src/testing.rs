@@ -648,6 +648,19 @@ pub fn normalized_assignment_keyword_is_credential_for_test(normalized: &str) ->
     crate::entropy::keywords::normalized_assignment_keyword_is_credential(normalized)
 }
 
+/// The SCAN-FACING credential-keyword UNION used by the multiline fragment and
+/// structural reassembly paths (`fragment_assignment_name_is_credential_like`):
+/// `normalized_assignment_keyword_is_credential` (the compact list + salt/nonce/
+/// seed) OR `normalized_assignment_keyword_has_secret_suffix` (the `*key`/
+/// `*secret`/`*token`/`*password` suffix family), MINUS the bare-ambiguous-owner
+/// (`key`/`token`/`secret`/`password`/`auth`/...) and public-metadata-owner
+/// (`*_digest`/`*_hash`/`*_dedup_key`/`version`/...) exclusions. Takes the RAW
+/// var name (it normalizes internally). Exposed so the union recall contract can
+/// pin that BOTH predicate sets contribute and neither exclusion regresses.
+pub fn fragment_assignment_name_is_credential_like_for_test(var_name: &str) -> bool {
+    crate::multiline::fragment_assignment_name_is_credential_like(var_name)
+}
+
 /// `assignment_keyword_for_line` extracts the assignment keyword a line is most
 /// likely keying on: an XML tag takes precedence, else the `=`/`:` separators
 /// are scanned right-to-left, the first credential key short-circuits, and the
