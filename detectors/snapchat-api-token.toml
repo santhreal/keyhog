@@ -8,7 +8,7 @@ id = "snapchat-api-token"
 name = "Snapchat Marketing API Token"
 service = "snapchat"
 severity = "high"
-keywords = ["snapchat", "SNAPCHAT", "snap_chat", " Snapchat"]
+keywords = ["snapchat", "SNAPCHAT", "snap_chat", "Snapchat"]
 
 [[detector.patterns]]
 regex = "(?:snapchat|SNAPCHAT)[_\\-\\s]*(?:api[_\\-\\s]*key|API[_\\-\\s]*KEY|access[_\\-\\s]*token|ACCESS[_\\-\\s]*TOKEN)[=: \\s\"'']+([a-f0-9]{64})"
