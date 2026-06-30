@@ -242,6 +242,27 @@ CANDIDATES: dict[str, list[re.Pattern]] = {
             r"(?![0-9a-fA-F])"
         )
     ],
+    # hex64 (32-byte / AES-256 key length) under the NARROW strong cryptographic
+    # keyword family ONLY (excludes bare `key`/`secret` to isolate the
+    # mirror-safe precision of the strong-anchor subset that the shipped
+    # `is_strong_keyword_anchored_hex_key` currently excludes at len 64).
+    "crypto_key_hex64_strong": [
+        re.compile(
+            r"(?i)(?:^|[^a-z0-9_])"
+            r"(?:encryption[_-]?key|private[_-]?key|signing[_-]?key|master[_-]?key|"
+            r"access[_-]?key|api[_-]?key|client[_-]?secret|app[_-]?secret|aes[_-]?key|"
+            r"secret[_-]?key)"
+            r"[\"'` ]*[=:]\s*[\"'`]?([0-9a-fA-F]{64})(?![0-9a-fA-F])"
+        )
+    ],
+    # hex64 under the BARE `key`/`secret` anchors only — the more ambiguous tail
+    # whose precision must be inspected separately before any broadening.
+    "crypto_key_hex64_bare": [
+        re.compile(
+            r"(?i)(?:^|[^a-z0-9_])(?:key|secret)"
+            r"[\"'` ]*[=:]\s*[\"'`]?([0-9a-fA-F]{64})(?![0-9a-fA-F])"
+        )
+    ],
     # `<cred-keyword> = <uuid>` — UUID used as a credential (keyword-anchored).
     "keyworded_uuid": [
         re.compile(
