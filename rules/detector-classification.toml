@@ -34,25 +34,20 @@ weak_anchor = [
   "foundation-api-key",
   "getresponse-api-key",
   "rudder-api-token",
-  # Context-prefix password detectors: a strong syntactic anchor
-  # (`IDENTIFIED BY '<x>'`, `--password <x>`) proves a credential SLOT, but the
-  # captured value still collides with dictionary placeholders (`'password'`,
-  # `--password changeme`). Keep the Tier-B shape gates engaged so the shared
-  # random-vs-dictionary discriminator surfaces real random secrets while
-  # dropping the placeholders, exactly as the generic keyword bridge does.
-  "sql-password",
-  "cli-password-flag",
 ]
-# NOTE: `url-credentials` is deliberately NOT weak_anchor. Unlike the SQL/CLI
-# context-prefix detectors, the URL userinfo slot (`scheme://user:<x>@host`) is
-# strong STRUCTURAL evidence: the bulk of the real CredData userinfo passwords
-# are SHORT all-lowercase random strings (`pxidztpv`, `zavvfuco`) that the
-# random-vs-dictionary floor declines — yet they ARE credentials by URI
-# structure. Keeping it strong-anchor skips the Tier-B randomness floor
-# (`apply_tier_b=false`) so those surface, while the Tier-A
-# `syntactic_punctuation_marker` gate (`:$VAR@`) and the known-example decoy
-# gate (`:password@`, `:changeme@`) still drop placeholders, and the regex
-# itself excludes `<>` so `:<password>@` templates never match.
+# NOTE: the "structural password slot" family — `url-credentials`,
+# `sql-password`, `cli-password-flag` — is deliberately NOT weak_anchor. Their
+# syntactic slot (`scheme://user:<x>@host`, `IDENTIFIED BY '<x>'`,
+# `--password <x>`) is strong STRUCTURAL evidence, and the bulk of the real
+# CredData passwords there are SHORT all-lowercase random strings (`pxidztpv`,
+# `argriyjqr`) that the Tier-B random-vs-dictionary FLOOR would decline — yet
+# they ARE credentials by structure. Keeping them strong-anchor skips that floor
+# (`apply_tier_b=false`) so those surface; precision against placeholders is held
+# WITHOUT the floor by the `dictionary_word_placeholder` gate (suppression/api.rs,
+# scoped via `detector_ids::is_structural_password_slot_detector`) which drops a
+# value the English bigram model is confident is a real word (`password`,
+# `secret`), the `{6,128}` value floor in each regex (drops short placeholders
+# `pass`/`admin`), the `<>` exclusion (templates), and the Tier-A `$VAR` marker.
 
 private_key_block = [
   "private-key",
