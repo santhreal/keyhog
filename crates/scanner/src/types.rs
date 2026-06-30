@@ -57,6 +57,27 @@ pub(crate) const REGEX_SIZE_LIMIT_BYTES: usize = 1 << 20; // 1 MiB default
 static REGEX_DFA_LIMIT_OVERRIDE: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
+/// Process-wide count of [`LazyRegex`] first-use compilations - incremented
+/// EXACTLY once per `LazyRegex` the moment its `OnceLock` actually builds the
+/// `Regex` (the cold-cache miss inside [`LazyRegex::get`]). Detector patterns are
+/// seeded eagerly at scanner construction ([`LazyRegex::detector_compiled`] uses
+/// `OnceLock::from`, which never runs the init closure), so in a correctly-built
+/// scanner this counter does NOT advance on the scan hot path: it is the
+/// observable that proves "compile once, scan many" - no per-scan regex rebuild.
+/// A regression that reintroduced per-scan `Regex::new` (the bug #13 fixed) would
+/// make this climb across scans. Pure observability (Law 10): it only ticks on a
+/// real compile, never gates or alters behaviour.
+static LAZY_REGEX_COMPILE_EVENTS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Snapshot of [`LAZY_REGEX_COMPILE_EVENTS`]: how many `LazyRegex` first-use
+/// compilations have happened process-wide so far. The zero-recompile regression
+/// gate snapshots this around repeated scans to prove steady-state scanning
+/// rebuilds no regex.
+pub(crate) fn lazy_regex_compile_events() -> u64 {
+    LAZY_REGEX_COMPILE_EVENTS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Override the per-regex DFA size limit for this process. Call before scanning.
 /// `0` resets to the compiled default. Tier-A config knob (default → TOML → CLI).
 pub fn set_regex_dfa_limit(bytes: usize) {
@@ -425,6 +446,10 @@ impl LazyRegex {
     pub(crate) fn get(&self) -> &Regex {
         self.cell
             .get_or_init(|| {
+                // Cold-cache miss: this `LazyRegex` is compiling for the first
+                // time. Record it so the zero-recompile gate can prove that the
+                // scan hot path triggers none of these after warm-up.
+                LAZY_REGEX_COMPILE_EVENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let built = if self.case_insensitive {
                     crate::compiler::compiler_compile::shared_regex(&self.src)
                 } else {

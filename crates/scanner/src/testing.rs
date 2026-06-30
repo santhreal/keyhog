@@ -17,6 +17,14 @@ pub fn pattern_regex_strs(scanner: &crate::CompiledScanner) -> Vec<&str> {
     scanner.pattern_regex_strs()
 }
 
+/// Process-wide count of `LazyRegex` first-use compilations (see
+/// `crate::types::lazy_regex_compile_events`). The zero-recompile regression gate
+/// snapshots this around `warm()` + repeated scans to prove steady-state scanning
+/// rebuilds no regex - locking the #13 "cache the pattern compile" fix.
+pub fn lazy_regex_compile_events() -> u64 {
+    crate::types::lazy_regex_compile_events()
+}
+
 /// The absolute path to a crate source file given a path **relative to this
 /// crate's manifest root** (`crates/scanner/`).
 ///
