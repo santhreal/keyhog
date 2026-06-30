@@ -1,0 +1,34 @@
+schema_version = 1
+detector_id = "gitlab-feed-token"
+service = "gitlab"
+severity = "medium"
+
+[[positive]]
+text = "glft-Nf7Rr2Tu6Vw3Xz9Bc5Ae8Eg1H"
+credential = "glft-Nf7Rr2Tu6Vw3Xz9Bc5Ae8Eg1H"
+reason = "GitLab feed token (glft- + 24 alnum body)."
+
+[[positive]]
+text = "https://gitlab.com/dashboard/issues.atom?feed_token=glft-Pg8Ss3Uv7Wx4Ya1Cd6Bf9Fh2Ij5Lm"
+credential = "glft-Pg8Ss3Uv7Wx4Ya1Cd6Bf9Fh2Ij5Lm"
+reason = "Token in a feed URL query parameter must surface."
+
+[[negative]]
+text = "glft-short"
+reason = "Body below 20 chars after the glft- prefix."
+
+[[evasion]]
+text = "FEED_TOKEN: 'glft-Nf7Rr2Tu6Vw3Xz9Bc5Ae8Eg1H'"
+credential = "glft-Nf7Rr2Tu6Vw3Xz9Bc5Ae8Eg1H"
+reason = "Quoted YAML config value must still surface."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted GitLab feed token."

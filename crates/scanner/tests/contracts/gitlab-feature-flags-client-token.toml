@@ -1,0 +1,34 @@
+schema_version = 1
+detector_id = "gitlab-feature-flags-client-token"
+service = "gitlab"
+severity = "low"
+
+[[positive]]
+text = "glffct-Me6Qq1St5Uv2Wy8Ab4Zd7Df9G"
+credential = "glffct-Me6Qq1St5Uv2Wy8Ab4Zd7Df9G"
+reason = "GitLab feature-flags client token (glffct- + 24 alnum body)."
+
+[[positive]]
+text = "UNLEASH_API_TOKEN=glffct-Nf7Rr2Tu6Vw3Xz9Bc5Ae8Eg1Hj4Km"
+credential = "glffct-Nf7Rr2Tu6Vw3Xz9Bc5Ae8Eg1Hj4Km"
+reason = "Env-var assignment around the Unleash client token."
+
+[[negative]]
+text = "glffct-short"
+reason = "Body below 20 chars after the glffct- prefix."
+
+[[evasion]]
+text = "client.api.token = \"glffct-Me6Qq1St5Uv2Wy8Ab4Zd7Df9G\""
+credential = "glffct-Me6Qq1St5Uv2Wy8Ab4Zd7Df9G"
+reason = "Quoted config-property value must still surface."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted GitLab feature-flags client token."

@@ -1,0 +1,22 @@
+# Docs: https://docs.gitlab.com/ee/administration/incoming_email.html
+# Format: glimt- prefix followed by 20+ alphanumeric/_/- characters.
+#   The incoming-mail token is embedded in a user's per-project email address
+#   used to create issues / notes by email; leaking one lets an attacker post
+#   issues and comments as that user, so the severity is medium.
+# Verify: no public endpoint (email-ingest authentication); unverified.
+# Prefix: glimt-
+
+[detector]
+id = "gitlab-incoming-mail-token"
+name = "GitLab Incoming Mail Token"
+service = "gitlab"
+severity = "medium"
+keywords = ["glimt-", "gitlab", "incoming_email"]
+
+[[detector.patterns]]
+regex = 'glimt-[a-zA-Z0-9_\-]{20,}'
+description = "GitLab incoming-mail token (glimt- prefix)"
+
+[[detector.tests]]
+test_positive = "glimt-Ld5Pp9Rs4Tu1Vx7Za3Yc6Ce8F"
+test_negative = "glimt-short"

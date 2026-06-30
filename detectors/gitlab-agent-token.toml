@@ -1,0 +1,22 @@
+# Docs: https://docs.gitlab.com/ee/user/clusters/agent/
+# Format: glagent- prefix followed by 20+ alphanumeric/_/- characters.
+#   The GitLab Agent for Kubernetes authenticates to the agent server (KAS)
+#   with this token; leaking one lets an attacker impersonate the agent and
+#   reach the connected cluster, so the severity is critical.
+# Verify: no public endpoint (cluster-internal / KAS authentication); unverified.
+# Prefix: glagent-
+
+[detector]
+id = "gitlab-agent-token"
+name = "GitLab Agent for Kubernetes Token"
+service = "gitlab"
+severity = "critical"
+keywords = ["glagent-", "gitlab", "kas", "agentk"]
+
+[[detector.patterns]]
+regex = 'glagent-[a-zA-Z0-9_\-]{20,}'
+description = "GitLab Agent for Kubernetes token (glagent- prefix)"
+
+[[detector.tests]]
+test_positive = "glagent-Hx7Kp2Qm9Rn4Sb6Tw8Vz1Yc3"
+test_negative = "glagent-short"

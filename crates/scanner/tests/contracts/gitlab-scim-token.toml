@@ -1,0 +1,34 @@
+schema_version = 1
+detector_id = "gitlab-scim-token"
+service = "gitlab"
+severity = "high"
+
+[[positive]]
+text = "glsoat-Kc4Np8Qr3St9Uw6Xz2Yb5Bd7E"
+credential = "glsoat-Kc4Np8Qr3St9Uw6Xz2Yb5Bd7E"
+reason = "GitLab SCIM OAuth access token (glsoat- + 24 alnum body)."
+
+[[positive]]
+text = "SCIM_TOKEN=glsoat-Lp5Qq9Rs4Tu1Vx7Za3Yc6Ce8Fg2Hj"
+credential = "glsoat-Lp5Qq9Rs4Tu1Vx7Za3Yc6Ce8Fg2Hj"
+reason = "Env-var assignment around the SCIM token."
+
+[[negative]]
+text = "glsoat-short"
+reason = "Body below 20 chars after the glsoat- prefix."
+
+[[evasion]]
+text = "Authorization: Bearer glsoat-Kc4Np8Qr3St9Uw6Xz2Yb5Bd7E"
+credential = "glsoat-Kc4Np8Qr3St9Uw6Xz2Yb5Bd7E"
+reason = "Inline bearer header form must still surface."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted GitLab SCIM token."

@@ -1,0 +1,34 @@
+schema_version = 1
+detector_id = "gitlab-incoming-mail-token"
+service = "gitlab"
+severity = "medium"
+
+[[positive]]
+text = "glimt-Ld5Pp9Rs4Tu1Vx7Za3Yc6Ce8F"
+credential = "glimt-Ld5Pp9Rs4Tu1Vx7Za3Yc6Ce8F"
+reason = "GitLab incoming-mail token (glimt- + 24 alnum body)."
+
+[[positive]]
+text = "INCOMING_EMAIL_TOKEN=glimt-Mq6Rr1St5Uv2Wy8Ab4Zd7Df9Gh3Jk"
+credential = "glimt-Mq6Rr1St5Uv2Wy8Ab4Zd7Df9Gh3Jk"
+reason = "Env-var assignment around the incoming-mail token."
+
+[[negative]]
+text = "glimt-short"
+reason = "Body below 20 chars after the glimt- prefix."
+
+[[evasion]]
+text = "project+glimt-Ld5Pp9Rs4Tu1Vx7Za3Yc6Ce8F@incoming.gitlab.com"
+credential = "glimt-Ld5Pp9Rs4Tu1Vx7Za3Yc6Ce8F"
+reason = "Token embedded in the incoming-email address must still surface."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted GitLab incoming-mail token."

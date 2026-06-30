@@ -1,0 +1,22 @@
+# Docs: https://docs.gitlab.com/ee/operations/feature_flags.html
+# Format: glffct- prefix followed by 20+ alphanumeric/_/- characters.
+#   The feature-flags client token authorizes an Unleash client to read a
+#   project's feature-flag configuration; leaking one discloses the flag
+#   strategies/rollout, so the severity is low (read-only config).
+# Verify: Unleash client API call with this token; reported unverified.
+# Prefix: glffct-
+
+[detector]
+id = "gitlab-feature-flags-client-token"
+name = "GitLab Feature Flags Client Token"
+service = "gitlab"
+severity = "low"
+keywords = ["glffct-", "gitlab", "feature_flag", "unleash"]
+
+[[detector.patterns]]
+regex = 'glffct-[a-zA-Z0-9_\-]{20,}'
+description = "GitLab feature-flags client (Unleash) token (glffct- prefix)"
+
+[[detector.tests]]
+test_positive = "glffct-Me6Qq1St5Uv2Wy8Ab4Zd7Df9G"
+test_negative = "glffct-short"

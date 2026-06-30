@@ -1,0 +1,23 @@
+# Docs: https://docs.gitlab.com/ee/security/tokens/#feed-token
+# Format: glft- prefix followed by 20+ alphanumeric/_/- characters.
+#   The feed token authenticates RSS / Atom / iCalendar feed URLs and exposes
+#   a user's issues, to-dos, and activity without a session; leaking one is an
+#   information-disclosure of all feeds readable by that user, so the severity
+#   is medium.
+# Verify: GET a feed URL with `?feed_token=`; reported unverified here.
+# Prefix: glft-
+
+[detector]
+id = "gitlab-feed-token"
+name = "GitLab Feed Token"
+service = "gitlab"
+severity = "medium"
+keywords = ["glft-", "gitlab", "feed_token", "rss"]
+
+[[detector.patterns]]
+regex = 'glft-[a-zA-Z0-9_\-]{20,}'
+description = "GitLab feed token (glft- prefix)"
+
+[[detector.tests]]
+test_positive = "glft-Nf7Rr2Tu6Vw3Xz9Bc5Ae8Eg1H"
+test_negative = "glft-short"

@@ -1,0 +1,22 @@
+# Docs: https://docs.gitlab.com/ee/user/group/saml_sso/scim_setup.html
+# Format: glsoat- prefix followed by 20+ alphanumeric/_/- characters.
+#   The SCIM OAuth access token authorizes identity-provider SCIM calls that
+#   provision and de-provision group members; leaking one lets an attacker
+#   add or remove users in the group, so the severity is high.
+# Verify: SCIM API call with this bearer token; reported unverified here.
+# Prefix: glsoat-
+
+[detector]
+id = "gitlab-scim-token"
+name = "GitLab SCIM OAuth Token"
+service = "gitlab"
+severity = "high"
+keywords = ["glsoat-", "gitlab", "scim"]
+
+[[detector.patterns]]
+regex = 'glsoat-[a-zA-Z0-9_\-]{20,}'
+description = "GitLab SCIM OAuth access token (glsoat- prefix)"
+
+[[detector.tests]]
+test_positive = "glsoat-Kc4Np8Qr3St9Uw6Xz2Yb5Bd7E"
+test_negative = "glsoat-short"

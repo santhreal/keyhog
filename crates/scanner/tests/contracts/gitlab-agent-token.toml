@@ -1,0 +1,34 @@
+schema_version = 1
+detector_id = "gitlab-agent-token"
+service = "gitlab"
+severity = "critical"
+
+[[positive]]
+text = "glagent-Hx7Kp2Qm9Rn4Sb6Tw8Vz1Yc3"
+credential = "glagent-Hx7Kp2Qm9Rn4Sb6Tw8Vz1Yc3"
+reason = "GitLab Agent for Kubernetes token (glagent- + 24 alnum body)."
+
+[[positive]]
+text = "KAS_TOKEN=glagent-Df8Gp3Kq7Lr2Mn5Pt9Sv4Wx6Za1Bc"
+credential = "glagent-Df8Gp3Kq7Lr2Mn5Pt9Sv4Wx6Za1Bc"
+reason = "Env-var assignment around the agent token."
+
+[[negative]]
+text = "glagent-short"
+reason = "Body below 20 chars after the glagent- prefix."
+
+[[evasion]]
+text = "kubectl create secret generic agent --from-literal=token=glagent-Hx7Kp2Qm9Rn4Sb6Tw8Vz1Yc3"
+credential = "glagent-Hx7Kp2Qm9Rn4Sb6Tw8Vz1Yc3"
+reason = "Inline --from-literal kubectl form must still surface."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted GitLab agent token."
