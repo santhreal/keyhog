@@ -8,7 +8,7 @@ id = "telegram-bot-token"
 name = "Telegram Bot Token"
 service = "telegram"
 severity = "high"
-keywords = ["TELEGRAM_BOT_TOKEN", "telegram_bot_token", "TELEGRAM_TOKEN", "telegram_token", "bot"]
+keywords = ["TELEGRAM_BOT_TOKEN", "telegram_bot_token", "TELEGRAM_TOKEN", "telegram_token", "api.telegram.org", "bot"]
 
 [[detector.patterns]]
 regex = "[0-9]{8,10}:[A-Za-z0-9_-]{35}"
