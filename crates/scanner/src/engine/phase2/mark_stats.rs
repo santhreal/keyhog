@@ -67,6 +67,25 @@ impl MarkSnapshot {
         self.hs_served + self.regexset_served
     }
 
+    /// True iff the path split accounts for every call exactly once:
+    /// `gate_skips + served_total() == calls` AND `served_total() == perpattern_work`.
+    ///
+    /// A gate-skip never reaches per-pattern work and a per-pattern call is
+    /// served by exactly one of HS / RegexSet, so a *quiescent* snapshot (read
+    /// after scanning stops) must satisfy both equalities. The profiler asserts
+    /// this before printing the decomposition: an inconsistent snapshot means a
+    /// `record_*` path bumped `calls` without its matching sub-counter (an
+    /// accounting bug), which would make every reported percentage wrong — so it
+    /// is surfaced loudly rather than printed as if correct (Law 10).
+    ///
+    /// Only valid post-scan: a live read across rayon workers can momentarily
+    /// skew because the five relaxed atomics are loaded at slightly different
+    /// instants, so callers must not assert this on a snapshot taken mid-scan.
+    pub fn is_consistent(&self) -> bool {
+        self.gate_skips + self.served_total() == self.calls
+            && self.served_total() == self.perpattern_work
+    }
+
     /// Fraction of all calls that took the cheap gate-skip path, in `[0, 100]`.
     /// Returns `0.0` when no calls were recorded (avoids a divide-by-zero).
     pub fn gate_skip_pct(&self) -> f64 {

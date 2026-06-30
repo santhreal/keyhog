@@ -147,7 +147,13 @@ fn reset_zeroes_all_five_counters() {
     phase2_mark_stats_reset();
     let s = phase2_mark_stats();
     assert_eq!(
-        (s.calls, s.gate_skips, s.perpattern_work, s.hs_served, s.regexset_served),
+        (
+            s.calls,
+            s.gate_skips,
+            s.perpattern_work,
+            s.hs_served,
+            s.regexset_served
+        ),
         (0, 0, 0, 0, 0),
         "reset must zero every counter"
     );
@@ -160,7 +166,10 @@ fn snapshot_does_not_reset_on_read() {
     let first = phase2_mark_stats();
     let second = phase2_mark_stats();
     assert_eq!(first.calls, 1);
-    assert_eq!(second.calls, 1, "reading the snapshot must not reset counters");
+    assert_eq!(
+        second.calls, 1,
+        "reading the snapshot must not reset counters"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -259,6 +268,133 @@ fn hs_pct_is_zero_when_perpattern_zero_even_with_calls() {
 }
 
 // ---------------------------------------------------------------------------
+// MarkSnapshot::is_consistent — the path-split accounting invariant the profiler
+// asserts before printing the decomposition (Law 10: never print a mis-accounted
+// split as if correct). Consistent iff `gate_skips + served_total == calls` AND
+// `served_total == perpattern_work`.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn is_consistent_true_for_default_snapshot() {
+    assert!(MarkSnapshot::default().is_consistent(), "0+0==0 and 0==0");
+}
+
+#[test]
+fn is_consistent_true_for_clean_mixed_split() {
+    assert!(snap(100, 25, 75, 60, 15).is_consistent());
+}
+
+#[test]
+fn is_consistent_true_for_all_gate_skip_corpus() {
+    assert!(
+        snap(500, 500, 0, 0, 0).is_consistent(),
+        "every call a gate-skip"
+    );
+}
+
+#[test]
+fn is_consistent_true_for_all_regexset_corpus() {
+    assert!(
+        snap(1000, 0, 1000, 0, 1000).is_consistent(),
+        "every per-pattern call regexset-served"
+    );
+}
+
+#[test]
+fn is_consistent_true_for_all_hs_corpus() {
+    assert!(
+        snap(1000, 0, 1000, 1000, 0).is_consistent(),
+        "every per-pattern call hs-served"
+    );
+}
+
+#[test]
+fn is_consistent_true_for_single_gate_skip() {
+    assert!(snap(1, 1, 0, 0, 0).is_consistent());
+}
+
+#[test]
+fn is_consistent_true_for_single_hs_call() {
+    assert!(snap(1, 0, 1, 1, 0).is_consistent());
+}
+
+#[test]
+fn is_consistent_true_for_single_regexset_call() {
+    assert!(snap(1, 0, 1, 0, 1).is_consistent());
+}
+
+#[test]
+fn is_consistent_true_for_large_balanced_snapshot() {
+    assert!(snap(2_000_000, 500_000, 1_500_000, 900_000, 600_000).is_consistent());
+}
+
+#[test]
+fn is_consistent_false_when_calls_one_too_high() {
+    // served==perpattern holds, but gate_skips + served (100) != calls (101).
+    assert!(!snap(101, 25, 75, 60, 15).is_consistent());
+}
+
+#[test]
+fn is_consistent_false_when_calls_one_too_low() {
+    assert!(!snap(99, 25, 75, 60, 15).is_consistent());
+}
+
+#[test]
+fn is_consistent_false_when_gate_skips_miscounted() {
+    // gate_skips 26 makes gate_skips + served (101) != calls (100).
+    assert!(!snap(100, 26, 75, 60, 15).is_consistent());
+}
+
+#[test]
+fn is_consistent_false_when_perpattern_understates_served() {
+    // gate_skips + served == calls holds, but served (75) != perpattern_work (70).
+    assert!(!snap(100, 25, 70, 60, 15).is_consistent());
+}
+
+#[test]
+fn is_consistent_false_when_perpattern_overstates_served() {
+    assert!(!snap(100, 25, 80, 60, 15).is_consistent());
+}
+
+#[test]
+fn is_consistent_false_when_hs_inflated() {
+    // served becomes 85: breaks both equalities.
+    assert!(!snap(100, 25, 75, 70, 15).is_consistent());
+}
+
+#[test]
+fn is_consistent_false_when_regexset_inflated() {
+    assert!(!snap(100, 25, 75, 60, 25).is_consistent());
+}
+
+#[test]
+fn is_consistent_false_when_only_calls_recorded() {
+    // calls bumped but no path counter followed — the canonical accounting bug.
+    assert!(!snap(5, 0, 0, 0, 0).is_consistent());
+}
+
+#[test]
+fn is_consistent_false_when_gate_skips_exceed_calls() {
+    assert!(!snap(1, 2, 0, 0, 0).is_consistent());
+}
+
+#[test]
+fn is_consistent_false_when_perpattern_unserved() {
+    // perpattern_work recorded but neither served path bumped (served=0).
+    assert!(!snap(100, 25, 75, 0, 0).is_consistent());
+}
+
+#[test]
+fn is_consistent_independent_of_percentage_rounding() {
+    // A snapshot whose percentages round messily is still a CONSISTENT split.
+    let s = snap(10123, 120, 10003, 8800, 1203);
+    assert!(
+        s.is_consistent(),
+        "consistency is integer accounting, not rounded pct"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // MarkSnapshot value semantics.
 // ---------------------------------------------------------------------------
 
@@ -306,16 +442,28 @@ fn format_renders_percentages_to_one_decimal() {
     // 120/10123 = 1.185..% -> "1.2%"; 8800/10003 = 87.97..% -> "88.0%".
     let s = snap(10123, 120, 10003, 8800, 1203);
     let line = format_mark_decomposition(&s);
-    assert!(line.contains("(1.2%)"), "gate-skip pct rounded wrong: {line}");
-    assert!(line.contains("(98.8%)"), "per-pattern pct rounded wrong: {line}");
+    assert!(
+        line.contains("(1.2%)"),
+        "gate-skip pct rounded wrong: {line}"
+    );
+    assert!(
+        line.contains("(98.8%)"),
+        "per-pattern pct rounded wrong: {line}"
+    );
     assert!(line.contains("(88.0%)"), "hs pct rounded wrong: {line}");
-    assert!(line.contains("(12.0%)"), "regexset pct rounded wrong: {line}");
+    assert!(
+        line.contains("(12.0%)"),
+        "regexset pct rounded wrong: {line}"
+    );
 }
 
 #[test]
 fn format_empty_snapshot_has_no_nan() {
     let line = format_mark_decomposition(&MarkSnapshot::default());
-    assert!(!line.contains("NaN"), "empty snapshot must not render NaN: {line}");
+    assert!(
+        !line.contains("NaN"),
+        "empty snapshot must not render NaN: {line}"
+    );
     assert!(line.contains("calls=0"), "{line}");
     assert!(line.contains("(0.0%)"), "{line}");
 }

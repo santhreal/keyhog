@@ -311,11 +311,28 @@ pub fn dump(label: &str) {
         // Attach the path decomposition directly under the prefilter leaf it
         // describes, so the dominant scan cost is diagnosable in place.
         if i == P::Phase2Prefilter as usize && mark.calls > 0 {
-            eprintln!("        ↳ {}", super::phase2::format_mark_decomposition(&mark));
+            let line = super::phase2::format_mark_decomposition(&mark);
+            if mark.is_consistent() {
+                eprintln!("        ↳ {line}");
+            } else {
+                // Law 10: never print a mis-accounted decomposition as if it were
+                // correct. The snapshot is quiescent here (read after the scan
+                // joined), so a failed split means a `record_*` path bumped
+                // `calls` without its matching sub-counter — every percentage on
+                // this line is then wrong. Surface it loudly next to the figures.
+                eprintln!(
+                    "        ↳ {line}  ⚠ INCONSISTENT: gate-skip + hs + regexset ({}) != calls ({}) — prefilter call accounting bug",
+                    mark.gate_skips + mark.served_total(),
+                    mark.calls
+                );
+            }
             // Second layer: where the HS-served time went (scan vs dropped host
             // loop). Only present when profiling timed at least one HS mark.
             if hs_split.any_recorded() {
-                eprintln!("          ↳ {}", super::phase2::format_hs_mark_split(&hs_split));
+                eprintln!(
+                    "          ↳ {}",
+                    super::phase2::format_hs_mark_split(&hs_split)
+                );
             }
         }
     }
