@@ -241,7 +241,7 @@ fn has_strict_go_sum_checksum_shape(bytes: &[u8], h1_pos: usize) -> bool {
     };
     digest
         .iter()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
+        .all(|&byte| crate::decode::is_standard_base64_byte(byte))
         && bytes
             .get(digest_start + 44)
             .is_none_or(u8::is_ascii_whitespace)
@@ -286,7 +286,7 @@ fn contains_sri_hash_value(bytes: &[u8], prefix: &[u8]) -> bool {
         let value_start = start + prefix.len();
         let mut value_end = value_start;
         while let Some(byte) = bytes.get(value_end) {
-            if byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=') {
+            if crate::decode::is_standard_base64_byte(*byte) {
                 value_end += 1;
             } else {
                 break;
@@ -370,7 +370,7 @@ fn is_base64_scalar(bytes: &[u8]) -> bool {
         && bytes.len() % 4 == 0
         && bytes
             .iter()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
+            .all(|&byte| crate::decode::is_standard_base64_byte(byte))
 }
 
 fn is_git_lfs_pointer_context_with_lines(

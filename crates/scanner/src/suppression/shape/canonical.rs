@@ -59,10 +59,7 @@ pub(crate) fn is_structured_dotted_token(value: &str) -> bool {
     let segments = [first, second, third];
     let is_jwt_like = first.starts_with("eyJ")
         && segments.iter().all(|segment| {
-            segment.len() >= 4
-                && segment.bytes().all(|byte| {
-                    byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=' | b'-' | b'_')
-                })
+            segment.len() >= 4 && segment.bytes().all(crate::decode::is_base64_candidate_byte)
         });
     let is_discord_style = (23..=28).contains(&first.len())
         && (6..=8).contains(&second.len())

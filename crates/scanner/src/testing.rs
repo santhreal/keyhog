@@ -367,6 +367,14 @@ pub fn entropy_matches_universal_rejection_for_test(value: &str) -> bool {
     crate::entropy::plausibility::matches_universal_rejection(value)
 }
 
+/// The low-alphanumeric-ratio rejection gate (entropy::plausibility) — `true`
+/// when fewer than half the value's CHARACTERS are alphanumeric. Exposed so a
+/// boundary test can pin its char-based (not byte-based) counting, which is the
+/// difference that keeps a multibyte-letter secret from being wrongly dropped.
+pub fn entropy_has_low_alnum_ratio_for_test(value: &str) -> bool {
+    crate::entropy::plausibility::has_low_alnum_ratio(value)
+}
+
 /// The fast probabilistic noise gate (`probabilistic_gate`) — rejects obvious
 /// high-entropy non-secrets (UUIDs, low-diversity pads) before heavy ML scoring.
 /// Lets a gap test pin its exact promising/not-promising decisions, in
@@ -602,6 +610,20 @@ pub fn standard_base64_shape_for_test(candidate: &str) -> Option<(bool, bool, bo
 /// (a third-or-later trailing `=`, or any `=` before the padding run).
 pub fn contains_non_padding_equals(value: &str) -> bool {
     crate::decode::contains_non_padding_equals(value)
+}
+
+/// `is_standard_base64_byte`: the RFC 4648 standard base64 alphabet test
+/// (alphanumeric + `+` `/` `=`), the single owner that three
+/// `context/false_positive.rs` byte scans delegate to.
+pub fn is_standard_base64_byte(byte: u8) -> bool {
+    crate::decode::is_standard_base64_byte(byte)
+}
+
+/// `is_base64_candidate_byte`: the standard alphabet plus the url-safe `-` and
+/// `_`, the single owner the JWT-like segment check in
+/// `suppression/shape/canonical.rs` delegates to.
+pub fn is_base64_candidate_byte(byte: u8) -> bool {
+    crate::decode::is_base64_candidate_byte(byte)
 }
 
 /// `candidate_starts_with_owned_assignment_key` driven with an explicit owned

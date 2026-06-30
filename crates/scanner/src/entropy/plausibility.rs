@@ -105,10 +105,21 @@ pub(crate) fn matches_universal_rejection(value: &str) -> bool {
         || value.starts_with("===")
 }
 
-fn has_low_alnum_ratio(value: &str) -> bool {
-    let alnum =
-        value.chars().filter(|ch| ch.is_alphanumeric()).count() as f64 / value.len().max(1) as f64;
-    alnum < 0.5
+pub(crate) fn has_low_alnum_ratio(value: &str) -> bool {
+    // Fewer than half the CHARACTERS are alphanumeric. Both numerator and
+    // denominator are counted in characters: a multibyte alphanumeric char (an
+    // accented letter, a CJK ideograph) is one alphanumeric unit, so dividing
+    // the char count by the BYTE length — as this once did — understates the
+    // ratio and would wrongly reject a real secret that contains non-ASCII
+    // letters. ASCII values are unaffected (char count == byte count there).
+    // The integer comparison `alnum * 2 < total` avoids a float division on this
+    // hot plausibility gate; an empty value has no alphanumerics and stays low.
+    let total = value.chars().count();
+    if total == 0 {
+        return true;
+    }
+    let alnum = value.chars().filter(|ch| ch.is_alphanumeric()).count();
+    alnum * 2 < total
 }
 
 pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityContext) -> bool {
