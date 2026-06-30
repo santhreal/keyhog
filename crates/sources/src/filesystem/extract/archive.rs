@@ -31,6 +31,17 @@ pub(super) fn is_openpack_archive_ext(ext: &str) -> bool {
     const OPENPACK_EXTS: &[&str] = &[
         // Plain ZIP and ZIP-wrapped app/package formats.
         "zip", "apk", "ipa", "crx", "jar",
+        // Compiled / published package artifacts that are ALSO plain ZIP
+        // containers. Without these a `.whl` / `.war` / `.aar` / … is read as
+        // opaque binary, so a credential baked into a DEFLATE-compressed entry
+        // (a `application.properties` in a WAR, a config in a Python wheel, a
+        // `.nuspec`/embedded appsettings in a NuGet package) is never reached.
+        // Unpacking the ZIP scans each entry like any other archived file.
+        //   whl   — Python wheel            war/ear — Java web/enterprise archive
+        //   aar   — Android library         nupkg/snupkg — NuGet (+symbols) package
+        //   egg   — Python egg              xpi   — Firefox extension
+        //   vsix  — VS Code extension
+        "whl", "war", "ear", "aar", "nupkg", "snupkg", "egg", "xpi", "vsix",
         // OOXML office documents (Word/Excel/PowerPoint) are ZIP containers
         // whose text lives in member XML (`word/document.xml`,
         // `xl/sharedStrings.xml`, `ppt/slides/*.xml`). A credential pasted into
