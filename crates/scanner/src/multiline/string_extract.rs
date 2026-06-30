@@ -282,11 +282,23 @@ pub(crate) fn extract_quoted_content(s: &str, open: char, close: char) -> Option
             content.push('}');
         } else if is_fstring && ch == '{' {
             // A real `{expr}` interpolation (escaped `{{`/`}}` are handled above):
-            // a runtime-computed value, not literal secret bytes. Skip it with
-            // nesting so the surrounding literal still reassembles.
+            // a runtime-computed value, not literal secret bytes. Skip it,
+            // tracking nested braces AND string literals inside the expression
+            // so a `{`/`}` that appears INSIDE a quoted span (e.g.
+            // `f"{d['}']}tail"`) does not miscount the depth and end the skip
+            // early — which would leak the expression's tail (`']}tail`) into the
+            // reassembled secret. Mirrors the string-aware `${...}` skip in
+            // `extract_template_literal_continuation`.
             let mut brace_depth = 1;
+            let mut in_str: Option<char> = None;
             for c in chars.by_ref() {
-                if c == '{' {
+                if let Some(quote) = in_str {
+                    if c == quote {
+                        in_str = None;
+                    }
+                } else if c == '\'' || c == '"' {
+                    in_str = Some(c);
+                } else if c == '{' {
                     brace_depth += 1;
                 } else if c == '}' {
                     brace_depth -= 1;

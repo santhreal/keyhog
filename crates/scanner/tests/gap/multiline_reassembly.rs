@@ -442,14 +442,11 @@ fn non_adjacent_f_in_identifier_preserves_braces() {
 
 #[test]
 fn fstring_escaped_double_brace_is_literal() {
-    // BUG (gap marker): Python f-string `{{kept}}` is an escaped literal brace
-    // span and evaluates to `{kept}`, so the reassembled secret value should be
-    // `sk-{kept}-zzzz0000`. The `chars.peek() != Some('{')` guard in
-    // extract_quoted_content only protects the FIRST brace of the `{{` pair;
-    // the SECOND '{' still triggers the interpolation consumer, which eats
-    // `kept}` and yields `sk-{}-zzzz0000` (the inner identifier is lost).
-    // This asserts the CORRECT behavior and is expected to FAIL until the
-    // double-brace escape is handled fully.
+    // Python f-string `{{kept}}` is an escaped literal brace span that evaluates
+    // to `{kept}`, so the reassembled secret value is `sk-{kept}-zzzz0000`.
+    // extract_quoted_content consumes the SECOND brace of each `{{`/`}}` pair
+    // and emits one literal brace, so `kept` survives between them (it is NOT
+    // mistaken for a `{...}` interpolation). Regression lock for that escape.
     let text = "tok = f\"sk-{{kept}}-zzzz0000\" \\\n    \"_cont\"\n";
     let p = pre(text);
     assert!(
@@ -1157,5 +1154,181 @@ fn var_ref_concatenation_still_resolves() {
         p.text.contains("AKIAIOSFODNN7EXAMPLEKEY01234"),
         "{:?}",
         p.text
+    );
+}
+
+// ---------------------------------------------------------------------------
+// f-string `{expr}` interpolation skip (string_extract::extract_quoted_content)
+//
+// A real `{expr}` interpolation is a runtime value and is dropped from the
+// reassembled literal; escaped `{{`/`}}` collapse to one literal brace. The skip
+// must track string literals INSIDE the expression so a `{`/`}` that appears in
+// a quoted span (f"{d['}']}tail") does not miscount brace depth and leak the
+// expression tail into the secret — the same quote-awareness the `${...}`
+// template handler already has.
+// ---------------------------------------------------------------------------
+
+/// Reassemble an f-string `body` (the text between `f"` and the closing `"`)
+/// through the real extractor via a backslash continuation, and return the
+/// appended/reassembled region. The continuation tail `_KCONT` is glued onto the
+/// f-string's literal output, so the reassembled value is
+/// `<literal-of-body>` + `_KCONT`. `body` must use single quotes for any inner
+/// strings (the outer delimiter is `"`).
+fn fstring_reassembled(body: &str) -> String {
+    let text = format!("tok = f\"{body}\" \\\n    \"_KCONT\"\n");
+    let p = pre(&text);
+    p.text[p.original_end..].to_string()
+}
+
+#[test]
+fn fstring_drops_simple_var_interpolation() {
+    let app = fstring_reassembled("ghp_{user}body");
+    assert!(app.contains("ghp_body_KCONT"), "{app:?}");
+    assert!(
+        !app.contains("user"),
+        "interpolation var must be dropped: {app:?}"
+    );
+}
+
+#[test]
+fn fstring_drops_var_at_end() {
+    let app = fstring_reassembled("ghp_{user}");
+    assert!(app.contains("ghp__KCONT"), "{app:?}");
+    assert!(!app.contains("user"), "{app:?}");
+}
+
+#[test]
+fn fstring_drops_var_at_start() {
+    let app = fstring_reassembled("{user}ghp_");
+    assert!(app.contains("ghp__KCONT"), "{app:?}");
+    assert!(!app.contains("user"), "{app:?}");
+}
+
+#[test]
+fn fstring_drops_two_named_vars() {
+    let app = fstring_reassembled("{alpha}mid{beta}end");
+    assert!(app.contains("midend_KCONT"), "{app:?}");
+    assert!(!app.contains("alpha") && !app.contains("beta"), "{app:?}");
+}
+
+#[test]
+fn fstring_escaped_open_brace_is_literal() {
+    let app = fstring_reassembled("a{{b");
+    assert!(app.contains("a{b_KCONT"), "{app:?}");
+}
+
+#[test]
+fn fstring_escaped_close_brace_is_literal() {
+    let app = fstring_reassembled("a}}b");
+    assert!(app.contains("a}b_KCONT"), "{app:?}");
+}
+
+#[test]
+fn fstring_both_escaped_braces_are_literal() {
+    let app = fstring_reassembled("{{x}}");
+    assert!(app.contains("{x}_KCONT"), "{app:?}");
+}
+
+#[test]
+fn fstring_close_brace_inside_interp_string_does_not_end_skip() {
+    // THE FIX: the `}` inside `'}'` must not close the interpolation early.
+    let app = fstring_reassembled("{d['}']}tail");
+    assert!(app.contains("tail_KCONT"), "{app:?}");
+    assert!(
+        !app.contains("']}"),
+        "expression tail must not leak: {app:?}"
+    );
+}
+
+#[test]
+fn fstring_open_brace_inside_interp_string_does_not_unbalance() {
+    // Before the fix the in-string `{` inflated brace_depth so the real `}` never
+    // balanced and the whole tail was consumed (empty literal).
+    let app = fstring_reassembled("{d['{']}tail");
+    assert!(
+        app.contains("tail_KCONT"),
+        "tail must survive a balanced skip: {app:?}"
+    );
+}
+
+#[test]
+fn fstring_brace_in_string_between_literal_text() {
+    let app = fstring_reassembled("pre{d['}']}post");
+    assert!(app.contains("prepost_KCONT"), "{app:?}");
+    assert!(!app.contains("']}"), "{app:?}");
+}
+
+#[test]
+fn fstring_nested_format_spec_braces_are_skipped() {
+    let app = fstring_reassembled("{x:>{w}}tail");
+    assert!(app.contains("tail_KCONT"), "{app:?}");
+}
+
+#[test]
+fn fstring_interp_with_brackets_no_brace_skipped() {
+    let app = fstring_reassembled("{f(a[b])}tail");
+    assert!(app.contains("tail_KCONT"), "{app:?}");
+}
+
+#[test]
+fn fstring_interp_with_plain_string_no_brace_skipped() {
+    let app = fstring_reassembled("{d['key']}tail");
+    assert!(app.contains("tail_KCONT"), "{app:?}");
+    assert!(!app.contains("key"), "{app:?}");
+}
+
+#[test]
+fn fstring_consecutive_interps_with_brace_strings() {
+    let app = fstring_reassembled("{a['}']}{b['{']}z");
+    assert!(app.contains("z_KCONT"), "{app:?}");
+    assert!(
+        !app.contains("']"),
+        "no expression fragment may leak: {app:?}"
+    );
+}
+
+#[test]
+fn fstring_no_interpolation_is_verbatim() {
+    let app = fstring_reassembled("plainbody123");
+    assert!(app.contains("plainbody123_KCONT"), "{app:?}");
+}
+
+#[test]
+fn fstring_empty_interpolation_is_dropped() {
+    let app = fstring_reassembled("a{}b");
+    assert!(app.contains("ab_KCONT"), "{app:?}");
+}
+
+#[test]
+fn fstring_var_with_underscores_is_dropped() {
+    let app = fstring_reassembled("{my_secret_var}realbody");
+    assert!(app.contains("realbody_KCONT"), "{app:?}");
+    assert!(!app.contains("my_secret_var"), "{app:?}");
+}
+
+#[test]
+fn fstring_interp_then_escaped_brace_literal() {
+    let app = fstring_reassembled("{alpha}{{lit}}");
+    assert!(app.contains("{lit}_KCONT"), "{app:?}");
+    assert!(!app.contains("alpha"), "{app:?}");
+}
+
+#[test]
+fn uppercase_f_prefix_enables_interpolation_skip() {
+    // The `F"..."` (capital) prefix must also enable interpolation handling.
+    let p = pre("tok = F\"ghp_{user}y\" \\\n    \"_KCONT\"\n");
+    let app = p.text[p.original_end..].to_string();
+    assert!(app.contains("ghp_y_KCONT"), "{app:?}");
+    assert!(!app.contains("user"), "{app:?}");
+}
+
+#[test]
+fn non_fstring_braces_are_preserved_verbatim() {
+    // A plain (non-`f`) string must keep its braces — they are not interpolation.
+    let p = pre("tok = \"a{b}c\" \\\n    \"_KCONT\"\n");
+    let app = p.text[p.original_end..].to_string();
+    assert!(
+        app.contains("a{b}c_KCONT"),
+        "non-f-string braces must survive: {app:?}"
     );
 }
