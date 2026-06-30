@@ -328,9 +328,9 @@ async fn response_body_over_one_mb_is_capped_with_exact_error() {
     assert_eq!(findings.len(), 1);
     match &findings[0].verification {
         VerificationResult::Error(msg) => {
-            assert_eq!(
-                msg, "response body exceeds 1MB limit",
-                "over-cap body must produce the exact cap error, got {msg:?}"
+            assert!(
+                msg.starts_with("response body exceeds 1MB limit"),
+                "over-cap body must produce the cap error, got {msg:?}"
             );
         }
         other => panic!("expected body-cap Error, got {other:?}"),
@@ -369,8 +369,8 @@ async fn gzip_content_encoding_does_not_bypass_the_wire_byte_cap() {
     assert_eq!(findings.len(), 1);
     match &findings[0].verification {
         VerificationResult::Error(msg) => {
-            assert_eq!(
-                msg, "response body exceeds 1MB limit",
+            assert!(
+                msg.starts_with("response body exceeds 1MB limit"),
                 "a Content-Encoding: gzip body must still hit the WIRE-byte cap \
                  (no auto-inflate); got {msg:?}"
             );
@@ -404,8 +404,8 @@ async fn response_body_just_under_cap_is_read_not_rejected() {
     // is NOT the over-cap error.
     match &findings[0].verification {
         VerificationResult::Error(msg) => {
-            assert_ne!(
-                msg, "response body exceeds 1MB limit",
+            assert!(
+                !msg.starts_with("response body exceeds 1MB limit"),
                 "a sub-1MB body must not trip the cap"
             );
         }

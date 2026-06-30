@@ -265,6 +265,9 @@ pub mod testing {
     pub use crate::verify::request::{
         CONNECTION_FAILED_ERROR, REDIRECT_LIMIT_ERROR, REQUEST_FAILED_ERROR, TIMEOUT_ERROR,
     };
+    pub use crate::verify::response::{
+        BODY_NOT_UTF8_ERROR, BODY_READ_FAILED_ERROR, RESPONSE_TOO_LARGE_ERROR,
+    };
     pub use crate::verify::tracked_join_error_preservation_for_test;
 
     pub struct TestApi;

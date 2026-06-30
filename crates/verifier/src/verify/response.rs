@@ -7,6 +7,29 @@ use crate::verify::request::{execute_request, RequestError};
 
 pub(crate) const MAX_RESPONSE_BODY_BYTES: usize = 1024 * 1024;
 
+/// The connection dropped mid-body while reading the API response. Transient.
+/// Leads with the legacy `body read failed` phrase so existing `.contains`
+/// checks keep matching (Law 3), then states the actionable fix.
+pub const BODY_READ_FAILED_ERROR: &str =
+    "body read failed: the connection dropped while reading the verification response. \
+     Fix: this is usually transient network or proxy instability — retry, or check egress \
+     to the credential's host";
+
+/// The endpoint returned more than the 1 MB the verifier reads, so the
+/// live/dead signal can't be parsed from a truncated body.
+pub const RESPONSE_TOO_LARGE_ERROR: &str =
+    "response body exceeds 1MB limit: the endpoint returned more than the 1 MB the verifier \
+     reads, so the success/failure signal cannot be parsed. \
+     Fix: this usually means the verify URL points at a web page or download rather than the \
+     JSON API — check the detector's verify URL";
+
+/// The response body was not valid UTF-8, so the success/failure text can't be read.
+pub const BODY_NOT_UTF8_ERROR: &str =
+    "body is not utf-8: the verifier needs a UTF-8 response to read the API's success/failure \
+     signal, but this body was binary. \
+     Fix: confirm the verify URL targets the JSON API endpoint, not a binary, redirect, or CDN \
+     response";
+
 pub(crate) struct HttpResponseBody {
     pub status: u16,
     pub body: String,
@@ -53,19 +76,19 @@ pub(crate) async fn read_response_body(
     let mut body = Vec::new();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|_| RequestError {
-            result: VerificationResult::Error("body read failed".into()),
+            result: VerificationResult::Error(BODY_READ_FAILED_ERROR.into()),
             transient: true,
         })?;
         if body.len() + chunk.len() > MAX_RESPONSE_BODY_BYTES {
             return Err(RequestError {
-                result: VerificationResult::Error("response body exceeds 1MB limit".into()),
+                result: VerificationResult::Error(RESPONSE_TOO_LARGE_ERROR.into()),
                 transient: false,
             });
         }
         body.extend_from_slice(&chunk);
     }
     String::from_utf8(body).map_err(|_| RequestError {
-        result: VerificationResult::Error("body is not utf-8".into()),
+        result: VerificationResult::Error(BODY_NOT_UTF8_ERROR.into()),
         transient: false,
     })
 }

@@ -13,7 +13,7 @@ pub(crate) mod aws;
 pub(crate) mod credential;
 mod multi_step;
 pub(crate) mod request;
-mod response;
+pub(crate) mod response;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
