@@ -1,5 +1,5 @@
 use keyhog_core::VerificationResult;
-use keyhog_verifier::testing::{TestApi, VerifierTestApi};
+use keyhog_verifier::testing::{TestApi, VerifierTestApi, INVALID_AWS_REGION_ERROR};
 
 const VALID_AWS_ACCESS_KEY: &str = "AKIA1234567890ABCDEF";
 const VALID_AWS_SECRET_KEY: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -145,7 +145,7 @@ fn aws_sts_region_validation_rejects_ssrf_shapes() {
             .expect_err("invalid AWS region shape must be rejected before URL construction");
         assert_eq!(
             error,
-            VerificationResult::Error("invalid AWS region".into())
+            VerificationResult::Error(INVALID_AWS_REGION_ERROR.into())
         );
     }
 }
@@ -172,7 +172,7 @@ async fn aws_sts_invalid_region_result_is_error_before_network() {
 
     assert_eq!(
         result,
-        VerificationResult::Error("invalid AWS region".into())
+        VerificationResult::Error(INVALID_AWS_REGION_ERROR.into())
     );
     assert!(
         metadata.is_empty(),

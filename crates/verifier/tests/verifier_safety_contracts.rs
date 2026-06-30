@@ -985,7 +985,7 @@ fn resolved_client_for_url_is_split_into_explicit_egress_stages() {
         direct_resolve.contains("crate::ssrf::resolve_dns_cached")
             && direct_resolve
                 .contains("screen_target_url_and_addrs(url, &addrs, allow_private_ips)?")
-            && direct_resolve.contains("blocked: DNS returned no addresses")
+            && direct_resolve.contains("DNS_NO_ADDRESSES_ERROR")
             && direct_resolve.contains("blocked: DNS resolution failed"),
         "direct resolver stage must own DNS resolution, resolved-IP screening, and fail-closed DNS errors"
     );

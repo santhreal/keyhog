@@ -10,8 +10,27 @@ use reqwest::Client;
 use crate::interpolate::{interpolate_http_value, missing_companion_refs};
 use crate::ssrf::{is_private_ip_addr, is_private_url};
 
-pub(crate) const PRIVATE_URL_ERROR: &str = "blocked: private URL";
-pub(crate) const HTTPS_ONLY_ERROR: &str = "blocked: HTTPS only";
+// ── refusal family ────────────────────────────────────────────────────────────
+// Security/policy refusals: deliberately terse and uniformly `blocked:`-prefixed.
+// They are NOT actionable in the operator sense (the credential's host is unsafe
+// to contact), so they do not carry a `Fix:` — the refusal IS the correct outcome.
+pub const PRIVATE_URL_ERROR: &str = "blocked: private URL";
+pub const HTTPS_ONLY_ERROR: &str = "blocked: HTTPS only";
+/// The host resolved to zero usable addresses; fail closed rather than proceed.
+pub const DNS_NO_ADDRESSES_ERROR: &str = "blocked: DNS returned no addresses";
+
+/// The verification target URL failed to parse. Leads with the legacy
+/// `invalid URL:` phrase (Law 3) and preserves the underlying parse error, then
+/// points at the most likely cause: the malformed URL is almost always the
+/// detector's `[detector.verify] url` (or a credential-interpolated host), not
+/// the scanned credential. This is an ACTIONABLE error (carries a `Fix:`), unlike
+/// the `blocked:` refusals above.
+pub fn invalid_url_error(parse_error: impl std::fmt::Display) -> String {
+    format!(
+        "invalid URL: {parse_error}. Fix: the verification target URL is malformed — check the \
+         detector's `[detector.verify] url` (and any credential-interpolated host) in its TOML"
+    )
+}
 
 // Operator-facing verification reasons for transport failures. Every message
 // leads with the legacy short phrase (`timeout`, `connection failed`,
@@ -105,7 +124,7 @@ pub(crate) fn ssrf_check_url_with_resolved_addrs_for_test(
 ) -> std::result::Result<(), VerificationResult> {
     let url = match reqwest::Url::parse(raw_url) {
         Ok(url) => url,
-        Err(e) => return Err(VerificationResult::Error(format!("invalid URL: {}", e))),
+        Err(e) => return Err(VerificationResult::Error(invalid_url_error(e))),
     };
     screen_target_url_and_addrs(&url, addrs, allow_private_ips)
 }
@@ -152,8 +171,7 @@ pub(crate) async fn resolved_client_for_url(
 }
 
 fn parse_target_url(raw_url: &str) -> std::result::Result<reqwest::Url, VerificationResult> {
-    reqwest::Url::parse(raw_url)
-        .map_err(|e| VerificationResult::Error(format!("invalid URL: {}", e)))
+    reqwest::Url::parse(raw_url).map_err(|e| VerificationResult::Error(invalid_url_error(e)))
 }
 
 fn enforce_target_url_policy(
@@ -200,9 +218,9 @@ async fn resolve_direct_target_addrs(
     let port = url.port_or_known_default().unwrap_or(443); // LAW10: no explicit port => scheme default (443); recall-irrelevant
     let target = format!("{host}:{port}");
     match crate::ssrf::resolve_dns_cached(target.as_str()).await {
-        Ok(addrs) if addrs.is_empty() => Err(VerificationResult::Error(
-            "blocked: DNS returned no addresses".into(),
-        )),
+        Ok(addrs) if addrs.is_empty() => {
+            Err(VerificationResult::Error(DNS_NO_ADDRESSES_ERROR.into()))
+        }
         Ok(addrs) => {
             screen_target_url_and_addrs(url, &addrs, allow_private_ips)?;
             Ok(addrs)

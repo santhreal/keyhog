@@ -263,7 +263,8 @@ pub mod testing {
     pub use crate::verify::aws::INVALID_AWS_REGION_ERROR;
     pub use crate::verify::credential::MAX_RETRIES_ERROR;
     pub use crate::verify::request::{
-        CONNECTION_FAILED_ERROR, REDIRECT_LIMIT_ERROR, REQUEST_FAILED_ERROR, TIMEOUT_ERROR,
+        invalid_url_error, CONNECTION_FAILED_ERROR, DNS_NO_ADDRESSES_ERROR, HTTPS_ONLY_ERROR,
+        PRIVATE_URL_ERROR, REDIRECT_LIMIT_ERROR, REQUEST_FAILED_ERROR, TIMEOUT_ERROR,
     };
     pub use crate::verify::response::{
         BODY_NOT_UTF8_ERROR, BODY_READ_FAILED_ERROR, RESPONSE_TOO_LARGE_ERROR,
