@@ -75,6 +75,12 @@ pub(crate) const KNOWN_PREFIXES: &[&str] = &[
     // PEM-framed private key blocks captured by the `private-key`
     // detector start with `-----BEGIN` (e.g. `-----BEGIN RSA-PRIVATE-KEY-----`).
     "-----BEGIN",
+    // PuTTY `.ppk` private-key files captured by the `putty-private-key`
+    // detector start with `PuTTY-User-Key-File-<version>:`. Same class as the
+    // PEM `-----BEGIN` floor: the distinctive header marker is the
+    // high-confidence signal, so the captured key file is floored to 0.8 rather
+    // than scored on the low-entropy header lines that precede the base64 body.
+    "PuTTY-User-Key-File-",
     // Test-fixture marker used by the bundled suppression list.
     "TESTKEY_",
 ];

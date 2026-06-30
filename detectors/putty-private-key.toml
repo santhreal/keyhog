@@ -1,0 +1,65 @@
+# Docs: https://the.earth.li/~sgtatham/putty/0.81/htmldoc/AppendixC.html
+# Format: PuTTY private-key file (.ppk), the native key format of PuTTY /
+# pageant / plink. Plain text, NOT PEM. Example (v2, unencrypted):
+#   PuTTY-User-Key-File-2: ssh-rsa
+#   Encryption: none
+#   Comment: rsa-key-20240101
+#   Public-Lines: 6
+#   <base64 public blob>
+#   Private-Lines: 14
+#   <base64 PRIVATE blob>          <- the secret material
+#   Private-MAC: <hex>
+# v3 (`PuTTY-User-Key-File-3`) adds Argon2 KDF header lines when encrypted
+# (Key-Derivation / Argon2-Memory / Argon2-Salt / …) but the secret-bearing
+# Private-Lines + trailing Private-MAC structure is identical.
+# Verify: no API endpoint (private keys are not call-time verifiable).
+# Prefix: PuTTY-User-Key-File-
+
+# The id is `putty-private-key`, NOT `generic-`: the `generic-` prefix would
+# route findings through the probabilistic entropy floor, which can reject the
+# low-entropy header lines that precede the base64 body. The `PuTTY-User-Key-File-`
+# marker IS the high-confidence signal for this class (mirrored by the
+# `PuTTY-User-Key-File-` entry in `scanner::confidence::KNOWN_PREFIXES`, exactly
+# like the PEM `-----BEGIN` floor), so the structural pattern carries the
+# finding without the generic gate. PEM `.pem`/OpenSSH keys are owned by
+# `private-key` / `ssh-private-key`; a `.ppk` carries no `-----BEGIN` marker, so
+# those detectors never fire on it and there is no double-report.
+
+[detector]
+id = "putty-private-key"
+name = "PuTTY Private Key (.ppk)"
+service = "ssh"
+severity = "critical"
+keywords = ["PuTTY-User-Key-File"]
+
+# Anchor on the distinctive `PuTTY-User-Key-File-<version>:` header and close
+# on the trailing `Private-MAC:` hex line so the capture spans the whole key
+# file (header → public blob → PRIVATE blob → MAC). The interior
+# `Private-Lines: <n>` requirement rejects a bare header reference (e.g. a doc
+# mention of the format) that carries no key material. `[\s\S]*?` is lazy +
+# unbounded — like `private-key.toml`, this keeps the match bounded to ONE key
+# file (a file with two adjacent .ppk blocks yields two matches, not one giant
+# span) and stays linear-time in the `regex`/Hyperscan engines (no nested
+# unbounded repetition → no catastrophic backtracking). `Private-MAC` is hex:
+# v2 uses a 40-char SHA-1 HMAC, v3 a 64-char HMAC-SHA-256; `{16,}` covers both
+# with headroom while still demanding a real MAC value.
+[[detector.patterns]]
+regex = 'PuTTY-User-Key-File-[0-9]+:[\s\S]*?Private-Lines:[ \t]*[0-9]+[\s\S]*?Private-MAC:[ \t]*[0-9a-fA-F]{16,}'
+description = "Full PuTTY .ppk private-key file (header…Private-MAC)"
+
+# Author-shipped self-test (Tier-B): a minimal unencrypted v2 .ppk MUST fire;
+# a bare format mention (keyword present, no Private-Lines/Private-MAC body)
+# MUST NOT — proving the detector keys on the key-file STRUCTURE, not merely
+# the header literal.
+[[detector.tests]]
+test_positive = """
+PuTTY-User-Key-File-2: ssh-ed25519
+Encryption: none
+Comment: deploy-key-prod
+Public-Lines: 2
+AAAAC3NzaC1lZDI1NTE5AAAAIGZ3aWxsbm90bWF0Y2hhbnl0aGluZ3JlYWxhdA
+Private-Lines: 1
+AAAAIH9qY2tkc2tkanNrZGpza2Rqc2tkanNrZGpza2Rqc2tkanNrZGo5dz0K
+Private-MAC: 6f3b2a1c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1
+"""
+test_negative = "See the PuTTY-User-Key-File-2 format documented in AppendixC for header layout."
