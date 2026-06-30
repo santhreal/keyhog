@@ -1,9 +1,28 @@
 //! CLI value parsers for typed command-line options.
 
+/// Build a uniform "unparseable typed value" rejection. clap already prefixes
+/// the offending input and the flag name (`invalid value '<got>' for
+/// '<--flag>'`), so this states only what was *expected*: the accepted
+/// range/form plus a concrete valid example. That turns a bare "not a valid
+/// number" — which leaves the user guessing the bounds — into a message that is
+/// itself the fix. Centralizing the wording keeps every numeric parser's
+/// parse-failure branch consistent instead of drifting across a dozen
+/// hand-written strings.
+fn unparseable(kind: &str, accepted: &str, example: &str) -> String {
+    format!("not a valid {kind}. Expected {accepted}; example: {example}")
+}
+
+/// Build a uniform "parsed, but out of range" rejection: it names the violated
+/// bound and a concrete in-range example so the message states the fix, not
+/// just the constraint. Used by the lower-bound (`>= 1`) parsers.
+fn out_of_range(constraint: &str, example: &str) -> String {
+    format!("{constraint}; example: {example}")
+}
+
 pub(crate) fn parse_min_confidence(s: &str) -> Result<f64, String> {
     let val: f64 = s
         .parse()
-        .map_err(|_| format!("'{}' is not a valid floating point number", s))?;
+        .map_err(|_| unparseable("decimal", "a value in [0.0, 1.0]", "0.85"))?;
     if (0.0..=1.0).contains(&val) {
         Ok(val)
     } else {
@@ -21,7 +40,7 @@ pub(crate) fn parse_min_confidence(s: &str) -> Result<f64, String> {
 pub(crate) fn parse_verify_rate(s: &str) -> Result<f64, String> {
     let val: f64 = s
         .parse()
-        .map_err(|_| format!("'{s}' is not a valid floating point number"))?;
+        .map_err(|_| unparseable("number", "a positive rate in (0, 10000] rps", "50"))?;
     if !val.is_finite() {
         return Err(format!("--verify-rate must be a finite number, got {val}"));
     }
@@ -45,7 +64,7 @@ pub(crate) fn parse_verify_rate(s: &str) -> Result<f64, String> {
 pub(crate) fn parse_ml_threshold(s: &str) -> Result<f64, String> {
     let val: f64 = s
         .parse()
-        .map_err(|_| format!("'{s}' is not a valid floating point number"))?;
+        .map_err(|_| unparseable("decimal", "a value in [0.0, 1.0]", "0.5"))?;
     if !val.is_finite() {
         return Err(format!(
             "--ml-threshold must be a finite number (no NaN/Inf), got {val}"
@@ -60,10 +79,10 @@ pub(crate) fn parse_ml_threshold(s: &str) -> Result<f64, String> {
 }
 
 pub(crate) fn parse_decode_depth(s: &str) -> Result<usize, String> {
+    let limit = keyhog_core::max_decode_depth_limit();
     let val: usize = s
         .parse()
-        .map_err(|_| format!("'{}' is not a valid positive integer", s))?;
-    let limit = keyhog_core::max_decode_depth_limit();
+        .map_err(|_| unparseable("integer", &format!("an integer in [1, {limit}]"), "3"))?;
     if (1..=limit).contains(&val) {
         Ok(val)
     } else {
@@ -76,9 +95,9 @@ pub(crate) fn parse_decode_depth(s: &str) -> Result<usize, String> {
 pub(crate) fn parse_min_secret_len(s: &str) -> Result<usize, String> {
     let val: usize = s
         .parse()
-        .map_err(|_| format!("'{s}' is not a valid positive integer"))?;
+        .map_err(|_| unparseable("integer", "a positive integer (>= 1)", "16"))?;
     if val == 0 {
-        Err("--min-secret-len must be greater than zero".to_string())
+        Err(out_of_range("--min-secret-len must be >= 1", "16"))
     } else {
         Ok(val)
     }
@@ -87,9 +106,9 @@ pub(crate) fn parse_min_secret_len(s: &str) -> Result<usize, String> {
 pub(crate) fn parse_positive_thread_count(s: &str) -> Result<usize, String> {
     let val: usize = s
         .parse()
-        .map_err(|_| format!("'{s}' is not a valid positive integer"))?;
+        .map_err(|_| unparseable("integer", "a positive integer (>= 1)", "4"))?;
     if val == 0 {
-        Err("--threads must be greater than zero".to_string())
+        Err(out_of_range("--threads must be >= 1", "4"))
     } else {
         Ok(val)
     }
@@ -99,9 +118,9 @@ pub(crate) fn parse_positive_thread_count(s: &str) -> Result<usize, String> {
 pub(crate) fn parse_positive_limit_count(s: &str) -> Result<usize, String> {
     let val: usize = s
         .parse()
-        .map_err(|_| format!("'{s}' is not a valid positive integer"))?;
+        .map_err(|_| unparseable("integer", "a positive integer (>= 1)", "100"))?;
     if val == 0 {
-        Err("limit count must be greater than zero".to_string())
+        Err(out_of_range("limit count must be >= 1", "100"))
     } else {
         Ok(val)
     }
@@ -110,9 +129,9 @@ pub(crate) fn parse_positive_limit_count(s: &str) -> Result<usize, String> {
 pub(crate) fn parse_positive_usize(s: &str) -> Result<usize, String> {
     let val: usize = s
         .parse()
-        .map_err(|_| format!("'{s}' is not a valid positive integer"))?;
+        .map_err(|_| unparseable("integer", "a positive integer (>= 1)", "1"))?;
     if val == 0 {
-        Err("value must be greater than zero".to_string())
+        Err(out_of_range("value must be >= 1", "1"))
     } else {
         Ok(val)
     }
@@ -121,9 +140,9 @@ pub(crate) fn parse_positive_usize(s: &str) -> Result<usize, String> {
 pub(crate) fn parse_daemon_request_timeout_secs(s: &str) -> Result<u64, String> {
     let val: u64 = s
         .parse()
-        .map_err(|_| format!("'{s}' is not a valid positive integer"))?;
+        .map_err(|_| unparseable("integer", "a positive number of seconds (>= 1)", "30"))?;
     if val == 0 {
-        Err("--request-timeout-secs must be greater than zero".to_string())
+        Err(out_of_range("--request-timeout-secs must be >= 1", "30"))
     } else {
         Ok(val)
     }
@@ -132,9 +151,9 @@ pub(crate) fn parse_daemon_request_timeout_secs(s: &str) -> Result<u64, String> 
 pub(crate) fn parse_positive_millis(s: &str) -> Result<u64, String> {
     let val: u64 = s
         .parse()
-        .map_err(|_| format!("'{s}' is not a valid positive integer"))?;
+        .map_err(|_| unparseable("integer", "a positive number of milliseconds (>= 1)", "500"))?;
     if val == 0 {
-        Err("millisecond timeout must be greater than zero".to_string())
+        Err(out_of_range("millisecond timeout must be >= 1", "500"))
     } else {
         Ok(val)
     }

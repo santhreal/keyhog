@@ -27,13 +27,22 @@ pub(crate) fn validate_cli_path_arg(path: &Path, name: &str) -> Result<()> {
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             anyhow::bail!(
-                "{name} '{}' does not exist. Check the spelling and re-run.",
+                "{name} '{}' does not exist. Check the spelling, confirm it is relative to the \
+                 current directory (`pwd`), or scan its parent directory instead.",
+                path.display()
+            );
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            anyhow::bail!(
+                "cannot access {name} '{}': permission denied. Grant traverse/read permission on \
+                 it and its parent directories (`chmod +rx`), or run keyhog as a user that can.",
                 path.display()
             );
         }
         Err(error) => {
             anyhow::bail!(
-                "cannot stat {name} '{}': {error}. Likely a permissions or filesystem issue.",
+                "cannot stat {name} '{}': {error}. Re-check the path and that the filesystem is \
+                 mounted and healthy; if it lives on a network mount, confirm the mount is up.",
                 path.display()
             );
         }

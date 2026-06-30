@@ -107,6 +107,8 @@ pub trait CliTestApi {
     fn parse_min_secret_len(&self, s: &str) -> std::result::Result<usize, String>;
     fn parse_positive_thread_count(&self, s: &str) -> std::result::Result<usize, String>;
     fn parse_positive_usize(&self, s: &str) -> std::result::Result<usize, String>;
+    fn parse_positive_millis(&self, s: &str) -> std::result::Result<u64, String>;
+    fn parse_daemon_request_timeout_secs(&self, s: &str) -> std::result::Result<u64, String>;
     fn parse_byte_size(&self, s: &str) -> std::result::Result<usize, String>;
     fn parse_detectors_verb(&self, s: &str) -> std::result::Result<String, String>;
     fn parse_severity_filter(&self, s: &str) -> Option<crate::args::SeverityFilter>;
@@ -467,6 +469,12 @@ impl CliTestApi for TestApi {
     }
     fn parse_positive_usize(&self, s: &str) -> std::result::Result<usize, String> {
         crate::value_parsers::parse_positive_usize(s)
+    }
+    fn parse_positive_millis(&self, s: &str) -> std::result::Result<u64, String> {
+        crate::value_parsers::parse_positive_millis(s)
+    }
+    fn parse_daemon_request_timeout_secs(&self, s: &str) -> std::result::Result<u64, String> {
+        crate::value_parsers::parse_daemon_request_timeout_secs(s)
     }
     fn parse_byte_size(&self, s: &str) -> std::result::Result<usize, String> {
         crate::value_parsers::parse_byte_size(s)
