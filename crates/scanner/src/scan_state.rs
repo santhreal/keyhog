@@ -451,23 +451,37 @@ impl ScanState {
     /// caller only wants one of them in the result set.
     pub(crate) fn into_matches(self) -> Vec<keyhog_core::RawMatch> {
         let mut matches: Vec<_> = self.matches.into_iter().collect();
-        // Sort by RawMatch's best-first order for final output.
-        matches.sort();
-        // Dedup identical findings (same detector + credential + offset).
-        // 0 or 1 match cannot contain a duplicate, so skip all dedup work -
-        // no HashSet alloc, no refcount traffic - on the overwhelmingly
+        // 0 or 1 match cannot contain a duplicate and is already in canonical
+        // order, so skip all sorting and dedup work entirely - no scratch
+        // buffer, no HashSet alloc, no refcount traffic - on the overwhelmingly
         // common small-chunk case.
         if matches.len() <= 1 {
             return matches;
         }
-        // Stable, allocation-free identity grouping. The Vec is already sorted
-        // best-first above; stable `sort_by` grouping on the borrowed identity
-        // fields preserves that best-first order within each duplicate run, so
-        // `dedup_by` keeps the highest-confidence entry. A final `sort()`
-        // restores canonical output order.
-        matches.sort_by(raw_match_identity_cmp);
+        // Group identical findings (same detector + credential + offset)
+        // adjacently with the BEST finding first within each group, in a single
+        // pass: `raw_match_identity_cmp` is the primary key and `RawMatch`'s
+        // best-first `Ord` is the tiebreak. `dedup_by` then keeps the first of
+        // each run - i.e. the highest-confidence entry per identity.
+        //
+        // `sort_unstable_by` is correct AND allocation-free here: the previous
+        // code paid for a separate leading stable `sort()` purely to seed a
+        // stable identity grouping (three sorts total, each allocating an ~n/2
+        // merge buffer). Folding best-first into the comparator's tiebreak makes
+        // the grouping order self-sufficient, so stability is no longer needed -
+        // the only elements an unstable sort may reorder are those Equal under
+        // the *total* comparator, which are identical findings and thus
+        // dedup-interchangeable.
+        matches.sort_unstable_by(|a, b| raw_match_identity_cmp(a, b).then_with(|| a.cmp(b)));
         matches.dedup_by(|a, b| same_raw_match_identity(a, b));
-        matches.sort();
+        // Restore canonical best-first output order across the now-unique
+        // findings. After dedup every element has a distinct identity, and
+        // `RawMatch::Ord` is total with respect to that identity (Ord-Equal
+        // implies same detector+credential+offset), so no two survivors compare
+        // Equal - the sorted order is uniquely determined and an unstable sort
+        // yields byte-identical output to a stable one, without the scratch
+        // allocation.
+        matches.sort_unstable();
         matches
     }
 }
