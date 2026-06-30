@@ -205,6 +205,16 @@ jobs:
         run: cargo test -p keyhog-scanner --test adversarial_suite --no-default-features --features ci-lean --profile release-fast
       - name: sources all_tests
         run: cargo test -p keyhog-sources --test all_tests --profile release-fast
+      # The `binary` source backend (ELF/PE/Mach-O section reader + Ghidra
+      # decompiler literal extraction) is NOT in `default` features, and no other
+      # job builds it (feature-matrix only `cargo check`s `--features full`, which
+      # excludes Ghidra). Without this step the binary backend's unit/regression
+      # tests — including the byte-exact C-string unescaper that secret recall on
+      # compiled binaries depends on — never execute in CI. Re-running the
+      # aggregator with `binary` enabled guards that decoder. No Ghidra binary is
+      # required: the covered tests are pure byte parsing + source inspection.
+      - name: sources all_tests (binary backend)
+        run: cargo test -p keyhog-sources --test all_tests --features binary --profile release-fast
       - name: verifier all_tests
         run: cargo test -p keyhog-verifier --test all_tests --profile release-fast
       - name: cli all_tests
