@@ -10,7 +10,6 @@ use crate::magic::{
 };
 use keyhog_core::{Chunk, SourceError};
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
 
@@ -28,7 +27,7 @@ pub(super) struct CentralZipEntry {
 pub(super) fn duplicate_central_zip_entries(
     path: &Path,
 ) -> Result<Option<Vec<CentralZipEntry>>, String> {
-    let mut file = File::open(path).map_err(|error| error.to_string())?;
+    let mut file = crate::filesystem::open_file_safe(path).map_err(|error| error.to_string())?;
     duplicate_central_zip_entries_from_reader(&mut file)
 }
 
@@ -52,7 +51,7 @@ pub(super) fn extract_zip_archive_from_central_entries(
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
     entries: Vec<CentralZipEntry>,
 ) {
-    let mut file = match File::open(path) {
+    let mut file = match crate::filesystem::open_file_safe(path) {
         Ok(file) => file,
         Err(error) => {
             tracing::warn!(
@@ -643,7 +642,7 @@ fn read_u32(bytes: &[u8]) -> Result<u32, String> {
 }
 
 pub(crate) fn read_central_zip_entries_error_for_test(path: &Path) -> Result<String, String> {
-    let mut file = File::open(path).map_err(|error| error.to_string())?;
+    let mut file = crate::filesystem::open_file_safe(path).map_err(|error| error.to_string())?;
     match read_central_zip_entries(&mut file) {
         Ok(_entries) => Err("zip central directory parsed without an error".to_string()),
         Err(error) => Ok(error),
@@ -654,7 +653,7 @@ pub(crate) fn read_local_zip_entry_data_error_for_test(
     path: &Path,
     compressed_size: u64,
 ) -> Result<String, String> {
-    let mut file = File::open(path).map_err(|error| error.to_string())?;
+    let mut file = crate::filesystem::open_file_safe(path).map_err(|error| error.to_string())?;
     let entry = CentralZipEntry {
         name: "entry".to_string(),
         compression_method: 0,

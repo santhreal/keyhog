@@ -5,7 +5,6 @@ use super::{
 };
 use crate::filesystem::filter;
 use keyhog_core::{Chunk, SourceError};
-use std::fs::File;
 use std::io::{Cursor, Read, Seek};
 use std::path::Path;
 
@@ -74,7 +73,7 @@ pub(super) fn extract_zip_archive(
         }
     }
 
-    let file = match File::open(path) {
+    let file = match crate::filesystem::open_file_safe(path) {
         Ok(file) => file,
         Err(error) => {
             tracing::warn!(
@@ -415,4 +414,277 @@ fn zip_entry_is_special(entry: &zip::read::ZipFile<'_>) -> bool {
 fn zip_external_attrs_are_special(external_attrs: u32) -> bool {
     let mode = external_attrs >> 16;
     mode != 0 && archive_unix_mode_is_special(mode)
+}
+
+/// Open-safety for the ZIP archive path.
+///
+/// Every other archive type (7z, rar, gz/xz, pdf) reads through `open_file_safe`
+/// or refuses a symlink path explicitly; ZIP was the lone holdout using raw
+/// `File::open`, so a symlinked `.zip` was FOLLOWED (a possible escape out of the
+/// scan root) and a FIFO swapped in at a `.zip` path would HANG the scan forever.
+/// All three ZIP open sites now route through `open_file_safe`, which applies
+/// `O_NOFOLLOW` + `O_NONBLOCK` + an `is_file()` guard. These tests drive each open
+/// site directly (codewalk's `is_file()` filter hides them from a normal walk, so
+/// the live exposure is the regular->special TOCTOU swap and explicit calls) and
+/// assert refusal WITHOUT hanging. Unix-only because they fabricate FIFOs /
+/// symlinks / devices; the `is_file()` guard they exercise is cross-platform.
+#[cfg(all(test, unix))]
+mod open_safety {
+    use super::{duplicates, extract_zip_archive};
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::{Path, PathBuf};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// Run `f` on a worker thread and REQUIRE completion within 10s — a raw
+    /// `open(O_RDONLY)` of a writer-less FIFO blocks forever, so this is the
+    /// no-hang regression guard for every routed open site.
+    fn within_timeout<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        rx.recv_timeout(Duration::from_secs(10))
+            .expect("zip open must NOT block on a special file (missing O_NONBLOCK?)")
+    }
+
+    fn make_fifo(dir: &Path, name: &str) -> PathBuf {
+        let path = dir.join(name);
+        let c = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        // SAFETY: mkfifo(2) with owner-only mode on a fresh temp path.
+        let rc = unsafe { libc::mkfifo(c.as_ptr(), 0o600) };
+        assert_eq!(rc, 0, "mkfifo failed: {}", std::io::Error::last_os_error());
+        path
+    }
+
+    fn symlink_to(dir: &Path, link: &str, target: &Path) -> PathBuf {
+        let path = dir.join(link);
+        std::os::unix::fs::symlink(target, &path).unwrap();
+        path
+    }
+
+    /// `duplicate_central_zip_entries` (open site #1) — returns Ok(has_dups)/Err.
+    fn dup_central(path: PathBuf) -> Result<bool, String> {
+        within_timeout(move || duplicates::duplicate_central_zip_entries(&path).map(|o| o.is_some()))
+    }
+
+    /// `extract_zip_archive_from_central_entries` (open site #2) — (chunks, errors).
+    fn from_central(path: PathBuf) -> (usize, Vec<String>) {
+        within_timeout(move || {
+            let mut chunks = 0usize;
+            let mut errors = Vec::new();
+            duplicates::extract_zip_archive_from_central_entries(
+                &path,
+                "archive.zip",
+                u64::MAX,
+                u64::MAX,
+                true,
+                &mut |row| {
+                    match row {
+                        Ok(_) => chunks += 1,
+                        Err(error) => errors.push(error.to_string()),
+                    }
+                    true
+                },
+                Vec::new(),
+            );
+            (chunks, errors)
+        })
+    }
+
+    /// `extract_zip_archive` (the entry that chains all three opens) — (chunks, errors).
+    fn extract(path: PathBuf) -> (usize, Vec<String>) {
+        within_timeout(move || {
+            let mut chunks = 0usize;
+            let mut errors = Vec::new();
+            extract_zip_archive(
+                &path,
+                "archive.zip",
+                u64::MAX,
+                u64::MAX,
+                true,
+                &mut |row| {
+                    match row {
+                        Ok(_) => chunks += 1,
+                        Err(error) => errors.push(error.to_string()),
+                    }
+                    true
+                },
+            );
+            (chunks, errors)
+        })
+    }
+
+    // ── open site #1: duplicate_central_zip_entries ─────────────────────
+
+    #[test]
+    fn dup_central_refuses_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("real.bin");
+        std::fs::write(&target, b"not a zip").unwrap();
+        let link = symlink_to(dir.path(), "a.zip", &target);
+        assert!(dup_central(link).is_err(), "a symlinked zip must not be followed");
+    }
+
+    #[test]
+    fn dup_central_refuses_fifo_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "a.zip");
+        assert!(dup_central(fifo).is_err(), "a FIFO at a zip path must be refused");
+    }
+
+    #[test]
+    fn dup_central_refuses_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(dup_central(dir.path().to_path_buf()).is_err());
+    }
+
+    #[test]
+    fn dup_central_refuses_dev_null() {
+        assert!(dup_central(PathBuf::from("/dev/null")).is_err());
+    }
+
+    #[test]
+    fn dup_central_refuses_symlink_to_fifo_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "pipe");
+        let link = symlink_to(dir.path(), "a.zip", &fifo);
+        assert!(dup_central(link).is_err());
+    }
+
+    #[test]
+    fn dup_central_regular_non_zip_errs_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("junk.zip");
+        std::fs::write(&path, b"this is not a zip central directory").unwrap();
+        // Opens fine (regular file), then the central-directory parse fails — a
+        // graceful error, never a hang.
+        assert!(dup_central(path).is_err());
+    }
+
+    #[test]
+    fn dup_central_nonexistent_path_errs() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(dup_central(dir.path().join("missing.zip")).is_err());
+    }
+
+    // ── open site #2: extract_zip_archive_from_central_entries ───────────
+
+    #[test]
+    fn from_central_refuses_symlink_with_loud_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("real.bin");
+        std::fs::write(&target, b"not a zip").unwrap();
+        let link = symlink_to(dir.path(), "a.zip", &target);
+        let (chunks, errors) = from_central(link);
+        assert_eq!(chunks, 0, "a symlinked zip must yield no chunks");
+        assert!(!errors.is_empty(), "the refusal must be surfaced loudly (Law 10)");
+    }
+
+    #[test]
+    fn from_central_refuses_fifo_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "a.zip");
+        let (chunks, _errors) = from_central(fifo);
+        assert_eq!(chunks, 0, "a FIFO must yield no chunks");
+    }
+
+    #[test]
+    fn from_central_refuses_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let (chunks, _errors) = from_central(dir.path().to_path_buf());
+        assert_eq!(chunks, 0);
+    }
+
+    #[test]
+    fn from_central_refuses_dev_null() {
+        let (chunks, _errors) = from_central(PathBuf::from("/dev/null"));
+        assert_eq!(chunks, 0);
+    }
+
+    // ── entry point: extract_zip_archive (chains all three opens) ────────
+
+    #[test]
+    fn extract_refuses_symlink_no_chunks() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("real.bin");
+        std::fs::write(&target, b"not a zip").unwrap();
+        let link = symlink_to(dir.path(), "a.zip", &target);
+        let (chunks, _errors) = extract(link);
+        assert_eq!(chunks, 0, "a symlinked zip must not be followed into chunks");
+    }
+
+    #[test]
+    fn extract_symlink_emits_loud_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("real.bin");
+        std::fs::write(&target, b"not a zip").unwrap();
+        let link = symlink_to(dir.path(), "a.zip", &target);
+        let (_chunks, errors) = extract(link);
+        assert!(!errors.is_empty(), "refusing a symlinked zip must be loud, never silent");
+    }
+
+    #[test]
+    fn extract_refuses_fifo_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "a.zip");
+        let (chunks, _errors) = extract(fifo);
+        assert_eq!(chunks, 0, "a FIFO at a zip path must yield no chunks and not hang");
+    }
+
+    #[test]
+    fn extract_fifo_emits_loud_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "a.zip");
+        let (_chunks, errors) = extract(fifo);
+        assert!(!errors.is_empty(), "refusing a FIFO zip must be surfaced loudly");
+    }
+
+    #[test]
+    fn extract_refuses_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let (chunks, _errors) = extract(dir.path().to_path_buf());
+        assert_eq!(chunks, 0);
+    }
+
+    #[test]
+    fn extract_refuses_dev_null() {
+        let (chunks, _errors) = extract(PathBuf::from("/dev/null"));
+        assert_eq!(chunks, 0);
+    }
+
+    #[test]
+    fn extract_refuses_symlink_to_fifo_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "pipe");
+        let link = symlink_to(dir.path(), "a.zip", &fifo);
+        let (chunks, _errors) = extract(link);
+        assert_eq!(chunks, 0);
+    }
+
+    #[test]
+    fn extract_regular_non_zip_no_chunks_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("junk.zip");
+        std::fs::write(&path, b"definitely not a zip").unwrap();
+        let (chunks, _errors) = extract(path);
+        assert_eq!(chunks, 0, "a non-zip regular file yields no chunks and must not hang");
+    }
+
+    #[test]
+    fn extract_nonexistent_path_emits_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let (chunks, errors) = extract(dir.path().join("missing.zip"));
+        assert_eq!(chunks, 0);
+        assert!(!errors.is_empty(), "a missing archive must surface an error");
+    }
+
+    #[test]
+    fn from_central_regular_non_zip_no_chunks_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("junk.zip");
+        std::fs::write(&path, b"definitely not a zip").unwrap();
+        let (chunks, _errors) = from_central(path);
+        assert_eq!(chunks, 0);
+    }
 }
