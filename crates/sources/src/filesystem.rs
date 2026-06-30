@@ -14,6 +14,8 @@ mod filter;
 mod path;
 mod read;
 mod reader;
+#[cfg(all(test, unix))]
+pub(crate) mod special_file_test_support;
 
 pub(crate) use extract::extraction_total_budget;
 use filter::walker_config;

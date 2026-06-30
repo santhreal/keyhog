@@ -431,37 +431,8 @@ fn zip_external_attrs_are_special(external_attrs: u32) -> bool {
 #[cfg(all(test, unix))]
 mod open_safety {
     use super::{duplicates, extract_zip_archive};
-    use std::os::unix::ffi::OsStrExt;
-    use std::path::{Path, PathBuf};
-    use std::sync::mpsc;
-    use std::time::Duration;
-
-    /// Run `f` on a worker thread and REQUIRE completion within 10s — a raw
-    /// `open(O_RDONLY)` of a writer-less FIFO blocks forever, so this is the
-    /// no-hang regression guard for every routed open site.
-    fn within_timeout<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
-        let (tx, rx) = mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = tx.send(f());
-        });
-        rx.recv_timeout(Duration::from_secs(10))
-            .expect("zip open must NOT block on a special file (missing O_NONBLOCK?)")
-    }
-
-    fn make_fifo(dir: &Path, name: &str) -> PathBuf {
-        let path = dir.join(name);
-        let c = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
-        // SAFETY: mkfifo(2) with owner-only mode on a fresh temp path.
-        let rc = unsafe { libc::mkfifo(c.as_ptr(), 0o600) };
-        assert_eq!(rc, 0, "mkfifo failed: {}", std::io::Error::last_os_error());
-        path
-    }
-
-    fn symlink_to(dir: &Path, link: &str, target: &Path) -> PathBuf {
-        let path = dir.join(link);
-        std::os::unix::fs::symlink(target, &path).unwrap();
-        path
-    }
+    use crate::filesystem::special_file_test_support::{make_fifo, symlink_to, within_timeout};
+    use std::path::PathBuf;
 
     /// `duplicate_central_zip_entries` (open site #1) — returns Ok(has_dups)/Err.
     fn dup_central(path: PathBuf) -> Result<bool, String> {

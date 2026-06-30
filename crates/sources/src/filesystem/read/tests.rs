@@ -692,38 +692,12 @@ mod special_files {
     use crate::filesystem::read::raw::{
         open_file_safe, read_file_mmap, read_file_prefix_safe, read_file_safe,
     };
+    use crate::filesystem::special_file_test_support::{
+        make_fifo, within_timeout, write_regular as regular,
+    };
     use std::io::Read;
     use std::os::unix::ffi::OsStrExt;
-    use std::path::{Path, PathBuf};
-    use std::sync::mpsc;
-    use std::time::Duration;
-
-    /// Run `f` on a worker thread and REQUIRE it to finish within 10s. A bare
-    /// blocking `open(O_RDONLY)` of a writer-less FIFO never returns, so this is
-    /// the regression guard proving `open_file_safe` returns instead of hanging.
-    fn within_timeout<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
-        let (tx, rx) = mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = tx.send(f());
-        });
-        rx.recv_timeout(Duration::from_secs(10))
-            .expect("open must NOT block on a special file (missing O_NONBLOCK?)")
-    }
-
-    fn make_fifo(dir: &Path, name: &str) -> PathBuf {
-        let path = dir.join(name);
-        let c = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
-        // SAFETY: standard mkfifo(2) with an owner-only mode on a fresh temp path.
-        let rc = unsafe { libc::mkfifo(c.as_ptr(), 0o600) };
-        assert_eq!(rc, 0, "mkfifo failed: {}", std::io::Error::last_os_error());
-        path
-    }
-
-    fn regular(dir: &Path, name: &str, bytes: &[u8]) -> PathBuf {
-        let path = dir.join(name);
-        std::fs::write(&path, bytes).unwrap();
-        path
-    }
+    use std::path::Path;
 
     // ── FIFO: refused, and never blocks ─────────────────────────────────
 
@@ -927,5 +901,201 @@ mod special_files {
         let path = regular(dir.path(), "empty.txt", b"");
         let bytes = read_file_safe(&path, 0).unwrap();
         assert!(bytes.is_empty());
+    }
+}
+
+/// Special-file safety for the read entry points ABOVE the `open_file_safe`
+/// primitive — the buffered read, the compressed-input read (the path 7z / rar /
+/// gz / xz / pdf extraction funnels through), the windowed-mmap read (the scan
+/// path for large files), and the capped read. Each routes through
+/// `open_file_safe`, so each must refuse a FIFO / symlink / device / directory
+/// without hanging; these tests lock that contract for every entry point, not
+/// just the primitive. Shared FIFO/symlink fixtures + the no-hang watchdog come
+/// from `special_file_test_support` (no-duplication).
+#[cfg(unix)]
+mod higher_read_path_special_files {
+    use crate::filesystem::read::raw::read_file_buffered;
+    use crate::filesystem::read::{
+        read_file_for_compressed_input_for_test as compressed_input,
+        read_file_mmap_for_test as mmap_text, read_file_safe_capped_for_test as safe_capped,
+        read_file_windowed_mmap_len_for_test as windowed_len,
+    };
+    use crate::filesystem::special_file_test_support::{
+        make_fifo, symlink_to, within_timeout, write_regular,
+    };
+    use std::path::Path;
+
+    const CAP: u64 = 1 << 20;
+
+    // ── read_file_buffered ──────────────────────────────────────────────
+
+    #[test]
+    fn buffered_refuses_fifo_returns_none_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "pipe");
+        let result = within_timeout(move || read_file_buffered(&fifo, 0));
+        assert!(result.is_none(), "buffered read must skip a FIFO");
+    }
+
+    #[test]
+    fn buffered_refuses_symlink_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = write_regular(dir.path(), "real.txt", b"secret = abc123def456");
+        let link = symlink_to(dir.path(), "link.txt", &target);
+        assert!(read_file_buffered(&link, 0).is_none(), "buffered read must refuse a symlink");
+    }
+
+    #[test]
+    fn buffered_refuses_directory_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(read_file_buffered(dir.path(), 0).is_none());
+    }
+
+    #[test]
+    fn buffered_refuses_dev_null_returns_none() {
+        assert!(read_file_buffered(Path::new("/dev/null"), 0).is_none());
+    }
+
+    #[test]
+    fn buffered_regular_file_returns_some() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_regular(dir.path(), "ok.txt", b"token = ghp_example");
+        assert!(read_file_buffered(&path, 0).is_some());
+    }
+
+    // ── read_file_for_compressed_input (7z / rar / gz / xz / pdf path) ───
+
+    #[test]
+    fn compressed_input_refuses_fifo_none_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "a.gz");
+        let result = within_timeout(move || compressed_input(&fifo, CAP));
+        assert!(result.is_none(), "compressed-input read must skip a FIFO");
+    }
+
+    #[test]
+    fn compressed_input_refuses_symlink_to_fifo_none_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "pipe");
+        let link = symlink_to(dir.path(), "a.gz", &fifo);
+        let result = within_timeout(move || compressed_input(&link, CAP));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn compressed_input_refuses_symlink_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = write_regular(dir.path(), "real.gz", b"\x1f\x8b\x08\x00");
+        let link = symlink_to(dir.path(), "a.gz", &target);
+        assert!(compressed_input(&link, CAP).is_none(), "must refuse a symlinked archive");
+    }
+
+    #[test]
+    fn compressed_input_refuses_directory_none() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(compressed_input(dir.path(), CAP).is_none());
+    }
+
+    #[test]
+    fn compressed_input_refuses_dev_null_none() {
+        assert!(compressed_input(Path::new("/dev/null"), CAP).is_none());
+    }
+
+    #[test]
+    fn compressed_input_regular_file_returns_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_regular(dir.path(), "a.bin", b"PK\x03\x04payload");
+        let bytes = compressed_input(&path, CAP).expect("regular file must read");
+        assert_eq!(bytes, b"PK\x03\x04payload");
+    }
+
+    // ── read_file_windowed_mmap (windowed scan path) ────────────────────
+
+    // The windowed-mmap path expresses a refusal as `Some(0)` — zero windows
+    // scanned — rather than `None`: per its contract that is an already-counted
+    // unreadable skip that must NOT invite the caller to reopen and stream the
+    // file (a bare `None` means "mmap unavailable, try the non-mmap path"). Either
+    // way the special file is opened through `open_file_safe`, refused, and never
+    // read; the assertion is that ZERO windows reach the scanner.
+
+    #[test]
+    fn windowed_refuses_fifo_zero_windows_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "pipe");
+        let result = within_timeout(move || windowed_len(&fifo, 1024, 32));
+        assert_eq!(result, Some(0), "a FIFO must yield zero windows, never hang");
+    }
+
+    #[test]
+    fn windowed_refuses_symlink_zero_windows() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = write_regular(dir.path(), "real.txt", b"x".repeat(4096).as_slice());
+        let link = symlink_to(dir.path(), "link.txt", &target);
+        assert_eq!(windowed_len(&link, 1024, 32), Some(0), "a symlink must yield zero windows");
+    }
+
+    #[test]
+    fn windowed_refuses_dev_null_zero_windows() {
+        assert_eq!(windowed_len(Path::new("/dev/null"), 1024, 32), Some(0));
+    }
+
+    #[test]
+    fn windowed_regular_file_returns_windows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_regular(
+            dir.path(),
+            "big.txt",
+            b"password = hunter2longvalue\n".repeat(64).as_slice(),
+        );
+        let n = windowed_len(&path, 1024, 32).expect("regular file must mmap");
+        assert!(n > 0, "a non-empty regular file must produce at least one window");
+    }
+
+    // ── read_file_mmap_for_test ─────────────────────────────────────────
+
+    #[test]
+    fn mmap_refuses_fifo_none_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "pipe");
+        let result = within_timeout(move || mmap_text(&fifo));
+        assert!(result.is_none(), "mmap read must skip a FIFO");
+    }
+
+    #[test]
+    fn mmap_regular_text_file_returns_some() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_regular(dir.path(), "ok.txt", b"AKIAIOSFODNN7EXAMPLE\n");
+        assert!(mmap_text(&path).is_some());
+    }
+
+    // ── read_file_safe_capped ───────────────────────────────────────────
+
+    #[test]
+    fn safe_capped_refuses_fifo_err_without_hanging() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = make_fifo(dir.path(), "pipe");
+        let result = within_timeout(move || safe_capped(&fifo, CAP).is_err());
+        assert!(result, "capped read must error on a FIFO");
+    }
+
+    #[test]
+    fn safe_capped_refuses_symlink_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = write_regular(dir.path(), "real.txt", b"hello");
+        let link = symlink_to(dir.path(), "link.txt", &target);
+        assert!(safe_capped(&link, CAP).is_err(), "capped read must refuse a symlink");
+    }
+
+    #[test]
+    fn safe_capped_refuses_dev_null_err() {
+        assert!(safe_capped(Path::new("/dev/null"), CAP).is_err());
+    }
+
+    #[test]
+    fn safe_capped_regular_file_returns_exact_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_regular(dir.path(), "ok.txt", b"AKIAIOSFODNN7EXAMPLE");
+        let bytes = safe_capped(&path, 32).unwrap();
+        assert_eq!(bytes, b"AKIAIOSFODNN7EXAMPLE");
     }
 }
