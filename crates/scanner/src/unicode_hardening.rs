@@ -530,6 +530,7 @@ fn is_zero_width(ch: char) -> bool {
         '\u{FEFF}' | // Zero Width No-Break Space (BOM)
         '\u{2060}'..='\u{2064}' | // Word Joiner + invisible operators (function application/times/separator/plus)
         '\u{180E}' | // Mongolian Vowel Separator
+        '\u{061C}' | // Arabic Letter Mark (Bidi_Control, invisible directional mark)
         '\u{200E}' | // Left-to-Right Mark
         '\u{200F}' | // Right-to-Left Mark
         '\u{00AD}' | // Soft Hyphen
@@ -547,6 +548,7 @@ fn is_unicode_separator_evasion(ch: char) -> bool {
         ch,
         '\u{0085}' | // Next Line (NEL) — invisible line splitter
         '\u{00A0}' | // No-Break Space — invisible word splitter
+        '\u{1680}' | // Ogham Space Mark (Zs) — renders as blank in most fonts
         '\u{2000}'
             ..='\u{200A}' | // En/em/thin/hair and related spaces
         '\u{2028}' | // Line Separator
