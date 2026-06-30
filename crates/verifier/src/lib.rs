@@ -260,6 +260,9 @@ pub mod testing {
     use std::time::Duration;
 
     pub use crate::oob::redact_interactsh_error;
+    pub use crate::verify::request::{
+        CONNECTION_FAILED_ERROR, REDIRECT_LIMIT_ERROR, REQUEST_FAILED_ERROR, TIMEOUT_ERROR,
+    };
     pub use crate::verify::tracked_join_error_preservation_for_test;
 
     pub struct TestApi;

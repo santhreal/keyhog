@@ -12,7 +12,7 @@ mod auth;
 mod aws;
 mod credential;
 mod multi_step;
-mod request;
+pub(crate) mod request;
 mod response;
 
 use std::collections::HashMap;

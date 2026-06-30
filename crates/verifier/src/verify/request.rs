@@ -12,6 +12,33 @@ use crate::ssrf::{is_private_ip_addr, is_private_url};
 
 pub(crate) const PRIVATE_URL_ERROR: &str = "blocked: private URL";
 pub(crate) const HTTPS_ONLY_ERROR: &str = "blocked: HTTPS only";
+
+// Operator-facing verification reasons for transport failures. Every message
+// leads with the legacy short phrase (`timeout`, `connection failed`,
+// `too many redirects`, `request failed`) so downstream substring checks keep
+// matching, then states the concrete fix the operator can act on. These are the
+// most user-visible verifier errors (they surface as a finding's verification
+// status), so they carry context + remedy rather than a bare token.
+/// The verification request exceeded its deadline before the endpoint responded.
+pub const TIMEOUT_ERROR: &str = "timeout: the endpoint did not respond within the \
+     verification deadline. Fix: raise the verification timeout with --timeout, or \
+     check network egress / proxy reachability to the credential's host";
+/// The TCP/TLS connection to the endpoint could not be opened.
+pub const CONNECTION_FAILED_ERROR: &str = "connection failed: could not open a \
+     connection to the endpoint. Fix: check DNS resolution, firewall/egress rules, \
+     and proxy settings for the credential's host";
+/// The endpoint tried to redirect, but redirects are disabled (Policy::none) to
+/// keep the pre-connect SSRF screen sound — a redirect target is re-resolved and
+/// would bypass the pin, so it is refused rather than followed.
+pub const REDIRECT_LIMIT_ERROR: &str = "too many redirects: the endpoint issued a \
+     redirect, but redirects are disabled for SSRF safety. Fix: set the detector's \
+     verification URL to the canonical API host so it answers directly without \
+     redirecting";
+/// The request failed before any response arrived (TLS handshake, body write, or
+/// another transport error that is not a timeout, connect, or redirect failure).
+pub const REQUEST_FAILED_ERROR: &str = "request failed: the HTTP request errored \
+     before any response was received. Fix: check the endpoint URL, TLS \
+     configuration, and proxy settings for the credential's host";
 const PINNED_CLIENT_CACHE_TTL: Duration = Duration::from_secs(60);
 const PINNED_CLIENT_CACHE_MAX_ENTRIES: usize = 4096;
 
@@ -417,13 +444,13 @@ pub(crate) async fn execute_request(
 ) -> std::result::Result<reqwest::Response, RequestError> {
     request.send().await.map_err(|e| RequestError {
         result: if e.is_timeout() {
-            VerificationResult::Error("timeout".into())
+            VerificationResult::Error(TIMEOUT_ERROR.into())
         } else if e.is_redirect() {
-            VerificationResult::Error("too many redirects".into())
+            VerificationResult::Error(REDIRECT_LIMIT_ERROR.into())
         } else if e.is_connect() {
-            VerificationResult::Error("connection failed".into())
+            VerificationResult::Error(CONNECTION_FAILED_ERROR.into())
         } else {
-            VerificationResult::Error("request failed".into())
+            VerificationResult::Error(REQUEST_FAILED_ERROR.into())
         },
         transient: e.is_timeout() || e.is_connect(),
     })
