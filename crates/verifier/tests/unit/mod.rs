@@ -29,6 +29,7 @@ pub mod rate_limit_rps_to_nanos_clamps_invalid;
 pub mod rate_limit_typical_intervals;
 pub mod rate_limit_zero_rps_clamps_to_default;
 pub mod response;
+pub mod response_verdict_contract;
 pub mod sanitize_oob_value_uppercase_folding;
 pub mod sanitize_raw_value_c1_controls;
 pub mod sanitize_raw_value_del_byte;
