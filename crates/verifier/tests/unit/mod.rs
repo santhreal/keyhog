@@ -2,6 +2,7 @@ pub mod a6_lr2;
 pub mod aws_sts_success_metadata;
 pub mod bogon;
 pub mod cache;
+pub mod cache_only_caches_stable_verdicts;
 pub mod domain_allowlist;
 pub mod file_gate;
 pub mod gates;

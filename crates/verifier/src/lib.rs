@@ -529,6 +529,10 @@ pub mod testing {
             body: &str,
         ) -> Result<bool, String>;
         fn body_indicates_error_for_test(&self, body: &str) -> bool;
+        fn verification_result_is_cacheable_for_test(
+            &self,
+            result: &keyhog_core::VerificationResult,
+        ) -> bool;
         fn ssrf_check_url_with_resolved_addrs_for_test(
             &self,
             raw_url: &str,
@@ -850,6 +854,13 @@ pub mod testing {
 
         fn body_indicates_error_for_test(&self, body: &str) -> bool {
             crate::verify::body_indicates_error(body)
+        }
+
+        fn verification_result_is_cacheable_for_test(
+            &self,
+            result: &keyhog_core::VerificationResult,
+        ) -> bool {
+            crate::verify::verification_result_is_cacheable(result)
         }
 
         fn ssrf_check_url_with_resolved_addrs_for_test(

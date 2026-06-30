@@ -310,14 +310,44 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
             (VerificationResult::Unverifiable, HashMap::new())
         };
 
-    cache.put(
-        &group.credential,
-        &group.detector_id,
-        verification.clone(),
-        metadata.clone(),
-    );
+    // Cache only stable verdicts. A `RateLimited` or a transient-network
+    // `Error` that exhausted the retry loop must NOT be pinned for the full TTL,
+    // or a single network blip would report a live credential as errored on
+    // every rescan within the window. See `verification_result_is_cacheable`.
+    if verification_result_is_cacheable(&verification) {
+        cache.put(
+            &group.credential,
+            &group.detector_id,
+            verification.clone(),
+            metadata.clone(),
+        );
+    }
 
     into_finding(group, verification, metadata)
+}
+
+/// Whether a verification outcome is stable enough to cache across scans.
+///
+/// Only definitive verdicts and the deterministic local outcomes are cached.
+/// `RateLimited` (always transient — a 429/503 the retry loop could not clear)
+/// and `Error` (a transient timeout/reset/"max retries exceeded" that exhausted
+/// retries, OR a deterministic config error) are deliberately NOT cached: the
+/// transient cases must be re-verified on the next scan rather than masking a
+/// live credential for the full cache TTL, and the deterministic errors are
+/// cheap, network-free local recomputes whose caching saves nothing — so
+/// skipping them removes any risk of pinning a misclassified blip.
+///
+/// This is a positive allowlist: a future `VerificationResult` variant defaults
+/// to NOT cacheable (re-verify), the safe direction for a verdict cache.
+pub(crate) fn verification_result_is_cacheable(result: &VerificationResult) -> bool {
+    matches!(
+        result,
+        VerificationResult::Live
+            | VerificationResult::Revoked
+            | VerificationResult::Dead
+            | VerificationResult::Unverifiable
+            | VerificationResult::Skipped
+    )
 }
 
 impl VerificationEngine {
