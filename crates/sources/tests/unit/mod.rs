@@ -48,3 +48,5 @@ pub mod lib;
 ))]
 pub mod process_excerpt;
 pub mod timeouts;
+#[cfg(feature = "web")]
+pub mod web_redact_url_userinfo_boundary;
