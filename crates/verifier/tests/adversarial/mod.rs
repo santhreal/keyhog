@@ -2,6 +2,7 @@ pub mod dns_private_ip_cgnat_100_64;
 pub mod dns_private_ip_ipv6_link_local;
 pub mod dns_private_ip_ipv6_unique_local;
 pub mod dns_private_ip_link_local_v4;
+pub mod interpolate_no_second_order_expansion;
 pub mod proxy_all_proxy_env_is_active;
 pub mod proxy_explicit_off_overrides_all_proxy;
 pub mod proxy_explicit_socks5_url_is_active;

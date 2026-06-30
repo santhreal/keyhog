@@ -174,6 +174,56 @@ fn interpolate_placeholder_value(value: &str, context: InterpolationContext) -> 
     }
 }
 
+/// Resolve the OOB collector URL companion, preserving a leading `scheme://`
+/// (which the DNS-hostname charset would otherwise strip) while reducing the
+/// operator-influenced host to `[a-z0-9.-]`. A value with no `scheme://` is
+/// sanitized whole. The scheme is accepted only when it is purely alphabetic,
+/// so no structural punctuation can masquerade as one.
+fn resolve_oob_url(companions: &HashMap<String, String>) -> String {
+    let raw = companions
+        .get(OOB_COMPANION_URL)
+        .map(String::as_str)
+        .unwrap_or(""); // LAW10: missing field => empty placeholder; recall-safe
+    match raw.split_once("://") {
+        Some((scheme, host)) if scheme.chars().all(|c| c.is_ascii_alphabetic()) => {
+            format!("{scheme}://{}", sanitize_oob_value(host))
+        }
+        _ => sanitize_oob_value(raw),
+    }
+}
+
+/// Resolve a single `{{…}}` placeholder body to its substituted value, or
+/// `None` when the token is unrecognized (the caller then emits it verbatim).
+///
+/// Every returned value is already neutralized for its position:
+///   - `match` / `companion.*` → percent-encoded (URL context) or
+///     control-stripped (header/body context) via [`interpolate_placeholder_value`].
+///   - `interactsh.url` → host reduced to the DNS charset, scheme preserved.
+///   - `interactsh.host` / bare `interactsh` / `interactsh.id` → reduced to the
+///     DNS-hostname charset `[a-z0-9.-]`. A host or id never carries a scheme,
+///     so — unlike the url token — no `scheme://` survives here.
+fn resolve_placeholder(
+    inner: &str,
+    credential: &str,
+    companions: &HashMap<String, String>,
+    context: InterpolationContext,
+) -> Option<String> {
+    let oob = |key| {
+        sanitize_oob_value(companions.get(key).map(String::as_str).unwrap_or(""))
+        // LAW10: missing field => empty placeholder; recall-safe
+    };
+    match inner {
+        "match" => Some(interpolate_placeholder_value(credential, context)),
+        "interactsh.url" => Some(resolve_oob_url(companions)),
+        "interactsh.host" | "interactsh" => Some(oob(OOB_COMPANION_HOST)),
+        "interactsh.id" => Some(oob(OOB_COMPANION_ID)),
+        _ => inner.strip_prefix("companion.").map(|name| {
+            let raw = companions.get(name).map(String::as_str).unwrap_or(""); // LAW10: missing companion => empty placeholder; recall-safe
+            interpolate_placeholder_value(raw, context)
+        }),
+    }
+}
+
 fn interpolate_with_context(
     template: &str,
     credential: &str,
@@ -197,78 +247,54 @@ fn interpolate_with_context(
         return sanitize_raw_value(raw);
     }
 
-    let match_replacement = interpolate_placeholder_value(credential, context);
-    let mut interpolated = template.replace("{{match}}", &match_replacement);
-
-    // OOB callback substitutions. Unlike `{{match}}` and `{{companion.*}}` we
-    // do NOT URL-encode the value: the minted host is already URL-safe (only
-    // `[a-z0-9.]`), and templates routinely embed it verbatim into JSON
-    // bodies, headers, and URL paths where percent-encoding would corrupt
-    // the structural punctuation. The host is `<unique_id>.<server_host>` and
-    // `server_host` derives from the operator-supplied `--oob-server`, which
-    // `normalize_server()` does not validate for charset - so we enforce the
-    // `[a-z0-9.]` invariant the no-encode path relies on right here, at the
-    // substitution boundary, via `sanitize_oob_value()`. Any structural
-    // punctuation or control byte that slipped through registration is
-    // dropped before it can reach a URL, header, or body. The `id` token can
-    // legitimately carry only `[a-z0-9]` (correlation id + alphanumeric
-    // suffix from `mint_url`), so the same hostname charset is a safe
-    // superset for it.
-    for (token, key) in [
-        ("{{interactsh.url}}", "__keyhog_oob_url"),
-        ("{{interactsh.host}}", "__keyhog_oob_host"),
-        ("{{interactsh.id}}", "__keyhog_oob_id"),
-        // bare `{{interactsh}}` aliases the bare host - the form most useful
-        // inside body templates: `"{\"text\":\"https://{{interactsh}}/x\"}"`.
-        ("{{interactsh}}", "__keyhog_oob_host"),
-    ] {
-        if interpolated.contains(token) {
-            let raw = companions.get(key).map(String::as_str).unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
-                                                                             // The url variant carries a leading scheme (`https://`) that the
-                                                                             // hostname charset would strip; sanitize only the host portion
-                                                                             // and re-prepend the (fixed, trusted) scheme so the value stays a
-                                                                             // well-formed URL while the operator-influenced host is cleaned.
-            let value = match raw.split_once("://") {
-                Some((scheme, host)) if scheme.chars().all(|c| c.is_ascii_alphabetic()) => {
-                    format!("{scheme}://{}", sanitize_oob_value(host))
-                }
-                _ => sanitize_oob_value(raw),
-            };
-            interpolated = interpolated.replace(token, &value);
-        }
-    }
-
-    let mut search_from = 0;
+    // Single left-to-right pass over the TEMPLATE. Each `{{…}}` token is
+    // resolved to its (already position-sanitized) value and appended to `out`;
+    // literal text between tokens is copied verbatim. The scan never re-reads an
+    // emitted value, so a substituted credential or companion — both untrusted,
+    // scanned content — can never introduce a `{{…}}` token that a later phase
+    // would expand.
+    //
+    // This is the security property the prior three-phase replace (match → OOB →
+    // companion) lacked: the header/body path control-strips values but does not
+    // percent-encode them, so a `{{match}}` whose scanned value was literally
+    // `{{companion.other}}` survived with its braces intact and the following
+    // companion phase expanded it — leaking a *different* companion secret into
+    // the outbound request. One pass with inert substitutions closes that
+    // entirely, for every token kind, in both contexts.
+    //
+    // OOB tokens are intentionally NOT percent-encoded (the minted host is
+    // already `[a-z0-9.-]` and templates embed it verbatim into JSON/headers/
+    // URLs); `resolve_placeholder` enforces that charset at this boundary so a
+    // hostile `--oob-server` cannot smuggle structural punctuation through.
+    // Unrecognized tokens are emitted verbatim, exactly as the phased replace
+    // left them.
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
     let mut replacements = 0usize;
     while replacements < MAX_INTERPOLATION_REPLACEMENTS {
-        let Some(offset) = interpolated[search_from..].find("{{companion.") else {
+        let Some(open) = rest.find("{{") else { break };
+        let after_open = &rest[open + 2..];
+        let Some(close_rel) = after_open.find("}}") else {
             break;
         };
-        let start = search_from + offset;
-        if let Some(end_offset) = interpolated[start..].find("}}") {
-            let name_start = start + "{{companion.".len();
-            let name_end = start + end_offset;
-            let name = &interpolated[name_start..name_end];
-            let raw = match companions.get(name) {
-                Some(value) => value.as_str(),
-                None => "", // LAW10: missing/non-string field => empty/placeholder; recall-safe
-            };
-            let replacement = interpolate_placeholder_value(raw, context);
-
-            let end = start + end_offset + 2;
-            interpolated = format!(
-                "{}{}{}",
-                &interpolated[..start],
-                replacement,
-                &interpolated[end..]
-            );
-            search_from = (start + replacement.len()).min(interpolated.len());
-            replacements += 1;
-        } else {
-            break;
+        let inner = &after_open[..close_rel];
+        out.push_str(&rest[..open]);
+        match resolve_placeholder(inner, credential, companions, context) {
+            Some(value) => out.push_str(&value),
+            None => {
+                // Unrecognized placeholder: preserve it verbatim.
+                out.push_str("{{");
+                out.push_str(inner);
+                out.push_str("}}");
+            }
         }
+        rest = &after_open[close_rel + 2..];
+        replacements += 1;
     }
-    interpolated
+    // Tail after the last resolved token (or the whole remainder once the scan
+    // breaks on no-more-tokens / an unterminated `{{` / the replacement cap).
+    out.push_str(rest);
+    out
 }
 
 /// Synthetic companion-map keys used to thread an OOB minted URL through
