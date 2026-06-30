@@ -2141,6 +2141,25 @@ pub mod entropy_scanner {
     }
 }
 
+/// Keyword-free ("isolated bare") high-entropy secret recall floors. These rescue
+/// a high-entropy token that carries NO surrounding secret keyword, so each has a
+/// carefully-tuned entropy + shape threshold. Exposed so the thresholds can be
+/// pinned at their boundaries against silent recall regression.
+pub mod entropy_isolated {
+    /// `entropy >= 3.65`, `len >= 20`, contains `_`, every non-`_` byte is
+    /// ASCII-alphanumeric, and the token has upper + lower + digit.
+    pub fn mixed_separator_token_floor_met(candidate: &str, entropy: f64) -> bool {
+        crate::entropy::scanner::mixed_separator_token_floor_met(candidate, entropy)
+    }
+
+    /// `entropy >= 3.9`, `len == 19`, four `-`-separated groups of 4 lowercase/
+    /// digit chars (each with a letter AND a digit), with at least one non-hex
+    /// letter (g–z) so a pure-hex UUID-ish token does not qualify.
+    pub fn lower_dash_app_password_floor_met(candidate: &str, entropy: f64) -> bool {
+        crate::entropy::scanner::lower_dash_app_password_floor_met(candidate, entropy)
+    }
+}
+
 /// Entropy plausibility and shape predicates exposed for unit tests migrated
 /// out of their original inline homes (KH-GAP-004).
 pub mod entropy_keywords {

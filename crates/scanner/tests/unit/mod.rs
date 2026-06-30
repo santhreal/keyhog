@@ -84,6 +84,7 @@ pub mod entropy_env_staging_prefix_match;
 pub mod entropy_fast;
 pub mod entropy_fast_extended;
 pub mod entropy_hex_digest_context_gate;
+pub mod entropy_isolated_floors;
 pub mod entropy_jwt_shape_rejected;
 pub mod entropy_package_lock_not_appropriate;
 pub mod entropy_placeholder_upper_example;
