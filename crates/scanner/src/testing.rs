@@ -2565,7 +2565,7 @@ pub mod unicode_hardening {
                 Self::ZeroWidth => "Zero-width character",
                 Self::RTLOverride => "Right-to-left override",
                 Self::Decomposed => "Decomposed Unicode form",
-                Self::Suspicious => "Suspicious Unicode usage",
+                Self::Suspicious => "Suspicious separator or control character",
             }
         }
     }

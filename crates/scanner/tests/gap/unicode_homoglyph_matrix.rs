@@ -722,7 +722,7 @@ fn evasion_kind_descriptions_are_exact() {
     );
     assert_eq!(
         EvasionKind::Suspicious.description(),
-        "Suspicious Unicode usage"
+        "Suspicious separator or control character"
     );
 }
 

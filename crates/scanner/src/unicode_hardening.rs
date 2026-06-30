@@ -129,6 +129,22 @@ pub(crate) fn detect_unicode_attacks(text: &str) -> Vec<EvasionMatch> {
             });
             continue;
         }
+
+        // ASCII evasion controls (C0 U+0000–001F + DEL U+007F, minus the
+        // structural whitespace \n/\r/\t). `normalize_homoglyphs` DROPS these
+        // (via `is_ascii_evasion_control`), so the detector must report the SAME
+        // chars — leaving them out is exactly the detect/normalize desync class
+        // that hid the DEL recall hole. Grouped with separators under
+        // `Suspicious`: both are non-printing characters that split a credential.
+        if is_ascii_evasion_control(ch) {
+            matches.push(EvasionMatch {
+                position: byte_pos,
+                kind: EvasionKind::Suspicious,
+                char: ch,
+                replacement: None,
+            });
+            continue;
+        }
     }
 
     matches

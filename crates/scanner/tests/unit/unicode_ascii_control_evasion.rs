@@ -12,7 +12,9 @@
 //! sites now delegate to one predicate, so DEL (and every other non-whitespace
 //! control) is dropped uniformly, and legitimate `\n`/`\r`/`\t` are preserved.
 
-use keyhog_scanner::testing::unicode_hardening::{contains_evasion, normalize_homoglyphs};
+use keyhog_scanner::testing::unicode_hardening::{
+    contains_evasion, detect_unicode_attacks, normalize_homoglyphs, EvasionKind,
+};
 use std::borrow::Cow;
 
 const DEL: char = '\u{7F}';
@@ -256,4 +258,191 @@ fn del_and_zero_width_both_removed_in_one_token() {
     // DEL (ASCII control) + ZWSP (U+200B) — different predicates, one rebuild.
     let out = normalize_homoglyphs("g\u{7F}h\u{200B}p_secret");
     assert_eq!(out.as_ref(), "ghp_secret", "got {out:?}");
+}
+
+// ── detect_unicode_attacks must report the SAME ASCII controls normalize drops ─
+//
+// The detector and the normalizer must classify the same chars — omitting ASCII
+// controls from the report is exactly the detect/normalize desync class that hid
+// the DEL recall hole. Controls are reported under `Suspicious` (the separator
+// group), with no replacement.
+
+/// True if `detect_unicode_attacks` reports `c` as a `Suspicious` evasion char.
+fn detect_reports_suspicious(text: &str, c: char) -> bool {
+    detect_unicode_attacks(text)
+        .iter()
+        .any(|a| a.kind == EvasionKind::Suspicious && a.char == c)
+}
+
+#[test]
+fn detect_reports_del_as_suspicious() {
+    assert!(detect_reports_suspicious("ghp_a\u{7F}b", '\u{7F}'));
+}
+
+#[test]
+fn detect_reports_null_as_suspicious() {
+    assert!(detect_reports_suspicious("ghp_a\u{0}b", '\u{0}'));
+}
+
+#[test]
+fn detect_reports_bell_as_suspicious() {
+    assert!(detect_reports_suspicious("ghp_a\u{7}b", '\u{7}'));
+}
+
+#[test]
+fn detect_reports_escape_as_suspicious() {
+    assert!(detect_reports_suspicious("ghp_a\u{1B}b", '\u{1B}'));
+}
+
+#[test]
+fn detect_reports_vertical_tab_as_suspicious() {
+    assert!(detect_reports_suspicious("ghp_a\u{B}b", '\u{B}'));
+}
+
+#[test]
+fn detect_reports_form_feed_as_suspicious() {
+    assert!(detect_reports_suspicious("ghp_a\u{C}b", '\u{C}'));
+}
+
+#[test]
+fn detect_reports_unit_separator_as_suspicious() {
+    assert!(detect_reports_suspicious("ghp_a\u{1F}b", '\u{1F}'));
+}
+
+#[test]
+fn detect_control_position_is_byte_index() {
+    // "ab" + DEL -> DEL is at byte index 2.
+    let attacks = detect_unicode_attacks("ab\u{7F}cd");
+    let m = attacks
+        .iter()
+        .find(|a| a.char == '\u{7F}')
+        .expect("DEL reported");
+    assert_eq!(m.position, 2, "got {attacks:?}");
+}
+
+#[test]
+fn detect_control_replacement_is_none() {
+    // A control is dropped, not substituted, so there is no replacement char.
+    let attacks = detect_unicode_attacks("a\u{7F}b");
+    let m = attacks
+        .iter()
+        .find(|a| a.char == '\u{7F}')
+        .expect("DEL reported");
+    assert_eq!(m.replacement, None, "got {attacks:?}");
+}
+
+#[test]
+fn detect_reports_each_of_multiple_controls() {
+    // NUL at byte 1, DEL at byte 3.
+    let attacks = detect_unicode_attacks("a\u{0}b\u{7F}c");
+    let controls: Vec<usize> = attacks
+        .iter()
+        .filter(|a| a.kind == EvasionKind::Suspicious)
+        .map(|a| a.position)
+        .collect();
+    assert_eq!(controls, vec![1, 3], "got {attacks:?}");
+}
+
+#[test]
+fn detect_does_not_report_newline() {
+    assert!(
+        !detect_unicode_attacks("a\nb")
+            .iter()
+            .any(|a| a.char == '\n'),
+        "newline is structural, not evasion"
+    );
+}
+
+#[test]
+fn detect_does_not_report_carriage_return() {
+    assert!(!detect_unicode_attacks("a\rb")
+        .iter()
+        .any(|a| a.char == '\r'));
+}
+
+#[test]
+fn detect_does_not_report_tab() {
+    assert!(!detect_unicode_attacks("a\tb")
+        .iter()
+        .any(|a| a.char == '\t'));
+}
+
+#[test]
+fn detect_clean_ascii_reports_nothing() {
+    assert!(detect_unicode_attacks("ghp_abcdef0123").is_empty());
+}
+
+#[test]
+fn detect_every_c0_control_except_whitespace_reported() {
+    for b in 0x00u8..=0x1F {
+        if matches!(b, b'\n' | b'\r' | b'\t') {
+            continue;
+        }
+        let c = b as char;
+        let text = format!("ghp_a{c}b");
+        assert!(
+            detect_reports_suspicious(&text, c),
+            "U+{:04X} must be reported as Suspicious",
+            b as u32
+        );
+    }
+}
+
+#[test]
+fn detect_del_and_zero_width_both_reported() {
+    let attacks = detect_unicode_attacks("a\u{7F}b\u{200B}c");
+    assert!(
+        attacks
+            .iter()
+            .any(|a| a.char == '\u{7F}' && a.kind == EvasionKind::Suspicious),
+        "DEL -> Suspicious: {attacks:?}"
+    );
+    assert!(
+        attacks
+            .iter()
+            .any(|a| a.char == '\u{200B}' && a.kind == EvasionKind::ZeroWidth),
+        "ZWSP -> ZeroWidth: {attacks:?}"
+    );
+}
+
+#[test]
+fn detect_control_and_cyrillic_homoglyph_both_reported() {
+    // U+0421 С (Cyrillic Es) -> CyrillicHomoglyph; DEL -> Suspicious.
+    let attacks = detect_unicode_attacks("\u{0421}a\u{7F}");
+    assert!(
+        attacks
+            .iter()
+            .any(|a| a.char == '\u{0421}' && a.kind == EvasionKind::CyrillicHomoglyph),
+        "{attacks:?}"
+    );
+    assert!(
+        attacks
+            .iter()
+            .any(|a| a.char == '\u{7F}' && a.kind == EvasionKind::Suspicious),
+        "{attacks:?}"
+    );
+}
+
+#[test]
+fn detect_c1_control_0x80_is_not_reported() {
+    // U+0080 is a C1 control (non-ASCII); it is not an ASCII-control evasion and
+    // is in no other set, so the detector reports nothing for it.
+    assert!(!detect_unicode_attacks("a\u{80}b")
+        .iter()
+        .any(|a| a.char == '\u{80}'));
+}
+
+#[test]
+fn detect_still_reports_fullwidth() {
+    // Regression: the control addition must not disturb other classifications.
+    assert!(detect_unicode_attacks("ghp_\u{FF21}")
+        .iter()
+        .any(|a| a.kind == EvasionKind::Fullwidth && a.char == '\u{FF21}'));
+}
+
+#[test]
+fn detect_still_reports_zero_width() {
+    assert!(detect_unicode_attacks("a\u{200B}b")
+        .iter()
+        .any(|a| a.kind == EvasionKind::ZeroWidth && a.char == '\u{200B}'));
 }
