@@ -546,8 +546,25 @@ fn is_unicode_separator_evasion(ch: char) -> bool {
     )
 }
 
+/// True for any Unicode combining mark — the full `Grapheme_Extend` set
+/// (general categories Mn/Mc/Me), not just the U+0300–U+036F Combining
+/// Diacritical Marks block.
+///
+/// Restricting to one block was an evasion hole: a combining mark spliced
+/// between credential bytes makes the underlying char sequence stop matching a
+/// detector regex (`g\u{1DC0}hp_…` no longer matches `ghp_`), and NFC does not
+/// rescue it (a mark with no precomposed base, e.g. U+1DC0, survives `nfc()`).
+/// Any block other than U+0300–036F — Supplement (U+1AB0–1AFF), Extended
+/// (U+1DC0–1DFF), for-Symbols (U+20D0–20FF), Half Marks (U+FE20–FE2F), or the
+/// Cyrillic/Hebrew/Arabic marks — therefore slipped past the strip.
+///
+/// Delegating to `unicode-normalization` (already a dependency) keeps this in
+/// lockstep with the Unicode tables with zero drift. ASCII is never a combining
+/// mark, so the `is_ascii` guard skips the table lookup on the common byte
+/// range — the per-char cost on the slow (non-ASCII) path stays a perfect-hash
+/// lookup, a rounding error.
 fn is_combining_mark(ch: char) -> bool {
-    matches!(ch, '\u{0300}'..='\u{036F}')
+    !ch.is_ascii() && unicode_normalization::char::is_combining_mark(ch)
 }
 
 /// RTL override characters
