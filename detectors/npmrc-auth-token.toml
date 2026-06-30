@@ -1,0 +1,38 @@
+# Docs: https://docs.npmjs.com/cli/configuring-npm/npmrc#auth-related-configuration
+# Format: an `.npmrc` registry-auth line. The write-capable registry credential
+# is the token assigned to the `_authToken` slot:
+#   //registry.npmjs.org/:_authToken=npm_xxxxxxxx
+#   //npm.pkg.github.com/:_authToken=ghp_xxxxxxxx
+#   _authToken=<legacy base64 / CI token>
+# `npm-access-token` only catches the modern `npm_<36>` shape; the SLOT itself
+# carries legacy base64 tokens, GitHub-Packages PATs, GitLab tokens, and
+# CI-injected secrets that the prefix detector misses. This is the one detector
+# for the slot regardless of token vendor.
+# Verify: no safe call-time probe (a publish would mutate the registry).
+# Prefix: _authToken=
+
+[detector]
+id = "npmrc-auth-token"
+name = "npm Registry Auth Token (.npmrc)"
+service = "npm"
+severity = "high"
+keywords = ["_authToken"]
+# Structural slot: the `_authToken=` anchor is decisive even when the token body
+# is a low-entropy legacy value the generic model scores below the global floor.
+# Same idiom as cursor/sourcegraph (min_confidence = 0.2). Prefixed tokens
+# (npm_/ghp_/glpat-) still earn the KNOWN_PREFIXES 0.8 floor independently.
+min_confidence = 0.2
+
+# Capture ONLY the token (group 1), never the `//host/:` registry prefix. The
+# value class spans the full token alphabet (base64 incl. `=` padding, plus the
+# `._~-` used by `npm_`/`NpmToken.`/`glpat-` shapes). The `{8,}` floor and the
+# class — which excludes `$ { } < >` — reject `_authToken=${NPM_TOKEN}`
+# templates and empty/placeholder slots.
+[[detector.patterns]]
+regex = '_authToken\s*=\s*([A-Za-z0-9._+/=~-]{8,})'
+description = "Registry auth token assigned in an .npmrc _authToken slot"
+group = 1
+
+[[detector.tests]]
+test_positive = "//registry.npmjs.org/:_authToken=YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo="
+test_negative = "//registry.npmjs.org/:_authToken=${NPM_TOKEN}"
