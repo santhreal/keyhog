@@ -511,7 +511,16 @@ pub(crate) fn is_evasion_char(ch: char) -> bool {
     is_zero_width(ch) || is_rtl_override(ch)
 }
 
-/// Zero-width characters
+/// Invisible / zero-advance format characters used to split a credential body.
+///
+/// This is a **curated** set of `General_Category=Cf` (plus soft hyphen)
+/// codepoints that render to nothing, NOT a blanket `Cf` drop: some format
+/// chars carry meaning and a visible/structural effect — the Arabic number
+/// signs (U+0600–0605), Syriac abbreviation mark (U+070F), Kaithi number sign
+/// (U+110BD), etc. — and dropping those would corrupt legitimate text. Only
+/// codepoints that are genuinely invisible AND have no legitimate role inside a
+/// credential token belong here. (Variation selectors and other combining marks
+/// are `General_Category=Mark` and are handled by [`is_combining_mark`].)
 fn is_zero_width(ch: char) -> bool {
     matches!(
         ch,
@@ -519,7 +528,7 @@ fn is_zero_width(ch: char) -> bool {
         '\u{200C}' | // Zero Width Non-Joiner
         '\u{200D}' | // Zero Width Joiner
         '\u{FEFF}' | // Zero Width No-Break Space (BOM)
-        '\u{2060}' | // Word Joiner
+        '\u{2060}'..='\u{2064}' | // Word Joiner + invisible operators (function application/times/separator/plus)
         '\u{180E}' | // Mongolian Vowel Separator
         '\u{200E}' | // Left-to-Right Mark
         '\u{200F}' | // Right-to-Left Mark
@@ -527,7 +536,9 @@ fn is_zero_width(ch: char) -> bool {
         '\u{2066}' | // Left-to-Right Isolate
         '\u{2067}' | // Right-to-Left Isolate
         '\u{2068}' | // First Strong Isolate
-        '\u{2069}' // Pop Directional Isolate
+        '\u{2069}' | // Pop Directional Isolate
+        '\u{FFF9}'..='\u{FFFB}' | // Interlinear annotation anchor/separator/terminator (invisible)
+        '\u{E0000}'..='\u{E007F}' // Tags block (language tag + tag chars + cancel-tag); invisible
     )
 }
 

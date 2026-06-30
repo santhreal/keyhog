@@ -133,6 +133,7 @@ pub mod unicode_evasion_anchor_parser;
 pub mod unicode_fast_path_borrowed;
 pub mod unicode_greek_homoglyph_normalization;
 pub mod unicode_hardening;
+pub mod unicode_invisible_format_evasion;
 pub mod unicode_mixed_evasion_normalization;
 pub mod unicode_rtl_override_removal;
 pub mod unicode_zero_width_removal;
