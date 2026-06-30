@@ -266,3 +266,145 @@ fn netrc_prose_machine_password_does_not_fire() {
         None
     );
 }
+
+// ===========================================================================
+// .pypirc — pypi-api-token (the `pypi-` upload token in the password slot).
+// ===========================================================================
+
+/// A `pypi-` upload token body in the detector's required {100,128} range:
+/// a 40-char `[a-zA-Z0-9]` unit x3 = 120 chars (subset of the value class).
+fn pypi_token() -> String {
+    format!("pypi-{}", "abcdefGHIJ0123456789klmnopQRSTUV01234567".repeat(3))
+}
+
+#[test]
+fn pypirc_upload_token_fires_and_captures_full_token() {
+    let tok = pypi_token();
+    let text = format!("[pypi]\nusername = __token__\npassword = {tok}\n");
+    assert_eq!(
+        capture_for(&text, "pypi-api-token").as_deref(),
+        Some(tok.as_str()),
+        "the whole pypi- upload token is the credential"
+    );
+}
+
+#[test]
+fn pypirc_bare_token_attributed_to_pypi_detector() {
+    let tok = pypi_token();
+    assert_eq!(capture_for(&tok, "pypi-api-token").as_deref(), Some(tok.as_str()));
+}
+
+#[test]
+fn pypirc_short_pypi_mention_does_not_fire() {
+    // pypi-api-token requires a 100+ char body; a `pypi-main` index/repo name
+    // stays silent.
+    let text = "[distutils]\nindex-servers = pypi\nrepository = pypi-main\n";
+    assert_eq!(capture_for(text, "pypi-api-token"), None);
+}
+
+// ===========================================================================
+// .git-credentials — url-credentials (https://user:pass@host userinfo).
+// ===========================================================================
+
+#[test]
+fn git_credentials_userinfo_password_fires() {
+    let line = "https://gituser:Xk7Qw9RpLm5Vn8Zt@github.com";
+    assert_eq!(
+        capture_for(line, "url-credentials").as_deref(),
+        Some("Xk7Qw9RpLm5Vn8Zt"),
+        "capture is the userinfo password only, not the host/path"
+    );
+}
+
+#[test]
+fn git_credentials_template_password_does_not_fire() {
+    assert_eq!(
+        capture_for("https://gituser:<password>@github.com", "url-credentials"),
+        None
+    );
+}
+
+#[test]
+fn git_credentials_empty_userinfo_password_does_not_fire() {
+    // No password between `:` and `@`.
+    assert_eq!(capture_for("https://gituser:@github.com", "url-credentials"), None);
+}
+
+// ===========================================================================
+// .my.cnf — generic-password ([client] password= slot).
+// ===========================================================================
+
+#[test]
+fn mycnf_password_slot_fires() {
+    let text = "[client]\nuser=root\nhost=localhost\npassword=Tn4Bv8Cx2Wq6Hs9Jp\n";
+    assert_eq!(
+        capture_for(text, "generic-password").as_deref(),
+        Some("Tn4Bv8Cx2Wq6Hs9Jp")
+    );
+}
+
+#[test]
+fn mycnf_env_template_does_not_fire() {
+    assert_eq!(
+        capture_for("[client]\nuser=root\npassword=${DB_PASS}\n", "generic-password"),
+        None
+    );
+}
+
+// ===========================================================================
+// .pgpass — DOCUMENTED GAP (positional colon password, no literal anchor).
+// ===========================================================================
+
+const PGPASS: &str = "localhost:5432:mydb:admin:Rk5Mn8Qw2Lp6Vt";
+
+#[test]
+fn pgpass_password_is_a_documented_gap_not_yet_surfaced() {
+    // The `.pgpass` password is a pure positional colon field with NO content
+    // keyword to anchor; the weak `word:NUMBER:word:word:word` shape cannot
+    // justify skipping the entropy floor (netrc earns that via its
+    // machine/login/password literals). Closing it cleanly needs a
+    // path/filename trigger — a follow-up. This pins the current behavior so the
+    // gap stays VISIBLE; flip it to a positive lock when the trigger lands.
+    let surfaced = scan(PGPASS)
+        .iter()
+        .any(|m| m.credential.as_ref().contains("Rk5Mn8Qw2Lp6Vt"));
+    assert!(!surfaced, "if .pgpass is now supported, convert this to a recall lock");
+}
+
+#[test]
+fn pgpass_line_does_not_false_fire_url_or_generic_password() {
+    // Precision: the 5-colon `.pgpass` shape is neither a URL userinfo nor a
+    // `password=` slot, so it must not be misread as either.
+    let hits = scan(PGPASS);
+    assert!(!hits.iter().any(|m| m.detector_id.as_ref() == "url-credentials"));
+    assert!(!hits.iter().any(|m| m.detector_id.as_ref() == "generic-password"));
+}
+
+// ===========================================================================
+// All covered dotfile formats surface together in one mixed dump.
+// ===========================================================================
+
+#[test]
+fn all_covered_dotfile_credentials_surface_together() {
+    let tok = pypi_token();
+    let blob = format!(
+        "machine api.example.com login deploy password Zx9Qw3Rt7Lp2Mk\n\
+         //registry.npmjs.org/:_authToken=s0meL3gacyT0kenValue12345\n\
+         password = {tok}\n\
+         https://gituser:Xk7Qw9RpLm5Vn8Zt@github.com\n\
+         [client]\npassword=Tn4Bv8Cx2Wq6Hs9Jp\n"
+    );
+    let creds: Vec<String> = scan(&blob)
+        .into_iter()
+        .map(|m| m.credential.as_ref().to_string())
+        .collect();
+    for needle in [
+        "Zx9Qw3Rt7Lp2Mk",
+        "s0meL3gacyT0kenValue12345",
+        "Xk7Qw9RpLm5Vn8Zt",
+        "Tn4Bv8Cx2Wq6Hs9Jp",
+    ] {
+        assert!(creds.iter().any(|c| c.contains(needle)), "missing {needle}: {creds:?}");
+    }
+    assert!(creds.iter().any(|c| c.contains("pypi-")), "missing pypi token: {creds:?}");
+}
