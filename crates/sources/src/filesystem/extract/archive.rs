@@ -500,7 +500,7 @@ fn chunk_from_archive_content_inner(
     )
 }
 
-pub(super) fn validate_scan_archive_entry_name(name: &str) -> Result<(), &'static str> {
+pub(crate) fn validate_scan_archive_entry_name(name: &str) -> Result<(), &'static str> {
     let mut current = name.to_string();
     for _ in 0..10 {
         validate_archive_path_text(&current)?;

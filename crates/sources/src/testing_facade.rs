@@ -11,6 +11,12 @@ pub mod testing {
         /// against every other gated scan so concurrent tests cannot pollute the
         /// process-global skip counters this test is about to assert on.
         fn skip_counter_guard(&self) -> ScanCounterScope;
+        /// Archive entry-name path-traversal validator (test accessor; the
+        /// `src/filesystem/extract/**` no-inline-tests contract keeps the unit
+        /// coverage out of `src`). Returns `Ok(())` for a safe relative entry
+        /// name and `Err(reason)` naming the refusal for traversal / absolute /
+        /// backslash / NUL / over-encoded names.
+        fn validate_archive_entry_name(&self, name: &str) -> Result<(), String>;
         /// OCI/Docker manifest-vs-index classification (test accessor so the
         /// `src/docker/**` no-inline-tests contract holds; coverage lives in
         /// `tests/docker_oci_classification.rs`).
@@ -493,6 +499,10 @@ pub mod testing {
     impl SourceTestApi for TestApi {
         fn skip_counter_guard(&self) -> ScanCounterScope {
             crate::enter_exclusive_scan_scope()
+        }
+
+        fn validate_archive_entry_name(&self, name: &str) -> Result<(), String> {
+            crate::filesystem::validate_scan_archive_entry_name(name).map_err(str::to_string)
         }
 
         #[cfg(feature = "docker")]

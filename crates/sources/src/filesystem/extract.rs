@@ -14,6 +14,12 @@ mod pdf;
 mod rar;
 mod seven_zip;
 
+// Re-export the archive entry-name path-traversal validator so the crate-root
+// test facade (`testing::SourceTestApi`) can pin its security contract directly,
+// keeping the unit coverage under `tests/` rather than an inline test module in
+// this always-on source (the filesystem no-inline-tests folder contract).
+pub(crate) use archive::validate_scan_archive_entry_name;
+
 /// Aggregate decoded-byte ceiling used when `--max-file-size 0` removes the
 /// per-file cap. Extraction still needs a hard bomb guard so an archive or
 /// compressed stream cannot expand without bound.
