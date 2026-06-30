@@ -190,6 +190,30 @@ pub(crate) fn compile_pattern(
         index: pattern_index,
         source,
     })?;
+    // Validate the declared capture group is a real index in THIS regex.
+    // `captures_len()` counts the implicit whole-match group 0 plus every
+    // explicit group, so a valid `group` satisfies `group < captures_len`. An
+    // out-of-range group is not a regex error (the pattern compiles); it only
+    // bites at scan time, where `extract_grouped_matches` resolves the target
+    // with `locs.get(group).unwrap_or((full_start, full_end))` and SILENTLY
+    // falls back to the whole match — capturing keyword + separator + value
+    // instead of the secret, which pollutes the credential and usually fails the
+    // checksum, dropping a real secret. Fail closed here (Law 10: no silent
+    // fallback) so a malformed detector from ANY source — the embedded corpus or
+    // a user `--detectors` overlay — is rejected loudly at compile rather than
+    // mis-scanned. (The embedded corpus is held clean by
+    // detector_capture_group_integrity.rs; this also covers user overlays.)
+    if let Some(group) = spec.group {
+        let captures_len = regex.captures_len();
+        if group >= captures_len {
+            return Err(ScanError::CaptureGroupOutOfRange {
+                detector_id: detector_id.to_string(),
+                index: pattern_index,
+                group,
+                captures_len,
+            });
+        }
+    }
     Ok(CompiledPattern {
         detector_index,
         regex: LazyRegex::detector_compiled(spec.regex.as_str(), regex),

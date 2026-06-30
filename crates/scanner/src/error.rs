@@ -14,6 +14,17 @@ pub enum ScanError {
         source: regex::Error,
     },
     #[error(
+        "detector {detector_id} pattern {index} declares capture group {group}, but its compiled regex has only {captures_len} group(s) (valid indices 0..{captures_len}). \
+         An out-of-range group makes the engine fall back to the whole match, capturing the keyword and separator instead of the secret. \
+         Fix: set `group` to a capture-group index that exists in the regex (group 0 is the whole match), or add the missing capture group"
+    )]
+    CaptureGroupOutOfRange {
+        detector_id: String,
+        index: usize,
+        group: usize,
+        captures_len: usize,
+    },
+    #[error(
         "failed to compile scanner regex set: {0}. Fix: simplify the detector regex set or remove the invalid pattern"
     )]
     RegexSetCompile(#[from] regex::Error),
