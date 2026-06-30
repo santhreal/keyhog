@@ -29,7 +29,13 @@ pub fn init_repo() -> (tempfile::TempDir, PathBuf) {
 }
 
 pub fn commit(repo: &Path, filename: &str, content: &str, message: &str) {
-    std::fs::write(repo.join(filename), content).expect("write fixture");
+    let path = repo.join(filename);
+    // `filename` may name a nested path (`secrets/id_rsa.pem`); `fs::write` does
+    // not create parent directories, so make them first.
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create fixture parent dirs");
+    }
+    std::fs::write(&path, content).expect("write fixture");
     Command::new("git")
         .args(["add", filename])
         .current_dir(repo)
