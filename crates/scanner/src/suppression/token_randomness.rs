@@ -120,6 +120,11 @@ impl RandomTokenEvidence {
     }
 
     #[inline]
+    pub(crate) fn distinct_letters(self) -> usize {
+        self.distinct_letters
+    }
+
+    #[inline]
     pub(crate) fn is_random_token(self) -> bool {
         self.mean_bigram_logprob()
             .is_some_and(|score| score <= RANDOM_LOGPROB_THRESHOLD)
@@ -200,6 +205,24 @@ pub(crate) fn is_confident_dictionary_word(value: &str) -> bool {
             .is_some_and(|score| score > RANDOM_LOGPROB_THRESHOLD)
 }
 
+/// `true` iff `value` has FEWER than [`MIN_DISTINCT_LETTERS`] distinct ASCII
+/// letters — a repetitive / alternating / digit-only MASK (`xxxxxxxx`, `aaaaaa`,
+/// `ababab`, `12345678`), never a real password.
+///
+/// This is the soundness companion to [`is_confident_dictionary_word`] for the
+/// strong-anchor structural-password-slot family. Those detectors are
+/// `is_service_anchored`, so the post-match pipeline sets `bypass_shape_gates`
+/// and SKIPS the Tier-B repetitive-run / repeated-block gates that normally drop
+/// a `--password xxxxxxxx` mask. `is_confident_dictionary_word` cannot catch a
+/// mask (its bigrams are improbable English, so the model is NOT confident it is
+/// a word), so without this guard the strong anchor would surface the mask as a
+/// false positive. A genuinely-short random password (`i8cr1w!`, 4 distinct
+/// letters) clears the floor and is kept — the same `MIN_DISTINCT_LETTERS = 3`
+/// boundary [`is_random_token`] uses, so the two paths agree byte-for-byte.
+pub(crate) fn has_low_letter_diversity(value: &str) -> bool {
+    RandomTokenEvidence::analyze(value).distinct_letters() < MIN_DISTINCT_LETTERS
+}
+
 /// Shared decision for the CONTIGUOUS identifier/type-name shape gates
 /// (KH-L-0413): keep the gate engaged (`true` ⇒ the value stays suppressed)
 /// UNLESS the value reads as a random token, in which case lift it (`false` ⇒
@@ -250,7 +273,10 @@ pub(crate) fn keep_word_separated_gate_with_randomness(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_confident_dictionary_word, is_random_token, MIN_ALPHA};
+    use super::{
+        has_low_letter_diversity, is_confident_dictionary_word, is_random_token, MIN_ALPHA,
+        MIN_DISTINCT_LETTERS,
+    };
 
     // ── is_confident_dictionary_word: confident English words ⇒ true ───────
 
@@ -325,6 +351,74 @@ mod tests {
         assert!(!is_confident_dictionary_word(""));
         assert!(!is_confident_dictionary_word("123456"));
         assert!(!is_confident_dictionary_word("h%40co"));
+    }
+
+    // ── has_low_letter_diversity: repetitive / digit-only MASKS ⇒ true ─────
+
+    #[test]
+    fn single_letter_mask_is_low_diversity() {
+        // The exact strong-anchor blind spot: `xxxxxxxx` has improbable English
+        // bigrams (so it is NOT a confident dictionary word) but only ONE distinct
+        // letter — a redaction mask, never a real password. The family gate must
+        // drop it on this predicate, since the Tier-B repetitive-run gate is
+        // skipped for the service-anchored family.
+        for mask in ["xxxxxxxx", "aaaaaa", "XXXXXXXX", "00000000", "zzzzzz"] {
+            assert!(
+                has_low_letter_diversity(mask),
+                "{mask} is a ≤1-distinct-letter mask, not a password"
+            );
+        }
+    }
+
+    #[test]
+    fn alternating_two_letter_mask_is_low_diversity() {
+        // `ababab` / `xyxyxy` have exactly 2 distinct letters — below the floor of
+        // 3 — so they are alternating patterns, not random passwords.
+        for mask in ["ababab", "xyxyxyxy", "a1a1a1a1"] {
+            assert!(
+                has_low_letter_diversity(mask),
+                "{mask} has < {MIN_DISTINCT_LETTERS} distinct letters"
+            );
+        }
+    }
+
+    #[test]
+    fn digit_and_symbol_only_values_are_low_diversity() {
+        // Pure-digit / pure-symbol values have ZERO distinct letters — a sequence
+        // or punctuation run in a password slot, dropped by the diversity floor.
+        for mask in ["12345678", "00000000", "!@#$%^&*", "--------"] {
+            assert!(
+                has_low_letter_diversity(mask),
+                "{mask} has zero distinct letters and must be low-diversity"
+            );
+        }
+    }
+
+    #[test]
+    fn genuine_random_passwords_clear_the_diversity_floor() {
+        // The recall the family must KEEP: a real short/low-alpha password has ≥ 3
+        // distinct letters and must NOT be flagged as a low-diversity mask.
+        for pw in [
+            "i8cr1w!",            // 4 distinct letters (i,c,r,w) — the recovery case
+            "pxidztpv",           // userinfo random
+            "argriyjqr",          // SQL IDENTIFIED BY random
+            "Rcuhxw1486",         // PowerShell -Password random
+            "Qx7Kp2Vn9Rm4Lt8w",  // long mixed random
+        ] {
+            assert!(
+                !has_low_letter_diversity(pw),
+                "{pw} has ≥ {MIN_DISTINCT_LETTERS} distinct letters — a real password, not a mask"
+            );
+        }
+    }
+
+    #[test]
+    fn exactly_three_distinct_letters_is_not_low_diversity() {
+        // Boundary: MIN_DISTINCT_LETTERS = 3 is the KEEP floor, so a value with
+        // exactly 3 distinct letters clears it (the predicate is strict `<`).
+        assert_eq!(MIN_DISTINCT_LETTERS, 3);
+        assert!(!has_low_letter_diversity("abcabc")); // a,b,c = 3 distinct
+        assert!(has_low_letter_diversity("abab")); //   a,b   = 2 distinct
     }
 
     #[test]

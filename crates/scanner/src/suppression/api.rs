@@ -170,28 +170,38 @@ pub(crate) fn suppress_named_detector_finding_stage(
     let apply_tier_b = is_generic_or_entropy(detector_id, weak_anchor);
 
     // A structural-password-slot detector (`url-credentials`, `sql-password`,
-    // `cli-password-flag`) is strong-anchor and skips the Tier-B randomness floor
-    // below, so a value in its syntactic credential SLOT surfaces regardless of
-    // how dictionary-like it is. That is correct for a random password
-    // (`://user:pxidztpv@host`, `IDENTIFIED BY 'argriyjqr'`) but wrong for the
-    // literal placeholder word (`://user:password@host`, `IDENTIFIED BY 'secret'`,
-    // `--password password`). Drop the captured value when the bigram model is
-    // CONFIDENT it is a pronounceable English word — never a random token (below
-    // the English threshold), never a short fail-safe (model returns None), never
-    // a hex digest (no g..z letter). Scoped to this family: a service-anchored
-    // detector's structured capture (hex / prefixed key) is never a free-form
-    // word, and applying the gate to all strong anchors wrongly suppressed hex
-    // keys whose a..f bigrams read as English (rollbar, steam, matomo, …).
-    if crate::detector_ids::is_structural_password_slot_detector(detector_id)
-        && super::token_randomness::is_confident_dictionary_word(credential)
-    {
-        crate::adjudicate::record_example_suppression(
-            "pipeline",
-            path,
-            credential,
-            "dictionary_word_placeholder",
-        );
-        return shape_stage("dictionary_word_placeholder");
+    // `cli-password-flag`) is strong-anchor and `is_service_anchored`, so the
+    // pipeline sets `bypass_shape_gates` and SKIPS both the Tier-B randomness
+    // floor below AND the Tier-B repetitive-run / repeated-block mask gates. That
+    // is correct for a random password (`://user:pxidztpv@host`, `IDENTIFIED BY
+    // 'argriyjqr'`) but surfaces two placeholder shapes a real secret never has:
+    //   1. the literal dictionary word (`://user:password@host`, `IDENTIFIED BY
+    //      'secret'`, `--password welcome`) — caught by the bigram model being
+    //      CONFIDENT the value is pronounceable English; never a random token
+    //      (below the English threshold), a short fail-safe (model returns None),
+    //      or a hex digest (no g..z letter);
+    //   2. the repetitive / digit-only MASK (`--password xxxxxxxx`, `IDENTIFIED
+    //      BY 'XXXXXXXX'`, `--password 12345678`) — improbable bigrams, so the
+    //      dictionary gate misses it, but fewer than `MIN_DISTINCT_LETTERS`
+    //      distinct letters, the same floor `is_random_token` uses, so a genuine
+    //      short random password (`i8cr1w!`, 4 distinct letters) is kept.
+    // Scoped to this family: a service-anchored detector's structured capture
+    // (hex / prefixed key) is never a free-form word, and applying the gate to
+    // all strong anchors wrongly suppressed hex keys whose a..f bigrams read as
+    // English (rollbar, steam, matomo, …).
+    if crate::detector_ids::is_structural_password_slot_detector(detector_id) {
+        let placeholder_reason = if super::token_randomness::is_confident_dictionary_word(credential)
+        {
+            Some("dictionary_word_placeholder")
+        } else if super::token_randomness::has_low_letter_diversity(credential) {
+            Some("low_letter_diversity_mask")
+        } else {
+            None
+        };
+        if let Some(reason) = placeholder_reason {
+            crate::adjudicate::record_example_suppression("pipeline", path, credential, reason);
+            return shape_stage(reason);
+        }
     }
 
     if apply_tier_b && source_type.is_some_and(|source| source.contains("/caesar")) {
