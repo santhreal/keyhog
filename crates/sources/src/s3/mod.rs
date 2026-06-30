@@ -200,11 +200,17 @@ fn collect_s3_chunks(
             }
             break;
         }
-        continuation_token = listing.next_continuation_token;
+        // A truncated listing must carry a non-empty NextContinuationToken; an
+        // empty/whitespace cursor would restart the listing from the first page
+        // (re-downloading the same objects), so normalize it to "exhausted" and
+        // record the coverage gap. See `crate::cloud::meaningful_continuation_token`.
+        continuation_token =
+            crate::cloud::meaningful_continuation_token(listing.next_continuation_token.as_deref())
+                .map(str::to_string);
         if continuation_token.is_none() {
             coverage.record_truncated(
                 &mut chunks,
-                "S3 listing response was truncated but omitted NextContinuationToken",
+                "S3 listing response was truncated but omitted or emptied NextContinuationToken",
             );
             break;
         }

@@ -183,8 +183,11 @@ fn collect_gcs_chunks(
             );
             break;
         }
-        match listing.next_page_token {
-            Some(token) => page_token = Some(token),
+        // An empty/whitespace `nextPageToken` means the listing is exhausted;
+        // re-requesting with it would restart from page one and re-download the
+        // same objects. See `crate::cloud::meaningful_continuation_token`.
+        match crate::cloud::meaningful_continuation_token(listing.next_page_token.as_deref()) {
+            Some(token) => page_token = Some(token.to_string()),
             None => break,
         }
     }

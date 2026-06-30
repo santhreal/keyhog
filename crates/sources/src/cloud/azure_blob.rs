@@ -97,10 +97,9 @@ struct AzureListResponse {
 
 impl AzureListResponse {
     fn next_marker(&self) -> Option<&str> {
-        self.next_marker
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+        // Azure returns an empty `<NextMarker/>` on the final page; the shared
+        // normalizer treats that (and any whitespace cursor) as "exhausted".
+        crate::cloud::meaningful_continuation_token(self.next_marker.as_deref())
     }
 }
 

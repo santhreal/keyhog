@@ -73,6 +73,24 @@ pub(crate) fn take_listing_page<T>(items: Vec<T>, remaining: usize) -> (Vec<T>, 
     (page, reached_limit)
 }
 
+/// Normalize an object-listing continuation cursor: a token that is absent,
+/// empty, or only whitespace means the listing is exhausted, so it returns
+/// `None`.
+///
+/// Every cloud lister (S3 `NextContinuationToken`, GCS `nextPageToken`, Azure
+/// `NextMarker`) paginates by re-requesting with the previous page's cursor and
+/// stops when there is no cursor. An *empty* cursor is not a valid "next page"
+/// pointer — re-requesting with it restarts the listing from the first page,
+/// which re-downloads the same objects (duplicate chunks, wasted bandwidth, and,
+/// with an unbounded `max_objects`, a non-terminating loop). Azure's protocol
+/// deliberately returns an empty `<NextMarker/>` element on the final page; some
+/// S3-compatible and self-hosted GCS/S3 endpoints likewise echo an empty cursor.
+/// Routing every cursor through here makes "empty cursor == done" one rule
+/// across all three backends, with the trimmed token borrowed from the input.
+pub(crate) fn meaningful_continuation_token(token: Option<&str>) -> Option<&str> {
+    token.map(str::trim).filter(|value| !value.is_empty())
+}
+
 pub(crate) struct CloudListingCoverage {
     source: &'static str,
     item_plural: &'static str,
@@ -500,4 +518,145 @@ pub(crate) fn record_source_truncated_once(
     Some(keyhog_core::SourceError::Other(format!(
         "{source} source scan was truncated: {reason}; remaining objects were not scanned"
     )))
+}
+
+#[cfg(test)]
+mod continuation_token_tests {
+    use super::meaningful_continuation_token;
+
+    // --- meaningful tokens (carry to the next page; surrounding ws trimmed) ---
+
+    #[test]
+    fn plain_token_passes_through() {
+        assert_eq!(
+            meaningful_continuation_token(Some("token123")),
+            Some("token123")
+        );
+    }
+
+    #[test]
+    fn realistic_s3_continuation_token_unchanged() {
+        let token = "1ueGcxLPRx1Tr/XYExHnhbYLgveDs2J/2qGn8B3kE6w=";
+        assert_eq!(meaningful_continuation_token(Some(token)), Some(token));
+    }
+
+    #[test]
+    fn realistic_gcs_page_token_unchanged() {
+        let token = "ChhvYmplY3QtMDAwMS5qc29uLWtleS1uZXh0";
+        assert_eq!(meaningful_continuation_token(Some(token)), Some(token));
+    }
+
+    #[test]
+    fn single_character_token_is_meaningful() {
+        assert_eq!(meaningful_continuation_token(Some("a")), Some("a"));
+    }
+
+    #[test]
+    fn zero_string_is_a_valid_token_not_empty() {
+        assert_eq!(meaningful_continuation_token(Some("0")), Some("0"));
+    }
+
+    #[test]
+    fn internal_space_is_preserved() {
+        assert_eq!(meaningful_continuation_token(Some("a b")), Some("a b"));
+    }
+
+    #[test]
+    fn base64_padding_equals_are_not_stripped() {
+        assert_eq!(
+            meaningful_continuation_token(Some("==abc==")),
+            Some("==abc==")
+        );
+    }
+
+    #[test]
+    fn leading_whitespace_is_trimmed() {
+        assert_eq!(
+            meaningful_continuation_token(Some("  token")),
+            Some("token")
+        );
+    }
+
+    #[test]
+    fn trailing_whitespace_is_trimmed() {
+        assert_eq!(
+            meaningful_continuation_token(Some("token  ")),
+            Some("token")
+        );
+    }
+
+    #[test]
+    fn surrounding_whitespace_is_trimmed_internal_kept() {
+        assert_eq!(
+            meaningful_continuation_token(Some("  a\tb  ")),
+            Some("a\tb")
+        );
+    }
+
+    #[test]
+    fn nbsp_padded_token_trims_to_value() {
+        assert_eq!(
+            meaningful_continuation_token(Some("\u{00A0}tok\u{00A0}")),
+            Some("tok")
+        );
+    }
+
+    // --- exhausted cursors (no next page) ---
+
+    #[test]
+    fn none_is_exhausted() {
+        assert_eq!(meaningful_continuation_token(None), None);
+    }
+
+    #[test]
+    fn empty_string_is_exhausted() {
+        assert_eq!(meaningful_continuation_token(Some("")), None);
+    }
+
+    #[test]
+    fn single_space_is_exhausted() {
+        assert_eq!(meaningful_continuation_token(Some(" ")), None);
+    }
+
+    #[test]
+    fn multiple_spaces_are_exhausted() {
+        assert_eq!(meaningful_continuation_token(Some("     ")), None);
+    }
+
+    #[test]
+    fn tab_only_is_exhausted() {
+        assert_eq!(meaningful_continuation_token(Some("\t")), None);
+    }
+
+    #[test]
+    fn newline_only_is_exhausted() {
+        assert_eq!(meaningful_continuation_token(Some("\n")), None);
+    }
+
+    #[test]
+    fn carriage_return_newline_is_exhausted() {
+        assert_eq!(meaningful_continuation_token(Some("\r\n")), None);
+    }
+
+    #[test]
+    fn mixed_ascii_whitespace_is_exhausted() {
+        assert_eq!(meaningful_continuation_token(Some(" \t\n \r ")), None);
+    }
+
+    #[test]
+    fn unicode_no_break_space_is_exhausted() {
+        // Azure's empty <NextMarker/> can arrive as a stray NBSP through some
+        // proxies; str::trim treats U+00A0 as whitespace, so it is exhausted.
+        assert_eq!(meaningful_continuation_token(Some("\u{00A0}")), None);
+    }
+
+    #[test]
+    fn unicode_ideographic_space_is_exhausted() {
+        assert_eq!(meaningful_continuation_token(Some("\u{3000}")), None);
+    }
+
+    #[test]
+    fn unicode_line_separator_is_exhausted() {
+        assert_eq!(meaningful_continuation_token(Some("\u{2028}")), None);
+    }
 }
