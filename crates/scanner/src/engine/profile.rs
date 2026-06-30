@@ -204,6 +204,7 @@ pub fn reset() {
     crate::decode::decoder_profile_reset();
     super::phase2_generic::generic_profile_reset();
     super::phase2::phase2_mark_stats_reset();
+    super::phase2::hs_mark_timing_reset();
     super::scan_postprocess::ml_batch_profile_reset();
     crate::gpu::ml_split_profile_reset();
 }
@@ -295,6 +296,9 @@ pub fn dump(label: &str) {
     // distinguishable: it answers whether the `phase2:prefilter` cost is cheap
     // gate-skips averaged with a few brutal RegexSet passes, or uniformly heavy.
     let mark: super::phase2::MarkSnapshot = super::phase2::phase2_mark_stats();
+    // Internal timing split of the HS-served portion (scan vs dropped host loop),
+    // read before its reset below. Only printed when HS-mark time was recorded.
+    let hs_split: super::phase2::HsMarkSplit = super::phase2::hs_mark_timing_snapshot();
 
     leaf(P::Preprocess as usize, scan_ns, "  ");
     leaf(P::Phase1Triggers as usize, scan_ns, "  ");
@@ -308,6 +312,11 @@ pub fn dump(label: &str) {
         // describes, so the dominant scan cost is diagnosable in place.
         if i == P::Phase2Prefilter as usize && mark.calls > 0 {
             eprintln!("        ↳ {}", super::phase2::format_mark_decomposition(&mark));
+            // Second layer: where the HS-served time went (scan vs dropped host
+            // loop). Only present when profiling timed at least one HS mark.
+            if hs_split.any_recorded() {
+                eprintln!("          ↳ {}", super::phase2::format_hs_mark_split(&hs_split));
+            }
         }
     }
     leaf(P::Generic as usize, phase2_ns, "    ");
@@ -335,4 +344,5 @@ pub fn dump(label: &str) {
     // next dump reflects only its own run (the leaf NS/CALLS were already swapped
     // out by `read_reset`; this keeps the mark counters consistent with them).
     super::phase2::phase2_mark_stats_reset();
+    super::phase2::hs_mark_timing_reset();
 }

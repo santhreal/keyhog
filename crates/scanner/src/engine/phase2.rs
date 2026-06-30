@@ -14,6 +14,12 @@ pub(crate) use mark_stats::{
     record_mark_regexset_served, MarkSnapshot,
 };
 
+mod hs_mark_timing;
+pub(crate) use hs_mark_timing::{
+    format_hs_mark_split, hs_mark_timing_reset, hs_mark_timing_snapshot, record_hs_mark_dropped_ns,
+    record_hs_mark_scan_ns, HsMarkSplit,
+};
+
 // The per-scanner performance tuning lives at crate root but remains an
 // engine-internal route selector, not scanner public API.
 pub(crate) use crate::tuning::*;

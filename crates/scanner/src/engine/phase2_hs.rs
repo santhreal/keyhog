@@ -7,6 +7,7 @@
 use super::phase2::ActivePatternsScratch;
 use super::*;
 use crate::simd::backend::{HsCompileOpts, HsScanner};
+use std::time::Instant;
 
 /// Hyperscan-backed always-active prefilter engine. See the `hs` field on
 /// [`Phase2AlwaysActivePrefilter`].
@@ -122,17 +123,29 @@ impl Phase2HsEngine {
         match_text: &str,
         scratch: &mut ActivePatternsScratch,
     ) -> std::result::Result<(), String> {
+        // Profile-gated timing split (#68): only take `Instant` when the unified
+        // profiler is on, so the unprofiled hot path pays nothing. Attributes the
+        // HS-served prefilter cost between the SIMD scan and the dropped host loop.
+        let prof = super::profile::enabled();
         let hs_to_phase2 = &self.hs_to_phase2;
+        let t_scan = if prof { Some(Instant::now()) } else { None };
         self.scanner
             .scan_each_result(match_text.as_bytes(), |hs_id| {
                 if let Some(&fb) = hs_to_phase2.get(hs_id) {
                     scratch.mark(fb);
                 }
             })?;
+        if let Some(t) = t_scan {
+            super::phase2::record_hs_mark_scan_ns(t.elapsed().as_nanos() as u64);
+        }
+        let t_dropped = if prof { Some(Instant::now()) } else { None };
         for (idx, re) in &self.dropped {
             if re.get().is_match(match_text) {
                 scratch.mark(*idx);
             }
+        }
+        if let Some(t) = t_dropped {
+            super::phase2::record_hs_mark_dropped_ns(t.elapsed().as_nanos() as u64);
         }
         Ok(())
     }
