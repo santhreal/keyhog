@@ -60,6 +60,17 @@ fn suppress_matches_nested_in_private_key_blocks(
         return Ok(());
     }
 
+    // Index the spans per file as (sorted starts, running prefix-maximum of end).
+    // A match [start,end] is nested in SOME private-key span of its file iff,
+    // among the spans whose `block_start <= start`, the maximum `block_end` is
+    // `>= end` (that max-end span has start <= start, so it contains the match).
+    // A `partition_point` on the sorted starts answers each query in O(log P),
+    // turning the previous O(matches x spans) containment scan into
+    // O((matches + spans) log spans). Without this, a crafted file packed with
+    // thousands of tiny PEM blocks (each a private-key-block match) drives a
+    // quadratic blow-up in this suppression pass (algorithmic-DoS, Law 7).
+    let by_file = index_spans_by_file(private_key_spans);
+
     let mut retain = Vec::with_capacity(matches.len());
     for m in matches.iter() {
         if is_private_key_block_detector(m.detector_id.as_ref())? {
@@ -70,15 +81,7 @@ fn suppress_matches_nested_in_private_key_blocks(
             retain.push(true);
             continue;
         };
-        retain.push(
-            !private_key_spans
-                .iter()
-                .any(|(block_file, block_start, block_end)| {
-                    block_file.as_ref() == file.as_ref()
-                        && *block_start <= start
-                        && end <= *block_end
-                }),
-        );
+        retain.push(!span_contains(&by_file, file.as_ref(), start, end));
     }
     let mut retained = Vec::with_capacity(matches.len());
     for (m, keep) in matches.drain(..).zip(retain) {
@@ -95,6 +98,66 @@ fn match_span(m: &RawMatch) -> Option<(Arc<str>, usize, usize)> {
     let start = m.location.offset;
     let end = start.saturating_add(m.credential.len());
     Some((file, start, end))
+}
+
+/// Private-key spans for one file, sorted by start with a running prefix-maximum
+/// of `end`. This is the index `span_contains` binary-searches to answer interval
+/// containment in O(log P) rather than scanning all P spans per match.
+struct FileKeySpans {
+    /// Span start offsets, strictly ascending positions (ties allowed).
+    starts: Vec<usize>,
+    /// `prefix_max_end[i]` is the maximum `end` over `starts[0..=i]`.
+    prefix_max_end: Vec<usize>,
+}
+
+/// Group `(file, start, end)` private-key spans by file and, per file, sort by
+/// `start` and precompute the prefix-maximum of `end`. The prefix-max lets a
+/// single binary search decide containment for arbitrary (even overlapping)
+/// spans: among the spans whose `start <= q_start`, if the largest `end` reaches
+/// `q_end`, then that very span (its `start` is in the prefix, its `end` is the
+/// max) fully contains `[q_start, q_end]`.
+fn index_spans_by_file(spans: Vec<(Arc<str>, usize, usize)>) -> HashMap<Arc<str>, FileKeySpans> {
+    let mut grouped: HashMap<Arc<str>, Vec<(usize, usize)>> = HashMap::new();
+    for (file, start, end) in spans {
+        grouped.entry(file).or_default().push((start, end));
+    }
+    grouped
+        .into_iter()
+        .map(|(file, mut spans)| {
+            spans.sort_unstable_by_key(|&(start, _)| start);
+            let starts: Vec<usize> = spans.iter().map(|&(start, _)| start).collect();
+            let mut prefix_max_end = Vec::with_capacity(spans.len());
+            let mut running = 0usize;
+            for &(_, end) in &spans {
+                running = running.max(end);
+                prefix_max_end.push(running);
+            }
+            (
+                file,
+                FileKeySpans {
+                    starts,
+                    prefix_max_end,
+                },
+            )
+        })
+        .collect()
+}
+
+/// Whether `[start, end]` is fully nested in SOME private-key span of `file`.
+/// `partition_point` finds how many spans begin at or before `start` (a prefix of
+/// the sorted starts); if the prefix's maximum `end` reaches `end`, a containing
+/// span exists. O(log P). Looks up the file key by `&str` via `Arc<str>: Borrow`.
+fn span_contains(
+    by_file: &HashMap<Arc<str>, FileKeySpans>,
+    file: &str,
+    start: usize,
+    end: usize,
+) -> bool {
+    let Some(spans) = by_file.get(file) else {
+        return false;
+    };
+    let count = spans.starts.partition_point(|&span_start| span_start <= start);
+    count > 0 && spans.prefix_max_end[count - 1] >= end
 }
 
 fn suppress_entropy_matches_near_named_detectors(matches: &mut Vec<RawMatch>) {
