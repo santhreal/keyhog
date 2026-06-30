@@ -218,11 +218,30 @@ fn ascii_normalization_scan(bytes: &[u8]) -> AsciiNormalizationScan {
         if byte >= 0x80 {
             return AsciiNormalizationScan::NonAscii;
         }
-        if byte < 0x20 && !matches!(byte, b'\n' | b'\r' | b'\t') {
+        if is_ascii_evasion_control_byte(byte) {
             return AsciiNormalizationScan::EvasiveAscii;
         }
     }
     AsciiNormalizationScan::CleanAscii
+}
+
+/// True for an ASCII control byte an attacker can splice into a credential body
+/// to break its byte sequence — every C0 control (U+0000–001F) **and DEL
+/// (U+007F)**, EXCEPT the structural whitespace `\n`/`\r`/`\t`. Newlines, CR,
+/// and tabs are legitimate layout (TSV columns, indentation, CRLF line ends);
+/// dropping them would corrupt offsets and mangle ordinary text, so they are
+/// never evasion.
+///
+/// This is the SINGLE source of truth for "ASCII evasion control": the fast-path
+/// gate ([`ascii_normalization_scan`]), the [`contains_evasion`] detector, and
+/// the per-char Drop classifier ([`is_ascii_evasion_control`]) all delegate here
+/// so they cannot desync. DEL is a real hole when missed: `is_ascii_control()`
+/// includes 0x7F, so a gate that only tested `b < 0x20` let `ghp_abc\x7Fdef…`
+/// reach the scanner as `CleanAscii` (returned `Cow::Borrowed` unchanged), and
+/// the spliced DEL broke the credential body regex — the secret evaded.
+#[inline]
+fn is_ascii_evasion_control_byte(b: u8) -> bool {
+    (b < 0x20 || b == 0x7F) && !matches!(b, b'\n' | b'\r' | b'\t')
 }
 
 /// Full Unicode normalization (NFC + homoglyph replacement)
@@ -404,13 +423,11 @@ pub(crate) fn contains_evasion(text: &str) -> bool {
 }
 
 fn contains_ascii_evasion(bytes: &[u8]) -> bool {
-    bytes
-        .iter()
-        .any(|&b| b < 0x20 && !matches!(b, b'\n' | b'\r' | b'\t'))
+    bytes.iter().any(|&b| is_ascii_evasion_control_byte(b))
 }
 
 fn is_ascii_evasion_control(ch: char) -> bool {
-    ch.is_ascii_control() && !matches!(ch, '\n' | '\r' | '\t')
+    ch.is_ascii() && is_ascii_evasion_control_byte(ch as u8)
 }
 
 fn cyrillic_to_latin(ch: char) -> Option<char> {

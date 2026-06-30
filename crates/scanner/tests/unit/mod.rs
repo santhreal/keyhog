@@ -127,6 +127,7 @@ pub mod structured_parsers;
 pub mod sub_facade;
 mod telemetry_serial;
 pub mod token_randomness;
+pub mod unicode_ascii_control_evasion;
 pub mod unicode_combining_mark_blocks;
 pub mod unicode_combining_marks_normalization;
 pub mod unicode_evasion_anchor_parser;
