@@ -1412,6 +1412,25 @@ pub fn resolve_value_shaped_group_for_test(
         current,
     ))
 }
+/// Compile a detector pattern (or companion) regex through the engine's EXACT
+/// builder (`compiler_compile::shared_regex_compile`: case-insensitive, CRLF,
+/// the engine's size / DFA limits) and return its capture-group count —
+/// `Regex::captures_len()`, i.e. the implicit whole-match group 0 plus every
+/// explicit capture group.
+///
+/// The corpus capture-group-bound guard uses this to assert a detector's
+/// declared `group = N` is a valid index in its OWN compiled regex. When it is
+/// not (the regex has fewer than `N + 1` groups), `extract_grouped_matches`
+/// falls back to the whole match (`locs.get(group).unwrap_or((full_start,
+/// full_end))`), capturing keyword + separator + value instead of just the
+/// secret — which both pollutes the reported credential and usually fails the
+/// detector's checksum, dropping a real secret. Compiling through the engine
+/// builder (not a fresh `Regex::new`) keeps the count identical to what the
+/// scanner sees at run time and avoids a size-limit mismatch on the corpus's
+/// largest patterns.
+pub fn detector_regex_captures_len_for_test(pattern: &str) -> Result<usize, regex::Error> {
+    crate::compiler::compiler_compile::shared_regex_compile(pattern).map(|re| re.captures_len())
+}
 /// Build a `CsrU32` from per-row index lists and read every row back out via
 /// the public `get`, so a test can pin that the (now exactly-capacity-reserved)
 /// build reconstructs the input rows byte-for-byte — including empty rows, the
