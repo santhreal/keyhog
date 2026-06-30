@@ -1,0 +1,37 @@
+# Docs: RFC 4716 (SSH2 key file format) + ssh.com Tectia / PuTTYgen "Export
+# ssh.com key". Distinct from PEM: 4 dashes + SPACES around the label.
+# Format:
+#   ---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----
+#   Subject: user
+#   Comment: "2048-bit rsa"
+#   <base64 body, multi-line>
+#   ---- END SSH2 ENCRYPTED PRIVATE KEY ----
+# (also `---- BEGIN SSH2 PRIVATE KEY ----` unencrypted). The `-----BEGIN`
+# (5-dash, no-space) PEM detectors never match this framing → recall hole.
+# Verify: no API endpoint (private keys are not call-time verifiable).
+# Prefix: ---- BEGIN SSH2
+
+[detector]
+id = "ssh2-private-key"
+name = "SSH2/ssh.com Private Key (RFC 4716)"
+service = "ssh"
+severity = "critical"
+keywords = ["BEGIN SSH2", "PRIVATE KEY"]
+
+# Anchor on the 4-dash spaced `---- BEGIN SSH2 … PRIVATE KEY ----` framing and
+# its paired END. `[\s\S]*?` is lazy + unbounded so the match is bounded to one
+# block (linear-time, no nested unbounded repetition). `(?:ENCRYPTED )?` covers
+# both the encrypted and plain variants.
+[[detector.patterns]]
+regex = '---- BEGIN SSH2 (?:ENCRYPTED )?PRIVATE KEY ----[\s\S]*?---- END SSH2 (?:ENCRYPTED )?PRIVATE KEY ----'
+description = "Full RFC 4716 / ssh.com SSH2 private-key block"
+
+[[detector.tests]]
+test_positive = """
+---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----
+Comment: \"2048-bit rsa\"
+P2/56wAAAgIAAAAmZGwtbW9kBASE64BODYBASE64BODYBASE64BODYBASE64BODY
+HpW3RqwsULLotTK1HAIPDqATPve1M6CgtxzBSBRKasyo1SSqT21dxfF1yAUHkABCD
+---- END SSH2 ENCRYPTED PRIVATE KEY ----
+"""
+test_negative = "See the ---- BEGIN SSH2 PUBLIC KEY ---- format in RFC 4716 for the public half."

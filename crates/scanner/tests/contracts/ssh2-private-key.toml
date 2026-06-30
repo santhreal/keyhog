@@ -1,0 +1,44 @@
+# Per-detector contract: ssh2-private-key  (-> tests/contracts/ssh2-private-key.toml)
+#
+# RFC 4716 / ssh.com Tectia private key: 4-dash + SPACED framing
+# `---- BEGIN SSH2 [ENCRYPTED ]PRIVATE KEY ----`. Captured credential is the
+# whole block; expected `credential` below is a body substring.
+
+schema_version = 1
+detector_id = "ssh2-private-key"
+service = "ssh"
+severity = "critical"
+
+[[positive]]
+text = "---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----\nComment: \"2048-bit rsa\"\nP2/56wAAAgIAAAAmSSH2PRIVBODYssh2bodyssh2bodyssh2body0001\nHpW3RqwsULLotTK1HAIPDqATPve1M6CgtxzBSBRKasyo1SSqT21dxfF1yAUHk\n---- END SSH2 ENCRYPTED PRIVATE KEY ----"
+credential = "P2/56wAAAgIAAAAmSSH2PRIVBODYssh2bodyssh2bodyssh2body0001"
+reason = "Encrypted ssh.com SSH2 private key; full-block capture contains the body."
+
+[[positive]]
+text = "---- BEGIN SSH2 PRIVATE KEY ----\nSubject: deploy\nUNENCSSH2BODYunencbodyunencbodyunencbody0002base64base64\n---- END SSH2 PRIVATE KEY ----"
+credential = "UNENCSSH2BODYunencbodyunencbodyunencbody0002base64base64"
+reason = "Unencrypted SSH2 private key variant."
+
+[[negative]]
+text = "---- BEGIN SSH2 PUBLIC KEY ----\nAAAAB3NzaC1yc2E\n---- END SSH2 PUBLIC KEY ----"
+reason = "SSH2 PUBLIC key block — not a secret; the detector requires PRIVATE KEY."
+
+[[negative]]
+text = "See the ---- BEGIN SSH2 PRIVATE KEY ---- header described in RFC 4716."
+reason = "Format mention with no closing END block."
+
+[[evasion]]
+text = "cat <<EOF\n---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----\nComment: x\nEVADESSH2BODYevadebodyevadebodyevadebody0003base64\n---- END SSH2 ENCRYPTED PRIVATE KEY ----\nEOF"
+credential = "EVADESSH2BODYevadebodyevadebodyevadebody0003base64"
+reason = "Heredoc envelope around a full SSH2 block."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Single block; lazy unbounded capture is linear."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted SSH2 block."

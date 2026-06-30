@@ -81,6 +81,14 @@ pub(crate) const KNOWN_PREFIXES: &[&str] = &[
     // high-confidence signal, so the captured key file is floored to 0.8 rather
     // than scored on the low-entropy header lines that precede the base64 body.
     "PuTTY-User-Key-File-",
+    // RFC 4716 / ssh.com SSH2 private-key blocks captured by the
+    // `ssh2-private-key` detector start with the 4-dash spaced framing
+    // `---- BEGIN SSH2 [ENCRYPTED ]PRIVATE KEY ----`. Same class as the PEM
+    // `-----BEGIN` and PuTTY floors: the distinctive header is the high-confidence
+    // signal, so the whole captured block is floored to 0.8 rather than scored on
+    // the (possibly low-entropy) base64 body, which would otherwise drop a real
+    // key whose body happens to be short or repetitive.
+    "---- BEGIN SSH2",
     // Test-fixture marker used by the bundled suppression list.
     "TESTKEY_",
 ];
