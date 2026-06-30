@@ -591,7 +591,11 @@ impl Phase2AlwaysActivePrefilter {
             if let Some(hs) = self.hs(phase2_patterns) {
                 let _ = localize_plain; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
                 match hs.mark(match_text, scratch) {
-                    Ok(()) => return,
+                    Ok(()) => {
+                        // Per-pattern work served by the HS SIMD fast path.
+                        record_mark_hs_served();
+                        return;
+                    }
                     Err(error) => {
                         tracing::warn!(
                             %error,
@@ -601,6 +605,11 @@ impl Phase2AlwaysActivePrefilter {
                 }
             }
         }
+        // Reaching here, this per-pattern call is served by the portable
+        // RegexSet batches: HS was unavailable, errored, the chunk exceeded the
+        // size gate, or this is a non-`simd` build. The profiler reads this split
+        // to attribute the `phase2:prefilter` cost between the two paths.
+        record_mark_regexset_served();
         let portable = self.portable(phase2_patterns);
         let use_ascii = tuning.homoglyph_gate && match_text.is_ascii();
 

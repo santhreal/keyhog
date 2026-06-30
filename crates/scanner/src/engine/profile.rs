@@ -290,6 +290,12 @@ pub fn dump(label: &str) {
         );
     };
 
+    // The prefilter call decomposition (gate-skip / HS-served / RegexSet-served)
+    // is read BEFORE its reset below so a candidate-dense vs sparse corpus is
+    // distinguishable: it answers whether the `phase2:prefilter` cost is cheap
+    // gate-skips averaged with a few brutal RegexSet passes, or uniformly heavy.
+    let mark: super::phase2::MarkSnapshot = super::phase2::phase2_mark_stats();
+
     leaf(P::Preprocess as usize, scan_ns, "  ");
     leaf(P::Phase1Triggers as usize, scan_ns, "  ");
     parent("phase2", phase2_ns, "  ");
@@ -298,6 +304,11 @@ pub fn dump(label: &str) {
     parent("phase2-capture", capture_ns, "    ");
     for &i in &PHASE2_CAPTURE_LEAVES {
         leaf(i, capture_ns, "      ");
+        // Attach the path decomposition directly under the prefilter leaf it
+        // describes, so the dominant scan cost is diagnosable in place.
+        if i == P::Phase2Prefilter as usize && mark.calls > 0 {
+            eprintln!("        ↳ {}", super::phase2::format_mark_decomposition(&mark));
+        }
     }
     leaf(P::Generic as usize, phase2_ns, "    ");
     leaf(P::Entropy as usize, phase2_ns, "    ");
@@ -319,4 +330,9 @@ pub fn dump(label: &str) {
     super::phase2_generic::generic_profile_dump();
     super::scan_postprocess::ml_batch_profile_dump();
     crate::gpu::ml_split_profile_dump();
+
+    // Reset the prefilter call counters now that they have been reported, so the
+    // next dump reflects only its own run (the leaf NS/CALLS were already swapped
+    // out by `read_reset`; this keeps the mark counters consistent with them).
+    super::phase2::phase2_mark_stats_reset();
 }

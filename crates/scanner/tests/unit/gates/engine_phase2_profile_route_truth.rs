@@ -31,8 +31,11 @@ fn engine_profile_reset_clears_phase2_mark_stats() {
         mark_stats.contains("#[cfg(not(test))]\npub(crate) fn phase2_mark_stats_reset()")
             && mark_stats.contains("MARK_CALLS.store(0, Relaxed)")
             && mark_stats.contains("MARK_GATE_SKIPS.store(0, Relaxed)")
-            && mark_stats.contains("MARK_PERPATTERN_WORK.store(0, Relaxed)"),
-        "production phase2 mark counters must have a real reset, not only a test-only reset"
+            && mark_stats.contains("MARK_PERPATTERN_WORK.store(0, Relaxed)")
+            && mark_stats.contains("MARK_HS_SERVED.store(0, Relaxed)")
+            && mark_stats.contains("MARK_REGEXSET_SERVED.store(0, Relaxed)"),
+        "production phase2 mark counters (incl. the HS/RegexSet path split) must \
+         all have a real reset, not only a test-only reset"
     );
     assert!(
         phase2.contains("phase2_mark_stats_reset, record_mark_call"),

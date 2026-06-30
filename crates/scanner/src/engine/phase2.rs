@@ -8,10 +8,10 @@ use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::sync::OnceLock;
 
 mod mark_stats;
-#[cfg(test)]
-pub(crate) use mark_stats::phase2_mark_stats;
 pub(crate) use mark_stats::{
-    phase2_mark_stats_reset, record_mark_call, record_mark_gate_skip, record_mark_perpattern_work,
+    format_mark_decomposition, phase2_mark_stats, phase2_mark_stats_reset, record_mark_call,
+    record_mark_gate_skip, record_mark_hs_served, record_mark_perpattern_work,
+    record_mark_regexset_served, MarkSnapshot,
 };
 
 // The per-scanner performance tuning lives at crate root but remains an

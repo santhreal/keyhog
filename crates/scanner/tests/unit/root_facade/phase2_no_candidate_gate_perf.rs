@@ -74,7 +74,8 @@ fn mark_matches_gate_path_is_fast() {
         };
         let _ = scanner.scan(&chunk);
     }
-    let (warm_calls, warm_skips, warm_work) = crate::engine::phase2_mark_stats();
+    let warm = crate::engine::phase2_mark_stats();
+    let (warm_calls, warm_skips, warm_work) = (warm.calls, warm.gate_skips, warm.perpattern_work);
     assert!(
         warm_calls >= 1,
         "warm scan: mark_matches must be invoked (calls={warm_calls})"

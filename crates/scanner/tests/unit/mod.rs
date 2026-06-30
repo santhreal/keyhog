@@ -106,6 +106,7 @@ pub mod hw_probe_cases;
 pub mod inline_migrated;
 pub mod is_sequential_placeholder_robustness;
 pub mod jwt_analysis;
+pub mod mark_stats;
 pub mod ml_scorer;
 pub mod multiline;
 pub mod phase2_entropy_helpers;

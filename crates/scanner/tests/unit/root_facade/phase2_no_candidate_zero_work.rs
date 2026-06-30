@@ -110,7 +110,8 @@ fn no_candidate_chunk_does_zero_per_pattern_work() {
         "no-candidate chunk must produce zero findings; got {keys:?}"
     );
 
-    let (calls, skips, work) = crate::engine::phase2_mark_stats();
+    let snap = crate::engine::phase2_mark_stats();
+    let (calls, skips, work) = (snap.calls, snap.gate_skips, snap.perpattern_work);
     // The direct scan path always reaches `mark_matches` (scan_inner →
     // scan_prepared_with_triggered → scan_phase2_patterns → mark_matches), so at
     // least one call must have happened.
@@ -155,7 +156,8 @@ fn always_active_finding_survives_the_gate() {
     // Structural invariant: every `mark_matches` call resolves to EXACTLY one of
     // {gate skip, per-pattern body} — never both, never neither. A drift here means
     // the counters (and the SWE-101 accounting they pin) are wrong.
-    let (calls, skips, work) = crate::engine::phase2_mark_stats();
+    let snap = crate::engine::phase2_mark_stats();
+    let (calls, skips, work) = (snap.calls, snap.gate_skips, snap.perpattern_work);
     assert!(calls >= 1, "mark_matches must run (calls={calls})");
     assert_eq!(
         skips + work,
