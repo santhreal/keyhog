@@ -143,47 +143,56 @@ pub fn is_private_url(url_str: &str) -> bool {
             // explicit `0x`-prefixed `from_str_radix(16)` covers
             // that gap; the leading-zero radix-8 parse covers the
             // octal variant for completeness.
-            let maybe_ip = if let Some(hex) = d.strip_prefix("0x").or_else(|| d.strip_prefix("0X"))
-            {
+            // A host that contains a dot is a *dotted* IPv4 form, never a bare
+            // integer, so it is parsed here — as a standard dotted-quad or an
+            // `inet_aton` short form whose fields each carry their OWN radix
+            // (`canonicalize_short_form_ipv4` → `parse_ip_field`). Routing every
+            // dotted host through this branch is load-bearing: the whole-string
+            // `0x` strip in the integer branches below succeeds on a host like
+            // `0x7f.1` (strip → `7f.1`) but then fails `from_str_radix` on the
+            // embedded dot, yielding `None` — which on the dot-bearing path would
+            // silently skip the per-field canonicalizer that resolves
+            // `0x7f.1` → 127.0.0.1. Because `looks_like_malformed_ip` only fires
+            // at ≥4 parts, a 2- or 3-part hex-leading short form
+            // (`0x7f.1`, `0x7f.0.1`) would otherwise reach neither gate and slip
+            // past the proxy-path SSRF check (the only gate there — no
+            // post-resolution IP veto). Leading with the dot test closes that.
+            //
+            // The bare-integer branches that follow handle dotless hosts only.
+            // They are defense-in-depth behind the dotless-domain refusal above
+            // (`!d.contains('.')` already returns `true`); keeping them means an
+            // integer IP is still classified correctly if that policy is ever
+            // relaxed.
+            let maybe_ip = if d.contains('.') {
+                // Standard quad first (`127.0.0.1`), then the abbreviated
+                // glibc/getaddrinfo short forms `Ipv4Addr::parse` rejects:
+                //   - 2-part:  http://127.1     → 127.0.0.1
+                //   - 3-part:  http://172.16.1  → 172.16.0.1
+                //   - hex/octal leading field: http://0x7f.1 / http://0177.1
+                // In inet_aton semantics the final field packs into the trailing
+                // low bytes; `canonicalize_short_form_ipv4` reproduces that.
+                d.parse::<Ipv4Addr>()
+                    .ok()
+                    .or_else(|| canonicalize_short_form_ipv4(d))
+            } else if let Some(hex) = d.strip_prefix("0x").or_else(|| d.strip_prefix("0X")) {
                 // Law 10: a `None` here is NOT a swallowed block-decision — it
                 // only means "this token is not a parseable hex integer-IP",
                 // so `maybe_ip` stays `None` and the host is treated as a real
                 // domain. That domain still gets DNS-resolved and re-screened
                 // against `is_private_ip_addr` post-resolution (rebinding
-                // defense), AND `looks_like_malformed_ip` below independently
-                // blocks octet-shaped evasion. No SSRF target is let through.
+                // defense). No SSRF target is let through.
                 u32::from_str_radix(hex, 16).ok().map(Ipv4Addr::from) // LAW10: fail-open to domain (see above) — post-resolution veto still gates it
             } else if d.starts_with('0') && d.len() > 1 && d.chars().all(|c| c.is_ascii_digit()) {
                 // Law 10: see above — a failed octal parse yields `None`
-                // (treat as domain), not an allow; post-resolution veto +
-                // `looks_like_malformed_ip` still gate it.
+                // (treat as domain), not an allow; post-resolution veto still
+                // gates it.
                 u32::from_str_radix(d, 8).ok().map(Ipv4Addr::from) // LAW10: fail-open to domain (see above) — post-resolution veto still gates it
-            } else if let Ok(n) = d.parse::<u32>() {
-                // LAW10: fail-closed — the parsed integer IP is screened by
-                // verifier_blocks_ip_addr below (and the post-resolution veto on
-                // the resolved path); a parse failure is never an allow, it falls
-                // through to the stricter dotted/short-form IP checks.
-                Some(Ipv4Addr::from(n))
-            } else if let Ok(ip) = d.parse::<Ipv4Addr>() {
-                // LAW10: fail-closed — the parsed dotted IP is screened by
-                // verifier_blocks_ip_addr below (and the post-resolution veto on
-                // the resolved path); a parse failure is never an allow, it falls
-                // through to the short-form IP canonicalization.
-                Some(ip)
             } else {
-                // Abbreviated dotted forms that glibc/getaddrinfo accept but
-                // `Ipv4Addr::parse` rejects (it requires exactly 4 octets):
-                //
-                //   - 2-part:  http://127.1        → 127.0.0.1
-                //   - 3-part:  http://172.16.1     → 172.16.0.1
-                //
-                // In classic inet_aton semantics the final field packs into
-                // the trailing low bytes, so the previous octets are the high
-                // bytes and the last field fills the remainder. Without this
-                // the URL-string SSRF gate let `https://127.1/` through, and
-                // on the proxy path (which skips the post-resolution IP veto)
-                // that was the only gate.
-                canonicalize_short_form_ipv4(d)
+                // Bare decimal integer host (`http://2130706433` → 127.0.0.1).
+                // Law 10: a parse failure yields `None` (treat as domain); the
+                // dotless-domain refusal above already blocks it, and the
+                // post-resolution veto re-screens the resolved path.
+                d.parse::<u32>().ok().map(Ipv4Addr::from) // LAW10: fail-open to domain (see above) — dotless refusal + post-resolution veto still gate it
             };
             if let Some(ip) = maybe_ip {
                 if verifier_blocks_ip_addr(IpAddr::V4(ip)) {

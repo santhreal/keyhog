@@ -19,6 +19,7 @@ pub mod ssrf_blocks_credential_userinfo_loopback;
 pub mod ssrf_blocks_decimal_integer_localhost;
 pub mod ssrf_blocks_file_scheme_url;
 pub mod ssrf_blocks_google_metadata_internal;
+pub mod ssrf_blocks_hex_leading_short_form;
 pub mod ssrf_blocks_hex_localhost;
 pub mod ssrf_blocks_internal_domain_suffix;
 pub mod ssrf_blocks_ipv4_mapped_loopback;
