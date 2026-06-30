@@ -225,6 +225,7 @@ fn process_line_chain(
         } else {
             if continuation_type == ContinuationType::Backslash
                 || continuation_type == ContinuationType::PlusOperator
+                || continuation_type == ContinuationType::DotOperator
                 || continuation_type == ContinuationType::Implicit
                 || !part.is_empty()
             {

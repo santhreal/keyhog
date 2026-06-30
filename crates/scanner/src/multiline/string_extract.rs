@@ -19,6 +19,7 @@ pub(super) enum ContinuationType {
     None,
     Backslash,
     PlusOperator,
+    DotOperator,
     Implicit,
     TemplateLiteral,
 }
@@ -203,6 +204,12 @@ pub(super) fn extract_string_part(
         }
     }
 
+    if config.dot_concatenation {
+        if let Some((part, continues)) = extract_dot_concatenation(line) {
+            return (part, continues, ContinuationType::DotOperator);
+        }
+    }
+
     if config.python_implicit {
         if let Some((part, continues)) = extract_python_implicit_concatenation(line) {
             return (part, continues, ContinuationType::Implicit);
@@ -344,19 +351,24 @@ fn filter_line_content(line: &str) -> String {
 }
 
 /// Iterate the literal segments of a string-concatenation expression, splitting
-/// ONLY on the `+` that sit OUTSIDE any quoted span. A `+` inside a quoted
-/// literal is part of the value, not a join operator: base64 uses `+` in its
-/// alphabet (`"aGVsbG8+d29ybGQ="`) and a fragment can even end in one
-/// (`"aGVsbG8+" + "d29ybGQ="`). A blind `split('+')` shredded those values,
+/// ONLY on the `op` join byte that sit OUTSIDE any quoted span. An `op` inside a
+/// quoted literal is part of the value, not a join operator: base64 uses `+` in
+/// its alphabet (`"aGVsbG8+d29ybGQ="`) and a `.` is ubiquitous inside string
+/// values (`"api.example.com"`); a fragment can even end in one
+/// (`"aGVsbG8+" + "d29ybGQ="`). A blind `split(op)` shredded those values,
 /// truncating the secret and breaking reassembly. Quote state honors backslash
 /// escapes so an escaped quote inside a literal does not end the span early.
 ///
+/// Parameterized on the single join byte so the `+` (Java/JS/Python/C#) and `.`
+/// (PHP/Perl) extractors share ONE quote-aware streaming splitter instead of
+/// each hand-rolling its own scan loop. `op` must be single-byte ASCII (`b'+'`
+/// or `b'.'`); like `"`, `'` and `` ` `` it then always lands on a char
+/// boundary, so every yielded slice is valid UTF-8.
+///
 /// Yields borrowed slices LAZILY via `from_fn` — no `Vec` allocation, so the hot
-/// path stays allocation-light. `+`, `"`, `'` and `` ` `` are all single-byte
-/// ASCII, so every segment boundary lands on a char boundary and the slices are
-/// always valid UTF-8.
+/// path stays allocation-light.
 #[cfg(feature = "multiline")]
-fn split_concatenation_operators(expr: &str) -> impl Iterator<Item = &str> {
+fn split_concatenation_operators(expr: &str, op: u8) -> impl Iterator<Item = &str> {
     let bytes = expr.as_bytes();
     let mut start = 0usize;
     let mut i = 0usize;
@@ -380,7 +392,7 @@ fn split_concatenation_operators(expr: &str) -> impl Iterator<Item = &str> {
                 }
             } else if matches!(b, b'"' | b'\'' | b'`') {
                 quote = Some(b);
-            } else if b == b'+' {
+            } else if b == op {
                 let segment = &expr[start..i - 1];
                 start = i;
                 return Some(segment);
@@ -427,7 +439,7 @@ fn extract_plus_concatenation(line: &str) -> Option<(String, bool)> {
     // "not a concatenation".
     let mut result = String::new();
     let mut part_count = 0usize;
-    for part in split_concatenation_operators(content_to_split) {
+    for part in split_concatenation_operators(content_to_split, b'+') {
         part_count += 1;
         let content = extract_string_content(part.trim());
         if !content.is_empty() {
@@ -440,6 +452,95 @@ fn extract_plus_concatenation(line: &str) -> Option<(String, bool)> {
     } else {
         Some((result, ends_with_plus))
     }
+}
+
+/// PHP / Perl join string literals with the `.` operator:
+///   `$token = "ghp_" . "abcdef" . "012345";`
+///
+/// Unlike `+`, `.` is heavily overloaded — member access (`obj.field`), float
+/// literals (`3.14`), namespace and path separators, file extensions — so this
+/// extractor is deliberately STRICT to stay precise on three axes:
+///
+/// 1. It splits ONLY on the `.` that sit OUTSIDE every quoted span (shared
+///    [`split_concatenation_operators`]); a `.` inside `"a.b"` is value bytes.
+/// 2. It reassembles ONLY segments that ARE a quoted literal. A bare segment
+///    (`$var`, `PHP_EOL`, `trim("x")`) is a runtime value — never literal secret
+///    bytes — so it is dropped, the same philosophy as the `${...}`
+///    template-literal handler. Requiring the segment to *start* with a quote
+///    (not merely contain one) keeps a function call's string argument from
+///    being mistaken for a concatenated fragment.
+/// 3. It requires at least two segments to contribute quoted bytes (the
+///    `"x" . "y"` idiom). That guard is what stops `arr["k"].length`,
+///    `cfg["db.host"]`, `explode(".", $s)` and `3.14` from reassembling into a
+///    synthetic candidate — each yields at most one quoted literal.
+///
+/// A trailing join `.` (`$x = "a" .` continued on the next line) sets the
+/// continuation flag so the chain walker pulls the next line, exactly like the
+/// `+` and backslash continuations.
+#[cfg(feature = "multiline")]
+fn extract_dot_concatenation(line: &str) -> Option<(String, bool)> {
+    let trimmed = line.trim();
+    if !trimmed.contains('.') {
+        return None;
+    }
+
+    let content_to_split = if let Some(pos) = trimmed.find('=') {
+        &trimmed[pos + 1..]
+    } else {
+        trimmed
+    };
+
+    // A `.`-join is meaningful only between quoted literals; an unquoted `.` is
+    // member access / a float / a path separator, never a string join. Cheap
+    // reject so ordinary `obj.method()` / `a.b.c` lines never enter the split.
+    if !content_to_split.contains('"')
+        && !content_to_split.contains('\'')
+        && !content_to_split.contains('`')
+    {
+        return None;
+    }
+
+    let ends_with_dot = content_to_split.trim_end().ends_with('.');
+
+    let mut result = String::new();
+    let mut contributing = 0usize;
+    for part in split_concatenation_operators(content_to_split, b'.') {
+        let part = part.trim();
+        // STRICT: only a segment that IS a quoted literal contributes. A bare
+        // segment (identifier / variable ref / function call) is runtime, not
+        // literal secret bytes — drop it rather than append the token verbatim.
+        if !part.starts_with(['"', '\'', '`']) {
+            continue;
+        }
+        if let Some(content) = first_quoted_literal(part) {
+            if !content.is_empty() {
+                result.push_str(&content);
+                contributing += 1;
+            }
+        }
+    }
+
+    if result.is_empty() || (contributing < 2 && !ends_with_dot) {
+        None
+    } else {
+        Some((result, ends_with_dot))
+    }
+}
+
+/// Extract the content of the FIRST quoted literal in `s` (any of `"`, `'`,
+/// `` ` ``), honoring backslash escapes via [`extract_quoted_content`].
+/// Returns `None` when `s` has no quoted literal. Unlike
+/// [`extract_string_content`], it has NO raw-line fallback — that absence is the
+/// point: the dot-concat extractor uses it to DROP bare runtime segments rather
+/// than append their source text.
+#[cfg(feature = "multiline")]
+fn first_quoted_literal(s: &str) -> Option<String> {
+    for (open, close) in [('"', '"'), ('\'', '\''), ('`', '`')] {
+        if let Some(content) = extract_quoted_content(s, open, close) {
+            return Some(content);
+        }
+    }
+    None
 }
 
 #[cfg(feature = "multiline")]

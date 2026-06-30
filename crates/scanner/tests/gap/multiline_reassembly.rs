@@ -66,6 +66,7 @@ fn default_config_values_match_source() {
     assert!(c.python_implicit);
     assert!(c.backslash_continuation);
     assert!(c.plus_concatenation);
+    assert!(c.dot_concatenation);
     assert!(c.template_literals);
 }
 

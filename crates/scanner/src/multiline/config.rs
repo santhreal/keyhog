@@ -219,6 +219,9 @@ pub struct MultilineConfig {
     pub backslash_continuation: bool,
     /// Whether to enable explicit concatenation with `+`.
     pub plus_concatenation: bool,
+    /// Whether to enable explicit concatenation with the `.` operator
+    /// (PHP / Perl string concatenation: `$x = "a" . "b";`).
+    pub dot_concatenation: bool,
     /// Whether to enable JavaScript template literal concatenation.
     pub template_literals: bool,
 }
@@ -230,6 +233,7 @@ impl Default for MultilineConfig {
             python_implicit: true,
             backslash_continuation: true,
             plus_concatenation: true,
+            dot_concatenation: true,
             template_literals: true,
         }
     }
@@ -268,6 +272,7 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     }
 
     let has_explicit_concat = text.contains("\" +") || text.contains("' +");
+    let has_dot_concat = has_dot_concat_shape(text);
     let has_backslash_cont = text.contains("\" \\") || text.contains("' \\");
     let has_template = memchr::memchr(b'`', bytes).is_some();
     // Function-style string concatenation: R's paste()/paste0() and Rust's
@@ -279,6 +284,7 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     let has_var_ref_concat =
         memchr::memchr(b'+', bytes).is_some() && has_var_ref_concatenation(text);
     if !has_explicit_concat
+        && !has_dot_concat
         && !has_backslash_cont
         && !has_template
         && !has_paste
@@ -301,6 +307,9 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
             || trimmed.contains("' +")
             || trimmed.contains("+ \"")
             || trimmed.contains("+ '")
+            // PHP / Perl `.` join between two adjacent quoted literals
+            // (`"x" . "y"`) or a trailing-dot continuation (`"x" .`).
+            || has_dot_concat_shape(trimmed)
             || (trimmed.ends_with('\\') && !trimmed.ends_with("\\\\"))
             || trimmed.contains("\" \"")
             || trimmed.contains("' '")
@@ -326,6 +335,72 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
         }
     }
 
+    false
+}
+
+/// Detect a PHP / Perl `.`-operator string-concatenation join: a `.` that sits
+/// OUTSIDE any quoted span and directly joins two adjacent quoted literals
+/// (`"x" . "y"`, any amount of intervening whitespace) OR ends a line as a
+/// trailing-dot continuation (`"x" .` continued on the next line).
+///
+/// This is the gate for [`extract_dot_concatenation`]. It is deliberately
+/// precise so it does NOT trip preprocessing on the overloaded `.`:
+///   * a `.` inside a string (`"a.b.c"`, `explode(".", $s)`) is skipped by
+///     quote tracking — it never reaches the join check;
+///   * a float (`3.14`) or member access (`obj.method`, `"str".length`) has a
+///     non-quote on at least one side, so it is rejected — the literal-method
+///     case `"str".length` in particular is NOT a join (identifier on the
+///     right), which keeps ordinary JS/Python string-method calls cheap.
+///
+/// Single O(n) byte pass, no allocation. Only `"` and `'` are string delimiters
+/// here (PHP/Perl); backtick is intentionally not a `.`-concat delimiter.
+#[cfg(feature = "multiline")]
+fn has_dot_concat_shape(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut quote: Option<u8> = None;
+    let mut escaped = false;
+    // True when the most recent non-whitespace byte was a closing string quote,
+    // i.e. a quoted literal just ended (modulo trailing spaces/tabs).
+    let mut prev_nonspace_closed_quote = false;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+        i += 1;
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == q {
+                quote = None;
+                prev_nonspace_closed_quote = true;
+            }
+            continue;
+        }
+        match b {
+            b'"' | b'\'' => {
+                quote = Some(b);
+                prev_nonspace_closed_quote = false;
+            }
+            b' ' | b'\t' => { /* whitespace preserves the prev-token state */ }
+            b'.' if prev_nonspace_closed_quote => {
+                // Left side is a closed quote; a join requires the right side to
+                // be another quoted literal (adjacent concatenation) or the end
+                // of the line (trailing-dot continuation).
+                let mut j = i;
+                while j < bytes.len() && matches!(bytes[j], b' ' | b'\t') {
+                    j += 1;
+                }
+                let right_is_quote = j < bytes.len() && matches!(bytes[j], b'"' | b'\'');
+                let right_is_eol = j >= bytes.len() || matches!(bytes[j], b'\n' | b'\r');
+                if right_is_quote || right_is_eol {
+                    return true;
+                }
+                prev_nonspace_closed_quote = false;
+            }
+            _ => prev_nonspace_closed_quote = false,
+        }
+    }
     false
 }
 

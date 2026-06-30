@@ -350,6 +350,10 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
         s.multiline.plus_concatenation,
     );
     h.field_bool(
+        "scanner.multiline.dot_concatenation",
+        s.multiline.dot_concatenation,
+    );
+    h.field_bool(
         "scanner.multiline.template_literals",
         s.multiline.template_literals,
     );
