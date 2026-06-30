@@ -121,6 +121,7 @@ pub mod multiline;
 pub mod multiline_large_file_keyword_gate;
 pub mod phase2_entropy_helpers;
 pub mod pipeline;
+pub mod placeholder_suppression_boundaries;
 pub mod prefix_trie;
 pub mod prefix_trie_extended;
 pub mod resolution;

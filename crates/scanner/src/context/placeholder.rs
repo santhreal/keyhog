@@ -52,12 +52,21 @@ pub(crate) fn is_known_example_credential(credential: &str) -> bool {
 /// Returns true if the credential is the hash of an empty input (common in
 /// integrity/checksum fields, never a real secret).
 fn is_empty_input_hash(credential: &str) -> bool {
-    let lower = credential.to_ascii_lowercase();
-    // Only match exact lengths to avoid false positives on substrings.
-    match lower.len() {
-        32 => lower == "d41d8cd98f00b204e9800998ecf8427e", // MD5("")
-        40 => lower == "da39a3ee5e6b4b0d3255bfef95601890afd80709", // SHA1("")
-        64 => lower == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", // SHA256("")
+    // Length-gate FIRST, then compare case-insensitively against the raw bytes.
+    // Law 7: this runs at every per-candidate suppression site (see the
+    // `is_known_example_credential` note), and the previous unconditional
+    // `credential.to_ascii_lowercase()` copied the whole credential for every
+    // candidate — including the vast majority that are not 32/40/64 chars and
+    // can never match. `[u8]::eq_ignore_ascii_case` is byte-identical here (all
+    // three digests are pure ASCII) and allocates nothing. Only exact lengths
+    // match, so a longer string that merely contains a digest never trips it.
+    let bytes = credential.as_bytes();
+    match bytes.len() {
+        32 => bytes.eq_ignore_ascii_case(b"d41d8cd98f00b204e9800998ecf8427e"), // MD5("")
+        40 => bytes.eq_ignore_ascii_case(b"da39a3ee5e6b4b0d3255bfef95601890afd80709"), // SHA1("")
+        64 => bytes.eq_ignore_ascii_case(
+            b"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        ), // SHA256("")
         _ => false,
     }
 }
