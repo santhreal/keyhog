@@ -1,7 +1,7 @@
 //! Migrated from src/ascii_ci.rs
 
 use keyhog_scanner::testing::ascii_ci::{
-    ci_find, ci_find_nonempty, contains_path_segment, contains_path_segment_two,
+    ci_find, ci_find_at, ci_find_nonempty, contains_path_segment, contains_path_segment_two,
     extend_ascii_lowercase_from, has_ascii_uppercase,
 };
 
@@ -256,4 +256,70 @@ fn contains_path_segment_two_negative() {
         "wp-content",
         "plugins"
     ));
+}
+
+// ---- ci_find_at: the position-returning case-insensitive substring search ----
+
+#[test]
+fn ci_find_at_returns_zero_when_needle_is_a_prefix() {
+    assert_eq!(ci_find_at(b"sha256:deadbeef", b"sha256:"), Some(0));
+}
+
+#[test]
+fn ci_find_at_returns_the_offset_of_an_embedded_match() {
+    assert_eq!(ci_find_at(b"nginx@sha256:x", b"sha256:"), Some(6));
+}
+
+#[test]
+fn ci_find_at_matches_case_insensitively_in_both_directions() {
+    // Upper-case haystack, lower-case needle (ssh-keygen SHA256:).
+    assert_eq!(ci_find_at(b"SHA256:x", b"sha256:"), Some(0));
+    // Lower-case haystack, upper-case needle - the needle may be any case.
+    assert_eq!(ci_find_at(b"sha256:x", b"SHA256:"), Some(0));
+    // Mixed case on both sides still matches.
+    assert_eq!(ci_find_at(b"xxShA256:", b"sHa256:"), Some(2));
+}
+
+#[test]
+fn ci_find_at_returns_none_when_absent() {
+    assert_eq!(ci_find_at(b"sha512-body", b"sha256:"), None);
+    assert_eq!(ci_find_at(b"", b"x"), None);
+}
+
+#[test]
+fn ci_find_at_empty_needle_is_not_found() {
+    // Mirrors ci_find_nonempty: an empty needle must not match every offset.
+    assert_eq!(ci_find_at(b"anything", b""), None);
+    assert_eq!(ci_find_at(b"", b""), None);
+}
+
+#[test]
+fn ci_find_at_needle_longer_than_haystack_is_none() {
+    assert_eq!(ci_find_at(b"sha", b"sha256:"), None);
+}
+
+#[test]
+fn ci_find_at_returns_first_of_multiple_occurrences() {
+    assert_eq!(ci_find_at(b"abXABxab", b"ab"), Some(0));
+    // First match is the upper-case one when it comes first.
+    assert_eq!(ci_find_at(b"ZZABzzab", b"ab"), Some(2));
+}
+
+#[test]
+fn ci_find_at_matches_at_the_very_end() {
+    assert_eq!(ci_find_at(b"xxxxAB", b"ab"), Some(4));
+}
+
+#[test]
+fn ci_find_nonempty_agrees_with_ci_find_at_presence() {
+    // ci_find_nonempty delegates to ci_find_at; pin that they never diverge.
+    for (h, n) in [
+        (&b"sha256:x"[..], &b"sha256:"[..]),
+        (&b"SHA256:x"[..], &b"sha256:"[..]),
+        (&b"nope"[..], &b"sha256:"[..]),
+        (&b"anything"[..], &b""[..]),
+        (&b"ab"[..], &b"abc"[..]),
+    ] {
+        assert_eq!(ci_find_nonempty(h, n), ci_find_at(h, n).is_some());
+    }
 }

@@ -275,12 +275,28 @@ pub(crate) fn ci_find(haystack: &[u8], needle_lower: &[u8]) -> bool {
 /// user/configured keyword lists where `""` must not match every byte offset.
 #[inline]
 pub(crate) fn ci_find_nonempty(haystack: &[u8], needle: &[u8]) -> bool {
-    if needle.is_empty() {
-        return false;
-    }
+    ci_find_at(haystack, needle).is_some()
+}
+
+/// Case-insensitive ASCII byte substring search returning the byte offset of
+/// the first match, or `None` when the needle does not occur.
+///
+/// The needle may contain any ASCII case; an empty needle is treated as "not
+/// found" (returns `None`), matching [`ci_find_nonempty`]. Because the match is
+/// ASCII-case-insensitive against a needle whose bytes are ASCII, the returned
+/// offset is byte-exact and lands on a UTF-8 char boundary, so a caller holding
+/// the original `&str` can slice `&s[offset + needle.len()..]` without risking a
+/// mid-codepoint panic.
+///
+/// This is the position-returning sibling of [`ci_find_nonempty`], which
+/// delegates here so the two never drift: one `memchr2` SIMD skim over the
+/// needle's first-byte case pair, with the full `eq_ignore_ascii_case` compare
+/// running only at each candidate offset.
+#[inline]
+pub(crate) fn ci_find_at(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     let n = needle.len();
-    if haystack.len() < n {
-        return false;
+    if n == 0 || haystack.len() < n {
+        return None;
     }
     let first_lower = needle[0].to_ascii_lowercase();
     let first_upper = needle[0].to_ascii_uppercase();
@@ -289,10 +305,10 @@ pub(crate) fn ci_find_nonempty(haystack: &[u8], needle: &[u8]) -> bool {
             break;
         }
         if haystack[start..start + n].eq_ignore_ascii_case(needle) {
-            return true;
+            return Some(start);
         }
     }
-    false
+    None
 }
 
 /// True when `path` (POSIX or Windows shape) contains the path segment

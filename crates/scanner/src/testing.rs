@@ -2846,6 +2846,10 @@ pub(crate) mod ascii_ci {
         crate::ascii_ci::ci_find_nonempty(haystack, needle)
     }
 
+    pub(crate) fn ci_find_at(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+        crate::ascii_ci::ci_find_at(haystack, needle)
+    }
+
     pub(crate) fn contains_path_segment(path: &str, segment: &str) -> bool {
         crate::ascii_ci::contains_path_segment(path, segment)
     }

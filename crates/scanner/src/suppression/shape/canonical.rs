@@ -214,22 +214,34 @@ fn aws_iam_arn_body_has_resource_target(body: &str) -> bool {
 }
 
 /// If `credential` begins with - OR contains - one of the well-known
-/// hash-algorithm labels (`sha256:`, `sha512:`, `sha512-`, `sha1:`,
-/// `md5:`), return the body after the label. Otherwise None.
+/// hash-algorithm labels (`sha256:`, `sha512:`, `sha512-`, `sha256-`,
+/// `sha1:`, `md5:`), return the body after the first such label. Otherwise
+/// None.
 ///
 /// Substring match (not prefix-only) is intentional. Docker image
 /// digests are commonly written `nginx@sha256:<64-hex>`, python
 /// requirements as `--hash=sha256:<64-hex>`, both of which keyhog's
 /// value extractor surfaces as one credential string that doesn't
 /// START with the algo label.
+///
+/// The label match is ASCII-case-insensitive: `ssh-keygen -lf` renders key
+/// fingerprints as upper-case `SHA256:<base64>`, and Windows `certutil
+/// -hashfile` emits upper-case `SHA256` before the digest. Matching only the
+/// lower-case spelling used to leak those upper-case digest bodies back out as
+/// false-positive credentials. Widening the label match is recall-safe because
+/// the sole caller ([`looks_like_prefixed_hash_digest`]) still re-checks that
+/// the stripped body is itself a fixed-length hex digest or base64 integrity
+/// blob before suppressing — the label alone never suppresses anything.
 fn strip_hash_algo_prefix(credential: &str) -> Option<&str> {
-    const LABELS: &[&str] = &["sha256:", "sha512:", "sha512-", "sha256-", "sha1:", "md5:"];
-    for label in LABELS {
-        if let Some(idx) = credential.find(label) {
-            return Some(&credential[idx + label.len()..]);
-        }
-    }
-    None
+    const LABELS: &[&[u8]] = &[
+        b"sha256:", b"sha512:", b"sha512-", b"sha256-", b"sha1:", b"md5:",
+    ];
+    let bytes = credential.as_bytes();
+    LABELS.iter().find_map(|label| {
+        // `label` is ASCII, so `idx + label.len()` is a UTF-8 char boundary and
+        // the slice cannot split a codepoint even for a multibyte body tail.
+        crate::ascii_ci::ci_find_at(bytes, label).map(|idx| &credential[idx + label.len()..])
+    })
 }
 
 /// True if `s` looks like a base64-encoded package-integrity body after
@@ -578,9 +590,17 @@ pub(crate) fn is_dash_segmented_alnum_decoy_with_randomness(
 mod tests {
     use super::{
         is_structured_dotted_token, looks_like_aws_iam_arn, looks_like_dashed_serial_key,
-        looks_like_entropy_canonical_non_secret_shape, looks_like_prefixed_masked_sequence,
-        looks_like_random_byte_base64_blob, looks_like_trimmed_aws_iam_arn,
+        looks_like_entropy_canonical_non_secret_shape, looks_like_prefixed_hash_digest,
+        looks_like_prefixed_masked_sequence, looks_like_random_byte_base64_blob,
+        looks_like_trimmed_aws_iam_arn, strip_hash_algo_prefix,
     };
+
+    /// A real `sha512-` npm SRI integrity body (proven suppressed by the
+    /// `regression_reverse_integrity_decoy_suppression` corpus): standard
+    /// base64, `==` padded, length a multiple of four, well over the 40-char
+    /// integrity floor.
+    const NPM_SRI_BODY: &str =
+        "1msyKcoKgxiewdylfpoWNSrFFW3ojqO5LKa5wDu1Ivsn9KJyenY5VvFVFvg3LtJWzI3b3d8GNNngKmP1Zdzpfy==";
 
     #[test]
     fn prefixed_masked_sequence_matches_mask_plus_fake_run_case_insensitively() {
@@ -717,5 +737,202 @@ mod tests {
         assert!(!looks_like_trimmed_aws_iam_arn(
             "arn:aws:iam::123456789012:role/ReadOnly"
         ));
+    }
+
+    // ---- strip_hash_algo_prefix: the case-insensitive label strip ----
+
+    #[test]
+    fn strip_hash_algo_prefix_strips_lowercase_sha256() {
+        assert_eq!(strip_hash_algo_prefix("sha256:deadbeef"), Some("deadbeef"));
+    }
+
+    #[test]
+    fn strip_hash_algo_prefix_strips_uppercase_sha256() {
+        // ssh-keygen -lf renders `SHA256:<base64>`; certutil emits upper-case.
+        // The lower-case-only match used to leak these back out.
+        assert_eq!(strip_hash_algo_prefix("SHA256:deadbeef"), Some("deadbeef"));
+    }
+
+    #[test]
+    fn strip_hash_algo_prefix_strips_mixed_case_sha256() {
+        assert_eq!(strip_hash_algo_prefix("Sha256:body"), Some("body"));
+        assert_eq!(strip_hash_algo_prefix("sHa256:body"), Some("body"));
+    }
+
+    #[test]
+    fn strip_hash_algo_prefix_strips_embedded_lowercase_docker_digest() {
+        // Value extractor surfaces `nginx@sha256:<hex>` as one string that does
+        // NOT start with the algo label - substring match is intentional.
+        assert_eq!(
+            strip_hash_algo_prefix("nginx@sha256:cafebabe"),
+            Some("cafebabe")
+        );
+    }
+
+    #[test]
+    fn strip_hash_algo_prefix_strips_embedded_uppercase_digest() {
+        assert_eq!(
+            strip_hash_algo_prefix("nginx@SHA256:cafebabe"),
+            Some("cafebabe")
+        );
+    }
+
+    #[test]
+    fn strip_hash_algo_prefix_strips_sha512_dash_both_cases() {
+        assert_eq!(strip_hash_algo_prefix("sha512-Zm9vYmFy"), Some("Zm9vYmFy"));
+        assert_eq!(strip_hash_algo_prefix("SHA512-Zm9vYmFy"), Some("Zm9vYmFy"));
+    }
+
+    #[test]
+    fn strip_hash_algo_prefix_strips_sha256_dash_both_cases() {
+        assert_eq!(strip_hash_algo_prefix("sha256-Zm9v"), Some("Zm9v"));
+        assert_eq!(strip_hash_algo_prefix("SHA256-Zm9v"), Some("Zm9v"));
+    }
+
+    #[test]
+    fn strip_hash_algo_prefix_strips_sha1_both_cases() {
+        assert_eq!(strip_hash_algo_prefix("sha1:0badf00d"), Some("0badf00d"));
+        assert_eq!(strip_hash_algo_prefix("SHA1:0badf00d"), Some("0badf00d"));
+    }
+
+    #[test]
+    fn strip_hash_algo_prefix_strips_md5_both_cases() {
+        assert_eq!(strip_hash_algo_prefix("md5:abcd"), Some("abcd"));
+        assert_eq!(strip_hash_algo_prefix("MD5:abcd"), Some("abcd"));
+    }
+
+    #[test]
+    fn strip_hash_algo_prefix_returns_none_without_label() {
+        assert_eq!(strip_hash_algo_prefix("randomtokenbody"), None);
+        // `sha:` and `sha384-` are NOT in the label set.
+        assert_eq!(strip_hash_algo_prefix("sha:foo"), None);
+        assert_eq!(strip_hash_algo_prefix("sha384-foo"), None);
+    }
+
+    #[test]
+    fn strip_hash_algo_prefix_first_label_in_array_order_wins() {
+        // LABELS are scanned in array order (sha256: before md5:), so the
+        // earlier-in-array label wins even when it appears later in the string.
+        assert_eq!(strip_hash_algo_prefix("md5:AAAA sha256:BBBB"), Some("BBBB"));
+    }
+
+    #[test]
+    fn strip_hash_algo_prefix_empty_body() {
+        assert_eq!(strip_hash_algo_prefix("sha256:"), Some(""));
+        assert_eq!(strip_hash_algo_prefix("SHA256:"), Some(""));
+    }
+
+    #[test]
+    fn strip_hash_algo_prefix_multibyte_body_does_not_panic() {
+        // The label is ASCII so the slice boundary is codepoint-safe even when
+        // the body tail is multibyte UTF-8.
+        assert_eq!(strip_hash_algo_prefix("sha256:café☕"), Some("café☕"));
+        assert_eq!(strip_hash_algo_prefix("SHA256:café☕"), Some("café☕"));
+    }
+
+    #[test]
+    fn strip_hash_algo_prefix_ssh_keygen_fingerprint_line() {
+        // `ssh-keygen -lf key.pub` output: "256 SHA256:<base64> user@host".
+        assert_eq!(
+            strip_hash_algo_prefix("256 SHA256:abcDEF012+/ghi comment"),
+            Some("abcDEF012+/ghi comment")
+        );
+    }
+
+    // ---- looks_like_prefixed_hash_digest: end-to-end suppression contract ----
+
+    #[test]
+    fn prefixed_hash_digest_lowercase_docker_64hex_true() {
+        let v = format!("sha256:{}", "a".repeat(64));
+        assert!(looks_like_prefixed_hash_digest(&v));
+    }
+
+    #[test]
+    fn prefixed_hash_digest_uppercase_label_64hex_true() {
+        // THE FIX end-to-end: upper-case label + lower-case 64-hex body.
+        let v = format!("SHA256:{}", "a".repeat(64));
+        assert!(looks_like_prefixed_hash_digest(&v));
+    }
+
+    #[test]
+    fn prefixed_hash_digest_uppercase_label_uppercase_hex_certutil_true() {
+        // Windows certutil emits `SHA256` + UPPER-case hex; is_uniform_hex
+        // accepts uniform upper-case, so the whole thing suppresses.
+        let v = format!("SHA256:{}", "A".repeat(64));
+        assert!(looks_like_prefixed_hash_digest(&v));
+    }
+
+    #[test]
+    fn prefixed_hash_digest_sha512_128hex_both_cases_true() {
+        assert!(looks_like_prefixed_hash_digest(&format!(
+            "sha512:{}",
+            "b".repeat(128)
+        )));
+        assert!(looks_like_prefixed_hash_digest(&format!(
+            "SHA512:{}",
+            "B".repeat(128)
+        )));
+    }
+
+    #[test]
+    fn prefixed_hash_digest_sha1_40hex_both_cases_true() {
+        assert!(looks_like_prefixed_hash_digest(&format!(
+            "sha1:{}",
+            "c".repeat(40)
+        )));
+        assert!(looks_like_prefixed_hash_digest(&format!(
+            "SHA1:{}",
+            "c".repeat(40)
+        )));
+    }
+
+    #[test]
+    fn prefixed_hash_digest_npm_integrity_base64_both_cases_true() {
+        assert!(looks_like_prefixed_hash_digest(&format!(
+            "sha512-{NPM_SRI_BODY}"
+        )));
+        assert!(looks_like_prefixed_hash_digest(&format!(
+            "SHA512-{NPM_SRI_BODY}"
+        )));
+    }
+
+    #[test]
+    fn prefixed_hash_digest_short_body_below_base64_floor_false() {
+        // Bodies shorter than the 40-char base64-integrity floor that are also
+        // not a {40,64,128}-length hex digest are not suppressed by this shape.
+        assert!(!looks_like_prefixed_hash_digest(&format!(
+            "sha256:{}",
+            "a".repeat(30)
+        )));
+        // md5's 32-hex body is below the floor and not a hex digest length here.
+        assert!(!looks_like_prefixed_hash_digest(&format!(
+            "md5:{}",
+            "a".repeat(32)
+        )));
+    }
+
+    #[test]
+    fn prefixed_hash_digest_non_base64_char_body_false() {
+        // A 40-char body clears the integrity floor, but a non-base64 byte
+        // ('!') makes it neither a hex digest nor a valid base64 integrity blob,
+        // so the broad base64 arm cannot suppress it either.
+        let v = format!("sha256:{}!", "z".repeat(39));
+        assert!(!looks_like_prefixed_hash_digest(&v));
+    }
+
+    #[test]
+    fn prefixed_hash_digest_unpadded_remainder_one_body_false() {
+        // A 41-char unpadded body has length % 4 == 1, which standard base64
+        // never produces, so it is not a valid integrity blob (and 41 is not a
+        // hex digest length). Pins the base64-shape boundary of the caller.
+        let v = format!("sha256:{}", "a".repeat(41));
+        assert!(!looks_like_prefixed_hash_digest(&v));
+    }
+
+    #[test]
+    fn prefixed_hash_digest_requires_the_label() {
+        // A bare 64-hex value with NO algo label is NOT this shape (the
+        // ambiguous bare-hex arm handles it, anchor-gated).
+        assert!(!looks_like_prefixed_hash_digest(&"a".repeat(64)));
     }
 }
