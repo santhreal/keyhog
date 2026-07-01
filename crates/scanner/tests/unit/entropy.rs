@@ -5,6 +5,7 @@ use keyhog_scanner::testing::entropy_keywords::{is_candidate_plausible, is_secre
 use keyhog_scanner::testing::entropy_scanner::{
     candidate_plausibility_rejection_reason, credential_keyword_context,
 };
+use keyhog_scanner::testing::is_likely_innocuous_line_for_test as innocuous_line;
 use std::sync::Arc;
 
 fn find_secrets(
@@ -916,4 +917,135 @@ fn entropy_simd_agreement() {
             Ok(())
         })
         .unwrap();
+}
+
+// ---- is_likely_innocuous_line: hash-digest lines are dropped case-insensitively ----
+
+#[test]
+fn innocuous_sha256_label_lowercase_is_dropped() {
+    assert!(innocuous_line("sha256:1a2b3c4d5e6f"));
+}
+
+#[test]
+fn innocuous_sha256_label_uppercase_is_dropped() {
+    // certutil / ssh-keygen emit upper-case labels; previously leaked through.
+    assert!(innocuous_line("SHA256:1a2b3c4d5e6f"));
+}
+
+#[test]
+fn innocuous_sha256_label_mixed_case_is_dropped() {
+    assert!(innocuous_line("Sha256:1a2b3c4d5e6f"));
+    assert!(innocuous_line("sHa256:1a2b3c4d5e6f"));
+}
+
+#[test]
+fn innocuous_sha512_label_both_cases_is_dropped() {
+    assert!(innocuous_line("sha512:abcdef0123456789"));
+    assert!(innocuous_line("SHA512:abcdef0123456789"));
+}
+
+#[test]
+fn innocuous_sha1_label_both_cases_is_dropped() {
+    assert!(innocuous_line("sha1:0123456789abcdef"));
+    assert!(innocuous_line("SHA1:0123456789abcdef"));
+}
+
+#[test]
+fn innocuous_md5_label_both_cases_is_dropped() {
+    assert!(innocuous_line("md5:d41d8cd98f00b204"));
+    assert!(innocuous_line("MD5:d41d8cd98f00b204"));
+}
+
+#[test]
+fn innocuous_git_sha_label_both_cases_is_dropped() {
+    assert!(innocuous_line("git-sha:1234567890abcdef"));
+    assert!(innocuous_line("GIT-SHA:1234567890abcdef"));
+}
+
+#[test]
+fn innocuous_label_inside_quotes_is_dropped() {
+    // The line trims surrounding quotes/commas before the label check.
+    assert!(innocuous_line("\"sha256:abcdef0123\""));
+    assert!(innocuous_line("'SHA256:abcdef0123',"));
+}
+
+#[test]
+fn innocuous_label_requires_the_colon_not_an_underscore() {
+    // `SHA256_KEY:` is a credential-shaped assignment, NOT a digest label - the
+    // case-insensitive widening must not swallow it.
+    assert!(!innocuous_line("SHA256_KEY: sk_live_realtoken12345"));
+    assert!(!innocuous_line("sha256_secret = deadbeefdeadbeef"));
+}
+
+#[test]
+fn innocuous_bare_40_hex_lowercase_is_dropped() {
+    assert!(innocuous_line(&"a".repeat(40)));
+}
+
+#[test]
+fn innocuous_bare_40_hex_uppercase_is_dropped() {
+    assert!(innocuous_line(&"A".repeat(40)));
+}
+
+#[test]
+fn innocuous_bare_40_hex_mixed_case_is_dropped() {
+    // is_ascii_hexdigit accepts either case; a git SHA-1 can be rendered mixed.
+    assert!(innocuous_line(&"aB".repeat(20)));
+}
+
+#[test]
+fn innocuous_bare_hex_of_wrong_length_is_not_dropped() {
+    // 39 and 41 hex are not the git-SHA-1 length and carry no algo label.
+    assert!(!innocuous_line(&"a".repeat(39)));
+    assert!(!innocuous_line(&"a".repeat(41)));
+}
+
+#[test]
+fn innocuous_import_like_declarations_are_dropped() {
+    assert!(innocuous_line("import os"));
+    assert!(innocuous_line("from typing import Optional"));
+    assert!(innocuous_line("use crate::scanner::Engine;"));
+    assert!(innocuous_line("package main"));
+    assert!(innocuous_line("include config.php"));
+    assert!(innocuous_line("#include <stdio.h>"));
+    assert!(innocuous_line("require('dotenv')"));
+}
+
+#[test]
+fn innocuous_plain_http_uris_are_dropped() {
+    assert!(innocuous_line("https://example.com/path"));
+    assert!(innocuous_line("http://localhost:8080/health"));
+}
+
+#[test]
+fn innocuous_plain_ftp_file_ssh_git_uris_are_dropped() {
+    assert!(innocuous_line("ftp://mirror.example.org/pub"));
+    assert!(innocuous_line("file:///etc/hosts"));
+    assert!(innocuous_line("ssh://git@github.com/org/repo.git"));
+    assert!(innocuous_line("git://git.example.com/repo.git"));
+}
+
+#[test]
+fn innocuous_real_credential_assignment_is_not_dropped() {
+    // A genuine secret-bearing line must NOT be treated as innocuous.
+    assert!(!innocuous_line("API_KEY=sk_live_51H8xToKenValue0123456789"));
+    assert!(!innocuous_line("db_password: hunter2secretvalue"));
+}
+
+#[test]
+fn innocuous_random_prose_is_not_dropped() {
+    assert!(!innocuous_line("the quick brown fox jumps over"));
+}
+
+#[test]
+fn innocuous_empty_and_whitespace_is_not_dropped() {
+    assert!(!innocuous_line(""));
+    assert!(!innocuous_line("    "));
+}
+
+#[test]
+fn innocuous_label_prefix_only_no_false_substring_match() {
+    // The label must be a PREFIX (after quote-trim), not merely contained: a
+    // value that only mentions `sha256:` mid-line is not dropped by this arm.
+    assert!(!innocuous_line("token=abc-sha256:notadigest"));
 }

@@ -586,6 +586,14 @@ pub fn is_likely_concatenation_fragment_for_test(line: &str) -> bool {
     crate::entropy::keywords::is_likely_concatenation_fragment(line)
 }
 
+/// `is_likely_innocuous_line`: true when a trimmed line is a non-secret shape
+/// dropped before entropy extraction — a bare URI, an `import`/`use`/`package`
+/// declaration, an algo-labelled hash digest (`sha256:`/`sha512:`/`sha1:`/`md5:`/
+/// `git-sha:`, matched case-insensitively) or a bare 40-hex git SHA.
+pub fn is_likely_innocuous_line_for_test(line: &str) -> bool {
+    crate::entropy::keywords::is_likely_innocuous_line(line)
+}
+
 /// `xml_assignment_tag`: returns the opening tag name of an XML-shaped line that
 /// has a matching `</tag>` close, for ANY well-formed element (NOT just
 /// credential-named ones — that filter lives in `xml_assignment_value`). Returns

@@ -57,7 +57,14 @@ fn is_keyword_assignment_line(line: &str, secret_keywords: &[String]) -> bool {
     has_keyword && (line.contains('=') || line.contains(':'))
 }
 
-pub(super) fn is_likely_innocuous_line(line: &str) -> bool {
+/// True when a line is structurally innocuous and should be dropped before
+/// entropy candidate extraction: a bare URI, an `import`/`use`/`package`-style
+/// declaration, a hash-digest line (algo-labelled or a bare 40-hex git SHA), and
+/// similar non-secret shapes.
+///
+/// `pub(crate)` so the `is_likely_innocuous_line_for_test` facade can lock the
+/// contract from `tests/unit/`.
+pub(crate) fn is_likely_innocuous_line(line: &str) -> bool {
     let trimmed = line.trim();
     let starts_with_uri = trimmed.starts_with("http://")
         || trimmed.starts_with("https://")
@@ -81,11 +88,17 @@ pub(super) fn is_likely_innocuous_line(line: &str) -> bool {
     }
 
     let without_quotes = trimmed.trim_matches(|c: char| c == '"' || c == '\'' || c == ',');
-    if without_quotes.starts_with("sha256:")
-        || without_quotes.starts_with("sha512:")
-        || without_quotes.starts_with("sha1:")
-        || without_quotes.starts_with("md5:")
-        || without_quotes.starts_with("git-sha:")
+    // Case-insensitive: ssh-keygen fingerprints (`SHA256:<base64>`) and Windows
+    // certutil emit upper-case algo labels. The bare-40-hex arm below already
+    // accepts either case via is_ascii_hexdigit, so matching these labels
+    // case-sensitively was the lone inconsistency that let upper-case digest
+    // lines leak into entropy extraction as false positives.
+    let wq = without_quotes.as_bytes();
+    if crate::ascii_ci::starts_with_ignore_ascii_case(wq, b"sha256:")
+        || crate::ascii_ci::starts_with_ignore_ascii_case(wq, b"sha512:")
+        || crate::ascii_ci::starts_with_ignore_ascii_case(wq, b"sha1:")
+        || crate::ascii_ci::starts_with_ignore_ascii_case(wq, b"md5:")
+        || crate::ascii_ci::starts_with_ignore_ascii_case(wq, b"git-sha:")
     {
         return true;
     }
