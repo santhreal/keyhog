@@ -1875,6 +1875,11 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/scanner/src/credential_context_keywords.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/credential_shapes.rs"
 error = true
 adversarial = true

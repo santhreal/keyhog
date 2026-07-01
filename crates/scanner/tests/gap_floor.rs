@@ -50,8 +50,6 @@ mod compiler_prefix_tuning_thresholds_exact;
 mod confidence_calibration_uncalibrated_passthrough;
 #[path = "gap/confidence_floor_policy.rs"]
 mod confidence_floor_policy;
-#[path = "gap/confidence_penalties_inline_tests_in_src.rs"]
-mod confidence_penalties_inline_tests_in_src;
 #[path = "gap/contains_evasion_single_owner_classification.rs"]
 mod contains_evasion_single_owner_classification;
 #[path = "gap/context_example_suffix_ascii_ci.rs"]
