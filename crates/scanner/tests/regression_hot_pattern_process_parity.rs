@@ -4,7 +4,7 @@
 mod support;
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{CompiledScanner, ScannerConfig};
+use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 use support::paths::detector_dir;
 
 fn scanner() -> CompiledScanner {
@@ -31,33 +31,45 @@ fn scanner_with_cap(max_matches_per_chunk: usize) -> CompiledScanner {
         .with_config(config)
 }
 
-// KNOWN-RED (tracked): on a simdsieve-capable host `scan()` selects the SimdCpu
-// hot path, which emits the OpenAI key even inside a git-LFS `.gitattributes`
-// `oid sha256:` false-positive context that the regular process_match path
-// suppresses — the recurring hot-pattern-path-bypasses-process-match precision
-// bug. Wired into `all_tests` (visible, not orphaned) and `#[ignore]`d — NOT
-// weakened — until the hot path delegates FP-context suppression. `cargo test --
-// --ignored` still runs it.
+// Recall-correct git-LFS parity: `is_git_lfs_oid_line` suppresses ONLY a real
+// oid — `oid sha256:` followed by EXACTLY 64 hex digits. A valid-shaped
+// `sk-proj-` key on an `oid sha256:` line is NOT a git-LFS oid, so suppressing
+// it would hide a real leaked credential (a recall loss). Both the SimdCpu hot
+// path and the CpuFallback regex path must report it — proof the hot path
+// delegates the SAME false-positive-context decision through process_match
+// (neither over-suppresses). This replaces an earlier test that asserted the
+// opposite; its premise ("the regular path suppresses this") was false, because
+// the oid-line check requires 64 hex and this value is not hex. See the genuine
+// suppression-parity coverage in `regression_hot_path_fp_context_parity`.
 #[test]
-#[ignore = "KH hot-path bypass: SimdCpu skips git-LFS FP-context suppression; delegate hot emits through process_match"]
-fn hot_openai_key_uses_process_false_positive_context_suppression() {
-    let token = "sk-proj-abcdefghijklmnopqrstuvwxyz1234567890ABCD";
+fn hot_openai_key_on_non_hex_oid_line_is_reported_on_both_backends() {
+    // sk-proj- + 40 mixed-case body (valid shape, not a sequential placeholder).
+    let token = "sk-proj-aB3dE6gH9jK2mN5pQ8rS1tU4vW7xY0zA3cD6eF9h";
     let chunk = Chunk {
-        data: format!("version https://git-lfs.github.com/spec/v1\noid sha256:{token}\n").into(),
+        data: format!(
+            "version https://git-lfs.github.com/spec/v1\noid sha256:{token}\nsize 1024\n"
+        )
+        .into(),
         metadata: ChunkMetadata {
             source_type: "filesystem".into(),
-            path: Some("repo/.gitattributes".into()),
+            path: Some("repo/pointer.txt".into()),
             ..Default::default()
         },
     };
 
-    let matches = scanner().scan(&chunk);
-    assert!(
-        matches.iter().all(
-            |m| !(m.detector_id.as_ref() == "openai-api-key" && m.credential.as_ref() == token)
-        ),
-        "simdsieve hot path must delegate canonical OpenAI hits through process_match false-positive context suppression; matches={matches:?}"
-    );
+    for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
+        let scanner = scanner();
+        scanner.clear_fragment_cache();
+        let matches = scanner.scan_with_backend(&chunk, backend);
+        assert!(
+            matches
+                .iter()
+                .any(|m| m.detector_id.as_ref() == "openai-api-key"
+                    && m.credential.as_ref() == token),
+            "a non-hex value on an `oid sha256:` line is not a git-LFS oid; the real \
+             sk-proj- key must surface on {backend:?}; matches={matches:?}"
+        );
+    }
 }
 
 #[test]

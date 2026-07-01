@@ -15,7 +15,16 @@ keywords = ["AKIA", "ASIA"]
 # case-insensitive by default). AKIA/ASIA ids are ALWAYS uppercase; without
 # this the lowercase look-alike `Akiaqylpmn…` (a doc/test placeholder) matches
 # and surfaces a false positive.
-regex = "(?-i)(AKIA|ASIA)[0-9A-Z]{16}"
+#
+# Trailing `\b` right-boundary: an AWS access key ID is EXACTLY 20 chars
+# (AKIA/ASIA + 16). A longer contiguous `[0-9A-Z]` run is not a valid key, so
+# the regex must fail closed instead of reporting the 20-char prefix — the same
+# self-delimiting-token contract as github-classic-pat / twilio-auth-token. This
+# also aligns the whole-text extraction path with the simdsieve hot path, whose
+# candidate validator already dropped overlong runs via its word-char check.
+# Single-quoted (literal) so `\b` reaches the regex engine intact — a
+# double-quoted TOML string would decode `\b` as a backspace byte.
+regex = '(?-i)(AKIA|ASIA)[0-9A-Z]{16}\b'
 description = "AWS access key ID"
 
 # NOT marked `required`: a leaked AKIA on its own is still a reportable

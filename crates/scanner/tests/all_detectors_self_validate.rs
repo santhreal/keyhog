@@ -287,7 +287,10 @@ fn smoke_scanner_fires_on_canonical_aws_ghp_re_examples() {
         ),
         ("github-classic-pat", "GITHUB_TOKEN=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"),
         ("resend-api-key", "RESEND_API_KEY=re_aBcDefGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStUvWx"),
-        ("openai-api-key", "OPENAI_API_KEY=sk-AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStUvWxYz"),
+        // Legacy `sk-` key is exactly 48 chars after the prefix; the detector's
+        // trailing `\b` now fails closed on a longer run, so this canonical
+        // fixture must be exactly 48 (previously 52 — an overlong run).
+        ("openai-api-key", "OPENAI_API_KEY=sk-AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStUv"),
     ];
     for (label, text) in cases {
         let chunk = Chunk {

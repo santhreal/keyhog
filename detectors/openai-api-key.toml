@@ -31,7 +31,11 @@ regex = 'sk-admin-[a-zA-Z0-9_-]{40,200}'
 description = "OpenAI admin API key (sk-admin-)"
 
 [[detector.patterns]]
-regex = 'sk-[a-zA-Z0-9]{48}'
+# Trailing `\b`: the legacy key is EXACTLY 48 chars after `sk-`. A longer
+# contiguous alphanumeric run is not a valid legacy key, so the regex fails
+# closed rather than reporting the 48-char prefix of a longer token (the
+# self-delimiting-token contract shared with github-classic-pat / aws-access-key).
+regex = 'sk-[a-zA-Z0-9]{48}\b'
 description = "OpenAI legacy API key (exactly 48 chars after sk-)"
 
 [detector.verify]

@@ -2,6 +2,15 @@
 # Format: ghp_ prefix followed by exactly 36 alphanumeric characters
 # Verify: GET /user with Bearer token returns 200 if valid
 # Prefix: ghp_
+#
+# The trailing `\b` right-boundary makes this fixed-length token self-delimiting:
+# a 40-char `ghp_` token embedded in a longer word-character run (e.g.
+# `ghp_<40>X`) is NOT a valid classic PAT, so the regex must fail closed instead
+# of reporting the 40-char prefix. Same convention as twilio-auth-token
+# (`(?-i)\bAC[a-f0-9]{32}\b`). Trailing-only by design: a leading `\b` would
+# diverge between the whole-text extraction path (which sees the preceding byte)
+# and the simdsieve hot path (whose candidate slice begins at the `ghp_` literal
+# and has already lost that context), reintroducing a hot-vs-regular mismatch.
 
 [detector]
 id = "github-classic-pat"
@@ -11,7 +20,7 @@ severity = "critical"
 keywords = ["ghp_"]
 
 [[detector.patterns]]
-regex = 'ghp_[A-Za-z0-9]{36}'
+regex = 'ghp_[A-Za-z0-9]{36}\b'
 description = "GitHub classic personal access token"
 
 [detector.verify]
