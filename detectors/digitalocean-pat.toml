@@ -11,7 +11,7 @@ severity = "critical"
 keywords = ["dop_v1_", "digitalocean"]
 
 [[detector.patterns]]
-regex = 'dop_v1_[a-f0-9]{64}'
+regex = 'dop_v1_[a-f0-9]{64}\b'
 description = "DigitalOcean personal access token (v1)"
 
 [detector.verify]

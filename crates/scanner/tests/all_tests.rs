@@ -157,6 +157,8 @@ pub mod regression_symbolic_password_weak_wrappers;
 pub mod regression_telegram_bot_token_recall;
 #[path = "regression_vendor_precision_negative_twin.rs"]
 pub mod regression_vendor_precision_negative_twin;
+#[path = "regression_vendor_token_right_boundary.rs"]
+pub mod regression_vendor_token_right_boundary;
 #[path = "regression_webhook_secret_recall.rs"]
 pub mod regression_webhook_secret_recall;
 #[path = "regression_zero_pattern_recompile.rs"]

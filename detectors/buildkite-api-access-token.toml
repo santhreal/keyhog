@@ -11,7 +11,7 @@ severity = "critical"
 keywords = ["bkua_", "buildkite"]
 
 [[detector.patterns]]
-regex = 'bkua_[a-zA-Z0-9]{32}'
+regex = 'bkua_[a-zA-Z0-9]{32}\b'
 description = "Buildkite API access token (bkua_ prefix + 32 chars)"
 
 [detector.verify]

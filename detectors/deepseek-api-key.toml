@@ -11,7 +11,7 @@ severity = "critical"
 keywords = ["sk-", "deepseek"]
 
 [[detector.patterns]]
-regex = 'sk-[a-f0-9]{32}'
+regex = 'sk-[a-f0-9]{32}\b'
 description = "DeepSeek API key (sk- prefix with 32 hex chars)"
 
 [detector.verify]
