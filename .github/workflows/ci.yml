@@ -237,7 +237,7 @@ jobs:
       # through the process-global rate limiter on a shared service slot with
       # tight watchdogs; it is intentionally NOT in `all_tests` (parallel) — it
       # runs as its own SERIAL target so its isolation assumptions hold. Removing
-      # this step orphans it (`scripts/gates/verifier_tests_wired.py` would flag).
+      # this step orphans it (`scripts/gates/tests_wired.py` would flag).
       - name: verifier break_it (serial)
         run: cargo test -p keyhog-verifier --test break_it --profile release-fast -- --test-threads=1
       - name: cli all_tests

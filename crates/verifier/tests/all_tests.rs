@@ -29,7 +29,7 @@ pub mod unit;
 // into this parallel binary makes it flaky (a delayed rate-limiter slot trips a
 // 5 s watchdog). It instead runs via an explicit serial CI step
 // (`cargo test -p keyhog-verifier --test break_it -- --test-threads=1`), which
-// `scripts/gates/verifier_tests_wired.py` counts as wired via the `--test` flag.
+// `scripts/gates/tests_wired.py` counts as wired via the `--test` flag.
 //
 // The gate fails the build if any top-level `tests/*.rs` becomes orphaned again.
 // Keep sorted.
