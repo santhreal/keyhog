@@ -114,16 +114,26 @@ fn scan_exit_precedence_keeps_system_failure_above_source_coverage_gap() {
     let reporting = std::fs::read_to_string(root.join("src/orchestrator/reporting.rs"))
         .expect("read terminal reporting");
     let report = std::fs::read_to_string(root.join("src/reporting.rs")).expect("read report");
+    // Both surfaces now render the ONE canonical coverage-gap set: the terminal
+    // summary iterates `CoverageGapKind::ALL`, and each category's terminal
+    // (human) and structured (SARIF) wording lives with the kind in reporting.rs.
+    // Assert the terminal summary renders the canonical set, and that the generic
+    // source-error category carries BOTH its terminal and structured wording
+    // there — so a partial source can never be surfaced on one summary and
+    // silently dropped from the other.
     assert!(
-        reporting.contains("let source_errors = crate::SOURCE_ERRORS.load")
-            && reporting.contains("source error row(s) emitted")
-            && reporting.contains("requested input was NOT fully scanned"),
-        "terminal coverage summary must name generic source errors, not only source skip counters"
+        reporting.contains("CoverageGapKind::ALL") && reporting.contains("human_reason"),
+        "terminal coverage summary must render the canonical CoverageGapKind set"
+    );
+    assert!(
+        report.contains("source error row(s) emitted")
+            && report.contains("requested input was NOT fully scanned"),
+        "canonical set must carry the terminal (human) wording for generic source errors"
     );
     assert!(
         report.contains("source emitted error rows")
             && report.contains("requested input was not fully scanned"),
-        "structured coverage summaries must include generic source errors"
+        "canonical set must carry the structured (SARIF) wording for generic source errors"
     );
 }
 
@@ -140,14 +150,14 @@ fn git_object_coverage_gaps_are_reported_separately() {
         "git object drops must make clean-looking scans exit as incomplete coverage through the central skip snapshot"
     );
     assert!(
-        reporting.contains("Git object(s) NOT scanned")
-            && reporting.contains("c.git_object_unreadable"),
-        "terminal summary must not lump unreadable Git objects under unreadable file wording and must read the central skip snapshot"
+        reporting.contains("CoverageGapKind::ALL") && reporting.contains("kind.severity()"),
+        "terminal summary must render the canonical set (which surfaces the Git-object gap as its own category, not lumped under unreadable files)"
     );
     assert!(
-        report.contains("Git object unreadable or wrong object kind")
+        report.contains("Git object(s) NOT scanned")
+            && report.contains("Git object unreadable or wrong object kind")
             && report.contains("c.git_object_unreadable"),
-        "structured report coverage summaries must surface the Git object gap category from the central skip snapshot"
+        "canonical set must surface the Git-object gap separately with both terminal and structured wording, keyed off the central skip snapshot"
     );
 }
 

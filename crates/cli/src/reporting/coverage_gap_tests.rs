@@ -9,7 +9,7 @@
 //! *binaries* and the structured decode-through oversize skip — and are
 //! regression-locked below.
 
-use super::{coverage_gap_summary, CoverageCounts};
+use super::{coverage_gap_summary, CoverageCounts, CoverageGapKind, CoverageSeverity};
 use keyhog_sources::SkipCounts;
 
 /// Look up the count reported for the first category whose reason contains
@@ -414,4 +414,234 @@ fn surfaced_count_equals_input_count() {
         Some(42),
         "the surfaced count must be the exact input count, not a boolean/clamp"
     );
+}
+
+// ── canonical CoverageGapKind contract (the human ⇄ SARIF unification) ─────────
+//
+// Both the human end-of-scan summary (`report_skip_summary`) and the SARIF
+// report (`coverage_gap_summary`) iterate the SAME `CoverageGapKind::ALL`. These
+// lock the single-source contract so the two surfaces can never drift apart — a
+// gap on one surface but not the other is a Law-10 false-clean.
+
+#[test]
+fn all_has_twenty_kinds() {
+    assert_eq!(
+        CoverageGapKind::ALL.len(),
+        20,
+        "the canonical coverage-gap set must have exactly 20 categories"
+    );
+}
+
+#[test]
+fn all_kinds_are_distinct() {
+    let mut seen: Vec<CoverageGapKind> = Vec::new();
+    for kind in CoverageGapKind::ALL {
+        assert!(
+            !seen.contains(&kind),
+            "{kind:?} appears more than once in CoverageGapKind::ALL"
+        );
+        seen.push(kind);
+    }
+}
+
+#[test]
+fn every_kind_is_nonzero_on_all_ones() {
+    let counts = all_ones();
+    for kind in CoverageGapKind::ALL {
+        assert!(
+            kind.count(&counts) > 0,
+            "{kind:?} has a zero count when every counter is set — its field is unwired"
+        );
+    }
+}
+
+#[test]
+fn every_kind_is_zero_on_empty() {
+    let counts = CoverageCounts::default();
+    for kind in CoverageGapKind::ALL {
+        assert_eq!(
+            kind.count(&counts),
+            0,
+            "{kind:?} must be zero for an all-zero snapshot"
+        );
+    }
+}
+
+#[test]
+fn fail_severity_set_is_exact() {
+    use CoverageGapKind::*;
+    for kind in [
+        SourceError,
+        NonBinaryUnreadable,
+        GitObjectUnreadable,
+        ArchiveTruncated,
+        BinarySectionNameUnresolved,
+        SourceTruncated,
+        StructuredSourceParseFailure,
+        ArchiveDuplicateScanUnavailable,
+        GitLfsPointer,
+        BinaryDegraded,
+        BinaryUnreadable,
+    ] {
+        assert_eq!(
+            kind.severity(),
+            CoverageSeverity::Fail,
+            "{kind:?} is a genuine coverage miss and must render as FAIL (red)"
+        );
+    }
+}
+
+#[test]
+fn warn_severity_set_is_exact() {
+    use CoverageGapKind::*;
+    for kind in [
+        OverMaxSize,
+        Binary,
+        Excluded,
+        ScannerStructuredParseFailure,
+        ScannerStructuredOversizeSkip,
+        ScannerDecodeTruncation,
+        ScannerInvalidPatternIndexSkip,
+        ScannerBoundaryCardinalityMismatch,
+        ScannerLineOffsetMismatch,
+    ] {
+        assert_eq!(
+            kind.severity(),
+            CoverageSeverity::Warn,
+            "{kind:?} is advisory/partial and must render as WARN (yellow)"
+        );
+    }
+}
+
+#[test]
+fn severity_partition_totals_all_kinds() {
+    // 11 FAIL + 9 WARN = 20 — no kind is left unclassified, and the split is
+    // pinned so a future re-classification is a deliberate, reviewed change.
+    let fail = CoverageGapKind::ALL
+        .iter()
+        .filter(|k| k.severity() == CoverageSeverity::Fail)
+        .count();
+    let warn = CoverageGapKind::ALL
+        .iter()
+        .filter(|k| k.severity() == CoverageSeverity::Warn)
+        .count();
+    assert_eq!(fail, 11, "expected 11 FAIL categories, got {fail}");
+    assert_eq!(warn, 9, "expected 9 WARN categories, got {warn}");
+    assert_eq!(fail + warn, CoverageGapKind::ALL.len());
+}
+
+#[test]
+fn sarif_reasons_are_all_unique() {
+    let mut reasons: Vec<&str> = CoverageGapKind::ALL
+        .iter()
+        .map(|k| k.sarif_reason())
+        .collect();
+    let total = reasons.len();
+    reasons.sort_unstable();
+    reasons.dedup();
+    assert_eq!(
+        reasons.len(),
+        total,
+        "two kinds share a SARIF reason string"
+    );
+}
+
+#[test]
+fn sarif_reasons_are_all_nonempty() {
+    for kind in CoverageGapKind::ALL {
+        assert!(
+            !kind.sarif_reason().trim().is_empty(),
+            "{kind:?} has an empty SARIF reason"
+        );
+    }
+}
+
+#[test]
+fn human_reasons_are_all_unique() {
+    let mut reasons: Vec<String> = CoverageGapKind::ALL
+        .iter()
+        .map(|k| k.human_reason(1))
+        .collect();
+    let total = reasons.len();
+    reasons.sort();
+    reasons.dedup();
+    assert_eq!(
+        reasons.len(),
+        total,
+        "two kinds share a human reason string"
+    );
+}
+
+#[test]
+fn human_reasons_are_all_nonempty() {
+    for kind in CoverageGapKind::ALL {
+        assert!(
+            !kind.human_reason(1).trim().is_empty(),
+            "{kind:?} has an empty human reason"
+        );
+    }
+}
+
+#[test]
+fn human_reason_embeds_the_count() {
+    for kind in CoverageGapKind::ALL {
+        let reason = kind.human_reason(4242);
+        assert!(
+            reason.contains("4242"),
+            "{kind:?} human reason must include its count, got {reason:?}"
+        );
+    }
+}
+
+#[test]
+fn sarif_summary_is_the_projection_of_all_kinds() {
+    // Every kind with a non-zero count — and only those — must appear in the
+    // SARIF summary keyed by its exact sarif_reason. This binds the SARIF surface
+    // to the canonical set.
+    let counts = all_ones();
+    let summary = coverage_gap_summary(&counts);
+    for kind in CoverageGapKind::ALL {
+        assert!(
+            summary.iter().any(|(r, _)| r == kind.sarif_reason()),
+            "{kind:?} is non-zero on all_ones but its sarif_reason is missing from the summary"
+        );
+    }
+    assert_eq!(
+        summary.len(),
+        CoverageGapKind::ALL.len(),
+        "the SARIF summary must contain exactly one entry per non-zero kind"
+    );
+}
+
+#[test]
+fn both_surfaces_cover_the_identical_kind_set() {
+    // The unification invariant: for one snapshot, the kinds the SARIF surface
+    // reports are exactly the non-zero kinds the human surface would render. If a
+    // kind lived on one surface only, the two counts would disagree.
+    let counts = all_ones();
+    let summary = coverage_gap_summary(&counts);
+    let sarif_reasons: Vec<&str> = summary.iter().map(|(r, _)| r.as_str()).collect();
+
+    let mut rendered = 0usize;
+    for kind in CoverageGapKind::ALL {
+        let n = kind.count(&counts);
+        if n == 0 {
+            continue;
+        }
+        assert!(
+            !kind.human_reason(n).trim().is_empty(),
+            "{kind:?} non-zero but the human surface renders nothing"
+        );
+        assert!(
+            sarif_reasons.contains(&kind.sarif_reason()),
+            "{kind:?} rendered by the human surface but missing from SARIF"
+        );
+        rendered += 1;
+    }
+    assert_eq!(
+        rendered,
+        summary.len(),
+        "the human and SARIF surfaces must cover the identical set of kinds"
+    );
+    assert_eq!(rendered, 20, "all 20 kinds render on the all_ones snapshot");
 }

@@ -661,285 +661,30 @@ pub(crate) fn reporting_ticker(done: Arc<AtomicBool>, started: Instant, total: u
 }
 
 pub(crate) fn report_skip_summary(ansi: bool) {
-    // Structured decode-through coverage gap — surfaced independently of the
-    // walker skip counters (a scan can fully cover the tree yet still fail to
-    // decode a malformed k8s Secret / tfstate / notebook). Law 10: a file that
-    // MATCHED a structured format but failed to parse loses the secrets encoded
-    // inside it (e.g. base64 in a k8s `data:` block), previously visible only at
-    // `tracing::debug!`. The raw text was still scanned, so this is a partial,
-    // not total, miss — the wording says so.
-    let structured_failures = keyhog_scanner::telemetry::structured_parse_failure_count();
-    if structured_failures > 0 {
-        let msg = format!(
-            "{structured_failures} file(s) matched a structured format (k8s Secret / \
-             Terraform state / Jupyter notebook / docker-compose) but FAILED to parse: \
-             secrets ENCODED inside them (e.g. base64 in a k8s `data:` block) were NOT \
-             decoded. The raw text was still scanned. Fix the file syntax to scan their \
-             encoded contents."
-        );
-        let palette = terminal_palette(ansi, false);
-        eprintln!("{}WARN {msg}{}", palette.yellow, palette.reset);
-    }
-
-    // Distinct from a parse FAILURE: a well-formed structured decode-through file
-    // (k8s Secret / compose / tfstate / notebook) that exceeded the structured
-    // size cap, so its base64 `data:` decode-through was skipped. The raw text was
-    // still scanned, so this is a partial miss — env/HCL caps are NOT counted here
-    // (they extract plain values the regular scan still sees).
-    let structured_oversize_skips = keyhog_scanner::telemetry::structured_oversize_skip_count();
-    if structured_oversize_skips > 0 {
-        let msg = format!(
-            "{structured_oversize_skips} file(s) matched a structured decode-through format \
-             (k8s Secret / Terraform state / Jupyter notebook / docker-compose) but EXCEEDED \
-             the structured-parse size cap: base64-encoded values (e.g. a k8s `data:` block) \
-             were NOT decoded. The raw text was still scanned. Split the file or scan the \
-             encoded blob directly to prove its decoded coverage."
-        );
-        let palette = terminal_palette(ansi, false);
-        eprintln!("{}WARN {msg}{}", palette.yellow, palette.reset);
-    }
-
-    let decode_truncations = keyhog_scanner::telemetry::decode_truncation_count();
-    if decode_truncations > 0 {
-        let msg = format!(
-            "{decode_truncations} decode root(s) hit a decode-through budget/cap: \
-             raw bytes were scanned, but deeper encoded layers may not have been \
-             expanded. Re-scan the affected corpus with a narrower target or tuned \
-             decode limits to prove encoded coverage."
-        );
-        let palette = terminal_palette(ansi, false);
-        eprintln!("{}WARN {msg}{}", palette.yellow, palette.reset);
-    }
-
-    let invalid_pattern_index_skips = keyhog_scanner::telemetry::invalid_pattern_index_skip_count();
-    if invalid_pattern_index_skips > 0 {
-        let msg = format!(
-            "{invalid_pattern_index_skips} scanner pattern expansion edge(s) were NOT applied: \
-             compiled pattern-index side data referenced patterns outside the trigger bitmap. \
-             This is a scanner invariant violation; treat the scan as partial."
-        );
-        let palette = terminal_palette(ansi, false);
-        eprintln!("{}WARN {msg}{}", palette.yellow, palette.reset);
-    }
-
-    let boundary_cardinality_mismatches =
-        keyhog_scanner::telemetry::boundary_result_cardinality_mismatch_count();
-    if boundary_cardinality_mismatches > 0 {
-        let msg = format!(
-            "{boundary_cardinality_mismatches} boundary reassembly pass(es) were NOT applied: \
-             chunk/result cardinality drift made cross-chunk findings unsafe to append. \
-             This is a scanner invariant violation; treat the scan as partial."
-        );
-        let palette = terminal_palette(ansi, false);
-        eprintln!("{}WARN {msg}{}", palette.yellow, palette.reset);
-    }
-
-    let line_offset_mapping_mismatches =
-        keyhog_scanner::telemetry::line_offset_mapping_mismatch_count();
-    if line_offset_mapping_mismatches > 0 {
-        let msg = format!(
-            "{line_offset_mapping_mismatches} multiline attribution mapping(s) used a fallback \
-             source offset because line-offset metadata was inconsistent. Findings were still \
-             emitted, but reported locations may be approximate; treat the scan as partial."
-        );
-        let palette = terminal_palette(ansi, false);
-        eprintln!("{}WARN {msg}{}", palette.yellow, palette.reset);
-    }
-
-    let c = keyhog_sources::skip_counts();
-    let source_errors = crate::SOURCE_ERRORS.load(std::sync::atomic::Ordering::Relaxed);
-    let git_object_unreadable = c.git_object_unreadable;
-    // Whether the binary source recorded any degradation/drop. Checked here so a
-    // run whose ONLY coverage gap is a Ghidra fallback / unreadable binary (with
-    // zero file-walk skips) still emits its summary line below.
-    #[cfg(feature = "binary")]
-    let binary_degraded = keyhog_sources::binary_degraded_to_strings();
-    #[cfg(not(feature = "binary"))]
-    let binary_degraded = 0;
-    #[cfg(feature = "binary")]
-    let binary_unreadable = keyhog_sources::binary_unreadable();
-    #[cfg(not(feature = "binary"))]
-    let binary_unreadable = 0;
-    let binary_gap = binary_degraded > 0 || binary_unreadable > 0;
-    // `binary_section_name_unresolved`, `source_truncated`, and
-    // `structured_source_parse_failures` are partial-coverage signals and are
-    // deliberately NOT part of `c.total()` (a file-skip total), so they are
-    // checked explicitly here. A run whose ONLY gap is one of these must still
-    // emit its summary line below.
-    if c.total() == 0
-        && source_errors == 0
-        && git_object_unreadable == 0
-        && c.binary_section_name_unresolved == 0
-        && c.source_truncated == 0
-        && c.structured_source_parse_failures == 0
-        && c.archive_duplicate_scan_unavailable == 0
-        && c.git_lfs_pointer == 0
-        && !binary_gap
-        && decode_truncations == 0
-        && invalid_pattern_index_skips == 0
-        && boundary_cardinality_mismatches == 0
-    {
-        return;
-    }
-    // One stderr line per non-empty skip category, each with the reason AND the
-    // remedy, so a previously-silent walker filter is visible (Law 10). The
-    // unreadable category is the most important: it means the tree was NOT fully
-    // covered, so a "no secrets found" result is not a clean bill of health.
-    let mut lines: Vec<(String, bool)> = Vec::new();
-    if source_errors > 0 {
-        lines.push((
-            format!(
-                "{source_errors} source error row(s) emitted: requested input was NOT fully scanned. Inspect the source errors above and rerun affected inputs."
-            ),
-            true,
-        ));
-    }
-    if c.over_max_size > 0 {
-        lines.push((
-            format!(
-                "{} file(s) skipped: exceeded --max-file-size. Re-scan with a larger cap to include them.",
-                c.over_max_size
-            ),
-            false,
-        ));
-    }
-    if c.binary > 0 {
-        lines.push((
-            format!(
-                "{} file(s) skipped: detected as binary (extension or content sniff) and not scanned as text.",
-                c.binary
-            ),
-            false,
-        ));
-    }
-    if c.excluded > 0 {
-        lines.push((
-            format!(
-                "{} file(s) skipped: matched the default-exclusion list (lock/minified/vendored).",
-                c.excluded
-            ),
-            false,
-        ));
-    }
-    let non_binary_unreadable = c.unreadable.saturating_sub(binary_unreadable);
-    if non_binary_unreadable > 0 {
-        // `warn` = true: this one is highlighted because an unreadable file is an
-        // unknown, not a clean file — the scan did not cover it.
-        lines.push((
-            format!(
-                "{} file(s) NOT scanned: unreadable (permission denied or I/O error). These were NOT checked for secrets.",
-                non_binary_unreadable
-            ),
-            true,
-        ));
-    }
-    if git_object_unreadable > 0 {
-        lines.push((
-            format!(
-                "{} Git object(s) NOT scanned: referenced commit/tree/blob data was unreadable or not the expected object kind.",
-                git_object_unreadable
-            ),
-            true,
-        ));
-    }
-    if c.archive_truncated > 0 {
-        // `warn` = true: a bomb-truncated archive means part of it was NOT
-        // scanned — partial coverage, an unknown, not a clean archive (Law 10).
-        lines.push((
-            format!(
-                "{} archive(s) only PARTIALLY scanned: extraction was truncated by the decompression-bomb guard (uncompressed size exceeded 4x --max-file-size). Remaining entries were NOT checked for secrets.",
-                c.archive_truncated
-            ),
-            true,
-        ));
-    }
-    if c.binary_section_name_unresolved > 0 {
-        // `warn` = true: a corrupt section-name string table means one or more
-        // binary sections could not be identified, so a high-value
-        // `.rodata`/`.data`/`__cstring` section may have been skipped — partial
-        // binary coverage, not a clean binary (Law 10).
-        lines.push((
-            format!(
-                "{} binary section(s) NOT scanned: their name could not be resolved (corrupt/truncated section-name string table). A secret-bearing section may have been skipped.",
-                c.binary_section_name_unresolved
-            ),
-            true,
-        ));
-    }
-    if c.source_truncated > 0 {
-        lines.push((
-            format!(
-                "{} source scan(s) only PARTIALLY scanned: a source-level aggregate cap was reached before all input was exhausted.",
-                c.source_truncated
-            ),
-            true,
-        ));
-    }
-    if c.structured_source_parse_failures > 0 {
-        lines.push((
-            format!(
-                "{} structured source file(s) only PARTIALLY scanned: format-specific expansion failed, so raw text was scanned but derived request/response/body chunks were not expanded.",
-                c.structured_source_parse_failures
-            ),
-            true,
-        ));
-    }
-    if c.archive_duplicate_scan_unavailable > 0 {
-        // `warn` = true: duplicate-entry detection could not run (zip64 / malformed
-        // central directory), so the standard parser scanned the archive but may
-        // have missed a duplicated/shadow central-directory entry — partial
-        // coverage, an evasion-bypass surface, not a clean archive (Law 10).
-        lines.push((
-            format!(
-                "{} archive(s) scanned WITHOUT duplicate-entry detection: a zip64 or malformed central directory prevented it, so a duplicated/shadow entry hiding a secret may have been missed.",
-                c.archive_duplicate_scan_unavailable
-            ),
-            true,
-        ));
-    }
-    if c.git_lfs_pointer > 0 {
-        // `warn` = true: only the tiny pointer text was scanned. The real blob it
-        // references lives in Git-LFS storage and was not on disk, so its content
-        // — which can hold a keystore, `.pem`, or encrypted `.env` — was NOT
-        // checked. Reporting this repo as clean would be a false-clean (Law 10).
-        lines.push((
-            format!(
-                "{} Git-LFS pointer(s) scanned WITHOUT their referenced content: the real blob lives in LFS storage and was not on disk. Run `git lfs pull` to materialise the blobs, then rescan.",
-                c.git_lfs_pointer
-            ),
-            true,
-        ));
-    }
-    // Binary-source degradations (Law 10): Ghidra deep analysis that fell back to
-    // shallow strings, and binaries dropped as unreadable. Each is already printed
-    // loudly at its drop site; this end-of-scan roll-up makes the totals visible
-    // alongside the other coverage gaps. Only compiled when the binary source is.
-    #[cfg(feature = "binary")]
-    {
-        if binary_degraded > 0 {
-            lines.push((
-                format!(
-                    "{binary_degraded} binary(ies) only SHALLOWLY scanned: Ghidra deep decompiler analysis failed or was too large, so only strings-mode extraction ran. Encoded/split secrets may have been missed."
-                ),
-                true,
-            ));
+    // Snapshot every coverage-gap counter once, then render each non-zero
+    // category from the ONE canonical set this human summary and the structured
+    // SARIF/HTML report share (`crate::reporting::CoverageGapKind`). A category
+    // can therefore never appear on one surface and not the other — a gap
+    // visible on the terminal but absent from SARIF would be a structured
+    // false-clean (Law 10). Adding a category is a compile error until both
+    // surfaces handle it.
+    use crate::reporting::{CoverageCounts, CoverageGapKind, CoverageSeverity};
+    let counts = CoverageCounts::current();
+    for kind in CoverageGapKind::ALL {
+        let n = kind.count(&counts);
+        if n == 0 {
+            continue;
         }
-        if binary_unreadable > 0 {
-            lines.push((
-                format!(
-                    "{binary_unreadable} binary(ies) NOT scanned: unreadable (permission denied or I/O error). These were NOT checked for secrets."
-                ),
-                true,
-            ));
-        }
-    }
-    for (msg, warn) in lines {
+        // `Fail` (red) = these bytes were genuinely NOT covered, so a "no secrets
+        // found" result is not a clean bill of health. `Warn` (yellow) = a
+        // deliberate skip (size cap, binary, exclusion) or a partial
+        // decode-through the raw scan still covered.
         let palette = terminal_palette(ansi, false);
-        let (label, color) = if warn {
-            ("FAIL", palette.red)
-        } else {
-            ("WARN", palette.yellow)
+        let (label, color) = match kind.severity() {
+            CoverageSeverity::Fail => ("FAIL", palette.red),
+            CoverageSeverity::Warn => ("WARN", palette.yellow),
         };
+        let msg = kind.human_reason(n);
         eprintln!("{color}{label} {msg}{}", palette.reset);
     }
 }

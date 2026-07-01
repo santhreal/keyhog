@@ -217,6 +217,301 @@ fn binary_unreadable_count() -> usize {
     }
 }
 
+/// Terminal severity for a coverage gap in the human end-of-scan summary.
+/// `Fail` (red) means the scan genuinely did NOT cover some requested bytes, so
+/// a "no secrets found" result is not a clean bill of health. `Warn` (yellow) is
+/// an advisory/deliberate skip (size cap, binary, exclusion) or a partial
+/// decode-through the raw scan still covered. SARIF notifications carry every
+/// gap regardless of severity; only the terminal renderer colours by it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CoverageSeverity {
+    Fail,
+    Warn,
+}
+
+/// The single canonical set of scan coverage-gap categories. Both the human
+/// end-of-scan summary ([`crate::orchestrator::reporting::report_skip_summary`])
+/// and the structured SARIF/HTML report ([`coverage_gap_summary`]) iterate
+/// [`CoverageGapKind::ALL`], so a category can never exist on one surface and not
+/// the other — a gap visible on the terminal but absent from SARIF is a
+/// structured false-clean (Law 10). The per-surface *wording* legitimately
+/// differs (terse machine reason for SARIF, verbose reason-plus-remedy for the
+/// operator), but the *set* of categories and their severity live here once.
+/// Adding a variant is a compile error until every `match` below handles it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CoverageGapKind {
+    ScannerStructuredParseFailure,
+    ScannerStructuredOversizeSkip,
+    ScannerDecodeTruncation,
+    ScannerInvalidPatternIndexSkip,
+    ScannerBoundaryCardinalityMismatch,
+    ScannerLineOffsetMismatch,
+    SourceError,
+    OverMaxSize,
+    Binary,
+    Excluded,
+    NonBinaryUnreadable,
+    GitObjectUnreadable,
+    ArchiveTruncated,
+    BinarySectionNameUnresolved,
+    SourceTruncated,
+    StructuredSourceParseFailure,
+    ArchiveDuplicateScanUnavailable,
+    GitLfsPointer,
+    BinaryDegraded,
+    BinaryUnreadable,
+}
+
+impl CoverageGapKind {
+    /// Canonical emission order: scanner-engine gaps first, then source-walker
+    /// gaps, then binary-source gaps. Both surfaces emit non-zero categories in
+    /// this order.
+    pub(crate) const ALL: [CoverageGapKind; 20] = [
+        Self::ScannerStructuredParseFailure,
+        Self::ScannerStructuredOversizeSkip,
+        Self::ScannerDecodeTruncation,
+        Self::ScannerInvalidPatternIndexSkip,
+        Self::ScannerBoundaryCardinalityMismatch,
+        Self::ScannerLineOffsetMismatch,
+        Self::SourceError,
+        Self::OverMaxSize,
+        Self::Binary,
+        Self::Excluded,
+        Self::NonBinaryUnreadable,
+        Self::GitObjectUnreadable,
+        Self::ArchiveTruncated,
+        Self::BinarySectionNameUnresolved,
+        Self::SourceTruncated,
+        Self::StructuredSourceParseFailure,
+        Self::ArchiveDuplicateScanUnavailable,
+        Self::GitLfsPointer,
+        Self::BinaryDegraded,
+        Self::BinaryUnreadable,
+    ];
+
+    /// This category's count from a snapshot. `NonBinaryUnreadable` excludes
+    /// unreadable binaries (their own category) so the same dropped file is never
+    /// counted twice across the two surfaces.
+    pub(crate) fn count(self, counts: &CoverageCounts) -> usize {
+        let c = &counts.skip;
+        match self {
+            Self::ScannerStructuredParseFailure => counts.scanner_structured_parse_failures,
+            Self::ScannerStructuredOversizeSkip => counts.scanner_structured_oversize_skips,
+            Self::ScannerDecodeTruncation => counts.scanner_decode_truncations,
+            Self::ScannerInvalidPatternIndexSkip => counts.scanner_invalid_pattern_index_skips,
+            Self::ScannerBoundaryCardinalityMismatch => {
+                counts.scanner_boundary_cardinality_mismatches
+            }
+            Self::ScannerLineOffsetMismatch => counts.scanner_line_offset_mismatches,
+            Self::SourceError => counts.source_errors,
+            Self::OverMaxSize => c.over_max_size,
+            Self::Binary => c.binary,
+            Self::Excluded => c.excluded,
+            Self::NonBinaryUnreadable => c.unreadable.saturating_sub(counts.binary_unreadable),
+            Self::GitObjectUnreadable => c.git_object_unreadable,
+            Self::ArchiveTruncated => c.archive_truncated,
+            Self::BinarySectionNameUnresolved => c.binary_section_name_unresolved,
+            Self::SourceTruncated => c.source_truncated,
+            Self::StructuredSourceParseFailure => c.structured_source_parse_failures,
+            Self::ArchiveDuplicateScanUnavailable => c.archive_duplicate_scan_unavailable,
+            Self::GitLfsPointer => c.git_lfs_pointer,
+            Self::BinaryDegraded => counts.binary_degraded,
+            Self::BinaryUnreadable => counts.binary_unreadable,
+        }
+    }
+
+    /// Terminal severity for the human summary. SARIF ignores this — it reports
+    /// every non-zero gap identically.
+    pub(crate) fn severity(self) -> CoverageSeverity {
+        match self {
+            // Advisory/deliberate skips, plus partial decode-through gaps the raw
+            // scan still covered → yellow WARN.
+            Self::OverMaxSize
+            | Self::Binary
+            | Self::Excluded
+            | Self::ScannerStructuredParseFailure
+            | Self::ScannerStructuredOversizeSkip
+            | Self::ScannerDecodeTruncation
+            | Self::ScannerInvalidPatternIndexSkip
+            | Self::ScannerBoundaryCardinalityMismatch
+            | Self::ScannerLineOffsetMismatch => CoverageSeverity::Warn,
+            // Genuine "these bytes were NOT covered" → red FAIL: a clean bill is
+            // unsafe while any of these is non-zero.
+            Self::SourceError
+            | Self::NonBinaryUnreadable
+            | Self::GitObjectUnreadable
+            | Self::ArchiveTruncated
+            | Self::BinarySectionNameUnresolved
+            | Self::SourceTruncated
+            | Self::StructuredSourceParseFailure
+            | Self::ArchiveDuplicateScanUnavailable
+            | Self::GitLfsPointer
+            | Self::BinaryDegraded
+            | Self::BinaryUnreadable => CoverageSeverity::Fail,
+        }
+    }
+
+    /// Terse, stable machine reason for a SARIF `toolExecutionNotifications`
+    /// entry (the count is a separate field, so this string is count-free).
+    pub(crate) fn sarif_reason(self) -> &'static str {
+        match self {
+            Self::ScannerStructuredParseFailure => {
+                "scanner structured parse failed (raw text scanned; encoded structured values not decoded)"
+            }
+            Self::ScannerStructuredOversizeSkip => {
+                "scanner structured decode-through skipped by size cap (structured file matched but exceeded the parse cap; encoded values e.g. a k8s data block were not decoded)"
+            }
+            Self::ScannerDecodeTruncation => {
+                "scanner decode-through truncated by budget/cap (raw bytes scanned; deeper encoded layers not expanded)"
+            }
+            Self::ScannerInvalidPatternIndexSkip => {
+                "scanner pattern expansion skipped by invalid pattern index (scanner invariant violation; scan partial)"
+            }
+            Self::ScannerBoundaryCardinalityMismatch => {
+                "scanner boundary reassembly skipped by chunk/result cardinality mismatch (scanner invariant violation; scan partial)"
+            }
+            Self::ScannerLineOffsetMismatch => {
+                "scanner multiline attribution used fallback source offsets (line-offset metadata mismatch; scan partial)"
+            }
+            Self::SourceError => {
+                "source emitted error rows (requested input was not fully scanned)"
+            }
+            Self::OverMaxSize => "exceeded --max-file-size",
+            Self::Binary => "binary (extension or content sniff)",
+            Self::Excluded => "default-exclusion list (lock/minified/vendored)",
+            Self::NonBinaryUnreadable => "unreadable (permission denied or I/O error)",
+            Self::GitObjectUnreadable => {
+                "Git object unreadable or wrong object kind (referenced commit/tree/blob not scanned)"
+            }
+            Self::ArchiveTruncated => {
+                "archive extraction truncated by decompression-bomb guard (remaining entries not scanned)"
+            }
+            Self::BinarySectionNameUnresolved => {
+                "binary section name unresolved (corrupt section-name string table; section may be unscanned)"
+            }
+            Self::SourceTruncated => {
+                "source scan truncated by aggregate source cap (remaining input not scanned)"
+            }
+            Self::StructuredSourceParseFailure => {
+                "structured source parse failed (raw text scanned; derived chunks not expanded)"
+            }
+            Self::ArchiveDuplicateScanUnavailable => {
+                "archive duplicate-entry detection unavailable (zip64 or malformed central directory; shadow entries may be missed)"
+            }
+            Self::GitLfsPointer => {
+                "Git-LFS pointer (pointer text scanned; referenced blob is in LFS storage, not on disk — run `git lfs pull` then rescan)"
+            }
+            Self::BinaryDegraded => {
+                "binary deep analysis degraded to strings-only (Ghidra failed or output too large)"
+            }
+            Self::BinaryUnreadable => {
+                "binary unreadable (permission denied or I/O error; binary NOT scanned)"
+            }
+        }
+    }
+
+    /// Verbose operator reason WITH the remedy, for the human stderr summary.
+    /// `n` is this category's count (always > 0 at the call site).
+    pub(crate) fn human_reason(self, n: usize) -> String {
+        match self {
+            Self::ScannerStructuredParseFailure => format!(
+                "{n} file(s) matched a structured format (k8s Secret / Terraform state / \
+                 Jupyter notebook / docker-compose) but FAILED to parse: secrets ENCODED \
+                 inside them (e.g. base64 in a k8s `data:` block) were NOT decoded. The raw \
+                 text was still scanned. Fix the file syntax to scan their encoded contents."
+            ),
+            Self::ScannerStructuredOversizeSkip => format!(
+                "{n} file(s) matched a structured decode-through format (k8s Secret / \
+                 Terraform state / Jupyter notebook / docker-compose) but EXCEEDED the \
+                 structured-parse size cap: base64-encoded values (e.g. a k8s `data:` block) \
+                 were NOT decoded. The raw text was still scanned. Split the file or scan the \
+                 encoded blob directly to prove its decoded coverage."
+            ),
+            Self::ScannerDecodeTruncation => format!(
+                "{n} decode root(s) hit a decode-through budget/cap: raw bytes were scanned, \
+                 but deeper encoded layers may not have been expanded. Re-scan the affected \
+                 corpus with a narrower target or tuned decode limits to prove encoded coverage."
+            ),
+            Self::ScannerInvalidPatternIndexSkip => format!(
+                "{n} scanner pattern expansion edge(s) were NOT applied: compiled pattern-index \
+                 side data referenced patterns outside the trigger bitmap. This is a scanner \
+                 invariant violation; treat the scan as partial."
+            ),
+            Self::ScannerBoundaryCardinalityMismatch => format!(
+                "{n} boundary reassembly pass(es) were NOT applied: chunk/result cardinality \
+                 drift made cross-chunk findings unsafe to append. This is a scanner invariant \
+                 violation; treat the scan as partial."
+            ),
+            Self::ScannerLineOffsetMismatch => format!(
+                "{n} multiline attribution mapping(s) used a fallback source offset because \
+                 line-offset metadata was inconsistent. Findings were still emitted, but \
+                 reported locations may be approximate; treat the scan as partial."
+            ),
+            Self::SourceError => format!(
+                "{n} source error row(s) emitted: requested input was NOT fully scanned. \
+                 Inspect the source errors above and rerun affected inputs."
+            ),
+            Self::OverMaxSize => format!(
+                "{n} file(s) skipped: exceeded --max-file-size. Re-scan with a larger cap to \
+                 include them."
+            ),
+            Self::Binary => format!(
+                "{n} file(s) skipped: detected as binary (extension or content sniff) and not \
+                 scanned as text."
+            ),
+            Self::Excluded => format!(
+                "{n} file(s) skipped: matched the default-exclusion list (lock/minified/vendored)."
+            ),
+            Self::NonBinaryUnreadable => format!(
+                "{n} file(s) NOT scanned: unreadable (permission denied or I/O error). These \
+                 were NOT checked for secrets."
+            ),
+            Self::GitObjectUnreadable => format!(
+                "{n} Git object(s) NOT scanned: referenced commit/tree/blob data was unreadable \
+                 or not the expected object kind."
+            ),
+            Self::ArchiveTruncated => format!(
+                "{n} archive(s) only PARTIALLY scanned: extraction was truncated by the \
+                 decompression-bomb guard (uncompressed size exceeded 4x --max-file-size). \
+                 Remaining entries were NOT checked for secrets."
+            ),
+            Self::BinarySectionNameUnresolved => format!(
+                "{n} binary section(s) NOT scanned: their name could not be resolved \
+                 (corrupt/truncated section-name string table). A secret-bearing section may \
+                 have been skipped."
+            ),
+            Self::SourceTruncated => format!(
+                "{n} source scan(s) only PARTIALLY scanned: a source-level aggregate cap was \
+                 reached before all input was exhausted."
+            ),
+            Self::StructuredSourceParseFailure => format!(
+                "{n} structured source file(s) only PARTIALLY scanned: format-specific \
+                 expansion failed, so raw text was scanned but derived request/response/body \
+                 chunks were not expanded."
+            ),
+            Self::ArchiveDuplicateScanUnavailable => format!(
+                "{n} archive(s) scanned WITHOUT duplicate-entry detection: a zip64 or malformed \
+                 central directory prevented it, so a duplicated/shadow entry hiding a secret \
+                 may have been missed."
+            ),
+            Self::GitLfsPointer => format!(
+                "{n} Git-LFS pointer(s) scanned WITHOUT their referenced content: the real blob \
+                 lives in LFS storage and was not on disk. Run `git lfs pull` to materialise \
+                 the blobs, then rescan."
+            ),
+            Self::BinaryDegraded => format!(
+                "{n} binary(ies) only SHALLOWLY scanned: Ghidra deep decompiler analysis failed \
+                 or was too large, so only strings-mode extraction ran. Encoded/split secrets \
+                 may have been missed."
+            ),
+            Self::BinaryUnreadable => format!(
+                "{n} binary(ies) NOT scanned: unreadable (permission denied or I/O error). \
+                 These were NOT checked for secrets."
+            ),
+        }
+    }
+}
+
 /// Build the SARIF/HTML coverage-gap summary from a [`CoverageCounts`] snapshot.
 /// Each non-zero category becomes one `(reason, count)` pair the reporter
 /// surfaces as a tool-execution notification, so a consuming platform sees the
@@ -228,94 +523,11 @@ fn binary_unreadable_count() -> usize {
 /// path omitted unreadable *binaries* and the structured decode-through
 /// oversize skip — so both are explicit entries below.
 fn coverage_gap_summary(counts: &CoverageCounts) -> Vec<(String, usize)> {
-    let c = &counts.skip;
-    // Unreadable binaries are reported as their OWN category below, so the
-    // generic unreadable count excludes them — otherwise the same dropped file
-    // is counted twice across the two categories.
-    let non_binary_unreadable = c.unreadable.saturating_sub(counts.binary_unreadable);
-    let summary = vec![
-        (
-            "source emitted error rows (requested input was not fully scanned)".to_string(),
-            counts.source_errors,
-        ),
-        ("exceeded --max-file-size".to_string(), c.over_max_size),
-        (
-            "binary (extension or content sniff)".to_string(),
-            c.binary,
-        ),
-        (
-            "default-exclusion list (lock/minified/vendored)".to_string(),
-            c.excluded,
-        ),
-        (
-            "unreadable (permission denied or I/O error)".to_string(),
-            non_binary_unreadable,
-        ),
-        (
-            "Git object unreadable or wrong object kind (referenced commit/tree/blob not scanned)"
-                .to_string(),
-            c.git_object_unreadable,
-        ),
-        (
-            "archive extraction truncated by decompression-bomb guard (remaining entries not scanned)".to_string(),
-            c.archive_truncated,
-        ),
-        (
-            "binary section name unresolved (corrupt section-name string table; section may be unscanned)".to_string(),
-            c.binary_section_name_unresolved,
-        ),
-        (
-            "source scan truncated by aggregate source cap (remaining input not scanned)".to_string(),
-            c.source_truncated,
-        ),
-        (
-            "structured source parse failed (raw text scanned; derived chunks not expanded)".to_string(),
-            c.structured_source_parse_failures,
-        ),
-        (
-            "archive duplicate-entry detection unavailable (zip64 or malformed central directory; shadow entries may be missed)".to_string(),
-            c.archive_duplicate_scan_unavailable,
-        ),
-        (
-            "Git-LFS pointer (pointer text scanned; referenced blob is in LFS storage, not on disk — run `git lfs pull` then rescan)".to_string(),
-            c.git_lfs_pointer,
-        ),
-        (
-            "scanner structured parse failed (raw text scanned; encoded structured values not decoded)".to_string(),
-            counts.scanner_structured_parse_failures,
-        ),
-        (
-            "scanner structured decode-through skipped by size cap (structured file matched but exceeded the parse cap; encoded values e.g. a k8s data block were not decoded)".to_string(),
-            counts.scanner_structured_oversize_skips,
-        ),
-        (
-            "scanner decode-through truncated by budget/cap (raw bytes scanned; deeper encoded layers not expanded)".to_string(),
-            counts.scanner_decode_truncations,
-        ),
-        (
-            "scanner pattern expansion skipped by invalid pattern index (scanner invariant violation; scan partial)".to_string(),
-            counts.scanner_invalid_pattern_index_skips,
-        ),
-        (
-            "scanner boundary reassembly skipped by chunk/result cardinality mismatch (scanner invariant violation; scan partial)".to_string(),
-            counts.scanner_boundary_cardinality_mismatches,
-        ),
-        (
-            "scanner multiline attribution used fallback source offsets (line-offset metadata mismatch; scan partial)".to_string(),
-            counts.scanner_line_offset_mismatches,
-        ),
-        (
-            "binary deep analysis degraded to strings-only (Ghidra failed or output too large)"
-                .to_string(),
-            counts.binary_degraded,
-        ),
-        (
-            "binary unreadable (permission denied or I/O error; binary NOT scanned)".to_string(),
-            counts.binary_unreadable,
-        ),
-    ];
-
-    summary.into_iter().filter(|(_, n)| *n > 0).collect()
+    CoverageGapKind::ALL
+        .iter()
+        .map(|kind| (kind.sarif_reason().to_string(), kind.count(counts)))
+        .filter(|(_, n)| *n > 0)
+        .collect()
 }
 
 #[cfg(test)]
