@@ -150,8 +150,8 @@ pub fn command() -> clap::Command {
          {count}-strong corpus (e.g. `keyhog detectors --search aws`)."
     );
     Cli::command()
-        .after_help(crate::exit_codes::HELP)
-        .mut_subcommand("scan", |sub| sub.after_help(crate::exit_codes::HELP))
+        .after_help(crate::exit_codes::help())
+        .mut_subcommand("scan", |sub| sub.after_help(crate::exit_codes::help()))
         .mut_subcommand("detectors", move |sub| {
             sub.mut_arg("search", move |arg| arg.long_help(long_help.clone()))
         })

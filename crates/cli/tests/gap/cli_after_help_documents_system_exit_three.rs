@@ -2,7 +2,7 @@
 
 #[test]
 fn cli_after_help_documents_system_error_exit_three() {
-    let help = keyhog::exit_codes::HELP;
+    let help = keyhog::exit_codes::help();
     assert!(
         help.contains("System error") || help.contains("system error"),
         "Cli after_help must document exit 3 for scanner/system failures"

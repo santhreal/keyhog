@@ -4,10 +4,17 @@
 //! the underlying numbers and help text live in this module so docs, help, and
 //! behavior cannot drift independently.
 
+use std::sync::LazyLock;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExitCodeDefinition {
     pub code: u8,
+    /// Short label (used by structured/diagnostic surfaces).
     pub label: &'static str,
+    /// Full one-line description rendered in the `EXIT CODES:` help block. The
+    /// generated [`help`] view renders these, so `DEFINITIONS` is the single source
+    /// of truth for the printed help — the numbers and the docs cannot drift.
+    pub help: &'static str,
     pub scan_reachable: bool,
 }
 
@@ -33,63 +40,77 @@ pub const DEFINITIONS: &[ExitCodeDefinition] = &[
     ExitCodeDefinition {
         code: EXIT_SUCCESS,
         label: "Success",
+        help: "Success (no secrets found)",
         scan_reachable: true,
     },
     ExitCodeDefinition {
         code: EXIT_FINDINGS,
         label: "Findings present",
+        help: "Secrets found, none confirmed live (unverified, skipped, or verified-inactive: dead/revoked)",
         scan_reachable: true,
     },
     ExitCodeDefinition {
         code: EXIT_USER_ERROR,
         label: "User error",
+        help: "User error (bad flag/config, missing path/baseline, detector-load failure, not-found/permission-denied path)",
         scan_reachable: true,
     },
     ExitCodeDefinition {
         code: EXIT_SYSTEM_ERROR,
         label: "System error",
+        help: "System error (local environment failure: low-level I/O that is not not-found/permission-denied, or GPU/hardware init)",
         scan_reachable: true,
     },
     ExitCodeDefinition {
         code: EXIT_HEALTH_FAILURE,
         label: "Health/self-test failure",
+        help: "Health/self-test failure (doctor unhealthy / repair could not restore a working binary / backend --self-test failed)",
         scan_reachable: false,
     },
     ExitCodeDefinition {
         code: EXIT_LIVE_CREDENTIALS,
         label: "Live credentials found",
+        help: "Live credentials found (requires --verify)",
         scan_reachable: true,
     },
     ExitCodeDefinition {
         code: EXIT_SCANNER_PANIC,
         label: "Scanner thread panicked",
+        help: "Scanner thread panicked mid-scan (state is unreliable)",
         scan_reachable: true,
     },
     ExitCodeDefinition {
         code: EXIT_REQUIRE_GPU_UNMET,
         label: "Required GPU unavailable",
+        help: "Required GPU unavailable (--require-gpu)",
         scan_reachable: true,
     },
     ExitCodeDefinition {
         code: EXIT_SOURCE_FAILED,
         label: "Requested source failed or coverage incomplete",
+        help: "Requested source failed or input coverage was incomplete",
         scan_reachable: true,
     },
     ExitCodeDefinition {
         code: EXIT_INTERRUPTED,
         label: "Interrupted",
+        help: "Interrupted (SIGINT / Ctrl-C)",
         scan_reachable: true,
     },
 ];
 
-pub const HELP: &str = "EXIT CODES:\n  \
-0   Success (no secrets found)\n  \
-1   Secrets found, none confirmed live (unverified, skipped, or verified-inactive: dead/revoked)\n  \
-2   User error (bad flag/config, missing path/baseline, detector-load failure, not-found/permission-denied path)\n  \
-3   System error (local environment failure: low-level I/O that is not not-found/permission-denied, or GPU/hardware init)\n  \
-4   Health/self-test failure (doctor unhealthy / repair could not restore a working binary / backend --self-test failed)\n  \
-10  Live credentials found (requires --verify)\n  \
-11  Scanner thread panicked mid-scan (state is unreliable)\n  \
-12  Required GPU unavailable (--require-gpu)\n  \
-13  Requested source failed or input coverage was incomplete\n  \
-130 Interrupted (SIGINT / Ctrl-C)";
+/// The `EXIT CODES:` help block shown under `--help`, GENERATED from
+/// [`DEFINITIONS`] so the numeric constants, the table, and the printed help can
+/// never drift apart (the table is the single source of truth). Rendered once and
+/// cached. Each row is `  {code:<3} {help}`, matching the historical hand-written
+/// layout byte-for-byte.
+pub fn help() -> &'static str {
+    static RENDERED: LazyLock<String> = LazyLock::new(|| {
+        let mut out = String::from("EXIT CODES:");
+        for def in DEFINITIONS {
+            out.push_str(&format!("\n  {:<3} {}", def.code, def.help));
+        }
+        out
+    });
+    &RENDERED
+}

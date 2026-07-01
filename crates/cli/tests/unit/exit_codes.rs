@@ -9,17 +9,18 @@
 //! alias resolutions, and the exact set-equality between `DEFINITIONS` and `HELP`.
 
 use keyhog::exit_codes::{
-    ExitCodeDefinition, DEFINITIONS, EXIT_BACKEND_SELF_TEST_FAILED, EXIT_CREDENTIALS_FOUND,
+    help, ExitCodeDefinition, DEFINITIONS, EXIT_BACKEND_SELF_TEST_FAILED, EXIT_CREDENTIALS_FOUND,
     EXIT_DETECTOR_AUDIT_FAILED, EXIT_DOCTOR_UNHEALTHY, EXIT_FINDINGS, EXIT_HEALTH_FAILURE,
     EXIT_INTERRUPTED, EXIT_LIVE_CREDENTIALS, EXIT_REPAIR_FAILED, EXIT_REQUIRE_GPU_UNMET,
     EXIT_SCANNER_PANIC, EXIT_SOURCE_FAILED, EXIT_SUCCESS, EXIT_SYSTEM_ERROR, EXIT_UPDATE_AVAILABLE,
-    EXIT_USER_ERROR, HELP,
+    EXIT_USER_ERROR,
 };
 
 /// The leading integer of every `HELP` line that starts with one (the header line
 /// `EXIT CODES:` and any wrapped text lines yield nothing).
 fn help_codes() -> Vec<u8> {
-    HELP.lines()
+    help()
+        .lines()
         .filter_map(|line| line.trim_start().split_whitespace().next())
         .filter_map(|token| token.parse::<u8>().ok())
         .collect()
@@ -192,9 +193,75 @@ fn credentials_found_alias_is_findings() {
 #[test]
 fn help_starts_with_exit_codes_header() {
     assert!(
-        HELP.starts_with("EXIT CODES:"),
+        help().starts_with("EXIT CODES:"),
         "HELP must open with the EXIT CODES header"
     );
+}
+
+#[test]
+fn generated_help_is_byte_identical_to_the_documented_block() {
+    // The help block is now GENERATED from DEFINITIONS; this pins its exact bytes so
+    // the refactor did not change a single character of `--help` output, and any
+    // future edit to a description/code is caught here.
+    let expected = "EXIT CODES:\n  \
+0   Success (no secrets found)\n  \
+1   Secrets found, none confirmed live (unverified, skipped, or verified-inactive: dead/revoked)\n  \
+2   User error (bad flag/config, missing path/baseline, detector-load failure, not-found/permission-denied path)\n  \
+3   System error (local environment failure: low-level I/O that is not not-found/permission-denied, or GPU/hardware init)\n  \
+4   Health/self-test failure (doctor unhealthy / repair could not restore a working binary / backend --self-test failed)\n  \
+10  Live credentials found (requires --verify)\n  \
+11  Scanner thread panicked mid-scan (state is unreliable)\n  \
+12  Required GPU unavailable (--require-gpu)\n  \
+13  Requested source failed or input coverage was incomplete\n  \
+130 Interrupted (SIGINT / Ctrl-C)";
+    assert_eq!(help(), expected);
+}
+
+#[test]
+fn every_definition_has_nonempty_help() {
+    for def in DEFINITIONS {
+        assert!(
+            !def.help.trim().is_empty(),
+            "exit code {} has an empty help description",
+            def.code
+        );
+    }
+}
+
+#[test]
+fn help_descriptions_are_unique() {
+    let mut seen = std::collections::HashSet::new();
+    for def in DEFINITIONS {
+        assert!(
+            seen.insert(def.help),
+            "duplicate help description {:?}",
+            def.help
+        );
+    }
+}
+
+#[test]
+fn generated_help_renders_every_definition_description() {
+    // Proves the generated view is sourced from DEFINITIONS: every row's description
+    // appears verbatim in the output.
+    let rendered = help();
+    for def in DEFINITIONS {
+        assert!(
+            rendered.contains(def.help),
+            "generated help is missing the description for code {}: {:?}",
+            def.code,
+            def.help
+        );
+    }
+}
+
+#[test]
+fn generated_help_starts_each_row_with_its_padded_code() {
+    // The `  {code:<3} ` layout: a single-digit code is padded so descriptions align.
+    let rendered = help();
+    assert!(rendered.contains("\n  0   Success"), "0 row layout");
+    assert!(rendered.contains("\n  10  Live"), "10 row layout");
+    assert!(rendered.contains("\n  130 Interrupted"), "130 row layout");
 }
 
 #[test]

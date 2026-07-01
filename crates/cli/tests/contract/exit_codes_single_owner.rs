@@ -2,8 +2,8 @@
 //! not collide.
 
 use keyhog::exit_codes::{
-    DEFINITIONS, EXIT_REQUIRE_GPU_UNMET, EXIT_SOURCE_FAILED, EXIT_SYSTEM_ERROR, EXIT_USER_ERROR,
-    HELP,
+    help, DEFINITIONS, EXIT_REQUIRE_GPU_UNMET, EXIT_SOURCE_FAILED, EXIT_SYSTEM_ERROR,
+    EXIT_USER_ERROR,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -33,7 +33,7 @@ fn user_gpu_and_source_failures_have_distinct_codes() {
 fn help_text_names_every_owned_exit_code() {
     for definition in DEFINITIONS {
         assert!(
-            HELP.contains(&definition.code.to_string()),
+            help().contains(&definition.code.to_string()),
             "exit help omits owned code {} ({})",
             definition.code,
             definition.label
