@@ -59,6 +59,14 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // probe builder private instead of exporting the GPU internals as `pub`
     // solely for external test placement.
     "gpu/backend.rs",
+    // The repeat-run precision heuristics (`is_degenerate_repeat`,
+    // `longest_repeat_run_len`, `max_repeat_run`) and the `DEGENERATE_RUN_LEN`
+    // threshold are private/`pub(crate)` to the confidence layer. The co-located
+    // tests pin the exact 9-vs-10 degenerate-run boundary and the byte-based
+    // run/ratio semantics that deny the confidence floor to placeholders; the
+    // items are deliberately not public, so external placement would force them
+    // `pub` solely for the test.
+    "confidence/penalties.rs",
     // The credential-context keyword loader parses its Tier-B TOML through the
     // crate-private `parse_credential_context_keywords` and exposes only a
     // `pub(crate)` accessor over a `LazyLock`. The co-located tests pin a
