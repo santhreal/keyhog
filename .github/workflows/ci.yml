@@ -233,6 +233,13 @@ jobs:
         run: cargo test -p keyhog-sources --lib --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile release-fast
       - name: verifier all_tests
         run: cargo test -p keyhog-verifier --test all_tests --profile release-fast
+      # `break_it.rs` is a fuzz file of engine tests that drive `verify_all`
+      # through the process-global rate limiter on a shared service slot with
+      # tight watchdogs; it is intentionally NOT in `all_tests` (parallel) — it
+      # runs as its own SERIAL target so its isolation assumptions hold. Removing
+      # this step orphans it (`scripts/gates/verifier_tests_wired.py` would flag).
+      - name: verifier break_it (serial)
+        run: cargo test -p keyhog-verifier --test break_it --profile release-fast -- --test-threads=1
       - name: cli all_tests
         run: cargo test -p keyhog --test all_tests --no-default-features --features ci-lean --profile release-fast
       - name: cli Vyre pin coherence

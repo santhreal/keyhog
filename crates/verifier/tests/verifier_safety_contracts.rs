@@ -569,15 +569,29 @@ async fn raw_credential_never_appears_in_any_emitted_finding_string() {
 
 #[tokio::test]
 async fn slow_server_hits_the_configured_timeout() {
-    // Server sends a status line then stalls indefinitely. With a 150 ms
-    // per-detector timeout the verifier must abort with a timeout-class error,
-    // not hang the scan.
+    // Server sends a partial status line then stalls for a LONG time. With a
+    // 150 ms per-detector timeout the verifier must abort with a timeout-class
+    // error, not wait out the stall — a slow server must never hang the scan.
+    //
+    // The stall (120 s) is deliberately far larger than any legitimate
+    // client-side delay so the wall-clock cleanly separates the two outcomes:
+    //   * timeout FIRES  -> returns in seconds (the request-timeout + retry
+    //     backoff), well under the ceiling below;
+    //   * timeout does NOT fire (the bug this guards) -> each of the 3 attempts
+    //     waits the full 120 s stall (~360 s total), tripping the watchdog.
+    // The ceiling has generous headroom because this test runs inside the
+    // aggregated `all_tests` binary, where the process-global
+    // `GLOBAL_RATE_LIMITER` accumulates cross-test error backpressure (a fixed
+    // +1 s per request once >50 errors are recorded process-wide) plus
+    // per-service slot spacing. That is legitimate production throttling, not a
+    // hang; the ceiling tolerates it while staying far below the 120 s stall so
+    // a real timeout-not-firing regression is still caught.
     let base = spawn_mock(|mut stream| async move {
         let mut buf = [0u8; 1024];
         let _ = stream.read(&mut buf).await;
         let _ = stream.write_all(b"HTTP/1.1 200 OK\r\n").await;
         // Never finish the headers; hold the connection open.
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        tokio::time::sleep(Duration::from_secs(120)).await;
     })
     .await;
 
@@ -589,7 +603,7 @@ async fn slow_server_hits_the_configured_timeout() {
 
     let started = std::time::Instant::now();
     let findings = tokio::time::timeout(
-        Duration::from_secs(10),
+        Duration::from_secs(60),
         engine.verify_all(vec![group_for("slow", "secret")]),
     )
     .await
@@ -597,12 +611,14 @@ async fn slow_server_hits_the_configured_timeout() {
     let elapsed = started.elapsed();
 
     assert_eq!(findings.len(), 1);
-    // 3 retries × (150 ms timeout + exponential backoff/jitter) stays far below
-    // the 30 s server stall.
-    // The hard ceiling here is just "did NOT hang for the 30 s server stall".
+    // The proof of "timeout fired, not hung": we returned in well under the
+    // 120 s server stall. 45 s leaves ample room for retry backoff + shared
+    // rate-limiter backpressure while remaining unmistakably below a hang.
     assert!(
-        elapsed < Duration::from_secs(8),
-        "timeout must bound the request; took {elapsed:?}"
+        elapsed < Duration::from_secs(45),
+        "timeout must bound the request (a slow server must not hang the scan); \
+         took {elapsed:?} — far below the 120 s server stall means the per-request \
+         timeout fired"
     );
     match &findings[0].verification {
         VerificationResult::Error(msg) => {

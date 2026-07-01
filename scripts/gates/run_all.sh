@@ -124,6 +124,10 @@ run "Gate #1g self-test: CI-orphan scanner regression detection" \
   python3 scripts/gates/recall_locks_wired.py --self-test
 run "Gate #1g: every scanner regression_*.rs is CI-wired (all_tests or --test)" \
   python3 scripts/gates/recall_locks_wired.py
+run "Gate #1h self-test: CI-orphan verifier test detection" \
+  python3 scripts/gates/verifier_tests_wired.py --self-test
+run "Gate #1h: every verifier tests/*.rs is CI-wired (all_tests or --test)" \
+  python3 scripts/gates/verifier_tests_wired.py
 run "Gate #4: surface coverage (every subcommand spawned)" \
   python3 scripts/gates/surface_coverage.py
 run "Gate #5: complexity budget (engine lane/backend/file growth)" \
