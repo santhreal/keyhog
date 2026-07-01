@@ -156,8 +156,18 @@ pub(crate) fn known_prefix_confidence_floor(credential: &str) -> Option<f64> {
     None
 }
 
+/// Strip the MOST-SPECIFIC known prefix from `credential` and return the body,
+/// or `None` if no known prefix matches.
+///
+/// When several known prefixes match (e.g. both `sk-` and `sk-proj-` match
+/// `sk-proj-…`), the LONGEST wins — equivalently, the shortest resulting body.
+/// This is deliberately independent of the order of `KNOWN_PREFIXES`: the correct
+/// body must not depend on which shadowing prefix happens to be listed first, so a
+/// future reorder or a newly-added shorter prefix cannot silently change the body
+/// that feeds sequence-detection and the confidence floor.
 pub(crate) fn known_prefix_body(credential: &str) -> Option<&str> {
     KNOWN_PREFIXES
         .iter()
-        .find_map(|prefix| credential.strip_prefix(prefix))
+        .filter_map(|prefix| credential.strip_prefix(prefix))
+        .min_by_key(|body| body.len())
 }

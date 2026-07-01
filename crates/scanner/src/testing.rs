@@ -926,6 +926,12 @@ pub mod confidence {
         crate::confidence::known_prefix_confidence_floor(credential)
     }
 
+    pub fn known_prefix_body(credential: &str) -> Option<&str> {
+        crate::confidence::known_prefix_body(credential)
+    }
+
+    pub const KNOWN_PREFIXES: &[&str] = crate::confidence::KNOWN_PREFIXES;
+
     #[cfg(test)]
     pub(crate) fn finalize_confidence(score: f64) -> f64 {
         crate::confidence::penalties::finalize_confidence(score)
