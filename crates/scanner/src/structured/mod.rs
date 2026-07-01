@@ -18,6 +18,51 @@ pub(crate) struct ExtractedPair {
     pub line: usize,
 }
 
+/// A recognised structured format, decoupled from parsing so the size cap can
+/// reason about a file it is about to skip (which the coupled detect-and-parse
+/// flow could not).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StructuredFormat {
+    Env,
+    K8sSecret,
+    DockerCompose,
+    Tfstate,
+    Hcl,
+    Jupyter,
+}
+
+impl StructuredFormat {
+    /// True for formats whose structured pass *decodes* values (base64 `data:`
+    /// blocks etc.) the regular byte scan cannot recover. Skipping the structured
+    /// pass on these is a real recall gap. `Env`/`Hcl` only extract plain scalar
+    /// values the regular scan still sees, so skipping them loses context, not a
+    /// secret — they must NOT be counted as coverage gaps (that would be the
+    /// false-loud telemetry the module forbids).
+    fn uses_decode_through(self) -> bool {
+        matches!(
+            self,
+            Self::K8sSecret | Self::DockerCompose | Self::Tfstate | Self::Jupyter
+        )
+    }
+}
+
+/// The exact partition the structured size cap applies: an oversize skip is a
+/// *counted* decode-through coverage gap only when the file is a recognised
+/// decode-through format (k8s Secret / compose / tfstate / notebook) AND is not
+/// a decode-derived buffer (whose encoded surface was already decoded and
+/// scanned upstream). `Env`/`Hcl` are context-only — skipping them loses context
+/// the regular byte scan still recovers, not a secret — so they are never
+/// counted (Law 10: no false-loud telemetry). Single source of truth shared by
+/// [`preprocess`] and its tests, so the counting decision cannot drift from the
+/// classification it is tested against.
+pub(crate) fn oversize_skip_is_counted(
+    text: &str,
+    path: Option<&str>,
+    decode_derived: bool,
+) -> bool {
+    !decode_derived && detect_format(text, path).is_some_and(StructuredFormat::uses_decode_through)
+}
+
 /// Detect format by path and/or content, parse it, and build a preprocessed text.
 /// Returns `None` when the file is not a recognised structured format, when it
 /// exceeds the size limit, or when no pairs could be extracted.
@@ -35,6 +80,26 @@ pub(crate) fn preprocess<'a>(
     decode_derived: bool,
 ) -> Option<ScannerPreprocessedText<'a>> {
     if text.len() > MAX_STRUCTURED_PARSE_BYTES {
+        // A recognised structured DECODE-THROUGH file (k8s Secret / compose /
+        // tfstate / notebook) over the cap loses its base64 `data:` decode-through
+        // surface, which the regular byte scan does not recover. Previously this
+        // was a bare silent `return None` (Law 10 violation). Surface it loudly +
+        // counted, like the parse-failure path. `decode_derived` buffers are not
+        // counted: the encoded surface was already decoded and scanned upstream,
+        // so a skip there loses nothing (no false-loud telemetry). Env/HCL are
+        // not decode-through, so their oversize skip is genuinely lossless and
+        // stays silent.
+        if oversize_skip_is_counted(text, path, decode_derived) {
+            crate::telemetry::record_structured_oversize_skip();
+            tracing::warn!(
+                bytes = text.len(),
+                cap = MAX_STRUCTURED_PARSE_BYTES,
+                path = path.unwrap_or("<unknown>"),
+                "structured decode-through skipped: file exceeds the structured-parse \
+                 size cap, so base64-encoded values (e.g. a k8s `data:` block) were NOT \
+                 decoded; the raw text was still scanned"
+            );
+        }
         return None;
     }
     let pairs = detect_and_parse(text, path, decode_derived)?;
@@ -44,11 +109,10 @@ pub(crate) fn preprocess<'a>(
     Some(build_preprocessed_text(text, pairs))
 }
 
-fn detect_and_parse(
-    text: &str,
-    path: Option<&str>,
-    decode_derived: bool,
-) -> Option<Vec<ExtractedPair>> {
+/// Detect which structured format `text`/`path` is, without parsing it. Pure
+/// path/content sniffing — used both by `detect_and_parse` (to dispatch) and by
+/// the size cap (to decide whether an oversized skip is a real recall gap).
+fn detect_format(text: &str, path: Option<&str>) -> Option<StructuredFormat> {
     // ASCII case-insensitive byte compares - every chunk runs through this
     // detector to decide whether a structured parser applies. The previous
     // flow built a fully-lowercased copy of the path on every call.
@@ -80,21 +144,21 @@ fn detect_and_parse(
     };
 
     if file_starts_ci(b".env") || file_ends_ci(b".env") {
-        return Some(parsers::parse_env(text));
+        return Some(StructuredFormat::Env);
     }
 
     if (ends_ci(b".yaml") || ends_ci(b".yml")) && text.contains("kind: Secret") {
-        return Some(parsers::parse_k8s_secret(text, decode_derived));
+        return Some(StructuredFormat::K8sSecret);
     }
 
     if (file_contains_ci(b"docker-compose") || file_contains_ci(b"compose"))
         && (ends_ci(b".yaml") || ends_ci(b".yml"))
     {
-        return Some(parsers::parse_docker_compose(text, decode_derived));
+        return Some(StructuredFormat::DockerCompose);
     }
 
     if ends_ci(b".tfstate") {
-        return Some(parsers::parse_tfstate(text, decode_derived));
+        return Some(StructuredFormat::Tfstate);
     }
 
     // HCL / Terraform configuration. The block shape
@@ -104,14 +168,29 @@ fn detect_and_parse(
     // Extract `(x, <value>)` pairs so the keyword sits adjacent to the
     // value as a synthetic line and named detectors fire.
     if ends_ci(b".tf") || ends_ci(b".tfvars") || ends_ci(b".hcl") {
-        return Some(parsers::parse_hcl(text));
+        return Some(StructuredFormat::Hcl);
     }
 
     if ends_ci(b".ipynb") {
-        return Some(parsers::parse_jupyter(text, decode_derived));
+        return Some(StructuredFormat::Jupyter);
     }
 
     None
+}
+
+fn detect_and_parse(
+    text: &str,
+    path: Option<&str>,
+    decode_derived: bool,
+) -> Option<Vec<ExtractedPair>> {
+    Some(match detect_format(text, path)? {
+        StructuredFormat::Env => parsers::parse_env(text),
+        StructuredFormat::K8sSecret => parsers::parse_k8s_secret(text, decode_derived),
+        StructuredFormat::DockerCompose => parsers::parse_docker_compose(text, decode_derived),
+        StructuredFormat::Tfstate => parsers::parse_tfstate(text, decode_derived),
+        StructuredFormat::Hcl => parsers::parse_hcl(text),
+        StructuredFormat::Jupyter => parsers::parse_jupyter(text, decode_derived),
+    })
 }
 
 #[cfg(feature = "multiline")]

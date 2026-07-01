@@ -3482,6 +3482,21 @@ pub fn parse_tfstate_tuples(text: &str) -> Vec<(String, String, usize)> {
         .collect()
 }
 
+/// Integration-test facade: the structured-oversize coverage-gap partition
+/// (task #52). Returns whether an oversize skip of `(text, path)` would be
+/// counted as a *decode-through* coverage gap — true only for a recognised
+/// decode-through format (k8s Secret / compose / tfstate / notebook) that is not
+/// a decode-derived buffer; false for `Env`/`Hcl` (context-only, lossless) and
+/// unrecognised inputs. Exposes the exact predicate `preprocess` applies at the
+/// `MAX_STRUCTURED_PARSE_BYTES` cap.
+pub fn structured_oversize_skip_is_counted(
+    text: &str,
+    path: Option<&str>,
+    decode_derived: bool,
+) -> bool {
+    crate::structured::oversize_skip_is_counted(text, path, decode_derived)
+}
+
 /// Integration-test facade: expand a regex pattern to a homoglyph-aware regex
 /// (ASCII chars become `[<ascii><glyphs>]` classes; regex-special chars are
 /// escaped). Plain `pub` so the out-of-crate tests/gap suite can pin the exact
