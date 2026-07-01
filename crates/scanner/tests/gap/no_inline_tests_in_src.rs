@@ -98,6 +98,15 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // prefilter). Parser and static are crate-internal — same white-box
     // justification as `placeholder_words.rs`.
     "assignment_keywords.rs",
+    // The scan-filter tests pin the two recall-critical no-hit prefilters
+    // (`has_secret_keyword_fast`, `has_generic_assignment_keyword`) that decide
+    // which no-phase-1-trigger chunks still reach phase-2 reassembly — a silent
+    // drop from either list is a direct false-negative. Both fns are `pub(super)`
+    // and cfg-gated behind `any(simd, gpu)`, so the behavioral lock (every curated
+    // vendor prefix, the deliberately-excluded short prefixes, and the
+    // case-sensitivity CONTRAST between the two gates) is white-box and stays
+    // co-located rather than widening the engine's internal surface.
+    "engine/scan_filters.rs",
     // The path-filter tests pin the `pub(crate)` path classifiers
     // (`path_is_ci_workflow_file`, `path_is_i18n_file`,
     // `looks_like_raw_base64_file_path`, `looks_like_entropy_raw_base64_file_path`)

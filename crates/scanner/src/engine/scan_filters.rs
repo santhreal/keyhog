@@ -379,3 +379,243 @@ pub(super) fn compute_pattern_signals(
         .unwrap_or(false); // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
     (kw, sf)
 }
+
+// Behavioral lock for the two recall-critical no-hit prefilters
+// (`has_secret_keyword_fast`, `has_generic_assignment_keyword`). They gate which
+// no-phase-1-trigger chunks are still routed into phase-2 reassembly/extraction,
+// so a silent drop from either list is a direct false-negative. These pin the
+// exact triggering contract — every curated vendor prefix, the deliberately-
+// EXCLUDED short prefixes, the case-sensitivity CONTRAST between the two gates,
+// and the fail-open (never-drop) boundaries — white-box because both fns are
+// `pub(super)` and cfg-gated behind `any(simd, gpu)` (see the allowlist entry in
+// `tests/gap/no_inline_tests_in_src.rs`).
+#[cfg(all(test, any(feature = "simd", feature = "gpu")))]
+mod tests {
+    use super::{has_generic_assignment_keyword, has_secret_keyword_fast};
+
+    /// The EXACT set of distinctive vendor prefixes `has_secret_keyword_fast`
+    /// treats as split-across-lines secret anchors. This is the contract: the fn
+    /// must fire for every one of these, so if a future edit drops one the
+    /// `every_curated_prefix_triggers` test fails loudly. Ordered by vendor to
+    /// mirror the source list.
+    const CURATED_PREFIXES: &[&str] = &[
+        // OpenAI
+        "sk-proj-",
+        "sk-svcacct-",
+        "sk-admin-",
+        // Stripe
+        "sk_live_",
+        "sk_test_",
+        "rk_live_",
+        "pk_live_",
+        // GitHub (all installation variants)
+        "ghp_",
+        "ghs_",
+        "gho_",
+        "ghu_",
+        "ghr_",
+        "github_pat_",
+        // Slack
+        "xoxb-",
+        "xoxp-",
+        "xoxa-",
+        "xoxr-",
+        "xoxs-",
+        "xapp-",
+        // Anthropic
+        "sk-ant-",
+        // HuggingFace
+        "hf_",
+        // GCP service-account email shard
+        ".iam.gserviceaccount.com",
+        // GitLab
+        "glpat-",
+        // npm
+        "npm_",
+        // Heroku
+        "HRKU-",
+    ];
+
+    #[test]
+    fn curated_prefix_list_has_exactly_twenty_five_entries() {
+        // Fast tripwire on the size of the recall-critical list. If the source
+        // list grows/shrinks, update this AND `every_curated_prefix_triggers`
+        // together so the count and the behavior stay in lockstep.
+        assert_eq!(CURATED_PREFIXES.len(), 25);
+    }
+
+    #[test]
+    fn every_curated_prefix_triggers() {
+        for prefix in CURATED_PREFIXES {
+            let line = format!("api_key = {prefix}A1b2C3d4E5f6");
+            assert!(
+                has_secret_keyword_fast(line.as_bytes()),
+                "curated prefix {prefix:?} must route the chunk to phase-2 reassembly"
+            );
+        }
+    }
+
+    #[test]
+    fn openai_prefixes_trigger() {
+        assert!(has_secret_keyword_fast(b"key=sk-proj-abcdef"));
+        assert!(has_secret_keyword_fast(b"key=sk-svcacct-abcdef"));
+        assert!(has_secret_keyword_fast(b"key=sk-admin-abcdef"));
+    }
+
+    #[test]
+    fn stripe_prefixes_trigger() {
+        assert!(has_secret_keyword_fast(b"k=sk_live_abcdef"));
+        assert!(has_secret_keyword_fast(b"k=sk_test_abcdef"));
+        assert!(has_secret_keyword_fast(b"k=rk_live_abcdef"));
+        assert!(has_secret_keyword_fast(b"k=pk_live_abcdef"));
+    }
+
+    #[test]
+    fn github_all_installation_variants_trigger() {
+        for token in ["ghp_", "ghs_", "gho_", "ghu_", "ghr_", "github_pat_"] {
+            let line = format!("gh={token}0123456789");
+            assert!(
+                has_secret_keyword_fast(line.as_bytes()),
+                "GitHub variant {token:?} must trigger"
+            );
+        }
+    }
+
+    #[test]
+    fn slack_prefixes_trigger() {
+        for token in ["xoxb-", "xoxp-", "xoxa-", "xoxr-", "xoxs-", "xapp-"] {
+            let line = format!("slack={token}0123456789");
+            assert!(
+                has_secret_keyword_fast(line.as_bytes()),
+                "Slack prefix {token:?} must trigger"
+            );
+        }
+    }
+
+    #[test]
+    fn anthropic_prefix_triggers() {
+        assert!(has_secret_keyword_fast(b"key=sk-ant-api03-abcdef"));
+    }
+
+    #[test]
+    fn huggingface_prefix_triggers() {
+        assert!(has_secret_keyword_fast(b"HF_TOKEN=hf_abcdefghij"));
+    }
+
+    #[test]
+    fn gitlab_and_npm_prefixes_trigger() {
+        assert!(has_secret_keyword_fast(b"token=glpat-abcdefghij"));
+        assert!(has_secret_keyword_fast(b"//registry:_authToken=npm_abcdef"));
+    }
+
+    #[test]
+    fn heroku_prefix_triggers() {
+        assert!(has_secret_keyword_fast(b"key=HRKU-9f8e7d6c5b4a"));
+    }
+
+    #[test]
+    fn gcp_service_account_shard_triggers() {
+        assert!(has_secret_keyword_fast(
+            b"client_email: svc@proj.iam.gserviceaccount.com"
+        ));
+    }
+
+    #[test]
+    fn match_is_case_sensitive_unlike_the_generic_gate() {
+        // `has_secret_keyword_fast` uses a case-SENSITIVE automaton (the prefixes
+        // are exact vendor casings), so an uppercased OpenAI prefix must NOT
+        // trigger. This is the deliberate contrast with the case-folding generic
+        // gate asserted in `generic_gate_is_case_insensitive`.
+        assert!(
+            !has_secret_keyword_fast(b"KEY=SK-PROJ-ABCDEF"),
+            "uppercased vendor prefix must not match the case-sensitive fast gate"
+        );
+    }
+
+    #[test]
+    fn heroku_prefix_is_case_sensitive() {
+        // `HRKU-` is stored uppercase; the lowercase spelling is not a real Heroku
+        // key prefix and must not trigger (guards against a case-fold regression
+        // silently widening this gate).
+        assert!(has_secret_keyword_fast(b"key=HRKU-abcdef"));
+        assert!(!has_secret_keyword_fast(b"key=hrku-abcdef"));
+    }
+
+    #[test]
+    fn deliberately_excluded_short_prefixes_do_not_trigger() {
+        // AKIA (AWS access-key id) and eyJ (base64 `{"` JWT header) are SHORT and
+        // appear constantly in fixtures/docs, so they are intentionally excluded
+        // from this multiline gate. Pin that exclusion — re-adding them would flood
+        // the phase-2 tail with fixture noise.
+        assert!(
+            !has_secret_keyword_fast(b"AKIAIOSFODNN7EXAMPLE"),
+            "AKIA is deliberately excluded from the multiline fast gate"
+        );
+        assert!(
+            !has_secret_keyword_fast(b"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"),
+            "eyJ JWT header is deliberately excluded from the multiline fast gate"
+        );
+    }
+
+    #[test]
+    fn prefix_anywhere_in_chunk_triggers() {
+        // The gate is a substring scan, not line-anchored: a prefix buried in the
+        // middle of a chunk still routes it to phase-2.
+        assert!(has_secret_keyword_fast(
+            b"noise noise ghp_abcdef trailing noise"
+        ));
+    }
+
+    #[test]
+    fn prefix_at_chunk_end_triggers() {
+        assert!(has_secret_keyword_fast(b"the value is glpat-"));
+    }
+
+    #[test]
+    fn empty_input_does_not_trigger() {
+        assert!(!has_secret_keyword_fast(b""));
+    }
+
+    #[test]
+    fn plain_prose_without_any_prefix_does_not_trigger() {
+        assert!(!has_secret_keyword_fast(
+            b"the quick brown fox jumps over the lazy dog"
+        ));
+    }
+
+    #[test]
+    fn truncated_prefixes_do_not_trigger() {
+        // `ghp` without the `_`, and `sk-proj` without the trailing `-`, are not
+        // the full curated prefixes — the gate must require the exact token so it
+        // stays specific.
+        assert!(!has_secret_keyword_fast(b"ghp is a common abbreviation"));
+        assert!(!has_secret_keyword_fast(b"my sk-proj folder"));
+    }
+
+    #[test]
+    fn generic_gate_is_case_insensitive() {
+        // Contrast with the vendor-prefix gate: `has_generic_assignment_keyword`
+        // folds case, so an all-caps assignment keyword still triggers.
+        assert!(has_generic_assignment_keyword(b"PASSWORD=hunter2"));
+        assert!(has_generic_assignment_keyword(b"Api_Key: xyz"));
+    }
+
+    #[test]
+    fn the_two_gates_cover_different_shapes() {
+        // Separation of concerns: a bare `password=` line has NO vendor prefix, so
+        // only the generic gate admits it; a bare `ghp_` token has no assignment
+        // keyword, so only the fast gate admits it. Pin that neither gate silently
+        // subsumes the other's job.
+        assert!(!has_secret_keyword_fast(b"password: hunter2"));
+        assert!(has_generic_assignment_keyword(b"password: hunter2"));
+        assert!(has_secret_keyword_fast(b"ghp_0123456789abcdef"));
+        assert!(!has_generic_assignment_keyword(b"ghp_0123456789abcdef"));
+    }
+
+    #[test]
+    fn generic_gate_rejects_a_non_credential_line() {
+        assert!(!has_generic_assignment_keyword(
+            b"the quick brown fox jumps over the lazy dog"
+        ));
+    }
+}
