@@ -69,8 +69,8 @@ pub(crate) fn keyword_is_credential_anchor(keyword: &str) -> bool {
         return true;
     }
     let lower = keyword.to_ascii_lowercase();
-    super::scan_filters::GENERIC_ASSIGNMENT_KEYWORDS
+    crate::assignment_keywords::assignment_keywords()
         .iter()
-        .any(|anchor| lower.contains(anchor))
+        .any(|anchor| lower.contains(anchor.as_str()))
         || lower.contains("bearer")
 }

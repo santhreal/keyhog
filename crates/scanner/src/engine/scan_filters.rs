@@ -87,61 +87,6 @@ pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
     AC.as_ref().is_none_or(|ac| ac.find(data).is_some())
 }
 
-pub(super) const GENERIC_ASSIGNMENT_KEYWORDS: &[&str] = &[
-    "secret",
-    "password",
-    "passwd",
-    "pwd",
-    // Bare `pass` (covers `*_PASS=`, the dominant CredData credential-env
-    // pattern). This is only the line PREFILTER; the GENERIC_RE bridge in
-    // phase2_generic.rs applies a whole-word left boundary so `bypass=` /
-    // `compass=` are not promoted to findings. `pass` substring-covers the
-    // `password`/`passwd`/`passphrase` lines above too — those entries are kept
-    // for self-documentation.
-    "pass",
-    "token",
-    "webhook_url",
-    "webhook-url",
-    "webhook.url",
-    "apikey",
-    "api_key",
-    "api-key",
-    "api.key",
-    "auth",
-    "authorization",
-    "auth_token",
-    "auth-token",
-    "auth.token",
-    "auth_key",
-    "auth-key",
-    "auth.key",
-    "credential",
-    "private_key",
-    "private-key",
-    "private.key",
-    "signing_key",
-    "signing-key",
-    "signing.key",
-    "encryption_key",
-    "encryption-key",
-    "encryption.key",
-    "access_key",
-    "access-key",
-    "access.key",
-    "client_secret",
-    "client-secret",
-    "client.secret",
-    "app_secret",
-    "app-secret",
-    "app.secret",
-    "master_key",
-    "master-key",
-    "master.key",
-    "license_key",
-    "license-key",
-    "license.key",
-];
-
 /// Check for generic `secret=`, `password:`, `token=` etc. keywords.
 /// Broader than `has_secret_keyword_fast` (which is for multiline only).
 ///
@@ -163,10 +108,11 @@ pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
     // dropping a chunk, and the same loud one-shot warning (Law 10) so the
     // degradation is never silent.
     static AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
-        match AhoCorasick::builder()
-            .ascii_case_insensitive(true)
-            .build(GENERIC_ASSIGNMENT_KEYWORDS.iter().copied())
-        {
+        match AhoCorasick::builder().ascii_case_insensitive(true).build(
+            crate::assignment_keywords::assignment_keywords()
+                .iter()
+                .map(String::as_str),
+        ) {
             Ok(ac) => Some(ac),
             Err(e) => {
                 crate::prefilter_degrade::warn_prefilter_disabled(

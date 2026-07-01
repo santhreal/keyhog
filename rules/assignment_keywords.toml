@@ -1,0 +1,75 @@
+# Tier-B data: generic credential-assignment keywords that trigger the phase-2
+# prefilter (`secret=`, `password:`, `token=`, `api_key=`, ...).
+#
+# Schema:
+#   [assignment_keywords]
+#   keywords = ["lowercase-keyword", ...]
+#
+# Semantics:
+# - This is a DETECTION-trigger vocabulary (it decides which chunks/lines are
+#   worth the full generic-credential machinery), NOT a suppression vocabulary —
+#   it is intentionally a separate file from rules/placeholder_words.toml.
+# - Consumed three ways, all case-insensitively: (1) an `ascii_case_insensitive`
+#   Aho-Corasick chunk prefilter (`has_generic_assignment_keyword`), (2) the
+#   no-hit prefilter STEM set (`generic_keyword_prefilter_stems`, which also adds a
+#   bare `key` stem), and (3) the entropy keyword-anchor contains-check. Because
+#   all three fold case, keywords are stored lowercase.
+# - Entries are ASCII, lowercase, and may carry `_`, `-`, or `.` separators (the
+#   three real-world spellings of compound keys, e.g. `api_key`/`api-key`/`api.key`).
+# - `pass` is deliberately present: it covers the dominant `*_PASS=` CredData
+#   credential-env pattern, and substring-covers `password`/`passwd`/`passphrase`.
+#   It is ONLY a line prefilter — the GENERIC_RE bridge in phase2_generic.rs applies
+#   a whole-word left boundary so `bypass=` / `compass=` are not promoted to
+#   findings. The longer `password`/`passwd` entries are kept for self-documentation.
+# - Adding a keyword here widens recall without a recompile; the prefilter-stem
+#   coherence gate keeps the no-hit admission set in sync with this list.
+
+[assignment_keywords]
+keywords = [
+  "secret",
+  "password",
+  "passwd",
+  "pwd",
+  "pass",
+  "token",
+  "webhook_url",
+  "webhook-url",
+  "webhook.url",
+  "apikey",
+  "api_key",
+  "api-key",
+  "api.key",
+  "auth",
+  "authorization",
+  "auth_token",
+  "auth-token",
+  "auth.token",
+  "auth_key",
+  "auth-key",
+  "auth.key",
+  "credential",
+  "private_key",
+  "private-key",
+  "private.key",
+  "signing_key",
+  "signing-key",
+  "signing.key",
+  "encryption_key",
+  "encryption-key",
+  "encryption.key",
+  "access_key",
+  "access-key",
+  "access.key",
+  "client_secret",
+  "client-secret",
+  "client.secret",
+  "app_secret",
+  "app-secret",
+  "app.secret",
+  "master_key",
+  "master-key",
+  "master.key",
+  "license_key",
+  "license-key",
+  "license.key",
+]

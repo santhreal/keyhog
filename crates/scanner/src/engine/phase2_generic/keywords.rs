@@ -44,9 +44,9 @@ static GENERIC_KEYWORD_STEMS: LazyLock<GenericKeywordStemSet> = LazyLock::new(||
 /// prevents a keyword-list expansion from becoming invisible to the prefilter.
 pub(crate) fn generic_keyword_prefilter_stems() -> Vec<&'static str> {
     let mut stems = Vec::new();
-    for keyword in crate::engine::scan_filters::GENERIC_ASSIGNMENT_KEYWORDS
+    for keyword in crate::assignment_keywords::assignment_keywords()
         .iter()
-        .copied()
+        .map(String::as_str)
         // Local vendor-prefixed `<name>_key=` support needs a bare `key`
         // prefilter stem; do not widen the shared no-hit admission gate.
         .chain(std::iter::once("key"))

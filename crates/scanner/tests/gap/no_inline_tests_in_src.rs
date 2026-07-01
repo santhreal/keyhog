@@ -90,6 +90,14 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // parser, vocab type, and marker validator are all crate-internal — the same
     // white-box justification as `entropy_floors.rs`.
     "placeholder_words.rs",
+    // The assignment-keyword tests drive the crate-private `parse_assignment_keywords`
+    // parser and the private `ASSIGNMENT_KEYWORDS` static against the bundled
+    // `assignment_keywords.toml` (separator handling, dup/empty/uppercase rejection,
+    // AC-build parity, and the byte-for-byte proof that the Tier-B list reproduces
+    // the old `GENERIC_ASSIGNMENT_KEYWORDS` const exactly — the recall-critical
+    // prefilter). Parser and static are crate-internal — same white-box
+    // justification as `placeholder_words.rs`.
+    "assignment_keywords.rs",
     // The path-filter tests pin the `pub(crate)` path classifiers
     // (`path_is_ci_workflow_file`, `path_is_i18n_file`,
     // `looks_like_raw_base64_file_path`, `looks_like_entropy_raw_base64_file_path`)
