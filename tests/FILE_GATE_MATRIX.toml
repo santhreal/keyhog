@@ -317,6 +317,13 @@ adversarial = true
 e2e_linked = true
 
 [[module]]
+path = "crates/cli/src/reporting/coverage_gap_tests.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
 path = "crates/cli/src/sources.rs"
 boundary = true
 error = true
