@@ -58,11 +58,34 @@ pub(crate) fn gpu_runtime_policy_from_args(
 ) -> keyhog_scanner::gpu::GpuRuntimePolicy {
     if args.require_gpu {
         keyhog_scanner::gpu::GpuRuntimePolicy::Required
-    } else if args.no_gpu {
+    } else if args.no_gpu || explicit_cpu_backend(args) {
         keyhog_scanner::gpu::GpuRuntimePolicy::Disabled
     } else {
         keyhog_scanner::gpu::GpuRuntimePolicy::Auto
     }
+}
+
+/// True when the operator explicitly selected a CPU-only backend
+/// (`--backend cpu`/`--backend simd`). Such a scan never acquires the GPU, so
+/// the resolved policy is `Disabled`: this keeps `gpu_probe()` from creating a
+/// wgpu/Vulkan instance the scan would never use. Beyond skipping a pointless
+/// (and slow) Vulkan init on the CPU path (Law 7), it prevents a real crash —
+/// the probe spawns a mesa driver worker thread that SIGSEGVs during teardown
+/// if the process exits fast on an early error (expired `.keyhogignore`,
+/// missing scan path) before the driver finishes initialising, turning a clean
+/// fail-closed `exit(2)` into a signal death (exit 139). `auto` (no explicit
+/// `--backend`) is intentionally NOT treated as CPU-only: autoroute legitimately
+/// probes to choose a backend.
+fn explicit_cpu_backend(args: &ScanArgs) -> bool {
+    args.backend
+        .as_deref()
+        .and_then(keyhog_scanner::hw_probe::parse_backend_str)
+        .is_some_and(|backend| {
+            !matches!(
+                backend,
+                keyhog_scanner::ScanBackend::Gpu | keyhog_scanner::ScanBackend::MegaScan
+            )
+        })
 }
 
 #[derive(Debug, Clone)]

@@ -147,6 +147,33 @@ jobs:
       - name: SARIF code-scanning compliance
         run: cargo test -p keyhog --test sarif_github_compliance --profile release-fast
 
+      # Fail-closed security regressions. These spawn the built binary and
+      # assert env-guard / allowlist-policy / lockdown / detector-corpus
+      # fail-closed contracts + exit codes, so they run as their own bounded
+      # targets (NOT folded into all_tests, which would grow the OOM/link
+      # footprint). They were CI-orphans (keyhog CI ran only specific `--test`
+      # targets), so these fail-closed assertions never ran — un-orphaning them
+      # surfaced a real SIGSEGV: a CPU-forced scan hitting an early setup error
+      # (expired `.keyhogignore`, missing path) crashed via a leaked GPU/Vulkan
+      # probe thread instead of `exit(2)`. `regression_scan_setup_error_exits_cleanly`
+      # is the durable lock for that (exit-by-code, never by signal).
+      - name: Fail-closed security regressions
+        run: >
+          cargo test -p keyhog --no-fail-fast --profile release-fast
+          --test regression_install_insecure_env_removed
+          --test regression_invalid_backend_env_fails_closed
+          --test regression_invalid_detectors_env_fails_closed
+          --test regression_malformed_detector_dir_fails_closed
+          --test regression_require_gpu_fails_closed
+          --test regression_output_to_dev_null
+          --test regression_daemon_relative_path_fail_closed
+          --test regression_expired_allowlist_fails_closed
+          --test regression_legacy_canary_env_ignored
+          --test regression_allowlist_governance
+          --test regression_lockdown_custom_incremental_cache
+          --test regression_explicit_backend_ignores_autoroute_cache
+          --test regression_scan_setup_error_exits_cleanly
+
       # Per-detector contract gate lives in strict-runners (with the
       # adversarial/encoding/path multipliers under KEYHOG_*_STRICT=1).
 

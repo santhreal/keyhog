@@ -51,8 +51,9 @@ pub enum SpecError {
     },
     #[error(
         "{failed_count} of {total} detector file(s) from {dir} failed to load, \
-         pass the quality gate, or exist at all; refusing to scan without a \
-         complete detector corpus. \
+         pass the quality gate, or exist at all — that is a partial detector \
+         corpus, so keyhog is refusing to scan without a complete detector \
+         corpus (a partial corpus silently drops recall). \
          Offending detector(s):\n{detail}\nFix: repair the named TOML file(s) \
          or add at least one valid `*.toml` detector spec, then rerun the scan."
     )]

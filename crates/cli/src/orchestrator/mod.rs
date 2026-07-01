@@ -9,9 +9,10 @@ mod streaming;
 
 use crate::args::ScanArgs;
 use crate::orchestrator_config::{
-    auto_discover_detectors, autoroute_config_digest, configure_threads, load_detectors_no_cache,
-    load_detectors_with_cache, parse_backend_override, resolve_scan_config,
-    resolved_scan_config_for_scanner, ResolvedScanConfig,
+    auto_discover_detectors, autoroute_config_digest, configure_threads,
+    gpu_runtime_policy_from_args, load_detectors_no_cache, load_detectors_with_cache,
+    parse_backend_override, resolve_scan_config, resolved_scan_config_for_scanner,
+    ResolvedScanConfig,
 };
 use crate::style;
 use anyhow::{Context, Result};
@@ -230,6 +231,20 @@ pub(crate) struct ScanOrchestrator {
 
 impl ScanOrchestrator {
     pub(crate) fn new(mut args: ScanArgs) -> Result<Self> {
+        // Resolve the GPU runtime policy from the operator's explicit flags and
+        // publish it BEFORE anything downstream can call `probe_hardware()`.
+        // `probe_hardware()` is memoised and runs `gpu_probe()` on its first
+        // call; with a non-Disabled policy that creates a wgpu/Vulkan instance
+        // whose mesa driver worker thread SIGSEGVs during teardown if the
+        // process then exits fast on an early setup error (an expired
+        // `.keyhogignore`, a missing scan path) before the driver finishes
+        // initialising. That turns a clean fail-closed `exit(2)` into a signal
+        // death (exit 139). `--no-gpu`/`--backend cpu` never use the GPU, so
+        // disabling the probe here both prevents that crash and skips a Vulkan
+        // init the scan cannot use (Law 7). `resolve_scan_config` may refine the
+        // policy from `.keyhog.toml`; that refinement is re-applied at the
+        // `set_gpu_runtime_policy` call below once the effective config is known.
+        keyhog_scanner::gpu::set_gpu_runtime_policy(gpu_runtime_policy_from_args(&args));
         // Grep/wc/curl convention: a positional `-` means "read from
         // stdin". Some users will try `keyhog scan - --stdin <<<...`
         // and otherwise hit `error: path '-' does not exist`. Promote
