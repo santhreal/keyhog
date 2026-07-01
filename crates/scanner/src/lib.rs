@@ -78,6 +78,7 @@ pub(crate) mod compiler;
 pub(crate) mod confidence;
 /// Code context analysis (comments, assignments, test files).
 pub mod context;
+pub(crate) mod credential_context_keywords;
 pub(crate) mod credential_shapes;
 pub(crate) mod deadline;
 /// Decode-through pipeline for nested encodings (base64, hex, URL, etc.).

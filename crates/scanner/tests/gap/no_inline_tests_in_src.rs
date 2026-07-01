@@ -59,6 +59,13 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // probe builder private instead of exporting the GPU internals as `pub`
     // solely for external test placement.
     "gpu/backend.rs",
+    // The credential-context keyword loader parses its Tier-B TOML through the
+    // crate-private `parse_credential_context_keywords` and exposes only a
+    // `pub(crate)` accessor over a `LazyLock`. The co-located tests pin a
+    // byte-identical parity against the legacy in-code array plus the fail-closed
+    // validator behaviour; the parser and the embedded TOML are deliberately not
+    // public, so external placement would force them `pub` solely for the test.
+    "credential_context_keywords.rs",
     // The detector-catalog validation helpers (`validate_rule_detector_ids`,
     // `bundled_detector_ids`) are `pub(crate)` — deliberately not part of the
     // crate's public API — so an external `tests/` target cannot reach them. The

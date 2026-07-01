@@ -609,28 +609,6 @@ fn keyword_context(
     secret_keywords: &[String],
     allow_canonical_lift: bool,
 ) -> KeywordContext {
-    const CREDENTIAL_KEYWORDS: &[&str] = &[
-        "password",
-        "passwd",
-        "pwd",
-        "db_pass",
-        "db_password",
-        "api_key",
-        "apikey",
-        "api-key",
-        "auth",
-        "authorization",
-        "bearer",
-        "_key",
-        "-key",
-        "token",
-        "_token",
-        "-token",
-        "secret",
-        "_secret",
-        "-secret",
-    ];
-
     let line_bytes = keyword_line.as_bytes();
     let exact_assignment_keyword =
         crate::entropy::keywords::assignment_keyword_for_line(keyword_line);
@@ -647,9 +625,11 @@ fn keyword_context(
         .as_deref()
         .is_some_and(crate::entropy::keywords::normalized_assignment_keyword_is_credential);
     let is_credential_context = is_exact_credential_context
-        || CREDENTIAL_KEYWORDS.iter().any(|credential_keyword| {
-            crate::ascii_ci::ci_find_nonempty(line_bytes, credential_keyword.as_bytes())
-        });
+        || crate::credential_context_keywords::credential_context_keywords()
+            .iter()
+            .any(|credential_keyword| {
+                crate::ascii_ci::ci_find_nonempty(line_bytes, credential_keyword.as_bytes())
+            });
 
     let base_threshold =
         if entropy_threshold.is_finite() && entropy_threshold > HIGH_ENTROPY_THRESHOLD {
