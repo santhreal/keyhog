@@ -1,22 +1,26 @@
-//! Recall + precision contract for distinctive-prefix, pure-hex-body vendor
-//! tokens whose prefix was missing from `confidence::KNOWN_PREFIXES`.
+//! KNOWN_PREFIXES completeness contract for distinctive-prefix, pure-hex-body
+//! vendor tokens (Shopify `shpat_`/`shpca_`/`shpss_`, Brevo `xkeysib-`, RubyGems
+//! `rubygems_`, Postman `PMAK-`, Shippo `shippo_live_`, Flipt `flipt_`).
 //!
-//! ROOT CAUSE (dogfood 2026-06-30): a service-anchored detector whose regex is
-//! `<distinctive-prefix>[a-f0-9]{N}` (Shopify `shpat_`, Brevo `xkeysib-`,
-//! RubyGems `rubygems_`, Postman `PMAK-`, Shippo `shippo_live_`, Flipt
-//! `flipt_`) earns almost no entropy/shape signal from its pure-hex body, so
-//! `compute_confidence` normalises a bare-token match below the 0.40 floor and
-//! `apply_post_ml_penalties` crushes it further — the match is silently dropped
-//! as `below_min_confidence`. deepseek `sk-<32hex>` survived the IDENTICAL hex
-//! body only because `sk-` was in `KNOWN_PREFIXES` (earning the 0.8 floor that
-//! is applied AFTER the penalties) while `shpat_<32hex>` was not: a real recall
-//! bug on critical-severity vendor tokens.
+//! `confidence::KNOWN_PREFIXES` (the 0.8 confidence floor) already lists many
+//! non-checksummed DISTINCTIVE vendor prefixes (glpat-, SG., hf_, vercel_, sbp_,
+//! dop_v1_, sk-, npm_). Being on the list is what lets a vendor token surface
+//! REGARDLESS of path — including a test/fixture path, where `penalize_test_paths`
+//! (default ON) otherwise penalises the confidence below the 0.40 floor. deepseek
+//! `sk-<32hex>` surfaces in a `fixtures/` path; a bare unfloored `pul-<40hex>`
+//! does not. The prefixes above are the SAME distinctive/critical class but were
+//! MISSING, so they behaved inconsistently (suppressed in test-shaped paths).
+//! Enrolling them makes the list consistent. NOTE: these vendors already surface
+//! in ordinary (non-test) paths without the floor — this is a completeness fix
+//! for path-robustness, not a real-path recall bug (see the boundary-sweep /
+//! hexbody-prefix-floor memory for the corrected analysis).
 //!
-//! This suite is SELF-VALIDATING: it proves each newly-floored prefix surfaces
-//! its exact-shape token on BOTH CPU backends (recall), and that the floor does
-//! NOT over-lift — a degenerate all-zero body and a bad-checksum token stay
-//! suppressed (precision). It also source-locks the enrolment so the fix cannot
-//! silently regress.
+//! The fixtures-path fixtures below are deliberate: they exercise the exact case
+//! where the floor is load-bearing. This suite is SELF-VALIDATING: each enrolled
+//! prefix surfaces its exact-shape token on BOTH CPU backends even under the
+//! test-path penalty (proves the floor), a degenerate all-zero body and a
+//! bad-checksum token stay suppressed (proves the floor does not over-lift), and
+//! the enrolment is source-locked so it cannot silently regress.
 
 mod support;
 
