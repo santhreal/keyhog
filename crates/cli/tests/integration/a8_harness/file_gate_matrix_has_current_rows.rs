@@ -14,5 +14,7 @@ fn file_gate_matrix_has_current_rows() {
         rows, paths,
         "every FILE_GATE_MATRIX path row must be inside an explicit [[module]] table"
     );
-    assert_eq!(rows, 421, "expected 421 module rows, got {rows}");
+    // 423 = 421 baseline + the docker `metadata.rs` / `oci.rs` module rows that
+    // were added to FILE_GATE_MATRIX.toml without bumping this contract count.
+    assert_eq!(rows, 423, "expected 423 module rows, got {rows}");
 }
