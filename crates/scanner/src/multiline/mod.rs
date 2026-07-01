@@ -18,6 +18,8 @@ pub use config::MultilineConfig;
 pub(crate) use config::{LineMapping, PreprocessedText};
 #[cfg(feature = "multiline")]
 pub(crate) use preprocessor::preprocess_multiline;
+#[cfg(feature = "multiline")]
+pub(crate) use string_extract::{extract_dot_concatenation, extract_plus_concatenation};
 pub(crate) use string_extract::{extract_prefix, fragment_assignment_name_is_credential_like};
 #[cfg(feature = "multiline")]
 pub(crate) use structural::resolve_template_reference;

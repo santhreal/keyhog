@@ -1311,6 +1311,25 @@ pub mod multiline {
         crate::multiline::extract_prefix(var_name)
     }
 
+    /// Test seam for the `+`-concatenation string extractor. Returns the
+    /// reassembled literal value and whether the line continues (trailing `+`),
+    /// or `None` when the line is not a quoted-literal `+` concatenation. Lets a
+    /// gap test pin the quote-aware assignment-prefix strip directly, so a
+    /// base64 padding `=` inside the value's first literal never truncates the
+    /// reassembled secret.
+    #[cfg(feature = "multiline")]
+    pub fn extract_plus_concatenation_for_test(line: &str) -> Option<(String, bool)> {
+        crate::multiline::extract_plus_concatenation(line)
+    }
+
+    /// Test seam for the `.`-concatenation string extractor (PHP/Perl). Same
+    /// contract as [`extract_plus_concatenation_for_test`] for the `.` join
+    /// operator.
+    #[cfg(feature = "multiline")]
+    pub fn extract_dot_concatenation_for_test(line: &str) -> Option<(String, bool)> {
+        crate::multiline::extract_dot_concatenation(line)
+    }
+
     /// Test seam for the multiline preprocessor join pass, returning the joined
     /// text and the preserved original-region length so a gap test can pin its
     /// contract: a passthrough chunk is carried through byte-identically while a

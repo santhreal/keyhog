@@ -403,19 +403,62 @@ fn split_concatenation_operators(expr: &str, op: u8) -> impl Iterator<Item = &st
     })
 }
 
+/// Byte index of the first `=` that sits OUTSIDE any quoted span — the
+/// assignment operator that separates a `name = value` line's LHS from its
+/// value. A quote-UNAWARE `str::find('=')` mistakes a base64 padding `=` inside
+/// the value's FIRST quoted literal for the assignment: on a bare continuation
+/// fragment like `"aGVsbG8=" + "d29ybGQ="` it splits at the padding `=` inside
+/// `"aGVsbG8="`, discarding the leading fragment and corrupting the `+`/`.`
+/// operator split so the whole concatenation is dropped — a silent recall loss
+/// on any secret whose reassembly crosses a padded base64 fragment. Tracking
+/// quote state (with backslash escapes, matching [`split_concatenation_operators`])
+/// keeps the value intact. Returns `None` when the line has no unquoted `=` (the
+/// common continuation-fragment case), so the caller splits the whole line.
 #[cfg(feature = "multiline")]
-fn extract_plus_concatenation(line: &str) -> Option<(String, bool)> {
+fn find_unquoted_assignment_eq(s: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut quote: Option<u8> = None;
+    let mut escaped = false;
+    for (i, &b) in bytes.iter().enumerate() {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == q {
+                quote = None;
+            }
+        } else if matches!(b, b'"' | b'\'' | b'`') {
+            quote = Some(b);
+        } else if b == b'=' {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Strip a `name = value` assignment prefix using the quote-aware
+/// [`find_unquoted_assignment_eq`], returning the value slice (or the whole line
+/// when there is no unquoted `=`). Shared by the `+` and `.` concat extractors so
+/// the assignment-boundary rule is defined ONCE and can never drift (both once
+/// hand-rolled the same quote-unaware `find('=')`).
+#[cfg(feature = "multiline")]
+fn strip_assignment_prefix(trimmed: &str) -> &str {
+    match find_unquoted_assignment_eq(trimmed) {
+        Some(pos) => &trimmed[pos + 1..],
+        None => trimmed,
+    }
+}
+
+#[cfg(feature = "multiline")]
+pub(crate) fn extract_plus_concatenation(line: &str) -> Option<(String, bool)> {
     let trimmed = line.trim();
     let ends_with_plus = trimmed.ends_with('+');
     if !trimmed.contains('+') {
         return None;
     }
 
-    let content_to_split = if let Some(pos) = trimmed.find('=') {
-        &trimmed[pos + 1..]
-    } else {
-        trimmed
-    };
+    let content_to_split = strip_assignment_prefix(trimmed);
 
     // This extractor owns quoted/string-literal concatenation only. Unquoted
     // `+` appears naturally inside standard base64 and arithmetic/config
@@ -478,17 +521,13 @@ fn extract_plus_concatenation(line: &str) -> Option<(String, bool)> {
 /// continuation flag so the chain walker pulls the next line, exactly like the
 /// `+` and backslash continuations.
 #[cfg(feature = "multiline")]
-fn extract_dot_concatenation(line: &str) -> Option<(String, bool)> {
+pub(crate) fn extract_dot_concatenation(line: &str) -> Option<(String, bool)> {
     let trimmed = line.trim();
     if !trimmed.contains('.') {
         return None;
     }
 
-    let content_to_split = if let Some(pos) = trimmed.find('=') {
-        &trimmed[pos + 1..]
-    } else {
-        trimmed
-    };
+    let content_to_split = strip_assignment_prefix(trimmed);
 
     // A `.`-join is meaningful only between quoted literals; an unquoted `.` is
     // member access / a float / a path separator, never a string join. Cheap
