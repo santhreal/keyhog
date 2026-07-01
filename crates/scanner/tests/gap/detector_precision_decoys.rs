@@ -56,7 +56,7 @@ fn cred_ctx() -> keyhog_scanner::testing::entropy_scanner::KeywordContext {
 
 #[test]
 fn your_key_here_instructional_fragment_suppressed() {
-    // doc_markers::check_markers INSTRUCTIONAL_FRAGMENTS contains "YOUR_"
+    // check_markers' Tier-B instructional_fragments contains "YOUR_"
     // with a leading-word-boundary requirement. "YOUR_API_KEY_HERE" starts
     // at offset 0 (boundary = none → allowed) → Suppress.
     assert!(suppress_generic("YOUR_API_KEY_HERE"));
@@ -66,7 +66,7 @@ fn your_key_here_instructional_fragment_suppressed() {
 
 #[test]
 fn replace_change_insert_fragments_suppressed() {
-    // INSTRUCTIONAL_FRAGMENTS = YOUR_, YOUR-, INSERT, CHANGE, REPLACE.
+    // Tier-B instructional_fragments = YOUR_, YOUR-, INSERT, CHANGE, REPLACE.
     assert!(suppress_generic("REPLACE_WITH_REAL_KEY"));
     assert!(suppress_generic("CHANGE_THIS_VALUE_NOW"));
     assert!(suppress_generic("INSERT_TOKEN_HERE_PLEASE"));

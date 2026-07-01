@@ -14,6 +14,16 @@
 # - "example" is part of the shared vocabulary, but URL domains under
 #   example.com / example.org remain guarded by the doc-marker path so reserved
 #   documentation domains do not suppress unrelated URL-shaped findings.
+#
+#   [doc_markers]
+#   instructional_fragments = ["lowercase-marker", ...]
+#   marker_substrings       = ["lowercase-marker", ...]
+#
+# - `[doc_markers]` holds two doc/placeholder marker vocabularies consumed by the
+#   suppression decision tree. Stored lowercase (uniform with `words`); the loader
+#   uppercases each entry because the scanner matches them against the uppercased
+#   credential. Unlike `words`, marker entries may contain `_` and `-`. Extend
+#   these lists to add your own placeholder conventions without recompiling.
 
 [placeholder_words]
 words = [
@@ -24,4 +34,32 @@ words = [
   "sample",
   "placeholder",
   "changeme",
+]
+
+[doc_markers]
+# Leading-word-boundary fragments (matched as `YOUR_API`, `CHANGEME`, ...): a word
+# boundary is required BEFORE the fragment so real base64 containing the substring
+# is not suppressed.
+instructional_fragments = ["your_", "your-", "insert", "change", "replace"]
+# Plain-substring markers, matched anywhere in the value — they appear buried
+# inside service-prefixed tokens (`ghp_EXAMPLE_TOKEN`, camel/snake-cased) where a
+# word-boundary match would miss them. Real secrets do not contain these literals.
+marker_substrings = [
+  "example",
+  "placeholder",
+  "not_a_real",
+  "notareal",
+  "insert_token_here",
+  "insert-token-here",
+  "change-me",
+  "changeme",
+  "replace_me",
+  "replaceme",
+  "redacted",
+  "fake_key",
+  "fakekey",
+  "test_key",
+  "testkey",
+  "sample_key",
+  "samplekey",
 ]

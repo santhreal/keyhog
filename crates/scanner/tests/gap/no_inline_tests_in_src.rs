@@ -81,6 +81,15 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // crate-internal, so external placement would force them `pub` solely for the
     // test — the same white-box justification as `detector_classification.rs`.
     "entropy_floors.rs",
+    // The placeholder/doc-marker tests drive the crate-private `parse_vocab`
+    // parser, the private `validate_markers` helper, and the private
+    // `PlaceholderVocab` fields against the bundled `placeholder_words.toml`
+    // (uppercase-on-load, `_`/`-` separators, dup/empty/uppercase rejection, and
+    // the parity proof that the Tier-B `[doc_markers]` lists reproduce the old
+    // `INSTRUCTIONAL_FRAGMENTS` / `DOC_MARKER_SUBSTRINGS` consts exactly). The
+    // parser, vocab type, and marker validator are all crate-internal — the same
+    // white-box justification as `entropy_floors.rs`.
+    "placeholder_words.rs",
     // The path-filter tests pin the `pub(crate)` path classifiers
     // (`path_is_ci_workflow_file`, `path_is_i18n_file`,
     // `looks_like_raw_base64_file_path`, `looks_like_entropy_raw_base64_file_path`)

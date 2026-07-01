@@ -82,9 +82,9 @@ pub(super) fn check_markers(
         }
     }
 
-    // ── 2. Common instructional fragments ──
-    const INSTRUCTIONAL_FRAGMENTS: &[&str] = &["YOUR_", "YOUR-", "INSERT", "CHANGE", "REPLACE"];
-    for frag in INSTRUCTIONAL_FRAGMENTS {
+    // ── 2. Common instructional fragments (Tier-B `[doc_markers]`) ──
+    for frag in crate::placeholder_words::instructional_fragments() {
+        let frag = frag.as_str();
         if upper.contains(frag) {
             // Require a word boundary before the fragment to avoid substring
             // false-positions in real secrets (e.g. "CHANGE" inside base64).
@@ -155,34 +155,19 @@ pub(super) fn check_markers(
     // `TESTKEY_*` adversarial fixtures carry the marker as their
     // prefix, so the `TESTKEY`/`TEST_KEY` markers are skipped for
     // them - they fall through to repetitive-mask gates instead.
-    const DOC_MARKER_SUBSTRINGS: &[&str] = &[
-        "EXAMPLE",
-        "PLACEHOLDER",
-        "NOT_A_REAL",
-        "NOTAREAL",
-        "INSERT_TOKEN_HERE",
-        "INSERT-TOKEN-HERE",
-        "CHANGE-ME",
-        "CHANGEME",
-        "REPLACE_ME",
-        "REPLACEME",
-        "REDACTED",
-        "FAKE_KEY",
-        "FAKEKEY",
-        "TEST_KEY",
-        "TESTKEY",
-        "SAMPLE_KEY",
-        "SAMPLEKEY",
-    ];
+    // The marker vocabulary is the Tier-B `[doc_markers].marker_substrings` list
+    // (UPPERCASE at load), consumed through the one placeholder/marker loader.
+    //
     // Case-INSENSITIVE reserved-domain carve-out (the marker scan below runs on
     // `upper`); see the `contains_EXAMPLE_token` site for why matching
     // `credential` case-sensitively over-suppressed secrets beside an
     // `Example.com` / `EXAMPLE.COM` mention.
     if !from_evasion_decoder && !upper.contains("EXAMPLE.COM") && !upper.contains("EXAMPLE.ORG") {
-        for marker in DOC_MARKER_SUBSTRINGS {
+        for marker in crate::placeholder_words::doc_marker_substrings() {
+            let marker = marker.as_str();
             if upper.contains(marker) {
                 if credential.starts_with("TESTKEY_")
-                    && (*marker == "TESTKEY" || *marker == "TEST_KEY")
+                    && (marker == "TESTKEY" || marker == "TEST_KEY")
                 {
                     continue;
                 }
