@@ -174,6 +174,17 @@ pub fn reverse_str_for_test(s: &str) -> String {
     crate::decode::reverse::reverse_str(s)
 }
 
+/// Test seam for the quoted-printable decoder: `=XX` hex octets decode to the
+/// byte; `=`-before-newline soft line breaks (`=\n`, `=\r\n`, `=\r`) are removed
+/// so a secret a QP encoder wrapped across a soft break stays contiguous; a
+/// non-hex `=X` or a trailing `=` is a literal. (The `_`→space rule is MIME
+/// Q-encoding, not plain QP, and is deliberately NOT applied here.) Returns
+/// `None` when the decoded bytes are not valid UTF-8.
+#[cfg(feature = "decode")]
+pub fn quoted_printable_decode_for_test(input: &str) -> Option<String> {
+    crate::decode::quoted_printable_decode(input).ok()
+}
+
 /// Test seam for the reverse decoder's admission gate: a candidate is worth
 /// reverse-decoding only when it has a `MIN_REVERSE_ALNUM_RUN`+ contiguous
 /// ASCII-alphanumeric run AND its reversed form would contain a known provider

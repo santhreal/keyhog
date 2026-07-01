@@ -295,7 +295,7 @@ fn contains_percent_escape(input: &str) -> bool {
         .any(|window| window[0] == b'%' && hex_val(window[1]).is_ok() && hex_val(window[2]).is_ok())
 }
 
-fn quoted_printable_decode(input: &str) -> Result<String, ()> {
+pub(crate) fn quoted_printable_decode(input: &str) -> Result<String, ()> {
     let mut bytes = Vec::with_capacity(input.len());
     let mut index = 0;
     let input_bytes = input.as_bytes();
@@ -304,27 +304,48 @@ fn quoted_printable_decode(input: &str) -> Result<String, ()> {
             bytes.extend_from_slice(&input_bytes[index..index + eq_idx]);
             index += eq_idx;
 
-            if index + 2 < input_bytes.len() {
-                if input_bytes[index + 1] == b'\r' && input_bytes[index + 2] == b'\n' {
-                    index += 3;
-                    continue;
+            // `index` points at the `=`; classify what follows.
+            match input_bytes.get(index + 1) {
+                // Soft line break: a QP `=` immediately before a line ending is a
+                // continuation marker and is removed together with the newline.
+                // RFC2045 specifies CRLF, but real-world QP (Unix-origin MIME,
+                // git-format mail) also emits a bare `=\n`, and occasionally a lone
+                // `=\r`; handling all three keeps a secret a QP encoder wrapped
+                // across a soft break contiguous instead of injecting a spurious
+                // `=` + newline. A literal `=` is always encoded `=3D`, so a raw
+                // `=` before a newline is unambiguously a soft break and this can
+                // never consume a real byte.
+                Some(b'\n') => index += 2,
+                Some(b'\r') => {
+                    index += if input_bytes.get(index + 2) == Some(&b'\n') {
+                        3
+                    } else {
+                        2
+                    };
                 }
-                match (
-                    hex_val(input_bytes[index + 1]),
-                    hex_val(input_bytes[index + 2]),
-                ) {
-                    (Ok(high), Ok(low)) => {
-                        bytes.push((high << 4) | low);
-                        index += 3;
-                    }
-                    _ => {
-                        bytes.push(b'=');
-                        index += 1;
+                // `=XX` hex octet: exactly two hex digits after the `=`.
+                Some(&first) => {
+                    match (
+                        hex_val(first),
+                        input_bytes.get(index + 2).map(|&b| hex_val(b)),
+                    ) {
+                        (Ok(high), Some(Ok(low))) => {
+                            bytes.push((high << 4) | low);
+                            index += 3;
+                        }
+                        // Non-hex, or the octet is truncated at end-of-input: the
+                        // `=` is a literal byte.
+                        _ => {
+                            bytes.push(b'=');
+                            index += 1;
+                        }
                     }
                 }
-            } else {
-                bytes.push(b'=');
-                index += 1;
+                // `=` is the final byte of the input: literal.
+                None => {
+                    bytes.push(b'=');
+                    index += 1;
+                }
             }
         } else {
             bytes.extend_from_slice(&input_bytes[index..]);
