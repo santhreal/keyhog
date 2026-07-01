@@ -107,6 +107,15 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // case-sensitivity CONTRAST between the two gates) is white-box and stays
     // co-located rather than widening the engine's internal surface.
     "engine/scan_filters.rs",
+    // The multiline secret-prefix tests drive the crate-private
+    // `parse_multiline_secret_prefixes` parser and the private
+    // `MULTILINE_SECRET_PREFIXES` static against the bundled
+    // `multiline_secret_prefixes.toml` (case-PRESERVING validation, dup/empty
+    // rejection, the deliberately-excluded short prefixes, a case-sensitive
+    // AC-build proof, and byte-for-byte parity with the old inline
+    // `AhoCorasick::new` array in scan_filters.rs). Parser and static are
+    // crate-internal — same white-box justification as `assignment_keywords.rs`.
+    "secret_prefixes.rs",
     // The path-filter tests pin the `pub(crate)` path classifiers
     // (`path_is_ci_workflow_file`, `path_is_i18n_file`,
     // `looks_like_raw_base64_file_path`, `looks_like_entropy_raw_base64_file_path`)

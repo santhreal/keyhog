@@ -118,6 +118,8 @@ pub mod resolution;
 pub(crate) mod scan_state;
 /// Scanner configuration and state.
 pub(crate) mod scanner_config;
+/// Tier-B distinctive vendor secret-prefix vocabulary for the multiline no-hit gate.
+pub(crate) mod secret_prefixes;
 /// Static-string interner backed by vyre's CHD perfect hash.
 /// Used by `CompiledScanner` to pre-intern detector metadata strings
 /// so the per-scan `ScanState` interner is hit only by dynamic
