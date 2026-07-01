@@ -20,7 +20,8 @@ fn plus_concatenation_does_not_collect_split_parts() {
     // whose alphabet contains `+`.
     assert!(
         production.contains("let mut part_count = 0usize;")
-            && production.contains("for part in split_concatenation_operators(content_to_split)"),
+            && production
+                .contains("for part in split_concatenation_operators(content_to_split, b'+')"),
         "plus-concat extraction must stream segments from the quote-aware iterator"
     );
     assert!(
@@ -28,8 +29,9 @@ fn plus_concatenation_does_not_collect_split_parts() {
         "plus-concat extraction must not blind-split on '+' (it shreds in-quote base64 '+')"
     );
     assert!(
-        production
-            .contains("fn split_concatenation_operators(expr: &str) -> impl Iterator<Item = &str>"),
+        production.contains(
+            "fn split_concatenation_operators(expr: &str, op: u8) -> impl Iterator<Item = &str>"
+        ),
         "the quote-aware splitter must yield a lazy iterator, not allocate"
     );
     assert!(
