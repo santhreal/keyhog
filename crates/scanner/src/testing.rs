@@ -197,6 +197,18 @@ pub fn mime_encoded_word_decode_for_test(input: &str) -> Option<String> {
     crate::decode::mime_encoded_word_decode(input).ok()
 }
 
+/// Test seam for the C-style octal escape decoder (`\NNN`, 1–3 octal digits per
+/// escape). A short or non-3-digit escape decodes to its byte value instead of
+/// aborting the whole candidate; values above 0o377 wrap mod 256. Each byte
+/// becomes `char::from(u8)` (Latin-1), so decoding never fails on the byte
+/// values themselves; `None` means the input contained no `\`-escape at all
+/// (nothing was decoded). Lets a gap test pin the greedy 1–3 digit consumption
+/// and the mixed-escape recall behaviour exactly.
+#[cfg(feature = "decode")]
+pub fn octal_escape_decode_for_test(input: &str) -> Option<String> {
+    crate::decode::octal_escape_decode(input).ok()
+}
+
 /// Test seam for the reverse decoder's admission gate: a candidate is worth
 /// reverse-decoding only when it has a `MIN_REVERSE_ALNUM_RUN`+ contiguous
 /// ASCII-alphanumeric run AND its reversed form would contain a known provider

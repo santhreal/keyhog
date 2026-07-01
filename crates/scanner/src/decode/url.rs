@@ -486,7 +486,7 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
     }
 }
 
-fn octal_escape_decode(input: &str) -> Result<String, ()> {
+pub(crate) fn octal_escape_decode(input: &str) -> Result<String, ()> {
     let mut decoded: Option<String> = None;
     let mut chars = input.char_indices().peekable();
 
@@ -498,20 +498,35 @@ fn octal_escape_decode(input: &str) -> Result<String, ()> {
             continue;
         }
 
-        let Some(&(_, next)) = chars.peek() else {
-            return Err(());
-        };
-        if !('0'..='7').contains(&next) {
+        // A `\` not followed by an octal digit — including a trailing `\` at end
+        // of input — is a literal backslash, not the start of an escape. Earlier
+        // code returned Err on a trailing `\`, discarding every octal escape
+        // already decoded in this candidate (all-or-nothing recall loss); treat
+        // it as a literal and keep going.
+        if !matches!(chars.peek(), Some(&(_, d)) if ('0'..='7').contains(&d)) {
             if let Some(decoded) = decoded.as_mut() {
                 decoded.push(ch);
             }
             continue;
         }
 
+        // C-style octal escape: 1 to 3 octal digits, greedy. Consume octal
+        // digits until a non-octal char or end of input, capping at three. A
+        // short escape (`\1`, `\12`) or one truncated by a following non-octal
+        // char must decode to its byte value — earlier code required EXACTLY
+        // three digits and returned Err otherwise, silently dropping the whole
+        // candidate (and every other escape in it) from the octal decode-through
+        // path. Values above 0o377 wrap mod 256, matching the common C
+        // convention for an over-long octal escape.
         let mut value = 0u8;
         for _ in 0..3 {
-            let digit = chars.next().ok_or(())?.1;
-            value = (value << 3) | digit.to_digit(8).ok_or(())? as u8;
+            match chars.peek() {
+                Some(&(_, d)) if ('0'..='7').contains(&d) => {
+                    value = (value << 3) | (d as u8 - b'0');
+                    chars.next();
+                }
+                _ => break,
+            }
         }
         lazy_decoded_prefix(&mut decoded, input, idx).push(char::from(value));
     }
