@@ -267,6 +267,31 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
 }
 
 #[test]
+fn generic_entropy_floors_load_from_tier_b_data() {
+    let src = scanner_src();
+    let adjudicate = adjudicate_code(&src);
+    let entropy_floors = uncommented_code(&read(&src.join("entropy_floors.rs")));
+    // The per-family floor TABLE is Tier-B calibration data, not a hardcoded match:
+    // adjudicate keeps `generic_entropy_floor` (and its Tier-A override) but reads
+    // the base floors from the loader, so re-calibrating a family is a data edit.
+    assert!(
+        adjudicate.contains("fn generic_entropy_floor(")
+            && adjudicate.contains("crate::entropy_floors::family_floor(")
+            && !adjudicate.contains("credential_len <= 24")
+            && !adjudicate.contains("credential_len <= 40"),
+        "generic_entropy_floor must read per-family floors from crate::entropy_floors, \
+         not a hardcoded length match"
+    );
+    assert!(
+        entropy_floors.contains("include_str!(\"../../../rules/entropy-floors.toml\")")
+            && entropy_floors.contains("fn family_floor(")
+            && entropy_floors.contains("default_floor")
+            && entropy_floors.contains("static ENTROPY_FLOORS: LazyLock"),
+        "entropy_floors must load the per-family floor table from the Tier-B rules file and cache it"
+    );
+}
+
+#[test]
 fn generic_bridge_suppression_reasons_route_through_adjudicator() {
     let src = scanner_src();
     let generic = uncommented_code(&read(&src.join("engine/phase2_generic.rs")));

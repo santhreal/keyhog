@@ -91,6 +91,8 @@ pub(crate) mod detector_ids;
 pub(crate) mod engine;
 /// Shannon entropy analysis for secret detection.
 pub mod entropy;
+/// Tier-B per-family generic-detector entropy-floor calibration table.
+pub(crate) mod entropy_floors;
 /// Specialized error types for the scanner.
 pub(crate) mod error;
 /// Cross-chunk fragment reassembly cache.

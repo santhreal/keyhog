@@ -2005,6 +2005,11 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/scanner/src/entropy_floors.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/simd/backend.rs"
 error = true
 adversarial = true

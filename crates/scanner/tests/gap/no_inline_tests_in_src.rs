@@ -73,6 +73,14 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // deliberately not part of the crate's public API, so external placement
     // would force exposing them `pub` solely for the test.
     "detector_classification.rs",
+    // The entropy-floor tests drive the crate-private `parse_entropy_floors`
+    // parser and the private `EntropyFloorTable::family_floor` lookup against the
+    // private `ENTROPY_FLOORS_TOML` bundle (bucket ordering, catch-all placement,
+    // and the parity proof that the Tier-B table reproduces the old hardcoded
+    // floors exactly). The parser, table type, and embedded TOML are all
+    // crate-internal, so external placement would force them `pub` solely for the
+    // test — the same white-box justification as `detector_classification.rs`.
+    "entropy_floors.rs",
     // The path-filter tests pin the `pub(crate)` path classifiers
     // (`path_is_ci_workflow_file`, `path_is_i18n_file`,
     // `looks_like_raw_base64_file_path`, `looks_like_entropy_raw_base64_file_path`)

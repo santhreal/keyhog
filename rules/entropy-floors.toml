@@ -1,0 +1,65 @@
+# Per-family generic-detector entropy floors (Tier-B data).
+#
+# Two-tier config (see CLAUDE.md "Two-tier TOML Configurability"): this is Tier-B
+# calibration DATA, never a CLI knob. A generic-detector candidate whose Shannon
+# entropy is BELOW its family's floor is suppressed by the low-entropy gate
+# (`adjudicate::generic_entropy_floor`). Floors are calibrated PER detector family
+# and PER length bucket because short generic values are legitimately lower-entropy
+# than long ones: a 16-char API key can be a real secret at entropy 3.0, where a
+# 60-char value at 3.0 is almost certainly word-y noise. A single global floor
+# would either over-suppress short real keys or under-suppress long false
+# positives. Re-calibrating a family is a data edit HERE, never a code change.
+#
+# Evaluation (see `entropy_floors::EntropyFloorTable::family_floor`): for a
+# candidate of length L under detector `detector`, the FIRST bucket (in listed
+# order) whose `max_len >= L` sets the floor. Every family's LAST bucket omits
+# `max_len` and is the catch-all for values longer than the final rung.
+# `max_len` values within a family MUST strictly increase. A detector id with no
+# family entry here uses `default_floor`.
+#
+# The Tier-A `entropy_threshold` scan knob (ScanConfig default 4.5) can only RAISE
+# a floor ABOVE that default (an operator asking for a stricter scan); it never
+# lowers a family floor below its calibrated value. That comparison lives in
+# `adjudicate::generic_entropy_floor`, so every family floor below stays < 4.5.
+
+# Floor for any generic detector without a family-specific entry below.
+default_floor = 3.5
+
+# Free-form generic API keys: length-graded. Short keys (<=24) are common and can
+# be genuinely low-entropy; the floor tightens back to the default for very long
+# values where low entropy signals a sentence/identifier, not a key.
+[[family]]
+detector = "generic-api-key"
+bucket = [
+    { max_len = 24, floor = 3.0 },
+    { max_len = 40, floor = 2.8 },
+    { floor = 3.5 },
+]
+
+# `secret = "..."` style values: slightly stricter than api-key in the short
+# bucket (more prone to prose), looser in the mid bucket.
+[[family]]
+detector = "generic-secret"
+bucket = [
+    { max_len = 24, floor = 2.8 },
+    { max_len = 40, floor = 3.2 },
+    { floor = 3.5 },
+]
+
+# Passwords are frequently human-chosen and low-entropy by nature; a low floor
+# preserves real weak passwords instead of dropping them as noise.
+[[family]]
+detector = "generic-password"
+bucket = [{ floor = 2.5 }]
+
+# Database URLs embed a credential inside structured punctuation; the whole value
+# reads as low-entropy even when the password segment is strong.
+[[family]]
+detector = "generic-database-url"
+bucket = [{ floor = 2.0 }]
+
+# Keyword-anchored secrets (`token`, `apikey`, ... = <value>) already carry a
+# strong contextual signal, so the entropy bar is the lowest of any family.
+[[family]]
+detector = "generic-keyword-secret"
+bucket = [{ floor = 1.5 }]

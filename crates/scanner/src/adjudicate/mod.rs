@@ -241,23 +241,18 @@ const DEFAULT_GENERIC_ENTROPY_THRESHOLD: f64 = 4.5;
 
 /// Single source of truth for the generic-detector entropy gate used by named
 /// generic/weak-anchor processing and the generic-secret fallback bridge.
+///
+/// The per-family, length-bucketed base floors are Tier-B calibration DATA
+/// (`crate::entropy_floors`, backed by `rules/entropy-floors.toml`); this owner
+/// keeps only the policy that layers the Tier-A `entropy_threshold` scan knob on
+/// top — an operator can RAISE the floor above the default for a stricter scan
+/// but never lower a calibrated family floor.
 pub(crate) fn generic_entropy_floor(
     entropy_threshold: f64,
     detector_id: &str,
     credential_len: usize,
 ) -> f64 {
-    let base: f64 = match detector_id {
-        id if id == crate::detector_ids::GENERIC_API_KEY && credential_len <= 24 => 3.0,
-        id if id == crate::detector_ids::GENERIC_API_KEY && credential_len <= 40 => 2.8,
-        id if id == crate::detector_ids::GENERIC_API_KEY => 3.5,
-        id if id == crate::detector_ids::GENERIC_PASSWORD => 2.5,
-        id if id == crate::detector_ids::GENERIC_DATABASE_URL => 2.0,
-        id if id == crate::detector_ids::GENERIC_SECRET && credential_len <= 24 => 2.8,
-        id if id == crate::detector_ids::GENERIC_SECRET && credential_len <= 40 => 3.2,
-        id if id == crate::detector_ids::GENERIC_SECRET => 3.5,
-        id if id == crate::detector_ids::GENERIC_KEYWORD_SECRET => 1.5,
-        _ => 3.5,
-    };
+    let base = crate::entropy_floors::family_floor(detector_id, credential_len);
 
     if entropy_threshold.is_finite() && entropy_threshold > DEFAULT_GENERIC_ENTROPY_THRESHOLD {
         base.max(entropy_threshold)
