@@ -136,6 +136,8 @@ run "Vyre pin consistency: 5 crates lockstep, registry pins, no vendor build-pat
   python3 scripts/gates/vyre_pin_consistency.py
 run "Org audit unit tests: Markdown section parser stays code-fence aware" \
   python3 -m unittest scripts.tests.test_org_audit -v
+run "tests_wired unit tests: CI-orphan model (path/mod/--test/all-targets/pkg)" \
+  python3 -m unittest scripts.tests.test_tests_wired -v
 run "Org audit: stale claims / LOC-cap bloat / evidence wiring" \
   python3 scripts/org_audit.py
 run "Install static analysis: shell + PowerShell parser/linter coverage" \

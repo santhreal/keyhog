@@ -23,7 +23,15 @@ A file `crates/<crate>/tests/<stem>.rs` is wired iff its stem is:
   * declared as `[pub] mod <stem>;` in that crate's `tests/all_tests.rs`
     (the aggregator crate-root; a sibling `mod` there compiles the top-level
     file), OR
-  * named by a `--test <stem>` flag in any .github/workflows/*.yml step.
+  * named by a `--test <stem>` flag in any .github/workflows/*.yml step, OR
+  * covered by an ALL-TARGETS step for the crate's package — a `cargo test
+    -p <pkg>` invocation with NO target-narrowing flag (`--test`/`--lib`/
+    `--doc`/`--bin`/`--example`), which compiles and runs EVERY integration
+    target (each top-level file as its own test binary). keyhog-sources uses
+    this for its deliberately-standalone, process-global-skip-counter tests,
+    which must run in their own process rather than the shared `all_tests`
+    binary. When such a step exists, every top-level file of that crate is
+    wired.
 `all_tests.rs` itself is the aggregator root (run directly) and is excluded.
 """
 
@@ -39,7 +47,7 @@ WORKFLOWS = REPO / ".github/workflows"
 
 # Crates whose top-level test files are fully wired and must STAY wired. Add a
 # crate here only after its orphan sweep lands (else this gate turns CI red).
-ENFORCED_CRATES: list[str] = ["verifier", "core"]
+ENFORCED_CRATES: list[str] = ["verifier", "core", "sources"]
 
 AGGREGATOR = "all_tests"
 
@@ -47,9 +55,37 @@ AGGREGATOR = "all_tests"
 # explicit means. Keep tiny and justified.
 ALLOWED: dict[str, set[str]] = {}
 
+# A `cargo test` step whose command contains any of these narrows to a subset of
+# targets, so it does NOT prove every top-level integration file runs.
+TARGET_NARROWING = ("--test ", "--test=", "--lib", "--doc", "--bin", "--example")
+
 PATH_INCLUDE = re.compile(r'#\[path\s*=\s*"(?:[^"]*/)?([A-Za-z0-9_]+)\.rs"\]')
 MOD_DECL = re.compile(r"^\s*(?:pub\s+)?mod\s+([A-Za-z0-9_]+)\s*;", re.MULTILINE)
-TEST_FLAG = re.compile(r"--test\s+([A-Za-z0-9_]+)")
+TEST_FLAG = re.compile(r"--test[ =]+([A-Za-z0-9_]+)")
+
+
+def crate_pkg(crate: str) -> str:
+    """Cargo package name for a crate directory (cli ships as `keyhog`)."""
+    return "keyhog" if crate == "cli" else f"keyhog-{crate}"
+
+
+def runs_all_targets(pkg: str) -> bool:
+    """True iff a workflow runs `cargo test -p <pkg>` with no target filter.
+
+    Such a step compiles + runs every integration target — each top-level
+    `tests/*.rs` as its own binary — so it wires them all without aggregation.
+    """
+    if not WORKFLOWS.is_dir():
+        return False
+    pkg_ref = re.compile(rf"-p\s+{re.escape(pkg)}(?:\s|$)")
+    for wf in sorted(WORKFLOWS.glob("*.yml")):
+        for line in wf.read_text().splitlines():
+            if "cargo test" not in line or not pkg_ref.search(line):
+                continue
+            if any(flag in line for flag in TARGET_NARROWING):
+                continue
+            return True
+    return False
 
 
 def workflow_test_flags() -> set[str]:
@@ -101,6 +137,10 @@ def top_level_test_files(crate: str) -> list[str]:
 
 
 def crate_orphans(crate: str, workflow_flags: set[str]) -> list[str]:
+    # An all-targets `cargo test -p <pkg>` step runs every integration file, so
+    # nothing in the crate can be orphaned.
+    if runs_all_targets(crate_pkg(crate)):
+        return []
     wired = wired_stems(crate, workflow_flags)
     allowed = ALLOWED.get(crate, set())
     return [
@@ -134,6 +174,29 @@ def self_test() -> int:
         "break_it"
     ]:
         print("self-test: TEST_FLAG broken", file=sys.stderr)
+        ok = False
+    # `--test-threads=1` (a test-binary arg) must NOT be read as a `--test` target
+    # and must NOT count as target-narrowing.
+    if TEST_FLAG.findall("cargo test -p x -- --test-threads=1"):
+        print("self-test: TEST_FLAG mis-parses --test-threads", file=sys.stderr)
+        ok = False
+    if any(f in "cargo test -p x -- --test-threads=1" for f in TARGET_NARROWING):
+        print("self-test: --test-threads mis-flagged as narrowing", file=sys.stderr)
+        ok = False
+    if not any(f in "cargo test -p x --test all_tests" for f in TARGET_NARROWING):
+        print("self-test: --test not flagged as narrowing", file=sys.stderr)
+        ok = False
+    # crate -> cargo package name (cli ships as `keyhog`).
+    if (crate_pkg("cli"), crate_pkg("core")) != ("keyhog", "keyhog-core"):
+        print("self-test: crate_pkg broken", file=sys.stderr)
+        ok = False
+    # `-p keyhog` must NOT match a `-p keyhog-sources` line (word boundary).
+    boundary = re.compile(r"-p\s+keyhog(?:\s|$)")
+    if boundary.search("cargo test -p keyhog-sources --lib"):
+        print("self-test: pkg boundary matched a longer name", file=sys.stderr)
+        ok = False
+    if not boundary.search("cargo test -p keyhog --test all_tests"):
+        print("self-test: pkg boundary missed exact name", file=sys.stderr)
         ok = False
     # orphan set math: a file wired by ANY mechanism is not an orphan.
     wired = {"a", "c"}

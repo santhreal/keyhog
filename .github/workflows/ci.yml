@@ -231,6 +231,30 @@ jobs:
       #    so the full aggregator can run all backends in parallel.)
       - name: sources opt-in backends (inline unit tests)
         run: cargo test -p keyhog-sources --lib --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile release-fast
+      # 3) The opt-in backends' INTEGRATION tests (tests/*.rs). Many are
+      #    deliberately their OWN test binary — they assert on the process-global
+      #    skip counters and keep those assertions out of `all_tests.rs` so a
+      #    per-test fixture can reset the atomics without racing sibling tests in
+      #    the same process. Their skip-counter, cloud-listing, hosted-git
+      #    API-failure, private-key-in-git-history, and slack-pagination locks
+      #    were DOUBLE-orphaned before this step: not aggregated into all_tests
+      #    AND all_tests never ran with their feature, so they never executed in
+      #    CI. This runs `cargo test -p keyhog-sources` with NO `--test` filter,
+      #    so EVERY integration target compiles + runs — each standalone file in
+      #    its own process (counter-safe by construction), and the `all_tests`
+      #    aggregator too. `--test-threads=1` keeps the aggregator's own
+      #    process-global-counter tests deterministic (same reason as
+      #    `verifier break_it`). `scripts/gates/tests_wired.py` treats this
+      #    all-targets step as wiring every sources `tests/*.rs`.
+      - name: sources opt-in backends (all standalone targets, serial)
+        run: cargo test -p keyhog-sources --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile release-fast -- --test-threads=1
+      # NOTE: two sources perf tripwires are `#[ignore]`d and NOT run in CI —
+      # `perf_io_path` (straces a spawned scan; ptrace-fragile under the parallel
+      # test-binary load) and `perf_parallel_cores` (a multicore speedup RATIO,
+      # only valid on an otherwise-idle host). Both still COMPILE in the
+      # all-targets step above (shown as `ignored`, not orphaned) and run on an
+      # idle host via `cargo test -p keyhog-sources --test <name> -- --ignored`.
+      # Their thresholds are unchanged; only the CI scheduling is gated.
       - name: verifier all_tests
         run: cargo test -p keyhog-verifier --test all_tests --profile release-fast
       # `break_it.rs` is a fuzz file of engine tests that drive `verify_all`
