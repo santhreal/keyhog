@@ -570,6 +570,22 @@ pub mod testing {
             verification: keyhog_core::VerificationResult,
             metadata: HashMap<String, String>,
         ) -> keyhog_core::VerifiedFinding;
+        /// Drive the REAL outbound header/body interpolation boundary
+        /// (`verify::request::apply_header_body_templates`) end to end and return
+        /// the *built* `reqwest::Request`'s final header set (as `(name, value)`
+        /// UTF-8-lossy pairs) and body. Unlike `interpolate_http_value`, which
+        /// tests the sanitizer in isolation, this proves the sanitizer is
+        /// actually WIRED into the request builder: a regression that attached a
+        /// raw `header.value` (bypassing interpolation) would surface here, not in
+        /// a helper-only test. `header_templates` are `(name, value-template)`
+        /// pairs; the credential is interpolated into each value template.
+        fn built_request_header_body_for_test(
+            &self,
+            header_templates: &[(&str, &str)],
+            body_template: Option<&str>,
+            credential: &str,
+            companions: &HashMap<String, String>,
+        ) -> (Vec<(String, String)>, Option<String>);
     }
 
     impl VerifierTestApi for TestApi {
@@ -633,6 +649,52 @@ pub mod testing {
             minted_id: &str,
         ) -> HashMap<String, String> {
             crate::interpolate::companions_with_oob(base, minted_host, minted_url, minted_id)
+        }
+
+        fn built_request_header_body_for_test(
+            &self,
+            header_templates: &[(&str, &str)],
+            body_template: Option<&str>,
+            credential: &str,
+            companions: &HashMap<String, String>,
+        ) -> (Vec<(String, String)>, Option<String>) {
+            let client = reqwest::Client::new();
+            // A fixed, non-routable target: the request is BUILT, never sent, so
+            // no traffic leaves the test — only the assembled header/body bytes
+            // are inspected.
+            let builder = client.post("https://verify.example.invalid/probe");
+            let specs: Vec<keyhog_core::HeaderSpec> = header_templates
+                .iter()
+                .map(|(name, value)| keyhog_core::HeaderSpec {
+                    name: (*name).to_string(),
+                    value: (*value).to_string(),
+                })
+                .collect();
+            let builder = crate::verify::request::apply_header_body_templates(
+                builder,
+                &specs,
+                body_template,
+                credential,
+                companions,
+            );
+            let request = builder
+                .build()
+                .expect("a sanitized verification request must always build");
+            let headers = request
+                .headers()
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        name.as_str().to_string(),
+                        String::from_utf8_lossy(value.as_bytes()).into_owned(),
+                    )
+                })
+                .collect();
+            let body = request
+                .body()
+                .and_then(reqwest::Body::as_bytes)
+                .map(|bytes| String::from_utf8_lossy(bytes).into_owned());
+            (headers, body)
         }
 
         fn builtin_service_domains(

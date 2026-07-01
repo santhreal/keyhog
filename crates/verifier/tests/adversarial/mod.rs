@@ -11,6 +11,7 @@ pub mod proxy_keyhog_empty_env_and_https_env_ignored;
 pub mod proxy_keyhog_none_env_does_not_override_https_proxy;
 pub mod proxy_keyhog_off_env_does_not_override_https_proxy;
 pub mod proxy_whitespace_https_proxy_not_active;
+pub mod request_build_header_injection_boundary;
 pub mod ssrf_blocks_127_shorthand;
 pub mod ssrf_blocks_6to4_wrapped_bogon;
 pub mod ssrf_blocks_aws_metadata_integer;
