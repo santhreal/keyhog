@@ -265,6 +265,21 @@ impl ScanOrchestrator {
         if args.git_staged && args.path.is_none() {
             args.path = Some(PathBuf::from("."));
         }
+        // Fail fast on a non-existent/unreadable scan path BEFORE resolving the
+        // config, which probes the GPU. A missing path validated only later
+        // (inside `resolve_scan_roots`, during source construction) would have
+        // already created the wgpu/Vulkan probe instance whose driver thread can
+        // SIGSEGV on the fast error exit (see the GPU-policy note above). Hoisting
+        // the check here makes a typo'd path fail instantly with a clean exit for
+        // EVERY backend (autoroute included, where the probe is not disabled) and
+        // skips a pointless hardware probe for a scan that cannot run (Law 7).
+        // `resolve_scan_roots` re-validates during source construction; this runs
+        // the SAME validator earlier, so the diagnostic and exit code are identical.
+        if !args.stdin {
+            for root in args.path.iter().chain(args.extra_paths.iter()) {
+                crate::path_validation::validate_cli_path_arg(root, "scan path")?;
+            }
+        }
         let mut effective_config = resolve_scan_config(&mut args)?;
         keyhog_scanner::gpu::set_gpu_runtime_policy(effective_config.gpu_runtime_policy);
         let disabled_detectors = effective_config.disabled_detectors.clone();

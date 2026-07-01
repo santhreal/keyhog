@@ -198,6 +198,30 @@ pub(crate) fn write_banner<W: Write>(
 /// The binary target delegates here so internal CLI modules can stay
 /// crate-private instead of becoming public API just to let `main.rs` dispatch
 /// subcommands.
+/// Terminate the process immediately with `code`, bypassing the normal teardown.
+///
+/// An autoroute hardware probe (`probe_hardware()` → `gpu_probe()`) leaks a
+/// wgpu/Vulkan instance whose mesa driver worker thread stays alive for the
+/// process lifetime. On a FAST error exit — an early setup error (missing path,
+/// expired `.keyhogignore`) or a fail-closed `autoroute calibration required` —
+/// that thread has not finished initialising, and the ordinary shutdown
+/// (unwind + libc `exit`/`atexit`) lets it run mid-teardown, where it SIGSEGVs
+/// and turns a clean fail-closed exit code into a signal death (exit 139). A
+/// security control that crashes instead of returning its documented code is
+/// untrustworthy. `_exit` skips atexit and all thread teardown, so no driver
+/// thread can run during shutdown; it also skips Rust's buffered-stdout flush,
+/// so we flush both streams first. Only the FAST error/panic exits route here —
+/// a successful scan runs long enough for the driver to initialise and tear
+/// down cleanly, so it keeps the normal `ExitCode` return.
+fn exit_now(code: u8) -> ! {
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
+    // SAFETY: `_exit` is async-signal-safe and terminates immediately. All
+    // operator-visible output has already been produced and flushed above.
+    unsafe { libc::_exit(i32::from(code)) }
+}
+
 pub async fn cli_main() -> ExitCode {
     // `env::args()` panics on non-UTF-8 args (Linux allows raw-byte
     // paths). The version check only needs to recognize literal ASCII
@@ -315,7 +339,9 @@ pub async fn cli_main() -> ExitCode {
     match command_outcome {
         Ok(outcome) => {
             if SCANNER_PANICKED.load(Ordering::Relaxed) {
-                ExitCode::from(exit_codes::EXIT_SCANNER_PANIC)
+                // A scanner panic is a fast/abnormal exit that may have probed
+                // the GPU; harden it against the Vulkan-teardown SIGSEGV.
+                exit_now(exit_codes::EXIT_SCANNER_PANIC);
             } else {
                 outcome
             }
@@ -333,7 +359,11 @@ pub async fn cli_main() -> ExitCode {
             } else {
                 exit_codes::EXIT_USER_ERROR
             };
-            ExitCode::from(code)
+            // Every scan-setup error routes here. When autoroute probed the GPU
+            // before failing, the normal teardown would SIGSEGV in the leaked
+            // Vulkan driver thread (exit 139) instead of returning `code`; exit
+            // immediately so the fail-closed code always reaches the operator.
+            exit_now(code);
         }
     }
 }

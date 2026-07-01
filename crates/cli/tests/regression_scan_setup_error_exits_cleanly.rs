@@ -41,6 +41,19 @@ fn scan_cpu(path: &std::path::Path) -> Output {
         .expect("spawn keyhog scan")
 }
 
+/// Run `keyhog scan --no-daemon <path>` with the DEFAULT (autoroute) backend —
+/// the backend a user gets when they do not pass `--backend`. Autoroute probes
+/// the GPU, so this exercises the path where the probe is NOT disabled: the
+/// early scan-path validation must still make a missing path exit cleanly.
+fn scan_default(path: &std::path::Path) -> Output {
+    Command::new(binary())
+        .args(["scan", "--no-daemon"])
+        .arg(path)
+        .env("NO_COLOR", "1")
+        .output()
+        .expect("spawn keyhog scan")
+}
+
 fn combined(output: &Output) -> String {
     format!(
         "{}\n{}",
@@ -211,4 +224,64 @@ fn repeated_error_scans_never_signal() {
         let output = scan_cpu(&missing);
         assert_exited_by_code(&output, &format!("nonexistent scan path (iteration {i})"));
     }
+}
+
+// --- default/autoroute backend: the probe is NOT disabled, so a clean exit here
+// depends on the scan path being validated BEFORE the hardware probe runs. ---
+
+#[test]
+fn nonexistent_path_default_backend_exits_by_code_not_signal() {
+    // The everyday typo: `keyhog scan <typo>` with no `--backend`. Autoroute
+    // probes the GPU, so without early path validation this crashed via the
+    // Vulkan driver thread. Now the missing path is caught before the probe.
+    let missing = PathBuf::from("/keyhog-nonexistent-scan-target-xyz");
+    let output = scan_default(&missing);
+    assert_exited_by_code(&output, "nonexistent scan path (default backend)");
+}
+
+#[test]
+fn nonexistent_path_default_backend_is_exit_2() {
+    let missing = PathBuf::from("/keyhog-nonexistent-scan-target-xyz");
+    let output = scan_default(&missing);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "a missing scan path is a user error on any backend; output:\n{}",
+        combined(&output)
+    );
+}
+
+#[test]
+fn nonexistent_extra_path_exits_by_code_not_signal() {
+    // Multi-root: a valid primary root plus a typo'd second positional path must
+    // still exit cleanly (the early validator checks every requested root).
+    let good = dir_with_fixture();
+    let output = Command::new(binary())
+        .args(["scan", "--backend", "cpu", "--no-daemon"])
+        .arg(good.path())
+        .arg("/keyhog-nonexistent-extra-root-xyz")
+        .env("NO_COLOR", "1")
+        .output()
+        .expect("spawn keyhog scan");
+    assert_exited_by_code(&output, "typo'd extra scan root");
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "a missing extra root is a user error; output:\n{}",
+        combined(&output)
+    );
+}
+
+#[test]
+fn default_backend_valid_dir_exits_by_code_not_signal() {
+    // A real directory on the autoroute backend must exit with a CODE, never a
+    // signal. The autoroute probe creates the leaked Vulkan instance, so this is
+    // the case that previously SIGSEGV'd whenever the scan then failed fast —
+    // e.g. `autoroute calibration required` on a host with no persisted decision
+    // (exit 2), which is the default on an uncalibrated box (as in CI). Exit
+    // code is host-dependent (2 uncalibrated; 0/1 once calibrated), so this pins
+    // the real contract — exits cleanly — not a specific code.
+    let dir = dir_with_fixture();
+    let output = scan_default(dir.path());
+    assert_exited_by_code(&output, "autoroute scan of a valid dir");
 }
