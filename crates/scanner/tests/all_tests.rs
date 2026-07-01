@@ -81,6 +81,8 @@ pub mod regression_github_app_pem_boundary;
 pub mod regression_github_pat_boundary;
 #[path = "regression_gitlab_token_completeness_recall.rs"]
 pub mod regression_gitlab_token_completeness_recall;
+#[path = "regression_hexbody_vendor_prefix_floor.rs"]
+pub mod regression_hexbody_vendor_prefix_floor;
 #[path = "regression_hot_path_fp_context_parity.rs"]
 pub mod regression_hot_path_fp_context_parity;
 #[path = "regression_hot_pattern_process_parity.rs"]

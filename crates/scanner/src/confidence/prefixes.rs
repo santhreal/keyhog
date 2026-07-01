@@ -59,6 +59,35 @@ pub(crate) const KNOWN_PREFIXES: &[&str] = &[
     "glrt-",
     // DigitalOcean
     "dop_v1_",
+    // Distinctive-prefix vendor tokens whose BODY is pure lowercase hex
+    // (`[a-f0-9]{N}`). A pure-hex body earns almost no entropy/shape signal, so
+    // `compute_confidence` normalizes a bare-token match (literal-prefix weight
+    // only) below the 0.40 floor and `apply_post_ml_penalties` crushes it
+    // further — the exact "lift-back defeated" path this floor exists to survive.
+    // Without the floor these critical/high-severity vendor tokens were dropped
+    // as `below_min_confidence` (a real recall bug: e.g. `API_TOKEN=shpat_<32hex>`
+    // reported nothing while `sk-<32hex>` reported deepseek, purely because `sk-`
+    // was floored and `shpat_` was not). Only DISTINCTIVE prefixes go here — the
+    // generic hex-body prefixes (`api-`, `key-`, `sdk-`, `ck_`, `pub-c-`) are
+    // deliberately excluded because flooring them would lift ordinary
+    // `key-<hex>` identifiers to findings; those detectors must earn a keyword
+    // context anchor instead. Each prefix below is proven to surface an
+    // exact-shape token on both CPU backends by
+    // `regression_hexbody_vendor_prefix_floor`.
+    // Shopify (admin / custom-app / storefront)
+    "shpat_",
+    "shpca_",
+    "shpss_",
+    // Brevo (Sendinblue)
+    "xkeysib-",
+    // RubyGems
+    "rubygems_",
+    // Postman
+    "PMAK-",
+    // Shippo (live)
+    "shippo_live_",
+    // Flipt
+    "flipt_",
     // JWT shape (base64url of `{"alg":...}`)
     "eyJ",
     // Vercel
