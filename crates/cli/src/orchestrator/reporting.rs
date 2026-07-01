@@ -681,6 +681,24 @@ pub(crate) fn report_skip_summary(ansi: bool) {
         eprintln!("{}WARN {msg}{}", palette.yellow, palette.reset);
     }
 
+    // Distinct from a parse FAILURE: a well-formed structured decode-through file
+    // (k8s Secret / compose / tfstate / notebook) that exceeded the structured
+    // size cap, so its base64 `data:` decode-through was skipped. The raw text was
+    // still scanned, so this is a partial miss — env/HCL caps are NOT counted here
+    // (they extract plain values the regular scan still sees).
+    let structured_oversize_skips = keyhog_scanner::telemetry::structured_oversize_skip_count();
+    if structured_oversize_skips > 0 {
+        let msg = format!(
+            "{structured_oversize_skips} file(s) matched a structured decode-through format \
+             (k8s Secret / Terraform state / Jupyter notebook / docker-compose) but EXCEEDED \
+             the structured-parse size cap: base64-encoded values (e.g. a k8s `data:` block) \
+             were NOT decoded. The raw text was still scanned. Split the file or scan the \
+             encoded blob directly to prove its decoded coverage."
+        );
+        let palette = terminal_palette(ansi, false);
+        eprintln!("{}WARN {msg}{}", palette.yellow, palette.reset);
+    }
+
     let decode_truncations = keyhog_scanner::telemetry::decode_truncation_count();
     if decode_truncations > 0 {
         let msg = format!(
@@ -755,6 +773,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
         && c.source_truncated == 0
         && c.structured_source_parse_failures == 0
         && c.archive_duplicate_scan_unavailable == 0
+        && c.git_lfs_pointer == 0
         && !binary_gap
         && decode_truncations == 0
         && invalid_pattern_index_skips == 0
@@ -874,6 +893,19 @@ pub(crate) fn report_skip_summary(ansi: bool) {
             format!(
                 "{} archive(s) scanned WITHOUT duplicate-entry detection: a zip64 or malformed central directory prevented it, so a duplicated/shadow entry hiding a secret may have been missed.",
                 c.archive_duplicate_scan_unavailable
+            ),
+            true,
+        ));
+    }
+    if c.git_lfs_pointer > 0 {
+        // `warn` = true: only the tiny pointer text was scanned. The real blob it
+        // references lives in Git-LFS storage and was not on disk, so its content
+        // — which can hold a keystore, `.pem`, or encrypted `.env` — was NOT
+        // checked. Reporting this repo as clean would be a false-clean (Law 10).
+        lines.push((
+            format!(
+                "{} Git-LFS pointer(s) scanned WITHOUT their referenced content: the real blob lives in LFS storage and was not on disk. Run `git lfs pull` to materialise the blobs, then rescan.",
+                c.git_lfs_pointer
             ),
             true,
         ));

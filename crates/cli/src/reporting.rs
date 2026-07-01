@@ -189,6 +189,10 @@ fn coverage_gap_summary() -> Vec<(String, usize)> {
             c.archive_duplicate_scan_unavailable,
         ),
         (
+            "Git-LFS pointer (pointer text scanned; referenced blob is in LFS storage, not on disk — run `git lfs pull` then rescan)".to_string(),
+            c.git_lfs_pointer,
+        ),
+        (
             "scanner structured parse failed (raw text scanned; encoded structured values not decoded)".to_string(),
             keyhog_scanner::telemetry::structured_parse_failure_count(),
         ),

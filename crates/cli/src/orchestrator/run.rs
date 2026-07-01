@@ -445,7 +445,8 @@ fn source_coverage_incomplete() -> bool {
         + counts.binary_section_name_unresolved
         + counts.source_truncated
         + counts.structured_source_parse_failures
-        + counts.archive_duplicate_scan_unavailable;
+        + counts.archive_duplicate_scan_unavailable
+        + counts.git_lfs_pointer;
 
     #[cfg(feature = "binary")]
     let binary_gaps =
@@ -454,6 +455,7 @@ fn source_coverage_incomplete() -> bool {
     let binary_gaps = 0;
 
     let scanner_coverage_gaps = keyhog_scanner::telemetry::structured_parse_failure_count()
+        + keyhog_scanner::telemetry::structured_oversize_skip_count()
         + keyhog_scanner::telemetry::decode_truncation_count()
         + keyhog_scanner::telemetry::invalid_pattern_index_skip_count()
         + keyhog_scanner::telemetry::boundary_result_cardinality_mismatch_count();

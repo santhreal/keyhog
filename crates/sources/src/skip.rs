@@ -76,6 +76,17 @@ static STRUCTURED_SOURCE_PARSE_FAILURES: AtomicUsize = AtomicUsize::new(0);
 /// 10 false-clean); now surfaced.
 static ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE: AtomicUsize = AtomicUsize::new(0);
 
+/// How many files were recognised as Git-LFS *pointers* — the tiny text
+/// stand-ins Git LFS commits in place of a large blob. keyhog scans the pointer
+/// text (and suppresses its content-hash `oid`), but the real blob it references
+/// lives in LFS storage and is NOT on disk to scan unless `git lfs pull` has
+/// materialised it. Silently reporting an unmaterialised-pointer repo as clean
+/// is a false-clean (Law 10): the blob — which can hold secrets (a keystore, a
+/// `.pem`, an encrypted `.env`) — was never scanned. Bumped once per pointer
+/// file; surfaced at end-of-scan as partial coverage. Recognition is the shared
+/// `keyhog_core::git_lfs::is_git_lfs_pointer`.
+static GIT_LFS_POINTER: AtomicUsize = AtomicUsize::new(0);
+
 /// Immutable snapshot of the skip counters, read once at end-of-scan so every
 /// reporter (human summary + structured JSON/SARIF) surfaces the same numbers.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -101,6 +112,9 @@ pub struct SkipCounts {
     /// malformed central directory); the standard parser still scanned them but
     /// may have missed a duplicated/shadow entry.
     pub archive_duplicate_scan_unavailable: usize,
+    /// Git-LFS pointer files whose referenced blob was not on disk to scan (the
+    /// pointer text was scanned; the real content in LFS storage was not).
+    pub git_lfs_pointer: usize,
 }
 
 impl SkipCounts {
@@ -132,6 +146,7 @@ pub(crate) enum SourceSkipEvent {
     SourceTruncated,
     StructuredSourceParseFailure,
     ArchiveDuplicateScanUnavailable,
+    GitLfsPointer,
 }
 
 impl SourceSkipEvent {
@@ -148,6 +163,7 @@ impl SourceSkipEvent {
             Self::SourceTruncated => &SOURCE_TRUNCATED,
             Self::StructuredSourceParseFailure => &STRUCTURED_SOURCE_PARSE_FAILURES,
             Self::ArchiveDuplicateScanUnavailable => &ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE,
+            Self::GitLfsPointer => &GIT_LFS_POINTER,
         }
     }
 }
@@ -187,6 +203,7 @@ pub fn skip_counts() -> SkipCounts {
         source_truncated: SOURCE_TRUNCATED.load(Relaxed),
         structured_source_parse_failures: STRUCTURED_SOURCE_PARSE_FAILURES.load(Relaxed),
         archive_duplicate_scan_unavailable: ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE.load(Relaxed),
+        git_lfs_pointer: GIT_LFS_POINTER.load(Relaxed),
     }
 }
 
@@ -209,6 +226,7 @@ pub(crate) fn reset_skip_counters() {
     SOURCE_TRUNCATED.store(0, Relaxed);
     STRUCTURED_SOURCE_PARSE_FAILURES.store(0, Relaxed);
     ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE.store(0, Relaxed);
+    GIT_LFS_POINTER.store(0, Relaxed);
 }
 
 /// Reset the over-max-size counter. Retained for API compatibility (Law 3);
@@ -359,4 +377,5 @@ pub(crate) fn set_skip_counts_for_test(counts: SkipCounts) {
     SOURCE_TRUNCATED.store(counts.source_truncated, Relaxed);
     STRUCTURED_SOURCE_PARSE_FAILURES.store(counts.structured_source_parse_failures, Relaxed);
     ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE.store(counts.archive_duplicate_scan_unavailable, Relaxed);
+    GIT_LFS_POINTER.store(counts.git_lfs_pointer, Relaxed);
 }

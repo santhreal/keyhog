@@ -343,12 +343,13 @@ fn skip_counts_total_sums_all_categories() {
         source_truncated: 17,
         structured_source_parse_failures: 19,
         archive_duplicate_scan_unavailable: 23,
+        git_lfs_pointer: 31,
     };
     assert_eq!(
         c.total(),
         28,
         "total() sums only the five whole-file skip categories; partial-coverage \
-         counters are surfaced separately and excluded"
+         counters (including git_lfs_pointer) are surfaced separately and excluded"
     );
 }
 
@@ -373,6 +374,7 @@ fn reset_skip_counters_zeroes_every_category() {
         source_truncated: 66,
         structured_source_parse_failures: 77,
         archive_duplicate_scan_unavailable: 88,
+        git_lfs_pointer: 99,
     });
 
     TestApi.reset_skip_counters();
@@ -401,6 +403,10 @@ fn reset_skip_counters_zeroes_every_category() {
     assert_eq!(
         snap.archive_duplicate_scan_unavailable, 0,
         "reset_skip_counters must also zero archive duplicate-scan partial-coverage counters"
+    );
+    assert_eq!(
+        snap.git_lfs_pointer, 0,
+        "reset_skip_counters must also zero the git-LFS pointer partial-coverage counter"
     );
     assert_eq!(snap.total(), 0);
 }

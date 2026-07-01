@@ -26,6 +26,28 @@ pub(crate) use archive::validate_scan_archive_entry_name;
 pub(super) const UNCAPPED_ARCHIVE_BUDGET: u64 = 1024 * 1024 * 1024;
 const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 1024;
 
+/// Upper bound on a Git-LFS pointer file's size. A canonical pointer is the
+/// three short lines `version …` / `oid sha256:…` / `size …` (~130 bytes; a few
+/// hundred with optional `ext-*` lines), always well under 1 KiB. Gating the
+/// whole-content pointer check on this bound means a large text file never pays
+/// the pointer scan (Law 7) — only genuinely pointer-sized files are examined.
+const GIT_LFS_POINTER_MAX_BYTES: usize = 1024;
+
+/// Bounded, no-follow probe: is the file at `path` a Git-LFS pointer? Reads at
+/// most one pointer's worth of bytes through the same `O_NOFOLLOW` safe open the
+/// real content reader uses, so it cannot be redirected by a symlink swap. The
+/// caller MUST have already confirmed the file is pointer-sized, so this never
+/// reads a large asset — the read is a rounding error (Law 7). A probe that
+/// fails to open/read returns `false`, so the caller falls through to its normal
+/// (loud, counted) skip path rather than silently dropping the file (Law 10).
+fn file_is_git_lfs_pointer(path: &Path) -> bool {
+    let mut buf = [0u8; GIT_LFS_POINTER_MAX_BYTES];
+    match read::read_file_prefix_safe(path, &mut buf) {
+        Ok(n) => keyhog_core::git_lfs::is_git_lfs_pointer(&buf[..n]),
+        Err(_) => false,
+    }
+}
+
 pub(crate) fn extraction_total_budget(max_size: u64) -> u64 {
     if max_size == 0 {
         UNCAPPED_ARCHIVE_BUDGET
@@ -350,6 +372,20 @@ pub(super) fn process_entry(
 
     // Compile the SKIP_EXTENSIONS array into a fast HashSet at startup to accelerate file-type screening (KH-45)
     if is_skip_extension(ext) {
+        // A skip-extension file is normally dropped unread as binary. But Git-LFS
+        // commits a pointer file that KEEPS the tracked asset's (binary)
+        // extension — `logo.png`, `model.bin` — while its content is the tiny
+        // text pointer, not the asset. So a skip-extension file that is
+        // pointer-sized may be an unmaterialised LFS pointer whose real blob was
+        // never on disk to scan. Probe only pointer-sized files (a real asset is
+        // far larger) so the common LFS case is recorded with its precise remedy
+        // (`git lfs pull`) instead of being mis-attributed to a plain binary
+        // skip. The probe is prefix-only and gated on size, so it stays a
+        // rounding error on a path that is otherwise read-free (Law 7).
+        if file_size <= GIT_LFS_POINTER_MAX_BYTES as u64 && file_is_git_lfs_pointer(&path) {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::GitLfsPointer);
+            return;
+        }
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
         return;
     }
@@ -817,6 +853,21 @@ pub(super) fn process_entry(
             return;
         }
     };
+
+    // Git-LFS pointer coverage (Law 10): if this small text file is actually a
+    // Git-LFS pointer, the blob it references lives in LFS storage and is not on
+    // disk — the pointer text is scanned below (and its content-hash `oid`
+    // suppressed by the scanner), but the real content was NOT. Record the
+    // coverage gap so an unmaterialised-pointer repo is not reported as a
+    // false-clean. Bounded to pointer-sized files so a large text file never
+    // pays the whole-content scan (Law 7). This is additive: the chunk is still
+    // emitted and scanned. A pointer smaller than one window always reaches this
+    // single-chunk path (a real pointer is ~130 bytes).
+    if content.len() <= GIT_LFS_POINTER_MAX_BYTES
+        && keyhog_core::git_lfs::is_git_lfs_pointer(content.as_bytes())
+    {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::GitLfsPointer);
+    }
 
     if !emit(Ok(Chunk {
         data: content,

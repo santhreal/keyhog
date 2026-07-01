@@ -622,6 +622,7 @@ fn source_coverage_gaps_since(before: keyhog_sources::SkipCounts) -> SourceCover
         archive_duplicate_scan_unavailable: after
             .archive_duplicate_scan_unavailable
             .saturating_sub(before.archive_duplicate_scan_unavailable),
+        git_lfs_pointer: after.git_lfs_pointer.saturating_sub(before.git_lfs_pointer),
     }
 }
 

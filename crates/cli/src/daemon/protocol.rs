@@ -150,6 +150,8 @@ pub struct SourceCoverageGaps {
     pub structured_source_parse_failures: usize,
     #[serde(default)]
     pub archive_duplicate_scan_unavailable: usize,
+    #[serde(default)]
+    pub git_lfs_pointer: usize,
 }
 
 impl SourceCoverageGaps {
@@ -163,6 +165,7 @@ impl SourceCoverageGaps {
             + self.source_truncated
             + self.structured_source_parse_failures
             + self.archive_duplicate_scan_unavailable
+            + self.git_lfs_pointer
     }
 
     pub fn is_empty(self) -> bool {
