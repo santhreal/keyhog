@@ -383,7 +383,20 @@ fn append_pdf_strings(bytes: &[u8], out: &mut String) {
                     None => pos = next_close + 1,
                 }
             }
-            b'<' if bytes.get(pos + 1) != Some(&b'<') => {
+            // `<<` opens a dictionary and `>>` closes it — neither is a hex
+            // string. Skip the two-byte dict delimiter and keep scanning the
+            // interior, so a literal `(...)` or hex `<...>` string that lives
+            // INSIDE a dictionary is still reached. Every PDF Info-dictionary
+            // metadata value (`/Author`, `/Title`, `/Keywords`, `/Producer`, …)
+            // sits inside `<< >>`; treating the second `<` of `<<` as a
+            // hex-string opener made `memchr(b'>')` swallow the whole dictionary
+            // up to its closing `>`, silently dropping the metadata string. That
+            // was a Law-10 recall hole: a credential pasted into a document's
+            // properties was never scanned.
+            b'<' if bytes.get(pos + 1) == Some(&b'<') => {
+                pos += 2;
+            }
+            b'<' => {
                 let Some(relative_close) = memchr::memchr(b'>', &bytes[pos + 1..]) else {
                     break;
                 };
