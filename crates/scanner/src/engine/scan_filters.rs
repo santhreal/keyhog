@@ -357,7 +357,10 @@ pub(super) fn compute_pattern_signals(
 // `tests/gap/no_inline_tests_in_src.rs`).
 #[cfg(all(test, any(feature = "simd", feature = "gpu")))]
 mod tests {
-    use super::{has_generic_assignment_keyword, has_secret_keyword_fast};
+    use super::{
+        has_generic_assignment_keyword, has_high_entropy_run_at_least, has_high_entropy_run_fast,
+        has_secret_keyword_fast, DEFAULT_ENTROPY_RUN_BYTES,
+    };
 
     /// The EXACT set of distinctive vendor prefixes `has_secret_keyword_fast`
     /// treats as split-across-lines secret anchors. This is the contract: the fn
@@ -583,5 +586,124 @@ mod tests {
         assert!(!has_generic_assignment_keyword(
             b"the quick brown fox jumps over the lazy dog"
         ));
+    }
+
+    // ── has_high_entropy_run_fast: the keyword-free entropy admission gate ──
+    // Admits a chunk to the entropy fallback when it holds a contiguous run of >= 32
+    // credential-value bytes (alphanumerics + token separators + symbolic password
+    // punctuation). Recall-critical: without it, pure-entropy secrets with no keyword
+    // anchor bail (that regression pinned generic-high-entropy recall at 0.36). The
+    // gate is deliberately PERMISSIVE — UUID/hash-shaped false positives that pass here
+    // are suppressed downstream, so this pins the run/threshold contract, not precision.
+
+    #[test]
+    fn entropy_run_threshold_is_thirty_two() {
+        assert_eq!(DEFAULT_ENTROPY_RUN_BYTES, 32);
+    }
+
+    #[test]
+    fn run_of_exactly_thirty_two_candidates_triggers() {
+        assert!(has_high_entropy_run_fast(&[b'a'; 32]));
+    }
+
+    #[test]
+    fn run_of_thirty_one_candidates_does_not_trigger() {
+        assert!(!has_high_entropy_run_fast(&[b'a'; 31]));
+    }
+
+    #[test]
+    fn a_non_candidate_byte_resets_the_run() {
+        // 16 + space + 16 never reaches a contiguous 32.
+        let mut data = vec![b'a'; 16];
+        data.push(b' ');
+        data.extend(std::iter::repeat(b'a').take(16));
+        assert!(!has_high_entropy_run_fast(&data));
+    }
+
+    #[test]
+    fn run_resumes_after_a_break_and_can_still_trigger() {
+        // Leading non-candidates do not prevent a later 32-run from firing.
+        let mut data = vec![b' '; 8];
+        data.extend(std::iter::repeat(b'z').take(32));
+        assert!(has_high_entropy_run_fast(&data));
+    }
+
+    #[test]
+    fn every_allowed_symbol_byte_is_a_candidate() {
+        for sym in [
+            b'-', b'_', b'+', b'/', b'=', b'.', b':', b'!', b'@', b'#', b'$', b'%', b'^', b'&',
+            b'*',
+        ] {
+            assert!(
+                has_high_entropy_run_fast(&[sym; 32]),
+                "symbol {:?} must count as an entropy-candidate byte",
+                sym as char
+            );
+        }
+    }
+
+    #[test]
+    fn base64ish_mixed_run_triggers() {
+        // A realistic base64/token run mixing alnum + `+/=._:-` is one contiguous run.
+        let data = b"aB3+/=._:-aB3+/=._:-aB3+/=._:-aB3+"; // 33 candidate bytes
+        assert!(has_high_entropy_run_fast(data));
+    }
+
+    #[test]
+    fn whitespace_and_structural_bytes_are_not_candidates() {
+        assert!(!has_high_entropy_run_fast(&[b' '; 40]), "spaces");
+        assert!(!has_high_entropy_run_fast(&[b'\n'; 40]), "newlines");
+        assert!(!has_high_entropy_run_fast(&[b'"'; 40]), "double quotes");
+        assert!(!has_high_entropy_run_fast(&[b'('; 40]), "parens");
+    }
+
+    #[test]
+    fn entropy_gate_empty_input_does_not_trigger() {
+        assert!(!has_high_entropy_run_fast(b""));
+    }
+
+    #[test]
+    fn realistic_64_char_sha_hex_triggers() {
+        let sha = b"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"; // 64 hex
+        assert!(has_high_entropy_run_fast(sha));
+    }
+
+    #[test]
+    fn realistic_40_char_base62_token_triggers() {
+        let token = b"ghp01234567890abcdefABCDEF0123456789wxyz"; // 40 alnum
+        assert_eq!(token.len(), 40);
+        assert!(has_high_entropy_run_fast(token));
+    }
+
+    #[test]
+    fn uuid_shaped_string_reaches_the_run_threshold() {
+        // A 36-char UUID is one contiguous run because `-` is a candidate byte, so it
+        // DOES pass this permissive gate (36 >= 32). The UUID-shaped false positive is
+        // killed downstream by is_uuid_v4_shape, not here — pin that division of labor.
+        let uuid = b"550e8400-e29b-41d4-a716-446655440000";
+        assert_eq!(uuid.len(), 36);
+        assert!(has_high_entropy_run_fast(uuid));
+    }
+
+    #[test]
+    fn natural_prose_never_reaches_the_threshold() {
+        // Real words cap well under 32 and spaces reset the run.
+        assert!(!has_high_entropy_run_fast(
+            b"the quick brown fox jumps over the lazy dog again and again"
+        ));
+    }
+
+    #[test]
+    fn at_least_helper_respects_a_custom_min_run() {
+        assert!(has_high_entropy_run_at_least(&[b'a'; 16], 16));
+        assert!(!has_high_entropy_run_at_least(&[b'a'; 15], 16));
+    }
+
+    #[test]
+    fn at_least_min_run_zero_clamps_to_one() {
+        // min_run is clamped to >= 1: a single candidate byte satisfies min_run 0,
+        // but empty data still cannot (there is no candidate byte at all).
+        assert!(has_high_entropy_run_at_least(b"a", 0));
+        assert!(!has_high_entropy_run_at_least(b"", 0));
     }
 }
