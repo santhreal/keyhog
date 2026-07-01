@@ -114,7 +114,9 @@ pub fn fires(text: &str, detector: &str) -> bool {
 
 /// True when any detector in `detectors` produces a match for `text`.
 pub fn fires_any(text: &str, detectors: &[&str]) -> bool {
-    scan_ids(text).iter().any(|(id, _)| detectors.contains(&id.as_str()))
+    scan_ids(text)
+        .iter()
+        .any(|(id, _)| detectors.contains(&id.as_str()))
 }
 
 /// Recall predicate: `needle` is detected under *some* detector, regardless of
