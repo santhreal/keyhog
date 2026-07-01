@@ -30,9 +30,17 @@ fn malformed_har_parse_fallback_is_visible_to_operator() {
         .output()
         .expect("spawn keyhog");
 
-    assert!(
-        output.status.success(),
-        "malformed HAR raw-text fallback should complete cleanly; status={:?} stderr={}",
+    // A structured-source raw-text fallback is only PARTIAL coverage: the raw
+    // text is scanned (inline values are caught) but the derived
+    // request/response/body chunks are not expanded, so an encoded-body secret
+    // could be missed. keyhog fails closed on incomplete source coverage — with
+    // no findings it must NOT report "clean", it exits EXIT_SOURCE_FAILED (13).
+    // The gap must still be surfaced to the operator / SARIF (asserted below);
+    // fail-closed and gap-visibility are complementary, not alternatives.
+    assert_eq!(
+        output.status.code(),
+        Some(13),
+        "incomplete structured coverage must fail closed (EXIT_SOURCE_FAILED=13); status={:?} stderr={}",
         output.status.code(),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -74,9 +82,17 @@ fn malformed_har_parse_fallback_is_visible_in_sarif_notifications() {
         .output()
         .expect("spawn keyhog");
 
-    assert!(
-        output.status.success(),
-        "malformed HAR raw-text fallback should complete cleanly; status={:?} stderr={}",
+    // A structured-source raw-text fallback is only PARTIAL coverage: the raw
+    // text is scanned (inline values are caught) but the derived
+    // request/response/body chunks are not expanded, so an encoded-body secret
+    // could be missed. keyhog fails closed on incomplete source coverage — with
+    // no findings it must NOT report "clean", it exits EXIT_SOURCE_FAILED (13).
+    // The gap must still be surfaced to the operator / SARIF (asserted below);
+    // fail-closed and gap-visibility are complementary, not alternatives.
+    assert_eq!(
+        output.status.code(),
+        Some(13),
+        "incomplete structured coverage must fail closed (EXIT_SOURCE_FAILED=13); status={:?} stderr={}",
         output.status.code(),
         String::from_utf8_lossy(&output.stderr)
     );
