@@ -32,9 +32,13 @@ pub enum ScanError {
         "failed to build Aho-Corasick literal matcher: {0}. Fix: check for empty or invalid detector keywords"
     )]
     AhoCorasick(#[from] aho_corasick::BuildError),
-    #[error("GPU scanner failure: {0}")]
+    #[error(
+        "GPU scanner failure: {0}. Fix: rerun with `--backend cpu` to scan on the CPU path, or run `keyhog doctor` to diagnose the GPU stack"
+    )]
     Gpu(String),
-    #[error("SIMD scanner failure: {0}")]
+    #[error(
+        "SIMD scanner failure: {0}. Fix: rerun with `--backend cpu` for the portable scalar path, or run `keyhog doctor` to check CPU feature detection"
+    )]
     Simd(String),
     #[error("scanner configuration failure: {0}. Fix: correct the bundled scanner rules")]
     Config(String),
