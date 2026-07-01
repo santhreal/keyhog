@@ -116,6 +116,13 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // `AhoCorasick::new` array in scan_filters.rs). Parser and static are
     // crate-internal — same white-box justification as `assignment_keywords.rs`.
     "secret_prefixes.rs",
+    // The Tier-B list tests drive the crate-private `parse_token_list` primitive and
+    // its `ListPolicy` directly across both policies (lowercase-required vs
+    // case-preserving), pinning the shared charset/dup/empty/order contract that the
+    // assignment-keyword and secret-prefix loaders delegate to. The primitive and
+    // policy type are crate-internal — same white-box justification as
+    // `assignment_keywords.rs`.
+    "tier_b_list.rs",
     // The path-filter tests pin the `pub(crate)` path classifiers
     // (`path_is_ci_workflow_file`, `path_is_i18n_file`,
     // `looks_like_raw_base64_file_path`, `looks_like_entropy_raw_base64_file_path`)

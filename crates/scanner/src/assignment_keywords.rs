@@ -9,7 +9,6 @@
 //! Tier-B data lets a team widen recall by dropping a keyword into the file without
 //! a recompile.
 
-use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
 #[derive(serde::Deserialize)]
@@ -47,40 +46,22 @@ pub(crate) fn assignment_keywords() -> &'static [String] {
 pub(crate) fn parse_assignment_keywords(raw: &str) -> Result<Vec<String>, String> {
     let parsed: AssignmentKeywordFile = toml::from_str(raw)
         .map_err(|error| format!("invalid assignment_keywords.toml: {error}"))?;
-    let mut seen = BTreeSet::new();
-    let mut out = Vec::with_capacity(parsed.assignment_keywords.keywords.len());
-    for raw_keyword in parsed.assignment_keywords.keywords {
-        let keyword = raw_keyword.trim();
-        if keyword.is_empty() {
-            return Err("assignment keyword entries must not be empty".to_string());
-        }
-        if keyword != keyword.to_ascii_lowercase() {
-            return Err(format!(
-                "assignment keyword {keyword:?} must be lowercase ASCII"
-            ));
-        }
-        if !keyword.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-' || byte == b'.'
-        }) {
-            return Err(format!(
-                "assignment keyword {keyword:?} must be ASCII alphanumeric with optional \
-                 '_'/'-'/'.' separators"
-            ));
-        }
-        if !seen.insert(keyword.to_string()) {
-            return Err(format!("duplicate assignment keyword {keyword:?}"));
-        }
-        out.push(keyword.to_string());
-    }
-    if out.is_empty() {
-        return Err("assignment_keywords.keywords must contain at least one entry".to_string());
-    }
-    Ok(out)
+    // All three consumers fold case, so entries are canonical lowercase; the
+    // `_`/`-`/`.` separators cover the three real-world spellings of compound keys.
+    crate::tier_b_list::parse_token_list(
+        parsed.assignment_keywords.keywords,
+        &crate::tier_b_list::ListPolicy {
+            what: "assignment keyword",
+            require_lowercase: true,
+            separators: b"_-.",
+        },
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     /// The exact list the scanner matched BEFORE the Tier-B move (the old
     /// `GENERIC_ASSIGNMENT_KEYWORDS` const in `engine/scan_filters.rs`), in order.

@@ -13,7 +13,6 @@
 //! require lowercase. Keeping the list in Tier-B lets a team widen split-secret
 //! recall by dropping a prefix into the file without a recompile.
 
-use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
 #[derive(serde::Deserialize)]
@@ -53,37 +52,23 @@ pub(crate) fn multiline_secret_prefixes() -> &'static [String] {
 pub(crate) fn parse_multiline_secret_prefixes(raw: &str) -> Result<Vec<String>, String> {
     let parsed: MultilineSecretPrefixFile = toml::from_str(raw)
         .map_err(|error| format!("invalid multiline_secret_prefixes.toml: {error}"))?;
-    let mut seen = BTreeSet::new();
-    let mut out = Vec::with_capacity(parsed.multiline_secret_prefixes.prefixes.len());
-    for raw_prefix in parsed.multiline_secret_prefixes.prefixes {
-        let prefix = raw_prefix.trim();
-        if prefix.is_empty() {
-            return Err("multiline secret-prefix entries must not be empty".to_string());
-        }
-        if !prefix.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-' || byte == b'.'
-        }) {
-            return Err(format!(
-                "multiline secret-prefix {prefix:?} must be ASCII alphanumeric with optional \
-                 '_'/'-'/'.' separators"
-            ));
-        }
-        if !seen.insert(prefix.to_string()) {
-            return Err(format!("duplicate multiline secret-prefix {prefix:?}"));
-        }
-        out.push(prefix.to_string());
-    }
-    if out.is_empty() {
-        return Err(
-            "multiline_secret_prefixes.prefixes must contain at least one entry".to_string(),
-        );
-    }
-    Ok(out)
+    // The consumer's Aho-Corasick is case-sensitive, so casing is PRESERVED verbatim
+    // (require_lowercase: false) — the one axis on which this differs from the
+    // case-folded assignment-keyword list.
+    crate::tier_b_list::parse_token_list(
+        parsed.multiline_secret_prefixes.prefixes,
+        &crate::tier_b_list::ListPolicy {
+            what: "multiline secret-prefix",
+            require_lowercase: false,
+            separators: b"_-.",
+        },
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     /// The EXACT list the multiline gate matched BEFORE the Tier-B move (the inline
     /// `AhoCorasick::new([...])` array in `engine/scan_filters.rs`), in order and

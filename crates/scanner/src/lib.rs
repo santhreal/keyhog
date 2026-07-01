@@ -153,6 +153,9 @@ pub(crate) mod structured;
 pub(crate) mod suppression;
 /// Per-scan telemetry: always-on counters + opt-in `--dogfood` events.
 pub mod telemetry;
+/// Shared parse + validate primitive for Tier-B single-column token lists
+/// (assignment keywords, multiline secret prefixes) — one owner, no drift.
+pub(crate) mod tier_b_list;
 pub(crate) mod tuning;
 /// Unicode normalization and homoglyph defense.
 pub(crate) mod unicode_hardening;

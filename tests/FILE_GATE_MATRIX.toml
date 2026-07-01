@@ -2020,6 +2020,11 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/scanner/src/tier_b_list.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/simd/backend.rs"
 error = true
 adversarial = true
