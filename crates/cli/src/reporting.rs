@@ -116,7 +116,7 @@ fn report_with<W: std::io::Write + 'static + Send>(
         OutputFormat::Json => ReportFormat::Json,
         OutputFormat::Jsonl => ReportFormat::Jsonl,
         OutputFormat::Sarif => ReportFormat::Sarif {
-            skip_summary: coverage_gap_summary(),
+            skip_summary: coverage_gap_summary(&CoverageCounts::current()),
         },
         OutputFormat::Csv => ReportFormat::Csv,
         OutputFormat::GithubAnnotations => ReportFormat::GithubAnnotations,
@@ -125,7 +125,7 @@ fn report_with<W: std::io::Write + 'static + Send>(
             scan_finished_at: metadata.scan_finished_at.clone(),
         },
         OutputFormat::Html => ReportFormat::Html {
-            skip_summary: coverage_gap_summary(),
+            skip_summary: coverage_gap_summary(&CoverageCounts::current()),
             metadata: Some(metadata.html()),
         },
         OutputFormat::Junit => ReportFormat::Junit,
@@ -138,17 +138,105 @@ fn format_gitlab_time(time: DateTime<Utc>) -> String {
     time.format("%Y-%m-%dT%H:%M:%S").to_string()
 }
 
-/// Build the SARIF coverage-gap summary from source and scanner counters. Each
-/// non-zero category becomes one `(reason, count)` pair the SARIF reporter
+/// One end-of-scan snapshot of every coverage-gap counter the reporters read.
+///
+/// The counters live in process-global atomics across two crates (source-side
+/// [`keyhog_sources::skip_counts`] plus the scanner's telemetry) and are read
+/// exactly once, at end of scan, by [`CoverageCounts::current`]. Threading a
+/// snapshot through [`coverage_gap_summary`] instead of reading the globals
+/// inside it makes that function pure — every category can be exercised
+/// directly in a unit test — and keeps the "where do the numbers come from"
+/// answer in one place.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct CoverageCounts {
+    /// Source-walker skip counters (files not scanned or only partially scanned).
+    pub(crate) skip: keyhog_sources::SkipCounts,
+    /// Source rows that surfaced as errors (requested input not fully scanned).
+    pub(crate) source_errors: usize,
+    /// Scanner structured parse failed (raw text scanned; encoded values not decoded).
+    pub(crate) scanner_structured_parse_failures: usize,
+    /// Structured decode-through file matched but exceeded the parse size cap.
+    pub(crate) scanner_structured_oversize_skips: usize,
+    /// Decode-through hit a budget/size cap; deeper encoded layers not expanded.
+    pub(crate) scanner_decode_truncations: usize,
+    /// Pattern expansion skipped by an invalid pattern index (invariant violation).
+    pub(crate) scanner_invalid_pattern_index_skips: usize,
+    /// Boundary reassembly skipped by chunk/result cardinality drift (invariant).
+    pub(crate) scanner_boundary_cardinality_mismatches: usize,
+    /// Multiline attribution used a fallback source offset (approximate lines).
+    pub(crate) scanner_line_offset_mismatches: usize,
+    /// Binaries whose deep analysis degraded to strings-only (0 without `binary`).
+    pub(crate) binary_degraded: usize,
+    /// Binaries dropped as unreadable (0 without the `binary` feature).
+    pub(crate) binary_unreadable: usize,
+}
+
+impl CoverageCounts {
+    /// Read every coverage-gap counter once, at end of scan. This is the ONLY
+    /// place the process-global counters are read; everything downstream is a
+    /// pure function of the returned snapshot.
+    pub(crate) fn current() -> Self {
+        use keyhog_scanner::telemetry;
+        CoverageCounts {
+            skip: keyhog_sources::skip_counts(),
+            source_errors: crate::SOURCE_ERRORS.load(std::sync::atomic::Ordering::Relaxed),
+            scanner_structured_parse_failures: telemetry::structured_parse_failure_count(),
+            scanner_structured_oversize_skips: telemetry::structured_oversize_skip_count(),
+            scanner_decode_truncations: telemetry::decode_truncation_count(),
+            scanner_invalid_pattern_index_skips: telemetry::invalid_pattern_index_skip_count(),
+            scanner_boundary_cardinality_mismatches:
+                telemetry::boundary_result_cardinality_mismatch_count(),
+            scanner_line_offset_mismatches: telemetry::line_offset_mapping_mismatch_count(),
+            binary_degraded: binary_degraded_count(),
+            binary_unreadable: binary_unreadable_count(),
+        }
+    }
+}
+
+/// Ghidra-degraded binary count, or 0 when the `binary` source is not compiled.
+fn binary_degraded_count() -> usize {
+    #[cfg(feature = "binary")]
+    {
+        keyhog_sources::binary_degraded_to_strings()
+    }
+    #[cfg(not(feature = "binary"))]
+    {
+        0
+    }
+}
+
+/// Unreadable-binary count, or 0 when the `binary` source is not compiled.
+fn binary_unreadable_count() -> usize {
+    #[cfg(feature = "binary")]
+    {
+        keyhog_sources::binary_unreadable()
+    }
+    #[cfg(not(feature = "binary"))]
+    {
+        0
+    }
+}
+
+/// Build the SARIF/HTML coverage-gap summary from a [`CoverageCounts`] snapshot.
+/// Each non-zero category becomes one `(reason, count)` pair the reporter
 /// surfaces as a tool-execution notification, so a consuming platform sees the
 /// scan's coverage gaps (unreadable files especially — those are unknowns).
-fn coverage_gap_summary() -> Vec<(String, usize)> {
-    let c = keyhog_sources::skip_counts();
-    let source_errors = crate::SOURCE_ERRORS.load(std::sync::atomic::Ordering::Relaxed);
+///
+/// Every category the human end-of-scan summary can print MUST appear here too:
+/// the structured (SARIF/HTML/JSON) surface silently under-reporting a gap the
+/// human sees is a false-clean (Law 10). This previously drifted — the SARIF
+/// path omitted unreadable *binaries* and the structured decode-through
+/// oversize skip — so both are explicit entries below.
+fn coverage_gap_summary(counts: &CoverageCounts) -> Vec<(String, usize)> {
+    let c = &counts.skip;
+    // Unreadable binaries are reported as their OWN category below, so the
+    // generic unreadable count excludes them — otherwise the same dropped file
+    // is counted twice across the two categories.
+    let non_binary_unreadable = c.unreadable.saturating_sub(counts.binary_unreadable);
     let summary = vec![
         (
             "source emitted error rows (requested input was not fully scanned)".to_string(),
-            source_errors,
+            counts.source_errors,
         ),
         ("exceeded --max-file-size".to_string(), c.over_max_size),
         (
@@ -161,7 +249,7 @@ fn coverage_gap_summary() -> Vec<(String, usize)> {
         ),
         (
             "unreadable (permission denied or I/O error)".to_string(),
-            c.unreadable,
+            non_binary_unreadable,
         ),
         (
             "Git object unreadable or wrong object kind (referenced commit/tree/blob not scanned)"
@@ -194,39 +282,44 @@ fn coverage_gap_summary() -> Vec<(String, usize)> {
         ),
         (
             "scanner structured parse failed (raw text scanned; encoded structured values not decoded)".to_string(),
-            keyhog_scanner::telemetry::structured_parse_failure_count(),
+            counts.scanner_structured_parse_failures,
+        ),
+        (
+            "scanner structured decode-through skipped by size cap (structured file matched but exceeded the parse cap; encoded values e.g. a k8s data block were not decoded)".to_string(),
+            counts.scanner_structured_oversize_skips,
         ),
         (
             "scanner decode-through truncated by budget/cap (raw bytes scanned; deeper encoded layers not expanded)".to_string(),
-            keyhog_scanner::telemetry::decode_truncation_count(),
+            counts.scanner_decode_truncations,
         ),
         (
             "scanner pattern expansion skipped by invalid pattern index (scanner invariant violation; scan partial)".to_string(),
-            keyhog_scanner::telemetry::invalid_pattern_index_skip_count(),
+            counts.scanner_invalid_pattern_index_skips,
         ),
         (
             "scanner boundary reassembly skipped by chunk/result cardinality mismatch (scanner invariant violation; scan partial)".to_string(),
-            keyhog_scanner::telemetry::boundary_result_cardinality_mismatch_count(),
+            counts.scanner_boundary_cardinality_mismatches,
         ),
         (
             "scanner multiline attribution used fallback source offsets (line-offset metadata mismatch; scan partial)".to_string(),
-            keyhog_scanner::telemetry::line_offset_mapping_mismatch_count(),
+            counts.scanner_line_offset_mismatches,
+        ),
+        (
+            "binary deep analysis degraded to strings-only (Ghidra failed or output too large)"
+                .to_string(),
+            counts.binary_degraded,
+        ),
+        (
+            "binary unreadable (permission denied or I/O error; binary NOT scanned)".to_string(),
+            counts.binary_unreadable,
         ),
     ];
 
-    #[cfg(feature = "binary")]
-    let summary = {
-        let mut summary = summary;
-        summary.push((
-            "binary deep analysis degraded to strings-only (Ghidra failed or output too large)"
-                .to_string(),
-            keyhog_sources::binary_degraded_to_strings(),
-        ));
-        summary
-    };
-
     summary.into_iter().filter(|(_, n)| *n > 0).collect()
 }
+
+#[cfg(test)]
+mod coverage_gap_tests;
 
 fn scan_targets(args: &ScanArgs) -> Vec<String> {
     let mut targets = Vec::new();
