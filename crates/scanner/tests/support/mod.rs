@@ -13,6 +13,7 @@ use keyhog_scanner::CompiledScanner;
 pub mod contracts;
 pub mod gpu_gate;
 pub mod paths;
+pub mod vendorgen;
 
 pub fn compile_full_detector_scanner() -> CompiledScanner {
     let detectors = keyhog_core::load_detectors(&paths::detector_dir()).expect("detectors");
