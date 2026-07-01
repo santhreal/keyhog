@@ -59,6 +59,13 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // probe builder private instead of exporting the GPU internals as `pub`
     // solely for external test placement.
     "gpu/backend.rs",
+    // The detector-catalog validation helpers (`validate_rule_detector_ids`,
+    // `bundled_detector_ids`) are `pub(crate)` — deliberately not part of the
+    // crate's public API — so an external `tests/` target cannot reach them. The
+    // co-located tests pin the fail-closed unknown-detector contract (singular vs
+    // plural message, dedup, first-appearance order) and the memoized bundled
+    // catalog directly, instead of widening the surface to `pub` for placement.
+    "detector_catalog.rs",
     // `CredentialShapeRule` keeps its length/prefix/body fields PRIVATE; the
     // co-located tests construct fixtures through the `#[cfg(test)] pub(crate)`
     // `exact_length_for_test` / `prefix_body_range_for_test` builders that set
