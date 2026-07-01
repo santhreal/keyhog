@@ -9,6 +9,7 @@ pub mod node_modules_skipped_by_default;
 pub mod ooxml_office_documents_are_scanned;
 pub mod pdf_documents_are_scanned;
 pub mod pdf_metadata_and_strings;
+pub mod pdf_stream_extraction;
 pub mod rar_documents_are_scanned;
 pub mod scan_skips_target_directory_by_default;
 pub mod seven_zip_documents_are_scanned;

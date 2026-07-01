@@ -14,8 +14,15 @@ use std::path::Path;
 
 const STREAM: &[u8] = b"stream";
 const ENDSTREAM: &[u8] = b"endstream";
+const ENDOBJ: &[u8] = b"endobj";
 const PDF_UNCAPPED_DECODE_BUDGET: usize = 1024 * 1024 * 1024;
 const MIN_PDF_TEXT_LEN: usize = 4;
+/// How far back the stream-dictionary window may reach. A stream's `<< >>`
+/// object dictionary sits immediately before its `stream` keyword; 8 KiB is
+/// beyond any real object dictionary. The window is additionally clamped to the
+/// preceding object boundary (see `stream_dictionary_window`) so it never bleeds
+/// into a prior object's dict.
+const DICT_WINDOW_CAP: usize = 8192;
 
 pub(super) fn extract_pdf_chunks(
     path: &Path,
@@ -316,7 +323,28 @@ fn stream_is_image(dict: &[u8]) -> bool {
 }
 
 fn stream_dictionary_window(bytes: &[u8], stream_pos: usize) -> &[u8] {
-    let window_start = stream_pos.saturating_sub(8192);
+    // The window must hold THIS stream's object dictionary and nothing from a
+    // PREVIOUS object. A stream's dict lives between its own `obj` and `stream`,
+    // always after the prior object's `endobj`/`endstream`. A fixed byte
+    // lookback that crosses that boundary leaks an earlier image stream's
+    // `/Subtype /Image` into a later text stream's window, so the text stream is
+    // misclassified as an image and silently skipped — a recall loss with no gap
+    // surfaced. Clamp the window start to the closest preceding object boundary.
+    //
+    // The boundary search is bounded to the cap window: a boundary farther back
+    // than `DICT_WINDOW_CAP` cannot raise the floor above `cap_start` anyway, and
+    // bounding it keeps this O(cap) per stream — never O(streams × n) on an
+    // adversarial many-stream PDF.
+    let cap_start = stream_pos.saturating_sub(DICT_WINDOW_CAP);
+    let capped = &bytes[cap_start..stream_pos];
+    let boundary = [
+        memmem::rfind(capped, ENDOBJ).map(|idx| idx + ENDOBJ.len()),
+        memmem::rfind(capped, ENDSTREAM).map(|idx| idx + ENDSTREAM.len()),
+    ]
+    .into_iter()
+    .flatten()
+    .max();
+    let window_start = boundary.map_or(cap_start, |offset| cap_start + offset);
     &bytes[window_start..stream_pos]
 }
 
