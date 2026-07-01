@@ -10,7 +10,7 @@
 //! this report shows the hardware/workload heuristic matrix.
 
 use crate::args::BackendArgs;
-use crate::exit_codes::EXIT_BACKEND_SELF_TEST_FAILED;
+use crate::exit_codes::{EXIT_BACKEND_SELF_TEST_FAILED, EXIT_SUCCESS};
 use crate::style::{self, Palette};
 use anyhow::Result;
 use keyhog_scanner::hw_probe::{
@@ -416,7 +416,7 @@ fn collect_self_test_report() -> BackendSelfTestReport {
         return BackendSelfTestReport {
             ok: true,
             status: BackendSelfTestStatus::Skip,
-            exit_code: 0,
+            exit_code: EXIT_SUCCESS,
             gpu_available: hw.gpu_available,
             gpu_is_software: hw.gpu_is_software,
             gpu_name: hw.gpu_name.clone(),
@@ -645,7 +645,7 @@ pub(crate) mod testing {
         let report = super::BackendSelfTestReport {
             ok: false,
             status: super::BackendSelfTestStatus::Fail,
-            exit_code: 4,
+            exit_code: super::EXIT_BACKEND_SELF_TEST_FAILED,
             gpu_available: true,
             gpu_is_software: false,
             gpu_name: Some("NVIDIA GeForce RTX 5090".to_string()),

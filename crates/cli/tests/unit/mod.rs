@@ -9,6 +9,7 @@ pub mod daemon_trust;
 #[cfg(unix)]
 pub mod daemon_wire;
 pub mod detectors_brace_fix;
+pub mod exit_codes;
 pub mod file_gate;
 pub mod format;
 pub mod gates;
@@ -28,7 +29,7 @@ pub mod subcommands_doctor;
 pub mod subcommands_explain;
 pub mod subcommands_hook;
 pub mod subcommands_scan_multi_root;
-pub mod subcommands_watch_multi_root;
 pub mod subcommands_scan_system;
+pub mod subcommands_watch_multi_root;
 pub mod test_fixture_suppressions;
 pub mod value_parsers;
