@@ -185,6 +185,18 @@ pub fn quoted_printable_decode_for_test(input: &str) -> Option<String> {
     crate::decode::quoted_printable_decode(input).ok()
 }
 
+/// Test seam for the RFC2047 MIME encoded-word decoder (`=?charset?enc?text?=`,
+/// used to hide non-ASCII — and secrets — in email/HAR headers). `B` is base64,
+/// `Q` is quoted-printable-like (`_`→space, `=XX` hex); the encoding letter is
+/// case-insensitive and the charset label is ignored (the raw bytes are what
+/// scanning wants). Returns `None` on a malformed word (missing `=?`/`?=`, an
+/// unknown encoding, a decode failure) or when the decoded bytes are not valid
+/// UTF-8. Lets a gap test pin the B/Q dispatch and boundary handling exactly.
+#[cfg(feature = "decode")]
+pub fn mime_encoded_word_decode_for_test(input: &str) -> Option<String> {
+    crate::decode::mime_encoded_word_decode(input).ok()
+}
+
 /// Test seam for the reverse decoder's admission gate: a candidate is worth
 /// reverse-decoding only when it has a `MIN_REVERSE_ALNUM_RUN`+ contiguous
 /// ASCII-alphanumeric run AND its reversed form would contain a known provider

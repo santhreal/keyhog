@@ -41,6 +41,10 @@ pub(crate) fn quoted_printable_decode(input: &str) -> Result<String, ()> {
     url::quoted_printable_decode(input)
 }
 
+pub(crate) fn mime_encoded_word_decode(input: &str) -> Result<String, ()> {
+    url::mime_encoded_word_decode(input)
+}
+
 pub(crate) fn extracted_value_strings_for_test(text: &str) -> Vec<String> {
     pipeline::with_extracted_value_spans(text, |values| {
         values.iter().map(|value| value.value.clone()).collect()
