@@ -363,6 +363,26 @@ fn extract_jupyter_outputs(
     }
 }
 
+/// Jupyter `output.data` MIME keys whose payload is human-readable TEXT (a
+/// string, or an array of string fragments to be joined) and can therefore carry
+/// a pasted or rendered secret: a token embedded in an HTML widget's URL, an API
+/// response shown as `application/json`, a credential in an inline
+/// `application/javascript` snippet, an `xlink:href` inside an `image/svg+xml`,
+/// etc. `text/plain` is the common case; the richer renderings are precisely
+/// where a display-only secret hides from a plain-text scan of the raw notebook
+/// (JSON string-array fragmentation breaks the token). Binary MIME payloads
+/// (`image/png`, `image/jpeg`, …) are base64 blobs handled by the decode-through
+/// pipeline, not here, so they are deliberately excluded.
+const JUPYTER_TEXT_OUTPUT_MIME_TYPES: &[&str] = &[
+    "text/plain",
+    "text/html",
+    "text/markdown",
+    "text/latex",
+    "application/json",
+    "application/javascript",
+    "image/svg+xml",
+];
+
 fn extract_jupyter_output(
     output: &serde_json::Value,
     cell_idx: usize,
@@ -382,16 +402,21 @@ fn extract_jupyter_output(
             decode_derived,
         );
     }
-    if let Some(text_plain) = output.get("data").and_then(|data| data.get("text/plain")) {
-        extract_jupyter_output_text(
-            text_plain,
-            &format!("{context}.text/plain"),
-            pending,
-            cell_idx,
-            output_idx,
-            "text/plain",
-            decode_derived,
-        );
+    if let Some(data) = output.get("data") {
+        for &mime in JUPYTER_TEXT_OUTPUT_MIME_TYPES {
+            let Some(payload) = data.get(mime) else {
+                continue;
+            };
+            extract_jupyter_output_text(
+                payload,
+                &format!("{context}.{mime}"),
+                pending,
+                cell_idx,
+                output_idx,
+                mime,
+                decode_derived,
+            );
+        }
     }
     if let Some(traceback) = output.get("traceback") {
         extract_jupyter_output_text(
