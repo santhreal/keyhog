@@ -8,10 +8,10 @@ credentials.
 $ keyhog scan .
 K E Y H O G
 ───────────
-v0.5.40 · secret scanner · 909 detectors
+v0.5.40 · secret scanner · 916 detectors
 by santh
 
-⚡ 16 cores | GPU: NVIDIA GeForce RTX 5090 | SIMD: AVX-512 | Hyperscan | 909 detectors (6054 patterns) io_uring | backend=simd-regex | gpu=none
+⚡ 16 cores | GPU: NVIDIA GeForce RTX 5090 | SIMD: AVX-512 | Hyperscan | 916 detectors (6061 patterns) io_uring | backend=simd-regex | gpu=none
 
 scanned 12,841 files in 1.4 s
 3 findings · 0 verified live · 1041 example fixtures suppressed
@@ -28,7 +28,7 @@ has:
 - an **entropy score** + **confidence**
 - an optional **live verification** result if you pass `--verify`
 
-The list of detectors ships in TOML files under `detectors/`. There are 905
+The list of detectors ships in TOML files under `detectors/`. There are 916
 of them today, covering ~750 distinct services. Anyone can add or override
 them without touching Rust code.
 
