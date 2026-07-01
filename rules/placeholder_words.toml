@@ -63,3 +63,19 @@ marker_substrings = [
   "sample_key",
   "samplekey",
 ]
+
+# Second marker vocabulary consumed by the entropy-plausibility gate
+# (`bytes_contain_entropy_placeholder_marker`, entropy/plausibility.rs). Kept in
+# two lists because it carries two uniform match semantics; the gate's remaining
+# THREE clauses are bespoke rules that stay in code (they are not lists): the
+# length-gated `secret_key` substring (< 20 bytes), the compound `AKIA…` prefix
+# with an `EXAMPLE` suffix or `1234567890` run, and the structural `<`/`>`
+# angle-bracket presence check.
+[entropy_markers]
+# Case-insensitive substring markers (matched via ascii_ci over raw bytes). Stored
+# lowercase; may carry `_`/`-` separators.
+ci_substrings = ["your_", "replace_me", "change_me", "insert_here", "fake_", "dummy_", "mock_"]
+# Whole-value EXACT markers, matched case-sensitively against the raw bytes. Stored
+# lowercase, so — preserving current behavior — only the lowercase whole value
+# suppresses (an uppercase `NULL` is NOT caught by this arm).
+exact_values = ["null", "none", "undefined", "empty", "default", "secret", "password"]

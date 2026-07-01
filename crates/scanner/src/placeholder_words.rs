@@ -40,6 +40,10 @@ struct PlaceholderWordFile {
     /// fails closed if either marker list is empty.
     #[serde(default)]
     doc_markers: DocMarkerSection,
+    /// Optional for the same reason as `doc_markers`; the bundled file always
+    /// provides it and the loader fails closed on an empty list.
+    #[serde(default)]
+    entropy_markers: EntropyMarkerSection,
 }
 
 #[derive(serde::Deserialize)]
@@ -55,15 +59,29 @@ struct DocMarkerSection {
     marker_substrings: Vec<String>,
 }
 
-/// All placeholder / doc-marker vocabularies parsed once from the Tier-B file.
-/// `words` stay lowercase (matched case-insensitively via their `upper()` form);
-/// the two marker lists are stored UPPERCASE here because the suppression
-/// decision tree matches them against the already-uppercased credential.
+#[derive(serde::Deserialize, Default)]
+struct EntropyMarkerSection {
+    #[serde(default)]
+    ci_substrings: Vec<String>,
+    #[serde(default)]
+    exact_values: Vec<String>,
+}
+
+/// All placeholder / doc-marker / entropy-marker vocabularies parsed once from the
+/// Tier-B file. `words` stay lowercase (matched case-insensitively via their
+/// `upper()` form); the doc-marker lists are stored UPPERCASE because the
+/// suppression decision tree matches them against the already-uppercased
+/// credential; the entropy-marker lists are stored lowercase (ci_substrings are
+/// matched case-insensitively over raw bytes; exact_values are matched
+/// case-sensitively as whole raw-byte values, so only the lowercase whole value
+/// suppresses — the pinned current behavior).
 #[derive(Debug)]
 pub(crate) struct PlaceholderVocab {
     words: Vec<PlaceholderWord>,
     instructional_fragments: Vec<String>,
     marker_substrings: Vec<String>,
+    entropy_ci_substrings: Vec<String>,
+    entropy_exact_values: Vec<String>,
 }
 
 static VOCAB: LazyLock<PlaceholderVocab> = LazyLock::new(|| {
@@ -81,6 +99,16 @@ static VOCAB: LazyLock<PlaceholderVocab> = LazyLock::new(|| {
                 !vocab.marker_substrings.is_empty(),
                 "rules/placeholder_words.toml [doc_markers].marker_substrings is empty; \
                  refusing to run without doc-marker-substring suppression truth"
+            );
+            assert!(
+                !vocab.entropy_ci_substrings.is_empty(),
+                "rules/placeholder_words.toml [entropy_markers].ci_substrings is empty; \
+                 refusing to run without entropy-marker substring suppression truth"
+            );
+            assert!(
+                !vocab.entropy_exact_values.is_empty(),
+                "rules/placeholder_words.toml [entropy_markers].exact_values is empty; \
+                 refusing to run without entropy-marker exact-value suppression truth"
             );
             vocab
         }
@@ -107,6 +135,19 @@ pub(crate) fn instructional_fragments() -> &'static [String] {
 /// `PLACEHOLDER`. Consumed by `suppression::doc_markers::check_markers`.
 pub(crate) fn doc_marker_substrings() -> &'static [String] {
     &VOCAB.marker_substrings
+}
+
+/// Entropy-plausibility case-insensitive substring markers (lowercase), e.g.
+/// `your_`, `mock_`. Matched via `ascii_ci` over raw bytes by
+/// `bytes_contain_entropy_placeholder_marker`.
+pub(crate) fn entropy_marker_ci_substrings() -> &'static [String] {
+    &VOCAB.entropy_ci_substrings
+}
+
+/// Entropy-plausibility whole-value EXACT markers (lowercase), e.g. `null`,
+/// `password`. Matched case-sensitively against the raw value bytes.
+pub(crate) fn entropy_marker_exact_values() -> &'static [String] {
+    &VOCAB.entropy_exact_values
 }
 
 pub(crate) fn example_word() -> Option<&'static PlaceholderWord> {
@@ -145,23 +186,38 @@ pub(crate) fn bytes_contain_placeholder_word(bytes: &[u8]) -> bool {
 }
 
 pub(crate) fn bytes_contain_entropy_placeholder_marker(bytes: &[u8]) -> bool {
-    crate::ascii_ci::ci_find(bytes, b"your_")
-        || crate::ascii_ci::ci_find(bytes, b"replace_me")
-        || crate::ascii_ci::ci_find(bytes, b"change_me")
-        || crate::ascii_ci::ci_find(bytes, b"insert_here")
-        || crate::ascii_ci::ci_find(bytes, b"fake_")
-        || crate::ascii_ci::ci_find(bytes, b"dummy_")
-        || crate::ascii_ci::ci_find(bytes, b"mock_")
-        || (crate::ascii_ci::ci_find(bytes, b"secret_key") && bytes.len() < 20)
-        || (crate::ascii_ci::starts_with_ignore_ascii_case(bytes, b"AKIA")
-            && (crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b"EXAMPLE")
-                || crate::ascii_ci::ci_find(bytes, b"1234567890")))
-        || bytes.contains(&b'<')
-        || bytes.contains(&b'>')
-        || matches!(
-            bytes,
-            b"null" | b"none" | b"undefined" | b"empty" | b"default" | b"secret" | b"password"
-        )
+    // Category 1: case-insensitive substring markers (Tier-B
+    // `[entropy_markers].ci_substrings`).
+    if entropy_marker_ci_substrings()
+        .iter()
+        .any(|marker| crate::ascii_ci::ci_find(bytes, marker.as_bytes()))
+    {
+        return true;
+    }
+    // Category 2: length-gated substring (bespoke rule, not a list — `secret_key`
+    // counts as a decoy ONLY for short values; a long value merely containing it is
+    // a real secret and must not be suppressed).
+    if crate::ascii_ci::ci_find(bytes, b"secret_key") && bytes.len() < 20 {
+        return true;
+    }
+    // Category 3: compound prefix+suffix (bespoke rule — an `AKIA…` shape whose body
+    // ends `EXAMPLE` or carries the `1234567890` sequential filler is a docs decoy).
+    if crate::ascii_ci::starts_with_ignore_ascii_case(bytes, b"AKIA")
+        && (crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b"EXAMPLE")
+            || crate::ascii_ci::ci_find(bytes, b"1234567890"))
+    {
+        return true;
+    }
+    // Category 4: structural angle-bracket presence (bespoke rule — `<...>` marks a
+    // fill-in-the-blank placeholder).
+    if bytes.contains(&b'<') || bytes.contains(&b'>') {
+        return true;
+    }
+    // Category 5: whole-value EXACT, case-sensitive (Tier-B
+    // `[entropy_markers].exact_values`).
+    entropy_marker_exact_values()
+        .iter()
+        .any(|marker| bytes == marker.as_bytes())
 }
 
 pub(crate) fn placeholder_word_suppresses(
@@ -244,25 +300,43 @@ pub(crate) fn parse_vocab(raw: &str) -> Result<PlaceholderVocab, String> {
         return Err("placeholder_words.words must contain at least one entry".to_string());
     }
 
+    // Doc-markers are matched against the UPPERCASED credential, so uppercase them
+    // at load; entropy-markers are matched over raw bytes (ci_substrings
+    // case-insensitively, exact_values case-sensitively), so they stay lowercase.
     let instructional_fragments = validate_markers(
         parsed.doc_markers.instructional_fragments,
         "instructional_fragment",
-    )?;
+    )?
+    .into_iter()
+    .map(|marker| marker.to_ascii_uppercase())
+    .collect();
     let marker_substrings =
-        validate_markers(parsed.doc_markers.marker_substrings, "marker_substring")?;
+        validate_markers(parsed.doc_markers.marker_substrings, "marker_substring")?
+            .into_iter()
+            .map(|marker| marker.to_ascii_uppercase())
+            .collect();
+    let entropy_ci_substrings =
+        validate_markers(parsed.entropy_markers.ci_substrings, "entropy ci_substring")?;
+    let entropy_exact_values =
+        validate_markers(parsed.entropy_markers.exact_values, "entropy exact_value")?;
 
     Ok(PlaceholderVocab {
         words,
         instructional_fragments,
         marker_substrings,
+        entropy_ci_substrings,
+        entropy_exact_values,
     })
 }
 
-/// Validate one marker vocabulary and return it UPPERCASED for matching against
-/// the uppercased credential. Markers are stored lowercase in the Tier-B file
-/// (uniform with `words`) but, unlike words, may carry `_`/`-` separators. An
-/// empty input list is allowed here (permissive for partial test TOMLs); the
-/// bundled-file loader fails closed on an empty list.
+/// Validate one marker vocabulary (lowercase-in-file, non-empty, ASCII with
+/// optional `_`/`-` separators, no dups) and return the entries VERBATIM
+/// (lowercase). Markers are stored lowercase in the Tier-B file (uniform with
+/// `words`) but, unlike words, may carry `_`/`-` separators. Callers that match
+/// against an uppercased credential map the result through `to_ascii_uppercase`;
+/// callers matching raw bytes use it as-is. An empty input list is allowed here
+/// (permissive for partial test TOMLs); the bundled-file loader fails closed on an
+/// empty list.
 fn validate_markers(raw: Vec<String>, kind: &str) -> Result<Vec<String>, String> {
     let mut seen = BTreeSet::new();
     let mut out = Vec::with_capacity(raw.len());
@@ -273,7 +347,7 @@ fn validate_markers(raw: Vec<String>, kind: &str) -> Result<Vec<String>, String>
         }
         if marker != marker.to_ascii_lowercase() {
             return Err(format!(
-                "{kind} {marker:?} must be lowercase in the Tier-B file (the loader uppercases it)"
+                "{kind} {marker:?} must be lowercase in the Tier-B file"
             ));
         }
         if !marker
@@ -287,7 +361,7 @@ fn validate_markers(raw: Vec<String>, kind: &str) -> Result<Vec<String>, String>
         if !seen.insert(marker.to_string()) {
             return Err(format!("duplicate {kind} {marker:?}"));
         }
-        out.push(marker.to_ascii_uppercase());
+        out.push(marker.to_string());
     }
     Ok(out)
 }
@@ -527,5 +601,182 @@ mod tests {
             vocab.marker_substrings,
             vec!["ZEBRA".to_string(), "ALPHA".to_string(), "MID".to_string()]
         );
+    }
+
+    // ── entropy_markers (bytes_contain_entropy_placeholder_marker) ──
+
+    // The exact lowercase forms the old hardcoded `||` chain matched (categories 1
+    // and 5 of `bytes_contain_entropy_placeholder_marker`). Categories 2/3/4
+    // (secret_key length-gate, AKIA compound, angle brackets) are bespoke rules that
+    // stay in code, not lists.
+    const LEGACY_ENTROPY_CI: &[&str] = &[
+        "your_",
+        "replace_me",
+        "change_me",
+        "insert_here",
+        "fake_",
+        "dummy_",
+        "mock_",
+    ];
+    const LEGACY_ENTROPY_EXACT: &[&str] = &[
+        "null",
+        "none",
+        "undefined",
+        "empty",
+        "default",
+        "secret",
+        "password",
+    ];
+
+    fn toml_with_entropy(body: &str) -> String {
+        format!("[placeholder_words]\nwords = [\"example\"]\n[entropy_markers]\n{body}")
+    }
+
+    #[test]
+    fn entropy_ci_substrings_reproduce_legacy_exactly() {
+        let loaded: Vec<&str> = entropy_marker_ci_substrings()
+            .iter()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(loaded.as_slice(), LEGACY_ENTROPY_CI);
+    }
+
+    #[test]
+    fn entropy_exact_values_reproduce_legacy_exactly() {
+        let loaded: Vec<&str> = entropy_marker_exact_values()
+            .iter()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(loaded.as_slice(), LEGACY_ENTROPY_EXACT);
+    }
+
+    #[test]
+    fn entropy_ci_substrings_are_stored_lowercase() {
+        // Unlike doc-markers (uppercased at load), entropy markers stay lowercase.
+        for marker in entropy_marker_ci_substrings() {
+            assert_eq!(
+                marker,
+                &marker.to_ascii_lowercase(),
+                "not lowercase: {marker}"
+            );
+        }
+    }
+
+    #[test]
+    fn entropy_exact_values_are_stored_lowercase() {
+        for marker in entropy_marker_exact_values() {
+            assert_eq!(
+                marker,
+                &marker.to_ascii_lowercase(),
+                "not lowercase: {marker}"
+            );
+        }
+    }
+
+    #[test]
+    fn entropy_marker_lists_are_nonempty() {
+        assert!(!entropy_marker_ci_substrings().is_empty());
+        assert!(!entropy_marker_exact_values().is_empty());
+    }
+
+    #[test]
+    fn no_duplicate_entropy_markers() {
+        let mut seen = BTreeSet::new();
+        for marker in entropy_marker_ci_substrings() {
+            assert!(seen.insert(marker), "dup ci marker {marker}");
+        }
+        let mut seen = BTreeSet::new();
+        for marker in entropy_marker_exact_values() {
+            assert!(seen.insert(marker), "dup exact marker {marker}");
+        }
+    }
+
+    #[test]
+    fn parse_vocab_keeps_entropy_markers_lowercase_not_uppercased() {
+        let vocab = parse_vocab(&toml_with_entropy(
+            "ci_substrings = [\"your_\"]\nexact_values = [\"null\"]\n",
+        ))
+        .expect("valid");
+        assert_eq!(vocab.entropy_ci_substrings, vec!["your_".to_string()]);
+        assert_eq!(vocab.entropy_exact_values, vec!["null".to_string()]);
+    }
+
+    #[test]
+    fn parse_vocab_rejects_uppercase_entropy_marker() {
+        let err = parse_vocab(&toml_with_entropy("ci_substrings = [\"YOUR_\"]\n")).unwrap_err();
+        assert!(err.contains("must be lowercase"), "got: {err}");
+    }
+
+    #[test]
+    fn parse_vocab_rejects_duplicate_entropy_marker() {
+        let err =
+            parse_vocab(&toml_with_entropy("exact_values = [\"null\", \"null\"]\n")).unwrap_err();
+        assert!(err.contains("duplicate"), "got: {err}");
+    }
+
+    #[test]
+    fn parse_vocab_without_entropy_section_parses_empty() {
+        let vocab = parse_vocab("[placeholder_words]\nwords = [\"example\"]\n").expect("valid");
+        assert!(vocab.entropy_ci_substrings.is_empty());
+        assert!(vocab.entropy_exact_values.is_empty());
+    }
+
+    #[test]
+    fn bundled_entropy_markers_match_accessors() {
+        let vocab = parse_vocab(include_str!("../../../rules/placeholder_words.toml"))
+            .expect("bundled file valid");
+        assert_eq!(
+            vocab.entropy_ci_substrings.as_slice(),
+            entropy_marker_ci_substrings()
+        );
+        assert_eq!(
+            vocab.entropy_exact_values.as_slice(),
+            entropy_marker_exact_values()
+        );
+    }
+
+    // Behavioral parity spot-checks (the full truth-table lives in
+    // tests/unit/root_facade/entropy_placeholder_marker_truth_table.rs); these
+    // confirm the Tier-B-backed fn preserves each category through this module.
+
+    #[test]
+    fn entropy_ci_substring_still_suppresses() {
+        assert!(bytes_contain_entropy_placeholder_marker(b"YOUR_API_TOKEN"));
+        assert!(bytes_contain_entropy_placeholder_marker(
+            b"please_replace_me_now"
+        ));
+    }
+
+    #[test]
+    fn entropy_exact_value_suppresses_case_sensitively() {
+        assert!(bytes_contain_entropy_placeholder_marker(b"null"));
+        assert!(
+            !bytes_contain_entropy_placeholder_marker(b"NULL"),
+            "uppercase NULL is not the case-sensitive exact marker (pinned behavior)"
+        );
+        assert!(
+            !bytes_contain_entropy_placeholder_marker(b"null_value"),
+            "`null` as a substring is not the whole-value exact marker"
+        );
+    }
+
+    #[test]
+    fn entropy_secret_key_length_gate_preserved() {
+        assert!(
+            bytes_contain_entropy_placeholder_marker(b"secret_key"),
+            "short secret_key is a decoy"
+        );
+        assert!(
+            !bytes_contain_entropy_placeholder_marker(b"my_secret_key_padding_xx"),
+            "secret_key at >= 20 bytes is past the length gate (recall boundary)"
+        );
+    }
+
+    #[test]
+    fn entropy_real_secret_not_suppressed() {
+        assert!(!bytes_contain_entropy_placeholder_marker(
+            b"aB3xK9mQ2pL7vR4nT8wZ"
+        ));
+        assert!(!bytes_contain_entropy_placeholder_marker(b""));
     }
 }
