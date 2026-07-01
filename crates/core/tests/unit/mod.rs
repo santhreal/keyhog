@@ -69,6 +69,7 @@ pub mod fix_replacement_text_wraps_in_dollar_braces;
 pub mod fresh_detector_returns_uniform_prior;
 pub mod full_dedup_pipeline_is_deterministic_across_input_orders;
 pub mod gates;
+pub mod git_lfs;
 pub mod hardening_report_failures_are_collectible;
 pub mod interactsh_token_without_oob_block_is_error;
 pub mod invalid_decode_depth_rejected;

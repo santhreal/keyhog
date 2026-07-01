@@ -569,6 +569,11 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/core/src/git_lfs.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/core/src/hardening.rs"
 error = true
 adversarial = true

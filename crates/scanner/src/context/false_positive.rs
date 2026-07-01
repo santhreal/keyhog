@@ -1,5 +1,6 @@
 use super::inference::surrounding_line_window;
 use crate::ascii_ci::ci_find;
+use keyhog_core::git_lfs;
 use std::collections::BTreeSet;
 
 /// Returns `true` if the match is in a context that indicates a false positive.
@@ -34,7 +35,7 @@ pub(crate) fn is_false_positive_match_context_with_path(
 
     is_go_sum_checksum_bytes(current_line_bytes, path_lower)
         || is_integrity_hash_bytes(current_line_bytes)
-        || (is_git_lfs_oid_line(current_line_bytes) && is_git_lfs_pointer_context_bytes(bytes))
+        || (git_lfs::is_git_lfs_oid_line(current_line_bytes) && git_lfs::is_git_lfs_pointer(bytes))
         || is_renovate_digest_match_context(current_match_line.as_bytes(), current_match_offset)
         || is_cors_header_bytes(current_line_bytes)
         || is_http_cache_header_bytes(current_line_bytes)
@@ -378,52 +379,13 @@ fn is_git_lfs_pointer_context_with_lines(
     line_idx: usize,
     line_bytes: &[u8],
 ) -> bool {
-    is_git_lfs_oid_line(line_bytes)
+    git_lfs::is_git_lfs_oid_line(line_bytes)
         && nearby_lines_contain(lines, line_idx, 3, |candidate| {
-            is_git_lfs_version_line(candidate.as_bytes())
+            git_lfs::is_git_lfs_version_line(candidate.as_bytes())
         })
         && following_lines_contain(lines, line_idx, 3, |candidate| {
-            is_git_lfs_size_line(candidate.as_bytes())
+            git_lfs::is_git_lfs_size_line(candidate.as_bytes())
         })
-}
-
-fn is_git_lfs_pointer_context_bytes(bytes: &[u8]) -> bool {
-    let mut has_version = false;
-    let mut has_oid = false;
-    for line in bytes.split(|byte| matches!(byte, b'\n' | b'\r')) {
-        if !has_version {
-            has_version = is_git_lfs_version_line(line);
-            continue;
-        }
-        if !has_oid {
-            has_oid = is_git_lfs_oid_line(line);
-            continue;
-        }
-        if is_git_lfs_size_line(line) {
-            return true;
-        }
-    }
-    false
-}
-
-fn is_git_lfs_version_line(bytes: &[u8]) -> bool {
-    trim_ascii_bytes(bytes).eq_ignore_ascii_case(b"version https://git-lfs.github.com/spec/v1")
-}
-
-fn is_git_lfs_oid_line(bytes: &[u8]) -> bool {
-    let trimmed = trim_ascii_bytes(bytes);
-    let Some(rest) = trimmed.strip_prefix(b"oid sha256:") else {
-        return false;
-    };
-    rest.len() == 64 && rest.iter().all(u8::is_ascii_hexdigit)
-}
-
-fn is_git_lfs_size_line(bytes: &[u8]) -> bool {
-    let trimmed = trim_ascii_bytes(bytes);
-    let Some(rest) = trimmed.strip_prefix(b"size ") else {
-        return false;
-    };
-    !rest.is_empty() && rest.iter().all(u8::is_ascii_digit)
 }
 
 fn trim_ascii_bytes(bytes: &[u8]) -> &[u8] {
