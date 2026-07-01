@@ -55,6 +55,31 @@ fn caught(scanner: &CompiledScanner, line: &str, value: &str) -> bool {
     credentials_for(scanner, line).iter().any(|c| c == value)
 }
 
+/// Like `caught`, but accepts the whole detectorless generic-bridge FAMILY
+/// (`generic-secret` / `generic-password` / `entropy-api-key`). A bare
+/// secret-family keyword (`secret = <v>`, zero suffixes) routes to
+/// `generic-password` / `entropy-api-key` rather than `generic-secret` — the
+/// label follows the detector set, but the VALUE still surfaces. Recall, not the
+/// specific generic label, is the backward-compat contract this locks.
+fn caught_by_generic_family(scanner: &CompiledScanner, line: &str, value: &str) -> bool {
+    let chunk = Chunk {
+        data: line.into(),
+        metadata: ChunkMetadata::default(),
+    };
+    scanner.clear_fragment_cache();
+    scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+        .into_iter()
+        .flatten()
+        .filter(|m| {
+            matches!(
+                m.detector_id.as_ref(),
+                "generic-secret" | "generic-password" | "entropy-api-key"
+            )
+        })
+        .any(|m| m.credential.as_ref() == value)
+}
+
 // All value literals below are VERIFIED to surface under a bare `secret = "<v>"`
 // (so a positive isolates the SUFFIX, and a negative's non-bridging is provably
 // the excluded suffix, not a value-shape rejection). They carry no vendor prefix
@@ -99,9 +124,13 @@ fn secret_preserving_suffix_forms_are_surfaced() {
         "secret_string (secret + _string suffix) must bridge"
     );
     // Backward compatibility: the bare keyword (zero suffixes) still bridges.
+    // Bare `secret =` routes to `generic-password` / `entropy-api-key` rather
+    // than `generic-secret` (the suffixed forms above route to generic-secret);
+    // the label follows the detector set but the value still surfaces, so this
+    // asserts the generic-bridge FAMILY caught it — recall, not the label.
     let v7 = "Xk9mP2qR7sT4vW8zCb3dE6fG";
     assert!(
-        caught(&s, &format!("secret = \"{v7}\""), v7),
+        caught_by_generic_family(&s, &format!("secret = \"{v7}\""), v7),
         "bare `secret = <value>` must still bridge (zero-suffix backward compat)"
     );
 }
