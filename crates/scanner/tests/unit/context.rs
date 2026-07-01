@@ -427,6 +427,319 @@ fn configmap_binary_data_dedent_to_metadata_parent_not_suppressed() {
     assert!(!is_false_positive_context(&lines, 3, None));
 }
 
+// ── Rust `#[test]` attribute-block lookback (the >3-attr TestCode regression) ─
+//
+// A Rust test fn has an arbitrary name and is marked by a `#[test]`-family
+// attribute. The attribute can sit several attribute / doc-comment lines above
+// the `fn` signature; a fixed 3-line lookback missed it, leaving the test body
+// at full confidence (a fixture-credential false positive). The block-walk now
+// clears the whole contiguous attribute block, bounded, and still stops at the
+// item boundary so a `#[test]` from an unrelated item above is never adopted.
+
+/// The inferred context of the fixture line carrying the `sk-proj-` marker.
+fn context_of_secret(src: &[&str]) -> CodeContext {
+    let idx = src
+        .iter()
+        .position(|line| line.contains("sk-proj-"))
+        .expect("fixture must contain a secret line");
+    infer_context(src, idx, None)
+}
+
+const RUST_SECRET: &str = "    let key = \"sk-proj-abcdefghijklmnopqrstuvwxyz123456\";";
+
+#[test]
+fn test_attr_four_attrs_above_fn_is_test_code() {
+    // The regression: `#[test]` is 4 lines above the signature (past the old cap).
+    assert_eq!(
+        context_of_secret(&[
+            "#[test]",
+            "#[ignore]",
+            "#[should_panic]",
+            "#[allow(clippy::unwrap_used)]",
+            "fn arbitrary_name() {",
+            RUST_SECRET,
+            "}",
+        ]),
+        CodeContext::TestCode
+    );
+}
+
+#[test]
+fn test_attr_eight_attrs_above_fn_is_test_code() {
+    assert_eq!(
+        context_of_secret(&[
+            "#[test]",
+            "#[ignore]",
+            "#[should_panic]",
+            "#[allow(a)]",
+            "#[allow(b)]",
+            "#[allow(c)]",
+            "#[allow(d)]",
+            "#[allow(e)]",
+            "fn arbitrary_name() {",
+            RUST_SECRET,
+            "}",
+        ]),
+        CodeContext::TestCode
+    );
+}
+
+#[test]
+fn test_attr_directly_above_fn_is_test_code() {
+    assert_eq!(
+        context_of_secret(&["#[test]", "fn arbitrary_name() {", RUST_SECRET, "}"]),
+        CodeContext::TestCode
+    );
+}
+
+#[test]
+fn test_attr_tokio_test_with_attrs_is_test_code() {
+    assert_eq!(
+        context_of_secret(&[
+            "#[tokio::test]",
+            "#[ignore]",
+            "#[allow(x)]",
+            "#[allow(y)]",
+            "async fn arbitrary_name() {",
+            RUST_SECRET,
+            "}",
+        ]),
+        CodeContext::TestCode
+    );
+}
+
+#[test]
+fn test_attr_cfg_test_with_attrs_is_test_code() {
+    assert_eq!(
+        context_of_secret(&[
+            concat!("#[cfg(", "test)]"),
+            "#[allow(a)]",
+            "#[allow(b)]",
+            "#[allow(c)]",
+            "fn arbitrary_name() {",
+            RUST_SECRET,
+            "}",
+        ]),
+        CodeContext::TestCode
+    );
+}
+
+#[test]
+fn test_attr_pub_fn_with_attrs_is_test_code() {
+    assert_eq!(
+        context_of_secret(&[
+            "#[test]",
+            "#[ignore]",
+            "#[allow(a)]",
+            "#[allow(b)]",
+            "pub fn arbitrary_name() {",
+            RUST_SECRET,
+            "}",
+        ]),
+        CodeContext::TestCode
+    );
+}
+
+#[test]
+fn test_attr_should_panic_with_message_is_test_code() {
+    assert_eq!(
+        context_of_secret(&[
+            "#[test]",
+            "#[should_panic(expected = \"boom\")]",
+            "fn arbitrary_name() {",
+            RUST_SECRET,
+            "}",
+        ]),
+        CodeContext::TestCode
+    );
+}
+
+#[test]
+fn test_attr_doc_comment_inside_block_is_test_code() {
+    assert_eq!(
+        context_of_secret(&[
+            "#[test]",
+            "#[allow(a)]",
+            "/// a stray doc line inside the attribute block",
+            "#[allow(b)]",
+            "fn arbitrary_name() {",
+            RUST_SECRET,
+            "}",
+        ]),
+        CodeContext::TestCode
+    );
+}
+
+#[test]
+fn test_attr_doc_comment_above_test_attr_is_test_code() {
+    assert_eq!(
+        context_of_secret(&[
+            "/// Tests the arbitrary thing.",
+            "#[test]",
+            "fn arbitrary_name() {",
+            RUST_SECRET,
+            "}",
+        ]),
+        CodeContext::TestCode
+    );
+}
+
+#[test]
+fn test_attr_single_blank_between_attr_and_fn_is_test_code() {
+    // rustfmt removes this, but unformatted input must still classify.
+    assert_eq!(
+        context_of_secret(&["#[test]", "", "fn arbitrary_name() {", RUST_SECRET, "}"]),
+        CodeContext::TestCode
+    );
+}
+
+#[test]
+fn test_attr_multiple_blanks_between_attr_and_fn_is_test_code() {
+    assert_eq!(
+        context_of_secret(&[
+            "#[test]",
+            "",
+            "",
+            "",
+            "fn arbitrary_name() {",
+            RUST_SECRET,
+            "}",
+        ]),
+        CodeContext::TestCode
+    );
+}
+
+#[test]
+fn test_attr_test_case_parameterized_attr_is_test_code() {
+    // `#[test_case(...)]` (the test-case crate) matches the `#[test` prefix.
+    assert_eq!(
+        context_of_secret(&[
+            "#[test_case(1)]",
+            "#[test_case(2)]",
+            "#[allow(a)]",
+            "#[allow(b)]",
+            "fn arbitrary_name(n: u32) {",
+            RUST_SECRET,
+            "}",
+        ]),
+        CodeContext::TestCode
+    );
+}
+
+#[test]
+fn test_attr_cfg_attr_miri_ignore_is_test_code() {
+    assert_eq!(
+        context_of_secret(&[
+            "#[test]",
+            "#[cfg_attr(miri, ignore)]",
+            "fn arbitrary_name() {",
+            RUST_SECRET,
+            "}",
+        ]),
+        CodeContext::TestCode
+    );
+}
+
+#[test]
+fn non_test_fn_with_many_attrs_is_not_test_code() {
+    assert_eq!(
+        context_of_secret(&[
+            "#[inline]",
+            "#[allow(a)]",
+            "#[allow(b)]",
+            "#[allow(c)]",
+            "fn arbitrary_name() {",
+            RUST_SECRET,
+            "}",
+        ]),
+        CodeContext::Assignment
+    );
+}
+
+#[test]
+fn non_test_fn_no_attrs_is_not_test_code() {
+    assert_eq!(
+        context_of_secret(&["fn arbitrary_name() {", RUST_SECRET, "}"]),
+        CodeContext::Assignment
+    );
+}
+
+#[test]
+fn non_test_fn_after_previous_test_fn_is_not_test_code() {
+    // The block-walk must stop at the previous item's boundary and NOT adopt its
+    // `#[test]`.
+    assert_eq!(
+        context_of_secret(&[
+            "#[test]",
+            "fn previous_test() {",
+            "    assert!(true);",
+            "}",
+            "",
+            "#[allow(dead_code)]",
+            "fn arbitrary_name() {",
+            RUST_SECRET,
+            "}",
+        ]),
+        CodeContext::Assignment
+    );
+}
+
+#[test]
+fn non_test_fn_with_code_between_attr_and_fn_is_not_test_code() {
+    // A non-attribute line between `#[test]` and the fn ends the block.
+    assert_eq!(
+        context_of_secret(&[
+            "#[test]",
+            "const X: u32 = 1;",
+            "fn arbitrary_name() {",
+            RUST_SECRET,
+            "}",
+        ]),
+        CodeContext::Assignment
+    );
+}
+
+#[test]
+fn test_attr_beyond_block_cap_is_not_test_code() {
+    // `#[test]` separated from the fn by more blank lines than ATTR_BLOCK_LOOKBACK
+    // is beyond the bounded walk — an absurd shape rustfmt never emits; the cap
+    // trades this for a guaranteed-bounded walk.
+    let mut src = vec!["#[test]".to_string()];
+    for _ in 0..40 {
+        src.push(String::new());
+    }
+    src.push("fn arbitrary_name() {".to_string());
+    src.push(RUST_SECRET.to_string());
+    src.push("}".to_string());
+    let borrowed = borrow(&src);
+    assert_eq!(context_of_secret(&borrowed), CodeContext::Assignment);
+}
+
+#[test]
+fn non_test_fn_test_attr_beyond_closing_brace_is_not_test_code() {
+    // `#[test]` above a previous item's closing brace must not leak downward.
+    assert_eq!(
+        context_of_secret(&[
+            "#[test]",
+            "}",
+            "#[allow(dead_code)]",
+            "fn arbitrary_name() {",
+            RUST_SECRET,
+            "}",
+        ]),
+        CodeContext::Assignment
+    );
+}
+
+#[test]
+fn test_attr_go_test_func_still_detected() {
+    // The Go `func TestX` path is unaffected by the Rust attribute-block change.
+    assert_eq!(
+        context_of_secret(&["func TestArbitrary(t *testing.T) {", RUST_SECRET, "}",]),
+        CodeContext::TestCode
+    );
+}
+
 #[test]
 fn false_positive_context_detects_git_lfs_pointer() {
     let lines = vec![

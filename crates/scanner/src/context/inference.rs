@@ -6,6 +6,13 @@ const ENCRYPTED_BLOCK_LOOKBACK_LINES: usize = 10;
 // 100 lines covers large Go/Java test functions with extensive setup.
 // The previous 30-line limit caused test fixtures to be reported as findings.
 const TEST_FUNCTION_LOOKBACK_LINES: usize = 100;
+/// Cap on the contiguous attribute/doc block walked above a Rust `fn` signature
+/// when deciding whether a `#[test]`-family attribute marks it as test code.
+/// Generous for any real attribute block (a handful of `#[...]` + doc lines,
+/// possibly with unformatted blank lines); the walk runs once per enclosing
+/// signature and this bound stops an all-blank prefix from reaching the file
+/// start.
+const ATTR_BLOCK_LOOKBACK: usize = 32;
 
 #[derive(serde::Deserialize)]
 struct TestPathRuleFile {
@@ -322,22 +329,30 @@ fn is_in_test_function(lines: &[&str], line_idx: usize) -> bool {
             || trimmed.starts_with("pub async fn "))
             && !trimmed.contains("fn test_")
         {
-            let pre_start = candidate_line_idx.saturating_sub(3);
-            let mut is_test_attr = false;
-            for pre_line in &lines[pre_start..candidate_line_idx] {
+            // A Rust test fn has an arbitrary name and is marked by a
+            // `#[test]`-family attribute. That attribute can sit several
+            // attribute / doc-comment lines above the signature
+            // (`#[test] #[ignore] #[should_panic(...)] ... fn`); a fixed 3-line
+            // window missed it and left the whole test body at full confidence,
+            // so a fixture credential surfaced as a false positive. Walk the
+            // WHOLE contiguous attribute/doc block instead. Blank lines are
+            // ignored (attributes attach to the next item across whitespace);
+            // any other line ends the block, so we never adopt a `#[test]` from
+            // an unrelated item above this fn. The block-walk runs once (at the
+            // enclosing signature) and is capped so a pathological all-blank
+            // prefix cannot make it walk to the file start.
+            let block_start = candidate_line_idx.saturating_sub(ATTR_BLOCK_LOOKBACK);
+            for pre_line in lines[block_start..candidate_line_idx].iter().rev() {
                 let pre_trimmed = pre_line.trim();
-                if pre_trimmed == "#[test]"
-                    || pre_trimmed == concat!("#[cfg(", "test)]")
-                    || pre_trimmed.starts_with("#[tokio::test")
-                    || pre_trimmed.starts_with("#[test")
-                    || pre_trimmed == "@Test"
-                {
-                    is_test_attr = true;
+                if pre_trimmed.is_empty() {
+                    continue;
+                }
+                if is_rust_test_attribute(pre_trimmed) {
+                    return true;
+                }
+                if !is_attribute_or_doc_line(pre_trimmed) {
                     break;
                 }
-            }
-            if is_test_attr {
-                return true;
             }
             return false;
         }
@@ -347,6 +362,30 @@ fn is_in_test_function(lines: &[&str], line_idx: usize) -> bool {
         }
     }
     false
+}
+
+/// A `#[test]`-family attribute (or the Java `@Test` annotation) that marks the
+/// following item as test code.
+fn is_rust_test_attribute(trimmed: &str) -> bool {
+    trimmed == "#[test]"
+        || trimmed == concat!("#[cfg(", "test)]")
+        || trimmed.starts_with("#[tokio::test")
+        || trimmed.starts_with("#[test")
+        || trimmed == "@Test"
+}
+
+/// A line that belongs to the attribute / doc-comment block that may sit between
+/// a `#[test]` attribute and the `fn` it applies to: any attribute (`#[...]` /
+/// inner `#![...]`), a doc/line comment (`//` / `///` / `//!`), or a block
+/// comment fragment (`/* … */`, ` * …`). A blank line or anything else ends the
+/// block, so the walk never adopts an attribute from an unrelated item.
+fn is_attribute_or_doc_line(trimmed: &str) -> bool {
+    trimmed.starts_with("#[")
+        || trimmed.starts_with("#![")
+        || trimmed.starts_with("//")
+        || trimmed.starts_with("/*")
+        || trimmed.starts_with('*')
+        || trimmed.ends_with("*/")
 }
 
 pub(crate) fn surrounding_line_window(text: &str, offset: usize, radius: usize) -> &str {
