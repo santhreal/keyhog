@@ -305,6 +305,18 @@ fn is_configmap_binary_data_context(lines: &[&str], line_idx: usize, line_bytes:
         && is_inside_configmap_binary_data_block(lines, line_idx)
 }
 
+/// How far back the block-header search may walk. The walk skips same-or-deeper
+/// indent siblings and returns at the first LESS-indented line (the structural
+/// parent), so for a well-formed block it naturally stops at the `binaryData:`
+/// header. This cap only bounds the pathological case of a long same-indent run
+/// with no dedent, keeping this per-match check from walking to the file start.
+/// It is deliberately generous: the previous 8-line cap stopped finding the
+/// header past the 8th entry, so every 9th-and-later `binaryData:` blob leaked
+/// as a false positive. 4096 clears any realistic ConfigMap binaryData block,
+/// and the walk only ever runs on YAML-key-shaped base64 value lines, so the
+/// worst-case work stays small.
+const BLOCK_HEADER_LOOKBACK: usize = 4096;
+
 fn is_inside_configmap_binary_data_block(lines: &[&str], line_idx: usize) -> bool {
     let Some(current_line) = lines.get(line_idx) else {
         return false;
@@ -313,7 +325,7 @@ fn is_inside_configmap_binary_data_block(lines: &[&str], line_idx: usize) -> boo
     if current_indent == 0 {
         return false;
     }
-    let start = line_idx.saturating_sub(8);
+    let start = line_idx.saturating_sub(BLOCK_HEADER_LOOKBACK);
     for candidate in lines[start..line_idx].iter().rev() {
         let bytes = candidate.as_bytes();
         let trimmed = trim_ascii_bytes(bytes);

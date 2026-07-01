@@ -214,6 +214,219 @@ fn false_positive_match_context_does_not_suppress_secret_like_configmap_binary_d
     );
 }
 
+// ── ConfigMap binaryData block-header lookback (the >8-entry FP regression) ───
+//
+// `is_inside_configmap_binary_data_block` walks back to the `binaryData:` header
+// by indentation. A fixed 8-line lookback truncated that walk, so every 9th and
+// later base64 blob in a block failed to find its header and leaked as a false
+// positive. The header search now clears any realistic block. Entry `e` (0-based)
+// of `configmap_binary_block(n)` lives at line index `2 + e`; the header is at
+// line index 1.
+
+/// A ConfigMap `binaryData:` block with `entries` base64 value lines.
+fn configmap_binary_block(entries: usize) -> Vec<String> {
+    const B64: [&str; 4] = [
+        "QUJDREVGRw==",
+        "SElKS0xNTg==",
+        "T1BRUlNUVQ==",
+        "Z2hwX2FiYw==",
+    ];
+    let mut lines = vec!["kind: ConfigMap".to_string(), "binaryData:".to_string()];
+    for i in 0..entries {
+        lines.push(format!("  entry-{i}.bin: {}", B64[i % B64.len()]));
+    }
+    lines
+}
+
+fn borrow(lines: &[String]) -> Vec<&str> {
+    lines.iter().map(String::as_str).collect()
+}
+
+#[test]
+fn configmap_binary_data_ninth_entry_beyond_old_cap_suppressed() {
+    // The regression: the 9th entry (line index 10) sits past the old 8-line cap.
+    let owned = configmap_binary_block(9);
+    let lines = borrow(&owned);
+    assert!(
+        is_false_positive_context(&lines, 10, None),
+        "9th binaryData entry must still resolve its header and be suppressed"
+    );
+}
+
+#[test]
+fn configmap_binary_data_eighth_entry_within_old_cap_still_suppressed() {
+    // Boundary control: the 8th entry (index 9) was reachable under the old cap.
+    let owned = configmap_binary_block(8);
+    let lines = borrow(&owned);
+    assert!(is_false_positive_context(&lines, 9, None));
+}
+
+#[test]
+fn configmap_binary_data_first_entry_still_suppressed() {
+    let owned = configmap_binary_block(9);
+    let lines = borrow(&owned);
+    assert!(is_false_positive_context(&lines, 2, None));
+}
+
+#[test]
+fn configmap_binary_data_fiftieth_entry_suppressed() {
+    let owned = configmap_binary_block(50);
+    let lines = borrow(&owned);
+    assert!(is_false_positive_context(&lines, 51, None));
+}
+
+#[test]
+fn configmap_binary_data_hundredth_entry_suppressed() {
+    let owned = configmap_binary_block(100);
+    let lines = borrow(&owned);
+    assert!(is_false_positive_context(&lines, 101, None));
+}
+
+#[test]
+fn configmap_binary_data_two_hundredth_entry_suppressed() {
+    let owned = configmap_binary_block(200);
+    let lines = borrow(&owned);
+    assert!(is_false_positive_context(&lines, 201, None));
+}
+
+#[test]
+fn configmap_binary_data_thousandth_entry_suppressed() {
+    // Well within the generous lookback bound; proves the cap is not merely a
+    // slightly-larger magic number.
+    let owned = configmap_binary_block(1000);
+    let lines = borrow(&owned);
+    assert!(is_false_positive_context(&lines, 1001, None));
+}
+
+#[test]
+fn configmap_binary_data_all_hundred_entries_suppressed() {
+    let owned = configmap_binary_block(100);
+    let lines = borrow(&owned);
+    for entry in 0..100 {
+        assert!(
+            is_false_positive_context(&lines, 2 + entry, None),
+            "entry {entry} (line {}) must be suppressed",
+            2 + entry
+        );
+    }
+}
+
+#[test]
+fn configmap_binary_data_deep_secret_like_value_not_suppressed() {
+    // A cleartext secret-shaped value deep in a large block must NOT be hidden.
+    let mut owned = configmap_binary_block(15);
+    owned.push("  api-token: sk-proj-abcdefghijklmnopqrstuvwxyz123456".to_string());
+    let lines = borrow(&owned);
+    assert!(
+        !is_false_positive_context(&lines, 17, None),
+        "a secret-shaped value must not be suppressed even deep in a binaryData block"
+    );
+}
+
+#[test]
+fn configmap_data_block_after_deep_binary_data_not_suppressed() {
+    // A sibling `data:` block after a large binaryData block: its values are
+    // secrets, not binary — the nearest dedent parent is `data:`, not the header.
+    let mut owned = configmap_binary_block(15);
+    owned.push("data:".to_string());
+    owned.push("  api-token: Z2hwX2FiYw==".to_string());
+    let lines = borrow(&owned);
+    assert!(
+        !is_false_positive_context(&lines, 18, None),
+        "a data: block value after a deep binaryData block must not be suppressed"
+    );
+}
+
+#[test]
+fn configmap_binary_data_lookback_stops_at_first_dedent_even_if_header_below() {
+    // The walk must return at the FIRST less-indented parent. A `binaryData:`
+    // header that sits ABOVE an intervening non-header parent must not be reached.
+    let lines = vec!["binaryData:", "otherblock:", "  entry.bin: QUJDREVGRw=="];
+    assert!(
+        !is_false_positive_context(&lines, 2, None),
+        "the nearest dedent parent (otherblock:) wins; a binaryData header above it is not the owner"
+    );
+}
+
+#[test]
+fn configmap_binary_data_blank_lines_between_entries_still_suppressed() {
+    let lines = vec![
+        "kind: ConfigMap",
+        "binaryData:",
+        "  a.bin: QUJDREVGRw==",
+        "",
+        "  b.bin: SElKS0xNTg==",
+        "",
+        "  c.bin: T1BRUlNUVQ==",
+    ];
+    assert!(
+        is_false_positive_context(&lines, 6, None),
+        "blank lines between entries must be skipped, not stop the header search"
+    );
+}
+
+#[test]
+fn configmap_binary_data_header_case_insensitive() {
+    let lines = vec!["kind: ConfigMap", "BinaryData:", "  a.bin: QUJDREVGRw=="];
+    assert!(is_false_positive_context(&lines, 2, None));
+}
+
+#[test]
+fn configmap_binary_data_header_trailing_whitespace_recognized() {
+    let lines = vec!["kind: ConfigMap", "binaryData:   ", "  a.bin: QUJDREVGRw=="];
+    assert!(is_false_positive_context(&lines, 2, None));
+}
+
+#[test]
+fn configmap_binary_data_zero_indent_value_not_suppressed() {
+    // A value at column 0 has no parent to own it.
+    let lines = vec!["binaryData:", "x.bin: QUJDREVGRw=="];
+    assert!(!is_false_positive_context(&lines, 1, None));
+}
+
+#[test]
+fn configmap_binary_data_deeper_nested_values_suppressed() {
+    // binaryData: at indent 2, values at indent 4.
+    let lines = vec!["spec:", "  binaryData:", "    a.bin: QUJDREVGRw=="];
+    assert!(is_false_positive_context(&lines, 2, None));
+}
+
+#[test]
+fn configmap_binary_data_non_header_word_not_matched() {
+    // `binaryDataFoo:` is a different key, not the block header.
+    let lines = vec!["kind: ConfigMap", "binaryDataFoo:", "  a.bin: QUJDREVGRw=="];
+    assert!(!is_false_positive_context(&lines, 2, None));
+}
+
+#[test]
+fn configmap_binary_data_no_header_above_not_suppressed() {
+    let lines = vec!["kind: ConfigMap", "data:", "  a.bin: QUJDREVGRw=="];
+    assert!(!is_false_positive_context(&lines, 2, None));
+}
+
+#[test]
+fn configmap_binary_data_quoted_value_suppressed() {
+    let lines = vec![
+        "kind: ConfigMap",
+        "binaryData:",
+        "  a.bin: \"QUJDREVGRw==\"",
+    ];
+    assert!(is_false_positive_context(&lines, 2, None));
+}
+
+#[test]
+fn configmap_binary_data_dedent_to_metadata_parent_not_suppressed() {
+    // The value's nearest dedent parent is `metadata:`, so the binaryData header
+    // two blocks up does not own it.
+    let lines = vec![
+        "binaryData:",
+        "  cert.bin: QUJDREVGRw==",
+        "metadata:",
+        "  name.bin: SElKS0xNTg==",
+    ];
+    assert!(!is_false_positive_context(&lines, 3, None));
+}
+
 #[test]
 fn false_positive_context_detects_git_lfs_pointer() {
     let lines = vec![
