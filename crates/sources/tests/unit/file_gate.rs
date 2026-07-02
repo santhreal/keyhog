@@ -728,8 +728,8 @@ fn web_happy() {
     let web = include_str!("../../src/web.rs");
     assert!(
         web.contains("fn classify_web_response(url: &str) -> WebResponseKind")
-            && web.contains("ends_with_ignore_ascii_case(path, \".wasm\")")
-            && web.contains("ends_with_ignore_ascii_case(path, \".map\")")
+            && web.contains("ends_with_ignore_ascii_case(path.as_bytes(), b\".wasm\")")
+            && web.contains("ends_with_ignore_ascii_case(path.as_bytes(), b\".map\")")
             && !web.contains("url.to_lowercase()"),
         "WebSource URL routing must classify extensions without allocating a lowercase copy of the full URL"
     );
