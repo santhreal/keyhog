@@ -209,6 +209,19 @@ pub fn octal_escape_decode_for_test(input: &str) -> Option<String> {
     crate::decode::octal_escape_decode(input).ok()
 }
 
+/// Test seam for the decode-density gate on the main scan path
+/// (`decode::has_decodable_payload`): returns true iff `data` carries an encoded
+/// shape long enough to be worth routing into decode-through — a
+/// `MIN_DECODABLE_RUN` (24) contiguous base64/hex run, `MIN_PERCENT_ESCAPES` (4)
+/// `%XX` escapes, or `MIN_BACKSLASH_ESCAPES` (2) `\u`/`\x` escapes. This gate is
+/// recall-load-bearing (it routes an otherwise prefilter-skipped, fully-encoded
+/// chunk into decode-through), so a silent threshold drift is a recall bug; this
+/// seam lets a test pin the exact boundaries.
+#[cfg(feature = "decode")]
+pub fn has_decodable_payload_for_test(data: &[u8]) -> bool {
+    crate::decode::has_decodable_payload(data)
+}
+
 /// Test seam for the reverse decoder's admission gate: a candidate is worth
 /// reverse-decoding only when it has a `MIN_REVERSE_ALNUM_RUN`+ contiguous
 /// ASCII-alphanumeric run AND its reversed form would contain a known provider
