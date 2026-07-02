@@ -450,3 +450,8 @@ SESSION TOTAL: ~2633 tests committed across 15 iterations. 3 held items. iter16 
 caesar_shift_all14, shannon_entropy16, simd_scalar_parity_chunk14 (swapped GHP_TOKEN to canonical valid-checksum ghp_0000...2C8GjS — agent wrongly claimed github has no checksum), report_csv_columns15, finding_serde_roundtrip15, severity_cmp14, cli_exclude_glob13, cli_stdin_scan13 (fail-closed exit13 emits EMPTY stdout not '[]'), cli_min_severity14, docker_image_ref17, slack_pagination9, binary_detect13.
 KEY LEARNINGS: (1) github/gitlab/stripe tokens VALIDATE a trailing checksum — fabricated random body yields 0 findings; use canonical ghp_0000...2C8GjS; (2) a fail-closed cli scan emits EMPTY stdout, error on stderr (not '[]').
 SESSION TOTAL: ~2786 tests committed across 16 iterations. 3 held items. iter17 authoring.
+
+## Iteration 17 COMPLETE (12/12) — ~185 tests
+z85_decode_all15, quoted_printable17, report_text_format19, config_severity_map, oci_layer14, cli_output_path12 (fixed: TEXT report names detector by DISPLAY NAME 'GitHub Classic PAT' not id — json/sarif carry id), finding_location_merge14, cli_no_color13, git_commit_scan14, detector_keyword_index19, cli_config_path13, filesystem_symlink13.
+KEY LEARNING: the human `text` report names a detector by its TOML display `name`, not the machine id (json/sarif carry the id).
+SESSION TOTAL: ~2947 tests committed across 17 iterations. 3 held items (prefilter, keyword_bridge, decode_json_escapes-4-cases). iter18 authoring.
