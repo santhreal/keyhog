@@ -15,7 +15,8 @@
 //!    <https://trufflesecurity.com/blog/research-uncovers-aws-account-numbers-hidden-in-access-keys>:
 //!    drop the 4-char prefix; base32-decode the body; the first 6 decoded bytes
 //!    are a big-endian u48; `account = (u48 & 0x7fff_ffff_ff80) >> 7`, rendered
-//!    as a 12-digit zero-padded decimal string.
+//!    as a zero-padded decimal string (12 digits for real AWS keys; see the
+//!    `aws_account_from_key_id` note on crafted 13-digit inputs).
 //!
 //! 2. **Canary classification.** An access key whose decoded account belongs to
 //!    a known canary issuer (canarytokens.org / Thinkst and off-brand clones) is
@@ -66,10 +67,16 @@ fn base32_value(c: u8) -> Option<u8> {
 /// access-key ID (wrong length, wrong prefix, or a non-base32 body), so a
 /// caller can blindly try every credential and only act on `Some`.
 ///
-/// The returned string is always exactly 12 ASCII digits, zero-padded — AWS
-/// account numbers are 12-digit identifiers and the leading-zero form (e.g.
-/// `052310077262`) is the canonical rendering, matching the STS `Account`
-/// field and trufflehog's output.
+/// For a real AWS access-key ID the returned string is 12 ASCII digits,
+/// zero-padded — AWS account numbers are 12-digit identifiers and the
+/// leading-zero form (e.g. `052310077262`) is the canonical rendering, matching
+/// the STS `Account` field and trufflehog's output.
+///
+/// NOTE: the decoded 48-bit account field can arithmetically reach
+/// `1_099_511_627_775` (13 digits) for a *crafted* key-shaped body that no real
+/// AWS key produces; `{:012}` zero-pads but does not truncate, so such
+/// adversarial inputs render 13 digits. Callers must not assume a fixed width
+/// for untrusted input.
 #[must_use]
 pub(crate) fn aws_account_from_key_id(key_id: &str) -> Option<String> {
     let key_id = key_id.trim();
