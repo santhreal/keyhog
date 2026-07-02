@@ -68,14 +68,71 @@ pub(crate) fn parse_http_endpoint(raw: &str, source: &str) -> Result<reqwest::Ur
     // non-http(s) URL is treated as private), so this only ever widens the
     // refusal set. It is the single owner of this policy, shared with the
     // WebSource and verifier SSRF gates.
-    if keyhog_verifier::ssrf::is_private_url(parsed.as_str())
-        && !private_cloud_endpoint_explicitly_allowed()
-    {
-        return Err(SourceError::Other(format!(
-            "refusing {source} endpoint: host is a private, loopback, link-local, or cloud-metadata address (SSRF)"
-        )));
+    if !private_cloud_endpoint_explicitly_allowed() {
+        if keyhog_verifier::ssrf::is_private_url(parsed.as_str()) {
+            return Err(SourceError::Other(format!(
+                "refusing {source} endpoint: host is a private, loopback, link-local, or cloud-metadata address (SSRF)"
+            )));
+        }
+        // DNS-rebinding SSRF defense (post-string-screen). `is_private_url`
+        // above classifies only the *literal* host token. A public hostname
+        // whose A/AAAA record points at a private / loopback / link-local /
+        // cloud-metadata address (169.254.169.254, 127.0.0.1, 10.x, [::1])
+        // sails past the string screen — classic DNS rebinding. WebSource
+        // closes this in `web::ssrf::resolve_and_screen` (resolve, re-screen
+        // every SocketAddr, pin the addrs), but the cloud S3/GCS/Azure blocking
+        // client did NO post-DNS IP veto, so such a host still connected. Screen
+        // the resolved addresses here against the SAME fleet-canonical predicate
+        // WebSource uses (`keyhog_verifier::ssrf::is_private_ip_addr`) so the
+        // "is this an SSRF target?" decision keeps its single owner (ONE PLACE)
+        // and only the resolution call is local — the cloud features do not pull
+        // in the `web` feature's threaded DNS pool. Honors the same explicit
+        // opt-in above so loopback mock endpoints (MinIO/Ceph, httpmock) work.
+        screen_resolved_endpoint_host(&parsed, source)?;
     }
     Ok(parsed)
+}
+
+/// Resolve a cloud endpoint host and refuse it if ANY resolved address is one
+/// the fleet-canonical `keyhog_verifier::ssrf::is_private_ip_addr` classifier
+/// rejects (private / loopback / link-local / cloud-metadata / unspecified /
+/// Class-E / CGN / benchmark / …). This is the DNS-rebinding half of the cloud
+/// SSRF endpoint screen; the literal-host string screen runs first in
+/// `parse_http_endpoint`.
+///
+/// A resolution *failure* is deliberately NOT a refusal: with no resolved
+/// address there is no connection target and therefore no SSRF, and reqwest
+/// re-resolves and surfaces the same failure at connect time. This can only ever
+/// *narrow* what is allowed — a host is refused solely when it successfully
+/// resolves to a blocked address, never when it merely fails to resolve — so it
+/// is not a silent security downgrade (Law 10): the check that can be performed
+/// (screen a resolved address) always runs, and the only "skipped" case is one
+/// where there is nothing to screen and nothing to connect to.
+fn screen_resolved_endpoint_host(parsed: &reqwest::Url, source: &str) -> Result<(), SourceError> {
+    use std::net::ToSocketAddrs;
+
+    let Some(host) = parsed.host_str() else {
+        // Shape (`host_str().is_none()`) is already rejected by the caller; this
+        // arm is unreachable in practice and screens nothing to screen.
+        return Ok(());
+    };
+    // `port_or_known_default` yields 80/443 for http/https (both already the
+    // only permitted schemes), so this never falls back to a wrong port.
+    let port = parsed.port_or_known_default().unwrap_or(443);
+    let Ok(addrs) = (host, port).to_socket_addrs() else {
+        // Resolution failed: no address to attack. reqwest will re-resolve and
+        // surface the same failure at connect time — never an SSRF pivot.
+        return Ok(());
+    };
+    for addr in addrs {
+        if keyhog_verifier::ssrf::is_private_ip_addr(&addr.ip()) {
+            return Err(SourceError::Other(format!(
+                "refusing {source} endpoint: host {host} resolves to {} which is a private, loopback, link-local, or cloud-metadata address (SSRF / DNS rebinding)",
+                addr.ip()
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Loud operator opt-in for pointing a cloud source at a private / loopback /
