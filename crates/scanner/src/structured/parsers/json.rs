@@ -27,16 +27,12 @@ pub(crate) fn parse_tfstate(text: &str, decode_derived: bool) -> Vec<ExtractedPa
     finalize_pending_pairs(text, pending)
 }
 
-/// Cap recursion depth on adversarial JSON. A 2 MiB document of nested arrays
-/// can exceed the default thread stack; 256 is beyond real Terraform state.
-const MAX_TFSTATE_DEPTH: usize = 256;
-
 fn extract_tfstate_outputs(
     value: &serde_json::Value,
     pending: &mut Vec<PendingExtractedPair>,
     depth: usize,
 ) {
-    if depth >= MAX_TFSTATE_DEPTH {
+    if depth >= super::MAX_STRUCTURED_TRAVERSAL_DEPTH {
         return;
     }
     let serde_json::Value::Object(map) = value else {
@@ -55,7 +51,7 @@ fn extract_tfstate_output_values(
     pending: &mut Vec<PendingExtractedPair>,
     depth: usize,
 ) {
-    if depth >= MAX_TFSTATE_DEPTH {
+    if depth >= super::MAX_STRUCTURED_TRAVERSAL_DEPTH {
         return;
     }
     match value {
@@ -95,7 +91,7 @@ fn extract_tfstate_resource_collections(
     pending: &mut Vec<PendingExtractedPair>,
     depth: usize,
 ) {
-    if depth >= MAX_TFSTATE_DEPTH {
+    if depth >= super::MAX_STRUCTURED_TRAVERSAL_DEPTH {
         return;
     }
     let serde_json::Value::Object(map) = value else {
@@ -119,7 +115,7 @@ fn extract_tfstate_module_resources(
     pending: &mut Vec<PendingExtractedPair>,
     depth: usize,
 ) {
-    if depth >= MAX_TFSTATE_DEPTH {
+    if depth >= super::MAX_STRUCTURED_TRAVERSAL_DEPTH {
         return;
     }
     let serde_json::Value::Object(map) = module else {
@@ -205,7 +201,7 @@ fn extract_tfstate_attribute_scalars(
     anchor_key: Option<&str>,
     depth: usize,
 ) {
-    if depth >= MAX_TFSTATE_DEPTH {
+    if depth >= super::MAX_STRUCTURED_TRAVERSAL_DEPTH {
         return;
     }
     match value {

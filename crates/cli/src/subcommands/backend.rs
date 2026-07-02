@@ -11,6 +11,7 @@
 
 use crate::args::BackendArgs;
 use crate::exit_codes::{EXIT_BACKEND_SELF_TEST_FAILED, EXIT_SUCCESS};
+use crate::format::format_bytes;
 use crate::style::{self, Palette};
 use anyhow::Result;
 use keyhog_scanner::hw_probe::{
@@ -307,12 +308,12 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
     println!("  classified:                {tier_label}");
     println!(
         "  effective min bytes:       {} (tier {})",
-        fmt_bytes(tier.min_bytes),
+        format_bytes(tier.min_bytes),
         tier.tier
     );
     println!(
         "  effective solo cap:        {}",
-        fmt_bytes(tier.solo_bytes)
+        format_bytes(tier.solo_bytes)
     );
 
     println!();
@@ -321,8 +322,8 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
         println!(
             "  {:<4} tier  min/solo/pattern = {} / {} / {}",
             profile.tier,
-            fmt_bytes(profile.min_bytes),
-            fmt_bytes(profile.solo_bytes),
+            format_bytes(profile.min_bytes),
+            format_bytes(profile.solo_bytes),
             profile.pattern_breakeven
         );
     }
@@ -741,18 +742,6 @@ pub(crate) mod testing {
 
     pub(crate) fn format_probe_mb_metric(value: Option<u64>) -> String {
         super::format_probe_metric(value)
-    }
-}
-
-fn fmt_bytes(n: u64) -> String {
-    if n >= 1024 * 1024 * 1024 {
-        format!("{} GiB", n / (1024 * 1024 * 1024))
-    } else if n >= 1024 * 1024 {
-        format!("{} MiB", n / (1024 * 1024))
-    } else if n >= 1024 {
-        format!("{} KiB", n / 1024)
-    } else {
-        format!("{n} B")
     }
 }
 

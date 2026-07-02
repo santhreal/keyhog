@@ -260,18 +260,34 @@ fn content_hash(data: &[u8]) -> u64 {
     h
 }
 
+/// Read a changed file through the SAME guarded read the `keyhog scan` walker
+/// uses. A raw `std::fs::read` here bypassed three walker protections: (1) no
+/// size cap, so a large (or TOCTOU-grown) file dropped into a watched tree
+/// OOMs the single-threaded daemon; (2) no special-file guard, so a FIFO
+/// created in the tree — which itself fires an inotify CREATE event — is opened
+/// blocking and HANGS the event loop forever, wedging the whole watcher; (3) no
+/// `O_NOFOLLOW`, so a symlink is followed out of the watched root. `0` selects
+/// the walker's hard 2 GiB TOCTOU sanity cap (watch carries no `--max-file-size`
+/// budget); a special file returns `InvalidInput` and an oversized file
+/// `InvalidData`, both surfaced loudly by `scan_file`'s existing error arm.
+fn read_watched_file(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+    keyhog_sources::read_file_safe_bytes(path, 0)
+}
+
 fn scan_file(
     scan_runtime: &DefaultScanRuntime,
     path: &std::path::Path,
     recently_scanned: &mut WatchDedupeState,
 ) -> Result<()> {
-    // Read BYTES (not `read_to_string`) and decode through the SAME path the
-    // `keyhog scan` walker uses. `read_to_string` failed on the first non-UTF-8
-    // byte and silently dropped the whole file, so a config with one stray
-    // Latin-1 byte was scanned by `scan` (lossy decode) but invisibly skipped by
-    // `watch` — a recall divergence between the two entry points (Law 10). Now
-    // both share `decode_file_bytes`, so watch recovers the same secrets.
-    let bytes = match std::fs::read(path) {
+    // Read BYTES (not `read_to_string`) through the walker's guarded read (see
+    // `read_watched_file`) and decode through the SAME path the `keyhog scan`
+    // walker uses. `read_to_string` failed on the first non-UTF-8 byte and
+    // silently dropped the whole file, so a config with one stray Latin-1 byte
+    // was scanned by `scan` (lossy decode) but invisibly skipped by `watch` — a
+    // recall divergence between the two entry points (Law 10). Now both share
+    // the guarded read + `decode_file_bytes`, so watch recovers the same
+    // secrets and can neither hang on a FIFO nor OOM on a huge file.
+    let bytes = match read_watched_file(path) {
         Ok(b) => b,
         Err(error) => {
             // A file that VANISHED between the inotify event and our read is a

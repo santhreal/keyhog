@@ -32,6 +32,7 @@ mod parallel_fetch;
     feature = "bitbucket"
 ))]
 mod process_excerpt;
+mod safe_read;
 mod skip;
 pub(crate) mod timeouts;
 #[cfg(any(
@@ -85,6 +86,7 @@ pub use factory::{
     create_source_with_http_config_limits_and_policy,
 };
 pub use limits::{SourceLimits, DEFAULT_SOURCE_LIMITS};
+pub use safe_read::read_file_safe_bytes;
 pub(crate) use skip::{
     acquire_scan_read_lease, attach_scan_lease, enter_exclusive_scan_scope, gate_scan,
     record_skip_event, record_skip_events, reset_skip_counters, SourceSkipEvent,

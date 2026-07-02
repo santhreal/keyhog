@@ -23,6 +23,16 @@ use filter::walker_config;
 pub(crate) use path::display_path;
 pub(crate) use read::decode_text_file;
 pub(crate) use read::open_file_safe;
+/// Crate-visible wrapper over the walker's guarded single-file read (`read`'s
+/// `pub(super)` primitive, which is `pub(in crate::filesystem)` and so cannot be
+/// re-exported crate-wide directly) so the crate-public
+/// [`crate::read_file_safe_bytes`] entry point used by `keyhog watch` shares the
+/// SAME `O_NOFOLLOW` + special-file-refusing + size-capped read the scan walker
+/// uses, instead of a raw `std::fs::read`. `cap == 0` selects the walker's hard
+/// 2 GiB TOCTOU ceiling (see `read::read_file_safe`).
+pub(crate) fn read_file_safe(path: &std::path::Path, cap: u64) -> std::io::Result<Vec<u8>> {
+    read::read_file_safe(path, cap)
+}
 
 pub(crate) fn default_exclude_dirs() -> &'static [String] {
     filter::default_exclude_dirs()

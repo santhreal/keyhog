@@ -39,7 +39,7 @@ fn extract_k8s_secret(
     depth: usize,
     decode_derived: bool,
 ) {
-    if depth >= MAX_YAML_TRAVERSAL_DEPTH {
+    if depth >= super::MAX_STRUCTURED_TRAVERSAL_DEPTH {
         return;
     }
     match yaml_kind(value) {
@@ -238,17 +238,12 @@ fn parse_yaml_documents(
     }
 }
 
-/// Cap recursion depth on adversarial YAML. Real docker-compose schemas and
-/// Kubernetes List wrappers nest shallowly; 256 stays permissive while
-/// preventing stack overflow.
-const MAX_YAML_TRAVERSAL_DEPTH: usize = 256;
-
 fn find_environment_pairs(
     value: &serde_yaml::Value,
     pending: &mut Vec<PendingExtractedPair>,
     depth: usize,
 ) {
-    if depth >= MAX_YAML_TRAVERSAL_DEPTH {
+    if depth >= super::MAX_STRUCTURED_TRAVERSAL_DEPTH {
         return;
     }
     match value {
