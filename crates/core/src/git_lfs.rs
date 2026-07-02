@@ -30,7 +30,11 @@
 pub const GIT_LFS_VERSION_LINE: &str = "version https://git-lfs.github.com/spec/v1";
 
 /// The number of hex characters in a `sha256` object id.
-const SHA256_HEX_LEN: usize = 64;
+///
+/// Canonical owner for the whole `keyhog-core` crate: a `sha256` digest is 32
+/// bytes, i.e. 64 lowercase hex characters, whether it names a Git-LFS blob
+/// (here) or a compiled-pattern cache file (`hardening.rs`).
+pub(crate) const SHA256_HEX_LEN: usize = 64;
 
 /// True if `line` (ignoring surrounding ASCII whitespace) is the Git-LFS
 /// `version` line.
@@ -81,4 +85,14 @@ pub fn is_git_lfs_pointer(content: &[u8]) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sha256_hex_len_is_sixty_four() {
+        assert_eq!(SHA256_HEX_LEN, 64);
+    }
 }

@@ -10,8 +10,8 @@ pub(crate) use super::isolated::{
     has_isolated_bare_secret_candidate, has_isolated_bare_secret_candidate_with_lines,
 };
 use super::{
-    keywords::*, shannon_entropy, EntropyMatch, HIGH_ENTROPY_THRESHOLD, LOW_ENTROPY_THRESHOLD,
-    VERY_HIGH_ENTROPY_THRESHOLD,
+    keywords::*, shannon_entropy, EntropyMatch, FIRST_SOURCE_LINE_NUMBER, HIGH_ENTROPY_THRESHOLD,
+    LOW_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD,
 };
 use crate::adjudicate::{EntropyShapeStage, StageId};
 use crate::entropy::plausibility::{is_secret_plausible, PlausibilityContext};
@@ -19,7 +19,6 @@ use crate::entropy::plausibility::{is_secret_plausible, PlausibilityContext};
 const CREDENTIAL_CONTEXT_MIN_LEN: usize = 8;
 const KEYWORD_FREE_MIN_LEN: usize = 20;
 const MIN_PASSWORD_LEN: usize = 8;
-const FIRST_SOURCE_LINE_NUMBER: usize = 1;
 const KEYWORD_FREE_LABEL: &str = "none (high-entropy)";
 
 /// Test-only constructor for a credential-anchor [`KeywordContext`] using the

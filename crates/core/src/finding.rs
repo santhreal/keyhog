@@ -502,6 +502,17 @@ pub(crate) mod serde_hash_hex {
     }
 }
 
+/// Convert a borrowed-or-owned string into an `Arc<str>` without an extra copy
+/// when the value is already owned. Single owner shared by `serde_arc_str` and
+/// `serde_arc_str_opt` deserialization.
+#[inline]
+fn arc_from_cow(value: Cow<'_, str>) -> Arc<str> {
+    match value {
+        Cow::Borrowed(value) => Arc::from(value),
+        Cow::Owned(value) => Arc::from(value),
+    }
+}
+
 pub(crate) mod serde_arc_str {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::borrow::Cow;
@@ -518,15 +529,7 @@ pub(crate) mod serde_arc_str {
     where
         D: Deserializer<'de>,
     {
-        Cow::<'de, str>::deserialize(deserializer).map(arc_from_cow)
-    }
-
-    #[inline]
-    fn arc_from_cow(value: Cow<'_, str>) -> Arc<str> {
-        match value {
-            Cow::Borrowed(value) => Arc::from(value),
-            Cow::Owned(value) => Arc::from(value),
-        }
+        Cow::<'de, str>::deserialize(deserializer).map(super::arc_from_cow)
     }
 }
 
@@ -546,14 +549,36 @@ pub(crate) mod serde_arc_str_opt {
     where
         D: Deserializer<'de>,
     {
-        Option::<Cow<'de, str>>::deserialize(deserializer).map(|opt| opt.map(arc_from_cow))
+        Option::<Cow<'de, str>>::deserialize(deserializer).map(|opt| opt.map(super::arc_from_cow))
+    }
+}
+
+#[cfg(test)]
+mod arc_from_cow_tests {
+    use super::arc_from_cow;
+    use std::borrow::Cow;
+    use std::sync::Arc;
+
+    #[test]
+    fn borrowed_cow_preserves_contents() {
+        let arc: Arc<str> = arc_from_cow(Cow::Borrowed("ghp_borrowed_token"));
+        assert_eq!(arc.as_ref(), "ghp_borrowed_token");
+        assert_eq!(arc.len(), 18);
     }
 
-    #[inline]
-    fn arc_from_cow(value: Cow<'_, str>) -> Arc<str> {
-        match value {
-            Cow::Borrowed(value) => Arc::from(value),
-            Cow::Owned(value) => Arc::from(value),
-        }
+    #[test]
+    fn owned_cow_preserves_contents() {
+        let owned = String::from("owned-secret-42");
+        let arc: Arc<str> = arc_from_cow(Cow::Owned(owned));
+        assert_eq!(arc.as_ref(), "owned-secret-42");
+        assert_eq!(arc.len(), 15);
+    }
+
+    #[test]
+    fn empty_cow_yields_empty_arc() {
+        let arc: Arc<str> = arc_from_cow(Cow::Borrowed(""));
+        assert_eq!(arc.as_ref(), "");
+        assert_eq!(arc.len(), 0);
+        assert!(arc.is_empty());
     }
 }

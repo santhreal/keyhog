@@ -60,7 +60,10 @@ impl GitHistorySource {
     /// assert_eq!(source.name(), "git-history");
     /// ```
     pub fn with_max_commits(mut self, n: usize) -> Self {
-        self.max_commits = Some(n);
+        // Single owner of the commit-cap conversion lives in `source.rs`; both
+        // git builders route through it so the byte-identical setters cannot
+        // drift (e.g. if a clamp/normalize policy is ever added).
+        self.max_commits = super::source::max_commits_limit(n);
         self
     }
 
@@ -427,6 +430,25 @@ fn stream_git_history_chunks(
             }
         }
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn git_history_with_max_commits_delegates_to_the_shared_owner() {
+        // GitHistorySource must not keep its own copy of the cap conversion; it
+        // routes through the single owner in `source.rs` so the two builders
+        // stay in lockstep. Assert the concrete stored value and that it equals
+        // the shared owner's output for the same request.
+        let source = GitHistorySource::new(PathBuf::from(".")).with_max_commits(4);
+        assert_eq!(source.max_commits, Some(4));
+        assert_eq!(source.max_commits, super::super::source::max_commits_limit(4));
+        // Zero is an explicit cap here too, never clamped to None.
+        let zero = GitHistorySource::new(PathBuf::from(".")).with_max_commits(0);
+        assert_eq!(zero.max_commits, Some(0));
+    }
 }
 
 fn make_git_history_chunk(

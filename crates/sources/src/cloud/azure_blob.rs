@@ -41,12 +41,12 @@ impl AzureBlobSource {
     }
 
     pub(crate) fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
-        self.prefix = Some(prefix.into());
+        crate::gcs::set_optional(&mut self.prefix, prefix.into());
         self
     }
 
     pub(crate) fn with_max_objects(mut self, max_objects: usize) -> Self {
-        self.max_objects = Some(max_objects);
+        crate::gcs::set_optional(&mut self.max_objects, max_objects);
         self
     }
 }
@@ -418,4 +418,27 @@ fn validate_container_url(raw: &str) -> Result<reqwest::Url, SourceError> {
         ));
     }
     Ok(parsed)
+}
+
+#[cfg(test)]
+mod builder_setter_tests {
+    use super::AzureBlobSource;
+
+    #[test]
+    fn with_prefix_and_max_objects_route_through_shared_set_optional() {
+        // Defaults start unset.
+        let source = AzureBlobSource::new("https://acct.blob.core.windows.net/container");
+        assert_eq!(source.prefix, None);
+        assert_eq!(source.max_objects, None);
+
+        // Shared setter wraps the value in `Some`.
+        let source = source.with_prefix("tenant-1/").with_max_objects(9);
+        assert_eq!(source.prefix.as_deref(), Some("tenant-1/"));
+        assert_eq!(source.max_objects, Some(9));
+
+        // Overwrites the prior `Some`, it does not merge or ignore the update.
+        let source = source.with_prefix("tenant-2/").with_max_objects(500);
+        assert_eq!(source.prefix.as_deref(), Some("tenant-2/"));
+        assert_eq!(source.max_objects, Some(500));
+    }
 }

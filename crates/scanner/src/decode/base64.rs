@@ -88,7 +88,7 @@ pub(crate) struct StandardBase64Shape {
     pub(crate) distinct_alnum: u32,
 }
 
-pub(crate) fn is_base64_candidate_byte(byte: u8) -> bool {
+pub fn is_base64_candidate_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=' | b'-' | b'_')
 }
 

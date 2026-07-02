@@ -167,7 +167,8 @@ impl CompiledScanner {
         // is the operator's defense; this hard cap is the per-pattern
         // budget. 1M iterations per pattern is ~6 orders of magnitude
         // above any legitimate detector's per-chunk match count.
-        const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
+        // Canonical cap lives in `engine::MAX_INNER_LOOP_ITERS`.
+        use super::MAX_INNER_LOOP_ITERS;
         let loop_deadline = crate::deadline::LoopDeadline::from_deadline(deadline);
         let mut match_count: usize = 0;
         while cursor <= cursor_end {
@@ -306,7 +307,8 @@ impl CompiledScanner {
         // pattern matching every byte on a 64 MiB chunk looped ~64M
         // times. 1M iterations per pattern is a generous floor still
         // 6 orders of magnitude above any legitimate detector count.
-        const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
+        // Canonical cap lives in `engine::MAX_INNER_LOOP_ITERS`.
+        use super::MAX_INNER_LOOP_ITERS;
         let mut match_count: usize = 0;
         // `find_iter` doesn't take a start position; walk it manually
         // via `find_at` so the anchored-window path stays cheap. The

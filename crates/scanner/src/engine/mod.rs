@@ -167,6 +167,20 @@ use keyhog_core::{Chunk, DetectorSpec, RawMatch};
 use std::sync::Arc;
 use std::sync::OnceLock;
 
+/// Per-pattern hard iteration cap shared by every inner match-walk loop in the
+/// engine (`extract.rs`'s confirmed/anchored extractors and
+/// `phase2_anchor_scan.rs`'s anchored phase-2 walk).
+///
+/// The deadline path (`LoopDeadline` + `loop_expired_on_cadence`) is the
+/// operator's wall-clock defense; this cap is the per-pattern budget that fires
+/// even when `--timeout` is unset (`deadline == None`). Without it a single
+/// regex matching every byte on a 64 MiB chunk (false-prefix storm, catastrophic
+/// backtracking) would loop ~64M times. 1M iterations per pattern is ~6 orders of
+/// magnitude above any legitimate detector's per-chunk match count, so a real
+/// scan never reaches it. Defined once here so the three walk sites can never
+/// drift apart (each used to carry its own byte-identical copy).
+pub(crate) const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GpuInitPolicy {
     /// Honor the resolved GPU runtime policy.
@@ -345,3 +359,31 @@ const _: () = {
     const fn assert_send_sync<T: Send + Sync>() {}
     let _ = assert_send_sync::<CompiledScanner>; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
 };
+
+#[cfg(test)]
+mod max_inner_loop_iters_tests {
+    use super::MAX_INNER_LOOP_ITERS;
+    use crate::deadline::HOT_LOOP_DEADLINE_CADENCE;
+
+    /// The canonical per-pattern hard cap is exactly the value the three engine
+    /// walk sites (`extract.rs` ×2, `phase2_anchor_scan.rs`) used to each hardcode.
+    /// If this drifts, an adversarial chunk's per-pattern iteration budget changes
+    /// silently for every walk at once — pin the concrete value.
+    #[test]
+    fn canonical_cap_is_one_million() {
+        assert_eq!(MAX_INNER_LOOP_ITERS, 1_000_000);
+    }
+
+    /// The wall-clock deadline is re-checked once every `HOT_LOOP_DEADLINE_CADENCE`
+    /// iterations, so a walk that runs to the hard cap performs exactly
+    /// `MAX_INNER_LOOP_ITERS / HOT_LOOP_DEADLINE_CADENCE` deadline checks. The cap
+    /// must be an exact whole multiple of the cadence (last check lands on the cap)
+    /// and yield the concrete 15625 checks — proving the deadline path can still
+    /// abort well before the hard cap is reached.
+    #[test]
+    fn cap_is_whole_multiple_of_deadline_cadence() {
+        assert_eq!(HOT_LOOP_DEADLINE_CADENCE, 64);
+        assert_eq!(MAX_INNER_LOOP_ITERS % HOT_LOOP_DEADLINE_CADENCE, 0);
+        assert_eq!(MAX_INNER_LOOP_ITERS / HOT_LOOP_DEADLINE_CADENCE, 15_625);
+    }
+}

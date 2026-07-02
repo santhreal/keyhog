@@ -1,6 +1,7 @@
 //! Autoroute workload bucketing and source-shape fingerprints.
 
 use keyhog_core::Chunk;
+use keyhog_scanner::decode::is_base64_candidate_byte;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -97,7 +98,7 @@ pub(super) fn decode_density_bucket(batch: &[Chunk]) -> u8 {
                 break;
             }
             sampled += 1;
-            if is_encoded_alphabet_byte(byte) {
+            if is_base64_candidate_byte(byte) {
                 encoded_run += 1;
             } else {
                 if encoded_run >= AUTOROUTE_DECODE_MIN_ENCODED_RUN {
@@ -122,10 +123,6 @@ pub(super) fn decode_density_bucket(batch: &[Chunk]) -> u8 {
         encoded_candidate_bytes.saturating_add(decode_trigger_bytes.min(sampled / 4));
     let score_per_kib = (weighted_decode_bytes as u64).saturating_mul(1024) / sampled as u64;
     log2_bucket(score_per_kib)
-}
-
-fn is_encoded_alphabet_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=' | b'-' | b'_')
 }
 
 fn is_decode_trigger_byte(byte: u8) -> bool {

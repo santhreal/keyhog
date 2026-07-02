@@ -1,13 +1,12 @@
 use super::keywords::{is_likely_innocuous_line, KeywordContext};
 use super::plausibility::is_isolated_bare_secret_plausible;
 use super::{
-    shannon_entropy, EntropyMatch, HIGH_ENTROPY_THRESHOLD, ISOLATED_BARE_ENTROPY_LABEL,
-    MIXED_ALNUM_TOKEN_THRESHOLD,
+    shannon_entropy, EntropyMatch, FIRST_SOURCE_LINE_NUMBER, HIGH_ENTROPY_THRESHOLD,
+    ISOLATED_BARE_ENTROPY_LABEL, MIXED_ALNUM_TOKEN_THRESHOLD,
 };
 use crate::adjudicate::{EntropyShapeStage, StageId};
 
 const KEYWORD_FREE_ISOLATED_MIN_LEN: usize = 16;
-const FIRST_SOURCE_LINE_NUMBER: usize = 1;
 
 #[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
 pub(crate) fn has_isolated_bare_secret_candidate(

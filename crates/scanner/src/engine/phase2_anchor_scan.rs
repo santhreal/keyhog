@@ -79,8 +79,8 @@ impl CompiledScanner {
         let mut next_allowed: usize = 0;
         // Same per-pattern hard cap + deadline cadence as extract.rs's inner
         // loops so an adversarial chunk can't run unbounded under the anchored
-        // path either.
-        const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
+        // path either. Canonical cap lives in `engine::MAX_INNER_LOOP_ITERS`.
+        use super::MAX_INNER_LOOP_ITERS;
         let loop_deadline = crate::deadline::LoopDeadline::from_deadline(deadline);
         let mut iters: usize = 0;
         for &(_, pos) in positions {

@@ -6,6 +6,7 @@
 //! malformed, encrypted, unsupported-filter, or truncated PDFs still surface a
 //! source coverage gap.
 
+use super::hexnib::hex_value;
 use super::{display_path, is_symlink};
 use crate::filesystem::read;
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
@@ -549,13 +550,4 @@ fn parse_hex_string(bytes: &[u8], start: usize, first_close: usize) -> Option<(S
         pos += 1;
     }
     None
-}
-
-fn hex_value(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
 }

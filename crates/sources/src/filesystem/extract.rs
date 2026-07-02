@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 mod archive;
 mod compressed;
+mod hexnib;
 mod pdf;
 mod rar;
 mod seven_zip;

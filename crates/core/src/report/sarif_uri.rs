@@ -1,5 +1,6 @@
 //! SARIF artifact URI helpers.
 
+use crate::winpath::is_windows_absolute;
 use std::sync::OnceLock;
 
 /// Render a filesystem path as a SARIF v2.1.0 `artifactLocation.uri`.
@@ -140,11 +141,6 @@ pub(crate) fn credential_fingerprints(
         crate::finding::hex_encode(credential_hash),
     );
     Some(fp)
-}
-
-fn is_windows_absolute(s: &str) -> bool {
-    let b = s.as_bytes();
-    b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'/' || b[2] == b'\\')
 }
 
 fn percent_encode_path(path: &str) -> String {

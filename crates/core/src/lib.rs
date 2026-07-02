@@ -29,7 +29,7 @@
 //! Core types shared across all KeyHog crates.
 mod allowlist;
 mod api;
-mod ascii_ci;
+pub mod ascii_ci;
 /// Offline AWS account-ID decode + canary-token classification (single source
 /// of truth shared by the scanner's finding metadata and the verifier's
 /// suppress-live-verification-for-canaries gate).
@@ -46,6 +46,7 @@ mod finding;
 /// Git-LFS pointer recognition, shared by the scanner (oid suppression) and
 /// sources (unscanned-blob coverage gap).
 pub mod git_lfs;
+pub mod winpath;
 /// Security hardening: memory zeroization and process isolation helpers.
 mod hardening;
 mod hyperscan_cache;

@@ -15,6 +15,19 @@ pub struct GcsSource {
     allow_token_forward: bool,
 }
 
+/// Set a cloud-source builder's optional field to `Some(value)`.
+///
+/// Single owner for the byte-identical `with_prefix` / `with_max_objects`
+/// setter bodies shared by the S3, GCS, and Azure Blob sources: each setter
+/// delegates here so the "wrap in `Some`, overwriting any prior value" rule
+/// lives in exactly one place. (Conceptually this belongs in `crate::cloud`
+/// alongside the other cross-source helpers; it is hosted here only because the
+/// cloud module root is outside this change's edit scope, and referenced via
+/// `crate::gcs::set_optional` from the sibling sources.)
+pub(crate) fn set_optional<T>(slot: &mut Option<T>, value: T) {
+    *slot = Some(value);
+}
+
 impl GcsSource {
     pub fn new(bucket: impl Into<String>) -> Self {
         Self {
@@ -50,7 +63,7 @@ impl GcsSource {
     }
 
     pub(crate) fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
-        self.prefix = Some(prefix.into());
+        set_optional(&mut self.prefix, prefix.into());
         self
     }
 
@@ -60,7 +73,7 @@ impl GcsSource {
     }
 
     pub(crate) fn with_max_objects(mut self, max_objects: usize) -> Self {
-        self.max_objects = Some(max_objects);
+        set_optional(&mut self.max_objects, max_objects);
         self
     }
 }
@@ -475,5 +488,28 @@ fn read_gcs_bearer_env(name: &'static str) -> Result<Option<String>, SourceError
         Err(std::env::VarError::NotUnicode(_)) => Err(SourceError::Other(format!(
             "{name} is not valid Unicode; provide a single-line bearer token"
         ))),
+    }
+}
+
+#[cfg(test)]
+mod builder_setter_tests {
+    use super::GcsSource;
+
+    #[test]
+    fn with_prefix_and_max_objects_route_through_shared_set_optional() {
+        // Defaults start unset.
+        let source = GcsSource::new("example-bucket");
+        assert_eq!(source.prefix, None);
+        assert_eq!(source.max_objects, None);
+
+        // Shared setter wraps the value in `Some`.
+        let source = source.with_prefix("logs/2026/").with_max_objects(7);
+        assert_eq!(source.prefix.as_deref(), Some("logs/2026/"));
+        assert_eq!(source.max_objects, Some(7));
+
+        // Overwrites the prior `Some`, it does not merge or ignore the update.
+        let source = source.with_prefix("configs/").with_max_objects(42);
+        assert_eq!(source.prefix.as_deref(), Some("configs/"));
+        assert_eq!(source.max_objects, Some(42));
     }
 }

@@ -31,7 +31,6 @@ use std::path::{Path, PathBuf};
 
 const HYPERSCAN_CACHE_PREFIX: &str = "hs-";
 const HYPERSCAN_CACHE_SUFFIX: &str = ".db";
-const SHA256_HEX_LEN: usize = 64;
 
 /// Outcome of a hardening attempt - collected so callers can log which
 /// protections actually took.
@@ -384,7 +383,7 @@ fn compiled_pattern_cache_filename(name: &OsStr) -> bool {
     else {
         return false;
     };
-    digest.len() == SHA256_HEX_LEN
+    digest.len() == crate::git_lfs::SHA256_HEX_LEN
         && digest
             .bytes()
             .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
@@ -405,4 +404,14 @@ pub(crate) fn lockdown_cache_entry_error_is_violation_for_test() -> bool {
         std::io::Error::new(std::io::ErrorKind::PermissionDenied, "entry denied"),
     ));
     keyhog_cache_contains_findings(Path::new("<test-cache>"), entries)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn sha256_hex_len_resolves_to_canonical_git_lfs_owner() {
+        // The compiled-pattern cache filename check reuses the single crate-wide
+        // owner in `git_lfs`; both this module and that one must see 64.
+        assert_eq!(crate::git_lfs::SHA256_HEX_LEN, 64);
+    }
 }

@@ -350,6 +350,16 @@ use crate::style::{
     SEV_RAIL as C_RAIL, SEV_RESET as C_RESET, SEV_SAFE as C_SAFE,
 };
 
+/// Braille spinner cycle for every phase ticker (scan / verification / reporting).
+/// Single owner so all three tickers spin identically; `frame % FRAMES.len()`
+/// indexes it. Ten frames give a smooth 1/10-turn step per tick.
+const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+/// Progress/indeterminate bar cell width shared by every phase ticker, so the
+/// determinate scan bar and the indeterminate warm-up/verify/report sweeps line
+/// up to the same column. Single owner — the three tickers must not drift apart.
+const BAR_WIDTH: usize = 22;
+
 /// Smooth determinate bar with 1/8-cell resolution: full `█` cells, one partial
 /// glyph for the fractional cell, then a dimmed `░` rail. The partial-block
 /// transition is what makes the fill look continuous rather than steppy.
@@ -430,8 +440,6 @@ pub(crate) fn render_ticker_line(
     frame: usize,
     color: bool,
 ) -> String {
-    const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    const BAR_WIDTH: usize = 22;
     let (brand, amber, muted, rail, bold, reset) = if color {
         (C_BRAND, C_AMBER, C_MUTED, C_RAIL, C_BOLD, C_RESET)
     } else {
@@ -486,8 +494,6 @@ pub(crate) fn render_verification_ticker_line(
     frame: usize,
     color: bool,
 ) -> String {
-    const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    const BAR_WIDTH: usize = 22;
     let (brand, muted, bold, reset) = if color {
         (C_BRAND, C_MUTED, C_BOLD, C_RESET)
     } else {
@@ -508,8 +514,6 @@ pub(crate) fn render_reporting_ticker_line(
     frame: usize,
     color: bool,
 ) -> String {
-    const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    const BAR_WIDTH: usize = 22;
     let (brand, muted, bold, reset) = if color {
         (C_BRAND, C_MUTED, C_BOLD, C_RESET)
     } else {
@@ -703,4 +707,61 @@ pub(crate) fn dump_dogfood_trace() {
         }
     });
     eprintln!("{payload}");
+}
+
+#[cfg(test)]
+mod ticker_const_tests {
+    use super::*;
+
+    /// The braille spinner cycle is exactly ten glyphs; `frame % FRAMES.len()`
+    /// steps 1/10 of a turn per tick. Pin the count and the two endpoints so a
+    /// reordered/trimmed table is caught.
+    #[test]
+    fn frames_is_ten_braille_spinner_glyphs() {
+        assert_eq!(FRAMES.len(), 10);
+        assert_eq!(FRAMES[0], "⠋");
+        assert_eq!(FRAMES[9], "⠏");
+    }
+
+    /// The shared bar width is 22 cells. Prove it is load-bearing: a full
+    /// determinate bar rendered at BAR_WIDTH is exactly 22 filled `█` cells.
+    #[test]
+    fn bar_width_is_twenty_two_cells() {
+        assert_eq!(BAR_WIDTH, 22);
+        let full = render_progress_bar(1.0, BAR_WIDTH, false);
+        assert_eq!(full.chars().count(), 22);
+        assert_eq!(full.chars().filter(|&c| c == '█').count(), 22);
+    }
+
+    /// Single-owner proof: the scan, verification and reporting tickers all read
+    /// the hoisted module-level `FRAMES`/`BAR_WIDTH` — not private per-function
+    /// copies. Each renders the same spinner glyph for a given frame and an
+    /// indeterminate sweep of exactly BAR_WIDTH cells. If any function
+    /// reintroduced a divergent local const, one of these equalities would break.
+    #[test]
+    fn every_phase_ticker_shares_one_frames_and_bar_width_owner() {
+        // `█`/`░` cells only appear in the indeterminate sweep of a no-color line.
+        fn sweep_cells(line: &str) -> usize {
+            line.chars().filter(|&c| c == '█' || c == '░').count()
+        }
+
+        for frame in 0..FRAMES.len() {
+            // total == 0 drives render_ticker_line down its indeterminate branch.
+            let scan = render_ticker_line(0, 0, 0, 0.0, frame, false);
+            let verify = render_verification_ticker_line(1, 0.0, frame, false);
+            let report = render_reporting_ticker_line(1, 0.0, frame, false);
+
+            // Same spinner glyph from the shared FRAMES table (no-color => the
+            // line starts with the bare spinner char, no leading SGR escape).
+            let want = FRAMES[frame % FRAMES.len()];
+            assert_eq!(scan.chars().next().unwrap().to_string(), want);
+            assert_eq!(verify.chars().next().unwrap().to_string(), want);
+            assert_eq!(report.chars().next().unwrap().to_string(), want);
+
+            // Same sweep width from the shared BAR_WIDTH const.
+            assert_eq!(sweep_cells(&scan), BAR_WIDTH);
+            assert_eq!(sweep_cells(&verify), BAR_WIDTH);
+            assert_eq!(sweep_cells(&report), BAR_WIDTH);
+        }
+    }
 }

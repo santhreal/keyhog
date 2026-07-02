@@ -233,16 +233,11 @@ fn ascii_is_uppercase(byte: u8) -> bool {
     byte.wrapping_sub(b'A') <= (b'Z' - b'A')
 }
 
-/// Case-insensitive `ends_with`. Returns true when the last `suffix.len()`
-/// bytes of `bytes` compare equal to `suffix` ignoring ASCII case.
-#[inline]
-pub(crate) fn ends_with_ignore_ascii_case(bytes: &[u8], suffix: &[u8]) -> bool {
-    if suffix.len() > bytes.len() {
-        return false;
-    }
-    let tail = &bytes[bytes.len() - suffix.len()..];
-    tail.eq_ignore_ascii_case(suffix)
-}
+/// Case-insensitive `ends_with`, re-exported from the canonical owner
+/// [`keyhog_core::ascii_ci::ends_with_ignore_ascii_case`]. Scanner call sites
+/// keep the `crate::ascii_ci::` path while the logic lives in ONE place (shared
+/// with the sources crate).
+pub(crate) use keyhog_core::ascii_ci::ends_with_ignore_ascii_case;
 
 /// Case-insensitive `starts_with`.
 #[inline]

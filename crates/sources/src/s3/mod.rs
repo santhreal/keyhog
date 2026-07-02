@@ -87,7 +87,7 @@ impl S3Source {
     /// Limit scanning to objects whose keys start with `prefix`.
     ///
     pub(crate) fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
-        self.prefix = Some(prefix.into());
+        crate::gcs::set_optional(&mut self.prefix, prefix.into());
         self
     }
 
@@ -99,7 +99,7 @@ impl S3Source {
 
     /// Limit the number of objects listed from the bucket before stopping.
     pub(crate) fn with_max_objects(mut self, max_objects: usize) -> Self {
-        self.max_objects = Some(max_objects);
+        crate::gcs::set_optional(&mut self.max_objects, max_objects);
         self
     }
 }
@@ -515,4 +515,27 @@ fn validate_endpoint(endpoint: &str) -> Result<String, SourceError> {
     }
 
     Ok(parsed.to_string().trim_end_matches('/').to_string())
+}
+
+#[cfg(test)]
+mod builder_setter_tests {
+    use super::S3Source;
+
+    #[test]
+    fn with_prefix_and_max_objects_route_through_shared_set_optional() {
+        // Defaults start unset.
+        let source = S3Source::new("bucket-name");
+        assert_eq!(source.prefix, None);
+        assert_eq!(source.max_objects, None);
+
+        // Shared setter wraps the value in `Some`.
+        let source = source.with_prefix("archive/").with_max_objects(3);
+        assert_eq!(source.prefix.as_deref(), Some("archive/"));
+        assert_eq!(source.max_objects, Some(3));
+
+        // Overwrites the prior `Some`, it does not merge or ignore the update.
+        let source = source.with_prefix("current/").with_max_objects(128);
+        assert_eq!(source.prefix.as_deref(), Some("current/"));
+        assert_eq!(source.max_objects, Some(128));
+    }
 }

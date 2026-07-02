@@ -275,9 +275,10 @@ enum WebResponseKind {
 
 fn classify_web_response(url: &str) -> WebResponseKind {
     let path = url.split_once(['?', '#']).map_or(url, |(path, _)| path);
-    if ends_with_ignore_ascii_case(path, ".wasm") {
+    use keyhog_core::ascii_ci::ends_with_ignore_ascii_case;
+    if ends_with_ignore_ascii_case(path.as_bytes(), b".wasm") {
         WebResponseKind::Wasm
-    } else if ends_with_ignore_ascii_case(path, ".map") {
+    } else if ends_with_ignore_ascii_case(path.as_bytes(), b".map") {
         WebResponseKind::SourceMap
     } else {
         WebResponseKind::JavaScript
@@ -320,13 +321,6 @@ fn web_response_kind_from_content_type(
     } else {
         None
     }
-}
-
-fn ends_with_ignore_ascii_case(value: &str, suffix: &str) -> bool {
-    value
-        .as_bytes()
-        .get(value.len().saturating_sub(suffix.len())..)
-        .is_some_and(|tail| tail.eq_ignore_ascii_case(suffix.as_bytes()))
 }
 
 fn send_with_pinned_redirects(

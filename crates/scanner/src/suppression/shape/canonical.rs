@@ -4,6 +4,15 @@
 pub(crate) const RFC7519_EXAMPLE_JWT_PREFIX: &str =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkw";
 
+/// Shannon-entropy (bits/char) threshold separating high-entropy base64 blobs
+/// from lower-entropy generic candidates. Single source of truth shared by the
+/// two generic-base64 decoy gates: below it a value is treated as a byte-
+/// distribution decoy, at/above it a value is instead routed to the ambiguous
+/// high-entropy path. The two gates MUST agree on this boundary — they were two
+/// byte-identical `4.8` locals before being hoisted here so the split can never
+/// silently drift.
+const HIGH_ENTROPY_BASE64_CUTOFF: f64 = 4.8;
+
 /// True if `credential` matches the XXXXX-XXXXX-XXXXX-XXXXX-XXXXX
 /// dashed-serial / license-key shape: exactly 5 dash-separated
 /// blocks, each exactly 5 alphanumeric characters. Microsoft Office,
@@ -312,8 +321,6 @@ pub(crate) fn looks_like_entropy_random_base64_blob_decoy(value: &str) -> bool {
 }
 
 pub(crate) fn looks_like_generic_random_base64_blob_decoy(value: &str, entropy: f64) -> bool {
-    const HIGH_ENTROPY_BASE64_CUTOFF: f64 = 4.8;
-
     if entropy >= HIGH_ENTROPY_BASE64_CUTOFF {
         return false;
     }
@@ -321,7 +328,6 @@ pub(crate) fn looks_like_generic_random_base64_blob_decoy(value: &str, entropy: 
 }
 
 pub(crate) fn generic_base64_candidate_is_ambiguous(value: &str, entropy: f64) -> bool {
-    const HIGH_ENTROPY_BASE64_CUTOFF: f64 = 4.8;
     const MIN_DISTINCT_ALNUM: u32 = 32;
 
     if entropy < HIGH_ENTROPY_BASE64_CUTOFF {
@@ -589,11 +595,15 @@ pub(crate) fn is_dash_segmented_alnum_decoy_with_randomness(
 #[cfg(test)]
 mod tests {
     use super::{
-        is_structured_dotted_token, looks_like_aws_iam_arn, looks_like_dashed_serial_key,
-        looks_like_entropy_canonical_non_secret_shape, looks_like_prefixed_hash_digest,
+        generic_base64_candidate_is_ambiguous, is_structured_dotted_token, looks_like_aws_iam_arn,
+        looks_like_dashed_serial_key, looks_like_entropy_canonical_non_secret_shape,
+        looks_like_generic_random_base64_blob_decoy, looks_like_prefixed_hash_digest,
         looks_like_prefixed_masked_sequence, looks_like_random_byte_base64_blob,
         looks_like_trimmed_aws_iam_arn, strip_hash_algo_prefix,
     };
+    // Imported separately: rustfmt groups the UPPER_SNAKE const after the
+    // lower-snake fn names in a `use` list, so keep it on its own line.
+    use super::HIGH_ENTROPY_BASE64_CUTOFF;
 
     /// A real `sha512-` npm SRI integrity body (proven suppressed by the
     /// `regression_reverse_integrity_decoy_suppression` corpus): standard
@@ -934,5 +944,52 @@ mod tests {
         // A bare 64-hex value with NO algo label is NOT this shape (the
         // ambiguous bare-hex arm handles it, anchor-gated).
         assert!(!looks_like_prefixed_hash_digest(&"a".repeat(64)));
+    }
+
+    // ---- HIGH_ENTROPY_BASE64_CUTOFF: single-owner shared entropy boundary ----
+
+    #[test]
+    fn high_entropy_base64_cutoff_value_is_locked() {
+        // The two generic-base64 decoy gates below share this exact bits/char
+        // boundary; both were byte-identical `4.8` locals before being hoisted
+        // to this one module-level const.
+        assert_eq!(HIGH_ENTROPY_BASE64_CUTOFF, 4.8);
+    }
+
+    #[test]
+    fn both_generic_base64_gates_pivot_on_the_shared_cutoff() {
+        // 40-char standard-base64 value engineered to clear BOTH gates'
+        // downstream shape checks at once: length in the [40, 300] band, both
+        // `+` and `/` present, length a multiple of four, and 38 distinct
+        // alphanumeric chars (>= the 32-char diversity floor). Because every
+        // structural predicate is satisfied, the ONLY thing that decides each
+        // gate's verdict here is the entropy comparison against the shared
+        // HIGH_ENTROPY_BASE64_CUTOFF.
+        let value = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL+/";
+        assert_eq!(value.len(), 40);
+
+        let just_below = HIGH_ENTROPY_BASE64_CUTOFF - 0.1;
+
+        // Below the cutoff: the decoy gate fires (low-entropy byte-distribution
+        // blob), the ambiguous gate does NOT (too low to be an ambiguous
+        // high-entropy candidate).
+        assert!(looks_like_generic_random_base64_blob_decoy(
+            value, just_below
+        ));
+        assert!(!generic_base64_candidate_is_ambiguous(value, just_below));
+
+        // Exactly AT the shared cutoff both flip in lockstep: the decoy gate
+        // stops firing (`entropy >= cutoff` short-circuits to false) and the
+        // ambiguous gate starts firing (`entropy >= cutoff` proceeds to the
+        // shape/diversity check, which passes). Their agreement at this single
+        // numeric boundary is what proves both read the same const.
+        assert!(!looks_like_generic_random_base64_blob_decoy(
+            value,
+            HIGH_ENTROPY_BASE64_CUTOFF
+        ));
+        assert!(generic_base64_candidate_is_ambiguous(
+            value,
+            HIGH_ENTROPY_BASE64_CUTOFF
+        ));
     }
 }

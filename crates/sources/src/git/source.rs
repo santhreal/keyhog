@@ -149,6 +149,16 @@ pub struct GitSource {
     respect_default_excludes: bool,
 }
 
+/// Single source of truth for the `with_max_commits` builder setting shared by
+/// `GitSource` and `GitHistorySource`. Both builders store the requested commit
+/// cap identically as `Some(n)`; centralizing the conversion here keeps the two
+/// byte-identical setters from drifting and gives any future clamp/normalize
+/// policy exactly one place to live. `history.rs` delegates via
+/// `super::source::max_commits_limit`.
+pub(super) fn max_commits_limit(n: usize) -> Option<usize> {
+    Some(n)
+}
+
 impl GitSource {
     /// Create a source that traverses a git repository.
     ///
@@ -184,7 +194,7 @@ impl GitSource {
     /// assert_eq!(source.name(), "git");
     /// ```
     pub fn with_max_commits(mut self, n: usize) -> Self {
-        self.max_commits = Some(n);
+        self.max_commits = max_commits_limit(n);
         self
     }
 
@@ -1434,5 +1444,29 @@ impl super::GitTreeVisitor for HeadBlobPathCollector<'_> {
         Err(SourceError::Git(format!(
             "git HEAD subtree object is not a tree while collecting live blob set: {error}"
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn git_source_with_max_commits_routes_through_the_shared_owner() {
+        // The shared owner stores the requested cap verbatim as `Some(n)`, and
+        // the GitSource builder must route through it (no divergent copy).
+        assert_eq!(max_commits_limit(7), Some(7));
+        let source = GitSource::new(PathBuf::from(".")).with_max_commits(5);
+        assert_eq!(source.max_commits, Some(5));
+        assert_eq!(source.max_commits, max_commits_limit(5));
+    }
+
+    #[test]
+    fn max_commits_limit_zero_is_an_explicit_cap_not_clamped_away() {
+        // Zero is a valid explicit "scan no commits" cap (git log --max-count 0),
+        // not "unlimited" (None): it must survive as Some(0), never be clamped.
+        assert_eq!(max_commits_limit(0), Some(0));
+        let source = GitSource::new(PathBuf::from(".")).with_max_commits(0);
+        assert_eq!(source.max_commits, Some(0));
     }
 }

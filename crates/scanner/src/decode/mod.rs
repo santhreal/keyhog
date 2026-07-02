@@ -15,9 +15,14 @@ mod url;
 pub(crate) mod util;
 
 pub use base64::{base64_decode, find_base64_strings, z85_decode};
+// `is_base64_candidate_byte` is the single canonical base64/url-safe alphabet
+// predicate; it is `pub` (not `pub(crate)`) because `keyhog-cli`'s autoroute
+// decode-density scanner (`orchestrator::dispatch::backend::workload`) is a
+// cross-crate consumer that must route through this one owner rather than
+// re-inline the byte set. The remaining three stay crate-internal.
+pub use base64::is_base64_candidate_byte;
 pub(crate) use base64::{
-    contains_non_padding_equals, is_base64_candidate_byte, is_standard_base64_byte,
-    standard_base64_shape,
+    contains_non_padding_equals, is_standard_base64_byte, standard_base64_shape,
 };
 pub use hex::{find_hex_strings, hex_decode};
 pub(crate) use pipeline::decode_chunk;

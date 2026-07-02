@@ -1,5 +1,6 @@
 //! Zip/APK/IPA/CRX/JAR + OOXML/ODF office-document archive extraction.
 
+use super::hexnib::hex_value;
 use super::{
     display_path, extraction_total_budget, is_symlink, record_default_excluded_archive_entry,
     MAX_NESTED_ARCHIVE_DEPTH,
@@ -534,7 +535,7 @@ fn validate_archive_path_text(name: &str) -> Result<(), &'static str> {
     if name.contains('\\') {
         return Err("backslash in entry name");
     }
-    if contains_parent_traversal(name) || is_windows_absolute(name) {
+    if contains_parent_traversal(name) || keyhog_core::winpath::has_windows_drive_prefix(name) {
         return Err("path traversal in entry name");
     }
     if Path::new(name).components().any(|component| {
@@ -573,19 +574,7 @@ fn percent_decode_lossy_once(value: &str) -> String {
     }
 }
 
-fn hex_value(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
-}
-
 fn contains_parent_traversal(value: &str) -> bool {
     value.contains("../") || value.ends_with("/..") || value == ".."
 }
 
-fn is_windows_absolute(value: &str) -> bool {
-    value.len() >= 2 && value.as_bytes()[0].is_ascii_alphabetic() && value.as_bytes()[1] == b':'
-}

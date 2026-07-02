@@ -27,7 +27,13 @@ const ENTROPY_WEIGHT: f64 = 0.20;
 const HIGH_ENTROPY_PARTIAL_WEIGHT: f64 = 0.12;
 const MODERATE_ENTROPY_THRESHOLD: f64 = 3.0;
 const MODERATE_ENTROPY_WEIGHT: f64 = 0.05;
-const LOW_ENTROPY_THRESHOLD: f64 = 2.0;
+/// Confidence-scoring floor: below this Shannon entropy (with a long-enough
+/// match) the finding's confidence is penalized. This is the CONFIDENCE penalty
+/// floor and is deliberately distinct from the entropy *detection* floor
+/// [`crate::entropy::LOW_ENTROPY_THRESHOLD`] (3.0) — different concept, so it
+/// carries a different name to keep the ONE-PLACE contract (no two same-named
+/// thresholds with different values).
+const LOW_ENTROPY_PENALTY_FLOOR: f64 = 2.0;
 const LOW_ENTROPY_MIN_MATCH_LENGTH: usize = 10;
 const LOW_ENTROPY_PENALTY: f64 = 0.6;
 const KEYWORD_NEARBY_WEIGHT: f64 = 0.10;
@@ -84,7 +90,7 @@ pub(crate) fn compute_confidence_with_threshold(
     } else if signals.entropy >= MODERATE_ENTROPY_THRESHOLD {
         score += MODERATE_ENTROPY_WEIGHT;
     }
-    let low_entropy_penalty = if signals.entropy < LOW_ENTROPY_THRESHOLD
+    let low_entropy_penalty = if signals.entropy < LOW_ENTROPY_PENALTY_FLOOR
         && signals.match_length > LOW_ENTROPY_MIN_MATCH_LENGTH
     {
         LOW_ENTROPY_PENALTY
