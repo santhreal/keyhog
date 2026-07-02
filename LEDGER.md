@@ -354,3 +354,12 @@ STILL TODO (confirmed by hunt, need careful/behavior-aware application):
 - [ ] [dead-code+missing-feature] cli/orchestrator run() never returns EXIT_LIVE_CREDENTIALS(10); wire scan_exit_code() (VerificationResult::Live confirmed at core/finding.rs:378) — BEHAVIOR CHANGE, audit exit-code contract tests first.
 - [ ] [dup] scanner/hw_probe SIMD-label chain triplicated (doctor/backend/banner) -> one simd_label owner.
 - [ ] [dead-code] scanner GENERIC_DATABASE_URL + GENERIC_PASSWORD phantom detector consts (never used; no rule TOML) — wire or remove.
+
+## ITERATION 1 (mega-test, committed ca97a469e) — 225 hand-written #[test] fns
+
+12 new value-asserting test files: cloud-ssrf-endpoint-guard(17), source-special-file-matrix(16), structured-depth-dos(23), decode-primitive-bounds(22), core-text-primitives(14), entropy-confidence-truth(31), suppression-decisions(23), exit-code-contract(19), simd-label-owner(15), archive-bomb-budget(13), report-output-bytes(17), detector-registry-integrity(15).
+Source fixes: cloud SSRF (redirect Policy::none + is_private_url endpoint screen + loud opt-in env); EXIT_LIVE_CREDENTIALS wiring (scan_exit_code, was dead); hw_probe simd_label single owner. Migrated 4 loopback cloud tests to the opt-in env. Compiles green --all-features; runtime verify in iter-2 build.
+Backlog surfaced by agents:
+- [ ] cloud DNS-rebinding: s3/gcs/azure do NOT re-screen resolved IPs post-DNS (web/ssrf.rs does resolve_and_screen + pin) — a public host resolving to 169.254.169.254 still connects. Close like web.
+- [ ] MAX_STRUCTURED_TRAVERSAL_DEPTH=256 is above serde_json/serde_yaml's own 128 parse-recursion limit -> the 256 cap is unreachable; align or document.
+- [ ] hw_probe simd_label owner made, but doctor.rs/backend.rs copies not yet repointed (finish dedup).
