@@ -363,3 +363,8 @@ Backlog surfaced by agents:
 - [ ] cloud DNS-rebinding: s3/gcs/azure do NOT re-screen resolved IPs post-DNS (web/ssrf.rs does resolve_and_screen + pin) — a public host resolving to 169.254.169.254 still connects. Close like web.
 - [ ] MAX_STRUCTURED_TRAVERSAL_DEPTH=256 is above serde_json/serde_yaml's own 128 parse-recursion limit -> the 256 cap is unreachable; align or document.
 - [ ] hw_probe simd_label owner made, but doctor.rs/backend.rs copies not yet repointed (finish dedup).
+
+## ITERATION 2 (mega-test, committed dc83bc0c5) — 186 hand-written #[test] fns
+12 new files: verifier ssrf-screen-matrix(19)+verify-poll-bounds(16), core calibration-beta(16)+merkle-incremental(16)+redaction-zeroization(21)+sarif-taxonomies-autofix, scanner ml-scorer-features+prefilter-cache, sources cloud-dns-rebinding-guard+git-metadata-scan+hosted-git-endpoint+input-sources-matrix.
+Source fix: cloud/mod.rs DNS-rebinding SSRF close (screen_resolved_endpoint_host reuses keyhog_verifier::ssrf::is_private_ip_addr — ONE PLACE; opt-in env honored; Law-10). Agents corrected imprecise specs by reading code (poll cap = loud Err; redact("")=="****"). Compile green --all-features; runtime verify deferred to iter3 build (shared target-dir forces ~30min --all-features recompiles — iter3 uses narrow features).
+SESSION TOTAL so far: 411 hand-written value-asserting tests committed (iter1 225 + iter2 186) + fixes: watch DoS, cloud SSRF+DNS-rebinding, EXIT_LIVE_CREDENTIALS wiring, simd_label owner, structured-depth + fmt_bytes dedup, Wave1-3 (62 dedup/hoist).
