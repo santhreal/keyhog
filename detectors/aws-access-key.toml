@@ -32,7 +32,7 @@ description = "AWS access key ID"
 # downgrades to "unverified" but the match still surfaces - partial leaks
 # are exactly what an attacker pivots on.
 [[detector.companions]]
-regex = "(?:AWS[_-]?SECRET[_-]?ACCESS[_-]?KEY|SECRET[_-]?KEY|AWS[_-]?SECRET(?:[_-]?KEY)?|aws[_-]?secret(?:[_-]?key)?)[=:\\s\"'']+([0-9a-zA-Z/+=]{40})"
+regex = "(?i:AWS[_-]?SECRET[_-]?ACCESS[_-]?KEY|SECRET[_-]?KEY|AWS[_-]?SECRET(?:[_-]?KEY)?)[=:\\s\"'']+([0-9a-zA-Z/+=]{40})"
 within_lines = 5
 name = "secret_key"
 
