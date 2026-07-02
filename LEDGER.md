@@ -341,3 +341,16 @@ sits idle waiting on a build.
 - [ ] [magic-number] crates/sources/src/bitbucket_workspace.rs:203 — Bitbucket page size `pagelen=100` is a lone inline literal (set_query line 203), unlike GitHub's documented single-owner `REPOS_PER_PAGE`. Low value: Bitbucket paginates via the `next` link,
 - [ ] [dup-fn] crates/scanner/src/decode/json.rs:123 — The C/JSON/JS single-char backslash-escape table (\b->0x08, \f->0x0c, \n, \r, \t) is reimplemented in two decode files: json.rs json_unescape (lines 123-127) and unicode_escape.rs simple_esc
 - [ ] [magic-number] crates/scanner/src/confidence/policy.rs:399 — generic_secret_confidence hardcodes an entire private scoring formula inline (entropy_boost `((entropy - 3.5) * 0.1).min(0.25)`, length_boost `((value_len - 16.0) * 0.005).clamp(0.0, 0.15)`,
+
+## Wave 4 (correctness fixes, commit pending)
+
+DONE (from read-only fix-spec hunt, each verified against real code + tested):
+- [FIXED][security/DoS] cli/subcommands/watch.rs — raw std::fs::read bypassed the walker's guarded read: no size cap (OOM on a big/TOCTOU-grown file dropped into a watched dir), no special-file guard (a mkfifo in the tree fires inotify CREATE -> blocking open HANGS the single watcher thread FOREVER), no O_NOFOLLOW (symlink-escape out of the watched root). Fix: new pub crate entry keyhog_sources::read_file_safe_bytes(path,0) routing through the SAME open_file_safe+read_file_safe the scan walker uses; watch now WARNs loudly (Law 10) on special/oversized instead of hanging/OOMing. +4 tests (regular reads exactly / FIFO refused-without-hang via 10s watchdog / symlink refused + target never leaked / missing=NotFound).
+- [FIXED][same-value-divergence] scanner/structured/parsers/{json,yaml}.rs — MAX_TFSTATE_DEPTH(256) and MAX_YAML_TRAVERSAL_DEPTH(256) were two same-valued consts; unified to one parsers::MAX_STRUCTURED_TRAVERSAL_DEPTH owner (5 json + 2 yaml sites) + lock test.
+- [FIXED][dup-fn+precision] cli/subcommands/backend.rs — deleted drifted fmt_bytes copy (integer-truncating "1 GiB", no TiB tier) and repointed 4 sites to the canonical crate::format::format_bytes (2-decimal + TiB); no test asserted the old form.
+
+STILL TODO (confirmed by hunt, need careful/behavior-aware application):
+- [ ] [security/SSRF] sources/cloud/mod.rs + slack.rs — no private/metadata-IP endpoint screen + inherit 5-hop auto-follow redirect (vs Policy::none() used by github_org/gitlab/bitbucket); a 302 to 169.254.169.254 is followed & its IAM-cred body scanned. Fix: reuse keyhog_verifier::ssrf::is_private_url + .redirect(Policy::none()); Cargo.toml slack/azure/gcs need dep:keyhog-verifier.
+- [ ] [dead-code+missing-feature] cli/orchestrator run() never returns EXIT_LIVE_CREDENTIALS(10); wire scan_exit_code() (VerificationResult::Live confirmed at core/finding.rs:378) — BEHAVIOR CHANGE, audit exit-code contract tests first.
+- [ ] [dup] scanner/hw_probe SIMD-label chain triplicated (doctor/backend/banner) -> one simd_label owner.
+- [ ] [dead-code] scanner GENERIC_DATABASE_URL + GENERIC_PASSWORD phantom detector consts (never used; no rule TOML) — wire or remove.
