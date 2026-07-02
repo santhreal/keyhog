@@ -24,15 +24,7 @@ pub fn startup_banner(caps: &HardwareCaps, detector_count: usize, pattern_count:
         "GPU: none".to_string()
     };
 
-    let simd = if caps.has_avx512 {
-        "AVX-512"
-    } else if caps.has_avx2 {
-        "AVX2"
-    } else if caps.has_neon {
-        "NEON"
-    } else {
-        "scalar"
-    };
+    let simd = super::simd_label(caps.has_avx512, caps.has_avx2, caps.has_neon);
 
     let hs = if caps.hyperscan_available {
         "Hyperscan"

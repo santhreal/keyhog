@@ -41,10 +41,16 @@ azure = [
     "dep:reqwest",
     "dep:quick-xml",
     "dep:urlencoding",
+    # SSRF endpoint host-screen in `cloud::parse_http_endpoint` delegates to the
+    # canonical `keyhog_verifier::ssrf::is_private_url` classifier.
+    "dep:keyhog-verifier",
 ]
 gcs = [
     "dep:reqwest",
     "dep:urlencoding",
+    # SSRF endpoint host-screen in `cloud::parse_http_endpoint` delegates to the
+    # canonical `keyhog_verifier::ssrf::is_private_url` classifier.
+    "dep:keyhog-verifier",
 ]
 s3 = [
     "dep:reqwest",
@@ -194,6 +200,11 @@ required-features = ["web"]
 [[test]]
 name = "regression_s3_skipped_objects_counted"
 path = "tests/regression_s3_skipped_objects_counted.rs"
+required-features = ["s3"]
+
+[[test]]
+name = "regression_cloud_ssrf_endpoint_guard"
+path = "tests/regression_cloud_ssrf_endpoint_guard.rs"
 required-features = ["s3"]
 
 [[test]]

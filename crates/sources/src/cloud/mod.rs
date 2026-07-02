@@ -31,6 +31,17 @@ pub(crate) fn blocking_client(
     };
     crate::http::blocking_client_builder(&http)
         .map_err(SourceError::Other)?
+        // SSRF hardening: `blocking_client_builder` installs a
+        // `Policy::limited(REDIRECT_LIMIT)` auto-follow policy. For cloud
+        // object storage that lets a hostile or compromised endpoint 3xx-bounce
+        // a listing/GET to an attacker-chosen host (metadata service, internal
+        // API) *after* the endpoint URL cleared the pre-request host screen in
+        // `parse_http_endpoint` — the redirect target is never re-screened.
+        // Mirroring `github_org`'s client, refuse redirects entirely: the S3,
+        // GCS, and Azure Blob REST APIs never legitimately redirect a listing
+        // or object fetch, so a redirect is either misconfiguration or an SSRF
+        // pivot, and following it is unsafe by default.
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| SourceError::Other(format!("failed to build {source} client: {error}")))
 }
@@ -47,7 +58,41 @@ pub(crate) fn parse_http_endpoint(raw: &str, source: &str) -> Result<reqwest::Ur
     {
         return Err(SourceError::Other(format!("invalid {source} endpoint")));
     }
+    // SSRF hardening: screen the endpoint host against the fleet-canonical
+    // private/loopback/link-local/metadata classifier before it is ever used to
+    // build a request. Without this, an operator-supplied custom endpoint
+    // (`--s3-endpoint`, GCS/Azure container URL) pointing at `127.0.0.1`,
+    // `10.0.0.5`, `169.254.169.254` (cloud metadata), `[::1]`, or
+    // `metadata.google.internal` turned the scanner into an SSRF proxy for
+    // internal services. `is_private_url` fails closed (an unparseable or
+    // non-http(s) URL is treated as private), so this only ever widens the
+    // refusal set. It is the single owner of this policy, shared with the
+    // WebSource and verifier SSRF gates.
+    if keyhog_verifier::ssrf::is_private_url(parsed.as_str())
+        && !private_cloud_endpoint_explicitly_allowed()
+    {
+        return Err(SourceError::Other(format!(
+            "refusing {source} endpoint: host is a private, loopback, link-local, or cloud-metadata address (SSRF)"
+        )));
+    }
     Ok(parsed)
+}
+
+/// Loud operator opt-in for pointing a cloud source at a private / loopback /
+/// link-local endpoint — a legitimate need for self-hosted S3-compatible
+/// storage (MinIO / Ceph on `127.0.0.1` or an internal `10.x` gateway) and for
+/// loopback mock servers in integration tests.
+///
+/// Default is OFF: the SSRF host-screen in `parse_http_endpoint` is fully
+/// active and refuses every private endpoint. This is never a silent bypass
+/// (Law 10) — the operator must explicitly set
+/// `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` to a truthy value, mirroring the
+/// existing `KEYHOG_GCS_ALLOW_TOKEN_FORWARD` explicit-opt-in convention.
+fn private_cloud_endpoint_explicitly_allowed() -> bool {
+    matches!(
+        std::env::var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT").as_deref(),
+        Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
+    )
 }
 
 pub(crate) fn credential_forward_allowed(allow_explicit: bool) -> bool {
@@ -241,9 +286,10 @@ pub(crate) fn read_listing_response_body(
         }
     }
 
-    let capacity_hint = response
-        .content_length()
-        .map(|len| len.min(max_response_bytes_u64).min(MAX_PREALLOCATED_READ_BYTES));
+    let capacity_hint = response.content_length().map(|len| {
+        len.min(max_response_bytes_u64)
+            .min(MAX_PREALLOCATED_READ_BYTES)
+    });
     let read = crate::capped_read::read_to_cap(response, max_response_bytes_u64, capacity_hint)
         .map_err(|error| {
             record_unreadable_listing_skip(
@@ -535,15 +581,15 @@ mod media_type_tests {
     fn strips_parameters_and_trims() {
         assert_eq!(media_type("text/plain; charset=utf-8"), "text/plain");
         assert_eq!(media_type("  application/json  "), "application/json");
-        assert_eq!(
-            media_type("image/png ; boundary=abc ; q=1"),
-            "image/png"
-        );
+        assert_eq!(media_type("image/png ; boundary=abc ; q=1"), "image/png");
     }
 
     #[test]
     fn bare_media_type_passes_through() {
-        assert_eq!(media_type("application/octet-stream"), "application/octet-stream");
+        assert_eq!(
+            media_type("application/octet-stream"),
+            "application/octet-stream"
+        );
         assert_eq!(media_type(""), "");
     }
 

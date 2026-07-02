@@ -8,7 +8,7 @@ use super::ScanOrchestrator;
 use crate::baseline::Baseline;
 use crate::exit_codes::{
     EXIT_FINDINGS, EXIT_LIVE_CREDENTIALS, EXIT_REQUIRE_GPU_UNMET, EXIT_SCANNER_PANIC,
-    EXIT_SOURCE_FAILED, EXIT_SYSTEM_ERROR,
+    EXIT_SOURCE_FAILED, EXIT_SUCCESS, EXIT_SYSTEM_ERROR,
 };
 use crate::style;
 use anyhow::Result;
@@ -339,9 +339,7 @@ impl ScanOrchestrator {
             (findings, has_findings)
         };
 
-        let has_live_credentials = report_findings
-            .iter()
-            .any(|f| matches!(f.verification, VerificationResult::Live));
+        let has_live_credentials = scan_exit_code(&report_findings) == EXIT_LIVE_CREDENTIALS;
 
         // `--stream`: emit one redacted `[stream]` preview per REPORTED finding.
         // Wired to the resolved report stream (post filter_and_resolve /
@@ -431,6 +429,32 @@ impl ScanOrchestrator {
         } else {
             std::process::ExitCode::SUCCESS
         })
+    }
+}
+
+/// Pure exit-code mapping for the *reported* findings set: the single source of
+/// truth for the "live credentials found" scan exit signal.
+///
+/// Returns [`EXIT_LIVE_CREDENTIALS`] (10) when ANY reported finding was
+/// confirmed [`VerificationResult::Live`] by the verifier, else [`EXIT_SUCCESS`]
+/// (0). Every other verification state — `Skipped` (the default when `--verify`
+/// is off), `Dead`, `Revoked`, `RateLimited`, `Error(..)`, `Unverifiable` — is
+/// NOT live and does not raise the code here (a dead/unverified finding is exit
+/// 1, decided by the caller's findings branch). A single `Live` anywhere in the
+/// set trips 10 even when it is mixed with non-live findings.
+///
+/// Keeping this a pure `&[VerifiedFinding] -> u8` function (rather than an
+/// inline `.any(..)` in `run()`) makes the live-credential exit contract unit
+/// testable without spawning a scan, and gives the code exactly one definitional
+/// home.
+pub(crate) fn scan_exit_code(findings: &[VerifiedFinding]) -> u8 {
+    if findings
+        .iter()
+        .any(|f| matches!(f.verification, VerificationResult::Live))
+    {
+        EXIT_LIVE_CREDENTIALS
+    } else {
+        EXIT_SUCCESS
     }
 }
 

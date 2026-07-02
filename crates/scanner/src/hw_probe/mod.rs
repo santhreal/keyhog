@@ -81,6 +81,30 @@ pub const fn multiple_backends_compiled() -> bool {
     cfg!(feature = "simd") || cfg!(feature = "gpu")
 }
 
+/// Single owner of the SIMD-tier label precedence chain.
+///
+/// The label reported by the startup banner, `keyhog backend`, `keyhog doctor`,
+/// and the backend store must always agree, so the `"AVX-512" > "AVX2" > "NEON"
+/// > "scalar"` precedence lives in exactly ONE place. Callers pass the three
+/// probed CPU-feature booleans (typically `caps.has_avx512`, `caps.has_avx2`,
+/// `caps.has_neon`) and receive the highest-priority label that is available.
+///
+/// Precedence is strict and independent of the lower bits: if `has_avx512` is
+/// true the result is `"AVX-512"` regardless of the other two, and so on down
+/// to `"scalar"` when none are present.
+#[must_use]
+pub const fn simd_label(has_avx512: bool, has_avx2: bool, has_neon: bool) -> &'static str {
+    if has_avx512 {
+        "AVX-512"
+    } else if has_avx2 {
+        "AVX2"
+    } else if has_neon {
+        "NEON"
+    } else {
+        "scalar"
+    }
+}
+
 /// Hardware capabilities detected at startup.
 #[derive(Debug, Clone)]
 pub struct HardwareCaps {

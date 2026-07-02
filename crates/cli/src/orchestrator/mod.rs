@@ -51,6 +51,13 @@ pub(crate) use postprocess::{
 #[doc(hidden)]
 pub(crate) use dispatch::backend_requires_coalesced_batch_pipeline_for_test;
 
+// Test seam: the pure live-credential exit-code mapping used by `run()` to
+// decide between EXIT_LIVE_CREDENTIALS (10) and EXIT_SUCCESS (0). Exposed
+// crate-internally so the exit-code contract can be unit-tested via the
+// `crate::testing` facade without spawning a scan.
+#[doc(hidden)]
+pub(crate) use run::scan_exit_code;
+
 // Test seam: the completion-summary and progress-ticker renderers are pure
 // formatting functions whose unit tests were relocated out of the `reporting`
 // module (the `*_no_inline_tests` folder gates). They are exercised through the
@@ -825,7 +832,10 @@ mod low_ram_cap_tests {
     fn low_ram_caps_clamp_down_never_up() {
         // Above the cap: reduced to the cap.
         assert_eq!(4096usize.min(LOW_RAM_MAX_MATCHES_PER_CHUNK), 500);
-        assert_eq!((4 * 1024 * 1024usize).min(LOW_RAM_MAX_DECODE_BYTES), 256 * 1024);
+        assert_eq!(
+            (4 * 1024 * 1024usize).min(LOW_RAM_MAX_DECODE_BYTES),
+            256 * 1024
+        );
         // Below the cap: left untouched.
         assert_eq!(100usize.min(LOW_RAM_MAX_MATCHES_PER_CHUNK), 100);
         assert_eq!((64 * 1024usize).min(LOW_RAM_MAX_DECODE_BYTES), 64 * 1024);

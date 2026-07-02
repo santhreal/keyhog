@@ -12,9 +12,15 @@ const BUCKET: &str = "regression-bucket";
 static COUNTER_LOCK: Mutex<()> = Mutex::new(());
 
 fn counter_guard() -> MutexGuard<'static, ()> {
-    COUNTER_LOCK
+    // These httpmock tests point the cloud endpoint at 127.0.0.1, which the
+    // default cloud SSRF endpoint screen now refuses. Opt into the loud,
+    // default-off allowance for the lifetime of this (separate) test binary —
+    // set while holding COUNTER_LOCK so it can never race a parallel test.
+    let guard = COUNTER_LOCK
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    std::env::set_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT", "1");
+    guard
 }
 
 fn object(name: &str, size: u64) -> String {

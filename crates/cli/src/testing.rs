@@ -366,6 +366,10 @@ pub trait CliTestApi {
         autoroute_calibration: bool,
     ) -> keyhog_scanner::GpuInitPolicy;
     fn scanner_panic_notice_for_test(&self, panicked: bool) -> Option<String>;
+    /// Pure live-credential exit-code mapping over a reported findings set:
+    /// `EXIT_LIVE_CREDENTIALS` (10) if any finding is `VerificationResult::Live`,
+    /// else `EXIT_SUCCESS` (0). Mirrors the exit-code branch in `run()`.
+    fn scan_exit_code(&self, findings: &[VerifiedFinding]) -> u8;
     fn scan_orchestrator_from_parts_for_test(
         &self,
         args: ScanArgs,
@@ -1067,6 +1071,9 @@ impl CliTestApi for TestApi {
     }
     fn scanner_panic_notice_for_test(&self, panicked: bool) -> Option<String> {
         crate::orchestrator::scanner_panic_notice_for_test(panicked)
+    }
+    fn scan_exit_code(&self, findings: &[VerifiedFinding]) -> u8 {
+        crate::orchestrator::scan_exit_code(findings)
     }
     fn scan_orchestrator_from_parts_for_test(
         &self,
