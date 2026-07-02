@@ -431,3 +431,7 @@ Committed: base32_decode15, decode_cap_bounds14, env_file_source17, reverse_deco
 FIX: gitlab E0277 ["a".repeat(100)].repeat(5) -> vec!["a".repeat(100); 5].
 HELD (needs empirical two-detector rework): keyword_bridge.rs — agent assumed one "generic-secret" bridge, but there are TWO mechanisms: `generic-password` (named TOML detector, keywords password/passwd/pwd/secret/token/... owns the value when it matches) AND `generic-secret` (phase2 FALLBACK bridge, detector_ids.rs GENERIC_SECRET, fires only when NO named detector caught the value). Which id a `kw=value` gets depends on value length/shape (16-byte high-entropy -> generic-password named; 8-byte floor -> generic-secret fallback). Rework each test per-fixture to assert the correct path. My generic-password edit was partially wrong (reverted intent needed).
 SESSION TOTAL: ~1958 tests committed. 2 files held for empirical rework: prefilter_trigger_union (datadog HS-only anchor behavior) + keyword_bridge (generic-password named vs generic-secret fallback). iter12 authoring.
+
+## Iteration 12 COMPLETE (12/12) — min_confidence_floor fixed
+min_confidence_floor: 3 tests assumed the sourcegraph token scores <0.40; it actually scores 0.70 (clears both floors). Rewrote to real observed confidence (clears-global-default, removing-floor-KEEPS, floor=c+0.05 drops); mechanics still proven by the sgp_confidence()-relative boundary tests. iter12 fully clean now (12/12).
+SESSION TOTAL: ~2136 tests committed across 12 complete iterations. 2 held (prefilter, keyword_bridge). iter13 authoring.
