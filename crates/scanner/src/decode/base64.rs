@@ -19,7 +19,23 @@ impl Decoder for Base64Decoder {
         visit_classified_base64_string_spans(&chunk.data, 12, |b64_match, variant| {
             if let Ok(decoded) = base64_decode_with_variant(&b64_match.value, variant) {
                 // LAW10: failed trial decode means this span is not valid base64; recall-preserving — the original chunk stays scanned unchanged.
-                if let Ok(text) = String::from_utf8(decoded) {
+                // Pre-UTF8-gate decode-through: a base64 blob whose decoded
+                // bytes are a gzip/zlib stream (`secret -> gzip -> base64`
+                // exfil) is not valid UTF-8, so the plain `from_utf8` gate
+                // below would drop it. Try a bounded inflate first; when it
+                // yields UTF-8 text, emit that so the compressed credential is
+                // rescanned. Non-container / malformed / binary-output bytes
+                // fall through to the normal UTF-8 path unchanged.
+                if let Some(inflated) = crate::decode::inflate::try_inflate_to_text(&decoded) {
+                    push_decoded_text_chunk_spliced_at(
+                        &mut decoded_chunks,
+                        chunk,
+                        b64_match.span(),
+                        &b64_match.value,
+                        inflated,
+                        self.name(),
+                    );
+                } else if let Ok(text) = String::from_utf8(decoded) {
                     // LAW10: non-UTF8 decoded bytes are not source text; recall-preserving — the original encoded text stays scanned unchanged.
                     // Splice the decoded text back over the original
                     // base64 blob in the parent so companion context

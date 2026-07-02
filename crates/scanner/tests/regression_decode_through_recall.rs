@@ -76,6 +76,15 @@ const B64_ZIP_STORED_NPMRC: &str =
 const B64_GZIP_BENIGN: &str =
     "H4sIAO0ARmoC/yvJSFUoLM1MzlZIKsovz1NIy69QyCrNLShWyC9LLVIoAUrnJFZVKqTkp4M5A60WAMsN9o2wAAAA";
 
+/// `base64(zlib.compress(NPMRC, 9))` — zlib stream (`78 da`), DEFLATE-compressed.
+/// Recovered through the same bounded inflate decode-through as gzip.
+const B64_ZLIB_NPMRC: &str =
+    "eNrT1y9KTc8sLimq1MsryM0q1ssvSte3ik8sLckIyc9OzbMtNshN9TFOT0yuDDEA8sMSc0pTDY2MTUwBd6oUsg==";
+
+/// `base64(gzip-magic + 0xff garbage)` — a well-formed gzip header followed by a
+/// corrupt DEFLATE body. The inflate must fail closed (no panic, no finding).
+const B64_CORRUPT_GZIP: &str = "H4sIAP//////////////////////////";
+
 fn scanner() -> CompiledScanner {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
     CompiledScanner::compile(detectors).expect("compile scanner")
@@ -204,16 +213,40 @@ fn npmrc_recovered_through_double_base64() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// GZIP / ZIP: the secret is COMPRESSED into a binary container. keyhog has no
-// inflate decoder and its text decoders reject non-UTF-8 output, so the token
-// is NOT recovered. These lock the current recall boundary (exact count 0).
+// GZIP / ZLIB via base64: the secret is COMPRESSED then base64-encoded
+// (`secret -> gzip -> base64` exfil). The base64 decoder now runs a bounded
+// inflate (decode::inflate) BEFORE its from_utf8 gate, so the token IS
+// recovered. ZIP and hex-wrapped containers remain gaps (see below): zip needs
+// a central-directory parser, and the hex decoder has no inflate stage yet.
 // ─────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn gzip_compressed_npmrc_not_recovered_through_base64() {
+fn gzip_compressed_npmrc_recovered_through_base64() {
     let matches = scan_embedded(B64_GZIP_NPMRC);
-    // No inflate stage: the base64 decodes to compressed binary (`1f 8b …`),
-    // which is not valid UTF-8, so no sub-chunk is scanned.
+    // decode-through: base64 decodes to a gzip stream (`1f 8b …`); the bounded
+    // inflate stage recovers the UTF-8 npmrc line before the from_utf8 gate, so
+    // the token is rescanned and found.
+    assert_eq!(count_with_needle(&matches, NPMRC_NEEDLE), 1);
+    assert_eq!(count_detector(&matches, "npmrc-auth-token"), 1);
+}
+
+#[test]
+fn zlib_compressed_npmrc_recovered_through_base64() {
+    // zlib stream (`78 da`) via base64 — same bounded inflate decode-through.
+    let matches = scan_embedded(B64_ZLIB_NPMRC);
+    let hit = matches
+        .iter()
+        .find(|m| m.detector_id.as_ref() == "npmrc-auth-token")
+        .expect("zlib+base64 wrapper recovers the npmrc token");
+    assert_eq!(hit.credential.as_ref(), NPMRC_NEEDLE);
+    assert_eq!(count_detector(&matches, "npmrc-auth-token"), 1);
+}
+
+#[test]
+fn corrupt_gzip_fails_closed_no_panic_no_finding() {
+    // Valid gzip magic, corrupt DEFLATE body: the bounded inflate returns None
+    // (fails closed) — no panic, and the un-inflatable bytes surface no token.
+    let matches = scan_embedded(B64_CORRUPT_GZIP);
     assert_eq!(count_with_needle(&matches, NPMRC_NEEDLE), 0);
     assert_eq!(count_detector(&matches, "npmrc-auth-token"), 0);
 }
@@ -268,8 +301,9 @@ fn nested_base64_of_zip_still_opaque() {
 // ─────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn base64_recovers_the_same_secret_that_gzip_hides() {
-    // Same plaintext, two wrappers: base64 -> recovered token; gzip -> nothing.
+fn base64_and_gzip_wrappers_both_recover_the_secret() {
+    // Same plaintext, two wrappers: base64 -> recovered token; gzip+base64 ->
+    // recovered too (via the bounded inflate decode-through).
     let via_b64 = scan_embedded(&b64(NPMRC));
     let via_gzip = scan_embedded(B64_GZIP_NPMRC);
     let recovered = via_b64
@@ -277,7 +311,11 @@ fn base64_recovers_the_same_secret_that_gzip_hides() {
         .find(|m| m.detector_id.as_ref() == "npmrc-auth-token")
         .expect("base64 wrapper recovers the npmrc token");
     assert_eq!(recovered.credential.as_ref(), NPMRC_NEEDLE);
-    assert_eq!(count_detector(&via_gzip, "npmrc-auth-token"), 0);
+    let via_gzip_hit = via_gzip
+        .iter()
+        .find(|m| m.detector_id.as_ref() == "npmrc-auth-token")
+        .expect("gzip+base64 wrapper recovers the npmrc token");
+    assert_eq!(via_gzip_hit.credential.as_ref(), NPMRC_NEEDLE);
 }
 
 #[test]

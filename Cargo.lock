@@ -2889,6 +2889,7 @@ dependencies = [
  "criterion",
  "dashmap",
  "dirs",
+ "flate2",
  "hex",
  "hex-simd",
  "hyperscan",

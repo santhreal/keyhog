@@ -7,6 +7,7 @@
 mod base64;
 pub(crate) mod caesar;
 pub(crate) mod hex;
+pub(crate) mod inflate;
 mod json;
 mod pipeline;
 pub(crate) mod reverse;
