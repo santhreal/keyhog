@@ -412,3 +412,10 @@ REAL BUG (merkle_spec_hash.rs, exposed by agent bug_ tests): severity key was UN
 AGENT-WRONG-VALUE CORRECTIONS (fixed to REAL behavior, not weakened): json unicode-escape decode is quote-independent (recovers on raw/unterminated chunks -> count 1 not 0); netrc JSON-escaped-backslash surfaces 2 DISTINCT valid creds (15ch decoded + 16ch raw), not a dedup bug. cli_backend_matrix: 8 simd tests were host-dependent (assumed hyperscan present); rewrote to host-INDEPENDENT no-silent-fallback contract (simd matches cpu OR fails closed exit 3; auto uncalibrated fails closed exit 2 OR completes exit 1 matching cpu) — green on accel + no-accel hosts.
 NOT COMMITTED: regression_hosted_git_endpoint_class.rs ran 0 tests (feature-gated off) — needs cfg investigation.
 SESSION TOTAL: ~1264 tests committed (iter1-6 1091 + iter7 173) + flate2 decode-through + aws companion recall + web_happy gate + spec-hash Law-10 fix. iter8 (14 files) authored, iter9 (12) authoring.
+
+## Iteration 8 COMPLETE (d0bbad10e + 4 follow-ups) — 12/13 files, ~188 tests
+Committed: entropy_histogram15, cli_daemon_status18, cli_scan_stdin15, cli_version_coherence15, docker_layer_classify13, har_deep15, probe_timeout_mapping18, allowlist_cache_invalidation14, unicode_hardening_strip20, finding_serde_roundtrip15, chunk_metadata15, skip_rules15.
+FIXES this iter: finding_serde:291 value->value.clone() (E0505); skip_rules control file is 50 bytes so cap 40->55 (+ error-message assertion) so the under-cap control is scanned while 60/100-byte oversize files are skipped.
+HELD (hyperscan-gated rewrite needed): prefilter_trigger_union.rs — 5 datadog tests assume a NO-LITERAL (HS-only) detector fires on CpuFallback; it fires only via Hyperscan (off on this host). Rewrite w/ AC-literal detectors for scalar parity + warm_backend-gated SimdCpu leg; keep the 9 green tests.
+cpu_decoder_parity.rs was a PRE-EXISTING committed file (iter8 agent only verified it) — not re-counted.
+SESSION TOTAL: ~1452 tests committed (iter1-6 1091 + iter7 173 + iter8 188) + flate2 + aws recall + web_happy + spec-hash Law-10 fix. iter9 (12) authored, iter10 (12) authoring.
