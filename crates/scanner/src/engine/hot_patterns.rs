@@ -58,7 +58,13 @@ impl CompiledScanner {
                     continue;
                 };
 
-                let lookahead_end = (offset + 100).min(text_bytes.len());
+                // Bound the delimiter search to a fixed lookahead window past the
+                // literal prefix: every hot-pattern credential is well under this
+                // many bytes, so scanning further only wastes work on an
+                // adversarial no-delimiter run. The precise validator below still
+                // owns the emitted span; this only caps the candidate slice fed to it.
+                const HOT_CREDENTIAL_LOOKAHEAD_BYTES: usize = 100;
+                let lookahead_end = (offset + HOT_CREDENTIAL_LOOKAHEAD_BYTES).min(text_bytes.len());
                 let candidate = &text_bytes[offset..lookahead_end];
                 let cred_end = candidate
                     .iter()

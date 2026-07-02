@@ -26,7 +26,7 @@ pub(crate) use canonical::{
     looks_like_generic_random_base64_blob_decoy, looks_like_prefixed_hash_digest,
     looks_like_prefixed_masked_sequence, looks_like_random_byte_base64_blob,
     looks_like_standard_base64_blob, looks_like_trimmed_aws_iam_arn,
-    looks_like_truncated_uuid_v4_suffix, RFC7519_EXAMPLE_JWT_PREFIX,
+    looks_like_truncated_uuid_v4_suffix, HIGH_ENTROPY_BASE64_CUTOFF, RFC7519_EXAMPLE_JWT_PREFIX,
 };
 pub(crate) use path::{
     looks_like_filename_reference, looks_like_scheme_prefixed_uri, looks_like_url_or_path_segment,
@@ -297,7 +297,7 @@ pub(crate) fn public_noncredential_shape_with_randomness(
 /// the generic and entropy emit paths so the base64 and symbolic-secret
 /// carve-outs do not drift.
 pub(crate) fn looks_like_high_entropy_punctuation_payload(value: &str, entropy: f64) -> bool {
-    if entropy < 4.8 || value.len() < 40 {
+    if entropy < HIGH_ENTROPY_BASE64_CUTOFF || value.len() < 40 {
         return false;
     }
     if value.contains('+') || value.contains('/') {
@@ -541,4 +541,41 @@ fn looks_like_ts_non_null_identifier(bytes: &[u8]) -> bool {
 pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
     looks_like_syntactic_punctuation_marker(value)
         || looks_like_credential_colliding_punctuation(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn high_entropy_punctuation_payload_pivots_on_shared_cutoff() {
+        // 40-char standard-base64 value carrying a `+`; the only thing that
+        // decides the verdict is the entropy comparison against the shared
+        // HIGH_ENTROPY_BASE64_CUTOFF, so this pins that decision.rs and this gate
+        // read the SAME boundary (no re-pasted bare `4.8`).
+        let value = format!("{}+", "a".repeat(39));
+        assert_eq!(value.len(), 40);
+        // Just below the cutoff: not a high-entropy punctuation payload.
+        assert!(!looks_like_high_entropy_punctuation_payload(
+            &value,
+            HIGH_ENTROPY_BASE64_CUTOFF - 0.1
+        ));
+        // Exactly AT the cutoff: the `+` arm fires.
+        assert!(looks_like_high_entropy_punctuation_payload(
+            &value,
+            HIGH_ENTROPY_BASE64_CUTOFF
+        ));
+    }
+
+    #[test]
+    fn high_entropy_punctuation_payload_requires_length_floor() {
+        // 39-char value at/above the cutoff and carrying `+` is still below the
+        // 40-byte length floor, so the gate stays closed.
+        let short = format!("{}+", "a".repeat(38));
+        assert_eq!(short.len(), 39);
+        assert!(!looks_like_high_entropy_punctuation_payload(
+            &short,
+            HIGH_ENTROPY_BASE64_CUTOFF
+        ));
+    }
 }

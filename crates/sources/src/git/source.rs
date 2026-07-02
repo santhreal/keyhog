@@ -26,7 +26,6 @@ const GIT_PARALLEL_BLOB_BATCH_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Metadata item bound for one parallel blob decode batch.
 const GIT_PARALLEL_BLOB_BATCH_ITEMS: usize = 4096;
-const GIT_FSCK_LINE_BYTES: usize = 4096;
 
 #[derive(Debug, Clone)]
 struct GitBlobCandidate {
@@ -1063,7 +1062,7 @@ fn collect_unreachable_objects(
     let mut reader = std::io::BufReader::new(stdout);
     let mut out = UnreachableGitObjects::default();
     let mut line_buf = Vec::new();
-    while super::read_capped_line(&mut reader, &mut line_buf, GIT_FSCK_LINE_BYTES)
+    while super::read_capped_line(&mut reader, &mut line_buf, super::GIT_PLUMBING_LINE_BYTES)
         .map_err(SourceError::Io)?
         > 0
     {

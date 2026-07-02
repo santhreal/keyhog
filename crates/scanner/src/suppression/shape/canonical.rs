@@ -11,7 +11,12 @@ pub(crate) const RFC7519_EXAMPLE_JWT_PREFIX: &str =
 /// high-entropy path. The two gates MUST agree on this boundary — they were two
 /// byte-identical `4.8` locals before being hoisted here so the split can never
 /// silently drift.
-const HIGH_ENTROPY_BASE64_CUTOFF: f64 = 4.8;
+///
+/// `pub(crate)` so the sibling `decision.rs` repetitive-run / high-entropy-blob
+/// gate and `shape::looks_like_high_entropy_punctuation_payload` bind the SAME
+/// boundary instead of re-pasting a bare `4.8` — the whole point of a single
+/// source of truth is that every gate that pivots on the cutoff moves with it.
+pub(crate) const HIGH_ENTROPY_BASE64_CUTOFF: f64 = 4.8;
 
 /// True if `credential` matches the XXXXX-XXXXX-XXXXX-XXXXX-XXXXX
 /// dashed-serial / license-key shape: exactly 5 dash-separated

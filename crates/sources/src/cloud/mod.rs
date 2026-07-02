@@ -1,6 +1,8 @@
 use keyhog_core::{Chunk, SourceError};
 use reqwest::blocking::{Client, Response};
 
+use crate::capped_read::MAX_PREALLOCATED_READ_BYTES;
+
 #[cfg(feature = "azure")]
 pub(crate) mod azure_blob;
 
@@ -241,7 +243,7 @@ pub(crate) fn read_listing_response_body(
 
     let capacity_hint = response
         .content_length()
-        .map(|len| len.min(max_response_bytes_u64).min(64 * 1024));
+        .map(|len| len.min(max_response_bytes_u64).min(MAX_PREALLOCATED_READ_BYTES));
     let read = crate::capped_read::read_to_cap(response, max_response_bytes_u64, capacity_hint)
         .map_err(|error| {
             record_unreadable_listing_skip(
@@ -355,7 +357,7 @@ pub(crate) fn read_text_object_body(
     let content_type_is_unknown_binary = content_type.is_some_and(is_unknown_binary_content_type);
 
     let capacity_hint = match response.content_length() {
-        Some(len) => len.min(ctx.max_bytes).min(64 * 1024) as usize,
+        Some(len) => len.min(ctx.max_bytes).min(MAX_PREALLOCATED_READ_BYTES) as usize,
         None => 0,
     };
     let read = crate::capped_read::read_to_cap(response, ctx.max_bytes, Some(capacity_hint as u64))

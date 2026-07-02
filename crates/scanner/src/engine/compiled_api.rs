@@ -468,8 +468,8 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             .alphabet_screen
             .as_ref()
             .is_none_or(|screen| screen.screen(chunk.data.as_bytes()));
-        let bigram_ok =
-            chunk.data.len() < 64 || self.bigram_bloom.maybe_overlaps(chunk.data.as_bytes());
+        let bigram_ok = chunk.data.len() < super::BIGRAM_BLOOM_MIN_CHUNK_BYTES
+            || self.bigram_bloom.maybe_overlaps(chunk.data.as_bytes());
         if !(alphabet_ok && bigram_ok) {
             #[cfg(feature = "simd")]
             if self.should_scan_no_hit_chunk(chunk) {

@@ -29,6 +29,13 @@ pub(crate) struct CaesarDecoder;
 pub(crate) const MIN_CAESAR_LEN: usize = 16;
 const MIN_ALNUM_RUN: usize = 8;
 
+/// Minimum accumulated base64 run (in chars) before [`encoded_private_key_payload_spans`]
+/// attempts a decode to look for a PEM `-----BEGIN … PRIVATE KEY-----` envelope.
+/// 128 base64 chars decode to ~96 bytes — enough to hold the framing markers —
+/// so shorter runs cannot be a wrapped private key and are skipped rather than
+/// decoded on every short base64-ish config line.
+const MIN_ENCODED_PRIVATE_KEY_B64_LEN: usize = 128;
+
 /// Number of letters in the ASCII alphabet — the modulus for a Caesar/ROT-N
 /// letter rotation (and the base for the `26 - k` inverse shift). This is the
 /// rotation modulus ONLY; the `[bool; 26]` shift table is sized `25 shifts + 1`
@@ -231,7 +238,7 @@ fn encoded_private_key_payload_spans(text: &str) -> Vec<(usize, usize)> {
         let Some(run) = run.take() else {
             return;
         };
-        if run.encoded.len() < 128 {
+        if run.encoded.len() < MIN_ENCODED_PRIVATE_KEY_B64_LEN {
             return;
         }
         let Ok(decoded) = super::base64_decode(&run.encoded) else {

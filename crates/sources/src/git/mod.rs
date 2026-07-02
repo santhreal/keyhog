@@ -33,6 +33,17 @@ pub use source::GitSource;
 
 pub(crate) use diff_parser::{trim_diff_line_bytes, UnifiedDiffEvent, UnifiedDiffParser};
 
+/// Byte cap for a single line of git plumbing output read through
+/// [`read_capped_line`].
+///
+/// Single owner for the fsck (`git fsck --unreachable`) and tag-ref
+/// (`git for-each-ref`) readers: both bound one structurally-short metadata line
+/// (an object id plus a type/refname) to the same 4 KiB ceiling, so the value
+/// lives here instead of being duplicated as `GIT_FSCK_LINE_BYTES` /
+/// `GIT_TAG_REF_LINE_BYTES`. (The diff/history readers scan arbitrary file
+/// content and instead use the operator-configurable `limits.git_line_bytes`.)
+pub(crate) const GIT_PLUMBING_LINE_BYTES: usize = 4096;
+
 pub(crate) fn git_blob_bytes_limit_usize(limits: crate::SourceLimits) -> usize {
     match usize::try_from(limits.git_blob_bytes) {
         Ok(value) => value,
@@ -397,6 +408,16 @@ fn join_tree_path(prefix: &[u8], filename: &[u8]) -> Vec<u8> {
         path.push(b'/');
         path.extend_from_slice(filename);
         path
+    }
+}
+
+#[cfg(test)]
+mod plumbing_line_cap_tests {
+    #[test]
+    fn git_plumbing_line_cap_is_the_shared_4_kib_value() {
+        // Single owner for the fsck and tag-ref line caps that previously lived as
+        // two separate `GIT_FSCK_LINE_BYTES` / `GIT_TAG_REF_LINE_BYTES` constants.
+        assert_eq!(super::GIT_PLUMBING_LINE_BYTES, 4096);
     }
 }
 

@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use keyhog_core::{Chunk, Source, SourceError};
 use serde::de::DeserializeOwned;
 
+use crate::capped_read::MAX_PREALLOCATED_READ_BYTES;
 use crate::FilesystemSource;
 
 mod sanitize;
@@ -639,7 +640,7 @@ pub(crate) fn read_api_json<T: DeserializeOwned>(
 
     let capacity_hint = response
         .content_length()
-        .map(|len| len.min(max_response_bytes_u64).min(64 * 1024));
+        .map(|len| len.min(max_response_bytes_u64).min(MAX_PREALLOCATED_READ_BYTES));
     let read = crate::capped_read::read_to_cap(response, max_response_bytes_u64, capacity_hint)
         .map_err(|error| api_unreadable_error(format!("failed to read {context}: {error}")))?;
     if read.truncated {

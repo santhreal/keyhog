@@ -94,14 +94,14 @@ pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
 
 /// Single-pass scan for a contiguous run of credential-value bytes (including
 /// common token separators and symbolic password punctuation).
-/// of length >= `MIN_ENTROPY_RUN`. The keyword-gated fallback drop in
+/// of length >= `DEFAULT_ENTROPY_RUN_BYTES`. The keyword-gated fallback drop in
 /// `scan_coalesced` (no-HS-hit branch) historically required the chunk
 /// to contain a generic-assignment / secret keyword before routing
 /// through `scan_inner` — chunks of pure entropy with NO keyword anchor
 /// (the `generic-high-entropy-string` corpus shape) silently bailed,
 /// pinning that category's recall at 0.36 on the SecretBench mirror.
 ///
-/// `MIN_ENTROPY_RUN` is set to 32 chars so the gate stays cheap and
+/// `DEFAULT_ENTROPY_RUN_BYTES` is set to 32 chars so the gate stays cheap and
 /// rarely trips on natural code: function/class names cap around 24
 /// chars, UUIDs are 36 chars *with dashes* (longest base62 run = 12),
 /// and the longest English word is 28 chars. Real secrets at this

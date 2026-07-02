@@ -109,6 +109,13 @@ pub(crate) fn with_extracted_value_spans<R>(
     })
 }
 
+/// Minimum length of a freestanding base64/url-safe alphabet run before it is
+/// kept as a decode candidate. A ~16-char run is the shortest that can carry a
+/// credential-length payload; shorter alphanumeric runs are ordinary
+/// identifiers/words, not encoded secrets. Named so the single `flush_b64` gate
+/// has one owner (sibling of [`MIN_EXTRACTED_VALUE_LEN`]).
+const MIN_B64_BLOCK_LEN: usize = 16;
+
 fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
     // Minimum length for a quoted-string or assignment value to be worth keeping
     // as a decode candidate. Both extraction paths apply the same floor; one
@@ -157,7 +164,7 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
     let is_pct_run_char = |ch: char| -> bool { ch == '%' || ch.is_ascii_hexdigit() };
 
     // Flush a pending base64 block: push it as a candidate only if it reached at
-    // least 16 chars (a credential-length run), otherwise discard it. Shorter
+    // least MIN_B64_BLOCK_LEN chars (a credential-length run), otherwise discard it. Shorter
     // alphanumeric runs are ordinary identifiers/words, not encoded secrets.
     fn flush_b64(
         values: &mut Vec<ExtractedValue>,
@@ -165,7 +172,7 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
         b64_start: &mut Option<usize>,
         b64_end: usize,
     ) {
-        if b64_block.len() >= 16 {
+        if b64_block.len() >= MIN_B64_BLOCK_LEN {
             if let Some(start) = b64_start.take() {
                 values.push(ExtractedValue::new(
                     std::mem::take(b64_block),

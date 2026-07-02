@@ -22,6 +22,13 @@ const MIN_REVERSE_LEN: usize = 16;
 /// sibling Caesar decoder names the same kind of gate `MIN_ALNUM_RUN`.
 const MIN_REVERSE_ALNUM_RUN: usize = 12;
 
+/// Shortest known-prefix length admitted into the reverse-decode gate. The only
+/// 2-char [`crate::confidence::KNOWN_PREFIXES`] entry (`0x`) is deliberately
+/// excluded: it appears by random chance in ~1.6% of long base64 strings and
+/// drove spurious findings on the base64-protobuf decoy class (see
+/// [`looks_reversible`]). Every 3+ char vendor prefix still gates as before.
+const MIN_REVERSE_PREFIX_LEN: usize = 3;
+
 /// Reverse-prefix needles for [`looks_reversible`].
 ///
 /// SOUNDNESS: `reverse(candidate).contains(prefix)` iff
@@ -32,7 +39,7 @@ const MIN_REVERSE_ALNUM_RUN: usize = 12;
 static REVERSED_KNOWN_PREFIXES: LazyLock<Vec<String>> = LazyLock::new(|| {
     crate::confidence::KNOWN_PREFIXES
         .iter()
-        .filter(|prefix| prefix.len() >= 3)
+        .filter(|prefix| prefix.len() >= MIN_REVERSE_PREFIX_LEN)
         .map(|prefix| reverse_str(prefix))
         .collect()
 });

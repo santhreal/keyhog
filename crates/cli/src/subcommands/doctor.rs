@@ -288,9 +288,7 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
                 report.coalesced_matches
             ),
             Err(e) => {
-                let known_lowering_gap = e.contains("_vyre_match_leader")
-                    || e.contains("canonical pre-emit lowering")
-                    || e.contains("subgroup_ballot");
+                let known_lowering_gap = crate::subcommands::backend::is_known_vyre_lowering_gap(&e);
                 if known_lowering_gap {
                     warned = true;
                     println!(
@@ -322,7 +320,7 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
                 );
             }
             Err(e) => {
-                let parity_degrade = e.contains("diverges from the CPU MoE reference");
+                let parity_degrade = crate::subcommands::backend::is_moe_parity_degrade(&e);
                 if parity_degrade {
                     warned = true;
                     println!(

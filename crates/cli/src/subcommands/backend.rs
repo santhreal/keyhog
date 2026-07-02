@@ -21,6 +21,43 @@ use std::process::ExitCode;
 
 const KEYHOG_GPU_MAX_BUFFER_CAP_MB: u64 = 256 * 1024;
 
+/// Substrings that identify a vyre GPU IR-lowering limitation in a GPU
+/// self-test error (the literal-set subgroup form the canonical pre-emit
+/// lowering rejects). When present, the literal-set path is a KNOWN gap — scans
+/// still run on the AC kernel path — not a broken GPU stack, so `backend
+/// --self-test` and `doctor` report it as a limitation rather than a hard FAIL.
+///
+/// Single source of truth for the classification: both this module's
+/// `collect_self_test_report` and `subcommands::doctor` match on it via
+/// [`is_known_vyre_lowering_gap`], so the two health surfaces can never drift
+/// into disagreeing about whether the same GPU error is fatal.
+const VYRE_LOWERING_GAP_MARKERS: [&str; 3] = [
+    "_vyre_match_leader",
+    "canonical pre-emit lowering",
+    "subgroup_ballot",
+];
+
+/// Substring that marks a GPU-MoE-vs-CPU-MoE parity divergence in a GPU
+/// self-test error. Detection still fails closed to the deterministic CPU MoE,
+/// so this is a KNOWN degrade (GPU ML acceleration disabled) rather than a hard
+/// FAIL. Single source of truth shared with `subcommands::doctor` via
+/// [`is_moe_parity_degrade`].
+const MOE_PARITY_DEGRADE_MARKER: &str = "diverges from the CPU MoE reference";
+
+/// True when a GPU self-test error names a known vyre IR-lowering gap (scans
+/// still route through the AC kernel), not a genuinely broken GPU stack.
+pub(crate) fn is_known_vyre_lowering_gap(error: &str) -> bool {
+    VYRE_LOWERING_GAP_MARKERS
+        .iter()
+        .any(|marker| error.contains(marker))
+}
+
+/// True when a GPU self-test error is a GPU/CPU MoE parity divergence (GPU ML
+/// acceleration degrades to the CPU MoE), not a hard dispatch failure.
+pub(crate) fn is_moe_parity_degrade(error: &str) -> bool {
+    error.contains(MOE_PARITY_DEGRADE_MARKER)
+}
+
 pub(crate) fn run(args: BackendArgs) -> Result<ExitCode> {
     let gpu_policy = if args.require_gpu {
         keyhog_scanner::gpu::GpuRuntimePolicy::Required
@@ -459,7 +496,7 @@ fn collect_self_test_report() -> BackendSelfTestReport {
             // stay green for a host whose scans are correct — while still naming the
             // fault loudly so it gets fixed. A genuine GPU-unavailable/dispatch
             // failure stays a FAIL.
-            let parity_degrade = error.contains("diverges from the CPU MoE reference");
+            let parity_degrade = is_moe_parity_degrade(&error);
             if parity_degrade {
                 probes.push(BackendSelfTestProbe::known("moe_kernel", &error));
             } else {
@@ -488,9 +525,7 @@ fn collect_self_test_report() -> BackendSelfTestReport {
             probes.push(probe);
         }
         Err(error) => {
-            let known_lowering_gap = error.contains("_vyre_match_leader")
-                || error.contains("canonical pre-emit lowering")
-                || error.contains("subgroup_ballot");
+            let known_lowering_gap = is_known_vyre_lowering_gap(&error);
             if known_lowering_gap {
                 probes.push(BackendSelfTestProbe::known(
                     "vyre_literal_set",
@@ -720,3 +755,6 @@ fn fmt_bytes(n: u64) -> String {
         format!("{n} B")
     }
 }
+
+#[cfg(test)]
+mod tests;

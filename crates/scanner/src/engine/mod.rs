@@ -181,6 +181,18 @@ use std::sync::OnceLock;
 /// drift apart (each used to carry its own byte-identical copy).
 pub(crate) const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
 
+/// Minimum chunk length (bytes) at or above which the bigram-bloom prefilter is
+/// consulted to skip a chunk. Below this length the bloom is bypassed and the
+/// chunk always advances to scanning: short chunks are too cheap to scan for the
+/// prefilter to earn its keep, and dropping one on a bloom miss risks a
+/// false-negative for negligible speed gain.
+///
+/// Defined once here so the two admission sites that gate on it — the coalesced
+/// phase-1 producer ([`scan_coalesced`]) and the single-chunk entry
+/// ([`compiled_api`]) — can never carry divergent copies of the threshold (each
+/// used to hardcode a bare `64`).
+pub(crate) const BIGRAM_BLOOM_MIN_CHUNK_BYTES: usize = 64;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GpuInitPolicy {
     /// Honor the resolved GPU runtime policy.
@@ -385,5 +397,15 @@ mod max_inner_loop_iters_tests {
         assert_eq!(HOT_LOOP_DEADLINE_CADENCE, 64);
         assert_eq!(MAX_INNER_LOOP_ITERS % HOT_LOOP_DEADLINE_CADENCE, 0);
         assert_eq!(MAX_INNER_LOOP_ITERS / HOT_LOOP_DEADLINE_CADENCE, 15_625);
+    }
+
+    /// The bigram-bloom admission threshold shared by the coalesced producer and
+    /// the single-chunk entry is exactly the bare `64` those two sites used to
+    /// hardcode. Pin the concrete value: if it drifts, both admission gates
+    /// change their short-chunk skip boundary at once and a silent recall shift
+    /// would be invisible without this lock.
+    #[test]
+    fn bigram_bloom_min_chunk_bytes_is_sixty_four() {
+        assert_eq!(super::BIGRAM_BLOOM_MIN_CHUNK_BYTES, 64);
     }
 }

@@ -10,7 +10,7 @@ use super::shape::{
     has_three_or_more_consecutive_identical, is_uuid_v4_shape, looks_like_bare_hex_digest,
     looks_like_bracketed_template_placeholder, looks_like_dashed_serial_key,
     looks_like_prefixed_hash_digest, looks_like_standard_base64_blob,
-    looks_like_truncated_uuid_v4_suffix, RFC7519_EXAMPLE_JWT_PREFIX,
+    looks_like_truncated_uuid_v4_suffix, HIGH_ENTROPY_BASE64_CUTOFF, RFC7519_EXAMPLE_JWT_PREFIX,
 };
 use crate::{adjudicate::StageId, context};
 
@@ -109,10 +109,11 @@ pub(super) fn suppression_stage_inner(
         return suppress("short_repetitive_run");
     }
     let has_n_plus = has_n_or_more_consecutive_identical(credential, 5);
-    let suppresses_repetitive_run =
-        has_n_plus && !entropy_hint.is_some_and(|entropy| entropy >= 4.8 && credential.len() >= 40);
+    let suppresses_repetitive_run = has_n_plus
+        && !entropy_hint
+            .is_some_and(|entropy| entropy >= HIGH_ENTROPY_BASE64_CUTOFF && credential.len() >= 40);
     let high_entropy_base64_candidate = entropy_hint.is_some_and(|entropy| {
-        entropy >= 4.8
+        entropy >= HIGH_ENTROPY_BASE64_CUTOFF
             && credential.len() >= 40
             && (credential.contains('+') || credential.contains('/'))
     });

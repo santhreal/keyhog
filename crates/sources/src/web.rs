@@ -31,6 +31,8 @@
 
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 
+use crate::capped_read::MAX_PREALLOCATED_READ_BYTES;
+
 mod ssrf;
 pub(crate) use ssrf::{
     build_web_client, is_autoroute_loopback_calibration_url, is_disallowed_ip,
@@ -699,7 +701,7 @@ fn read_bytes_response(
     }
 
     // Stream into a bounded buffer; abort the moment we exceed the cap.
-    let capacity_hint = max_response_bytes.min(64 * 1024);
+    let capacity_hint = max_response_bytes.min(MAX_PREALLOCATED_READ_BYTES as usize);
     let read = crate::capped_read::read_to_cap(resp, cap, Some(capacity_hint as u64))
         .map_err(|e| web_unreadable_error(format!("failed to read bytes from {safe_url}: {e}")))?;
     if read.truncated {

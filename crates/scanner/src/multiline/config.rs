@@ -239,6 +239,17 @@ impl Default for MultilineConfig {
     }
 }
 
+/// String markers for function-style string concatenation: R's `paste()` /
+/// `paste0()` and Rust's `concat!()` macro. All three splice multiple string
+/// literals into one value, so any of them signals a concat. Single owner shared
+/// by the whole-text indicator scan, the per-line indicator scan (both here), and
+/// the per-line extractor in `string_extract`, so the marker set can never drift
+/// across the three call sites.
+#[cfg(feature = "multiline")]
+pub(super) fn has_function_concat_marker(s: &str) -> bool {
+    s.contains("paste0(") || s.contains("paste(") || s.contains("concat!(")
+}
+
 /// Check if text contains any concatenation indicators.
 #[cfg(feature = "multiline")]
 pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
@@ -275,11 +286,8 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     let has_dot_concat = has_dot_concat_shape(text);
     let has_backslash_cont = text.contains("\" \\") || text.contains("' \\");
     let has_template = memchr::memchr(b'`', bytes).is_some();
-    // Function-style string concatenation: R's paste()/paste0() and Rust's
-    // concat!() macro. All three splice multiple string literals into one
-    // value, so any of them is a concat indicator.
-    let has_paste =
-        text.contains("paste0(") || text.contains("paste(") || text.contains("concat!(");
+    // Function-style string concatenation (R paste()/paste0(), Rust concat!()).
+    let has_paste = has_function_concat_marker(text);
     let has_implicit = has_implicit_concat_marker(bytes);
     let has_var_ref_concat =
         memchr::memchr(b'+', bytes).is_some() && has_var_ref_concatenation(text);
@@ -299,9 +307,7 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
         if trimmed.ends_with('+')
             || trimmed.starts_with('+')
             || trimmed.starts_with("+ ")
-            || trimmed.contains("paste0(")
-            || trimmed.contains("paste(")
-            || trimmed.contains("concat!(")
+            || has_function_concat_marker(trimmed)
             || starts_parenthesized_implicit_block(trimmed)
             || trimmed.contains("\" +")
             || trimmed.contains("' +")
@@ -461,4 +467,35 @@ pub(crate) fn should_passthrough(text: &str) -> bool {
             .lines()
             .any(|line| line.len() > MAX_MULTILINE_LINE_BYTES)
         || !has_concatenation_indicators(text)
+}
+
+#[cfg(all(test, feature = "multiline"))]
+mod tests {
+    use super::{has_concatenation_indicators, has_function_concat_marker};
+
+    #[test]
+    fn function_concat_marker_matches_all_three_forms_only() {
+        // Every form the single-owner marker set must recognize.
+        assert!(has_function_concat_marker("x = paste0(\"a\", \"b\")"));
+        assert!(has_function_concat_marker("x <- paste(\"a\", \"b\")"));
+        assert!(has_function_concat_marker("let x = concat!(\"a\", \"b\");"));
+        // Near-misses that must NOT trip it: a different macro, and an
+        // identifier that merely embeds "paste" without the call paren.
+        assert!(!has_function_concat_marker("let x = format!(\"a\")"));
+        assert!(!has_function_concat_marker("let pastexyz = 3"));
+        assert!(!has_function_concat_marker("let x = 3.14"));
+    }
+
+    #[test]
+    fn has_indicators_uses_function_concat_marker_at_both_scans() {
+        // paste0 line: whole-text scan and per-line scan both route through the
+        // shared marker and flag it as a concatenation indicator.
+        assert!(has_concatenation_indicators(
+            "token = paste0(\"gh\", \"p_deadbeefdeadbeef\")"
+        ));
+        // JSON-shaped body is rejected up front regardless of markers.
+        assert!(!has_concatenation_indicators("{\"a\": \"b\"}"));
+        // Plain assignment with no concat shape is not an indicator.
+        assert!(!has_concatenation_indicators("token = \"static_value\""));
+    }
 }

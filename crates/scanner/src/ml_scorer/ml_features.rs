@@ -45,6 +45,11 @@ const MIN_HEX_PLACEHOLDER_LENGTH: usize = 10;
 const MAX_UNIQUE_CHAR_NORMALIZATION: f32 = 40.0;
 const MAX_DOT_COUNT_NORMALIZATION: f32 = 5.0;
 const MAX_DASH_COUNT_NORMALIZATION: f32 = 10.0;
+
+/// `u64` words needed to hold a presence bit for every possible byte bigram:
+/// 256 * 256 = 65_536 distinct bigrams, packed 64 per word => 1024 words. Named
+/// so the bitset size stays tied to its derivation instead of a bare literal.
+const BIGRAM_BITSET_WORDS: usize = (256 * 256) / 64;
 const CONFIG_FILE_TYPE_INDEX: usize = 0;
 const SOURCE_FILE_TYPE_INDEX: usize = 1;
 const CI_FILE_TYPE_INDEX: usize = 2;
@@ -384,7 +389,7 @@ fn unique_bigram_stats(bytes: &[u8]) -> (usize, usize) {
         return (0, 0);
     }
 
-    let mut seen = [0u64; 1024];
+    let mut seen = [0u64; BIGRAM_BITSET_WORDS];
     let mut unique = 0usize;
     for window in bytes.windows(2) {
         let idx = ((window[0] as usize) << 8) | window[1] as usize;
@@ -472,5 +477,30 @@ fn summarize_text_bytes(text_bytes: &[u8]) -> TextSummary {
         dot_count,
         dash_count,
         unique_chars: unique_byte_count(text_bytes),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bigram_bitset_covers_every_possible_bigram() {
+        // 65_536 distinct byte bigrams, 64 per u64 word.
+        assert_eq!(BIGRAM_BITSET_WORDS, 1024);
+        // The largest bigram index (0xFF,0xFF) = 65_535 must land in the buffer.
+        let max_idx = (0xFFusize << 8) | 0xFF;
+        assert!(max_idx / 64 < BIGRAM_BITSET_WORDS);
+    }
+
+    #[test]
+    fn unique_bigram_stats_counts_distinct_windows() {
+        // "abcd" -> ab, bc, cd : 3 distinct of 3 windows.
+        assert_eq!(unique_bigram_stats(b"abcd"), (3, 3));
+        // "aaaa" -> aa repeated : 1 distinct of 3 windows.
+        assert_eq!(unique_bigram_stats(b"aaaa"), (1, 3));
+        // Degenerate lengths.
+        assert_eq!(unique_bigram_stats(b"a"), (0, 0));
+        assert_eq!(unique_bigram_stats(b""), (0, 0));
     }
 }

@@ -11,7 +11,7 @@
 //! buffers.
 
 #[cfg(feature = "multiline")]
-use super::config::MultilineConfig;
+use super::config::{has_function_concat_marker, MultilineConfig};
 
 #[cfg(feature = "multiline")]
 #[derive(Debug, PartialEq)]
@@ -638,8 +638,7 @@ fn extract_python_implicit_concatenation(line: &str) -> Option<(String, bool)> {
 #[cfg(feature = "multiline")]
 fn extract_function_concatenation(line: &str) -> Option<(String, bool)> {
     let trimmed = line.trim();
-    if !trimmed.contains("paste0(") && !trimmed.contains("paste(") && !trimmed.contains("concat!(")
-    {
+    if !has_function_concat_marker(trimmed) {
         return None;
     }
     let parts = extract_quoted_strings(trimmed);

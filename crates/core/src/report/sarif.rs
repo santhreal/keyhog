@@ -48,6 +48,17 @@ pub(crate) struct SarifReporter<W: Write + Send> {
 mod sarif_types;
 use sarif_types::*;
 
+/// SINGLE OWNER for the taxonomy identifiers keyhog attaches to every finding.
+///
+/// Each string appears in TWO SARIF positions that a consuming dashboard
+/// cross-references: the per-result `properties.cwe` / `properties.owasp`
+/// (built in [`SarifReporter::result_properties`]) and the `taxonomies[].taxa[].id`
+/// (built in `sarif_taxonomies::sarif_taxonomies_json`). If those two drift, the
+/// reference silently fails to resolve. Owning the id once here — consumed by
+/// both sites — makes that drift impossible.
+pub(super) const CWE_HARDCODED_CREDENTIALS_ID: &str = "CWE-798";
+pub(super) const OWASP_AUTH_FAILURES_ID: &str = "A07:2021";
+
 impl<W: Write + Send> SarifReporter<W> {
     /// Construct a streaming SARIF reporter that writes its document to
     /// `writer`. The SARIF prefix is emitted lazily on the first finding.
@@ -164,8 +175,8 @@ impl<W: Write + Send> SarifReporter<W> {
                     0.0
                 }
             }),
-            cwe: "CWE-798",
-            owasp: "A07:2021",
+            cwe: CWE_HARDCODED_CREDENTIALS_ID,
+            owasp: OWASP_AUTH_FAILURES_ID,
             remediation_action: remediation.action.clone(),
             remediation_revoke_url: remediation.revoke_url.clone(),
             remediation_docs_url: remediation.docs_url.clone(),

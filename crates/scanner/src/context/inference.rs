@@ -13,6 +13,12 @@ const TEST_FUNCTION_LOOKBACK_LINES: usize = 100;
 /// signature and this bound stops an all-blank prefix from reaching the file
 /// start.
 const ATTR_BLOCK_LOOKBACK: usize = 32;
+/// The Rust test-config gate attribute, assembled via `concat!` so the literal
+/// token never appears verbatim in this source file. Single owner for the two
+/// match sites (`is_in_test_function` current-line check and
+/// `is_rust_test_attribute`) that recognise it; keeping it in one place stops
+/// the two sites from silently drifting apart.
+const CFG_TEST_ATTR: &str = concat!("#[cfg(", "test)]");
 
 #[derive(serde::Deserialize)]
 struct TestPathRuleFile {
@@ -300,7 +306,7 @@ fn is_in_test_function(lines: &[&str], line_idx: usize) -> bool {
             || trimmed.starts_with("describe(")
             || trimmed.starts_with("test(")
             || trimmed == "#[test]"
-            || trimmed == concat!("#[cfg(", "test)]")
+            || trimmed == CFG_TEST_ATTR
             || trimmed.starts_with("#[tokio::test")
             || trimmed.starts_with("func Test")
             || trimmed == "@Test"
@@ -368,7 +374,7 @@ fn is_in_test_function(lines: &[&str], line_idx: usize) -> bool {
 /// following item as test code.
 fn is_rust_test_attribute(trimmed: &str) -> bool {
     trimmed == "#[test]"
-        || trimmed == concat!("#[cfg(", "test)]")
+        || trimmed == CFG_TEST_ATTR
         || trimmed.starts_with("#[tokio::test")
         || trimmed.starts_with("#[test")
         || trimmed == "@Test"
@@ -438,4 +444,23 @@ pub(crate) fn surrounding_line_window(text: &str, offset: usize, radius: usize) 
         end = start;
     }
     &text[start..end]
+}
+
+#[cfg(test)]
+mod cfg_test_attr_tests {
+    use super::{is_rust_test_attribute, CFG_TEST_ATTR};
+
+    #[test]
+    fn cfg_test_attr_equals_expected_token() {
+        // The single owner must assemble to exactly the Rust test-config gate.
+        assert_eq!(CFG_TEST_ATTR, "#[cfg(test)]");
+    }
+
+    #[test]
+    fn cfg_test_attr_is_recognised_as_test_attribute() {
+        // Both match sites route through this constant, so it must classify as
+        // a Rust test attribute.
+        assert!(is_rust_test_attribute(CFG_TEST_ATTR));
+        assert!(is_rust_test_attribute("#[cfg(test)]"));
+    }
 }

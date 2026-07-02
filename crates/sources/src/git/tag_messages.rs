@@ -5,8 +5,6 @@ use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 
 use super::{git_unscanned_object_error, parse_git_object_id_line, record_git_object_unreadable};
 
-const GIT_TAG_REF_LINE_BYTES: usize = 4096;
-
 #[derive(Debug, Clone)]
 pub(crate) struct GitTagMessageRef {
     oid: gix::ObjectId,
@@ -36,16 +34,17 @@ pub(crate) fn collect_reachable_tag_messages(
     let mut tags = VecDeque::new();
     let mut line_buf = Vec::new();
     loop {
-        let consumed = super::read_capped_line(&mut reader, &mut line_buf, GIT_TAG_REF_LINE_BYTES)
-            .map_err(SourceError::Io)?;
+        let consumed =
+            super::read_capped_line(&mut reader, &mut line_buf, super::GIT_PLUMBING_LINE_BYTES)
+                .map_err(SourceError::Io)?;
         if consumed == 0 {
             break;
         }
-        if consumed > GIT_TAG_REF_LINE_BYTES {
+        if consumed > super::GIT_PLUMBING_LINE_BYTES {
             return Err(super::git_output_line_truncated_error(
                 "git tag source",
                 "tag ref line",
-                GIT_TAG_REF_LINE_BYTES,
+                super::GIT_PLUMBING_LINE_BYTES,
                 consumed,
             ));
         }

@@ -42,6 +42,19 @@ const EXPERT_COUNT: usize = 6;
 const EXPERT_HIDDEN_LAYER_1: usize = 32;
 const EXPERT_HIDDEN_LAYER_2: usize = 16;
 
+/// Bounded per-thread score-cache capacity: the map is cleared wholesale once it
+/// reaches this many entries (see `util_hash::memoize_by_hash`). 256 covers the
+/// distinct matches of a single file's batch scoring. Single owner for the cap so
+/// the number in the code and the "256-entry bounded cache" prose cannot drift.
+const SCORE_CACHE_CAPACITY: usize = 256;
+
+/// Symmetric saturation bound for the fast rational sigmoid: outside
+/// `[-SIGMOID_SATURATION, SIGMOID_SATURATION]` the output is clamped to `0.0` /
+/// `1.0`. One owner so the lower and upper clamp points can never drift out of
+/// symmetry (the CPU forward pass is the parity reference for every confidence
+/// floor and the GPU shader).
+const SIGMOID_SATURATION: f32 = 6.0;
+
 // SINGLE-SOURCE-OF-TRUTH guard. These layer dimensions are mirrored from
 // `ml_weights` (their canonical home, where they also drive the `weights.bin`
 // buffer offsets) because the forward pass needs them as plain consts for
@@ -100,7 +113,7 @@ pub(crate) fn score_with_config(
     // as a memoize_by_hash consumer); the cap stays 256 (one file's matches),
     // and on a miss the same features→forward_pass→f64 is computed, so the
     // observable score is byte-identical to the hand-rolled cache.
-    crate::util_hash::memoize_by_hash(&SCORE_CACHE, cache_key, 256, || {
+    crate::util_hash::memoize_by_hash(&SCORE_CACHE, cache_key, SCORE_CACHE_CAPACITY, || {
         let features = compute_features_with_config(
             text,
             context,
@@ -340,9 +353,9 @@ fn dense_row<const INPUT: usize>(weights: &[f32], input: &[f32; INPUT], bias: f3
 
 fn sigmoid(value: f32) -> f32 {
     let x = value;
-    if x <= -6.0 {
+    if x <= -SIGMOID_SATURATION {
         0.0
-    } else if x >= 6.0 {
+    } else if x >= SIGMOID_SATURATION {
         1.0
     } else {
         // Fast polynomial/rational evaluation of sigmoid (0.5 + 0.5 * x / (1 + |x|))
@@ -364,4 +377,28 @@ fn softmax(logits: &[f32; EXPERT_COUNT]) -> [f32; EXPERT_COUNT] {
         *value /= sum;
     }
     exps
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sigmoid_saturates_symmetrically_at_named_bound() {
+        // At/beyond the single-owner saturation bound the output clamps exactly.
+        assert_eq!(sigmoid(SIGMOID_SATURATION), 1.0);
+        assert_eq!(sigmoid(-SIGMOID_SATURATION), 0.0);
+        assert_eq!(sigmoid(SIGMOID_SATURATION + 1.0), 1.0);
+        assert_eq!(sigmoid(-SIGMOID_SATURATION - 1.0), 0.0);
+        // The midpoint uses the rational branch, not the clamp.
+        assert_eq!(sigmoid(0.0), 0.5);
+        // Just inside the bound stays strictly interior (rational branch active).
+        let just_inside = sigmoid(SIGMOID_SATURATION - 0.001);
+        assert!(just_inside > 0.5 && just_inside < 1.0, "{just_inside}");
+    }
+
+    #[test]
+    fn score_cache_capacity_is_the_documented_bound() {
+        assert_eq!(SCORE_CACHE_CAPACITY, 256);
+    }
 }

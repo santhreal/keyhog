@@ -22,6 +22,17 @@ use keyhog_scanner::{CompiledScanner, GpuInitPolicy};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// Hosts with strictly less RAM than this are treated as low-RAM and get the
+/// deep-decode scan limits below clamped down to avoid an OOM. 4 GiB, expressed
+/// in MiB to compare directly against `HardwareCaps::total_memory_mb`.
+const LOW_RAM_HOST_THRESHOLD_MB: u64 = 4096;
+/// Low-RAM clamp for `max_matches_per_chunk`: the effective value is capped at
+/// (never raised to) this on a low-RAM host.
+const LOW_RAM_MAX_MATCHES_PER_CHUNK: usize = 500;
+/// Low-RAM clamp for `max_decode_bytes` (256 KiB): the effective decode window
+/// is capped at (never raised to) this on a low-RAM host.
+const LOW_RAM_MAX_DECODE_BYTES: usize = 256 * 1024;
+
 /// Offline (no-verify, no-network) structural metadata for a finding's
 /// credential. Single source of truth shared by every scan-output route so the
 /// JWT analysis and the offline-decoded AWS account ID never diverge by route.
@@ -387,18 +398,18 @@ impl ScanOrchestrator {
         // `effective_config` before it is handed to the orchestrator), so "what
         // runs" stays a single auditable answer.
         if let Some(mem_mb) = hw.total_memory_mb {
-            if mem_mb < 4096 {
+            if mem_mb < LOW_RAM_HOST_THRESHOLD_MB {
                 let prev_matches = effective_config.scanner.max_matches_per_chunk;
                 let prev_decode = effective_config.scanner.max_decode_bytes;
-                let new_matches = prev_matches.min(500);
-                let new_decode = prev_decode.min(256 * 1024);
+                let new_matches = prev_matches.min(LOW_RAM_MAX_MATCHES_PER_CHUNK);
+                let new_decode = prev_decode.min(LOW_RAM_MAX_DECODE_BYTES);
                 effective_config.scanner.max_matches_per_chunk = new_matches;
                 effective_config.scanner.max_decode_bytes = new_decode;
                 if new_matches != prev_matches || new_decode != prev_decode {
                     static LOW_RAM_CAP_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
                     if LOW_RAM_CAP_WARNED.set(()).is_ok() {
                         eprintln!(
-                            "keyhog: low-RAM host ({mem_mb} MiB < 4096) — capping scan limits to \
+                            "keyhog: low-RAM host ({mem_mb} MiB < {LOW_RAM_HOST_THRESHOLD_MB}) — capping scan limits to \
                              avoid OOM: max_decode_bytes {prev_decode} → {new_decode}, \
                              max_matches_per_chunk {prev_matches} → {new_matches}. Set these \
                              explicitly in .keyhog.toml or via flags to override; run \
@@ -790,3 +801,33 @@ fn filesystem_auto_scan_cannot_route_gpu(args: &ScanArgs) -> bool {
 // `reporting::dump_dogfood_trace` is consumed by sibling `run.rs` via
 // `use reporting::{dump_dogfood_trace, …};` directly. The re-export
 // that lived here was unused and tripped the unused-imports lint.
+
+#[cfg(test)]
+mod low_ram_cap_tests {
+    use super::{
+        LOW_RAM_HOST_THRESHOLD_MB, LOW_RAM_MAX_DECODE_BYTES, LOW_RAM_MAX_MATCHES_PER_CHUNK,
+    };
+
+    /// Pin the OOM-guard thresholds and the 256-KiB decode-window derivation, so
+    /// a silent edit to any of the three cannot change the low-RAM scan envelope
+    /// unnoticed.
+    #[test]
+    fn low_ram_caps_have_expected_values() {
+        assert_eq!(LOW_RAM_HOST_THRESHOLD_MB, 4096);
+        assert_eq!(LOW_RAM_MAX_MATCHES_PER_CHUNK, 500);
+        assert_eq!(LOW_RAM_MAX_DECODE_BYTES, 256 * 1024);
+    }
+
+    /// The caps are applied via `.min()`, i.e. they clamp DOWN and never raise a
+    /// smaller configured value — the exact semantics the low-RAM adaptation
+    /// relies on. Prove both directions with the named constants.
+    #[test]
+    fn low_ram_caps_clamp_down_never_up() {
+        // Above the cap: reduced to the cap.
+        assert_eq!(4096usize.min(LOW_RAM_MAX_MATCHES_PER_CHUNK), 500);
+        assert_eq!((4 * 1024 * 1024usize).min(LOW_RAM_MAX_DECODE_BYTES), 256 * 1024);
+        // Below the cap: left untouched.
+        assert_eq!(100usize.min(LOW_RAM_MAX_MATCHES_PER_CHUNK), 100);
+        assert_eq!((64 * 1024usize).min(LOW_RAM_MAX_DECODE_BYTES), 64 * 1024);
+    }
+}

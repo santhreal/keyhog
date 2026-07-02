@@ -16,7 +16,7 @@ use anyhow::Result;
 pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 pub(crate) use backend::inspect_autoroute_cache;
 pub(crate) use backend::CachedBackendRouter;
-use backend::{AutorouteRoutingError, MeasuredBackendRouter};
+use backend::{is_gpu_backend, AutorouteRoutingError, MeasuredBackendRouter};
 use keyhog_core::{Chunk, RawMatch, Source};
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use keyhog_scanner::CompiledScanner;
@@ -26,18 +26,22 @@ use std::sync::Arc;
 use std::time::Instant;
 
 const COALESCED_CHUNK_SCAN_CEILING_BYTES: usize = 512 * 1024 * 1024;
+/// The scan ceiling in MiB, derived from the byte constant so the operator-facing
+/// skip messages can never name a different size than the limit actually enforced.
+const COALESCED_CHUNK_SCAN_CEILING_MB: usize = COALESCED_CHUNK_SCAN_CEILING_BYTES / (1024 * 1024);
 
 pub(super) fn record_oversized_coalesced_chunk_skip(chunk: &Chunk) {
     let mb = chunk.data.len() / (1024 * 1024);
     let path = chunk.metadata.path.as_deref().unwrap_or("<unknown>"); // LAW10: absent path/field => display placeholder for REPORTING only; coverage gap still recorded
     eprintln!(
-        "keyhog: WARNING: skipping chunk over 512 MiB scan ceiling ({mb} MiB) at {path}; it was NOT scanned for secrets."
+        "keyhog: WARNING: skipping chunk over {COALESCED_CHUNK_SCAN_CEILING_MB} MiB scan ceiling ({mb} MiB) at {path}; it was NOT scanned for secrets."
     );
     let _receipt = crate::record_source_error();
     tracing::warn!(
         path = %path,
         size_mb = mb,
-        "skipping chunk over 512 MiB scan ceiling"
+        ceiling_mb = COALESCED_CHUNK_SCAN_CEILING_MB,
+        "skipping chunk over scan ceiling"
     );
 }
 
@@ -149,7 +153,7 @@ impl CoalescedScannerWorker {
             return Ok(scan_start.elapsed());
         }
         let chosen_backend = self.router.choose(self.scanner.as_ref(), batch)?;
-        let ran_on_gpu = matches!(chosen_backend, ScanBackend::Gpu | ScanBackend::MegaScan);
+        let ran_on_gpu = is_gpu_backend(chosen_backend);
         let per_chunk = match chosen_backend {
             // The Vyre GpuLiteralSet region-presence route is the single on-GPU
             // trigger path. It owns backend acquisition and degrades LOUDLY to
@@ -582,5 +586,34 @@ impl ScanOrchestrator {
                 let _receipt = crate::record_incremental_cache_persist_failed();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod dispatch_const_tests {
+    use super::*;
+
+    /// The MiB scan-ceiling used in operator skip messages is DERIVED from the
+    /// byte constant, so the two can never drift apart. Pins both the value (512)
+    /// and the exact byte<->MiB relationship the derivation relies on.
+    #[test]
+    fn coalesced_scan_ceiling_mb_is_derived_from_bytes() {
+        assert_eq!(COALESCED_CHUNK_SCAN_CEILING_MB, 512);
+        assert_eq!(
+            COALESCED_CHUNK_SCAN_CEILING_MB * 1024 * 1024,
+            COALESCED_CHUNK_SCAN_CEILING_BYTES
+        );
+    }
+
+    /// `is_gpu_backend` is the single owner of the "does this backend run on the
+    /// GPU" predicate that the coalesced worker's `ran_on_gpu` flag consumes.
+    /// Pin its verdict for every routable backend so an inline `matches!` copy
+    /// cannot silently reintroduce a divergent classification.
+    #[test]
+    fn is_gpu_backend_classifies_every_routable_backend() {
+        assert!(is_gpu_backend(ScanBackend::Gpu));
+        assert!(is_gpu_backend(ScanBackend::MegaScan));
+        assert!(!is_gpu_backend(ScanBackend::SimdCpu));
+        assert!(!is_gpu_backend(ScanBackend::CpuFallback));
     }
 }

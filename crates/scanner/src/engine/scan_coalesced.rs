@@ -152,7 +152,8 @@ impl CompiledScanner {
                     .as_ref()
                     .is_some_and(|screen| !screen.screen(data));
                 if alphabet_rejected
-                    || (data.len() >= 64 && !self.bigram_bloom.maybe_overlaps(data))
+                    || (data.len() >= super::BIGRAM_BLOOM_MIN_CHUNK_BYTES
+                        && !self.bigram_bloom.maybe_overlaps(data))
                 {
                     return None;
                 }
