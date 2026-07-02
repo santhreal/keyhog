@@ -553,32 +553,7 @@ pub(crate) mod serde_arc_str_opt {
     }
 }
 
-#[cfg(test)]
-mod arc_from_cow_tests {
-    use super::arc_from_cow;
-    use std::borrow::Cow;
-    use std::sync::Arc;
-
-    #[test]
-    fn borrowed_cow_preserves_contents() {
-        let arc: Arc<str> = arc_from_cow(Cow::Borrowed("ghp_borrowed_token"));
-        assert_eq!(arc.as_ref(), "ghp_borrowed_token");
-        assert_eq!(arc.len(), 18);
-    }
-
-    #[test]
-    fn owned_cow_preserves_contents() {
-        let owned = String::from("owned-secret-42");
-        let arc: Arc<str> = arc_from_cow(Cow::Owned(owned));
-        assert_eq!(arc.as_ref(), "owned-secret-42");
-        assert_eq!(arc.len(), 15);
-    }
-
-    #[test]
-    fn empty_cow_yields_empty_arc() {
-        let arc: Arc<str> = arc_from_cow(Cow::Borrowed(""));
-        assert_eq!(arc.as_ref(), "");
-        assert_eq!(arc.len(), 0);
-        assert!(arc.is_empty());
-    }
-}
+// Tests live in `tests/unit/finding_arc_str_serde_roundtrip.rs` (KH-GAP-004: no
+// inline test modules in `src/`). The `arc_from_cow` deserialize helper is
+// exercised end-to-end through the public `RawMatch` serde round-trip (its
+// `Arc<str>` fields use `serde_arc_str`, which calls it).

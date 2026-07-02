@@ -406,12 +406,5 @@ pub(crate) fn lockdown_cache_entry_error_is_violation_for_test() -> bool {
     keyhog_cache_contains_findings(Path::new("<test-cache>"), entries)
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn sha256_hex_len_resolves_to_canonical_git_lfs_owner() {
-        // The compiled-pattern cache filename check reuses the single crate-wide
-        // owner in `git_lfs`; both this module and that one must see 64.
-        assert_eq!(crate::git_lfs::SHA256_HEX_LEN, 64);
-    }
-}
+// Tests live in `tests/unit/hardening_sha256_len_single_owner.rs` (KH-GAP-004:
+// no inline test modules in `src/`).
