@@ -11,13 +11,23 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             let mut entries =
                 Vec::with_capacity(2 + d.patterns.len() + d.companions.len() + d.keywords.len());
             entries.push(format!("id:{}", d.id));
-            entries.push(format!("sev:{:?}", d.severity));
+            // Bind severity to the detector id: an un-bound `sev:{severity}` key
+            // makes swapping severities between two detectors produce the same
+            // sorted multiset (identical digest), so the merkle cache would keep
+            // a stale skip after severity — and severity-threshold suppression —
+            // changed (Law 10 silent staleness).
+            entries.push(format!("sev:{}:{:?}", d.id, d.severity));
             for p in &d.patterns {
                 entries.push(format!(
-                    "p:{}:{}|g:{}",
+                    // `cs:` folds `client_safe` in: toggling it downgrades every
+                    // match of this pattern to `Severity::ClientSafe` (gated by
+                    // `--hide-client-safe`), a material output change that must
+                    // invalidate the cache.
+                    "p:{}:{}|g:{}|cs:{}",
                     d.id,
                     p.regex,
-                    p.group.map(|g| g.to_string()).unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
+                    p.group.map(|g| g.to_string()).unwrap_or_default(), // LAW10: missing/non-string field => empty/placeholder; recall-safe
+                    p.client_safe
                 ));
             }
             for c in &d.companions {
