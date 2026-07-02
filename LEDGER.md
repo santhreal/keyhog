@@ -445,3 +445,8 @@ SESSION TOTAL: ~2453 tests committed across 14 iterations. 3 held items (prefilt
 ## Iteration 15 COMPLETE (clean 12/12) — ~180 tests
 base32_decoder17, context_window19, match_dedup_key16, report_sonarqube14, finding_ordering14, redaction_mask16, cli_json_shape13, cli_quiet_flag12, cli_version_help15, github_repo_classify16, har_parse13, stdin_chunk15. No fixes needed (agents obeyed the accumulated hard-won-truths: cpu backend, .contains on wrapped errors, real detector ids). Documented finding: aws_account_from_key_id 13-digit-vs-12-doc (cosmetic). Investigated + left-as-is: entropy ends_with('salt') over-broad-but-intentional.
 SESSION TOTAL: ~2633 tests committed across 15 iterations. 3 held items. iter16 authoring.
+
+## Iteration 16 COMPLETE (12/12) — ~180 tests
+caesar_shift_all14, shannon_entropy16, simd_scalar_parity_chunk14 (swapped GHP_TOKEN to canonical valid-checksum ghp_0000...2C8GjS — agent wrongly claimed github has no checksum), report_csv_columns15, finding_serde_roundtrip15, severity_cmp14, cli_exclude_glob13, cli_stdin_scan13 (fail-closed exit13 emits EMPTY stdout not '[]'), cli_min_severity14, docker_image_ref17, slack_pagination9, binary_detect13.
+KEY LEARNINGS: (1) github/gitlab/stripe tokens VALIDATE a trailing checksum — fabricated random body yields 0 findings; use canonical ghp_0000...2C8GjS; (2) a fail-closed cli scan emits EMPTY stdout, error on stderr (not '[]').
+SESSION TOTAL: ~2786 tests committed across 16 iterations. 3 held items. iter17 authoring.
