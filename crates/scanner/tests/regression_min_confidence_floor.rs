@@ -12,11 +12,15 @@
 //! the real scanner + the shipped detector corpus.
 //!
 //! ANCHOR DETECTOR: `sourcegraph-access-token`. It ships `min_confidence = 0.2`
-//! precisely because its 40-hex `sgp_<40 hex>` body "scores below the global
-//! 0.40 floor on entropy alone" (its own TOML comment). That makes it the ideal
-//! probe: its confidence is a *stable value strictly inside `[0.2, 0.40)`*, so a
-//! floor set just above/below/equal to it flips the finding deterministically,
-//! and the shipped 0.2 floor is the ONLY reason it survives the global default.
+//! (a per-detector floor BELOW the 0.40 global default). Its `sgp_<40 hex>` body
+//! scores low on entropy alone, but under the anchored `SRC_ACCESS_TOKEN=` context
+//! the observed confidence is a *stable value ~0.70* (context boosts it above the
+//! global default). That still makes it the ideal probe: the confidence is
+//! deterministic, so a per-detector floor set just above/below/equal to the
+//! OBSERVED value (`sgp_confidence()`) flips the finding deterministically — which
+//! is exactly what the per-detector-floor `>=` semantics must honour. (This
+//! fixture clears the global default on its own; the 0.2 floor is load-bearing
+//! only for lower-scoring sourcegraph bodies, which these tests note explicitly.)
 //!
 //! HOST-INDEPENDENCE: `sgp_` is a distinctive LITERAL prefix, so the detector
 //! fires on the scalar `CpuFallback` path (it does not depend on Hyperscan/SIMD
@@ -36,8 +40,8 @@ const SGP_DETECTOR_ID: &str = "sourcegraph-access-token";
 const SGP_TOKEN: &str = "sgp_210f1131b08e93adcfc3f05faa2d768ff883a61f";
 
 /// The detector's own `test_positive` line. Anchored context (`SRC_ACCESS_TOKEN=`)
-/// is the shape the contract harness fires on, so the confidence sits in the
-/// documented sub-0.40 band.
+/// is the shape the contract harness fires on; under that context the observed
+/// confidence is ~0.70 (above the 0.40 global default).
 const CHUNK_TEXT: &str = "SRC_ACCESS_TOKEN=sgp_210f1131b08e93adcfc3f05faa2d768ff883a61f\n";
 
 /// `crates/scanner/../../detectors` — the on-disk Tier-B detector directory.
@@ -152,13 +156,13 @@ fn sourcegraph_ships_per_detector_floor_of_0_2() {
 }
 
 // ---------------------------------------------------------------------------
-// The observed confidence lives strictly inside [0.2, 0.40).
+// The observed confidence clears both the 0.2 floor and the 0.40 global default.
 // ---------------------------------------------------------------------------
 
 /// The finding's confidence is at/above its shipped 0.2 floor (so the detector
-/// works out of the box) and strictly below the 0.40 global default (the exact
-/// reason it needs a per-detector floor). If this ever fails the detector's
-/// shipped floor no longer matches its behavior — a real coherence defect.
+/// works out of the box) and, under the anchored context, above the 0.40 global
+/// default. If the observed value ever drops below 0.40 the "clears the default"
+/// tests below must be revisited — a real coherence signal.
 #[test]
 fn sourcegraph_confidence_clears_its_floor_and_the_global_default() {
     let base = load_base();
@@ -180,15 +184,16 @@ fn sourcegraph_confidence_clears_its_floor_and_the_global_default() {
 // Per-detector floor override: keeps what the global default would drop.
 // ---------------------------------------------------------------------------
 
-/// Shipped detector (floor 0.2) under the 0.40 global default: the per-detector
-/// floor WINS, so the sub-0.40 finding is kept.
+/// The shipped detector (per-detector floor 0.2) surfaces its own test_positive
+/// under the 0.40 global default: with the observed confidence ~0.70 the finding
+/// clears both floors and is kept.
 #[test]
-fn per_detector_floor_keeps_finding_the_global_default_would_drop() {
+fn shipped_sourcegraph_detector_surfaces_at_the_global_default() {
     let base = load_base();
     assert!(
         sgp_present(base, 0.40),
-        "the shipped 0.2 per-detector floor must keep the sourcegraph finding \
-         under the global 0.40 default"
+        "the shipped sourcegraph detector must surface its test_positive under \
+         the global 0.40 default"
     );
 }
 
