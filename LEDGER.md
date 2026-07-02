@@ -419,3 +419,9 @@ FIXES this iter: finding_serde:291 value->value.clone() (E0505); skip_rules cont
 HELD (hyperscan-gated rewrite needed): prefilter_trigger_union.rs — 5 datadog tests assume a NO-LITERAL (HS-only) detector fires on CpuFallback; it fires only via Hyperscan (off on this host). Rewrite w/ AC-literal detectors for scalar parity + warm_backend-gated SimdCpu leg; keep the 9 green tests.
 cpu_decoder_parity.rs was a PRE-EXISTING committed file (iter8 agent only verified it) — not re-counted.
 SESSION TOTAL: ~1452 tests committed (iter1-6 1091 + iter7 173 + iter8 188) + flate2 + aws recall + web_happy + spec-hash Law-10 fix. iter9 (12) authored, iter10 (12) authoring.
+
+## Iteration 10 COMPLETE (769636de4 + reverse follow-up) + decode-density seam (e51ee43fb) — ~181 tests
+iter10 12 files: reverse_decode_depth13, decode_density_gate15, nested_base64_15, confidence_scoring14, severity_threshold_suppress16, sarif_region_bytes14, cli_config_surface16, cli_config_file_load15, cli_output_file12, fs_walk_symlink14, tarball_entry14, status_verdict_map14.
+KEEPER (testability, real): has_decodable_payload_for_test seam in scanner testing.rs + regression_decode_density_boundary.rs(12) pinning the recall-load-bearing decode-density thresholds 24/4/2 (gate had no seam — iter10 agent found it).
+WRONG-VALUE CORRECTIONS to real behavior: base64 %4==2 vector aGVsbG->aGVsbA (non-canonical trailing bits correctly rejected by strict decoder); reverse full-scan assertion scoped to aws-access-key (reversed literal legitimately flagged by a generic high-entropy detector, aws never fires on it).
+SESSION TOTAL: ~1803 tests committed (iter1-6 1091 + iter7 173 + iter8 188 + iter9 170 + iter10 168 + decode-density seam 12 + misc +1) + flate2 + aws recall + web_happy + spec-hash Law-10 fix + decode-density seam keeper. iter11 (12) authoring.
