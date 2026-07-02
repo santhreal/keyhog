@@ -232,19 +232,23 @@ fn has_h1_token_boundary(bytes: &[u8], h1_pos: usize) -> bool {
     h1_pos == 0 || bytes[h1_pos - 1].is_ascii_whitespace()
 }
 
+/// Length of a go.sum `h1:` checksum: a SHA-256 digest (32 bytes) rendered as
+/// standard base64 with padding is exactly 44 characters.
+const GO_SUM_H1_BASE64_DIGEST_LEN: usize = 44;
+
 fn has_strict_go_sum_checksum_shape(bytes: &[u8], h1_pos: usize) -> bool {
     if count_ascii_fields(&bytes[..h1_pos]) < 2 {
         return false;
     }
     let digest_start = h1_pos + b"h1:".len();
-    let Some(digest) = bytes.get(digest_start..digest_start + 44) else {
+    let Some(digest) = bytes.get(digest_start..digest_start + GO_SUM_H1_BASE64_DIGEST_LEN) else {
         return false;
     };
     digest
         .iter()
         .all(|&byte| crate::decode::is_standard_base64_byte(byte))
         && bytes
-            .get(digest_start + 44)
+            .get(digest_start + GO_SUM_H1_BASE64_DIGEST_LEN)
             .is_none_or(u8::is_ascii_whitespace)
 }
 
@@ -386,16 +390,22 @@ fn is_base64_scalar(bytes: &[u8]) -> bool {
             .all(|&byte| crate::decode::is_standard_base64_byte(byte))
 }
 
+/// How many lines above/below the `oid sha256:` line a git-LFS pointer's
+/// `version` and `size` lines may sit. A real LFS pointer file is three lines
+/// (`version`, `oid`, `size`), so a window of 3 covers reordered/padded pointers
+/// without reaching into unrelated content.
+const GIT_LFS_POINTER_LOOKAROUND_LINES: usize = 3;
+
 fn is_git_lfs_pointer_context_with_lines(
     lines: &[&str],
     line_idx: usize,
     line_bytes: &[u8],
 ) -> bool {
     git_lfs::is_git_lfs_oid_line(line_bytes)
-        && nearby_lines_contain(lines, line_idx, 3, |candidate| {
+        && nearby_lines_contain(lines, line_idx, GIT_LFS_POINTER_LOOKAROUND_LINES, |candidate| {
             git_lfs::is_git_lfs_version_line(candidate.as_bytes())
         })
-        && following_lines_contain(lines, line_idx, 3, |candidate| {
+        && following_lines_contain(lines, line_idx, GIT_LFS_POINTER_LOOKAROUND_LINES, |candidate| {
             git_lfs::is_git_lfs_size_line(candidate.as_bytes())
         })
 }

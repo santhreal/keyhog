@@ -18,10 +18,6 @@ pub(crate) const NUM_FEATURES: usize = 42;
 /// Offset into the feature vector where the one-hot file-type encoding starts.
 const FILE_TYPE_OFFSET: usize = 32;
 
-/// Number of mixture-of-experts specialists. Each expert sees the same input
-/// but learns different aspects (one may specialize in cloud credentials,
-/// another in short API keys, etc.). 6 experts balance capacity vs. inference
-/// cost - trained via grid search over {4, 6, 8, 12}.
 /// Normalization ceiling for text length feature (feature[0] = len / 200).
 /// 200 chars covers the longest common credential format (JWT, SSH keys).
 const MAX_NORMALIZED_TEXT_LENGTH: f32 = 200.0;

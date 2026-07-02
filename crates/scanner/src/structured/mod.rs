@@ -12,6 +12,12 @@ pub(crate) mod parsers;
 
 const MAX_STRUCTURED_PARSE_BYTES: usize = 2 * 1024 * 1024;
 
+/// Separator inserted between a key and its value in each synthetic scannable
+/// line (`"{context}: {value}"`). Single owner for both the literal pushed into
+/// the output text and the `.len()` used in the pre-size / offset arithmetic
+/// below: if the two ever diverged, the synthetic-line offsets would be wrong.
+const SYNTHETIC_PAIR_SEPARATOR: &str = ": ";
+
 pub(crate) struct ExtractedPair {
     pub context: String,
     pub value: String,
@@ -206,7 +212,7 @@ fn build_preprocessed_text<'a>(
     // and the throwaway String that a `format!` per pair would allocate.
     let appended_len: usize = pairs
         .iter()
-        .map(|p| p.context.len() + 2 + p.value.len() + 1)
+        .map(|p| p.context.len() + SYNTHETIC_PAIR_SEPARATOR.len() + p.value.len() + 1)
         .sum();
     let mut final_text = String::with_capacity(original_end + 1 + appended_len);
     final_text.push_str(text);
@@ -233,7 +239,7 @@ fn build_preprocessed_text<'a>(
     for pair in pairs {
         // line == "{context}: {value}"; push the parts directly instead of
         // allocating an intermediate String via format!.
-        let line_len = pair.context.len() + 2 + pair.value.len();
+        let line_len = pair.context.len() + SYNTHETIC_PAIR_SEPARATOR.len() + pair.value.len();
         mappings.push(LineMapping {
             line_number: pair.line,
             start_offset: current_offset,
@@ -241,7 +247,7 @@ fn build_preprocessed_text<'a>(
             original_start_offset: source_line_start(&source_line_offsets, pair.line),
         });
         final_text.push_str(&pair.context);
-        final_text.push_str(": ");
+        final_text.push_str(SYNTHETIC_PAIR_SEPARATOR);
         final_text.push_str(&pair.value);
         final_text.push('\n');
         current_offset += line_len + 1;
@@ -267,7 +273,7 @@ fn build_preprocessed_text<'a>(
     // and the throwaway String that a `format!` per pair would allocate.
     let appended_len: usize = pairs
         .iter()
-        .map(|p| p.context.len() + 2 + p.value.len() + 1)
+        .map(|p| p.context.len() + SYNTHETIC_PAIR_SEPARATOR.len() + p.value.len() + 1)
         .sum();
     let mut final_text = String::with_capacity(text.len() + 1 + appended_len);
     final_text.push_str(text);
@@ -297,7 +303,7 @@ fn build_preprocessed_text<'a>(
     for pair in pairs {
         // line == "{context}: {value}"; push the parts directly instead of
         // allocating an intermediate String via format!.
-        let line_len = pair.context.len() + 2 + pair.value.len();
+        let line_len = pair.context.len() + SYNTHETIC_PAIR_SEPARATOR.len() + pair.value.len();
         mappings.push(LineMapping {
             line_number: pair.line,
             start_offset: current_offset,
@@ -305,7 +311,7 @@ fn build_preprocessed_text<'a>(
             original_start_offset: source_line_start(&source_line_offsets, pair.line),
         });
         final_text.push_str(&pair.context);
-        final_text.push_str(": ");
+        final_text.push_str(SYNTHETIC_PAIR_SEPARATOR);
         final_text.push_str(&pair.value);
         final_text.push('\n');
         current_offset += line_len + 1;

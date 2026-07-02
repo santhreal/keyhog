@@ -452,11 +452,20 @@ fn cloud_key_extension(key: &str) -> Option<&str> {
     Some(ext)
 }
 
-pub(crate) fn is_binary_content_type(content_type: &str) -> bool {
-    let media_type = content_type
+/// Extract the bare media type from a `Content-Type` header value: the text
+/// before the first `;` (dropping any `charset=`/`boundary=` parameters), with
+/// surrounding whitespace trimmed. Single owner so every content-type
+/// classifier (cloud binary/unknown checks here, the web-response router in
+/// `crate::web`) splits the header the same way.
+pub(crate) fn media_type(content_type: &str) -> &str {
+    content_type
         .split_once(';')
         .map_or(content_type, |(media_type, _)| media_type)
-        .trim();
+        .trim()
+}
+
+pub(crate) fn is_binary_content_type(content_type: &str) -> bool {
+    let media_type = media_type(content_type);
     starts_with_ignore_ascii_case(media_type, "image/")
         || starts_with_ignore_ascii_case(media_type, "audio/")
         || starts_with_ignore_ascii_case(media_type, "video/")
@@ -465,11 +474,7 @@ pub(crate) fn is_binary_content_type(content_type: &str) -> bool {
 }
 
 fn is_unknown_binary_content_type(content_type: &str) -> bool {
-    let media_type = content_type
-        .split_once(';')
-        .map_or(content_type, |(media_type, _)| media_type)
-        .trim();
-    media_type.eq_ignore_ascii_case("application/octet-stream")
+    media_type(content_type).eq_ignore_ascii_case("application/octet-stream")
 }
 
 fn starts_with_ignore_ascii_case(value: &str, prefix: &str) -> bool {
@@ -518,6 +523,35 @@ pub(crate) fn record_source_truncated_once(
     Some(keyhog_core::SourceError::Other(format!(
         "{source} source scan was truncated: {reason}; remaining objects were not scanned"
     )))
+}
+
+#[cfg(test)]
+mod media_type_tests {
+    use super::{is_binary_content_type, media_type};
+
+    #[test]
+    fn strips_parameters_and_trims() {
+        assert_eq!(media_type("text/plain; charset=utf-8"), "text/plain");
+        assert_eq!(media_type("  application/json  "), "application/json");
+        assert_eq!(
+            media_type("image/png ; boundary=abc ; q=1"),
+            "image/png"
+        );
+    }
+
+    #[test]
+    fn bare_media_type_passes_through() {
+        assert_eq!(media_type("application/octet-stream"), "application/octet-stream");
+        assert_eq!(media_type(""), "");
+    }
+
+    #[test]
+    fn binary_check_uses_the_shared_extractor() {
+        // A parameterized image type must be recognized as binary via the same
+        // single split rule the router uses.
+        assert!(is_binary_content_type("image/jpeg; charset=binary"));
+        assert!(!is_binary_content_type("text/plain; charset=utf-8"));
+    }
 }
 
 #[cfg(test)]

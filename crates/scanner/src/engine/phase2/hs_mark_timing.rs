@@ -24,6 +24,7 @@
 //! contributes nothing to the hot path. The counters are process-wide relaxed
 //! atomics that sum across rayon workers, matching `POPULATE_PREFILTER_NS`.
 
+use super::mark_stats::pct;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 /// Nanoseconds spent in the HS SIMD scan + mark callback, summed across workers.
@@ -65,15 +66,6 @@ impl HsMarkSplit {
     /// line when this holds, so an unprofiled run stays silent).
     pub fn any_recorded(&self) -> bool {
         self.total_ns() > 0
-    }
-}
-
-/// `100 * part / whole`, or `0.0` when `whole == 0`.
-fn pct(part: u64, whole: u64) -> f64 {
-    if whole > 0 {
-        100.0 * part as f64 / whole as f64
-    } else {
-        0.0
     }
 }
 

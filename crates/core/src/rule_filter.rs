@@ -178,6 +178,13 @@ impl std::str::FromStr for RuleSuppressor {
     }
 }
 
+/// Single owner for the "empty `[[suppress]]` table" rejection message. Emitted
+/// both at the primary empty-conditions guard and at the defensive fall-through
+/// below, so the two sites cannot drift into differently-worded errors.
+const NO_CONDITIONS_ERR: &str = "no conditions specified in [[suppress]] entry; \
+     use `[[suppress]]\\nliteral_true = true` if you really want \
+     to drop every finding";
+
 fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
     let mut conditions: Vec<RuleCondition> = Vec::new();
 
@@ -237,10 +244,7 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
     if conditions.is_empty() {
         // Empty `[[suppress]]` table is almost always a typo. Refuse
         // rather than silently matching every finding.
-        return Err("no conditions specified in [[suppress]] entry; \
-             use `[[suppress]]\\nliteral_true = true` if you really want \
-             to drop every finding"
-            .into());
+        return Err(NO_CONDITIONS_ERR.into());
     }
 
     // AND of all conditions inside one [[suppress]] table.
@@ -252,10 +256,7 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
     // gets the parsable "no conditions" message instead of a
     // backtrace.
     let Some(first) = iter.next() else {
-        return Err("no conditions specified in [[suppress]] entry; \
-             use `[[suppress]]\\nliteral_true = true` if you really want \
-             to drop every finding"
-            .into());
+        return Err(NO_CONDITIONS_ERR.into());
     };
     let mut formula = RuleFormula::condition(first);
     for cond in iter {

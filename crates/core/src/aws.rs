@@ -34,8 +34,14 @@ use std::sync::OnceLock;
 /// the identical embedding, so both decode with the same routine.
 const AWS_KEY_ID_PREFIXES: [&str; 2] = ["AKIA", "ASIA"];
 
+/// Length of the 4-char access-key-ID prefix (`AKIA`/`ASIA`) that precedes the
+/// base32 body. Single owner for the "skip the prefix" slice offset so the
+/// decode routine can never disagree with [`AWS_KEY_ID_PREFIXES`] about where
+/// the encoded account bits begin.
+const AWS_KEY_ID_PREFIX_LEN: usize = 4;
+
 /// Length of a canonical AWS access-key ID: 4-char prefix + 16 base32 chars.
-const AWS_KEY_ID_LEN: usize = 20;
+const AWS_KEY_ID_LEN: usize = AWS_KEY_ID_PREFIX_LEN + 16;
 
 /// The 48-bit mask + 7-bit right shift that extracts the account number from
 /// the leading 6 decoded bytes. Documented by trufflesecurity; the low 7 bits
@@ -80,7 +86,7 @@ pub(crate) fn aws_account_from_key_id(key_id: &str) -> Option<String> {
     // The 16 base32 chars after the prefix encode 80 bits; we only need the
     // leading 48 bits (first 6 bytes), which come from the first 10 base32
     // chars (10 * 5 = 50 bits). Accumulate those 50 bits, then keep the top 48.
-    let body = &key_id.as_bytes()[4..];
+    let body = &key_id.as_bytes()[AWS_KEY_ID_PREFIX_LEN..];
     let mut acc: u64 = 0;
     for &c in &body[..10] {
         let v = base32_value(c)?;

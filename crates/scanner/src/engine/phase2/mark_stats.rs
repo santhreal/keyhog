@@ -111,8 +111,10 @@ impl MarkSnapshot {
 }
 
 /// `100 * part / whole`, or `0.0` when `whole == 0`. Shared by the snapshot
-/// accessors so the divide-by-zero guard lives in exactly one place.
-fn pct(part: u64, whole: u64) -> f64 {
+/// accessors so the divide-by-zero guard lives in exactly one place. Also the
+/// single owner for the sibling [`super::hs_mark_timing`] percentage accessors,
+/// so the divide-by-zero guard is not re-implemented per module.
+pub(super) fn pct(part: u64, whole: u64) -> f64 {
     if whole > 0 {
         100.0 * part as f64 / whole as f64
     } else {
@@ -284,4 +286,26 @@ pub(crate) fn phase2_mark_stats_reset() {
     MARK_PERPATTERN_WORK.store(0, Relaxed);
     MARK_HS_SERVED.store(0, Relaxed);
     MARK_REGEXSET_SERVED.store(0, Relaxed);
+}
+
+#[cfg(test)]
+mod pct_owner_tests {
+    use super::pct;
+
+    // `pct` is the single owner for both this module's `*_pct` accessors and the
+    // sibling `hs_mark_timing` split accessors (dedup: the divide-by-zero guard
+    // and rounding live in exactly one place). Pin its concrete arithmetic so a
+    // future edit to either caller cannot silently reintroduce a divergent copy.
+    #[test]
+    fn pct_is_percentage_of_whole() {
+        assert_eq!(pct(1, 4), 25.0);
+        assert_eq!(pct(900, 1000), 90.0);
+        assert_eq!(pct(3, 3), 100.0);
+    }
+
+    #[test]
+    fn pct_is_zero_when_whole_is_zero_no_div_by_zero() {
+        assert_eq!(pct(5, 0), 0.0);
+        assert_eq!(pct(0, 0), 0.0);
+    }
 }

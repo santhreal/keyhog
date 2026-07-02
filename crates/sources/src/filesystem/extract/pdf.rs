@@ -148,7 +148,8 @@ fn emit_non_pdf_extension_fallback(
     let (data, source_type) = match read::decode_text_file(&bytes) {
         Some(text) if !text.is_empty() => (text.into(), "filesystem"),
         _ => {
-            let strings = crate::strings::extract_printable_strings(&bytes, 8);
+            let strings =
+                crate::strings::extract_printable_strings(&bytes, super::MIN_PRINTABLE_STRING_LEN);
             if strings.is_empty() {
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
                 return;

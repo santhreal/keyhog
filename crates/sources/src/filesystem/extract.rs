@@ -27,6 +27,14 @@ pub(crate) use archive::validate_scan_archive_entry_name;
 pub(super) const UNCAPPED_ARCHIVE_BUDGET: u64 = 1024 * 1024 * 1024;
 const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 1024;
 
+/// Minimum length of a printable run kept when a non-text (binary) file or
+/// archive entry is scanned as extracted strings. Shared by every
+/// `extract_printable_strings` call on the filesystem path so the strings-scan
+/// floor is set in ONE place, matching the crate convention of a named length
+/// (`binary::MIN_STRING_LEN`, `web::MIN_WASM_STRING_LEN`) rather than a bare
+/// literal at each call site.
+pub(super) const MIN_PRINTABLE_STRING_LEN: usize = 8;
+
 /// Upper bound on a Git-LFS pointer file's size. A canonical pointer is the
 /// three short lines `version …` / `oid sha256:…` / `size …` (~130 bytes; a few
 /// hundred with optional `ext-*` lines), always well under 1 KiB. Gating the
@@ -161,7 +169,7 @@ pub(super) fn chunk_from_extracted_entry(
         })),
         Ok(_) => None, // empty entry: nothing to scan, not a coverage gap
         Err(bytes) => {
-            let strings = crate::strings::extract_printable_strings(&bytes, 8);
+            let strings = crate::strings::extract_printable_strings(&bytes, MIN_PRINTABLE_STRING_LEN);
             if strings.is_empty() {
                 record_binary_without_printable_strings(&entry_path);
                 None
@@ -815,7 +823,7 @@ pub(super) fn process_entry(
         Some(read::BufferedFileRead::Text(text)) if text.is_empty() => return,
         Some(read::BufferedFileRead::Text(text)) => (text.into(), "filesystem"),
         Some(read::BufferedFileRead::Bytes(bytes)) => {
-            let strings = crate::strings::extract_printable_strings(&bytes, 8);
+            let strings = crate::strings::extract_printable_strings(&bytes, MIN_PRINTABLE_STRING_LEN);
             if strings.is_empty() {
                 record_binary_without_printable_strings(&display_path(&path));
                 return;
@@ -830,7 +838,7 @@ pub(super) fn process_entry(
             )
         }
         Some(read::BufferedFileRead::Mmap(mmap)) => {
-            let strings = crate::strings::extract_printable_strings(&mmap, 8);
+            let strings = crate::strings::extract_printable_strings(&mmap, MIN_PRINTABLE_STRING_LEN);
             if strings.is_empty() {
                 record_binary_without_printable_strings(&display_path(&path));
                 return;

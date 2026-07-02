@@ -15,6 +15,13 @@ use std::io::Write;
 use std::path::Path;
 use std::rc::Rc;
 
+/// Initial capacity reserved for a RAR entry's decoded body. A 64 KiB starting
+/// buffer avoids repeated small reallocations while decoding while keeping the
+/// up-front reservation bounded for a tiny entry (the real size caps the
+/// reservation for a small entry via `min`). Named once so the two entry sinks
+/// cannot drift apart, mirroring `seven_zip::READ_CAPACITY_HINT`.
+const RAR_ENTRY_BUFFER_CAPACITY_HINT: usize = 64 * 1024;
+
 pub(super) fn extract_rar_chunks(
     path: &Path,
     max_size: u64,
@@ -817,7 +824,7 @@ struct RarEntrySink {
 
 impl RarEntrySink {
     fn new(entry_name: String, expected_size: u64, cap: u64) -> Self {
-        let capacity = expected_size.min(64 * 1024) as usize;
+        let capacity = expected_size.min(RAR_ENTRY_BUFFER_CAPACITY_HINT as u64) as usize;
         Self {
             entry_name,
             content: Vec::with_capacity(capacity),
@@ -871,7 +878,7 @@ impl SolidRarEntrySink {
     fn new(entry_name: String, cap: u64, decoded: Rc<RefCell<Vec<RarDecodedEntry>>>) -> Self {
         Self {
             entry_name,
-            content: Vec::with_capacity(64 * 1024),
+            content: Vec::with_capacity(RAR_ENTRY_BUFFER_CAPACITY_HINT),
             cap,
             hit_cap: false,
             decoded,

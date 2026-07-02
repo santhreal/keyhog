@@ -29,9 +29,8 @@ pub(crate) fn is_known_example_credential(credential: &str) -> bool {
     }
 
     // x/X-dominated values are masking filler.
-    let body = credential.as_bytes();
-    let x_count = body.iter().filter(|&&b| b == b'x' || b == b'X').count();
-    if body.len() >= 16 && x_count > body.len() * 3 / 4 {
+    let x_count = bytes.iter().filter(|&&b| b == b'x' || b == b'X').count();
+    if bytes.len() >= 16 && x_count > bytes.len() * 3 / 4 {
         return true;
     }
 
@@ -69,6 +68,18 @@ fn is_empty_input_hash(credential: &str) -> bool {
         ), // SHA256("")
         _ => false,
     }
+}
+
+/// Fraction of adjacent steps that must be monotonic/sequential before a hex
+/// body is treated as a documentation placeholder rather than a real secret:
+/// 90% (`* 9 / 10`), allowing a small number of non-sequential positions.
+const SEQUENTIAL_STEP_RATIO_NUMERATOR: usize = 9;
+const SEQUENTIAL_STEP_RATIO_DENOMINATOR: usize = 10;
+
+/// The `> threshold` count of sequential steps required over `step_count`
+/// candidate positions. Single owner for the 90% sequential-run heuristic.
+fn sequential_step_threshold(step_count: usize) -> usize {
+    step_count * SEQUENTIAL_STEP_RATIO_NUMERATOR / SEQUENTIAL_STEP_RATIO_DENOMINATOR
 }
 
 pub(crate) fn is_sequential_placeholder(credential: &str) -> bool {
@@ -111,7 +122,7 @@ fn is_hex_sequential_placeholder(credential: &str) -> bool {
     if bytes.len() >= 16 {
         let ascending = count_adjacent_hex_steps(bytes, hex_forward_step);
         let descending = count_adjacent_hex_steps(bytes, hex_reverse_step);
-        let threshold = (bytes.len() - 1) * 9 / 10;
+        let threshold = sequential_step_threshold(bytes.len() - 1);
         if ascending > threshold || descending > threshold {
             return true;
         }
@@ -129,7 +140,7 @@ fn is_hex_sequential_placeholder(credential: &str) -> bool {
     let ascending = count_pair_column_hex_steps(bytes, pair_count, 0);
     let ascending2 = count_pair_column_hex_steps(bytes, pair_count, 1);
 
-    let threshold = pair_count * 9 / 10;
+    let threshold = sequential_step_threshold(pair_count);
     ascending > threshold && ascending2 > threshold
 }
 
@@ -161,7 +172,7 @@ fn hex_byte_values_are_sequential(bytes: &[u8], pair_count: usize) -> bool {
     let reverse = count_pair_value_steps(bytes, pair_count, |previous, next| {
         previous == next.wrapping_add(1)
     });
-    let threshold = (pair_count - 1) * 9 / 10;
+    let threshold = sequential_step_threshold(pair_count - 1);
     forward > threshold || reverse > threshold
 }
 

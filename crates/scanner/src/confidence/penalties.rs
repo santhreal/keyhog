@@ -136,6 +136,31 @@ pub(crate) fn is_service_anchored_detector(detector_id: &str) -> bool {
     crate::detector_ids::is_service_anchored_detector(detector_id)
 }
 
+/// Multiplier applied when a credential literally contains a placeholder word
+/// (`EXAMPLE`, `PLACEHOLDER`, …) on its surface or decoded form: it is a doc
+/// sample, not a live secret. Single owner for the placeholder-word slam so the
+/// surface-form and decoded-form paths cannot drift to different factors.
+const PLACEHOLDER_WORD_PENALTY: f64 = 0.05;
+
+/// Multiplier applied when a value's byte alphabet is so small it is effectively
+/// one repeated symbol (`char_diversity` below the per-class floor) — a padding /
+/// placeholder artifact, not a real high-entropy secret body. Shared by the named
+/// and generic detector branches (same magnitude, different diversity threshold).
+const LOW_DIVERSITY_PENALTY: f64 = 0.1;
+
+/// Multiplier applied when a value's SHAPE is degenerate: a single-character run
+/// that is a large fraction of the token or long in absolute terms
+/// ([`is_degenerate_repeat`]). No real secret body carries such a run. Shared by
+/// the named and generic detector branches.
+const DEGENERATE_SHAPE_PENALTY: f64 = 0.1;
+
+/// Multiplier applied when decode-through proves the value is a DATA ENVELOPE,
+/// not a credential: it base64/hex-decodes to a binary asset (magic bytes) or a
+/// full protobuf message, is a uniform random-base64 blob, or is a double-base64
+/// wrapper. Slammed hardest — no service publishes a secret in this shape — so
+/// all three data-envelope arms share one factor.
+const DATA_ENVELOPE_PENALTY: f64 = 0.02;
+
 /// Apply post-ML penalties based on hard-coded placeholder heuristics.
 ///
 /// `is_named` is true for service-anchored detectors. For those, the
@@ -169,7 +194,7 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
         && !has_decoded_placeholder
         && has_credential_url_userinfo_without_placeholder(credential);
     if (has_surface_placeholder || has_decoded_placeholder) && !placeholder_is_only_url_host {
-        adjusted *= 0.05;
+        adjusted *= PLACEHOLDER_WORD_PENALTY;
     }
     if is_named {
         // Named detectors: a small-alphabet body (64-char hex has ≤ 16 distinct
@@ -178,7 +203,7 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
         // penalize DEGENERATE values (effectively one repeated character), which
         // no real key has, so a Linode 64-hex PAT survives but `aaaa…aaaa` dies.
         if char_diversity(credential) < 0.1 {
-            adjusted *= 0.1;
+            adjusted *= LOW_DIVERSITY_PENALTY;
         }
         // Degenerate repeat: a run that is either a large FRACTION of the token
         // (ratio > 0.8) OR long in ABSOLUTE terms (>= DEGENERATE_RUN_LEN). The
@@ -188,14 +213,14 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
         // 0.8 (NOT > 0.8) while its 16-char `X` run is plainly synthetic. One
         // penalty either way (no double-count with the ratio arm).
         if max_repeat_run(credential) > 0.8 || is_degenerate_repeat(credential) {
-            adjusted *= 0.1;
+            adjusted *= DEGENERATE_SHAPE_PENALTY;
         }
     } else {
         if char_diversity(credential) < 0.3 {
-            adjusted *= 0.1;
+            adjusted *= LOW_DIVERSITY_PENALTY;
         }
         if max_repeat_run(credential) > 0.5 || is_degenerate_repeat(credential) {
-            adjusted *= 0.1;
+            adjusted *= DEGENERATE_SHAPE_PENALTY;
         }
         // Decode-through coherence (generic detectors only). A generic
         // high-entropy candidate that base64/hex-decodes to an identifiable
@@ -206,7 +231,7 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
         // detector (skipped here) and effectively never on a real generic
         // secret. This is keyhog's decode-through advantage feeding scoring.
         if decode_evidence.is_binary_payload() {
-            adjusted *= 0.02;
+            adjusted *= DATA_ENVELOPE_PENALTY;
         }
         // Uniform random-base64 blob (44+ chars, all-base64 alphabet, with
         // `+`/`/`, padding, or high alphabet diversity). The alphabet check
@@ -222,7 +247,7 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
         if !allow_encoded_text_secret
             && crate::decode_structure::looks_like_uniform_base64_blob(credential)
         {
-            adjusted *= 0.02;
+            adjusted *= DATA_ENVELOPE_PENALTY;
         }
         // Double-base64 wrapper (k8s `data:` shape: outer base64 decodes to
         // bytes that are themselves all standard-base64 alphabet, length
@@ -230,7 +255,7 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
         // wrapper is categorically a data envelope, not a credential. Mirror
         // v32 had 7 such FPs concentrated in yaml/k8s-secret fixtures.
         if !allow_encoded_text_secret && decode_evidence.decoded_is_base64_blob() {
-            adjusted *= 0.02;
+            adjusted *= DATA_ENVELOPE_PENALTY;
         }
     }
     finalize_confidence(adjusted)
@@ -332,7 +357,35 @@ mod tests {
     //! items are unreachable from an external `tests/` target, so the white-box
     //! tests live here.
 
-    use super::{is_degenerate_repeat, longest_repeat_run_len, max_repeat_run, DEGENERATE_RUN_LEN};
+    use super::{
+        apply_post_ml_penalties_with_encoded_text_lift, is_degenerate_repeat,
+        longest_repeat_run_len, max_repeat_run, DATA_ENVELOPE_PENALTY, DEGENERATE_RUN_LEN,
+        DEGENERATE_SHAPE_PENALTY, LOW_DIVERSITY_PENALTY, PLACEHOLDER_WORD_PENALTY,
+    };
+
+    // ── the hoisted post-ML penalty multipliers are pinned ───────────────────
+    #[test]
+    fn penalty_multiplier_constants_are_pinned() {
+        assert_eq!(PLACEHOLDER_WORD_PENALTY, 0.05);
+        assert_eq!(LOW_DIVERSITY_PENALTY, 0.1);
+        assert_eq!(DEGENERATE_SHAPE_PENALTY, 0.1);
+        assert_eq!(DATA_ENVELOPE_PENALTY, 0.02);
+    }
+
+    #[test]
+    fn generic_degenerate_low_diversity_value_takes_both_shape_penalties() {
+        // 16 identical non-base64 bytes: char_diversity = 1/16 < 0.3 (LOW_DIVERSITY)
+        // AND a 16-long run ≥ DEGENERATE_RUN_LEN with ratio 1.0 > 0.5
+        // (DEGENERATE_SHAPE). '!' is outside the base64 alphabet, so no
+        // data-envelope arm fires. Generic detector (is_named = false).
+        let value = "!".repeat(16);
+        let scored = apply_post_ml_penalties_with_encoded_text_lift(1.0, &value, false, false);
+        // 1.0 × LOW_DIVERSITY_PENALTY × DEGENERATE_SHAPE_PENALTY = 0.1 × 0.1 = 0.01.
+        assert!(
+            (scored - 0.01).abs() < 1e-9,
+            "expected 0.01 (0.1 × 0.1), got {scored}"
+        );
+    }
 
     // ── longest_repeat_run_len: the byte-run primitive ───────────────────────
     #[test]

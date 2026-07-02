@@ -122,6 +122,14 @@ pub(crate) const KNOWN_PREFIXES: &[&str] = &[
     "TESTKEY_",
 ];
 
+/// Minimum confidence a credential carrying a well-known literal prefix is lifted
+/// to. Named (not an inline `0.8`) so this floor has a single owner alongside the
+/// sibling confidence floors [`super::policy::NAMED_DETECTOR_ANCHOR_FLOOR`] and
+/// `crate::checksum::CHECKSUM_VALID_FLOOR`, and so the many doc references to "the
+/// 0.8 floor" resolve to one constant. Locked by the `confidence_prefix_floor_*`
+/// unit tests.
+pub(crate) const KNOWN_PREFIX_CONFIDENCE_FLOOR: f64 = 0.8;
+
 /// Return a minimum confidence floor for credentials with well-known literal prefixes.
 ///
 /// Credentials carrying a placeholder word (`EXAMPLE`, `PLACEHOLDER`, `DUMMY`,
@@ -151,7 +159,7 @@ pub(crate) fn known_prefix_confidence_floor(credential: &str) -> Option<f64> {
         if crate::placeholder_words::bytes_contain_placeholder_word(body.as_bytes()) {
             return None;
         }
-        return Some(0.8);
+        return Some(KNOWN_PREFIX_CONFIDENCE_FLOOR);
     }
     None
 }

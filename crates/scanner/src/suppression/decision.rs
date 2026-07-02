@@ -8,7 +8,8 @@ use super::doc_markers::{check_markers, MarkerVerdict};
 use super::shape::{
     has_n_or_more_consecutive_identical, has_repeated_block_mask,
     has_three_or_more_consecutive_identical, is_uuid_v4_shape, looks_like_bare_hex_digest,
-    looks_like_dashed_serial_key, looks_like_prefixed_hash_digest, looks_like_standard_base64_blob,
+    looks_like_bracketed_template_placeholder, looks_like_dashed_serial_key,
+    looks_like_prefixed_hash_digest, looks_like_standard_base64_blob,
     looks_like_truncated_uuid_v4_suffix, RFC7519_EXAMPLE_JWT_PREFIX,
 };
 use crate::{adjudicate::StageId, context};
@@ -325,14 +326,8 @@ pub(super) fn suppression_stage_inner(
     //          wrappers when the placeholder is the entire RHS.
     //          SecretBench-medium 15k seed-0: 41 FPs from
     //          template-placeholder.
-    {
-        let trimmed = credential.trim();
-        let bracketed = (trimmed.starts_with('{') && trimmed.ends_with('}'))
-            || (trimmed.starts_with('<') && trimmed.ends_with('>'))
-            || (trimmed.starts_with("${") && trimmed.ends_with('}'));
-        if bracketed && trimmed.len() <= 80 {
-            return suppress("template_placeholder");
-        }
+    if looks_like_bracketed_template_placeholder(credential.trim()) {
+        return suppress("template_placeholder");
     }
 
     // ── 5f. base64-of-arbitrary-bytes (e.g. protobuf wire dumps,
@@ -495,7 +490,7 @@ pub(crate) fn decoded_benign_text_reason(credential: &str) -> Option<&'static st
     if crate::suppression::shape::looks_like_aws_iam_arn(decoded) {
         return Some("decoded_aws_iam_arn");
     }
-    if decoded_looks_like_template_placeholder(decoded) {
+    if looks_like_bracketed_template_placeholder(decoded) {
         return Some("decoded_template_placeholder");
     }
     if looks_like_prose_whitespace_run(decoded) {
@@ -528,11 +523,4 @@ fn decoded_looks_like_labelled_hash(decoded: &str) -> bool {
 
 fn decoded_looks_like_bare_hash_digest(decoded: &str) -> bool {
     matches!(decoded.len(), 56 | 64 | 72 | 128) && looks_like_bare_hex_digest(decoded)
-}
-
-fn decoded_looks_like_template_placeholder(decoded: &str) -> bool {
-    let bracketed = (decoded.starts_with('{') && decoded.ends_with('}'))
-        || (decoded.starts_with('<') && decoded.ends_with('>'))
-        || (decoded.starts_with("${") && decoded.ends_with('}'));
-    bracketed && decoded.len() <= 80
 }

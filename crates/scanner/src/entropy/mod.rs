@@ -373,7 +373,44 @@ fn is_entropy_appropriate_inner(
 
 #[cfg(test)]
 mod tests {
-    use super::FIRST_SOURCE_LINE_NUMBER;
+    use super::plausibility::{
+        LEADING_SLASH_BASE64_ENTROPY_FLOOR, SECOND_HALF_ENTROPY_FLOOR,
+        SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR,
+    };
+    use super::{FIRST_SOURCE_LINE_NUMBER, HIGH_ENTROPY_THRESHOLD, MIXED_ALNUM_TOKEN_THRESHOLD};
+
+    /// The three entropy floors hoisted out of `plausibility.rs` keep their exact
+    /// tuned values. These are the single named owners for the literals that were
+    /// pasted inline (`3.5`, `4.8`, `2.5`); a drift here is a detection-behavior
+    /// change, so pin the bytes.
+    #[test]
+    fn plausibility_entropy_floors_have_their_tuned_values() {
+        assert_eq!(SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR, 3.5);
+        assert_eq!(LEADING_SLASH_BASE64_ENTROPY_FLOOR, 4.8);
+        assert_eq!(SECOND_HALF_ENTROPY_FLOOR, 2.5);
+    }
+
+    /// Ordering contract among the plausibility floors and the shared thresholds.
+    /// The symbolic-credential relaxation is only coherent as a floor BELOW the
+    /// blanket high floor; the second-half tail floor sits well below the
+    /// whole-token mixed-alnum floor; and the anchor-free leading-slash base64
+    /// blob must clear the STRICTEST bar (above the high floor). If any of these
+    /// inversions ever holds, the relaxation/gate logic is broken.
+    #[test]
+    fn plausibility_entropy_floors_are_ordered_coherently() {
+        assert!(
+            SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR < HIGH_ENTROPY_THRESHOLD,
+            "symbolic-credential relaxation must be a LOWER floor than the 4.5 blanket floor",
+        );
+        assert!(
+            SECOND_HALF_ENTROPY_FLOOR < MIXED_ALNUM_TOKEN_THRESHOLD,
+            "the second-half tail floor must sit below the whole-token mixed-alnum floor",
+        );
+        assert!(
+            LEADING_SLASH_BASE64_ENTROPY_FLOOR > HIGH_ENTROPY_THRESHOLD,
+            "the anchor-free leading-slash base64 floor must be the strictest",
+        );
+    }
 
     /// The hoisted canonical is the one-based origin: a zero-based `.lines()`
     /// index of 0 must resolve to source line 1, and the offset must add exactly

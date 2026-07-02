@@ -434,6 +434,28 @@ pub(crate) fn looks_like_truncated_uuid_v4_suffix(s: &str) -> bool {
     hex_bytes_are_uniform_case(b, &[6, 11, 16, 21])
 }
 
+/// Maximum length of a template-placeholder value. Above this a brace/angle-
+/// wrapped value is likely a real structured payload (JSON body, XML doc), not a
+/// `${VAR}`-style placeholder, so the suppression must not fire. Single named
+/// owner for the two suppression sites that previously pasted `<= 80` inline.
+const TEMPLATE_PLACEHOLDER_MAX_LEN: usize = 80;
+
+/// True when `value` is a template placeholder wrapped in `{...}`, `<...>`, or
+/// `${...}` and is no longer than [`TEMPLATE_PLACEHOLDER_MAX_LEN`] bytes. Real
+/// credentials are never delivered wrapped in brace/angle markers; the
+/// dotenv/yaml extractor sometimes preserves the wrapper when the placeholder is
+/// the entire RHS. Callers pass an already-trimmed `value` (the raw-credential
+/// gate trims first; the base64-decode gate receives pre-trimmed text), so this
+/// predicate performs no trimming of its own — the two suppression sites in
+/// `decision.rs` that carried byte-identical copies of this check now share this
+/// one owner (DEDUP).
+pub(crate) fn looks_like_bracketed_template_placeholder(value: &str) -> bool {
+    let bracketed = (value.starts_with('{') && value.ends_with('}'))
+        || (value.starts_with('<') && value.ends_with('>'))
+        || (value.starts_with("${") && value.ends_with('}'));
+    bracketed && value.len() <= TEMPLATE_PLACEHOLDER_MAX_LEN
+}
+
 /// Return true if the credential contains three or more consecutive identical characters.
 pub(crate) fn has_three_or_more_consecutive_identical(s: &str) -> bool {
     let bytes = s.as_bytes();
@@ -596,11 +618,12 @@ pub(crate) fn is_dash_segmented_alnum_decoy_with_randomness(
 mod tests {
     use super::{
         generic_base64_candidate_is_ambiguous, is_structured_dotted_token, looks_like_aws_iam_arn,
-        looks_like_dashed_serial_key, looks_like_entropy_canonical_non_secret_shape,
-        looks_like_generic_random_base64_blob_decoy, looks_like_prefixed_hash_digest,
-        looks_like_prefixed_masked_sequence, looks_like_random_byte_base64_blob,
-        looks_like_trimmed_aws_iam_arn, strip_hash_algo_prefix,
+        looks_like_bracketed_template_placeholder, looks_like_dashed_serial_key,
+        looks_like_entropy_canonical_non_secret_shape, looks_like_generic_random_base64_blob_decoy,
+        looks_like_prefixed_hash_digest, looks_like_prefixed_masked_sequence,
+        looks_like_random_byte_base64_blob, looks_like_trimmed_aws_iam_arn, strip_hash_algo_prefix,
     };
+    use super::TEMPLATE_PLACEHOLDER_MAX_LEN;
     // Imported separately: rustfmt groups the UPPER_SNAKE const after the
     // lower-snake fn names in a `use` list, so keep it on its own line.
     use super::HIGH_ENTROPY_BASE64_CUTOFF;
@@ -944,6 +967,32 @@ mod tests {
         // A bare 64-hex value with NO algo label is NOT this shape (the
         // ambiguous bare-hex arm handles it, anchor-gated).
         assert!(!looks_like_prefixed_hash_digest(&"a".repeat(64)));
+    }
+
+    // ---- looks_like_bracketed_template_placeholder: single-owner brace/angle gate ----
+
+    #[test]
+    fn bracketed_template_placeholder_matches_brace_angle_and_dollar_forms() {
+        assert!(looks_like_bracketed_template_placeholder("{placeholder}"));
+        assert!(looks_like_bracketed_template_placeholder("<your-token-here>"));
+        assert!(looks_like_bracketed_template_placeholder("${SECRET_TOKEN}"));
+    }
+
+    #[test]
+    fn bracketed_template_placeholder_rejects_unwrapped_and_overlong() {
+        // No wrapping markers: a real token must not be suppressed.
+        assert!(!looks_like_bracketed_template_placeholder(
+            "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
+        ));
+        // Opening marker without the matching close.
+        assert!(!looks_like_bracketed_template_placeholder("{unterminated"));
+        // Exactly at the length ceiling is accepted; one over is rejected.
+        let at_cap = format!("{{{}}}", "a".repeat(TEMPLATE_PLACEHOLDER_MAX_LEN - 2));
+        assert_eq!(at_cap.len(), TEMPLATE_PLACEHOLDER_MAX_LEN);
+        assert!(looks_like_bracketed_template_placeholder(&at_cap));
+        let over_cap = format!("{{{}}}", "a".repeat(TEMPLATE_PLACEHOLDER_MAX_LEN - 1));
+        assert_eq!(over_cap.len(), TEMPLATE_PLACEHOLDER_MAX_LEN + 1);
+        assert!(!looks_like_bracketed_template_placeholder(&over_cap));
     }
 
     // ---- HIGH_ENTROPY_BASE64_CUTOFF: single-owner shared entropy boundary ----

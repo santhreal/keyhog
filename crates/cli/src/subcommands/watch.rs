@@ -38,6 +38,15 @@ use std::time::{Duration, Instant};
 const DEDUP_WINDOW: Duration = Duration::from_millis(750);
 const DEDUP_PRUNE_INTERVAL: usize = 128;
 
+/// FNV-1a 64-bit offset basis and prime. Shared by the raw-content hash
+/// ([`content_hash`]) and the finding-set fingerprint ([`findings_fingerprint`]),
+/// which both use the same non-cryptographic hash purely to collapse a save
+/// burst's duplicate inotify events. Named here (instead of pasting the two
+/// magic constants into each function) so both provably use one algorithm and
+/// cannot silently drift apart.
+const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
 #[derive(Default)]
 struct WatchDedupeState {
     /// Pre-scan dedup keyed on RAW content hash: skips the scan when a burst
@@ -243,10 +252,10 @@ fn roots_hint(roots: &[PathBuf]) -> String {
 /// edit - we only need to suppress the duplicate inotify event, not to
 /// resist collisions.
 fn content_hash(data: &[u8]) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut h: u64 = FNV_OFFSET_BASIS;
     for b in data {
         h ^= *b as u64;
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        h = h.wrapping_mul(FNV_PRIME);
     }
     h
 }
@@ -389,15 +398,15 @@ fn suppress_duplicate_event(
 fn findings_fingerprint(matches: &[keyhog_core::RawMatch]) -> u64 {
     let mut combined: u64 = 0;
     for m in matches {
-        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut h: u64 = FNV_OFFSET_BASIS;
         for b in m.detector_id.as_bytes() {
             h ^= u64::from(*b);
-            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+            h = h.wrapping_mul(FNV_PRIME);
         }
         h ^= m.location.line.unwrap_or(0) as u64; // LAW10: dedup-key hash input; recall-safe
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        h = h.wrapping_mul(FNV_PRIME);
         h ^= m.location.offset as u64;
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        h = h.wrapping_mul(FNV_PRIME);
         // XOR-combine so the fingerprint is independent of match order.
         combined ^= h;
     }
@@ -501,3 +510,6 @@ fn should_skip(path: &std::path::Path, skip_dirs: &SkipDirPolicy) -> bool {
         false
     })
 }
+
+#[cfg(test)]
+mod tests;

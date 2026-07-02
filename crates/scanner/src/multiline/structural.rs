@@ -58,8 +58,18 @@ pub(super) fn collect_structural_fragments(
     // implicit block, `+`-concat reference, template interpolation, or
     // prefix-grouped cluster) to be worth emitting. All four structural passes
     // share this floor; one owner so they can never drift apart. The inline
-    // ARRAY path uses its own larger `16` cutoff and is intentionally separate.
+    // ARRAY path uses its own larger `MIN_INLINE_ARRAY_FRAGMENT_LEN` cutoff and
+    // is intentionally separate.
     const MIN_STRUCTURAL_FRAGMENT_LEN: usize = 12;
+    // Minimum length for a reassembled inline-array string fragment (e.g.
+    // `key = ["ab", "cd", ...]`). Deliberately larger than the cross-line floor:
+    // a single joined array literal has no cross-line evidence backing it, so it
+    // must clear a higher bar before it is emitted as a scan candidate.
+    const MIN_INLINE_ARRAY_FRAGMENT_LEN: usize = 16;
+    // Maximum line gap between two credential-like assignments for them to stay
+    // in the same reassembly cluster. A later assignment further than this from
+    // the cluster's last member starts a fresh cluster instead of extending it.
+    const MAX_CLUSTER_LINE_GAP: usize = 10;
 
     let mut current_struct_offset = initial_offset;
     let mut structural_joined = Vec::new();
@@ -80,7 +90,7 @@ pub(super) fn collect_structural_fragments(
             .is_some_and(fragment_assignment_name_is_credential_like)
         {
             let array_joined = join_inline_array_strings(line);
-            if array_joined.len() >= 16 {
+            if array_joined.len() >= MIN_INLINE_ARRAY_FRAGMENT_LEN {
                 structural_joined.push(array_joined.clone());
                 structural_mappings.push(LineMapping {
                     start_offset: current_struct_offset,
@@ -115,7 +125,7 @@ pub(super) fn collect_structural_fragments(
                 let cluster = &mut clusters[cluster_idx];
                 if is_related_variable(&cluster[0].1, var_name) {
                     if let Some(last) = cluster.last() {
-                        if index.saturating_sub(last.0) < 10 {
+                        if index.saturating_sub(last.0) < MAX_CLUSTER_LINE_GAP {
                             cluster.push((index, var_name.to_string(), value.to_string()));
                             added = true;
                         }

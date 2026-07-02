@@ -64,7 +64,7 @@ pub(crate) fn decode_chunk(
         for (dec_i, decoder) in decoders.iter().enumerate() {
             // Re-check the caller deadline BEFORE each decoder's
             // candidate fan-out (C9). The top-of-loop check only fires
-            // once per BFS dequeue, so a single chunk could run all 14
+            // once per BFS dequeue, so a single chunk could run all 13 default
             // decoders to completion with no deadline check. This check stops
             // us from even invoking the next decoder once the deadline trips;
             // the matching check inside the inner loop below stops us

@@ -127,6 +127,14 @@ impl Source for GitHubOrgSource {
     }
 }
 
+/// Repositories requested per `/orgs/<org>/repos` page (GitHub's maximum).
+///
+/// Single owner for the two coupled uses: the `per_page` query parameter and
+/// the "a short page means the last page" terminator (`count < PER_PAGE`).
+/// Changing one without the other silently breaks pagination — either an early
+/// stop that drops repos or an extra empty page — so both read this constant.
+const REPOS_PER_PAGE: usize = 100;
+
 #[derive(Debug, Deserialize)]
 struct GitHubRepo {
     name: String,
@@ -270,7 +278,7 @@ fn list_repos(
             clone_url: repo.clone_url,
         }));
 
-        if count < 100 {
+        if count < REPOS_PER_PAGE {
             return Ok(repos);
         }
 
@@ -294,7 +302,7 @@ fn send_github_request_with_backoff(
     for attempt in 0..MAX_ATTEMPTS {
         let response = client
             .get(format!(
-                "https://api.github.com/orgs/{org}/repos?per_page=100&page={page}"
+                "https://api.github.com/orgs/{org}/repos?per_page={REPOS_PER_PAGE}&page={page}"
             ))
             .send()
             .map_err(|e| {
@@ -331,6 +339,26 @@ fn send_github_request_with_backoff(
     Err(hosted_git::api_unreadable_error(
         "GitHub API retry limit exceeded",
     ))
+}
+
+#[cfg(test)]
+mod pagination_tests {
+    use super::REPOS_PER_PAGE;
+
+    #[test]
+    fn repos_per_page_is_github_max_and_drives_the_query() {
+        // GitHub's documented maximum page size. The list-repos loop pages with
+        // this value AND treats a page shorter than it as the last page, so this
+        // is the single owner both uses must read.
+        assert_eq!(REPOS_PER_PAGE, 100);
+        let url = format!(
+            "https://api.github.com/orgs/acme/repos?per_page={REPOS_PER_PAGE}&page=1"
+        );
+        assert_eq!(
+            url,
+            "https://api.github.com/orgs/acme/repos?per_page=100&page=1"
+        );
+    }
 }
 
 pub(crate) fn rewrite_chunk_path_for_test(

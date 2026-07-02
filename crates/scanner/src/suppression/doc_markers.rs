@@ -28,6 +28,16 @@ pub(super) enum MarkerVerdict {
 /// for any credential containing non-ASCII bytes before the match, returned
 /// the wrong character and silently let placeholder tokens slip past. ASCII
 /// inputs happened to work because `byte_idx == char_idx` for pure ASCII.
+/// True when `upper` (an already-uppercased credential) mentions an RFC 2606
+/// reserved example domain (`example.com` / `example.org`). Both the
+/// `contains_EXAMPLE_token` carve-out and the doc-marker substring carve-out
+/// need this exact test to avoid over-suppressing a real secret sitting beside
+/// an `Example.com` mention; keeping the two `EXAMPLE.COM` / `EXAMPLE.ORG`
+/// literals in one owner stops the pair drifting apart (DEDUP).
+fn upper_mentions_reserved_example_domain(upper: &str) -> bool {
+    upper.contains("EXAMPLE.COM") || upper.contains("EXAMPLE.ORG")
+}
+
 pub(super) fn upper_contains_token(upper: &str, token: &str) -> bool {
     upper.match_indices(token).any(|(idx, _)| {
         let before = upper[..idx].chars().next_back();
@@ -75,8 +85,7 @@ pub(super) fn check_markers(
             // form; matching `credential` case-sensitively let those mentions
             // slip past the carve-out and over-suppressed real secrets sitting
             // beside them. Reuse the already-computed `upper` (no allocation).
-            && !upper.contains("EXAMPLE.COM")
-            && !upper.contains("EXAMPLE.ORG")
+            && !upper_mentions_reserved_example_domain(upper)
         {
             return MarkerVerdict::Suppress("contains_EXAMPLE_token");
         }
@@ -162,7 +171,7 @@ pub(super) fn check_markers(
     // `upper`); see the `contains_EXAMPLE_token` site for why matching
     // `credential` case-sensitively over-suppressed secrets beside an
     // `Example.com` / `EXAMPLE.COM` mention.
-    if !from_evasion_decoder && !upper.contains("EXAMPLE.COM") && !upper.contains("EXAMPLE.ORG") {
+    if !from_evasion_decoder && !upper_mentions_reserved_example_domain(upper) {
         for marker in crate::placeholder_words::doc_marker_substrings() {
             let marker = marker.as_str();
             if upper.contains(marker) {

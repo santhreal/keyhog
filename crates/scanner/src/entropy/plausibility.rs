@@ -1,5 +1,27 @@
 use super::{shannon_entropy, HIGH_ENTROPY_THRESHOLD, MIXED_ALNUM_TOKEN_THRESHOLD};
 
+/// Relaxed Shannon floor for a symbolic (non-alphanumeric-bearing) value that
+/// ALSO carries a strong credential-keyword anchor. The blanket
+/// [`HIGH_ENTROPY_THRESHOLD`] (4.5) over-rejects real symbolic-password shapes
+/// whose entropy lands in the 3.5–4.5 band (e.g. `1E1B3b4Ho$U4kYBi` ≈ 3.95);
+/// the anchor + symbol set together are the positive evidence that licenses this
+/// lower floor. Single named owner for the value used in
+/// [`passes_secret_strength_checks`]. Kept below [`HIGH_ENTROPY_THRESHOLD`].
+pub(crate) const SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR: f64 = 3.5;
+
+/// Shannon floor for an isolated leading-`/` base64 value
+/// (`is_isolated_leading_slash_base64_secret`). Deliberately the strictest floor
+/// in this module: a bare `/`-prefixed base64 blob has no keyword anchor, so it
+/// must clear a high entropy bar before it is treated as a secret. Sits above
+/// [`HIGH_ENTROPY_THRESHOLD`].
+pub(crate) const LEADING_SLASH_BASE64_ENTROPY_FLOOR: f64 = 4.8;
+
+/// Minimum Shannon entropy the SECOND HALF of a >16-char value must carry for the
+/// value to survive the shape gate. Catches values whose randomness is
+/// front-loaded (a real prefix followed by a low-entropy tail). Single owner for
+/// the floor in [`passes_secret_shape_checks`].
+pub(crate) const SECOND_HALF_ENTROPY_FLOOR: f64 = 2.5;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct PlausibilityContext {
     pub(crate) is_credential_context: bool,
@@ -147,7 +169,7 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
         let has_alpha = value.bytes().any(|b| b.is_ascii_alphabetic());
         let has_digit = value.bytes().any(|b| b.is_ascii_digit());
         let has_symbol = value.bytes().any(|b| !b.is_ascii_alphanumeric());
-        if has_symbol && entropy >= 3.5 {
+        if has_symbol && entropy >= SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR {
             return true;
         }
         if !has_symbol
@@ -228,7 +250,7 @@ fn is_isolated_leading_slash_base64_secret(value: &str, placeholder_keywords: &[
     has_upper
         && has_lower
         && has_digit
-        && shannon_entropy(value.as_bytes()) >= 4.8
+        && shannon_entropy(value.as_bytes()) >= LEADING_SLASH_BASE64_ENTROPY_FLOOR
         && passes_secret_shape_checks(value, PlausibilityContext::default())
 }
 
@@ -255,7 +277,7 @@ fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool
     if value.len() > 16 && unique_char_count(value) < 8 {
         return false;
     }
-    if value.len() > 16 && second_half_entropy(value) < 2.5 {
+    if value.len() > 16 && second_half_entropy(value) < SECOND_HALF_ENTROPY_FLOOR {
         return false;
     }
     // Defect #81: entropy-api-key was firing on Java/Go camelCase and
