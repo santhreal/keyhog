@@ -22,7 +22,7 @@ everything else is data, tooling, docs, or eval harness.
 | Dir | What it is |
 |-----|-----------|
 | `crates/` | The Rust workspace — the only place runtime code lives. Five crates (below). |
-| `detectors/` | **909 detector TOMLs — DATA, not code.** One file = one secret type. Drop a file to add a detector; no recompile of detection logic. See [below](#detectors--data-not-code). |
+| `detectors/` | **916 detector TOMLs — DATA, not code.** One file = one secret type. Drop a file to add a detector; no recompile of detection logic. See [below](#detectors--data-not-code). |
 | `rules/` | Other Tier-B data files (e.g. `aws-canary-accounts.toml`). Same idea as `detectors/`: ship data, users extend by dropping files. |
 | `ml/` | The Python ML pipeline that produces the scanner's embedded `weights.bin`: synthetic + real corpus → blend → train → gate. Entry point `retrain_loop.sh`. Trains the model; `crates/scanner` *serves* it. |
 | `benchmarks/` | Reproducible eval harness (`bench/` python pkg): corpus generators, scanner adapters, scorer, the regression/differential `gate`, and the README leaderboard generator. The numbers in the README come from here. |

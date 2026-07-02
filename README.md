@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/keyhog-banner.svg" alt="keyhog - secret scanner - 909 detectors - gpu" width="560" />
+  <img src="docs/assets/keyhog-banner.svg" alt="keyhog - secret scanner - 916 detectors - gpu" width="560" />
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@
 ---
 
 **keyhog** scans source trees, git history, Docker images, GitHub/GitLab/Bitbucket
-repository collections, S3/GCS/Azure Blob buckets, and running systems for leaked credentials. **909 service-specific detectors**,
+repository collections, S3/GCS/Azure Blob buckets, and running systems for leaked credentials. **916 service-specific detectors**,
 decode-through (base64/hex/url/protobuf), confidence scoring, SARIF output,
 zero runtime configuration. Default `keyhog scan .` works out of the box.
 
@@ -51,7 +51,7 @@ fails only on NEW secrets.
 For ultra-lean CI installs there's now `cargo install keyhog
 --no-default-features --features ci`: 13 MB binary (vs 22 MB full),
 ~140 ms cold-start, no Hyperscan dependency, no wgpu/Vulkan probe,
-no libstdc++ link. Same 909 detectors, same ML/entropy/decode/multiline
+no libstdc++ link. Same 916 detectors, same ML/entropy/decode/multiline
 data paths. Use this profile in self-built CI images where binary size
 or container cold-start matters; the prebuilt installer above stays the
 default for a turnkey single-binary download.
@@ -61,7 +61,7 @@ lefthook recipes: [`docs/DROP_IN_USAGE.md`](docs/DROP_IN_USAGE.md).
 
 ### How it works
 
-keyhog compiles its 909 detectors into a shared trigger/extraction plan,
+keyhog compiles its 916 detectors into a shared trigger/extraction plan,
 uses Hyperscan when that feature is present, decodes nested encodings before
 matching, and can apply explicit per-detector Bayesian Beta(α,β) confidence
 calibration. Hardware acceleration is an explicit backend selection layer;
@@ -165,8 +165,8 @@ Backend selection is reported on startup (the host line also names the GPU and
 `io_uring` when present):
 
 ```
-v0.5.40 · secret scanner · 909 detectors
-⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 909 detectors (6054 patterns) | backend=simd-regex
+v0.5.40 · secret scanner · 916 detectors
+⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 916 detectors (6054 patterns) | backend=simd-regex
 ```
 
 **Full documentation:** [santhsecurity.github.io/keyhog](https://santhsecurity.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, exit codes, env vars, contributing. Source under `docs/`.
@@ -331,7 +331,7 @@ unavailable, `13` requested source failed or input coverage was incomplete. Matc
 
 ## What it catches
 
-909 service-specific detectors with checksum / companion validation:
+916 service-specific detectors with checksum / companion validation:
 
 - **Cloud providers** . AWS (access key + secret + STS verification),
   Azure (subscription key, storage account key, SAS), GCP (service account,
@@ -369,7 +369,7 @@ remediation guide, so a finding is never a black box:
 </p>
 
 Browse the full catalog at [`/site/detectors.html`](./site/detectors.html) -
-loads all 909 with severity + service + keyword filter.
+loads all 916 with severity + service + keyword filter.
 
 ## Why higher recall, fewer false positives
 
@@ -742,7 +742,7 @@ crates/
   sources/    File system, git (staged/diff/history), stdin, Docker, S3, GCS, Azure Blob, GitHub/GitLab/Bitbucket, web
   verifier/   Live credential verification (344 detectors carry an active `[detector.verify]` endpoint)
   cli/        CLI binary, daemon, watch, baselines, calibrate, hook installer
-detectors/    909 TOML files (data, not code)
+detectors/    916 TOML files (data, not code)
 site/         Documentation site (17 pages, GitHub-Pages-ready)
 benchmarks/   Reproducible eval harness: corpus generators, scanner adapters, scorer, gate, README report generator
 tools/        Contract generators (gen_contracts.py, gen_companion_contracts.py)
