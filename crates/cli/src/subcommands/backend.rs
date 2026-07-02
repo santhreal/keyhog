@@ -15,7 +15,7 @@ use crate::format::format_bytes;
 use crate::style::{self, Palette};
 use anyhow::Result;
 use keyhog_scanner::hw_probe::{
-    gpu_routing_profile, gpu_routing_profiles, probe_hardware, select_backend_verdict,
+    gpu_routing_profile, gpu_routing_profiles, probe_hardware, select_backend_verdict, simd_label,
 };
 use serde::Serialize;
 use std::process::ExitCode;
@@ -207,15 +207,7 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
     println!("  logical_cores:     {}", hw.logical_cores);
     println!(
         "  simd:              {}",
-        if hw.has_avx512 {
-            "AVX-512"
-        } else if hw.has_avx2 {
-            "AVX2"
-        } else if hw.has_neon {
-            "NEON"
-        } else {
-            "scalar"
-        }
+        simd_label(hw.has_avx512, hw.has_avx2, hw.has_neon)
     );
     println!(
         "  gpu:               {} {}",

@@ -1,5 +1,6 @@
 use keyhog_core::{
-    contains_bytes_ignore_ascii_case, contains_ignore_ascii_case, starts_with_ignore_ascii_case,
+    contains_bytes_ignore_ascii_case, contains_ignore_ascii_case, ends_with_ignore_ascii_case,
+    starts_with_ignore_ascii_case,
 };
 
 #[test]
@@ -63,4 +64,52 @@ fn ascii_fold_does_not_spuriously_match_multibyte_utf8() {
     assert!(contains_bytes_ignore_ascii_case("AUTHORIZATION", b"author"));
     assert!(contains_bytes_ignore_ascii_case("anything", b""));
     assert!(!contains_bytes_ignore_ascii_case("ab", b"abc"));
+}
+
+// `ends_with_ignore_ascii_case` — migrated out of `src/ascii_ci.rs` inline
+// tests (KH-GAP-004). Case-insensitive suffix match without allocating a
+// lowercased copy; used by extension/URL classification hot paths.
+
+#[test]
+fn ends_with_exact_case() {
+    assert!(ends_with_ignore_ascii_case(b"config.YAML", b".YAML"));
+}
+
+#[test]
+fn ends_with_mixed_case() {
+    assert!(ends_with_ignore_ascii_case(b"archive.TAR.gz", b".tar.GZ"));
+}
+
+#[test]
+fn ends_with_full_string() {
+    assert!(ends_with_ignore_ascii_case(b"EXAMPLE", b"example"));
+}
+
+#[test]
+fn ends_with_empty_suffix_always_matches() {
+    assert!(ends_with_ignore_ascii_case(b"anything", b""));
+    assert!(ends_with_ignore_ascii_case(b"", b""));
+}
+
+#[test]
+fn ends_with_suffix_longer_than_value() {
+    assert!(!ends_with_ignore_ascii_case(b".gz", b"archive.gz"));
+}
+
+#[test]
+fn ends_with_no_match() {
+    assert!(!ends_with_ignore_ascii_case(b"file.json", b".yaml"));
+}
+
+#[test]
+fn ends_with_prefix_only_no_match() {
+    // Suffix appears at the front, not the end.
+    assert!(!ends_with_ignore_ascii_case(b"yaml.file", b"yaml"));
+}
+
+#[test]
+fn ends_with_from_str_bytes() {
+    let path = "https://host/app.WASM";
+    assert!(ends_with_ignore_ascii_case(path.as_bytes(), b".wasm"));
+    assert!(!ends_with_ignore_ascii_case(path.as_bytes(), b".map"));
 }

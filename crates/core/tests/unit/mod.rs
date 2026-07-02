@@ -191,3 +191,4 @@ pub mod unknown_service_falls_back_to_screaming_snake;
 pub mod unknown_severity_is_rejected;
 pub mod v1_legacy_format_treated_as_cold_start;
 pub mod validate;
+pub mod winpath;

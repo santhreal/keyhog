@@ -741,6 +741,11 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/core/src/winpath.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/alphabet_filter.rs"
 error = true
 adversarial = true
@@ -1510,6 +1515,9 @@ path = "crates/sources/src/filesystem/extract/archive/zip_scan/duplicates.rs"
 path = "crates/sources/src/filesystem/extract/compressed.rs"
 
 [[module]]
+path = "crates/sources/src/filesystem/extract/hexnib.rs"
+
+[[module]]
 path = "crates/sources/src/filesystem/extract/pdf.rs"
 
 [[module]]
@@ -1634,6 +1642,9 @@ path = "crates/sources/src/s3/listing.rs"
 
 [[module]]
 path = "crates/sources/src/s3/mod.rs"
+
+[[module]]
+path = "crates/sources/src/safe_read.rs"
 
 [[module]]
 path = "crates/sources/src/skip.rs"

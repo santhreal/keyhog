@@ -63,7 +63,8 @@ mod registry;
 
 pub use api::*;
 pub use ascii_ci::{
-    contains_bytes_ignore_ascii_case, contains_ignore_ascii_case, starts_with_ignore_ascii_case,
+    contains_bytes_ignore_ascii_case, contains_ignore_ascii_case, ends_with_ignore_ascii_case,
+    starts_with_ignore_ascii_case,
 };
 pub use hyperscan_cache::{
     hyperscan_cache_header_is_valid, write_hyperscan_cache_header, HYPERSCAN_CACHE_FILE_BYTES,

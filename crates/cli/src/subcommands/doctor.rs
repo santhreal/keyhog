@@ -15,7 +15,7 @@ use crate::exit_codes::EXIT_DOCTOR_UNHEALTHY;
 use crate::installer::scan_engine_self_test;
 use crate::style::{self, Palette};
 use anyhow::Result;
-use keyhog_scanner::hw_probe::probe_hardware;
+use keyhog_scanner::hw_probe::{probe_hardware, simd_label};
 use std::process::ExitCode;
 
 fn canonicalize_for_shadow_check(path: std::path::PathBuf) -> std::path::PathBuf {
@@ -46,15 +46,7 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
 
     // ── Host ──────────────────────────────────────────────────────────
     let hw = probe_hardware();
-    let simd = if hw.has_avx512 {
-        "AVX-512"
-    } else if hw.has_avx2 {
-        "AVX2"
-    } else if hw.has_neon {
-        "NEON"
-    } else {
-        "scalar"
-    };
+    let simd = simd_label(hw.has_avx512, hw.has_avx2, hw.has_neon);
     println!("\n{bold}host{reset}");
     println!(
         "  os/arch        {} / {}",
@@ -288,7 +280,8 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
                 report.coalesced_matches
             ),
             Err(e) => {
-                let known_lowering_gap = crate::subcommands::backend::is_known_vyre_lowering_gap(&e);
+                let known_lowering_gap =
+                    crate::subcommands::backend::is_known_vyre_lowering_gap(&e);
                 if known_lowering_gap {
                     warned = true;
                     println!(
