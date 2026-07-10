@@ -5,9 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Read;
 
-use super::evidence::{
-    gpu_cold_warm_route_evidence, selected_backend_margin_ns, AutorouteDecision,
-};
+use super::evidence::{gpu_cold_warm_route_evidence, AutorouteDecision};
 use super::host::AutorouteHostProfile;
 use super::workload::WorkloadKey;
 use super::AUTOROUTE_CACHE_VERSION;
@@ -76,7 +74,7 @@ pub(super) struct AutorouteBuildFeatures {
 }
 
 impl AutorouteBuildFeatures {
-    fn current() -> Self {
+    pub(super) fn current() -> Self {
         Self {
             cli_features: current_cli_features(),
             scanner_features: current_scanner_dependency_features(),
@@ -159,15 +157,16 @@ fn current_scanner_dependency_features() -> Vec<String> {
     if cfg!(feature = "portable") || cfg!(feature = "full") {
         features.extend(["decode", "entropy", "ml", "multiline"]);
     }
-    if cfg!(feature = "gpu") {
+    if keyhog_scanner::hw_probe::gpu_backend_compiled() {
         features.extend(["gpu", "simd"]);
     }
-    if cfg!(feature = "simd") {
+    if keyhog_scanner::hw_probe::simd_backend_compiled() {
         features.push("simd");
     }
-    if cfg!(feature = "cuda") {
-        features.extend(["cuda", "gpu", "simd"]);
-    }
+    // The scanner's `cuda` Cargo feature is a no-op alias for `gpu` and has no
+    // `cfg(feature = "cuda")` code. Its behavior identity is therefore already
+    // represented by `gpu`; the CLI's own feature list still records an
+    // explicitly enabled CLI `cuda` alias as part of the binary identity.
     normalize_feature_list(features)
 }
 
@@ -215,6 +214,33 @@ fn describe_feature_list(features: &[String]) -> String {
     }
 }
 
+/// How a raw cache read failed to parse into a trusted [`AutorouteCache`].
+/// The ONE parse pipeline (envelope version gate BEFORE the full payload
+/// deserialize) shared by the reader, the inspection view, and the merge-save —
+/// three call sites, three POLICIES, one parse.
+enum CacheParseError {
+    /// The bytes are not JSON with the version envelope shape at all.
+    NotJson(serde_json::Error),
+    /// The envelope parsed but the schema version does not match this build.
+    /// A version bump accompanies a structural change, so parsing an outdated
+    /// cache directly into `AutorouteCache` would fail with an opaque serde
+    /// error; gating on the version FIRST yields a clear, actionable message.
+    Version { found: u32 },
+    /// The version matched but the full payload failed to deserialize.
+    Payload(serde_json::Error),
+}
+
+fn parse_autoroute_cache(data: &[u8]) -> Result<AutorouteCache, CacheParseError> {
+    let envelope: AutorouteCacheVersionEnvelope =
+        serde_json::from_slice(data).map_err(CacheParseError::NotJson)?;
+    if envelope.version != AUTOROUTE_CACHE_VERSION {
+        return Err(CacheParseError::Version {
+            found: envelope.version,
+        });
+    }
+    serde_json::from_slice(data).map_err(CacheParseError::Payload)
+}
+
 pub(super) fn load_autoroute_cache(
     path: &std::path::Path,
     detector_digest: u64,
@@ -223,22 +249,21 @@ pub(super) fn load_autoroute_cache(
     host_profile: &AutorouteHostProfile,
 ) -> Result<HashMap<WorkloadKey, AutorouteDecision>, Box<dyn std::error::Error + Send + Sync>> {
     let data = read_autoroute_cache_file(path)?;
-    // Gate on the schema version BEFORE the full deserialize. A version bump
-    // accompanies a structural change, so parsing an outdated cache directly
-    // into `AutorouteCache` fails with an opaque serde error and a version
-    // check placed after it can never run. Reading only the version first
-    // rejects an incompatible cache with a clear, actionable message.
-    let envelope: AutorouteCacheVersionEnvelope = serde_json::from_slice(&data)
-        .map_err(|e| format!("autoroute cache is not valid cache JSON: {e}"))?;
-    if envelope.version != AUTOROUTE_CACHE_VERSION {
-        return Err(format!(
-            "unsupported autoroute cache version {} (this build expects {}); \
-             re-run calibration to regenerate it",
-            envelope.version, AUTOROUTE_CACHE_VERSION
-        )
-        .into());
-    }
-    let cache: AutorouteCache = serde_json::from_slice(&data)?;
+    let cache = match parse_autoroute_cache(&data) {
+        Ok(cache) => cache,
+        Err(CacheParseError::NotJson(e)) => {
+            return Err(format!("autoroute cache is not valid cache JSON: {e}").into());
+        }
+        Err(CacheParseError::Version { found }) => {
+            return Err(format!(
+                "unsupported autoroute cache version {found} (this build expects {}); \
+                 re-run calibration to regenerate it",
+                AUTOROUTE_CACHE_VERSION
+            )
+            .into());
+        }
+        Err(CacheParseError::Payload(e)) => return Err(e.into()),
+    };
     host_profile.require_exact_identity()?;
     validate_cache_shared_identity(&cache, detector_digest, rules_digest, host_profile)?;
     // Multi-config cache: pick the decisions calibrated for THIS resolved scan
@@ -444,14 +469,34 @@ fn interpolate_cpu_class(
     key: &WorkloadKey,
     axis: BucketAxis,
 ) -> Option<BucketResolution> {
-    let target = axis.value(key);
+    bracket_agreeing_cpu(decisions, axis.value(key), |candidate_key| {
+        axis.matches_except_axis(key, candidate_key)
+            .then(|| axis.value(candidate_key))
+    })
+}
+
+/// The shared bracket scan behind both sound interpolations: find the nearest
+/// calibrated CPU-class bucket strictly below and strictly above `target`
+/// among the candidates admitted by `candidate_axis_value` (which returns the
+/// candidate's position on the interpolation axis, or `None` to exclude it
+/// from the class). Yields `Interpolated` ONLY when both neighbours exist and
+/// agree on the backend — the agreeing-CPU-bracket monotonicity argument (#34).
+/// GPU decisions never participate (their correctness can vary with size).
+/// ONE owner for the nearest-lo/nearest-hi mechanics so the per-axis (#34) and
+/// single-file-diagonal (#46) interpolations can never drift in how they
+/// bracket.
+fn bracket_agreeing_cpu(
+    decisions: &HashMap<WorkloadKey, AutorouteDecision>,
+    target: u8,
+    candidate_axis_value: impl Fn(&WorkloadKey) -> Option<u8>,
+) -> Option<BucketResolution> {
     let mut nearest_lo: Option<(u8, ScanBackend, WorkloadKey)> = None;
     let mut nearest_hi: Option<(u8, ScanBackend, WorkloadKey)> = None;
 
     for (candidate_key, decision) in decisions {
-        if !axis.matches_except_axis(key, candidate_key) {
+        let Some(value) = candidate_axis_value(candidate_key) else {
             continue;
-        }
+        };
         let Some(backend) = decision.backend() else {
             continue;
         };
@@ -459,7 +504,6 @@ fn interpolate_cpu_class(
         if super::is_gpu_backend(backend) {
             continue;
         }
-        let value = axis.value(candidate_key);
         if value < target {
             let replace = match nearest_lo {
                 Some((best, _, _)) => value > best,
@@ -526,64 +570,21 @@ fn interpolate_single_file_diagonal(
     if key.bytes_bucket != key.max_file_bucket {
         return None;
     }
-    let target = key.bytes_bucket;
-    let mut nearest_lo: Option<(u8, ScanBackend, WorkloadKey)> = None;
-    let mut nearest_hi: Option<(u8, ScanBackend, WorkloadKey)> = None;
-
-    for (candidate_key, decision) in decisions {
-        // The candidate must itself be a single-file point of the SAME non-size
-        // class (chunks/pattern/density/source all equal). Requiring chunks equal
-        // keeps the bracket within one chunk regime — a rung across a chunk-count
-        // change is not a sound single-file neighbour and is left fail-closed.
-        if candidate_key.bytes_bucket != candidate_key.max_file_bucket
-            || candidate_key.chunks_bucket != key.chunks_bucket
-            || candidate_key.pattern_bucket != key.pattern_bucket
-            || candidate_key.decode_density_bucket != key.decode_density_bucket
-            || candidate_key.source_class_hash != key.source_class_hash
-        {
-            continue;
-        }
-        let Some(backend) = decision.backend() else {
-            continue;
-        };
-        // GPU correctness can vary with input size — never bracket across it.
-        if super::is_gpu_backend(backend) {
-            continue;
-        }
-        let value = candidate_key.bytes_bucket;
-        if value < target {
-            let replace = match nearest_lo {
-                Some((best, _, _)) => value > best,
-                None => true,
-            };
-            if replace {
-                nearest_lo = Some((value, backend, *candidate_key));
-            }
-        } else if value > target {
-            let replace = match nearest_hi {
-                Some((best, _, _)) => value < best,
-                None => true,
-            };
-            if replace {
-                nearest_hi = Some((value, backend, *candidate_key));
-            }
-        }
-    }
-
-    match (nearest_lo, nearest_hi) {
-        (Some((_, lo_backend, lo_key)), Some((_, hi_backend, hi_key)))
-            if lo_backend == hi_backend =>
-        {
-            Some(BucketResolution::Interpolated {
-                backend: lo_backend,
-                lo: lo_key,
-                hi: hi_key,
-            })
-        }
-        // Bracketing pair disagrees, only one side exists, or the query is above
-        // every rung (a between-floor clamp owns below; above stays fail-closed).
-        _ => None,
-    }
+    // The candidate must itself be a single-file point of the SAME non-size
+    // class (chunks/pattern/density/source all equal). Requiring chunks equal
+    // keeps the bracket within one chunk regime — a rung across a chunk-count
+    // change is not a sound single-file neighbour and is left fail-closed.
+    // A non-bracketed query (only one side, disagreeing pair, or above every
+    // rung) stays None: the below-floor clamp owns below; above stays
+    // fail-closed.
+    bracket_agreeing_cpu(decisions, key.bytes_bucket, |candidate_key| {
+        (candidate_key.bytes_bucket == candidate_key.max_file_bucket
+            && candidate_key.chunks_bucket == key.chunks_bucket
+            && candidate_key.pattern_bucket == key.pattern_bucket
+            && candidate_key.decode_density_bucket == key.decode_density_bucket
+            && candidate_key.source_class_hash == key.source_class_hash)
+            .then_some(candidate_key.bytes_bucket)
+    })
 }
 
 // Below-floor extrapolation (the second sound generalization, after #34's
@@ -678,7 +679,7 @@ fn clamp_below_calibrated_floor(
 // (binary version / git hash / feature set) that a post-upgrade stale cache shows.
 
 /// Operator-facing view of the persisted autoroute cache (one JSON object).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 pub(crate) struct AutorouteCacheInspection {
     pub(crate) path: Option<String>,
     pub(crate) present: bool,
@@ -704,7 +705,11 @@ pub(crate) struct AutorouteConfigInspection {
     pub(crate) decisions: Vec<AutorouteDecisionInspection>,
 }
 
-/// One calibrated (workload bucket -> fastest-correct backend) decision.
+/// One calibrated (workload bucket -> fastest-correct backend) decision, rendered
+/// for `keyhog backend inspect`. Every numeric field here is DERIVED from the
+/// persisted timing evidence on the source `AutorouteDecision` (which stores no
+/// denormalized copies) — this human-readable projection is where those derived
+/// ms / margin values surface.
 #[derive(Debug, Serialize)]
 pub(crate) struct AutorouteDecisionInspection {
     pub(crate) workload: String,
@@ -714,22 +719,15 @@ pub(crate) struct AutorouteDecisionInspection {
     pub(crate) simd_ms: u128,
     pub(crate) cpu_ms: Option<u128>,
     pub(crate) gpu_ms: Option<u128>,
+    /// The ns margin by which `backend` beat the next-fastest candidate route,
+    /// derived from the timing evidence. `None` when no competing route exists.
+    pub(crate) selected_margin_ns: Option<u128>,
 }
 
 pub(crate) fn inspect_autoroute_cache(path: Option<&std::path::Path>) -> AutorouteCacheInspection {
     let mut out = AutorouteCacheInspection {
         path: path.map(|p| p.display().to_string()),
-        present: false,
-        error: None,
-        version: None,
-        binary_version: None,
-        git_hash: None,
-        identity_matches_build: None,
-        identity_mismatch_reason: None,
-        host: None,
-        detector_digest: None,
-        rules_digest: None,
-        configs: Vec::new(),
+        ..AutorouteCacheInspection::default()
     };
 
     let Some(path) = path else {
@@ -756,33 +754,31 @@ pub(crate) fn inspect_autoroute_cache(path: Option<&std::path::Path>) -> Autorou
     };
     out.present = true;
 
-    match serde_json::from_slice::<AutorouteCacheVersionEnvelope>(&data) {
-        Ok(envelope) => {
-            out.version = Some(envelope.version);
-            if envelope.version != AUTOROUTE_CACHE_VERSION {
-                out.error = Some(format!(
-                    "cache schema version {} is incompatible with this build (expects {}); \
-                     re-run calibration to regenerate it",
-                    envelope.version, AUTOROUTE_CACHE_VERSION
-                ));
-                return out;
-            }
-        }
-        Err(error) => {
+    let cache = match parse_autoroute_cache(&data) {
+        Ok(cache) => cache,
+        Err(CacheParseError::NotJson(error)) => {
             out.error = Some(format!("autoroute cache is not valid cache JSON: {error}"));
             return out;
         }
-    }
-
-    let cache: AutorouteCache = match serde_json::from_slice(&data) {
-        Ok(cache) => cache,
-        Err(error) => {
+        Err(CacheParseError::Version { found }) => {
+            out.version = Some(found);
+            out.error = Some(format!(
+                "cache schema version {found} is incompatible with this build (expects {}); \
+                 re-run calibration to regenerate it",
+                AUTOROUTE_CACHE_VERSION
+            ));
+            return out;
+        }
+        Err(CacheParseError::Payload(error)) => {
+            // The envelope parsed and matched this build's version.
+            out.version = Some(AUTOROUTE_CACHE_VERSION);
             out.error = Some(format!(
                 "autoroute cache payload did not deserialize: {error}"
             ));
             return out;
         }
     };
+    out.version = Some(cache.version);
 
     out.binary_version = Some(cache.binary_version.clone());
     out.git_hash = Some(cache.git_hash.clone());
@@ -827,9 +823,13 @@ pub(crate) fn inspect_autoroute_cache(path: Option<&std::path::Path>) -> Autorou
                 backend: decision.backend.clone(),
                 sample_bytes: decision.sample_bytes,
                 sample_chunks: decision.sample_chunks,
-                simd_ms: decision.simd_ms,
-                cpu_ms: decision.cpu_ms,
-                gpu_ms: decision.gpu_ms,
+                // Human-readable ms + margin live in the inspection view only,
+                // DERIVED from the persisted timing evidence (not stored on the
+                // decision — the ONE-PLACE invariant this schema enforces).
+                simd_ms: decision.simd_ms(),
+                cpu_ms: decision.cpu_ms(),
+                gpu_ms: decision.gpu_ms(),
+                selected_margin_ns: decision.selected_margin_ns(),
             })
             .collect();
         decisions.sort_by(|a, b| a.workload.cmp(&b.workload));
@@ -925,24 +925,26 @@ fn validate_decision_route_evidence(
     if decision.calibrated_at_unix_ms == 0 {
         return Err("cache decision is missing a calibration timestamp".into());
     }
+    // Timing-evidence VALIDITY (enough trials, well-formed CI) is a real invariant
+    // and stays. The former `X_ms != X_timing.best_ms()` cross-checks are GONE:
+    // per-backend ms is now DERIVED from the timing on load (`decision.simd_ms()`
+    // …), so it cannot disagree with its own source — there is nothing to
+    // cross-check. Same for the selected-margin: `selected_margin_ns()` is derived
+    // from the timing + resolved backend, so the former stored-vs-recomputed check
+    // is structurally impossible to fail and has been removed (ONE-PLACE).
     if !decision
         .simd_timing
         .is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)
-        || decision.simd_ms != decision.simd_timing.best_ms()
     {
         return Err("cache decision has invalid SIMD timing evidence".into());
     }
     if let Some(cpu_timing) = decision.cpu_timing.as_ref() {
-        if !cpu_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)
-            || decision.cpu_ms != Some(cpu_timing.best_ms())
-        {
+        if !cpu_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS) {
             return Err("cache decision has invalid CPU timing evidence".into());
         }
     }
     if let Some(gpu_timing) = decision.gpu_timing.as_ref() {
-        if !gpu_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)
-            || decision.gpu_ms != Some(gpu_timing.best_ms())
-        {
+        if !gpu_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS) {
             return Err("cache decision has invalid GPU timing evidence".into());
         }
     }
@@ -952,11 +954,6 @@ fn validate_decision_route_evidence(
     };
     if !selected_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS) {
         return Err("selected backend timing evidence is invalid".into());
-    }
-    let candidates = decision.route_candidates_for_selected_backend(selected_backend);
-    let expected_margin = selected_backend_margin_ns(selected_backend, &candidates);
-    if decision.selected_margin_ns != expected_margin {
-        return Err("cache decision has invalid selected backend margin".into());
     }
     // Soundness gate. The persisted backend must equal the deterministic
     // resolution of the persisted timing evidence (`resolved_routing_backend`) —
@@ -1000,28 +997,16 @@ fn validate_decision_calibration_evidence(
 fn validate_gpu_cold_warm_cache_evidence(
     decision: &AutorouteDecision,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    match decision.gpu_timing.as_ref() {
-        Some(gpu_timing) => {
-            let Some((cold_ns, warm_timing, route_ns)) = gpu_cold_warm_route_evidence(gpu_timing)
-            else {
-                return Err("cache decision has invalid GPU cold/warm timing evidence".into());
-            };
-            if decision.gpu_cold_ns != Some(cold_ns)
-                || decision.gpu_warm_ms != Some(warm_timing.best_ms())
-                || decision.gpu_warm_timing.as_ref() != Some(&warm_timing)
-                || decision.gpu_route_ns != Some(route_ns)
-            {
-                return Err("cache decision has mismatched GPU cold/warm route evidence".into());
-            }
-        }
-        None => {
-            if decision.gpu_cold_ns.is_some()
-                || decision.gpu_warm_ms.is_some()
-                || decision.gpu_warm_timing.is_some()
-                || decision.gpu_route_ns.is_some()
-            {
-                return Err("cache decision has GPU cold/warm evidence without GPU timing".into());
-            }
+    // A persisted GPU timing set must be structurally able to produce cold/warm
+    // route evidence (enough warm trials); otherwise it could not route and the
+    // cache is corrupt — fail closed (Law 10), never silently drop GPU. The
+    // cold/warm/route VALUES are derived on demand from this same evidence
+    // (`AutorouteDecision::gpu_cold_warm_route`), so there is no stored copy to
+    // cross-check — only this derivability invariant remains. No GPU timing means
+    // nothing to derive: trivially valid.
+    if let Some(gpu_timing) = decision.gpu_timing.as_ref() {
+        if gpu_cold_warm_route_evidence(gpu_timing).is_none() {
+            return Err("cache decision has invalid GPU cold/warm timing evidence".into());
         }
     }
     Ok(())
@@ -1115,19 +1100,19 @@ fn read_mergeable_configs(
             return Vec::new();
         }
     };
-    match serde_json::from_slice::<AutorouteCacheVersionEnvelope>(&data) {
-        Ok(envelope) if envelope.version == AUTOROUTE_CACHE_VERSION => {}
-        Ok(envelope) => {
+    let cache = match parse_autoroute_cache(&data) {
+        Ok(cache) => cache,
+        Err(CacheParseError::Version { found }) => {
             tracing::info!(
                 target: "keyhog::routing",
                 path = %path.display(),
-                found_version = envelope.version,
+                found_version = found,
                 expected_version = AUTOROUTE_CACHE_VERSION,
                 "existing autoroute cache is an older schema; superseding it with this build's calibration"
             );
             return Vec::new();
         }
-        Err(error) => {
+        Err(CacheParseError::NotJson(error)) => {
             tracing::warn!(
                 target: "keyhog::routing",
                 path = %path.display(),
@@ -1136,10 +1121,7 @@ fn read_mergeable_configs(
             );
             return Vec::new();
         }
-    }
-    let cache: AutorouteCache = match serde_json::from_slice(&data) {
-        Ok(cache) => cache,
-        Err(error) => {
+        Err(CacheParseError::Payload(error)) => {
             tracing::warn!(
                 target: "keyhog::routing",
                 path = %path.display(),

@@ -25,6 +25,8 @@
 
 - [CLI reference](./reference/cli.md)
 - [Configuration](./reference/configuration.md)
+- [Confidence calibration](./reference/confidence-calibration.md)
+- [Autoroute calibration](./reference/autoroute-calibration.md)
 - [Exit codes](./reference/exit-codes.md)
 - [Environment variables](./reference/env.md)
 

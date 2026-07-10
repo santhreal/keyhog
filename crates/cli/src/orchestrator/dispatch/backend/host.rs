@@ -25,8 +25,26 @@ impl AutorouteHostProfile {
     pub(super) fn from_caps(
         caps: &HardwareCaps,
         gpu_runtime_backend: Option<&'static str>,
+        gpu_supported_by_build: bool,
     ) -> Self {
-        let gpu_device_identity = caps.gpu_available.then(|| caps.gpu_name.clone()).flatten();
+        // A build compiled WITHOUT GPU support never routes to the GPU, so a
+        // physically present GPU is NOT part of THIS build's scan identity:
+        // collapse the whole GPU dimension (device/runtime/driver/software)
+        // instead of recording a present-but-unusable device. This is not a
+        // silent degrade (Law 10) — the build feature set (`push_feature!("gpu")`)
+        // already stamps the cache identity, so a GPU-capable build's cache can
+        // never collide with this one; and a GPU-CAPABLE build whose runtime
+        // probe fails keeps `hardware_gpu_present` true below and still fails
+        // closed in `require_exact_identity`. Without this, a portable/no-gpu
+        // binary can never calibrate on a workstation that HAS a GPU: the hw
+        // probe sees the card (`caps.gpu_available`) but no wgpu runtime is
+        // compiled, so the runtime-backend requirement can never be satisfied.
+        // Preserve a present-but-unidentified GPU as `Some("")` so
+        // `require_exact_identity` rejects the failed probe. Collapsing it to
+        // `None` would be indistinguishable from genuinely absent hardware and
+        // could trust calibration across an unknown device/driver change.
+        let gpu_device_identity = (gpu_supported_by_build && caps.gpu_available)
+            .then(|| caps.gpu_name.clone().unwrap_or_default());
         let hardware_gpu_present = gpu_device_identity
             .as_deref()
             .map(str::trim)
@@ -49,15 +67,14 @@ impl AutorouteHostProfile {
             gpu_driver_runtime_identity: hardware_gpu_present
                 .then(|| caps.gpu_runtime_identity.clone())
                 .flatten(),
-            gpu_is_software: caps.gpu_is_software,
+            gpu_is_software: gpu_supported_by_build && caps.gpu_is_software,
             total_memory_mb: caps.total_memory_mb,
         }
     }
 
     pub(super) fn require_exact_identity(&self) -> Result<(), &'static str> {
-        match self.cpu_model.as_deref().map(str::trim) {
-            Some(model) if !model.is_empty() => {}
-            _ => return Err("CPU model string is unavailable"),
+        if !field_is_present_nonblank(&self.cpu_model) {
+            return Err("CPU model string is unavailable");
         }
         if self.physical_cores == 0
             || self.logical_cores == 0
@@ -69,34 +86,40 @@ impl AutorouteHostProfile {
             Some(memory_mb) if memory_mb > 0 => {}
             _ => return Err("system memory size is unavailable"),
         }
-        let gpu_name = self.gpu_name.as_deref().map(str::trim);
-        if self.gpu_name.is_some() && !matches!(gpu_name, Some(name) if !name.is_empty()) {
+        // A Some("") / Some("  ") field is a PROBE BUG, distinct from an honest
+        // None (no device): present-but-blank never validates.
+        let gpu_name_present = field_is_present_nonblank(&self.gpu_name);
+        if self.gpu_name.is_some() && !gpu_name_present {
             return Err("GPU device identity is unavailable");
         }
-        let hardware_gpu_present =
-            matches!(gpu_name, Some(name) if !name.is_empty()) && !self.gpu_is_software;
-        let gpu_runtime_backend = self.gpu_runtime_backend.as_deref().map(str::trim);
-        let gpu_runtime_backend_present =
-            matches!(gpu_runtime_backend, Some(backend) if !backend.is_empty());
+        let hardware_gpu_present = gpu_name_present && !self.gpu_is_software;
+        let gpu_runtime_backend_present = field_is_present_nonblank(&self.gpu_runtime_backend);
         if self.gpu_runtime_backend.is_some() && !gpu_runtime_backend_present {
             return Err("GPU runtime backend identity is unavailable");
         }
         if gpu_runtime_backend_present && self.gpu_name.is_none() {
             return Err("GPU runtime backend is present without GPU device identity");
         }
-        if hardware_gpu_present {
-            if !gpu_runtime_backend_present {
-                return Err("GPU runtime backend identity is unavailable");
-            }
+        if hardware_gpu_present && !gpu_runtime_backend_present {
+            return Err("GPU runtime backend identity is unavailable");
         }
-        if hardware_gpu_present || gpu_runtime_backend_present {
-            match self.gpu_driver_runtime_identity.as_deref().map(str::trim) {
-                Some(identity) if !identity.is_empty() => {}
-                _ => return Err("GPU driver/runtime identity is unavailable"),
-            }
+        if (hardware_gpu_present || gpu_runtime_backend_present)
+            && !field_is_present_nonblank(&self.gpu_driver_runtime_identity)
+        {
+            return Err("GPU driver/runtime identity is unavailable");
         }
         Ok(())
     }
+}
+
+/// True when an optional identity field is `Some` with non-blank content —
+/// the ONE definition of "this probe field actually resolved" shared by every
+/// `require_exact_identity` check (a `Some("")` is a probe bug, not identity).
+fn field_is_present_nonblank(field: &Option<String>) -> bool {
+    field
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty())
 }
 
 fn detect_cpu_model() -> Option<String> {

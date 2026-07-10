@@ -1,11 +1,10 @@
 use super::evidence::{
-    canonical_matches, canonical_matches_equal_reference, route_candidates,
-    selected_backend_margin_ns, AutorouteDecision, BackendTimingEvidence,
+    canonical_matches, canonical_matches_equal_reference, AutorouteDecision, BackendTimingEvidence,
 };
 use super::host::AutorouteHostProfile;
 use super::store::{
-    load_autoroute_cache, resolve_bucket, save_autoroute_cache, AutorouteCache, BucketResolution,
-    AUTOROUTE_CACHE_FILE_BYTES,
+    load_autoroute_cache, resolve_bucket, save_autoroute_cache, AutorouteBuildFeatures,
+    AutorouteCache, BucketResolution, AUTOROUTE_CACHE_FILE_BYTES,
 };
 use super::workload::{
     autoroute_stable_bucket, autoroute_stable_density_bucket, source_class_hash, workload_key,
@@ -32,6 +31,47 @@ fn sole_compiled_backend_tracks_the_feature_set() {
             Some(ScanBackend::CpuFallback),
             "a single-backend (portable) build resolves its only backend without calibration"
         );
+    }
+}
+
+#[test]
+fn autoroute_build_identity_tracks_dependency_owned_backend_features() {
+    let identity = AutorouteBuildFeatures::current();
+    assert_eq!(
+        identity.scanner_features.iter().any(|name| name == "gpu"),
+        keyhog_scanner::hw_probe::gpu_backend_compiled(),
+        "persisted autoroute identity must record the scanner dependency's actual GPU backend"
+    );
+    assert_eq!(
+        identity.scanner_features.iter().any(|name| name == "simd"),
+        keyhog_scanner::hw_probe::simd_backend_compiled(),
+        "persisted autoroute identity must record the scanner dependency's actual SIMD backend"
+    );
+}
+
+#[test]
+fn autoroute_host_identity_uses_dependency_owned_gpu_compile_fact() {
+    let mut caps = test_hw_caps();
+    caps.gpu_available = true;
+    caps.gpu_name = Some("NVIDIA GeForce RTX 5090".to_string());
+    caps.gpu_runtime_identity = Some("cuda:NVIDIA:RTX5090:driver-565".to_string());
+
+    let profile = AutorouteHostProfile::from_caps(
+        &caps,
+        Some("cuda"),
+        keyhog_scanner::hw_probe::gpu_backend_compiled(),
+    );
+    if keyhog_scanner::hw_probe::gpu_backend_compiled() {
+        assert_eq!(profile.gpu_name, caps.gpu_name);
+        assert_eq!(profile.gpu_runtime_backend.as_deref(), Some("cuda"));
+        assert_eq!(
+            profile.gpu_driver_runtime_identity,
+            caps.gpu_runtime_identity
+        );
+    } else {
+        assert_eq!(profile.gpu_name, None);
+        assert_eq!(profile.gpu_runtime_backend, None);
+        assert_eq!(profile.gpu_driver_runtime_identity, None);
     }
 }
 
@@ -90,7 +130,7 @@ fn host_profile_strips_gpu_runtime_when_no_hardware_gpu_participates() {
     cpu_only.gpu_name = Some("stale probe name".to_string());
     cpu_only.gpu_runtime_identity = Some("stale runtime identity".to_string());
     cpu_only.gpu_is_software = false;
-    let cpu_profile = AutorouteHostProfile::from_caps(&cpu_only, Some("cuda"));
+    let cpu_profile = AutorouteHostProfile::from_caps(&cpu_only, Some("cuda"), true);
     assert_eq!(
         cpu_profile.gpu_name, None,
         "CPU-only autoroute identity must not persist stale GPU device names"
@@ -109,7 +149,7 @@ fn host_profile_strips_gpu_runtime_when_no_hardware_gpu_participates() {
     software_gpu.gpu_name = Some("llvmpipe (LLVM 15.0.7)".to_string());
     software_gpu.gpu_runtime_identity = Some("wgpu:Vulkan:llvmpipe:mesa".to_string());
     software_gpu.gpu_is_software = true;
-    let software_profile = AutorouteHostProfile::from_caps(&software_gpu, Some("wgpu"));
+    let software_profile = AutorouteHostProfile::from_caps(&software_gpu, Some("wgpu"), true);
     assert_eq!(
         software_profile.gpu_runtime_backend, None,
         "software renderer runtimes do not participate in autoroute calibration"
@@ -126,6 +166,75 @@ fn host_profile_strips_gpu_runtime_when_no_hardware_gpu_participates() {
     assert!(
         software_profile.gpu_is_software,
         "software renderer status remains part of host identity"
+    );
+}
+
+#[test]
+fn no_gpu_build_calibrates_on_a_host_that_has_a_physical_gpu() {
+    // Regression: a portable / no-`gpu`-feature build on a workstation WITH a
+    // discrete GPU. The hardware probe sees the card, but no wgpu runtime is
+    // compiled, so `runtime_status.gpu_backend` is None. Before the fix this
+    // tripped `require_exact_identity` ("GPU runtime backend identity is
+    // unavailable") and `keyhog scan --autoroute-calibrate` / `install.sh
+    // --calibrate` failed closed on EVERY GPU box for the portable binary. A
+    // no-gpu build must collapse the (unusable) GPU dimension and calibrate
+    // SIMD/CPU-only.
+    let mut gpu_host = test_hw_caps();
+    gpu_host.gpu_available = true;
+    gpu_host.gpu_name = Some("NVIDIA GeForce RTX 5090".to_string());
+    gpu_host.gpu_runtime_identity = Some("wgpu:Vulkan:NVIDIA:565.00".to_string());
+    gpu_host.gpu_is_software = false;
+
+    // gpu_supported_by_build = false → this build can never route to the GPU.
+    let mut portable = AutorouteHostProfile::from_caps(&gpu_host, None, false);
+    assert_eq!(
+        portable.gpu_name, None,
+        "no-gpu build records no GPU device identity for an unusable card"
+    );
+    assert_eq!(
+        portable.gpu_runtime_backend, None,
+        "no-gpu build records no GPU runtime backend"
+    );
+    assert_eq!(
+        portable.gpu_driver_runtime_identity, None,
+        "no-gpu build records no GPU driver identity"
+    );
+    assert!(
+        !portable.gpu_is_software,
+        "no-gpu build carries no GPU software flag"
+    );
+    // Isolate the GPU invariant from real-host cpuinfo so the test is hermetic.
+    portable.cpu_model = Some("test-cpu".to_string());
+    portable
+        .require_exact_identity()
+        .expect("a no-gpu build must calibrate on a host that has a physical GPU");
+
+    // Contrast: a GPU-CAPABLE build whose runtime probe FAILED (gpu_backend
+    // None) must STILL fail closed — the physical GPU IS usable by this build,
+    // so caching GPU-absent evidence would silently mis-route (Law 10).
+    let mut gpu_build_probe_failed = AutorouteHostProfile::from_caps(&gpu_host, None, true);
+    gpu_build_probe_failed.cpu_model = Some("test-cpu".to_string());
+    assert_eq!(
+        gpu_build_probe_failed.require_exact_identity(),
+        Err("GPU runtime backend identity is unavailable"),
+        "a GPU-capable build that sees the card but got no runtime backend must fail closed"
+    );
+}
+
+#[test]
+fn gpu_capable_build_rejects_present_gpu_without_device_name() {
+    let mut caps = test_hw_caps();
+    caps.gpu_available = true;
+    caps.gpu_name = None;
+    caps.gpu_runtime_identity = Some("cuda:unknown-device:driver-565".to_string());
+
+    let mut profile = AutorouteHostProfile::from_caps(&caps, Some("cuda"), true);
+    profile.cpu_model = Some("test-cpu".to_string());
+    assert_eq!(profile.gpu_name.as_deref(), Some(""));
+    assert_eq!(
+        profile.require_exact_identity(),
+        Err("GPU device identity is unavailable"),
+        "present GPU hardware with a failed name probe must invalidate calibration, not collapse to no-GPU identity"
     );
 }
 
@@ -232,7 +341,7 @@ fn test_chunk_with_source(data: String, source_type: &str) -> Chunk {
     Chunk {
         data: data.into(),
         metadata: keyhog_core::ChunkMetadata {
-            source_type: source_type.to_string(),
+            source_type: source_type.into(),
             size_bytes: Some(size),
             ..Default::default()
         },
@@ -418,14 +527,12 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && serialized.contains("\"correctness_digest\"")
             && serialized.contains("\"calibrated_at_unix_ms\"")
             && serialized.contains("\"simd_timing\"")
-            && serialized.contains("\"gpu_cold_ns\"")
-            && serialized.contains("\"gpu_warm_ms\"")
-            && serialized.contains("\"gpu_warm_timing\"")
-            && serialized.contains("\"gpu_route_ns\"")
             && serialized.contains("\"trials_ns\"")
-            && serialized.contains("\"confidence_interval_95_ns\"")
-            && serialized.contains("\"selected_margin_ns\""),
-        "cache JSON must persist route evidence, not only the selected backend"
+            && serialized.contains("\"confidence_interval_95_ns\""),
+        // v21 persists PRIMARY evidence only: the per-backend ms, GPU
+        // cold/warm/route, and selected-margin keys are gone from the JSON —
+        // they are DERIVED from the timing evidence on load, never stored.
+        "cache JSON must persist route timing evidence, not only the selected backend"
     );
     let loaded =
         load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host).unwrap();
@@ -1400,7 +1507,11 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
     .expect("compile scanner");
     let caps = test_hw_caps();
     let runtime_status = scanner.runtime_status();
-    let host = AutorouteHostProfile::from_caps(&caps, runtime_status.gpu_backend);
+    let host = AutorouteHostProfile::from_caps(
+        &caps,
+        runtime_status.gpu_backend,
+        keyhog_scanner::hw_probe::gpu_backend_compiled(),
+    );
     let pattern_count = 902;
     let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
     let hit_batch = vec![test_chunk_with_source(
@@ -1861,8 +1972,10 @@ fn autoroute_cache_rejects_selected_backend_without_timing_evidence() {
         Some(10),
         None,
     );
+    // Drop the CpuFallback timing so the SELECTED backend has no evidence — the
+    // "missing timing" invariant is kept in v21 (the redundant `cpu_ms` field it
+    // once also cleared is gone; ms is derived from `cpu_timing`).
     bad.cpu_timing = None;
-    bad.cpu_ms = None;
     write_tampered_decision_cache(
         &path,
         digest,
@@ -1963,9 +2076,10 @@ fn autoroute_cache_rejects_zero_duration_timing_evidence() {
     let host = test_host(None);
     let key = test_workload_key();
     let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
+    // Zero-duration SIMD timing is rejected by the kept `is_valid_for_trials`
+    // invariant; v21 removed the redundant `simd_ms` field (derived from timing).
     bad.simd_timing =
         super::evidence::BackendTimingEvidence::constant_ms(0, AUTOROUTE_CALIBRATION_TRIALS);
-    bad.simd_ms = 0;
     write_tampered_decision_cache(
         &path,
         digest,
@@ -2049,15 +2163,8 @@ fn autoroute_confidence_uses_student_t_for_small_calibration_samples() {
         1,
         0xA11D_0B57_A11D_0B57,
         1,
-        selected_backend_margin_ns(
-            ScanBackend::SimdCpu,
-            &[(ScanBackend::SimdCpu, 90), (ScanBackend::CpuFallback, 101)],
-        ),
         simd_timing,
         Some(cpu_timing),
-        None,
-        None,
-        None,
         None,
     );
 
@@ -2303,36 +2410,38 @@ fn autoroute_cache_rejects_missing_correctness_digest() {
 }
 
 #[test]
-fn autoroute_cache_rejects_gpu_cold_warm_evidence_mismatch() {
-    let path = std::env::temp_dir().join(format!(
-        "keyhog_autoroute_gpu_cold_warm_mismatch_{}.json",
-        std::process::id()
-    ));
-    let digest = 0x1234_5678_9ABC_DEF0u64;
-    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
-    let host = test_host(Some("NVIDIA GeForce RTX 5090"));
-    let key = test_workload_key();
-    let mut bad = AutorouteDecision::new(ScanBackend::Gpu, 8 * 1024 * 1024, 1, 12, None, Some(5));
-    bad.gpu_cold_ns = bad.gpu_cold_ns.map(|ns| ns.saturating_add(1));
-    write_tampered_decision_cache(
-        &path,
-        digest,
-        config_digest,
-        &host,
-        key,
-        bad,
-        "mismatched GPU cold/warm route evidence",
-    );
-    let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
-    assert!(
-        loaded
-            .expect_err("mismatched GPU cold/warm evidence must be rejected")
-            .to_string()
-            .contains("mismatched GPU cold/warm route evidence"),
-        "GPU autoroute cache trust requires first-dispatch and warmed timing evidence to match the trial distribution"
-    );
+fn derived_accessors_match_the_persisted_timing_evidence() {
+    // v21 REPLACES the old "reject a cache whose STORED cold/warm fields mismatch
+    // the timing" contract: those denormalized fields are gone, so the derived
+    // values are computed from the timing on demand and CANNOT disagree with it.
+    // This proves that ONE-PLACE invariant directly — every accessor reflects the
+    // persisted timing evidence exactly, with no second copy that could drift.
+    let decision =
+        AutorouteDecision::new(ScanBackend::Gpu, 8 * 1024 * 1024, 1, 12, Some(9), Some(20));
 
-    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+    // Per-backend ms derives from the (constant) timing built for each input.
+    assert_eq!(decision.simd_ms(), 12);
+    assert_eq!(decision.cpu_ms(), Some(9));
+    assert_eq!(decision.gpu_ms(), Some(20));
+
+    // GPU cold / warm / route derive from `gpu_timing` through the single owner
+    // `gpu_cold_warm_route_evidence`, so the accessors equal a fresh derivation.
+    let gpu_timing = decision.gpu_timing.as_ref().expect("gpu timing present");
+    let (cold_ns, warm_timing, route_ns) =
+        super::evidence::gpu_cold_warm_route_evidence(gpu_timing)
+            .expect("gpu timing must be derivable");
+    assert_eq!(decision.gpu_cold_ns(), Some(cold_ns));
+    assert_eq!(decision.gpu_warm_ms(), Some(warm_timing.best_ms()));
+    assert_eq!(decision.gpu_route_ns(), Some(route_ns));
+
+    // With no GPU timing, every GPU-derived accessor is `None` — there is no
+    // stored copy that could disagree with the (absent) evidence.
+    let cpu_only =
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, Some(9), None);
+    assert_eq!(cpu_only.gpu_ms(), None);
+    assert_eq!(cpu_only.gpu_cold_ns(), None);
+    assert_eq!(cpu_only.gpu_warm_ms(), None);
+    assert_eq!(cpu_only.gpu_route_ns(), None);
 }
 
 #[test]
@@ -2384,19 +2493,14 @@ fn autoroute_cache_rejects_selected_backend_with_overlapping_confidence() {
         11_000_000, 11_000_000, 11_000_000, 11_000_000, 11_000_000, 11_000_000, 11_000_000,
     ])
     .expect("valid steady CPU timing");
-    let candidates = route_candidates(&simd_timing, Some(&cpu_timing), None);
     let bad = AutorouteDecision::from_timing_evidence(
         ScanBackend::SimdCpu,
         8 * 1024 * 1024,
         1,
         0xA11D_0B57_A11D_0B57,
         1,
-        selected_backend_margin_ns(ScanBackend::SimdCpu, &candidates),
         simd_timing,
         Some(cpu_timing),
-        None,
-        None,
-        None,
         None,
     );
     // SIMD has one lucky 10ms trial but a wide CI centred near 30ms; CPU is a

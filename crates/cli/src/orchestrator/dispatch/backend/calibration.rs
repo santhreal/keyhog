@@ -1,4 +1,15 @@
-//! Install-time autoroute calibration measurement.
+//! Install-time autoroute (backend-selection) calibration measurement.
+//!
+//! Disambiguation: "calibration" in this module means measuring which scan
+//! *backend* (SIMD / scalar CPU / GPU) is the fastest measured-correct choice
+//! for a workload class, then persisting that decision. It is the
+//! `calibrate-autoroute` / `--autoroute-calibrate` subsystem documented in
+//! `docs/src/reference/autoroute-calibration.md`.
+//!
+//! It is NOT the Bayesian *confidence* calibration in
+//! [`keyhog_core::calibration`] (the `keyhog calibrate --tp/--fp` per-detector
+//! Beta(α, β) store). This module never reads or writes confidence scores; the
+//! two systems share only the English word "calibration".
 
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
@@ -8,8 +19,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::evidence::{
     canonical_match_digest, canonical_matches, canonical_matches_equal_reference,
-    gpu_cold_warm_route_evidence, selected_backend_margin_ns, AutorouteDecision,
-    BackendTimingEvidence,
+    gpu_cold_warm_route_evidence, AutorouteDecision, BackendTimingEvidence,
 };
 use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS};
 
@@ -23,8 +33,6 @@ pub(super) fn calibrate_fastest_correct_backend(
     let sample_bytes = calibration_sample_bytes(sample)?;
 
     let (reference_matches, simd_timing) = measure_reference_simd(scanner, sample)?;
-    let mut candidates = vec![(ScanBackend::SimdCpu, simd_timing.best_ns)];
-    let mut best = (ScanBackend::SimdCpu, simd_timing.best_ns);
 
     let cpu_timing = measure_candidate_backend(
         scanner,
@@ -32,30 +40,19 @@ pub(super) fn calibrate_fastest_correct_backend(
         ScanBackend::CpuFallback,
         &reference_matches,
     )?;
-    if cpu_timing.best_ns < best.1 {
-        best = (ScanBackend::CpuFallback, cpu_timing.best_ns);
-    }
-    candidates.push((ScanBackend::CpuFallback, cpu_timing.best_ns));
     let cpu_timing = Some(cpu_timing);
 
     let mut gpu_timing = None;
-    let mut gpu_cold_ns = None;
-    let mut gpu_warm_timing = None;
-    let mut gpu_route_ns = None;
     let gpu_candidate_allowed = autoroute_gpu && hw_caps.gpu_available && !hw_caps.gpu_is_software;
     if gpu_candidate_allowed {
         let measured_gpu_timing =
             measure_candidate_backend(scanner, sample, ScanBackend::Gpu, &reference_matches)?;
-        if let Some((cold_ns, warm_timing, route_ns)) =
-            gpu_cold_warm_route_evidence(&measured_gpu_timing)
-        {
-            if route_ns < best.1 {
-                best = (ScanBackend::Gpu, route_ns);
-            }
-            candidates.push((ScanBackend::Gpu, route_ns));
-            gpu_cold_ns = Some(cold_ns);
-            gpu_warm_timing = Some(warm_timing);
-            gpu_route_ns = Some(route_ns);
+        // Admit the GPU candidate only if its timing can produce valid cold/warm
+        // route evidence — the SAME derivability invariant the loaded-cache path
+        // enforces (`store::validate_gpu_cold_warm_cache_evidence`). The cold /
+        // warm / route VALUES are DERIVED on demand from `gpu_timing`
+        // (`AutorouteDecision::gpu_cold_warm_route`), never stored here.
+        if gpu_cold_warm_route_evidence(&measured_gpu_timing).is_some() {
             gpu_timing = Some(measured_gpu_timing);
         } else {
             tracing::error!(
@@ -70,7 +67,6 @@ pub(super) fn calibrate_fastest_correct_backend(
         }
     }
 
-    let selected_margin_ns = selected_backend_margin_ns(best.0, &candidates);
     let calibrated_at_unix_ms = current_unix_time_ms().map_err(|error| {
         AutorouteRoutingError::calibration_not_persisted(format!(
             "system clock is before the UNIX epoch ({error})"
@@ -78,66 +74,53 @@ pub(super) fn calibrate_fastest_correct_backend(
     })?;
     let correctness_digest = canonical_match_digest(&canonical_matches(&reference_matches));
 
-    tracing::info!(
-        target: "keyhog::routing",
-        backend = best.0.label(),
-        sample_chunks = sample.len(),
-        sample_bytes,
-        simd_ms = simd_timing.best_ms(),
-        cpu_ms = cpu_timing.as_ref().map(BackendTimingEvidence::best_ms),
-        gpu_opt_in = autoroute_gpu,
-        gpu_considered = gpu_candidate_allowed,
-        gpu_ms = gpu_timing.as_ref().map(BackendTimingEvidence::best_ms),
-        gpu_cold_ms = gpu_cold_ns.map(|ns| ns / 1_000_000),
-        gpu_warm_ms = gpu_warm_timing.as_ref().map(BackendTimingEvidence::best_ms),
-        gpu_route_ms = gpu_route_ns.map(|ns| ns / 1_000_000),
-        trials = AUTOROUTE_CALIBRATION_TRIALS,
-        "autoroute calibrated backend decision"
-    );
-    let decision = AutorouteDecision::from_timing_evidence(
-        best.0,
+    // Construct with the reference backend provisionally, then resolve the REAL
+    // selection deterministically from the measured evidence: the provably-fastest
+    // route if one is statistically separated, otherwise the lowest-overhead
+    // member of the tied-fastest set. `resolved_routing_backend` is the SAME
+    // function `store::validate_decision_route_evidence` re-checks, so
+    // calibration never persists a decision validation would reject — and a fast
+    // host where the routes tie within measurement noise still gets a usable,
+    // sound cache instead of an empty one that hard-errors every auto scan.
+    // The provisional backend/margin are ALWAYS overwritten below; only the
+    // resolved pair is ever observable.
+    let mut decision = AutorouteDecision::from_timing_evidence(
+        ScanBackend::SimdCpu,
         sample_bytes,
         sample.len(),
         correctness_digest,
         calibrated_at_unix_ms,
-        selected_margin_ns,
         simd_timing,
         cpu_timing,
         gpu_timing,
-        gpu_cold_ns,
-        gpu_warm_timing,
-        gpu_route_ns,
     );
-    // Resolve the backend deterministically from the measured evidence: the
-    // provably-fastest route if one is statistically separated, otherwise the
-    // lowest-overhead member of the tied-fastest set. This is the SAME function
-    // `store::validate_decision_route_evidence` re-checks, so calibration never
-    // persists a decision validation would reject — and a fast host where the
-    // routes tie within measurement noise still gets a usable, sound cache
-    // instead of an empty one that hard-errors every auto scan.
     let Some(resolved) = decision.resolved_routing_backend() else {
         return Err(AutorouteRoutingError::calibration_not_persisted(
             "calibration produced no route timing evidence to resolve a backend from",
         ));
     };
-    if resolved == best.0 {
-        return Ok(decision);
-    }
-    let resolved_margin_ns = selected_backend_margin_ns(resolved, &candidates);
-    Ok(AutorouteDecision::from_timing_evidence(
-        resolved,
+    // Persist the resolved backend; the selected-backend margin is DERIVED from
+    // it + the timing evidence on demand (`AutorouteDecision::selected_margin_ns`),
+    // not stored — so it can never disagree with the persisted evidence.
+    decision.backend = resolved.label().to_string();
+
+    tracing::info!(
+        target: "keyhog::routing",
+        backend = resolved.label(),
+        sample_chunks = sample.len(),
         sample_bytes,
-        sample.len(),
-        correctness_digest,
-        calibrated_at_unix_ms,
-        resolved_margin_ns,
-        decision.simd_timing.clone(),
-        decision.cpu_timing.clone(),
-        decision.gpu_timing.clone(),
-        decision.gpu_cold_ns,
-        decision.gpu_warm_timing.clone(),
-        decision.gpu_route_ns,
-    ))
+        simd_ms = decision.simd_ms(),
+        cpu_ms = decision.cpu_ms(),
+        gpu_opt_in = autoroute_gpu,
+        gpu_considered = gpu_candidate_allowed,
+        gpu_ms = decision.gpu_ms(),
+        gpu_cold_ms = decision.gpu_cold_ns().map(|ns| ns / 1_000_000),
+        gpu_warm_ms = decision.gpu_warm_ms(),
+        gpu_route_ms = decision.gpu_route_ns().map(|ns| ns / 1_000_000),
+        trials = AUTOROUTE_CALIBRATION_TRIALS,
+        "autoroute calibrated backend decision"
+    );
+    Ok(decision)
 }
 
 pub(super) fn calibration_sample_bytes(sample: &[Chunk]) -> Result<u64, AutorouteRoutingError> {
@@ -203,29 +186,17 @@ fn measure_reference_simd(
     Ok((reference, timing))
 }
 
+/// The reference-mismatch diff view: every match's calibration identity,
+/// rendered. Derived from `evidence::canonical_matches` + `render_canonical_match`
+/// so the identity FIELDS have exactly one owner (`evidence::canonical_match`)
+/// and this diff can never drift from the equality check it explains.
 pub(super) fn calibration_match_identity_set(
     results: &[Vec<keyhog_core::RawMatch>],
 ) -> BTreeSet<String> {
-    let mut set = BTreeSet::new();
-    for (chunk_idx, chunk_matches) in results.iter().enumerate() {
-        for m in chunk_matches {
-            let credential_hash_hex: String = m
-                .credential_hash
-                .as_bytes()
-                .iter()
-                .map(|b| format!("{b:02x}"))
-                .collect();
-            set.insert(format!(
-                "chunk={chunk_idx} detector={} cred_hash={} file={:?} line={:?} offset={}",
-                m.detector_id,
-                credential_hash_hex,
-                m.location.file_path.as_deref(),
-                m.location.line,
-                m.location.offset,
-            ));
-        }
-    }
-    set
+    canonical_matches(results)
+        .iter()
+        .map(super::evidence::render_canonical_match)
+        .collect()
 }
 
 fn measure_candidate_backend(

@@ -51,11 +51,18 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 
+// v21: primary-evidence-only decision schema — `AutorouteDecision` persists just
+// the measured timing evidence (simd/cpu/gpu) plus backend/sample/digest; every
+// derived value (per-backend ms, GPU cold/warm/route, selected margin) is computed
+// on load via accessors instead of stored, so a cache can never hold a value
+// inconsistent with its own evidence (the whole cross-field-mismatch validation
+// class is gone). v20 caches carry the now-removed denormalized fields and are
+// rejected on the version gate and recalibrated.
 // v20: multi-config cache schema — shared binary/host/corpus identity once at
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 20;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 21;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -107,25 +114,26 @@ impl AutorouteRoutingError {
         cache_path: &Option<PathBuf>,
         cache_load_error: &Option<String>,
     ) -> Self {
+        // Inverted pyramid: what happened, then the fix, then the forensics.
+        // The bucket is rendered by `store::render_workload_key` — the ONE
+        // rendering shared with `keyhog backend --autoroute` and the
+        // interpolation notices, so an operator can match this refused bucket
+        // against the buckets that ARE calibrated field-for-field.
         let cache_state = autoroute_cache_state(cache_path, cache_load_error);
         Self {
             message: format!(
-                "autoroute calibration required: no persisted fastest-correct backend decision \
-                 exists for workload bucket bytes_log2={} chunks_log2={} max_file_log2={} \
-                 patterns_log2={} decode_density_log2={} source_hash={:016x}. {cache_state}. \
-                 Normal auto scans never benchmark, guess, or substitute CPU/SIMD/GPU for a \
-                 missing decision. Run `keyhog calibrate-autoroute` to prime every \
-                 scan-policy preset and workload bucket for this binary in place, or rerun \
-                 `install.sh --calibrate` on Unix / `install.ps1 -Calibrate` on Windows to \
-                 recalibrate at install time, for this binary, host, detector corpus, resolved \
-                 scan config, source class, and explicit scan controls; or pass an explicit \
-                 `--backend <{}>` for diagnostics.",
-                key.bytes_bucket,
-                key.chunks_bucket,
-                key.max_file_bucket,
-                key.pattern_bucket,
-                key.decode_density_bucket,
-                key.source_class_hash,
+                "autoroute calibration required: this workload has no persisted \
+                 fastest-correct backend decision.\n  \
+                 fix: run `keyhog calibrate-autoroute` (primes every scan-policy preset and \
+                 workload bucket for this binary in place), or rerun `install.sh --calibrate` \
+                 on Unix / `install.ps1 -Calibrate` on Windows.\n  \
+                 workload bucket: [{}]\n  \
+                 cache: {cache_state}.\n  \
+                 Decisions are scoped to this exact binary, host, detector corpus, resolved \
+                 scan config, and source class. Normal auto scans never benchmark, guess, or \
+                 substitute CPU/SIMD/GPU for a missing decision; pass an explicit \
+                 `--backend <{}>` for a one-off diagnostic scan.",
+                store::render_workload_key(&key),
                 backend_override_hint(),
             ),
         }
@@ -261,7 +269,11 @@ impl CachedBackendRouter {
     ) -> Self {
         let runtime_status = scanner.runtime_status();
         let detector_digest = runtime_status.detector_digest;
-        let host_profile = AutorouteHostProfile::from_caps(&hw_caps, runtime_status.gpu_backend);
+        let host_profile = AutorouteHostProfile::from_caps(
+            &hw_caps,
+            runtime_status.gpu_backend,
+            keyhog_scanner::hw_probe::gpu_backend_compiled(),
+        );
         let (cache_path, decisions, cache_load_error) = load_persistent_autoroute_decisions(
             detector_digest,
             &rules_digest,
@@ -291,22 +303,42 @@ impl CachedBackendRouter {
         }
         let key = workload_key(batch, self.pattern_count)
             .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
-        match store::resolve_bucket(&self.decisions, &key) {
-            store::BucketResolution::Exact(backend) => Ok(backend),
-            store::BucketResolution::Interpolated { backend, lo, hi } => {
-                note_interpolated_route(&key, backend, &lo, &hi);
-                Ok(backend)
-            }
-            store::BucketResolution::ClampedBelowFloor { backend, floor } => {
-                note_below_floor_route(&key, backend, &floor);
-                Ok(backend)
-            }
-            store::BucketResolution::Unresolved => Err(AutorouteRoutingError::missing_decision(
-                key,
-                &self.cache_path,
-                &self.cache_load_error,
-            )),
+        resolve_persisted_backend(
+            &self.decisions,
+            key,
+            &self.cache_path,
+            &self.cache_load_error,
+        )
+    }
+}
+
+/// Resolve a workload bucket against the persisted decision table, announcing
+/// any non-exact (interpolated / below-floor) route on stderr, and failing
+/// closed on a miss. ONE owner for the lookup-and-announce contract shared by
+/// [`CachedBackendRouter::choose`] and the non-calibration branch of
+/// [`MeasuredBackendRouter::choose`] — the two routers must never drift in how
+/// they treat a near-miss bucket.
+fn resolve_persisted_backend(
+    decisions: &HashMap<WorkloadKey, AutorouteDecision>,
+    key: WorkloadKey,
+    cache_path: &Option<PathBuf>,
+    cache_load_error: &Option<String>,
+) -> Result<ScanBackend, AutorouteRoutingError> {
+    match store::resolve_bucket(decisions, &key) {
+        store::BucketResolution::Exact(backend) => Ok(backend),
+        store::BucketResolution::Interpolated { backend, lo, hi } => {
+            note_interpolated_route(&key, backend, &lo, &hi);
+            Ok(backend)
         }
+        store::BucketResolution::ClampedBelowFloor { backend, floor } => {
+            note_below_floor_route(&key, backend, &floor);
+            Ok(backend)
+        }
+        store::BucketResolution::Unresolved => Err(AutorouteRoutingError::missing_decision(
+            key,
+            cache_path,
+            cache_load_error,
+        )),
     }
 }
 
@@ -323,7 +355,11 @@ impl MeasuredBackendRouter {
     ) -> Self {
         let runtime_status = scanner.runtime_status();
         let detector_digest = runtime_status.detector_digest;
-        let host_profile = AutorouteHostProfile::from_caps(&hw_caps, runtime_status.gpu_backend);
+        let host_profile = AutorouteHostProfile::from_caps(
+            &hw_caps,
+            runtime_status.gpu_backend,
+            keyhog_scanner::hw_probe::gpu_backend_compiled(),
+        );
         let (cache_path, decisions, cache_load_error) = load_persistent_autoroute_decisions(
             detector_digest,
             &rules_digest,
@@ -371,24 +407,12 @@ impl MeasuredBackendRouter {
             // Not calibrating: behave like the cache-only router — an exact miss
             // may still resolve by sound CPU-class interpolation or a below-floor
             // clamp before failing closed (the exact lookup above already missed).
-            match store::resolve_bucket(&self.decisions, &key) {
-                store::BucketResolution::Exact(backend) => return Ok(backend),
-                store::BucketResolution::Interpolated { backend, lo, hi } => {
-                    note_interpolated_route(&key, backend, &lo, &hi);
-                    return Ok(backend);
-                }
-                store::BucketResolution::ClampedBelowFloor { backend, floor } => {
-                    note_below_floor_route(&key, backend, &floor);
-                    return Ok(backend);
-                }
-                store::BucketResolution::Unresolved => {
-                    return Err(AutorouteRoutingError::missing_decision(
-                        key,
-                        &self.cache_path,
-                        &self.cache_load_error,
-                    ));
-                }
-            }
+            return resolve_persisted_backend(
+                &self.decisions,
+                key,
+                &self.cache_path,
+                &self.cache_load_error,
+            );
         }
         self.host_profile
             .require_exact_identity()
@@ -488,38 +512,34 @@ fn load_persistent_autoroute_decisions(
             return (None, HashMap::new(), Some(error));
         }
     };
-    let mut cache_load_error = None;
-    if !matches!(cache_path.as_ref(), Some(path) if path.exists()) {
+    // Disabled cache (None) or a not-yet-calibrated path: cold start, no error.
+    let Some(existing_path) = cache_path.as_deref().filter(|path| path.exists()) else {
         return (cache_path, HashMap::new(), None);
-    }
+    };
     if let Err(error) = host_profile.require_exact_identity() {
-        cache_load_error = Some(error.to_string());
-        return (cache_path, HashMap::new(), cache_load_error);
+        let error = error.to_string();
+        return (cache_path, HashMap::new(), Some(error));
     }
-    let decisions = match cache_path.as_ref() {
-        Some(path) if path.exists() => {
-            match load_autoroute_cache(
-                path,
-                detector_digest,
-                rules_digest,
-                config_digest,
-                host_profile,
-            ) {
-                Ok(decisions) => decisions,
-                Err(error) => {
-                    let message = error.to_string();
-                    tracing::warn!(
-                        target: "keyhog::routing",
-                        path = %path.display(),
-                        error = %message,
-                        "autoroute cache ignored"
-                    );
-                    cache_load_error = Some(message);
-                    HashMap::new()
-                }
-            }
+    let mut cache_load_error = None;
+    let decisions = match load_autoroute_cache(
+        existing_path,
+        detector_digest,
+        rules_digest,
+        config_digest,
+        host_profile,
+    ) {
+        Ok(decisions) => decisions,
+        Err(error) => {
+            let message = error.to_string();
+            tracing::warn!(
+                target: "keyhog::routing",
+                path = %existing_path.display(),
+                error = %message,
+                "autoroute cache ignored"
+            );
+            cache_load_error = Some(message);
+            HashMap::new()
         }
-        _ => HashMap::new(),
     };
 
     if !decisions.is_empty() {

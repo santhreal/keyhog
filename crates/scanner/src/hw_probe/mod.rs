@@ -78,7 +78,24 @@ impl ScanBackend {
 /// consumers MUST ask the scanner rather than checking their own `cfg!`.
 #[must_use]
 pub const fn multiple_backends_compiled() -> bool {
-    cfg!(feature = "simd") || cfg!(feature = "gpu")
+    simd_backend_compiled() || gpu_backend_compiled()
+}
+
+/// True when this scanner crate was compiled with the Hyperscan/SIMD backend.
+/// Consumers must query this owner instead of their own Cargo feature namespace:
+/// workspace feature unification can enable a dependency backend without
+/// enabling a same-named feature on the consuming crate.
+#[must_use]
+pub const fn simd_backend_compiled() -> bool {
+    cfg!(feature = "simd")
+}
+
+/// True when this scanner crate was compiled with the GPU backend stack.
+/// Autoroute host identity and persisted build evidence use this dependency-owned
+/// fact so a GPU-selected calibration can never be stored without GPU identity.
+#[must_use]
+pub const fn gpu_backend_compiled() -> bool {
+    cfg!(feature = "gpu")
 }
 
 /// Single owner of the SIMD-tier label precedence chain.
@@ -231,26 +248,37 @@ pub mod testing {
         }
     }
 
+    /// Select the CPU scan backend (SIMD/scalar tier) for the given hardware
+    /// capabilities, ignoring any GPU. Delegates to [`super::select`].
     pub fn cpu_tier_backend(caps: &HardwareCaps) -> ScanBackend {
         super::select::cpu_tier_backend(caps)
     }
 
+    /// Classify a GPU adapter name into a routing [`GpuTier`] (High/Mid/Low).
+    /// `None` (no adapter) classifies to the lowest tier.
     pub fn classify_gpu_tier(adapter_name: Option<&str>) -> GpuTier {
         from_inner(super::tier::classify_gpu_tier(adapter_name))
     }
 
+    /// Minimum workload size (bytes) at which the GPU backend is allowed to
+    /// engage at all for this tier (below it, CPU always wins).
     pub fn gpu_min_bytes_for_tier(tier: GpuTier) -> u64 {
         super::tier::gpu_min_bytes_for_tier(to_inner(tier))
     }
 
+    /// Minimum workload size (bytes) at which the GPU runs *solo* (no CPU
+    /// co-scan) for this tier.
     pub fn gpu_solo_bytes_for_tier(tier: GpuTier) -> u64 {
         super::tier::gpu_solo_bytes_for_tier(to_inner(tier))
     }
 
+    /// Pattern-count break-even above which GPU scanning beats CPU at this tier.
     pub fn gpu_pattern_breakeven_for_tier(tier: GpuTier) -> usize {
         super::tier::gpu_pattern_breakeven_for_tier(to_inner(tier))
     }
 
+    /// Choose the scan backend for a batch from hardware caps, total workload
+    /// size, pattern count, and the largest single-chunk size.
     pub fn select_backend_for_batch(
         caps: &HardwareCaps,
         workload_bytes: u64,
@@ -265,6 +293,9 @@ pub mod testing {
         )
     }
 
+    /// Like [`select_backend_for_batch`] but returns the full
+    /// [`BackendRoutingVerdict`] (the chosen backend plus the inputs and reason
+    /// behind the decision) for diagnostics/telemetry.
     pub fn select_backend_for_batch_verdict(
         caps: &HardwareCaps,
         workload_bytes: u64,
@@ -279,15 +310,19 @@ pub mod testing {
         )
     }
 
+    /// Test-only forced backend override (from the `KEYHOG_*` routing env), or
+    /// `None` when routing is not overridden.
     pub fn forced_backend_override_for_test() -> Option<ScanBackend> {
         super::select::forced_backend_override_for_test()
     }
 
+    /// Parse the physical CPU core count from `/proc/cpuinfo` contents (Linux).
     #[cfg(target_os = "linux")]
     pub fn linux_physical_cores_from_cpuinfo(content: &str) -> Option<usize> {
         super::platform::linux_physical_cores_from_cpuinfo(content)
     }
 
+    /// Parse total system memory (MiB) from `/proc/meminfo` contents (Linux).
     #[cfg(target_os = "linux")]
     pub fn linux_total_memory_mb_from_meminfo(content: &str) -> Option<u64> {
         super::platform::linux_total_memory_mb_from_meminfo(content)

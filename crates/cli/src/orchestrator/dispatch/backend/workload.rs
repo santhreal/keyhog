@@ -30,8 +30,8 @@ pub(super) struct WorkloadClassificationError {
 impl WorkloadClassificationError {
     fn missing_source_family(chunk: &Chunk) -> Self {
         Self {
-            source_type: chunk.metadata.source_type.clone(),
-            path: chunk.metadata.path.clone(),
+            source_type: chunk.metadata.source_type.to_string(),
+            path: chunk.metadata.path.as_deref().map(|s| s.to_string()),
         }
     }
 }

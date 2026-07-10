@@ -38,6 +38,18 @@ pub(super) fn gpu_cold_warm_route_evidence(
     Some((cold_ns, warm_timing, route_ns))
 }
 
+/// A calibrated routing decision for one workload bucket.
+///
+/// PRIMARY EVIDENCE ONLY: the persisted state is the measured timing evidence
+/// (`simd_timing` / `cpu_timing` / `gpu_timing`) plus the resolved `backend`,
+/// calibration sample, digest, timestamp, and trial count. Every value that is a
+/// pure function of that evidence — per-backend best-ms (`simd_ms()`/…), the GPU
+/// cold/warm/route triple (`gpu_cold_warm_route()`), and the selected-backend
+/// margin (`selected_margin_ns()`) — is DERIVED on demand through the accessors
+/// below rather than stored a second time. This is the ONE-PLACE invariant: a
+/// cache can never hold a derived value inconsistent with its own evidence,
+/// because there is no stored copy to drift — which is why the old
+/// `validate_decision_route_evidence` cross-field-mismatch checks no longer exist.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct AutorouteDecision {
     pub(super) backend: String,
@@ -45,17 +57,9 @@ pub(super) struct AutorouteDecision {
     pub(super) sample_chunks: usize,
     pub(super) correctness_digest: u64,
     pub(super) calibrated_at_unix_ms: u128,
-    pub(super) simd_ms: u128,
-    pub(super) cpu_ms: Option<u128>,
-    pub(super) gpu_ms: Option<u128>,
     pub(super) simd_timing: BackendTimingEvidence,
     pub(super) cpu_timing: Option<BackendTimingEvidence>,
     pub(super) gpu_timing: Option<BackendTimingEvidence>,
-    pub(super) gpu_cold_ns: Option<u128>,
-    pub(super) gpu_warm_ms: Option<u128>,
-    pub(super) gpu_warm_timing: Option<BackendTimingEvidence>,
-    pub(super) gpu_route_ns: Option<u128>,
-    pub(super) selected_margin_ns: Option<u128>,
     pub(super) trials: usize,
 }
 
@@ -74,37 +78,15 @@ impl AutorouteDecision {
             cpu_ms.map(|ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS));
         let gpu_timing =
             gpu_ms.map(|ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS));
-        let (gpu_cold_ns, gpu_warm_timing, gpu_route_ns) =
-            match gpu_timing.as_ref().and_then(gpu_cold_warm_route_evidence) {
-                Some((cold_ns, warm_timing, route_ns)) => {
-                    (Some(cold_ns), Some(warm_timing), Some(route_ns))
-                }
-                None => (None, None, None),
-            };
-        let candidates = route_candidates_with_gpu_backend(
-            &simd_timing,
-            cpu_timing.as_ref(),
-            gpu_route_ns,
-            gpu_evidence_backend(backend),
-        );
-        let selected_margin_ns = selected_backend_margin_ns(backend, &candidates);
         Self {
             backend: backend.label().to_string(),
             sample_bytes,
             sample_chunks,
             correctness_digest: 0xA11D_0B57_A11D_0B57,
             calibrated_at_unix_ms: 1,
-            simd_ms: simd_timing.best_ms(),
-            cpu_ms: cpu_timing.as_ref().map(BackendTimingEvidence::best_ms),
-            gpu_ms: gpu_timing.as_ref().map(BackendTimingEvidence::best_ms),
             simd_timing,
             cpu_timing,
             gpu_timing,
-            gpu_cold_ns,
-            gpu_warm_ms: gpu_warm_timing.as_ref().map(BackendTimingEvidence::best_ms),
-            gpu_warm_timing,
-            gpu_route_ns,
-            selected_margin_ns,
             trials: AUTOROUTE_CALIBRATION_TRIALS,
         }
     }
@@ -115,13 +97,9 @@ impl AutorouteDecision {
         sample_chunks: usize,
         correctness_digest: u64,
         calibrated_at_unix_ms: u128,
-        selected_margin_ns: Option<u128>,
         simd_timing: BackendTimingEvidence,
         cpu_timing: Option<BackendTimingEvidence>,
         gpu_timing: Option<BackendTimingEvidence>,
-        gpu_cold_ns: Option<u128>,
-        gpu_warm_timing: Option<BackendTimingEvidence>,
-        gpu_route_ns: Option<u128>,
     ) -> Self {
         Self {
             backend: backend.label().to_string(),
@@ -129,23 +107,71 @@ impl AutorouteDecision {
             sample_chunks,
             correctness_digest,
             calibrated_at_unix_ms,
-            simd_ms: simd_timing.best_ms(),
-            cpu_ms: cpu_timing.as_ref().map(BackendTimingEvidence::best_ms),
-            gpu_ms: gpu_timing.as_ref().map(BackendTimingEvidence::best_ms),
             simd_timing,
             cpu_timing,
             gpu_timing,
-            gpu_cold_ns,
-            gpu_warm_ms: gpu_warm_timing.as_ref().map(BackendTimingEvidence::best_ms),
-            gpu_warm_timing,
-            gpu_route_ns,
-            selected_margin_ns,
             trials: AUTOROUTE_CALIBRATION_TRIALS,
         }
     }
 
     pub(super) fn backend(&self) -> Option<ScanBackend> {
         keyhog_scanner::hw_probe::parse_backend_str(&self.backend)
+    }
+
+    // ── Derived evidence accessors (see the struct doc: primary-evidence-only) ──
+    // Each is a pure function of the persisted timing set, computed on demand so
+    // no stored copy can drift. These replace the former denormalized fields.
+
+    /// Best (fastest-trial) SIMD backend time in ms.
+    pub(super) fn simd_ms(&self) -> u128 {
+        self.simd_timing.best_ms()
+    }
+
+    /// Best CPU-fallback backend time in ms, if CPU was measured.
+    pub(super) fn cpu_ms(&self) -> Option<u128> {
+        self.cpu_timing.as_ref().map(BackendTimingEvidence::best_ms)
+    }
+
+    /// Best GPU backend time in ms, if GPU was measured.
+    pub(super) fn gpu_ms(&self) -> Option<u128> {
+        self.gpu_timing.as_ref().map(BackendTimingEvidence::best_ms)
+    }
+
+    /// The GPU cold-start ns, warm timing evidence, and routing ns — all derived
+    /// from the persisted `gpu_timing` through the single owner
+    /// [`gpu_cold_warm_route_evidence`]. `None` when there is no GPU timing or it
+    /// cannot produce valid cold/warm evidence (too few warm trials).
+    pub(super) fn gpu_cold_warm_route(&self) -> Option<(u128, BackendTimingEvidence, u128)> {
+        self.gpu_timing
+            .as_ref()
+            .and_then(gpu_cold_warm_route_evidence)
+    }
+
+    /// GPU cold-start ns, derived (see [`Self::gpu_cold_warm_route`]).
+    pub(super) fn gpu_cold_ns(&self) -> Option<u128> {
+        self.gpu_cold_warm_route().map(|(cold_ns, _, _)| cold_ns)
+    }
+
+    /// GPU warm best-ms, derived.
+    pub(super) fn gpu_warm_ms(&self) -> Option<u128> {
+        self.gpu_cold_warm_route()
+            .map(|(_, warm_timing, _)| warm_timing.best_ms())
+    }
+
+    /// GPU routing ns (the cold-vs-warm route cost the router compares), derived.
+    pub(super) fn gpu_route_ns(&self) -> Option<u128> {
+        self.gpu_cold_warm_route().map(|(_, _, route_ns)| route_ns)
+    }
+
+    /// The ns margin by which the persisted (resolved) backend beat the next
+    /// candidate route, derived from the timing evidence via the SAME
+    /// [`selected_backend_margin_ns`] / candidate set calibration selected it
+    /// with. `None` when the backend is unparseable or there is no competing
+    /// route to measure against.
+    pub(super) fn selected_margin_ns(&self) -> Option<u128> {
+        let backend = self.backend()?;
+        let candidates = self.route_candidates_for_selected_backend(backend);
+        selected_backend_margin_ns(backend, &candidates)
     }
 
     pub(super) fn timing_for_backend(
@@ -167,7 +193,7 @@ impl AutorouteDecision {
         route_candidates_with_gpu_backend(
             &self.simd_timing,
             self.cpu_timing.as_ref(),
-            self.gpu_route_ns,
+            self.gpu_route_ns(),
             gpu_evidence_backend(selected_backend),
         )
     }
@@ -260,11 +286,7 @@ impl AutorouteDecision {
                 cpu_timing.confidence_interval_95_ns,
             ));
         }
-        if let (Some(cold_ns), Some(warm_timing), Some(_route_ns)) = (
-            self.gpu_cold_ns,
-            self.gpu_warm_timing.as_ref(),
-            self.gpu_route_ns,
-        ) {
+        if let Some((cold_ns, warm_timing, _route_ns)) = self.gpu_cold_warm_route() {
             let warm_interval = warm_timing.confidence_interval_95_ns;
             intervals.push((
                 gpu_evidence_backend(selected_backend),
@@ -276,15 +298,6 @@ impl AutorouteDecision {
         }
         intervals
     }
-}
-
-#[cfg(test)]
-pub(super) fn route_candidates(
-    simd_timing: &BackendTimingEvidence,
-    cpu_timing: Option<&BackendTimingEvidence>,
-    gpu_route_ns: Option<u128>,
-) -> Vec<(ScanBackend, u128)> {
-    route_candidates_with_gpu_backend(simd_timing, cpu_timing, gpu_route_ns, ScanBackend::Gpu)
 }
 
 fn route_candidates_with_gpu_backend(
@@ -540,6 +553,24 @@ fn canonical_match(chunk_idx: usize, m: &RawMatch) -> CanonicalMatch<'_> {
         m.location.file_path.as_deref(),
         m.location.line,
         m.location.offset,
+    )
+}
+
+/// Render one canonical match identity for the reference-mismatch diff log.
+/// Derived from [`canonical_match`] — the ONE owner of which fields make up a
+/// match's calibration identity — so the diff that *explains* an equality
+/// failure can never disagree with the equality itself about what was compared.
+pub(super) fn render_canonical_match(
+    (chunk_idx, detector_id, credential_hash, file_path, line, offset): &CanonicalMatch<'_>,
+) -> String {
+    let credential_hash_hex: String = credential_hash
+        .as_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    format!(
+        "chunk={chunk_idx} detector={detector_id} cred_hash={credential_hash_hex} \
+         file={file_path:?} line={line:?} offset={offset}"
     )
 }
 
