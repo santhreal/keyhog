@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Make `CompiledScanner::scan` the deterministic portable CPU reference path
+- Make `CompiledScanner::scan` and `scan_coalesced` the deterministic portable CPU reference paths
   instead of an uncalibrated hardware heuristic. Accelerated library callers
   select a measured backend through `scan_with_backend`; the CLI continues to
   use persisted fastest-correct autoroute decisions.

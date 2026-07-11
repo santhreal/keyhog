@@ -93,15 +93,24 @@ impl CompiledScanner {
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
         if backend == crate::hw_probe::ScanBackend::SimdCpu {
             self.deny_silent_selected_backend_degrade(backend);
-            return self.scan_coalesced(chunks);
+            return self.scan_coalesced_simd(chunks);
         }
         self.scan_chunks_with_backend(chunks, backend)
     }
 
-    /// High-throughput coalesced scan: all files scanned in parallel, zero
-    /// overhead for non-hit files.
-    #[allow(clippy::needless_return)] // return needed under non-simd cfg branch
+    /// Scan a batch through the deterministic portable CPU reference backend.
+    /// Accelerated callers use [`Self::scan_coalesced_with_backend`] after
+    /// measurement; the CLI supplies its persisted fastest-correct decision.
     pub fn scan_coalesced(&self, chunks: &[keyhog_core::Chunk]) -> Vec<Vec<keyhog_core::RawMatch>> {
+        self.scan_chunks_with_backend(chunks, crate::hw_probe::ScanBackend::CpuFallback)
+    }
+
+    /// Hyperscan coalesced implementation for an explicitly selected SIMD route.
+    #[allow(clippy::needless_return)] // return needed under non-simd cfg branch
+    fn scan_coalesced_simd(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+    ) -> Vec<Vec<keyhog_core::RawMatch>> {
         use rayon::prelude::*;
 
         #[cfg(not(feature = "simd"))]
