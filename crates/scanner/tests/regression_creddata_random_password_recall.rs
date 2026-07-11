@@ -23,11 +23,21 @@ mod support;
 use support::paths::detector_dir;
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{CompiledScanner, ScanBackend};
+use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 
 fn scanner() -> CompiledScanner {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
     CompiledScanner::compile(detectors).expect("compile scanner")
+}
+
+fn scanner_with_bpe_override(bound: f64) -> CompiledScanner {
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
+    let cfg = ScannerConfig::default()
+        .with_entropy_bpe_max_bytes_per_token_override(bound)
+        .unwrap_or_else(|error| panic!("override {bound} must be valid: {error}"));
+    CompiledScanner::compile(detectors)
+        .expect("compile scanner")
+        .with_config(cfg)
 }
 
 fn credentials_for(scanner: &CompiledScanner, line: &str) -> Vec<String> {
@@ -108,5 +118,30 @@ fn detector_owned_bpe_policy_distinguishes_passphrases_from_opaque_api_keys() {
     assert!(
         !caught(&s, &format!("api_key = \"{value}\""), value),
         "the opaque API-key detector keeps BPE enabled and must reject the same language-compressible value"
+    );
+}
+
+#[test]
+fn explicit_scan_bpe_override_can_release_opaque_api_key_language_like_values() {
+    let value = "CorrectHorseBatteryStaple!9";
+    let strict = scanner();
+    assert!(
+        !caught(&strict, &format!("api_key = \"{value}\""), value),
+        "with detector-local policy only, the language-like API-key value must remain suppressed"
+    );
+    let relaxed = scanner_with_bpe_override(99.0);
+    assert!(
+        caught(&relaxed, &format!("api_key = \"{value}\""), value),
+        "a scan-wide BPE override must be the final runtime authority when explicitly set"
+    );
+}
+
+#[test]
+fn explicit_scan_bpe_override_does_not_enable_bpe_for_generically_disabled_detectors() {
+    let value = "CorrectHorseBatteryStaple!9";
+    let relaxed = scanner_with_bpe_override(99.0);
+    assert!(
+        caught(&relaxed, &format!("passphrase = \"{value}\""), value),
+        "generic-password-owned BPE disablement is detector-local and must survive a scan-wide override"
     );
 }
