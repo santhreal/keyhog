@@ -9,6 +9,7 @@ name = "SonarCloud API Token"
 service = "sonarcloud"
 severity = "high"
 keywords = ["SONARCLOUD", "sonarcloud.io", "SONAR_TOKEN", "SONAR_CLOUD_TOKEN"]
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:SONAR|sonar)(?:_?CLOUD|_?cloud)?(?:_?TOKEN|_?token)?[=:\\s\"'']+([a-f0-9]{40})"

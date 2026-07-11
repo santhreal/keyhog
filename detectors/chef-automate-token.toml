@@ -9,6 +9,7 @@ name = "Chef Automate API Token"
 service = "chef-automate"
 severity = "critical"
 keywords = ["chef-automate", "api-token", "CHEF_AUTOMATE", "automate-token"]
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:CHEF[_-]AUTOMATE[_-]TOKEN|CHEF[_-]API[_-]TOKEN|AUTOMATE[_-]TOKEN)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"

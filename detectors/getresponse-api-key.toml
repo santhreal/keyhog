@@ -9,6 +9,7 @@ name = "GetResponse API Key"
 service = "getresponse"
 severity = "critical"
 keywords = ["getresponse", "GETRESPONSE", "X-Auth-Token", "api_key"]
+weak_anchor = true
 
 [[detector.patterns]]
 regex = '(?:GETRESPONSE|getresponse)[_-]*(?:API|api)?[_-]*(?:KEY|key|TOKEN|token)[=: ]+([a-zA-Z0-9_-]{20,})'

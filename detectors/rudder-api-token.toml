@@ -9,6 +9,7 @@ name = "Rudder API Token"
 service = "rudder"
 severity = "critical"
 keywords = ["X-API-Token", "rudder", "RUDDER_TOKEN"]
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:RUDDER[_-]TOKEN|RUDDER[_-]API[_-]TOKEN)[=:\\s\"'']+([a-zA-Z0-9_-]{32})"

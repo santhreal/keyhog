@@ -10,6 +10,7 @@ service = "alchemy"
 severity = "critical"
 min_confidence = 0.2
 keywords = ["alchemy", "ALCHEMY_API_KEY", "ALCHEMY_APIKEY", "alchemy_api_key", "alchemy.com"]
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:ALCHEMY|alchemy)[_\\-\\.]?(?:API[_\\-\\.]?KEY|api[_\\-\\.]?key)[=:\\s\\\"']+([a-f0-9]{32})"

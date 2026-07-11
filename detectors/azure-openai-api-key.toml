@@ -10,6 +10,7 @@ service = "azure-openai"
 severity = "critical"
 min_confidence = 0.2
 keywords = ["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "azure-openai", "api-key"]
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:AZURE_OPENAI_API_KEY|azure-openai|azure_openai)[=:\\s\"\\']+([a-f0-9]{32})"

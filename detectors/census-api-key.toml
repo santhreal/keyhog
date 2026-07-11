@@ -9,6 +9,7 @@ name = "Census API Key"
 service = "census"
 severity = "high"
 keywords = ["CENSUS", "census", "CENSUS_API_KEY", "CENSUS_TOKEN"]
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:CENSUS)[_.]?(?:API[._-]?KEY|TOKEN)[=:\\s\"'']+([a-zA-Z0-9]{32,})"

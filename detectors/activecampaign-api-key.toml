@@ -9,6 +9,7 @@ name = "ActiveCampaign API Key"
 service = "activecampaign"
 severity = "critical"
 keywords = ["activecampaign", "ACTIVECAMPAIGN", "Api-Token", "api_token"]
+weak_anchor = true
 
 [[detector.patterns]]
 regex = '(?:ACTIVECAMPAIGN|activecampaign)[_]*(?:API|api)?[_]*(?:KEY|key|TOKEN|token)[=: ]+([a-zA-Z0-9]{32,})'

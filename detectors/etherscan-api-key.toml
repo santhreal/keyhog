@@ -10,6 +10,7 @@ service = "etherscan"
 severity = "high"
 min_confidence = 0.2
 keywords = ["etherscan", "ETHERSCAN", "ETHERSCAN_API_KEY", "etherscan_api_key", "etherscan.io", "api.etherscan.io"]
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:ETHERSCAN|etherscan)[_\\-\\.]?(?:API[_\\-\\.]?KEY|api[_\\-\\.]?key)[=:\\s\\\"']+([a-f0-9]{32})"

@@ -9,6 +9,7 @@ name = "SSH Private Key"
 service = "ssh"
 severity = "critical"
 keywords = ["BEGIN", "PRIVATE KEY", "OPENSSH", "RSA", "EC PRIVATE", "DSA"]
+private_key_block = true
 
 # Capture the full BEGIN/END block, not just the header marker. Header-only
 # captures are identical across distinct keys of the same type and collapse

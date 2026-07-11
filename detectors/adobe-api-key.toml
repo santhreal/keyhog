@@ -10,6 +10,7 @@ service = "adobe"
 severity = "high"
 min_confidence = 0.2
 keywords = ["ADOBE", "CLIENT_ID", "adobe_io"]
+weak_anchor = true
 
 [[detector.patterns]]
 regex = '''(?:ADOBE|adobe)[._-]?(?:CLIENT|client)[._-]?(?:ID|id)[=:\s"']+([a-f0-9]{32,40})'''

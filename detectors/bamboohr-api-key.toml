@@ -10,6 +10,7 @@ service = "bamboohr"
 severity = "critical"
 min_confidence = 0.2
 keywords = ["BAMBOOHR_API_KEY", "bamboo_hr", "bamboohr"]
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:BAMBOOHR_API_KEY|BAMBOO_API_KEY|bamboohr_api_key|bamboo_api_key)[=:\\s\"'']+([a-f0-9]{40})"

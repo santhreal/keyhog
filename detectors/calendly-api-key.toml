@@ -10,6 +10,7 @@ service = "calendly"
 severity = "high"
 min_confidence = 0.2
 keywords = ["CALENDLY", "calendly", "PAT"]
+weak_anchor = true
 
 [[detector.patterns]]
 regex = '''(?:CALENDLY|calendly)[._-]?(?:TOKEN|token|PAT|pat|API|api)[=:\s"']+([a-f0-9]{40})'''

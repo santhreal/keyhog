@@ -18,6 +18,7 @@ name = "Private Key (PEM)"
 service = "crypto"
 severity = "critical"
 keywords = ["BEGIN", "PRIVATE KEY"]
+private_key_block = true
 
 # Multi-line PEM body capture. `[\s\S]*?` (lazy) keeps the match bounded
 # to one BEGIN/END pair - without `?` a file containing two adjacent

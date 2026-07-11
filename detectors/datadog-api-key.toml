@@ -10,6 +10,7 @@ service = "datadog"
 severity = "critical"
 min_confidence = 0.2
 keywords = ["DD-API-Key", "DD_API_KEY", "DATADOG_API_KEY", "datadog_api_key"]
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:DD.API.KEY|DATADOG.API.KEY|datadog.api.key)[=:\\s\"']+([a-f0-9]{32})"
