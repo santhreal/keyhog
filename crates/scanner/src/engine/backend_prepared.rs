@@ -111,6 +111,11 @@ pub(crate) fn build_simd_scanner(
     );
 
     let opts = crate::simd::backend::HsCompileOpts {
+        // Phase 1 consumes set membership only: every callback marks a pattern
+        // bit, and match positions/multiplicity are discarded. Retiring a
+        // pattern after its first hit avoids callback storms on repetitive
+        // multi-MiB inputs without changing the triggered-pattern set.
+        singlematch: true,
         shard_target: tuning.hs_shard_target,
         ..Default::default()
     };
