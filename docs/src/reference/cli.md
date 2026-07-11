@@ -130,15 +130,15 @@ Lists every detector in the embedded corpus.
 
 ```sh
 keyhog detectors                  # human-readable, grouped by service
-keyhog detectors --json           # one JSON object per detector
-keyhog detectors --json | jq length
-902
+keyhog detectors --format json           # one JSON object per detector
+keyhog detectors --format json | jq length
 ```
 
 ## `keyhog explain <DETECTOR_ID>`
 
-Pretty-print a single detector's TOML. Includes keywords, patterns,
-companion rules, and verification endpoint.
+Explain the loaded detector. Includes keywords, patterns, companion rules,
+verification endpoint, and detector-owned entropy/BPE/length/suppression
+policy.
 
 ```sh
 keyhog explain stripe-secret-key

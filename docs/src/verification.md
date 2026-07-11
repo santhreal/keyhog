@@ -157,8 +157,14 @@ partial verification pass cannot look complete.
 
 ## Detectors without verification
 
-Not every detector has a `verify` block. 344 of the 916 detectors do
-(about 38%). The rest are:
+Not every detector has a `verify` block. Query the installed corpus instead of
+relying on a copied count:
+
+```sh
+keyhog detectors --format json | jq '[.[] | select(.verify)] | length'
+```
+
+Detectors counted there ship a live verification endpoint. The rest are:
 
 - Format-only detectors (private keys, certificates, JWTs) where the
   credential itself has provable structure but no service to call.
