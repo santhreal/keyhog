@@ -451,6 +451,47 @@ fn workload_key_rejects_missing_source_class_evidence() {
 }
 
 #[test]
+fn workload_key_separates_payload_derived_size_from_full_source_size() {
+    let mut chunk = test_chunk_with_source("a".repeat(64), "filesystem/windowed");
+    chunk.metadata.path = Some("large.bin".into());
+    chunk.metadata.size_bytes = None;
+
+    let payload_key = workload_key(&[chunk.clone()], 902)
+        .expect("a transformed or streamed payload remains autoroutable");
+    chunk.metadata.size_bytes = Some(64);
+    let full_size_key = workload_key(&[chunk], 902).expect("full source size classifies");
+
+    assert_eq!(payload_key.max_file_bucket, full_size_key.max_file_bucket);
+    assert_ne!(
+        payload_key.source_class_hash, full_size_key.source_class_hash,
+        "source fingerprint must encode whether max-file size came from payload or full-source evidence"
+    );
+    assert_ne!(
+        payload_key, full_size_key,
+        "numerically equal payload and full-file size buckets must not share calibration evidence"
+    );
+}
+
+#[test]
+fn source_class_hash_associates_size_provenance_with_each_source_family() {
+    let mut filesystem = test_chunk_with_source("a".repeat(64), "filesystem/windowed");
+    let mut web = test_chunk_with_source("b".repeat(64), "web:js");
+    filesystem.metadata.size_bytes = None;
+    let filesystem_payload =
+        source_class_hash(&[filesystem.clone(), web.clone()]).expect("mixed source classes hash");
+
+    filesystem.metadata.size_bytes = Some(64);
+    web.metadata.size_bytes = None;
+    let web_payload =
+        source_class_hash(&[filesystem, web]).expect("reversed size provenance hashes");
+
+    assert_ne!(
+        filesystem_payload, web_payload,
+        "equal source sets with different per-family size provenance need distinct calibration keys"
+    );
+}
+
+#[test]
 fn autoroute_calibration_rejects_empty_sample_before_timing() {
     for sample in [Vec::new(), vec![test_chunk(String::new())]] {
         let err = calibration::calibration_sample_bytes(&sample)
@@ -2032,7 +2073,7 @@ fn autoroute_cache_rejects_missing_calibration_sample_evidence() {
 }
 
 #[test]
-fn autoroute_cache_rejects_legacy_backend_alias_labels() {
+fn autoroute_cache_rejects_retired_backend_alias_labels() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_legacy_backend_alias_{}.json",
         std::process::id()
@@ -2051,15 +2092,15 @@ fn autoroute_cache_rejects_legacy_backend_alias_labels() {
         &host,
         key,
         bad,
-        "non-canonical backend label",
+        "unsupported backend decision",
     );
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
         loaded
             .expect_err("legacy backend aliases must not be accepted in persisted autoroute proof")
             .to_string()
-            .contains("non-canonical backend label"),
-        "autoroute cache must require canonical backend labels, not CLI compatibility aliases"
+            .contains("unsupported backend decision"),
+        "autoroute cache must reject retired implementation aliases instead of canonicalizing them"
     );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant

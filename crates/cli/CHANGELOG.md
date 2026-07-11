@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Include full-source-size provenance in autoroute workload keys so streamed or
+  transformed payload sizes cannot silently reuse a calibration measured from
+  an equal numeric full-file-size bucket.
 - Replace autoroute cache writes through a synced same-directory temporary file
   so recalibration atomically replaces an existing cache path across supported
   operating systems.
