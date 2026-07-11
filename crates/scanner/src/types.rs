@@ -513,7 +513,9 @@ pub(crate) struct CompiledCompanion {
 #[cfg(any(feature = "entropy", feature = "simdsieve"))]
 pub(crate) use crate::scan_state::RawMatchPriority;
 pub(crate) use crate::scan_state::ScanState;
-pub use crate::scanner_config::{ScannerConfig, ScannerTuningConfig};
+pub use crate::scanner_config::{
+    ScannerConfig, ScannerConfigInstallError, ScannerTuningConfig,
+};
 // `MlPendingMatch` only exists with the `ml` feature (it is the batch-queue
 // record); re-export it under the same gate so the lean / `--no-default-features`
 // build resolves the import set instead of failing with E0432.

@@ -254,6 +254,17 @@ pub struct ScannerConfig {
     pub calibration: Option<Arc<Calibration>>,
 }
 
+/// Invalid scanner installation policy.
+#[derive(Debug, thiserror::Error)]
+pub enum ScannerConfigInstallError {
+    /// Invalid shared detection configuration.
+    #[error(transparent)]
+    Shared(#[from] keyhog_core::ConfigError),
+    /// A present zero timeout expires before scanning any bytes.
+    #[error("per_chunk_timeout_ms must be greater than zero when set; use None to disable the deadline")]
+    ZeroPerChunkTimeout,
+}
+
 impl Deref for ScannerConfig {
     type Target = ScanConfig;
     fn deref(&self) -> &ScanConfig {

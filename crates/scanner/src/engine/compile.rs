@@ -484,8 +484,13 @@ impl CompiledScanner {
     pub fn try_with_config(
         mut self,
         config: ScannerConfig,
-    ) -> std::result::Result<Self, keyhog_core::ConfigError> {
+    ) -> std::result::Result<Self, crate::scanner_config::ScannerConfigInstallError> {
         config.validate()?;
+        if config.per_chunk_timeout_ms == Some(0) {
+            return Err(
+                crate::scanner_config::ScannerConfigInstallError::ZeroPerChunkTimeout,
+            );
+        }
         profile::set_profile_enabled(config.profile);
         profile::set_perf_trace_enabled(config.perf_trace);
         self.config = config;

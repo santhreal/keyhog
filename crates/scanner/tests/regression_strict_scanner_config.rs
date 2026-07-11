@@ -47,3 +47,17 @@ fn strict_scanner_config_rejects_invalid_explicit_bpe_override() {
         "non-finite detector-wide BPE override must fail before installation",
     );
 }
+
+#[test]
+fn strict_scanner_config_rejects_zero_chunk_timeout() {
+    let mut config = ScannerConfig::default();
+    config.per_chunk_timeout_ms = Some(0);
+    let result = CompiledScanner::compile(Vec::new())
+        .expect("empty detector corpus is a valid library scanner")
+        .try_with_config(config);
+    let error = match result {
+        Ok(_) => panic!("zero timeout must fail before scanner installation"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("greater than zero"));
+}
