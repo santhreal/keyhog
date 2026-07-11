@@ -132,7 +132,7 @@ The available per-detector tuning fields are:
 
 ### BPE token efficiency
 *   **`bpe_max_bytes_per_token`** (float, optional): Per-detector
-    `cl100k_base` characters-per-token ceiling. Values above the ceiling are
+    `cl100k_base` UTF-8-bytes-per-token ceiling. Values above the ceiling are
     efficiently tokenized, word-like candidates and are suppressed after the
     cheaper shape and entropy gates. The detector field takes precedence over
     the compiled scan fallback. An explicitly configured

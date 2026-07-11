@@ -42,7 +42,7 @@ Terminology matters here: Betterleaks' current source calls the predicate
 [`failsTokenEfficiency`](https://github.com/betterleaks/betterleaks/blob/0b4063d7990e0ab6366a5b4eb58789584af5f945/internal/exprruntime/bindings_filter.go#L111-L139),
 not “BPD.” It uses `cl100k_base`, a byte-length/token ratio, word-list checks,
 and short-value threshold branches. KeyHog names its related mechanism **BPE
-token efficiency**, measures Unicode characters per token, and resolves the
+token efficiency**, measures UTF-8 bytes per token, and resolves the
 ceiling per detector. If “BPD” is being used informally to mean a bits/byte or
 bytes/token density, do not treat it as a third implemented score: Shannon
 entropy and BPE token efficiency are the two separate signals documented here.
@@ -85,14 +85,15 @@ Three gates, in order, each cheaper than the next:
 
 3. **SIMD prefilter (`simd-regex`).** A multi-pattern trigger scanner.
    When the `simd` feature is compiled, the detector corpus is also compiled
-   into Hyperscan databases; portable builds keep the same backend contract
-   through the pure-Rust trigger path. One scan pass returns "which detector IDs
-   have a candidate match." On AVX-512 + Hyperscan hardware this runs at
-   ~3 GB/s.
+   into Hyperscan databases; portable builds use the pure-Rust trigger path.
+   One scan pass returns "which detector IDs have a candidate match."
 
-   On GPUs above the breakeven threshold (2 MiB on 5090-class, 16 MiB
-   on 4090-class), the prefilter switches to a CUDA literal-set scan
-   via vyre - same patterns, parallelized across thousands of cores.
+   GPU-capable builds add vyre's region-presence literal-set backend. There is
+   no universal model-name or byte threshold at which KeyHog silently switches
+   to it. `--backend auto` requires an exact persisted calibration decision for
+   the current binary, detector/config digest, host/device/driver, workload
+   class, and size bucket. Calibration keeps a GPU route only when its complete
+   findings are identical and it is the fastest eligible backend for that key.
 
 ## Stage 3 - detector match
 
@@ -172,14 +173,16 @@ A finding that survives stage 4 makes it to output.
 | Chunker           | ~5 GB/s (mmap + magic-byte sniff) |
 | Alphabet screen   | ~12 GB/s (256-bit table lookup, vectorized) |
 | Bigram bloom      | ~8 GB/s (4096-bit table, vectorized) |
-| `simd-regex` trigger scan | ~3 GB/s with Hyperscan on AVX-512; portable builds use the pure-Rust trigger path |
+| `simd-regex` trigger scan | Host- and corpus-dependent; calibration measures the installed Hyperscan path |
 | Per-detector regex | ~150 MB/s × detectors flagged |
 | Post-process      | ~200 MB/s |
 
-The end-to-end number on the dogfood corpus is ~800 MB/s sustained.
-Hardware acceleration (AVX-512, CUDA) raises the SIMD-prefilter ceiling
-substantially on big inputs; small inputs (< 100 KB) bottleneck on the
-chunker and post-process, not the regex.
+End-to-end throughput depends on the detector/config digest, source shape,
+candidate density, decoding and verification policy, cache state, CPU, GPU,
+driver, and storage. Use `keyhog calibrate-autoroute` for routing evidence on
+the installed host and the repository benchmark harness for reproducible
+cross-version measurements; do not treat a throughput number from another
+machine or detector corpus as a routing threshold.
 
 ## Where the precision comes from
 
