@@ -161,9 +161,9 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         "CPU-tier routing must not label AVX/NEON-only hosts as simd-regex when no live Hyperscan/Vectorscan prefilter exists"
     );
     let selected_simd_guard = compiled_api
-        .split("if selected_backend == ScanBackend::SimdCpu && !self.simd_backend_usable()")
+        .split("pub(crate) fn deny_silent_selected_backend_degrade(")
         .nth(1)
-        .and_then(|tail| tail.split("selected_backend\n    }").next())
+        .and_then(|tail| tail.split("/// Number of loaded detectors.").next())
         .expect("selected SimdCpu unavailable guard extractable");
     assert!(
         selected_simd_guard.contains("crate::process_exit::backend_unavailable(")
