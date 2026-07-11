@@ -56,26 +56,42 @@ const ALL_BACKENDS: &[ScanBackend] = &[
 // key, recognized by the aws-access-key-id detector.
 const SECRET: &str = concat!("AK", "IAQYLPMN5HFIQR7XYA");
 
+fn canonical(results: &[Vec<keyhog_core::RawMatch>]) -> Vec<keyhog_core::RawMatch> {
+    let mut findings = results.iter().flatten().cloned().collect::<Vec<_>>();
+    findings.sort();
+    findings
+}
+
 /// Require every backend to surface the decoded secret for this layer.
 fn check_decoder_cells(decoder_label: &str, fixture: &Chunk) {
     let scanner = scanner();
     let mut failed = Vec::new();
+    scanner.clear_fragment_cache();
+    let reference_results =
+        scanner.scan_chunks_with_backend(std::slice::from_ref(fixture), ScanBackend::SimdCpu);
+    let reference = canonical(&reference_results);
 
     for backend in ALL_BACKENDS {
         scanner.clear_fragment_cache();
+        let degrade_before = scanner.runtime_status().gpu_degrade_count;
         let results = scanner.scan_chunks_with_backend(std::slice::from_ref(fixture), *backend);
+        let degrade_after = scanner.runtime_status().gpu_degrade_count;
         let found = results
             .iter()
             .flatten()
             .any(|m| m.credential.as_ref().contains(SECRET));
 
-        if !found {
+        if !found || canonical(&results) != reference || degrade_after != degrade_before {
             let credentials: Vec<String> = results
                 .iter()
                 .flatten()
                 .map(|m| m.credential.as_ref().to_string())
                 .collect();
-            failed.push(format!("{backend:?}: saw {credentials:?}"));
+            failed.push(format!(
+                "{backend:?}: found={found} exact_parity={} degraded={} saw={credentials:?}",
+                canonical(&results) == reference,
+                degrade_after != degrade_before,
+            ));
         }
     }
 
