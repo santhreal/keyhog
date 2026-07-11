@@ -276,6 +276,15 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         }
     }
 
+    /// Cumulative count of runtime GPU dispatch degrades recorded by this
+    /// scanner. This relaxed atomic load lets benchmarks and dispatch reporting
+    /// distinguish real GPU execution from a loud CPU degradation without
+    /// rebuilding the full runtime-status digest.
+    pub fn gpu_degrade_count(&self) -> u64 {
+        self.gpu_degrade_count
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Dump and reset every scanner-owned profile stream collected under the
     /// unified explicit profile switch. This is the only public
     /// boundary the CLI needs; it prevents CLI/orchestrator code from growing

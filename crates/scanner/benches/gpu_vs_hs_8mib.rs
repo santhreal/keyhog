@@ -11,7 +11,10 @@
 //!
 //! Pass `-- --perf-trace` to get the region-presence phase breakdown
 //! (matcher / coalesce / dispatch / floor / phase2_gpu / phase2) and Vyre
-//! dispatch telemetry on stderr.
+//! dispatch telemetry on stderr. Trace instrumentation is intentionally not a
+//! crossover measurement: it adds GPU-specific timers and counters, so the
+//! speed gate is enforced only by the normal untraced run. Full-result parity
+//! remains mandatory in both modes.
 //!
 //! This is a plain `main()` (harness = false) so the numbers are raw wall-time
 //! medians, not criterion's adaptive sampling — every number is one timed call.
@@ -311,10 +314,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             gpu_results == hs_results,
             "exact parity broken: GPU and Hyperscan returned different full RawMatch results on the same 8 MiB input (GPU hits={gpu_hits}, Hyperscan hits={hs_hits})"
         );
-        assert!(
-            gpu < hs,
-            "8 MiB crossover missed: GPU median {gpu:?} did not beat the fastest Hyperscan median {hs:?}"
-        );
+        if perf_trace {
+            println!(
+                "crossover gate not enforced under --perf-trace; trace instrumentation is diagnostic and GPU-specific. Rerun without --perf-trace for the production speed gate."
+            );
+        } else {
+            assert!(
+                gpu < hs,
+                "8 MiB crossover missed: GPU median {gpu:?} did not beat the fastest Hyperscan median {hs:?}"
+            );
+        }
     }
     #[cfg(not(feature = "gpu"))]
     {
