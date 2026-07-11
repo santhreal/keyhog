@@ -139,6 +139,8 @@ pub mod regression_r2b_detector_fixtures;
 pub mod regression_recall_new_prefixes;
 #[path = "regression_resolution_algorithmic_dos.rs"]
 pub mod regression_resolution_algorithmic_dos;
+#[path = "regression_entropy_unique_char_count.rs"]
+pub mod regression_entropy_unique_char_count;
 #[path = "regression_reverse_integrity_decoy_suppression.rs"]
 pub mod regression_reverse_integrity_decoy_suppression;
 #[path = "regression_saas_platform_token_recall.rs"]

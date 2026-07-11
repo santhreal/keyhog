@@ -326,7 +326,7 @@ fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool
     true
 }
 
-fn unique_char_count(value: &str) -> usize {
+pub(crate) fn unique_char_count(value: &str) -> usize {
     // ASCII fast path: distinct bytes == distinct chars (every ASCII byte is a
     // single-byte char), so reuse the one canonical distinct-byte primitive
     // (`entropy::unique_byte_count`) instead of re-inlining its 256-slot
@@ -388,37 +388,4 @@ fn is_placeholder_ci(value: &str, placeholder_keywords: &[String]) -> bool {
         value,
         Some(shannon_entropy(bytes)),
     ) || crate::placeholder_words::bytes_contain_entropy_placeholder_marker(bytes)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::unique_char_count;
-
-    /// The ASCII fast path now delegates to the single canonical distinct-byte
-    /// primitive (`entropy::unique_byte_count`); for ASCII input the two must
-    /// agree exactly (distinct bytes == distinct chars), and both report the
-    /// real distinct count, not merely non-emptiness.
-    #[test]
-    fn unique_char_count_ascii_matches_canonical_byte_count() {
-        assert_eq!(unique_char_count("aabbc"), 3);
-        assert_eq!(unique_char_count("AaAaAa"), 2);
-        assert_eq!(unique_char_count(""), 0);
-        for probe in ["aabbc", "AaAaAa", "0123456789abcdef0123", ""] {
-            assert_eq!(
-                unique_char_count(probe),
-                crate::entropy::unique_byte_count(probe.as_bytes()),
-                "ASCII unique_char_count must equal the canonical distinct-byte count for {probe:?}",
-            );
-        }
-    }
-
-    /// The non-ASCII branch counts scalar values, not bytes: `é` is two UTF-8
-    /// bytes but one char, so a byte-based count would over-report. `café` has
-    /// four distinct chars (five bytes) and `ééé` collapses to one.
-    #[test]
-    fn unique_char_count_non_ascii_counts_chars_not_bytes() {
-        assert_eq!(unique_char_count("café"), 4);
-        assert_eq!("café".len(), 5); // five UTF-8 bytes, so a byte count would give 5
-        assert_eq!(unique_char_count("ééé"), 1);
-    }
 }

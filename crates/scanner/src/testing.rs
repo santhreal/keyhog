@@ -431,6 +431,17 @@ pub fn entropy_has_low_alnum_ratio_for_test(value: &str) -> bool {
     crate::entropy::plausibility::has_low_alnum_ratio(value)
 }
 
+/// Distinct-scalar counter used by entropy plausibility. Its ASCII path shares
+/// the allocation-free distinct-byte primitive; non-ASCII input counts chars.
+pub fn entropy_unique_char_count_for_test(value: &str) -> usize {
+    crate::entropy::plausibility::unique_char_count(value)
+}
+
+/// Canonical allocation-free distinct-byte counter used by the ASCII path.
+pub fn entropy_unique_byte_count_for_test(bytes: &[u8]) -> usize {
+    crate::entropy::unique_byte_count(bytes)
+}
+
 /// The fast probabilistic noise gate (`probabilistic_gate`) — rejects obvious
 /// high-entropy non-secrets (UUIDs, low-diversity pads) before heavy ML scoring.
 /// Lets a gap test pin its exact promising/not-promising decisions, in
