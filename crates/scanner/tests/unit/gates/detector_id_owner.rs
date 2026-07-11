@@ -128,7 +128,8 @@ fn detector_ids_module_owns_scanner_detector_identity() {
     );
 
     let classification = read(&src.join("detector_classification.rs"));
-    let rules = read(&repo_root().join("rules/detector-classification.toml"));
+    let suppression = read(&src.join("suppression/api.rs"));
+    let rules = read(&repo_root().join("rules/stripe-hot-confirmed-prefixes.toml"));
     let confirmed_extract = read(
         &src.join("engine")
             .join("scan_postprocess")
@@ -137,18 +138,18 @@ fn detector_ids_module_owns_scanner_detector_identity() {
     assert!(
         !owner.contains("RESIDUAL_WEAK_ANCHORED")
             && !owner.contains("is_residual_weak_anchored")
-            && classification
-                .contains("include_str!(\"../../../rules/detector-classification.toml\")")
-            && classification.contains("weak_anchor")
-            && classification.contains("is_residual_weak_anchor"),
-        "residual weak-anchor classification must live in Tier-B detector-classification rules, not detector_ids.rs"
+            && !classification.contains("is_residual_weak_anchor")
+            && !rules.contains("weak_anchor = [")
+            && suppression.contains("if spec.weak_anchor"),
+        "weak-anchor classification must come from each active DetectorSpec"
     );
     assert!(
         !owner.contains("PRIVATE_KEY | SSH_PRIVATE_KEY | GITHUB_APP_PRIVATE_KEY")
-            && classification.contains("private_key_block")
-            && classification.contains("is_private_key_block_detector")
-            && rules.contains("private_key_block = ["),
-        "private-key block detector classification must live in Tier-B detector-classification rules, not detector_ids.rs"
+            && owner.contains("detector_spec_by_id(detector_id)")
+            && owner.contains("detector.private_key_block")
+            && !classification.contains("is_private_key_block_detector")
+            && !rules.contains("private_key_block = ["),
+        "private-key block classification must come from each detector's TOML-backed spec"
     );
     assert!(
         classification.contains("stripe_hot_confirmed_prefix")

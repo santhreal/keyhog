@@ -66,5 +66,6 @@ pub(crate) fn is_service_anchored_detector(detector_id: &str) -> bool {
 
 #[inline]
 pub(crate) fn is_private_key_block_detector(detector_id: &str) -> Result<bool, String> {
-    crate::detector_classification::is_private_key_block_detector(detector_id)
+    Ok(keyhog_core::detector_spec_by_id(detector_id)
+        .is_some_and(|detector| detector.private_key_block))
 }

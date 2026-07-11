@@ -254,11 +254,12 @@ pub fn assign_re_captures_for_test(line: &str) -> Option<(String, String)> {
 /// `parse_classification_rules`, never the cached query path. Each facade
 /// forwards verbatim to the live, bundled-TOML-backed query.
 pub fn detector_is_residual_weak_anchor_for_test(detector_id: &str) -> Result<bool, String> {
-    crate::detector_classification::is_residual_weak_anchor(detector_id)
+    Ok(keyhog_core::detector_spec_by_id(detector_id)
+        .is_some_and(|detector| detector.weak_anchor))
 }
 
 pub fn detector_is_private_key_block_for_test(detector_id: &str) -> Result<bool, String> {
-    crate::detector_classification::is_private_key_block_detector(detector_id)
+    crate::detector_ids::is_private_key_block_detector(detector_id)
 }
 
 pub fn detector_stripe_hot_confirmed_prefixes_for_test() -> Result<Vec<String>, String> {

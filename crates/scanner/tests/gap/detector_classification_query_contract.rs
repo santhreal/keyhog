@@ -1,14 +1,8 @@
-//! Behavioral contract for the Tier-B detector-classification query API
-//! (crates/scanner/src/detector_classification.rs), against the LIVE bundled
-//! `rules/detector-classification.toml`.
+//! Behavioral contract for detector-owned classification plus the shared
+//! Stripe-prefix query.
 //!
-//! The four query functions (`is_residual_weak_anchor`,
-//! `is_private_key_block_detector`, `stripe_hot_confirmed_prefixes`, `validate`)
-//! drive real suppression/resolution behaviour, yet the module's own
-//! `#[cfg(test)]` tests only cover `parse_classification_rules` directly — the
-//! cached operator-facing query path has zero behavioral coverage. These pin it
-//! through the public facades with EXACT values, including cross-classification
-//! negatives (an id in one bucket must report `false` for the other).
+//! Weak-anchor and private-key-block membership comes from each detector spec;
+//! the ordered Stripe prefix list remains shared Tier-B data.
 
 use keyhog_scanner::testing::{
     detector_classification_validate_for_test as validate,
@@ -22,7 +16,7 @@ fn live_rules_validate_clean() {
     assert_eq!(
         validate(),
         Ok(()),
-        "the bundled detector-classification.toml must parse + validate clean"
+        "the bundled Stripe prefix policy must parse + validate clean"
     );
 }
 

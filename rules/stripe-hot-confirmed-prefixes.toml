@@ -1,0 +1,10 @@
+# Stripe secret-key prefixes shared by the direct hot path and confirmed
+# extraction. A confirmed match with one of these prefixes is deduplicated when
+# the hot path already emitted the same offset.
+
+stripe_hot_confirmed_prefix = [
+  "sk_live_",
+  "sk_test_",
+  "rk_live_",
+  "rk_test_",
+]

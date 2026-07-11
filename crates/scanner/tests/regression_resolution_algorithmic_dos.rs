@@ -31,7 +31,7 @@ use keyhog_scanner::resolution::resolve_matches;
 use sha2::{Digest, Sha256};
 
 /// A detector id classified as a private-key BLOCK detector (see
-/// rules/detector-classification.toml `private_key_block`): its matches define
+/// its detector-TOML `private_key_block` flag): its matches define
 /// the suppression spans and are themselves never suppressed.
 const SPAN_ID: &str = "private-key";
 /// A generic (non-block, non-entropy) probe detector id: its matches are the

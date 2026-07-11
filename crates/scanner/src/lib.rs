@@ -86,6 +86,7 @@ pub mod decode;
 /// Decode-structure analysis: classify what a candidate base64/hex-decodes to
 /// (binary asset magic bytes, protobuf wire) so decode-through feeds scoring.
 pub(crate) mod decode_structure;
+#[cfg(test)]
 pub(crate) mod detector_catalog;
 pub(crate) mod detector_classification;
 /// Canonical detector-id strings and scanner-side detector-family predicates.

@@ -733,7 +733,7 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Result<Vec<Ve
     // found the canonical `aws-access-key`.
     matches = keyhog_scanner::resolution::try_resolve_matches(matches)
         .map_err(anyhow::Error::msg)
-        .context("failed to resolve matches; fix rules/detector-classification.toml")?;
+        .context("failed to resolve matches using the active detector classification")?;
 
     // Inline `keyhog:ignore` / `gitleaks:allow` comment suppression. The
     // shared filter only acts on matches whose source is "filesystem"

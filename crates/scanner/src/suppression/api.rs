@@ -465,8 +465,8 @@ fn is_generic_or_entropy(detector_id: &str, weak_anchor: bool) -> bool {
 /// the detector corpus. The broad-identifier class (Category C of
 /// the internal design notes: a `[a-zA-Z0-9_-]`-style capture with a small
 /// minimum length that matches any short identifier) is derived here; the
-/// pure-hex class, which is shape-indistinguishable from real hex keys,
-/// stays in `rules/detector-classification.toml`.
+/// pure-hex class, which is shape-indistinguishable from real hex keys, is
+/// declared by the owning detector's `weak_anchor` field.
 pub(crate) fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> Result<bool, String> {
     Ok(match detector_weak_anchor_base(spec)? {
         WeakAnchorBase::Always => true,
@@ -490,7 +490,7 @@ pub(crate) fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> Result<b
 /// specific pattern that matched.
 ///
 /// `weak_anchor` keeps the Tier-B shape gates engaged for collision-prone
-/// captures. The residual (`rules/detector-classification.toml`) pure-hex class,
+/// captures. The detector-owned residual pure-hex class,
 /// the generic/entropy/private-key carve-outs, and a detector-level explicit
 /// `min_confidence` are all DETECTOR-wide. Only the broad-identifier class is
 /// inherently per-pattern: a detector like `servicenow-api-key` mixes a strong
@@ -521,7 +521,7 @@ pub(crate) fn detector_weak_anchor_base(
     {
         return Ok(WeakAnchorBase::Never);
     }
-    if crate::detector_classification::is_residual_weak_anchor(id)? {
+    if spec.weak_anchor {
         return Ok(WeakAnchorBase::Always);
     }
     if spec.min_confidence.is_some() {
