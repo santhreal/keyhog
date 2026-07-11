@@ -2529,7 +2529,7 @@ fn autoroute_cache_rejects_selected_backend_with_overlapping_confidence() {
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 }
 
-// --- #34 bucket resolution: exact hit, else sound CPU-class interpolation ----
+// --- Exact bucket resolution ------------------------------------------------
 
 fn cpu_decision(backend: ScanBackend) -> AutorouteDecision {
     match backend {
@@ -2564,9 +2564,9 @@ fn bucket_resolution_exact_hit_wins() {
 }
 
 #[test]
-fn bucket_resolution_interpolates_between_agreeing_cpu_neighbours() {
-    // Calibrated at bytes_log2 8 and 12, both SimdCpu; request 10 (every other
-    // dimension equal) resolves to SimdCpu by sound interpolation.
+fn bucket_resolution_rejects_agreeing_cpu_neighbours() {
+    // Matching CPU decisions on neighbouring size buckets do not prove which
+    // backend is fastest for the unmeasured bucket.
     let base = test_workload_key();
     let lo = WorkloadKey {
         bytes_bucket: 8,
@@ -2583,23 +2583,53 @@ fn bucket_resolution_interpolates_between_agreeing_cpu_neighbours() {
         bytes_bucket: 10,
         ..base
     };
-    match resolve_bucket(&decisions, &requested) {
-        BucketResolution::Interpolated {
-            backend,
-            lo: got_lo,
-            hi: got_hi,
-        } => {
-            assert_eq!(backend, ScanBackend::SimdCpu);
-            assert_eq!(got_lo, lo);
-            assert_eq!(got_hi, hi);
-        }
-        other => panic!("expected interpolation between agreeing CPU neighbours, got {other:?}"),
-    }
+    assert_eq!(
+        resolve_bucket(&decisions, &requested),
+        BucketResolution::Unresolved
+    );
 }
 
 #[test]
-fn bucket_resolution_also_interpolates_along_max_file_axis() {
-    // The same soundness holds on the max_file size axis, not only total bytes.
+fn persisted_router_rejects_agreeing_neighbours_without_exact_evidence() {
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 8,
+            ..base
+        },
+        cpu_decision(ScanBackend::SimdCpu),
+    );
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 12,
+            ..base
+        },
+        cpu_decision(ScanBackend::SimdCpu),
+    );
+    let requested = WorkloadKey {
+        bytes_bucket: 10,
+        ..base
+    };
+
+    let error = resolve_persisted_backend(
+        &decisions,
+        requested,
+        &Some(std::path::PathBuf::from("autoroute.json")),
+        &None,
+    )
+    .expect_err("production autoroute lookup must require an exact bucket");
+    assert!(
+        error
+            .to_string()
+            .contains("no persisted fastest-correct backend decision"),
+        "missing exact evidence must surface the calibration error: {error}"
+    );
+}
+
+#[test]
+fn bucket_resolution_rejects_neighbours_along_max_file_axis() {
+    // The exactness requirement applies independently to every workload axis.
     let base = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
@@ -2620,15 +2650,9 @@ fn bucket_resolution_also_interpolates_along_max_file_axis() {
         max_file_bucket: 7,
         ..base
     };
-    assert!(
-        matches!(
-            resolve_bucket(&decisions, &requested),
-            BucketResolution::Interpolated {
-                backend: ScanBackend::CpuFallback,
-                ..
-            }
-        ),
-        "an agreeing CPU bracket along max_file must interpolate"
+    assert_eq!(
+        resolve_bucket(&decisions, &requested),
+        BucketResolution::Unresolved
     );
 }
 
@@ -2748,15 +2772,12 @@ fn bucket_resolution_does_not_cross_non_size_dimensions() {
     );
 }
 
-// --- #44 below-floor clamp: a sub-floor single file routes to CpuFallback -----
+// --- Below-floor workloads still require exact evidence ---------------------
 
 #[test]
-fn bucket_resolution_clamps_below_floor_to_cpu_fallback() {
-    // A single small file (`keyhog scan small.env`) lands BELOW the smallest
-    // calibrated bucket on BOTH size axes (bytes and max_file move together for
-    // one file), so no lower neighbour brackets it. Instead of failing closed it
-    // clamps to setup-free CpuFallback (an input too small to amortize any
-    // backend's setup cannot be beaten by one that pays it).
+fn bucket_resolution_rejects_below_floor_cpu_extrapolation() {
+    // Fixed setup cost alone cannot prove the fastest backend for an unmeasured
+    // smaller workload, so even a CPU-only calibrated frontier must fail closed.
     let base = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
@@ -2782,25 +2803,14 @@ fn bucket_resolution_clamps_below_floor_to_cpu_fallback() {
     };
     assert_eq!(
         resolve_bucket(&decisions, &requested),
-        BucketResolution::ClampedBelowFloor {
-            backend: ScanBackend::CpuFallback,
-            floor: WorkloadKey {
-                bytes_bucket: 8,
-                max_file_bucket: 8,
-                ..base
-            },
-        },
-        "a sub-floor single-file bucket must clamp to setup-free CpuFallback, not fail closed"
+        BucketResolution::Unresolved
     );
 }
 
 #[test]
-fn bucket_resolution_interpolates_between_single_file_rungs() {
-    // #46: a single file BETWEEN two calibrated single-file rungs (bytes/max_file
-    // moving together: query 7, between agreeing-SimdCpu rungs 6 and 8) is bracketed
-    // along the size DIAGONAL and resolves to SimdCpu — the per-axis interpolation
-    // can't see it (both size axes move at once), and it is NOT below the floor, so
-    // before #46 it failed closed. CpuFallback is reference-correct so recall holds.
+fn bucket_resolution_rejects_between_single_file_rungs() {
+    // Correlated bytes/max-file buckets are still a distinct unmeasured workload
+    // identity; agreeing endpoints are not a calibrated decision for the middle.
     let base = test_workload_key();
     let lo = WorkloadKey {
         bytes_bucket: 6,
@@ -2820,26 +2830,10 @@ fn bucket_resolution_interpolates_between_single_file_rungs() {
         max_file_bucket: 7,
         ..base
     };
-    match resolve_bucket(&decisions, &requested) {
-        BucketResolution::Interpolated {
-            backend,
-            lo: got_lo,
-            hi: got_hi,
-        } => {
-            assert_eq!(backend, ScanBackend::SimdCpu);
-            assert_eq!(
-                got_lo, lo,
-                "diagonal interpolation must report the lower rung"
-            );
-            assert_eq!(
-                got_hi, hi,
-                "diagonal interpolation must report the upper rung"
-            );
-        }
-        other => panic!(
-            "expected diagonal interpolation between agreeing single-file rungs, got {other:?}"
-        ),
-    }
+    assert_eq!(
+        resolve_bucket(&decisions, &requested),
+        BucketResolution::Unresolved
+    );
 }
 
 #[test]

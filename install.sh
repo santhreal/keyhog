@@ -1403,8 +1403,10 @@ prime_autoroute_cache() {
         fi
     fi
 
-    kib_sizes="4 64"
-    mib_sizes="1 8 32"
+    # One representative for every stable file-size bucket from 512 B through
+    # 32 MiB. Autoroute no longer interpolates across unmeasured buckets.
+    kib_sizes="1 4 16 64 256"
+    mib_sizes="1 4 8 32"
     many_file_counts="4 16 32"
     # The stdin + filesystem "core" probes run once per scan-policy preset
     # (default + each supported preset); the external-source probes

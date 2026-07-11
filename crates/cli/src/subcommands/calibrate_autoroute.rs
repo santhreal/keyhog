@@ -86,8 +86,18 @@ fn core_workload_plan() -> Vec<Workload> {
             bytes: 64 * 1024,
         },
         Workload::File {
+            label: "1 KiB workload",
+            kib: 1,
+            decode_heavy: false,
+        },
+        Workload::File {
             label: "4 KiB workload",
             kib: 4,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "16 KiB workload",
+            kib: 16,
             decode_heavy: false,
         },
         Workload::File {
@@ -96,8 +106,18 @@ fn core_workload_plan() -> Vec<Workload> {
             decode_heavy: false,
         },
         Workload::File {
+            label: "256 KiB workload",
+            kib: 256,
+            decode_heavy: false,
+        },
+        Workload::File {
             label: "1 MiB workload",
             kib: 1024,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "4 MiB workload",
+            kib: 4 * 1024,
             decode_heavy: false,
         },
         Workload::File {

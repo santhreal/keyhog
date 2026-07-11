@@ -12,11 +12,9 @@
 //! proves the spawn + cache-path plumbing and that decisions persist across
 //! processes.
 //!
-//! The verifying targets cover (a) the ladder's exact single-file buckets
-//! (4 KiB, 64 KiB) and (b) a sub-floor tiny file (`keyhog scan small.env`),
-//! which resolves through the #44 below-floor clamp to setup-free CpuFallback
-//! rather than failing closed — so this also proves the everyday small-file
-//! scan never exits 2 after calibration.
+//! The verifying targets cover exact single-file buckets represented by the
+//! ladder, including a 512-byte file in the same stable bucket as the 1 KiB
+//! probe. No neighbouring-bucket interpolation is involved.
 
 use crate::e2e::support::binary;
 use std::process::Command;
@@ -71,12 +69,8 @@ fn calibrate_autoroute_primes_every_preset_for_a_later_scan() {
     let sixty_four_kib = work.path().join("probe-64kib.txt");
     write_plain_bytes(&four_kib, 4 * 1024);
     write_plain_bytes(&sixty_four_kib, 64 * 1024);
-    // A sub-floor tiny file — the everyday `keyhog scan small.config`. At 512
-    // bytes it is strictly below the ladder's smallest single-file probe (4 KiB)
-    // on both size axes, so it can only resolve via the #44 below-floor clamp;
-    // before that fix this exited 2. Built from the same trigger-free plain block
-    // as the rungs, so it shares their decode-density class and the clamp finds
-    // its floor.
+    // The 1 KiB ladder probe represents the same stable workload bucket as this
+    // 512-byte file, so this remains an exact keyed decision rather than a clamp.
     let tiny = work.path().join("small.config");
     write_plain_bytes(&tiny, 512);
 

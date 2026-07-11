@@ -8,6 +8,11 @@
 use super::*;
 
 #[test]
+fn scan_policy_plan_covers_every_digest_changing_preset() {
+    assert_eq!(SCAN_POLICY_PRESETS, ["--fast", "--deep", "--precision"]);
+}
+
+#[test]
 fn plain_block_is_exactly_one_kib() {
     assert_eq!(calibration_block(PLAIN_SEED).len(), 1024);
     assert_eq!(calibration_block(DECODE_HEAVY_SEED).len(), 1024);
@@ -26,13 +31,34 @@ fn calibration_bytes_are_whole_kib_runs() {
 #[test]
 fn workload_plan_matches_the_installer_ladder() {
     let plan = core_workload_plan();
-    // 2 stdin + 5 single-file (incl. decode-heavy) + 3 file-tree workloads.
-    assert_eq!(plan.len(), 11);
+    // 2 stdin + 10 single-file (incl. decode-heavy) + 3 file-tree workloads.
+    assert_eq!(plan.len(), 15);
     let labels: Vec<&str> = plan.iter().map(Workload::label).collect();
     assert!(labels.contains(&"empty stdin workload"));
+    assert!(labels.contains(&"1 KiB workload"));
+    assert!(labels.contains(&"16 KiB workload"));
+    assert!(labels.contains(&"256 KiB workload"));
+    assert!(labels.contains(&"4 MiB workload"));
     assert!(labels.contains(&"decode-heavy 256 KiB workload"));
     assert!(labels.contains(&"32 MiB workload"));
     assert!(labels.contains(&"32 x 4 KiB files workload"));
+
+    let plain_file_kib: Vec<usize> = plan
+        .iter()
+        .filter_map(|workload| match workload {
+            Workload::File {
+                kib,
+                decode_heavy: false,
+                ..
+            } => Some(*kib),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        plain_file_kib,
+        [1, 4, 16, 64, 256, 1024, 4096, 8192, 32768],
+        "plain probes must represent every stable file-size bucket through 32 MiB"
+    );
 }
 
 #[test]

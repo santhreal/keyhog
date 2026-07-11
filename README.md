@@ -136,13 +136,13 @@ failing closed. The decisions for the default policy and every preset coexist in
 one cache file (each keyed by its own resolved-config digest):
 
 <p align="center">
-  <img src="demo/keyhog-calibrate.gif" alt="install.sh --calibrate streaming the 16-probe autoroute sweep — empty/64 KiB stdin, 4/64 KiB and 1/8/32 MiB files, decode-heavy, many-file trees, git history/blobs/diff, web URL, and a live docker image — each workload class measuring every backend and landing PASS, then the persisted decisions summary and 'Autoroute calibration phase complete'" width="860" />
+  <img src="demo/keyhog-calibrate.gif" alt="install.sh --calibrate streaming the autoroute sweep: stdin, contiguous stable file-size buckets through 32 MiB, decode-heavy input, many-file trees, git history/blobs/diff, web URL, and a live docker image; each workload class measures every backend before the persisted decisions summary" width="860" />
 </p>
 
-`keyhog backend` prints the live decision for this host: the hardware probe and
-the size-keyed routing matrix where small inputs stay on `simd-regex` and large
-chunks cross into `gpu-region-presence` once the per-tier byte thresholds are
-met — a measured, explainable function of host and input size, never a guess.
+`keyhog backend` prints the hardware probe and a size-keyed capability matrix for
+diagnostics. That matrix is advisory; normal `auto` scans do not route from its
+static tier thresholds. They consume only persisted fastest-correct decisions
+for the exact workload key shown by `keyhog backend --autoroute`.
 
 `keyhog backend --autoroute` is the companion view: it reads the *persisted*
 calibration cache and lists which resolved scan configs and workload buckets

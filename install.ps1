@@ -1037,7 +1037,9 @@ function Invoke-AutorouteCalibration {
                 Stdout = Join-Path $tmpDir 'stdout-stdin-64kib.txt'
                 Stderr = Join-Path $tmpDir 'stderr-stdin-64kib.txt'
             }
-            foreach ($kib in @(4, 64)) {
+            # One representative for every stable file-size bucket from 512 B
+            # through 32 MiB. Autoroute never interpolates an unmeasured bucket.
+            foreach ($kib in @(1, 4, 16, 64, 256)) {
                 $probe = Join-Path $tmpDir "probe-${kib}kib.txt"
                 New-CalibrationProbeKiB -Path $probe -KiB $kib
                 $workloads += [pscustomobject]@{
@@ -1049,7 +1051,7 @@ function Invoke-AutorouteCalibration {
                     Stderr = Join-Path $tmpDir "stderr-${kib}kib.txt"
                 }
             }
-            foreach ($mib in @(1, 8, 32)) {
+            foreach ($mib in @(1, 4, 8, 32)) {
                 $probe = Join-Path $tmpDir "probe-${mib}mib.txt"
                 New-CalibrationProbe -Path $probe -MiB $mib
                 $workloads += [pscustomobject]@{

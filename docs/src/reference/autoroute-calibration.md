@@ -43,7 +43,9 @@ keyhog calibrate-autoroute
 ```
 
 This drives the core stdin + filesystem workload ladder across every scan
-preset (the buckets a typical `keyhog scan <path>` resolves). It does **not**
+preset. Plain single-file probes cover every stable size bucket from 512 bytes
+through 32 MiB (represented by 1/4/16/64/256 KiB and 1/4/8/32 MiB files), plus
+decode-heavy and many-file shapes. It does **not**
 cover the git / docker / web source probes; those need environment orchestration
 (a repo, a running daemon, a served URL) that only the installer's
 `--calibrate` mode performs. If you scan those sources and hit
@@ -75,11 +77,10 @@ calibration, even when they do not change which backend is fastest:
 - Workload **shape** matters: a single file, a directory, and a piped `stdin`
   stream are distinct buckets, and `stdin` is content-sensitive.
 
-A near-miss bucket can resolve from neighbouring calibrated buckets, but only
-when the backend choice is provably stable across that range (CPU-class
-backends, which return identical findings at any input size). When it does, the
-route is announced once on stderr, never silently. An uncalibrated bucket that
-cannot be resolved this way fails closed.
+Every lookup is exact at the complete workload-key level. A neighbouring size
+bucket—even one with the same CPU winner—is not evidence that the same backend
+is fastest here. Uncalibrated buckets therefore fail closed; KeyHog never
+interpolates or clamps them to a CPU/GPU substitute.
 
 ## When an auto scan reports `calibration required`
 

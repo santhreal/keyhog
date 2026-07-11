@@ -116,9 +116,8 @@ impl AutorouteRoutingError {
     ) -> Self {
         // Inverted pyramid: what happened, then the fix, then the forensics.
         // The bucket is rendered by `store::render_workload_key` — the ONE
-        // rendering shared with `keyhog backend --autoroute` and the
-        // interpolation notices, so an operator can match this refused bucket
-        // against the buckets that ARE calibrated field-for-field.
+        // rendering shared with `keyhog backend --autoroute`, so an operator can
+        // match this refused bucket against calibrated buckets field-for-field.
         let cache_state = autoroute_cache_state(cache_path, cache_load_error);
         Self {
             message: format!(
@@ -312,29 +311,20 @@ impl CachedBackendRouter {
     }
 }
 
-/// Resolve a workload bucket against the persisted decision table, announcing
-/// any non-exact (interpolated / below-floor) route on stderr, and failing
-/// closed on a miss. ONE owner for the lookup-and-announce contract shared by
+/// Resolve an exact workload bucket against the persisted decision table and
+/// fail closed on any miss. ONE owner for the lookup contract shared by
 /// [`CachedBackendRouter::choose`] and the non-calibration branch of
-/// [`MeasuredBackendRouter::choose`] — the two routers must never drift in how
-/// they treat a near-miss bucket.
+/// [`MeasuredBackendRouter::choose`] — neither router may infer a backend from
+/// neighbouring measurements.
 fn resolve_persisted_backend(
     decisions: &HashMap<WorkloadKey, AutorouteDecision>,
     key: WorkloadKey,
     cache_path: &Option<PathBuf>,
     cache_load_error: &Option<String>,
 ) -> Result<ScanBackend, AutorouteRoutingError> {
-    match store::resolve_bucket(decisions, &key) {
-        store::BucketResolution::Exact(backend) => Ok(backend),
-        store::BucketResolution::Interpolated { backend, lo, hi } => {
-            note_interpolated_route(&key, backend, &lo, &hi);
-            Ok(backend)
-        }
-        store::BucketResolution::ClampedBelowFloor { backend, floor } => {
-            note_below_floor_route(&key, backend, &floor);
-            Ok(backend)
-        }
-        store::BucketResolution::Unresolved => Err(AutorouteRoutingError::missing_decision(
+    match decisions.get(&key).and_then(AutorouteDecision::backend) {
+        Some(backend) => Ok(backend),
+        None => Err(AutorouteRoutingError::missing_decision(
             key,
             cache_path,
             cache_load_error,
@@ -404,9 +394,9 @@ impl MeasuredBackendRouter {
         }
 
         if !self.calibration_mode {
-            // Not calibrating: behave like the cache-only router — an exact miss
-            // may still resolve by sound CPU-class interpolation or a below-floor
-            // clamp before failing closed (the exact lookup above already missed).
+            // Not calibrating: behave like the cache-only router. Every miss is
+            // an invalid autoroute state; neighbouring measurements are not
+            // evidence for this workload identity.
             return resolve_persisted_backend(
                 &self.decisions,
                 key,
@@ -569,53 +559,6 @@ fn autoroute_cache_state(
         Some(path) => format!("No autoroute cache file exists at {}", path.display()),
         None => "--autoroute-cache off / [system].autoroute_cache = \"off\" disables the autoroute cache".to_string(),
     }
-}
-
-/// Surface a sound CPU-class bucket interpolation LOUDLY (Law 10): the route was
-/// not directly calibrated but resolved from two agreeing calibrated neighbours.
-/// Recall-safe (CPU backends return identical findings at any input size) and
-/// recorded — never a silent fallback. Fires once per process so a many-file or
-/// daemon scan does not spam stderr per batch.
-fn note_interpolated_route(
-    key: &WorkloadKey,
-    backend: ScanBackend,
-    lo: &WorkloadKey,
-    hi: &WorkloadKey,
-) {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static WARNED: AtomicBool = AtomicBool::new(false);
-    if WARNED.swap(true, Ordering::Relaxed) {
-        return;
-    }
-    eprintln!(
-        "keyhog: autoroute workload bucket [{}] was not directly calibrated; resolved to {} by \
-         interpolation between two agreeing calibrated CPU-class buckets [{}] and [{}]. This is \
-         recall-safe (CPU backends return identical findings at any input size) but run \
-         `keyhog calibrate-autoroute` for an exact decision. (Further \
-         interpolations this run are not repeated.)",
-        store::render_workload_key(key),
-        backend.label(),
-        store::render_workload_key(lo),
-        store::render_workload_key(hi),
-    );
-}
-
-fn note_below_floor_route(key: &WorkloadKey, backend: ScanBackend, floor: &WorkloadKey) {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static WARNED: AtomicBool = AtomicBool::new(false);
-    if WARNED.swap(true, Ordering::Relaxed) {
-        return;
-    }
-    eprintln!(
-        "keyhog: autoroute workload bucket [{}] is smaller than every calibrated bucket in its \
-         class (floor [{}]); resolved to setup-free {} because an input too small to amortize \
-         any backend's fixed setup cannot be beaten by one that pays it. This is recall-safe \
-         (CpuFallback is the reference backend) but run `keyhog calibrate-autoroute` for an \
-         exact decision. (Further below-floor clamps this run are not repeated.)",
-        store::render_workload_key(key),
-        store::render_workload_key(floor),
-        backend.label(),
-    );
 }
 
 pub(super) fn is_gpu_backend(backend: ScanBackend) -> bool {

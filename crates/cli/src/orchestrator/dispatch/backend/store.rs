@@ -364,50 +364,22 @@ fn read_autoroute_cache_file(path: &std::path::Path) -> std::io::Result<Vec<u8>>
     Ok(data)
 }
 
-// --- Bucket resolution (exact, else sound CPU-class interpolation) ----------
+// --- Exact bucket resolution (test facade) ----------------------------------
 //
-// A scan looks its workload bucket up in the calibrated decisions. An EXACT hit
-// is a zero-cost table lookup. A miss historically failed closed (Law 10: never
-// guess a backend). #34 adds ONE generalization that is not a guess: if the
-// requested bucket lies strictly between two calibrated buckets that
-//   (a) match it on every workload dimension EXCEPT one SIZE axis (bytes_bucket
-//       or max_file_bucket), and
-//   (b) BOTH resolved to the SAME CPU-class backend (SimdCpu / CpuFallback),
-// then the choice is provably stable across that interval. CPU-class backends
-// are exact-match — their findings are identical regardless of input size, so no
-// GPU/MoE score divergence can flip recall across the span (cf. #18) — and the
-// faster CPU backend is monotonic in size, so two agreeing endpoints bracket an
-// interval that resolves to the same backend. GPU buckets NEVER interpolate
-// (their correctness can vary with size). A non-bracketed or disagreeing miss
-// stays Unresolved (fail closed). Every interpolation is surfaced LOUDLY by the
-// caller (Law 10) — it is recall-safe and recorded, never a silent fallback.
+// Autoroute evidence is scoped to the complete workload key. Neighbouring size
+// buckets do not prove which backend is fastest for this one, even when their
+// CPU decisions agree, so a miss must remain unresolved.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(test)]
 pub(super) enum BucketResolution {
     /// The exact workload bucket was calibrated.
     Exact(ScanBackend),
-    /// Not directly calibrated, but bracketed by two calibrated CPU-class buckets
-    /// that agree on the backend along one size axis — a sound interpolation.
-    Interpolated {
-        backend: ScanBackend,
-        lo: WorkloadKey,
-        hi: WorkloadKey,
-    },
-    /// Smaller than every calibrated bucket in its workload class along one size
-    /// axis (e.g. `keyhog scan small.env`, below the ladder's smallest single-file
-    /// probe). Resolved to setup-free [`ScanBackend::CpuFallback`]: an input too
-    /// small to amortize any backend's fixed setup cannot be beaten by a backend
-    /// with setup, and CpuFallback is the reference-correct backend, so this is a
-    /// sound below-floor extrapolation, not a guess. `floor` is the smallest
-    /// calibrated bucket in the class (proof the class itself is calibrated).
-    ClampedBelowFloor {
-        backend: ScanBackend,
-        floor: WorkloadKey,
-    },
-    /// No sound resolution exists — the caller must fail closed.
+    /// No exact decision exists — the caller must fail closed.
     Unresolved,
 }
 
+#[cfg(test)]
 pub(super) fn resolve_bucket(
     decisions: &HashMap<WorkloadKey, AutorouteDecision>,
     key: &WorkloadKey,
@@ -415,257 +387,7 @@ pub(super) fn resolve_bucket(
     if let Some(backend) = decisions.get(key).and_then(AutorouteDecision::backend) {
         return BucketResolution::Exact(backend);
     }
-    for axis in [BucketAxis::Bytes, BucketAxis::MaxFile] {
-        if let Some(resolution) = interpolate_cpu_class(decisions, key, axis) {
-            return resolution;
-        }
-    }
-    // A single file BETWEEN two calibrated single-file rungs can't be bracketed by
-    // the per-axis interpolation above (its two size axes move together), so try
-    // the diagonal companion before the below-floor clamp — see
-    // `interpolate_single_file_diagonal`.
-    if let Some(resolution) = interpolate_single_file_diagonal(decisions, key) {
-        return resolution;
-    }
-    // A query smaller than every calibrated bucket in its class has no lower
-    // bracket to interpolate from (the common `keyhog scan small.env` case: a
-    // single file below the ladder's smallest single-file probe). Clamp it to
-    // setup-free CpuFallback — see `clamp_below_calibrated_floor`.
-    clamp_below_calibrated_floor(decisions, key).unwrap_or(BucketResolution::Unresolved)
-    // LAW10: fail-closed — no clamp evidence => Unresolved => caller exits 2, not a silent route
-}
-
-#[derive(Clone, Copy)]
-enum BucketAxis {
-    Bytes,
-    MaxFile,
-}
-
-impl BucketAxis {
-    fn value(self, key: &WorkloadKey) -> u8 {
-        match self {
-            BucketAxis::Bytes => key.bytes_bucket,
-            BucketAxis::MaxFile => key.max_file_bucket,
-        }
-    }
-
-    /// True when `other` matches `key` on EVERY workload dimension except this
-    /// one size axis — the precondition for interpolating along it.
-    fn matches_except_axis(self, key: &WorkloadKey, other: &WorkloadKey) -> bool {
-        let bytes_ok = matches!(self, BucketAxis::Bytes) || other.bytes_bucket == key.bytes_bucket;
-        let max_file_ok =
-            matches!(self, BucketAxis::MaxFile) || other.max_file_bucket == key.max_file_bucket;
-        bytes_ok
-            && max_file_ok
-            && other.chunks_bucket == key.chunks_bucket
-            && other.pattern_bucket == key.pattern_bucket
-            && other.decode_density_bucket == key.decode_density_bucket
-            && other.source_class_hash == key.source_class_hash
-    }
-}
-
-fn interpolate_cpu_class(
-    decisions: &HashMap<WorkloadKey, AutorouteDecision>,
-    key: &WorkloadKey,
-    axis: BucketAxis,
-) -> Option<BucketResolution> {
-    bracket_agreeing_cpu(decisions, axis.value(key), |candidate_key| {
-        axis.matches_except_axis(key, candidate_key)
-            .then(|| axis.value(candidate_key))
-    })
-}
-
-/// The shared bracket scan behind both sound interpolations: find the nearest
-/// calibrated CPU-class bucket strictly below and strictly above `target`
-/// among the candidates admitted by `candidate_axis_value` (which returns the
-/// candidate's position on the interpolation axis, or `None` to exclude it
-/// from the class). Yields `Interpolated` ONLY when both neighbours exist and
-/// agree on the backend — the agreeing-CPU-bracket monotonicity argument (#34).
-/// GPU decisions never participate (their correctness can vary with size).
-/// ONE owner for the nearest-lo/nearest-hi mechanics so the per-axis (#34) and
-/// single-file-diagonal (#46) interpolations can never drift in how they
-/// bracket.
-fn bracket_agreeing_cpu(
-    decisions: &HashMap<WorkloadKey, AutorouteDecision>,
-    target: u8,
-    candidate_axis_value: impl Fn(&WorkloadKey) -> Option<u8>,
-) -> Option<BucketResolution> {
-    let mut nearest_lo: Option<(u8, ScanBackend, WorkloadKey)> = None;
-    let mut nearest_hi: Option<(u8, ScanBackend, WorkloadKey)> = None;
-
-    for (candidate_key, decision) in decisions {
-        let Some(value) = candidate_axis_value(candidate_key) else {
-            continue;
-        };
-        let Some(backend) = decision.backend() else {
-            continue;
-        };
-        // GPU correctness can vary with input size — never bracket across it.
-        if super::is_gpu_backend(backend) {
-            continue;
-        }
-        if value < target {
-            let replace = match nearest_lo {
-                Some((best, _, _)) => value > best,
-                None => true,
-            };
-            if replace {
-                nearest_lo = Some((value, backend, *candidate_key));
-            }
-        } else if value > target {
-            let replace = match nearest_hi {
-                Some((best, _, _)) => value < best,
-                None => true,
-            };
-            if replace {
-                nearest_hi = Some((value, backend, *candidate_key));
-            }
-        }
-    }
-
-    match (nearest_lo, nearest_hi) {
-        (Some((_, lo_backend, lo_key)), Some((_, hi_backend, hi_key)))
-            if lo_backend == hi_backend =>
-        {
-            Some(BucketResolution::Interpolated {
-                backend: lo_backend,
-                lo: lo_key,
-                hi: hi_key,
-            })
-        }
-        // Bracketing pair disagrees, or only one side exists -> not sound.
-        _ => None,
-    }
-}
-
-// Between-rung single-file interpolation (#46) — the diagonal companion to #34's
-// per-axis interpolation, and the third sound generalization after the #44
-// below-floor clamp.
-//
-// A SINGLE file's `bytes_bucket` and `max_file_bucket` are the SAME quantity (the
-// one file's size) bucketed twice, so two different-sized single files differ on
-// BOTH size axes at once. `interpolate_cpu_class` holds one axis fixed while
-// varying the other, so it can never bracket them — the exact correlation that
-// also forced the #44 clamp. The everyday `keyhog scan mid.env` whose size lands
-// strictly between two calibrated single-file rungs (e.g. 16 KiB between the
-// 4 KiB and 64 KiB probes) therefore used to fail closed (exit 2).
-//
-// This brackets along the size DIAGONAL instead: when the query is itself a
-// single-file point (`bytes_bucket == max_file_bucket`) of a calibrated class,
-// sitting strictly between two calibrated single-file rungs that AGREE on a CPU
-// backend, that backend is the sound choice between them. A single file's size is
-// ONE degree of freedom, so this is exactly #34's agreeing-CPU-bracket
-// monotonicity applied to the true single-file size axis: under the linear
-// setup+throughput cost model, a backend that is fastest-correct at a smaller AND
-// a larger single-file size is fastest-correct in between, and CPU backends are
-// reference-correct at every size (recall preserved). GPU is never bracketed (its
-// correctness varies with size). Like every generalized resolution it is surfaced
-// LOUDLY by the caller as an `Interpolated` route, not a silent default.
-fn interpolate_single_file_diagonal(
-    decisions: &HashMap<WorkloadKey, AutorouteDecision>,
-    key: &WorkloadKey,
-) -> Option<BucketResolution> {
-    // Only a single-file query lives on the diagonal. A multi-file workload's two
-    // size axes are independent and is owned by the per-axis interpolation above.
-    if key.bytes_bucket != key.max_file_bucket {
-        return None;
-    }
-    // The candidate must itself be a single-file point of the SAME non-size
-    // class (chunks/pattern/density/source all equal). Requiring chunks equal
-    // keeps the bracket within one chunk regime — a rung across a chunk-count
-    // change is not a sound single-file neighbour and is left fail-closed.
-    // A non-bracketed query (only one side, disagreeing pair, or above every
-    // rung) stays None: the below-floor clamp owns below; above stays
-    // fail-closed.
-    bracket_agreeing_cpu(decisions, key.bytes_bucket, |candidate_key| {
-        (candidate_key.bytes_bucket == candidate_key.max_file_bucket
-            && candidate_key.chunks_bucket == key.chunks_bucket
-            && candidate_key.pattern_bucket == key.pattern_bucket
-            && candidate_key.decode_density_bucket == key.decode_density_bucket
-            && candidate_key.source_class_hash == key.source_class_hash)
-            .then_some(candidate_key.bytes_bucket)
-    })
-}
-
-// Below-floor extrapolation (the second sound generalization, after #34's
-// interpolation). A single small file — `keyhog scan small.env`, by far the most
-// common scan — lands in a size bucket BELOW the ladder's smallest single-file
-// probe (4 KiB) and used to fail closed (exit 2) on an everyday input.
-//
-// Why interpolation can't reach it: for a SINGLE file, bytes_bucket and
-// max_file_bucket are perfectly correlated (both track the one file's size), so
-// two different-sized single files differ on BOTH size axes at once.
-// `interpolate_cpu_class` varies ONE axis while holding the other fixed, so it
-// never brackets them. This clamp instead works on the size FRONTIER: both axes
-// together.
-//
-// The resolution is sound, not a guess: when the query is STRICTLY smaller than
-// every calibrated bucket in its class on BOTH size axes, it is smaller than
-// anything measured, so no backend's FIXED setup (Hyperscan scratch/database
-// alloc, GPU kernel launch) can be amortized and the setup-free CpuFallback is
-// the lowest-overhead correct choice — a backend that paid setup to win at a
-// LARGER size only loses ground as the input shrinks. CpuFallback is also the
-// reference-correct backend (identical findings at any size), so recall is
-// preserved. GPU is never the anchor (its correctness varies with size).
-//
-// Strict on BOTH axes is deliberate: a query equal to a calibrated bucket on one
-// axis (same total bytes, fewer/larger files) is NOT unambiguously smaller, so it
-// stays fail-closed here rather than risk a slower route. A query BETWEEN two
-// calibrated single-file rungs is not a floor either — it is owned by the
-// diagonal interpolation (`interpolate_single_file_diagonal`, #46) which runs
-// before this clamp; by the time the clamp is reached, the query is genuinely
-// below the whole single-file frontier. The class must have at least one
-// calibrated CPU bucket (proof the class itself was calibrated); a wholly
-// uncalibrated class still fails closed. Surfaced LOUDLY by the caller, like
-// interpolation.
-fn clamp_below_calibrated_floor(
-    decisions: &HashMap<WorkloadKey, AutorouteDecision>,
-    key: &WorkloadKey,
-) -> Option<BucketResolution> {
-    let mut floor: Option<WorkloadKey> = None;
-
-    for (candidate_key, decision) in decisions {
-        // Same workload class on every NON-size dimension.
-        if candidate_key.chunks_bucket != key.chunks_bucket
-            || candidate_key.pattern_bucket != key.pattern_bucket
-            || candidate_key.decode_density_bucket != key.decode_density_bucket
-            || candidate_key.source_class_hash != key.source_class_hash
-        {
-            continue;
-        }
-        let Some(backend) = decision.backend() else {
-            continue;
-        };
-        // GPU correctness can vary with input size — never anchor a clamp to it.
-        if super::is_gpu_backend(backend) {
-            continue;
-        }
-        // Any calibrated CPU bucket that is NOT strictly larger than the query on
-        // BOTH size axes means the query is not below this class's frontier — an
-        // exact hit, an interpolation, or a between-bucket miss owns it, never a
-        // clamp. Bail rather than clamp over real (or equal) bracketing evidence.
-        if candidate_key.bytes_bucket <= key.bytes_bucket
-            || candidate_key.max_file_bucket <= key.max_file_bucket
-        {
-            return None;
-        }
-        // Strictly larger on both axes: a genuine floor. Keep the smallest one.
-        let smaller = match floor {
-            Some(best) => {
-                (candidate_key.bytes_bucket, candidate_key.max_file_bucket)
-                    < (best.bytes_bucket, best.max_file_bucket)
-            }
-            None => true,
-        };
-        if smaller {
-            floor = Some(*candidate_key);
-        }
-    }
-
-    floor.map(|floor_key| BucketResolution::ClampedBelowFloor {
-        backend: ScanBackend::CpuFallback,
-        floor: floor_key,
-    })
+    BucketResolution::Unresolved
 }
 
 // --- Read-only inspection ---------------------------------------------------
@@ -847,7 +569,7 @@ pub(crate) fn inspect_autoroute_cache(path: Option<&std::path::Path>) -> Autorou
 /// Render a workload bucket in the same field layout as the fail-closed
 /// "no persisted decision for workload bucket ..." error, so an operator can
 /// match the bucket they were refused against the buckets that ARE calibrated.
-/// Shared by the inspection view and the interpolation notice — one bucket
+/// Shared by cache inspection and missing-decision diagnostics — one bucket
 /// rendering, never a drifting second copy.
 pub(super) fn render_workload_key(key: &WorkloadKey) -> String {
     format!(

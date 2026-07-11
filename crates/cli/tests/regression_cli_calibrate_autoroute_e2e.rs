@@ -19,8 +19,8 @@
 //!     inspected valid cache reports and an incompatible one is rejected against.
 //!   * `AUTOROUTE_CACHE_FILE_BYTES = 8 * 1024 * 1024` (store.rs:16) — the read
 //!     cap; a file one byte over is reported "unreadable".
-//!   * `calibrate-autoroute` sweeps 11 workloads × 4 scan policies (default +
-//!     `--fast`/`--deep`/`--precision`) = 44 probes, and each policy resolves a
+//!   * `calibrate-autoroute` sweeps 15 workloads × 4 scan policies (default +
+//!     `--fast`/`--deep`/`--precision`) = 60 probes, and each policy resolves a
 //!     DISTINCT config digest, so the primed cache holds exactly 4 configs.
 
 use std::path::{Path, PathBuf};
@@ -395,7 +395,7 @@ fn backend_autoroute_and_self_test_are_mutually_exclusive() {
 #[test]
 fn calibrate_autoroute_cache_off_is_rejected_up_front() {
     // `off` disables persistence, which defeats the whole point of calibration;
-    // it must be rejected once, not fail 44 probes closed.
+    // it must be rejected once, not fail the full probe matrix closed.
     let out = Command::new(binary())
         .args(["calibrate-autoroute", "--autoroute-cache", "off"])
         .output()
@@ -429,10 +429,10 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
         String::from_utf8_lossy(&calibrate.stderr)
     );
     let cal_stdout = String::from_utf8_lossy(&calibrate.stdout);
-    // 11 workloads × 4 policies = 44 probes across 4 scan policies.
+    // 15 workloads × 4 policies = 60 probes across 4 scan policies.
     assert!(
-        cal_stdout.contains("44 workload buckets"),
-        "summary reports the exact 44-probe sweep; stdout={cal_stdout}"
+        cal_stdout.contains("60 workload buckets"),
+        "summary reports the exact 60-probe sweep; stdout={cal_stdout}"
     );
     assert!(
         cal_stdout.contains("4 scan policies"),
