@@ -90,7 +90,7 @@ The error names the missing workload bucket. Resolve it by either:
   --calibrate` / `install.ps1 -Calibrate`) so the bucket gets a measured
   decision, or
 - Passing an explicit backend for a one-off diagnostic scan:
-  `keyhog scan --backend simd` (or `gpu`, `cpu`, …). An explicit `--backend`
+  `keyhog scan --backend simd` (or `gpu`, `cpu`). An explicit `--backend`
   bypasses autoroute entirely; it is a diagnostic/benchmark override and does
   not prove autoroute correctness.
 

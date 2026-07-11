@@ -412,13 +412,12 @@ fn workload_selector_is_the_single_branch_owner() {
 }
 
 // ---------------------------------------------------------------------------
-// 3. The MegaScan collapse: `mega-scan` parses to a real arm but is the SAME
-//    live engine as `gpu` (the RulePipeline NFA engine was retired).
+// 3. The MegaScan compatibility API remains the SAME live engine as Gpu, but
+//    no retired spelling constructs it through operator input.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn megascan_aliases_parse_but_collapse_onto_the_gpu_region_presence_route() {
-    // Every advertised mega-scan alias still resolves (public CLI surface).
+fn megascan_is_programmatic_only_and_collapses_onto_gpu_region_presence() {
     for alias in [
         "mega-scan",
         "megascan",
@@ -428,8 +427,8 @@ fn megascan_aliases_parse_but_collapse_onto_the_gpu_region_presence_route() {
     ] {
         assert_eq!(
             parse_backend_str(alias),
-            Some(ScanBackend::MegaScan),
-            "alias {alias} must still parse to MegaScan"
+            None,
+            "retired alias {alias} must not construct MegaScan"
         );
     }
     // The label is stable (coherence with --help / banner / JSON).
@@ -549,13 +548,26 @@ fn parse_backend_str_is_the_single_string_source() {
     // Case-insensitive + whitespace-trimmed.
     assert_eq!(parse_backend_str("  GPU  "), Some(ScanBackend::Gpu));
     assert_eq!(parse_backend_str("SimD"), Some(ScanBackend::SimdCpu));
-    // gpu aliases.
+    // Stable evidence labels.
     assert_eq!(
         parse_backend_str("gpu-region-presence"),
         Some(ScanBackend::Gpu)
     );
-    assert_eq!(parse_backend_str("gpu-zero-copy"), Some(ScanBackend::Gpu));
-    assert_eq!(parse_backend_str("literal-set"), Some(ScanBackend::Gpu));
+    assert_eq!(parse_backend_str("simd-regex"), Some(ScanBackend::SimdCpu));
+    assert_eq!(
+        parse_backend_str("cpu-fallback"),
+        Some(ScanBackend::CpuFallback)
+    );
+    // Retired implementation names do not silently map.
+    for retired in [
+        "gpu-zero-copy",
+        "literal-set",
+        "mega-scan",
+        "hyperscan",
+        "scalar",
+    ] {
+        assert_eq!(parse_backend_str(retired), None);
+    }
     // Unknown -> None (caller falls through to auto-routing).
     assert_eq!(parse_backend_str("quantum"), None);
     assert_eq!(parse_backend_str(""), None);

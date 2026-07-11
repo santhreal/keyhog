@@ -510,8 +510,8 @@ fn docs_keep_backend_override_on_explicit_cli_surface() {
     );
     assert!(
         config_doc.contains("`--backend`")
-            && config_doc.contains("`auto`/`gpu`/`gpu-region-presence`")
-            && config_doc.contains("`simd`/`simd-regex`/`cpu`/`cpu-fallback`"),
+            && config_doc.contains("`auto`/`gpu`/`simd`/`cpu`")
+            && config_doc.contains("retired MegaScan and implementation-name aliases are rejected"),
         "configuration docs must document the explicit --backend surface"
     );
     assert!(

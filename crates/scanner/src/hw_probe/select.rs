@@ -415,41 +415,19 @@ pub(super) fn test_backend_override() -> Option<ScanBackend> {
 /// Keep this list at the parser owner so Clap validation, error messages, docs
 /// gates, and `parse_backend_str` cannot drift into rejecting canonical labels
 /// before routing sees them.
-pub const BACKEND_OVERRIDE_VALUES: [&str; 10] = [
-    "auto",
-    "gpu",
-    "gpu-region-presence",
-    "mega-scan",
-    "megascan",
-    "gpu-mega-scan",
-    "simd",
-    "simd-regex",
-    "cpu",
-    "cpu-fallback",
-];
+pub const BACKEND_OVERRIDE_VALUES: [&str; 4] = ["auto", "gpu", "simd", "cpu"];
 
 /// Pure backend string → [`ScanBackend`] mapping, with no env or
 /// thread-local override read. Tests that only verify the string→backend
 /// mapping MUST call this directly rather than mutating global process state.
-/// Keeping the mapping pure removes parallel-test hazards while staying the
-/// single source of truth for CLI/config backend parsing.
+/// Keeping the mapping pure removes parallel-test hazards. The CLI/config
+/// boundary admits only [`BACKEND_OVERRIDE_VALUES`]; this parser additionally
+/// reads the stable descriptive labels stored in autoroute evidence.
 pub fn parse_backend_str(raw: &str) -> Option<ScanBackend> {
     match raw.trim().to_ascii_lowercase().as_str() {
-        // `gpu-zero-copy` is a legacy backend-string alias. The operator-visible
-        // label is `gpu-region-presence` because the live route still pays a
-        // host lowercase/coalescing pre-pass and therefore is not zero-copy.
-        "gpu" | "gpu-region-presence" | "gpu-zero-copy" | "literal-set" => Some(ScanBackend::Gpu),
-        // Both spellings are advertised `--backend` values (clap
-        // `PossibleValuesParser` in `args/scan.rs` accepts `mega-scan` AND
-        // `megascan`); the no-hyphen form was previously dropped to `None` here,
-        // so `--backend megascan` silently fell through to auto-routing instead
-        // of forcing the GPU route. Recognized here so the canonical parser
-        // matches the advertised CLI surface (coherence).
-        "mega-scan" | "megascan" | "gpu-mega-scan" | "regex-nfa" | "rule-pipeline" => {
-            Some(ScanBackend::MegaScan)
-        }
-        "simd" | "simd-regex" | "hyperscan" => Some(ScanBackend::SimdCpu),
-        "cpu" | "cpu-fallback" | "scalar" => Some(ScanBackend::CpuFallback),
+        "gpu" | "gpu-region-presence" => Some(ScanBackend::Gpu),
+        "simd" | "simd-regex" => Some(ScanBackend::SimdCpu),
+        "cpu" | "cpu-fallback" => Some(ScanBackend::CpuFallback),
         _ => None,
     }
 }

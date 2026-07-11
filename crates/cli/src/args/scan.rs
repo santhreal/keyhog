@@ -478,9 +478,7 @@ pub struct ScanArgs {
     pub perf_trace: bool,
 
     /// Force a specific scan backend instead of using persisted autoroute.
-    /// Values: `auto`, `gpu`, `gpu-region-presence`, `mega-scan`,
-    /// `megascan`, `gpu-mega-scan`, `simd`, `simd-regex`, `cpu`,
-    /// or `cpu-fallback`.
+    /// Values: `auto`, `gpu`, `simd`, or `cpu`.
     #[arg(
         long,
         value_name = "BACKEND",

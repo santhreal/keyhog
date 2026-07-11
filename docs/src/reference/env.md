@@ -63,7 +63,7 @@ controls. The common replacements are:
 
 | Need | Now set via |
 |------|-------------|
-| Backend override | `--backend <auto\|gpu\|gpu-region-presence\|mega-scan\|megascan\|gpu-mega-scan\|simd\|simd-regex\|cpu\|cpu-fallback>` |
+| Backend override | `--backend <auto\|gpu\|simd\|cpu>` |
 | GPU routing requirement or disablement | `--require-gpu`, `--no-gpu`, or `[system] gpu = "required"` / `"off"` |
 | GPU candidates during calibration | `--autoroute-gpu`, `--no-autoroute-gpu`, or `[system] autoroute_gpu` |
 | Scanner concurrency and per-chunk limits | `--threads` plus top-level `threads`, `reader_threads`, `per_chunk_timeout_ms`, `fused_batch`, and `fused_depth` |

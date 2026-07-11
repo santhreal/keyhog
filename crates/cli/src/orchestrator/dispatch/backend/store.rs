@@ -1,10 +1,12 @@
 //! Persistent autoroute calibration cache schema and validation.
 
+#[cfg(test)]
 use keyhog_scanner::hw_probe::ScanBackend;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Read;
 
+use super::canonical_execution_backend;
 use super::evidence::{gpu_cold_warm_route_evidence, AutorouteDecision};
 use super::host::AutorouteHostProfile;
 use super::workload::WorkloadKey;
@@ -611,17 +613,6 @@ fn render_host_profile(host: &AutorouteHostProfile) -> String {
     )
 }
 
-/// Collapse the two GPU labels to one route class for routing-decision
-/// comparison. `Gpu` and `MegaScan` share the same measured GPU timing evidence
-/// and differ only by a config-driven execution label, so they are equivalent
-/// when checking which route the timings selected. SIMD and CPU stay distinct.
-fn normalized_route_class(backend: ScanBackend) -> ScanBackend {
-    match backend {
-        ScanBackend::MegaScan => ScanBackend::Gpu,
-        other => other,
-    }
-}
-
 fn validate_decision_route_evidence(
     decision: &AutorouteDecision,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -685,11 +676,10 @@ fn validate_decision_route_evidence(
     let Some(resolved) = decision.resolved_routing_backend() else {
         return Err("cache decision has no route timing evidence".into());
     };
-    // Compare by route CLASS: `Gpu` and `MegaScan` are the same physical GPU
-    // route with a config-driven label, not a timing decision, so a MegaScan
-    // decision is consistent with a resolved `Gpu` winner. SIMD/CPU stay
-    // distinct classes.
-    if normalized_route_class(selected_backend) != normalized_route_class(resolved) {
+    // Compare by execution class so a programmatic compatibility variant can
+    // never behave like a distinct measured route. Persisted decisions are
+    // canonical already; this also keeps in-memory validation coherent.
+    if canonical_execution_backend(selected_backend) != canonical_execution_backend(resolved) {
         if decision.has_separated_fastest_route() {
             // One route is provably fastest and it is not the selected one.
             return Err("selected backend is not the fastest persisted timing evidence".into());

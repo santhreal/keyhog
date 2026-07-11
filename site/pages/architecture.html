@@ -1,5 +1,5 @@
 title = "Architecture"
-description = "How keyhog compiles 909 detectors, scans sources, and uses persisted calibrated backend routing."
+description = "How keyhog compiles 922 detectors, scans sources, and uses persisted calibrated backend routing."
 ---
 <h1>Architecture</h1>
 <p class="lede">
@@ -38,7 +38,7 @@ description = "How keyhog compiles 909 detectors, scans sources, and uses persis
 
 <h2>Two-phase coalesced scan</h2>
 
-<p>Naive multi-pattern regex blows up at 909 detectors. The trick is to
+<p>Naive multi-pattern regex blows up at 922 detectors. The trick is to
 split the work:</p>
 
 <p><strong>Phase 1 — broad-spectrum NFA over all files.</strong> Hyperscan
@@ -124,15 +124,14 @@ naive line-by-line scanners. keyhog runs a lightweight join pass on:</p>
 <table>
   <thead><tr><th>Backend</th><th>How it works</th></tr></thead>
   <tbody>
-    <tr><td><code>gpu-zero-copy</code></td><td>vyre-backed GPU detection path for calibrated large-workload classes.</td></tr>
+    <tr><td><code>gpu-region-presence</code></td><td>Vyre-backed GPU region-presence pass followed by the shared CPU validation tail.</td></tr>
     <tr><td><code>simd-regex</code></td><td>Hyperscan / Vectorscan NFA over AVX-512 / AVX2 / NEON.</td></tr>
     <tr><td><code>cpu-fallback</code></td><td>Aho-Corasick prefix filter + Rust <code>regex</code> for the survivors. Always available; correctness floor.</td></tr>
-    <tr><td><code>mega-scan</code></td><td>Single 256 MiB GPU shard for streaming large single files (HAR, log dumps).</td></tr>
   </tbody>
 </table>
 </div>
 
-<p>Selection is cache-backed. The installer or <code>keyhog calibrate</code>
+<p>Selection is cache-backed. The installer or <code>keyhog calibrate-autoroute</code>
 records the measured decision, and runtime scans either use that decision or
 fail loud with the calibration fix to run.</p>
 

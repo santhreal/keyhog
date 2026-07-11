@@ -565,6 +565,16 @@ pub(super) fn is_gpu_backend(backend: ScanBackend) -> bool {
     matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan)
 }
 
+/// Collapse compatibility variants onto the live execution engine they use.
+/// Autoroute persistence, comparison, and reporting must never mint a second
+/// label for the same measured route.
+pub(super) fn canonical_execution_backend(backend: ScanBackend) -> ScanBackend {
+    match backend {
+        ScanBackend::MegaScan => ScanBackend::Gpu,
+        other => other,
+    }
+}
+
 pub(super) fn backend_requires_coalesced_batch_pipeline(
     explicit: Option<keyhog_scanner::hw_probe::ScanBackend>,
 ) -> bool {

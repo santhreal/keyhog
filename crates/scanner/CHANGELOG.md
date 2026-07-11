@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Reduce the operator backend surface to `auto`, `gpu`, `simd`, and `cpu`.
+  Stable profile/evidence labels remain parseable by library and persistence
+  paths, while MegaScan and implementation-name aliases no longer silently map
+  to a live route. `ScanBackend::MegaScan` remains available to source-compatible
+  library callers but is no longer produced by the parser.
 - Make `CompiledScanner::scan` and `scan_coalesced` the deterministic portable CPU reference paths
   instead of an uncalibrated hardware heuristic. Accelerated library callers
   select a measured backend through `scan_with_backend`; the CLI continues to

@@ -10,8 +10,8 @@
 //!   * `ac_gpu_program` (a `classic_ac_bounded_ranges` `vyre::Program`) — had
 //!     zero callers; `GpuLiteralSet` is the single on-GPU AC trigger engine.
 //!   * `rule_pipeline` (the `RulePipeline` regex-NFA "MegaScan" engine) — its
-//!     `scan` was never invoked; `--backend mega-scan`
-//!     routes to the SAME region-presence backend as `--backend gpu`. The
+//!     `scan` was never invoked; the compatibility MegaScan API variant routes
+//!     to the SAME region-presence backend as `--backend gpu`. The
 //!     cached wrapper, its diagnostic builder, and fixed-size aliases were
 //!     deleted as dead surface; only adaptive byte-budget sizing remains in
 //!     [`super::rule_pipeline`].

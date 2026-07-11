@@ -88,13 +88,7 @@ fn with_env<R>(value: Option<&str>, body: impl FnOnce() -> R) -> R {
 #[test]
 fn env_override_gpu_forces_gpu_regardless_of_hardware() {
     let caps = caps_no_gpu(true, true);
-    for alias in [
-        "gpu",
-        "GPU",
-        "gpu-region-presence",
-        "gpu-zero-copy",
-        "literal-set",
-    ] {
+    for alias in ["gpu", "GPU", "gpu-region-presence"] {
         with_env(Some(alias), || {
             assert_eq!(
                 select_backend(&caps, 1 << 30, 10_000),
@@ -106,29 +100,22 @@ fn env_override_gpu_forces_gpu_regardless_of_hardware() {
 }
 
 #[test]
-fn env_override_mega_scan_forces_mega_scan() {
-    let caps = caps_with_gpu("Apple M1 Max", true, true);
+fn retired_mega_scan_aliases_do_not_create_an_override() {
     for alias in [
         "mega-scan",
-        "MEGA-SCAN",
+        "megascan",
         "gpu-mega-scan",
         "regex-nfa",
         "rule-pipeline",
     ] {
-        with_env(Some(alias), || {
-            assert_eq!(
-                select_backend(&caps, 1 << 30, 10_000),
-                ScanBackend::MegaScan,
-                "env={alias} must force MegaScan"
-            );
-        });
+        assert_eq!(parse_backend_str(alias), None);
     }
 }
 
 #[test]
 fn env_override_simd_forces_simd_even_when_gpu_would_win() {
     let caps = caps_with_gpu("NVIDIA RTX 5090", true, true);
-    for alias in ["simd", "SIMD", "simd-regex", "hyperscan"] {
+    for alias in ["simd", "SIMD", "simd-regex"] {
         with_env(Some(alias), || {
             assert_eq!(
                 select_backend(&caps, 1 << 30, 10_000),
@@ -142,7 +129,7 @@ fn env_override_simd_forces_simd_even_when_gpu_would_win() {
 #[test]
 fn env_override_cpu_forces_cpu_fallback() {
     let caps = caps_with_gpu("NVIDIA RTX 5090", true, true);
-    for alias in ["cpu", "CPU", "cpu-fallback", "scalar"] {
+    for alias in ["cpu", "CPU", "cpu-fallback"] {
         with_env(Some(alias), || {
             assert_eq!(
                 select_backend(&caps, 1 << 30, 10_000),

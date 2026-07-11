@@ -56,7 +56,7 @@ Forced --backend simd is rejected instead of silently running another backend."
             crate::process_exit::backend_unavailable(
                 "simd-regex selected but the SIMD/Hyperscan prefilter is unavailable; \
 silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or choose \
-`--backend cpu-fallback` explicitly.",
+`--backend cpu` explicitly.",
             );
         }
         gpu_forced::deny_silent_gpu_degrade(self, backend);

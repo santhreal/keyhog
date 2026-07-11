@@ -22,10 +22,9 @@
 //!   * `AKIAQYLPMN5HFIQR7XYA` fires `aws-access-key`
 //!     (`backend_parity_determinism_fixed_corpus.rs`).
 //!   * `--backend` accepts `BACKEND_OVERRIDE_VALUES`
-//!     (`crates/scanner/src/hw_probe/select.rs`): `auto`, `simd`, `simd-regex`,
-//!     `cpu`, `cpu-fallback`, plus the gpu variants. `scalar` is a canonical
-//!     alias inside `parse_backend_str` but is NOT in `BACKEND_OVERRIDE_VALUES`,
-//!     so clap rejects `--backend scalar` (exit 2) — pinned as a coherence gap.
+//!     (`crates/scanner/src/hw_probe/select.rs`): `auto`, `gpu`, `simd`, and
+//!     `cpu`. Stable evidence labels remain library-readable; implementation
+//!     names and retired aliases are rejected by the CLI.
 //!   * findings present, none verified live -> exit 1 (`EXIT_FINDINGS`); a
 //!     clean scan -> exit 0 (`EXIT_SUCCESS`); a bad flag value -> exit 2
 //!     (`EXIT_USER_ERROR`).
@@ -315,58 +314,18 @@ fn cpu_and_simd_agree_value_for_value_including_location() {
 }
 
 // ---------------------------------------------------------------------------
-// Backend-alias parity: canonical aliases must route to the same engine.
+// Stable evidence labels are not duplicate CLI commands.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn cpu_fallback_alias_matches_cpu() {
+fn evidence_labels_are_rejected_as_cli_backend_commands() {
     let home = cache_home();
     let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
-
-    let (code_cpu, out_cpu, _) = scan(home.path(), &path, Some("cpu"), &[]);
-    let (code_alias, out_alias, _) = scan(home.path(), &path, Some("cpu-fallback"), &[]);
-
-    assert_eq!(code_cpu, Some(1));
-    assert_eq!(
-        code_alias, code_cpu,
-        "`cpu-fallback` is an alias of `cpu` and must share its exit code"
-    );
-    assert_eq!(
-        ordered_findings(&out_alias),
-        ordered_findings(&out_cpu),
-        "`--backend cpu-fallback` must be identical to `--backend cpu`"
-    );
-}
-
-#[test]
-fn simd_regex_alias_matches_simd() {
-    let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
-
-    // `simd-regex` and `simd` are aliases of the SAME engine, so they must give
-    // an identical (exit code, finding set) on ANY host — whether that host runs
-    // the accelerator (exit 1 + plant) or fails closed (exit 3). Alias parity is
-    // therefore host-independent WITHOUT assuming the accelerator is present.
-    let (code_simd, out_simd, _) = scan(home.path(), &path, Some("simd"), &[]);
-    let (code_alias, out_alias, _) = scan(home.path(), &path, Some("simd-regex"), &[]);
-
-    assert_eq!(
-        code_alias, code_simd,
-        "`simd-regex` is an alias of `simd` and must share its exit code"
-    );
-    // Compare finding sets only when the engine actually ran (a fail-closed
-    // exit 3 emits no JSON report, so both aliases share empty stdout).
-    if code_simd != Some(EXIT_BACKEND_UNAVAILABLE) {
-        assert_eq!(
-            ordered_findings(&out_alias),
-            ordered_findings(&out_simd),
-            "`--backend simd-regex` must be identical to `--backend simd`"
-        );
-    } else {
-        assert_eq!(
-            out_alias, out_simd,
-            "both aliases must fail closed with identical (empty) output"
-        );
+    for label in ["gpu-region-presence", "simd-regex", "cpu-fallback"] {
+        let (code, out, err) = scan(home.path(), &path, Some(label), &[]);
+        assert_eq!(code, Some(2), "label {label:?}; stderr={err}");
+        assert!(out.is_empty(), "rejected label must not run a scan");
+        assert!(err.contains(label), "diagnostic must name {label:?}: {err}");
     }
 }
 
@@ -439,13 +398,8 @@ fn clean_file_yields_the_same_empty_set_on_cpu_and_simd() {
 
 #[test]
 fn scalar_alias_is_rejected_by_the_cli_parser_exit_2() {
-    // COHERENCE GAP: `scalar` is a canonical alias inside
-    // `keyhog_scanner::hw_probe::parse_backend_str` (-> CpuFallback), whose own
-    // doc calls itself "the single source of truth for CLI/config backend
-    // parsing" — yet it is NOT in `BACKEND_OVERRIDE_VALUES`, the list clap
-    // validates `--backend` against. So the CLI rejects `--backend scalar`
-    // before routing ever sees it. This test pins the CURRENT (buggy) behavior:
-    // exit 2, not a scan.
+    // Implementation names are not part of the operator surface. Clap must
+    // reject them before routing, never silently translate them.
     let home = cache_home();
     let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
 
@@ -454,7 +408,7 @@ fn scalar_alias_is_rejected_by_the_cli_parser_exit_2() {
     assert_eq!(
         code,
         Some(2),
-        "clap rejects the unadvertised `scalar` value -> exit 2 (user error); stderr={err}"
+        "clap rejects the retired `scalar` value -> exit 2 (user error); stderr={err}"
     );
     assert!(
         err.contains("scalar"),

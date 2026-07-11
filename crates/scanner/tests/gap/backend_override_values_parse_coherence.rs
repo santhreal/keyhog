@@ -3,12 +3,9 @@
 //! `BACKEND_OVERRIDE_VALUES` is the operator-facing `--backend` list (Clap
 //! validation, docs, error messages); `parse_backend_str` is the canonical
 //! string -> ScanBackend mapping. The module doc warns these must not drift.
-//! Existing parser tests assert hardcoded alias lists; none iterate the ACTUAL
-//! const, so a value added to the advertised list but forgotten in the parser
-//! would slip through. Pin the coherence directly: every advertised value
-//! except the `auto` sentinel parses to a concrete backend, with the exact
-//! canonical mappings (incl. the no-hyphen `megascan` that once silently fell
-//! through to auto-routing).
+//! Pin the coherence directly: every advertised value except the `auto`
+//! sentinel parses to a concrete backend, stable evidence labels remain
+//! readable, and retired aliases do not silently select another live engine.
 
 use keyhog_scanner::hw_probe::{parse_backend_str, ScanBackend, BACKEND_OVERRIDE_VALUES};
 
@@ -37,10 +34,6 @@ fn canonical_backend_strings_map_exactly() {
         parse_backend_str("gpu-region-presence"),
         Some(ScanBackend::Gpu)
     );
-    assert_eq!(parse_backend_str("mega-scan"), Some(ScanBackend::MegaScan));
-    // The no-hyphen spelling is an advertised value that previously dropped to
-    // None (silently auto-routing instead of forcing the GPU mega-scan path).
-    assert_eq!(parse_backend_str("megascan"), Some(ScanBackend::MegaScan));
     assert_eq!(parse_backend_str("simd"), Some(ScanBackend::SimdCpu));
     assert_eq!(parse_backend_str("simd-regex"), Some(ScanBackend::SimdCpu));
     assert_eq!(parse_backend_str("cpu"), Some(ScanBackend::CpuFallback));
@@ -56,4 +49,25 @@ fn parser_trims_lowercases_and_rejects_unknown() {
     assert_eq!(parse_backend_str("Gpu"), Some(ScanBackend::Gpu));
     assert_eq!(parse_backend_str(""), None);
     assert_eq!(parse_backend_str("gibberish"), None);
+}
+
+#[test]
+fn retired_aliases_are_rejected_instead_of_silently_remapped() {
+    for retired in [
+        "gpu-zero-copy",
+        "literal-set",
+        "mega-scan",
+        "megascan",
+        "gpu-mega-scan",
+        "regex-nfa",
+        "rule-pipeline",
+        "hyperscan",
+        "scalar",
+    ] {
+        assert_eq!(
+            parse_backend_str(retired),
+            None,
+            "retired alias {retired:?}"
+        );
+    }
 }

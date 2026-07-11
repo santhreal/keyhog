@@ -34,7 +34,13 @@ pub enum DaemonAction {
         ///
         /// The default `auto` mode requires install-time calibration. Use an
         /// explicit backend for diagnostics and hermetic daemon tests.
-        #[arg(long, value_name = "auto|simd|cpu|gpu|megascan")]
+        #[arg(
+            long,
+            value_name = "BACKEND",
+            value_parser = clap::builder::PossibleValuesParser::new(
+                keyhog_scanner::hw_probe::BACKEND_OVERRIDE_VALUES
+            )
+        )]
         backend: Option<String>,
         /// Max seconds a client connection may sit without completing one
         /// request frame before the daemon closes it and reclaims the slot.

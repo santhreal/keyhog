@@ -177,20 +177,19 @@ fn routing_profiles_table_order_and_length() {
 // ─── string parsing: canonical backend aliases ──────────────────────────────
 
 #[test]
-fn parse_backend_str_maps_canonical_aliases() {
+fn parse_backend_str_maps_cli_names_and_stable_evidence_labels() {
     assert_eq!(parse_backend_str("gpu"), Some(ScanBackend::Gpu));
     assert_eq!(
         parse_backend_str("gpu-region-presence"),
         Some(ScanBackend::Gpu)
     );
-    assert_eq!(parse_backend_str("literal-set"), Some(ScanBackend::Gpu));
-    // The no-hyphen `megascan` spelling must map (was a silent None fall-through).
-    assert_eq!(parse_backend_str("megascan"), Some(ScanBackend::MegaScan));
-    assert_eq!(parse_backend_str("mega-scan"), Some(ScanBackend::MegaScan));
     assert_eq!(parse_backend_str("simd"), Some(ScanBackend::SimdCpu));
-    assert_eq!(parse_backend_str("hyperscan"), Some(ScanBackend::SimdCpu));
     assert_eq!(parse_backend_str("cpu"), Some(ScanBackend::CpuFallback));
-    assert_eq!(parse_backend_str("scalar"), Some(ScanBackend::CpuFallback));
+    assert_eq!(parse_backend_str("simd-regex"), Some(ScanBackend::SimdCpu));
+    assert_eq!(
+        parse_backend_str("cpu-fallback"),
+        Some(ScanBackend::CpuFallback)
+    );
 }
 
 #[test]
@@ -202,6 +201,10 @@ fn parse_backend_str_trims_lowercases_and_rejects_unknown() {
     assert_eq!(parse_backend_str("quantum"), None);
     assert_eq!(parse_backend_str(""), None);
     assert_eq!(parse_backend_str("gpu2"), None);
+    assert_eq!(parse_backend_str("mega-scan"), None);
+    assert_eq!(parse_backend_str("literal-set"), None);
+    assert_eq!(parse_backend_str("hyperscan"), None);
+    assert_eq!(parse_backend_str("scalar"), None);
 }
 
 // ─── stable operator-facing labels ──────────────────────────────────────────

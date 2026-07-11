@@ -3,7 +3,7 @@ description = "Amortize the ~3 s scanner-compile cost across many invocations ov
 ---
 <h1>Daemon mode</h1>
 <p class="lede">
-  Every keyhog invocation pays a cold-start compile of 909 detectors into
+  Every keyhog invocation pays a cold-start compile of 922 detectors into
   a single Hyperscan database. Run keyhog as a long-lived daemon and that
   cost is paid once per host; latency claims are reported by the daemon
   benchmark artifacts.
@@ -111,7 +111,7 @@ hooks and IDE save handlers are the killer use cases.</p>
 <pre><code><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
 <span class="prompt">$</span> keyhog daemon stop &amp;&amp; keyhog daemon start
 <span class="a">keyhog daemon stopped</span>
-<span class="a">keyhog daemon started · loaded 909 detectors</span></code></pre>
+<span class="a">keyhog daemon started · loaded 922 detectors</span></code></pre>
 
 <p>KeyHog does not ship a single <code>daemon restart</code> verb.
 <code>stop &amp;&amp; start</code> drops the old socket, recompiles the detector

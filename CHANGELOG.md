@@ -6,6 +6,14 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Removed
 
+- **Duplicate backend aliases and the retired MegaScan CLI route.** `--backend`
+  now presents four choices: `auto`, `gpu`, `simd`, and `cpu`. MegaScan,
+  engine-implementation, and historical zero-copy spellings are rejected
+  instead of silently selecting one of those same engines under another name.
+  Profiles and evidence retain their descriptive stable labels. The public
+  `ScanBackend::MegaScan` variant remains as a source-compatible library
+  migration boundary and still executes the GPU region-presence route when
+  supplied programmatically.
 - **The no-op `kubernetes-secret` detector shim.** Kubernetes `Secret.data`
   values continue through the structured decoder and are attributed to the
   detector that recognizes the decoded credential. The retired detector only

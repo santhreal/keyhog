@@ -5,7 +5,7 @@ use keyhog_scanner::hw_probe::ScanBackend;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-use super::{AUTOROUTE_CALIBRATION_TRIALS, AUTOROUTE_GPU_WARM_TRIALS};
+use super::{canonical_execution_backend, AUTOROUTE_CALIBRATION_TRIALS, AUTOROUTE_GPU_WARM_TRIALS};
 
 pub(super) fn selected_backend_margin_ns(
     selected: ScanBackend,
@@ -79,7 +79,7 @@ impl AutorouteDecision {
         let gpu_timing =
             gpu_ms.map(|ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS));
         Self {
-            backend: backend.label().to_string(),
+            backend: canonical_execution_backend(backend).label().to_string(),
             sample_bytes,
             sample_chunks,
             correctness_digest: 0xA11D_0B57_A11D_0B57,
@@ -102,7 +102,7 @@ impl AutorouteDecision {
         gpu_timing: Option<BackendTimingEvidence>,
     ) -> Self {
         Self {
-            backend: backend.label().to_string(),
+            backend: canonical_execution_backend(backend).label().to_string(),
             sample_bytes,
             sample_chunks,
             correctness_digest,
@@ -170,7 +170,7 @@ impl AutorouteDecision {
     /// route to measure against.
     pub(super) fn selected_margin_ns(&self) -> Option<u128> {
         let backend = self.backend()?;
-        let candidates = self.route_candidates_for_selected_backend(backend);
+        let candidates = self.route_candidates();
         selected_backend_margin_ns(backend, &candidates)
     }
 
@@ -186,15 +186,12 @@ impl AutorouteDecision {
         }
     }
 
-    pub(super) fn route_candidates_for_selected_backend(
-        &self,
-        selected_backend: ScanBackend,
-    ) -> Vec<(ScanBackend, u128)> {
+    pub(super) fn route_candidates(&self) -> Vec<(ScanBackend, u128)> {
         route_candidates_with_gpu_backend(
             &self.simd_timing,
             self.cpu_timing.as_ref(),
             self.gpu_route_ns(),
-            gpu_evidence_backend(selected_backend),
+            ScanBackend::Gpu,
         )
     }
 
@@ -202,7 +199,7 @@ impl AutorouteDecision {
         &self,
         selected: ScanBackend,
     ) -> bool {
-        let intervals = self.route_confidence_intervals(selected);
+        let intervals = self.route_confidence_intervals();
         let Some((_, selected_interval)) = intervals
             .iter()
             .find(|(backend, _)| *backend == selected)
@@ -260,7 +257,7 @@ impl AutorouteDecision {
     /// - Two or more members → they are mutually non-separated (a tie); the
     ///   lowest-overhead member is the sound route.
     fn fastest_winner_set(&self) -> Vec<ScanBackend> {
-        let intervals = self.route_confidence_intervals(ScanBackend::Gpu);
+        let intervals = self.route_confidence_intervals();
         intervals
             .iter()
             .filter(|(backend, ci)| {
@@ -272,10 +269,7 @@ impl AutorouteDecision {
             .collect()
     }
 
-    fn route_confidence_intervals(
-        &self,
-        selected_backend: ScanBackend,
-    ) -> Vec<(ScanBackend, TimingConfidenceInterval)> {
+    fn route_confidence_intervals(&self) -> Vec<(ScanBackend, TimingConfidenceInterval)> {
         let mut intervals = vec![(
             ScanBackend::SimdCpu,
             self.simd_timing.confidence_interval_95_ns,
@@ -289,7 +283,7 @@ impl AutorouteDecision {
         if let Some((cold_ns, warm_timing, _route_ns)) = self.gpu_cold_warm_route() {
             let warm_interval = warm_timing.confidence_interval_95_ns;
             intervals.push((
-                gpu_evidence_backend(selected_backend),
+                ScanBackend::Gpu,
                 TimingConfidenceInterval {
                     low_ns: cold_ns.max(warm_interval.low_ns),
                     high_ns: cold_ns.max(warm_interval.high_ns),
@@ -314,13 +308,6 @@ fn route_candidates_with_gpu_backend(
         candidates.push((gpu_backend, gpu_route_ns));
     }
     candidates
-}
-
-fn gpu_evidence_backend(selected_backend: ScanBackend) -> ScanBackend {
-    match selected_backend {
-        ScanBackend::MegaScan => ScanBackend::MegaScan,
-        _ => ScanBackend::Gpu,
-    }
 }
 
 /// Engagement-overhead rank used to break a statistical tie: lower wins. A tie

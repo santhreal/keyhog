@@ -15,6 +15,6 @@ fn forced_backend_parser_covers_all_scenarios() {
     // Forced GPU.
     assert_eq!(parse_backend_str("gpu"), Some(ScanBackend::Gpu));
 
-    // Forced MegaScan.
-    assert_eq!(parse_backend_str("mega-scan"), Some(ScanBackend::MegaScan));
+    // Retired MegaScan strings are not forced backends.
+    assert_eq!(parse_backend_str("mega-scan"), None);
 }

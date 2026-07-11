@@ -367,9 +367,7 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
     }
 
     println!();
-    println!(
-        "Force a scan backend with: keyhog scan --backend <auto|gpu|gpu-region-presence|mega-scan|megascan|gpu-mega-scan|simd|simd-regex|cpu|cpu-fallback> ..."
-    );
+    println!("Force a scan backend with: keyhog scan --backend <auto|gpu|simd|cpu> ...");
     Ok(())
 }
 

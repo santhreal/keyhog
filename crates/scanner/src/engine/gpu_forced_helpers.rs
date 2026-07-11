@@ -58,7 +58,8 @@ pub(crate) fn gpu_forced_unavailable_message(
 /// `orchestrator::run` before any scan) which returns the documented
 /// `ExitCode` through the CLI - no library `process::exit`, so embedders
 /// stay alive. This function's hard exit covers a *different*, narrower
-/// case: `--backend gpu`/`mega-scan` FORCED a per-chunk GPU dispatch
+/// case: `--backend gpu` (or the compatibility API variant) forced a per-chunk
+/// GPU dispatch
 /// that then found the stack unusable, deep inside the parallel scan loop
 /// where there is no `Result` channel back to the caller (it runs under
 /// `par_iter` map closures returning `Vec<RawMatch>`). For that forced-

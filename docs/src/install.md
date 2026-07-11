@@ -105,7 +105,7 @@ The installer auto-detects, but you can override:
 | `keyhog scan --no-gpu`   | Force the CPU + SIMD path; skip every GPU init (saves cold-start on hosts with no usable GPU).                                                                                                                                               |
 | `keyhog scan --require-gpu` | Hard-fail (`exit 12`) when the GPU stack is unavailable. This is a diagnostic/CI assertion, separate from autoroute. Autoroute itself is not a fallback hierarchy: it selects the fastest measured-correct backend from all eligible candidates. |
 | `.keyhog.toml [system] gpu = "off"` | Persist the CPU/SIMD-only policy for a repository. Use `"required"` for self-hosted GPU runners where a GPU regression must fail closed.                                                                                         |
-| `keyhog scan --backend gpu\|mega-scan\|simd\|cpu` | Force a specific scan backend regardless of autoroute. Diagnostic and benchmark override only; it does not prove autoroute correctness.                                                                                                  |
+| `keyhog scan --backend gpu\|simd\|cpu` | Force a specific live scan engine regardless of autoroute. Diagnostic and benchmark override only; it does not prove autoroute correctness.                                                                                                  |
 
 Hosted CI runners normally have no useful GPU. Use `--no-gpu` or
 `[system] gpu = "off"` there. On self-hosted GPU runners, use

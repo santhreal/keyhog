@@ -41,9 +41,9 @@ pub enum ScanBackend {
     /// detector-presence bitmaps and the shared CPU phase-2 tail confirms
     /// findings.
     Gpu,
-    /// Compatibility backend for the old mega-scan operator surface.
-    /// Activated by `--backend mega-scan`; the shipped scan path collapses it
-    /// onto the same GPU region-presence producer as [`ScanBackend::Gpu`].
+    /// Compatibility API variant for integrations compiled against the retired
+    /// MegaScan route. New operator input cannot select it; the shipped scan
+    /// path collapses it onto the same producer as [`ScanBackend::Gpu`].
     MegaScan,
     /// Hyperscan NFA multi-pattern matching + SIMD prefilter.
     /// This is the primary high-throughput path on all platforms.

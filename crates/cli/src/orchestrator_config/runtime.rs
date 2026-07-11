@@ -38,7 +38,12 @@ pub(crate) fn parse_backend_override(
     if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("auto") {
         return Ok(None);
     }
-    keyhog_scanner::hw_probe::parse_backend_str(trimmed)
+    let operator_value = keyhog_scanner::hw_probe::BACKEND_OVERRIDE_VALUES
+        .iter()
+        .copied()
+        .find(|value| !value.eq_ignore_ascii_case("auto") && value.eq_ignore_ascii_case(trimmed));
+    operator_value
+        .and_then(keyhog_scanner::hw_probe::parse_backend_str)
         .map(Some)
         .ok_or_else(|| {
             let supported = keyhog_scanner::hw_probe::BACKEND_OVERRIDE_VALUES.join(", ");

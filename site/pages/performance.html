@@ -33,7 +33,7 @@ absent, stale, or missing a competitor, the claim is not made here.</p>
 <table>
   <thead><tr><th>Workload</th><th>Backend</th><th>Throughput</th></tr></thead>
   <tbody>
-    <tr><td>Pure text stream</td><td><code>simd-regex</code> or <code>gpu-zero-copy</code></td><td>Reported by the benchmark harness.</td></tr>
+    <tr><td>Pure text stream</td><td><code>simd-regex</code> or <code>gpu-region-presence</code></td><td>Reported by the benchmark harness.</td></tr>
     <tr><td>Mixed code + data tree</td><td>Calibrated autoroute decision</td><td>Reported by the benchmark harness.</td></tr>
     <tr><td>Large single file</td><td>Calibrated autoroute decision</td><td>Reported by the benchmark harness.</td></tr>
     <tr><td>Tiny hot daemon scan</td><td><code>simd-regex</code></td><td>Reported by daemon latency tests.</td></tr>
@@ -47,7 +47,7 @@ absent, stale, or missing a competitor, the claim is not made here.</p>
 <table>
   <thead><tr><th>Operation</th><th>Time</th></tr></thead>
   <tbody>
-    <tr><td>Cold start (compile 909 detectors, no cache)</td><td>Reported by <code>cold_start</code> benchmarks.</td></tr>
+    <tr><td>Cold start (compile 922 detectors, no cache)</td><td>Reported by <code>cold_start</code> benchmarks.</td></tr>
     <tr><td>Cold start (compile cache hit, mmap DB)</td><td>Reported by <code>cold_start</code> benchmarks.</td></tr>
     <tr><td>Daemon-served stdin scan</td><td>Reported by daemon latency tests.</td></tr>
     <tr><td>Pre-commit hook staged diff</td><td>Reported by e2e CLI tests and benchmark reports.</td></tr>
@@ -58,7 +58,7 @@ absent, stale, or missing a competitor, the claim is not made here.</p>
 <h2 id="autoroute-contract">Autoroute contract</h2>
 
 <p>Autoroute is a persisted calibration contract, not a hardcoded size table.
-Installation or <code>keyhog calibrate</code> measures the available backends
+Installation or <code>keyhog calibrate-autoroute</code> measures the available backends
 for workload classes, stores the winning correct backend with hardware and
 detector-set fingerprints, and normal scans use that record with no per-scan
 probing.</p>
@@ -75,21 +75,21 @@ probing.</p>
 </table>
 </div>
 
-<p>Override with <code>keyhog scan --backend {gpu|simd|cpu|mega-scan}</code> for
+<p>Override with <code>keyhog scan --backend {gpu|simd|cpu}</code> for
 diagnostic runs. Production routing depends on calibration evidence.</p>
 
 <h2>Inspect calibration on your hardware</h2>
 
 <pre><code><span class="prompt">$</span> keyhog backend
-<span class="a">keyhog v0.5.40 | 16 cores | SIMD: AVX-512 | Hyperscan | 909 detectors</span>
+<span class="a">keyhog v0.5.40 | 16 cores | SIMD: AVX-512 | Hyperscan | 922 detectors</span>
 <span class="a">  cpu: AMD Ryzen 9 7950X · 16c/32t · AVX-512 + AVX2 + SSE4.2</span>
 <span class="a">  gpu: NVIDIA RTX 4090 · 24 GB · CUDA + Vulkan</span>
 <span class="a">  autoroute calibration: fresh</span>
 <span class="a">    small-tree/default-detectors → simd-regex</span>
-<span class="a">    large-file/default-detectors → gpu-zero-copy</span>
+<span class="a">    large-file/default-detectors → gpu-region-presence</span>
 
 <span class="prompt">$</span> keyhog backend --probe-bytes $((300 * 1024 * 1024))
-<span class="a">300 MiB probe class uses persisted calibration → gpu-zero-copy</span></code></pre>
+<span class="a">300 MiB probe class uses persisted calibration → gpu-region-presence</span></code></pre>
 
 <h2>Reproduce the benchmarks</h2>
 

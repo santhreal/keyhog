@@ -173,33 +173,37 @@ fn env_override_accepts_label_aliases() {
     // Each backend has multiple opt-in aliases; CI runners and Dockerfiles
     // routinely use the human-readable label as the env value, so all forms
     // must map to the same backend. Asserted on the pure mapping (no global env).
-    for value in [
-        "gpu",
-        "GPU",
-        "gpu-region-presence",
-        "Gpu-Zero-Copy",
-        " gpu ",
-        "literal-set",
-    ] {
+    for value in ["gpu", "GPU", "gpu-region-presence", " gpu "] {
         assert_eq!(
             parse_backend_str(value),
             Some(ScanBackend::Gpu),
             "value {value:?} must map to Gpu"
         );
     }
-    for value in ["simd", "SIMD", "simd-regex", "hyperscan", "HYPERSCAN"] {
+    for value in ["simd", "SIMD", "simd-regex"] {
         assert_eq!(
             parse_backend_str(value),
             Some(ScanBackend::SimdCpu),
             "value {value:?} must map to SimdCpu"
         );
     }
-    for value in ["cpu", "Cpu", "cpu-fallback", "scalar"] {
+    for value in ["cpu", "Cpu", "cpu-fallback"] {
         assert_eq!(
             parse_backend_str(value),
             Some(ScanBackend::CpuFallback),
             "value {value:?} must map to CpuFallback"
         );
+    }
+    for retired in [
+        "gpu-zero-copy",
+        "literal-set",
+        "mega-scan",
+        "megascan",
+        "gpu-mega-scan",
+        "hyperscan",
+        "scalar",
+    ] {
+        assert_eq!(parse_backend_str(retired), None);
     }
 }
 

@@ -1169,7 +1169,7 @@ fn autoroute_cache_rejects_empty_decision_set() {
 }
 
 #[test]
-fn autoroute_cache_roundtrips_megascan_backend_decision() {
+fn autoroute_cache_canonicalizes_programmatic_megascan_to_gpu() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_megascan_{}.json",
         std::process::id()
@@ -1199,13 +1199,13 @@ fn autoroute_cache_roundtrips_megascan_backend_decision() {
         &host,
         &decisions,
     )
-    .expect("MegaScan autoroute decision should persist");
+    .expect("compatibility backend decision should persist canonically");
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
         .expect("MegaScan autoroute decision should reload");
     assert_eq!(
         loaded.get(&key).and_then(AutorouteDecision::backend),
-        Some(ScanBackend::MegaScan),
-        "persisted MegaScan route evidence must not be relabeled as plain GPU"
+        Some(ScanBackend::Gpu),
+        "persistence must not mint a second label for the same GPU engine"
     );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
