@@ -40,14 +40,14 @@ fn detectors_help_exits_zero() {
         "legacy spelling must give an actionable migration warning; got: {stderr}"
     );
 
-    let legacy_list = Command::new(binary())
+    let retired_list = Command::new(binary())
         .args(["detectors", "list"])
         .output()
-        .expect("spawn legacy list spelling");
-    assert_eq!(legacy_list.status.code(), Some(0));
-    let stderr = String::from_utf8_lossy(&legacy_list.stderr);
+        .expect("spawn retired list spelling");
+    assert_eq!(retired_list.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&retired_list.stderr);
     assert!(
-        stderr.contains("compatibility spelling") && stderr.contains("use `keyhog detectors`"),
-        "legacy list verb must give an actionable migration warning; got: {stderr}"
+        stderr.contains("unexpected argument 'list'"),
+        "retired duplicate list verb must be rejected visibly; got: {stderr}"
     );
 }

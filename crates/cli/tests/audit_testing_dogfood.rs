@@ -214,9 +214,9 @@ fn stream_preview_must_not_show_test_fixture_suppressed_credential() {
 /// AUD-testing_dogfood-2 — an empty detector directory is a hard user error,
 /// not a valid empty corpus that can scan a target and return "no findings".
 ///
-/// This also pins the historical detector-list coherence fix: scan errors must
-/// not cite stale `detectors list` guidance, while `keyhog detectors list`
-/// remains a valid compatibility alias for the default detector listing action.
+/// This also pins the detector-list coherence fix: scan errors must not cite
+/// stale `detectors list` guidance, and that retired duplicate command must not
+/// silently execute the canonical listing action.
 #[test]
 fn empty_detector_scan_fails_closed_without_phantom_list_guidance() {
     let dir = TempDir::new().expect("tempdir");
@@ -260,12 +260,13 @@ fn empty_detector_scan_fails_closed_without_phantom_list_guidance() {
         .output()
         .expect("spawn keyhog detectors list");
     let detectors_list_stderr = String::from_utf8_lossy(&detectors_list.stderr);
-    assert!(
-        detectors_list.status.success(),
-        "`keyhog detectors list` must remain a valid alias for the default list action; stderr={detectors_list_stderr}"
+    assert_eq!(
+        detectors_list.status.code(),
+        Some(2),
+        "the retired duplicate `keyhog detectors list` command must be rejected; stderr={detectors_list_stderr}"
     );
     assert!(
-        !detectors_list_stderr.contains("unexpected argument 'list'"),
-        "`keyhog detectors list` must not regress into a clap positional error; stderr={detectors_list_stderr}"
+        detectors_list_stderr.contains("unexpected argument 'list'"),
+        "the retired list verb must fail visibly instead of running another action; stderr={detectors_list_stderr}"
     );
 }

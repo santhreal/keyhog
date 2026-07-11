@@ -4,13 +4,6 @@ use clap::{Parser, ValueEnum};
 
 #[derive(Parser)]
 pub struct DetectorArgs {
-    /// Compatibility positional for the former redundant `list` verb.
-    #[arg(
-        hide = true,
-        value_name = "VERB",
-        value_parser = crate::value_parsers::parse_detectors_verb
-    )]
-    pub verb: Option<String>,
     /// Detector TOML directory
     #[arg(short, long, default_value = "detectors")]
     pub detectors: PathBuf,

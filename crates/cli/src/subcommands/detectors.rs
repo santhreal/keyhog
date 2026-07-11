@@ -17,24 +17,6 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 pub(crate) fn run(args: DetectorArgs) -> Result<ExitCode> {
-    if args.verb.as_deref() == Some("list") {
-        eprintln!(
-            "warning: `keyhog detectors list` is a compatibility spelling; \
-             use `keyhog detectors`"
-        );
-    }
-    // The optional `list` verb names the default action explicitly, so it is
-    // incompatible with the alternate actions `--audit` / `--fix`: `keyhog
-    // detectors list --audit` would be asking for two different verbs at once.
-    // Reject loudly instead of silently letting `--audit`/`--fix` win, so the
-    // operator's intent and the action taken can never disagree.
-    if args.verb.as_deref() == Some("list") && (args.audit || args.fix) {
-        anyhow::bail!(
-            "`keyhog detectors list` is the (default) list action and cannot be \
-             combined with `--audit` or `--fix`. Drop `list` to audit/fix, or \
-             drop the flag to list."
-        );
-    }
     if args.fix {
         return run_fix(&args);
     }

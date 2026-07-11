@@ -110,7 +110,6 @@ pub trait CliTestApi {
     fn parse_positive_millis(&self, s: &str) -> std::result::Result<u64, String>;
     fn parse_daemon_request_timeout_secs(&self, s: &str) -> std::result::Result<u64, String>;
     fn parse_byte_size(&self, s: &str) -> std::result::Result<usize, String>;
-    fn parse_detectors_verb(&self, s: &str) -> std::result::Result<String, String>;
     fn parse_severity_filter(&self, s: &str) -> Option<crate::args::SeverityFilter>;
     fn parse_output_format(&self, s: &str) -> Option<crate::args::OutputFormat>;
     fn parse_dedup_scope(&self, s: &str) -> Option<crate::args::CliDedupScope>;
@@ -487,9 +486,6 @@ impl CliTestApi for TestApi {
     }
     fn parse_byte_size(&self, s: &str) -> std::result::Result<usize, String> {
         crate::value_parsers::parse_byte_size(s)
-    }
-    fn parse_detectors_verb(&self, s: &str) -> std::result::Result<String, String> {
-        crate::value_parsers::parse_detectors_verb(s)
     }
     fn parse_severity_filter(&self, s: &str) -> Option<crate::args::SeverityFilter> {
         crate::value_parsers::parse_severity_filter(s)
