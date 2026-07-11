@@ -474,6 +474,24 @@ impl CompiledScanner {
         self
     }
 
+    /// Validate and apply a custom configuration.
+    ///
+    /// Operator-facing and other user-influenced boundaries should prefer this
+    /// result-returning form: invalid entropy, BPE, probability, depth, or
+    /// resource-limit values are rejected instead of reaching scan semantics.
+    /// [`Self::with_config`] remains the source-compatible builder for callers
+    /// that already validated or constructed a trusted [`ScannerConfig`].
+    pub fn try_with_config(
+        mut self,
+        config: ScannerConfig,
+    ) -> std::result::Result<Self, keyhog_core::ConfigError> {
+        config.scan.validate()?;
+        profile::set_profile_enabled(config.profile);
+        profile::set_perf_trace_enabled(config.perf_trace);
+        self.config = config;
+        Ok(self)
+    }
+
     /// Apply explicit performance-route tuning to this compiled scanner.
     pub fn with_tuning_config(self, config: crate::scanner_config::ScannerTuningConfig) -> Self {
         self.tuning.apply_config(&config);
