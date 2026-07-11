@@ -46,23 +46,4 @@ impl CompiledScanner {
             .as_ref()
     }
 
-    /// Lazily compile the smaller positioned-candidate literal set used by GPU
-    /// confirmed-anchor and generic-keyword accelerators.
-    #[cfg(feature = "gpu")]
-    pub(crate) fn gpu_position_matcher(&self) -> Option<&vyre_libs::scan::GpuLiteralSet> {
-        self.gpu_position_matcher
-            .get_or_init(|| {
-                let Some(literals) = &self.gpu_position_literals else {
-                    return None;
-                };
-                match compile_gpu_literal_set(literals, "pos-lit") {
-                    Ok(matcher) => Some(matcher),
-                    Err(error) => {
-                        report_gpu_matcher_unavailable(&error, "positioned literal");
-                        None
-                    }
-                }
-            })
-            .as_ref()
-    }
 }

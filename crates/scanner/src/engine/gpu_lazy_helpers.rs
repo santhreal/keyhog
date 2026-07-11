@@ -2,8 +2,6 @@ use std::sync::Arc;
 
 static GPU_MATCHER_CACHE_UNAVAILABLE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 static GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-static GPU_POSITION_MATCHER_UNAVAILABLE_WARNED: std::sync::OnceLock<()> =
-    std::sync::OnceLock::new();
 
 fn report_gpu_matcher_cache_unavailable(error: &super::gpu_cache::GpuMatcherCacheDirError) {
     tracing::warn!(
@@ -28,7 +26,6 @@ pub(super) fn report_gpu_matcher_unavailable(error: &crate::error::ScanError, ma
     );
     let warned = match matcher_kind {
         "literal" => &GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED,
-        "positioned literal" => &GPU_POSITION_MATCHER_UNAVAILABLE_WARNED,
         _ => &GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED,
     };
     if warned.set(()).is_ok() {

@@ -19,6 +19,7 @@ use self::candidates::{
 use self::lowering::build_shards_recursive;
 #[cfg(test)]
 use self::lowering::regex_dfa_source_for_pattern;
+#[cfg(test)]
 pub(super) use self::shard::match_region;
 use self::shard::Phase2GpuDfaShard;
 #[cfg(test)]
