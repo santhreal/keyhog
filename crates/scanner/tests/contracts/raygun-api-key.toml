@@ -22,9 +22,9 @@ text = "RAYGUN_API_KEY=zHHPHEXAMPLEEXAMPLE5YTMi"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
 
 [[evasion]]
-text = "{\"secret\":\"zHHPHPTJ-SaJd915YTMi\"}"
+text = "{\"raygun_api_key\":\"zHHPHPTJ-SaJd915YTMi\"}"
 credential = "zHHPHPTJ-SaJd915YTMi"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "JSON envelope preserves the detector's required Raygun service anchor."
 
 [perf]
 fixture_bytes = 4096

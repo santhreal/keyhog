@@ -4,13 +4,13 @@ service = "github"
 severity = "critical"
 
 [[positive]]
-text = "gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk"
-credential = "gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk"
+text = "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"
+credential = "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"
 reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
 
 [[positive]]
-text = "gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk=\"gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk\""
-credential = "gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk"
+text = "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=\"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\""
+credential = "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"
 reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
@@ -22,8 +22,8 @@ text = "gho_HEXAMPLEEXAMPLEANprk"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
 
 [[evasion]]
-text = "Authorization: Bearer gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk"
-credential = "gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk"
+text = "Authorization: Bearer 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"
+credential = "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"
 reason = "Adversarial envelope — credential must still surface under this detector."
 
 [perf]

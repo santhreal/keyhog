@@ -22,9 +22,9 @@ text = "spiderfoottoken=QT3EUEXAMPLEEXAMPLEcUr_T"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
 
 [[evasion]]
-text = "{\"secret\":\"QT3EUl0GUeQm_rjcUr_T\"}"
+text = "{\"spiderfoot_token\":\"QT3EUl0GUeQm_rjcUr_T\"}"
 credential = "QT3EUl0GUeQm_rjcUr_T"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "JSON envelope preserves the detector's required SpiderFoot service anchor."
 
 [perf]
 fixture_bytes = 4096

@@ -4,13 +4,13 @@ service = "github"
 severity = "critical"
 
 [[positive]]
-text = "ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1"
-credential = "ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1"
+text = "ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh"
+credential = "ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh"
 reason = "ghu_ prefix followed by exactly 36 alphanumeric characters."
 
 [[positive]]
-text = "Authorization: Bearer ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1"
-credential = "ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1"
+text = "Authorization: Bearer ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh"
+credential = "ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh"
 reason = "Token embedded in a Bearer authorization header."
 
 [[negative]]
@@ -18,8 +18,8 @@ text = "ghu_short"
 reason = "Body too short — only 5 chars after ghu_ prefix, regex requires 36."
 
 [[evasion]]
-text = "GITHUB_USER_TO_SERVER=ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1"
-credential = "ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1"
+text = "GITHUB_USER_TO_SERVER=ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh"
+credential = "ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh"
 reason = "Uppercase env-var context with ghu_ prefix."
 
 [perf]

@@ -16,6 +16,10 @@ description = "LooksRare API key in assignment context"
 group = 1
 
 [[detector.patterns]]
-regex = "X-Looks-Api-Key[\\s]*:[\\s]*([a-zA-Z0-9_-]{32,})"
+regex = "X-Looks-Api-Key[\\s]*[=:][\\s]*[\"'']?([a-zA-Z0-9_-]{32,})[\"'']?"
 description = "LooksRare API key in HTTP header"
 group = 1
+
+[[detector.tests]]
+test_positive = "X-Looks-Api-Key=\"fedcba9876543210fedcba9876543210abcd\""
+test_negative = "X-Looks-Api-Key=short"
