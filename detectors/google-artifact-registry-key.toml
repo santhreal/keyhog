@@ -11,14 +11,20 @@ severity = "critical"
 keywords = ["_json_key", "artifactregistry", "googleusercontent.com", "service_account"]
 
 [[detector.patterns]]
-regex = "\"type\"\\s*:\\s*\"service_account\"[^}]*\"private_key\"\\s*:\\s*\"-----BEGIN PRIVATE KEY-----"
+regex = "\"type\"\\s*:\\s*\"service_account\"[^}]*\"private_key\"\\s*:\\s*\"(-----BEGIN PRIVATE KEY-----)"
 description = "Google service account JSON key with private key (Artifact Registry authentication)"
-
-[[detector.patterns]]
-regex = "(?:_json_key|GAR|GOOGLE_ARTIFACT)[\\w_]*(?:PASSWORD|KEY)[=:\\s\"'']+(\\{[^}]*\"type\"\\s*:\\s*\"service_account\"[^}]*\\})"
-description = "Google Artifact Registry JSON key in environment variable with context"
 group = 1
 
 [[detector.patterns]]
-regex = "\"client_email\"\\s*:\\s*\"[a-z0-9-]+@[a-z0-9-]+\\.iam\\.gserviceaccount\\.com\"[^}]*\"private_key_id\""
+regex = '''(?:_json_key|(?:GAR|GOOGLE_ARTIFACT)[\w_]*(?:PASSWORD|KEY))[=:\s"'']+\{[^}\n]*(?:\\?")type(?:\\?")\s*:\s*(?:\\?")service_account(?:\\?")[^}\n]*(?:\\?")private_key(?:\\?")\s*:\s*(?:\\?")(-----BEGIN PRIVATE KEY-----)'''
+description = "Google Artifact Registry JSON key in an environment variable, including escaped JSON"
+group = 1
+
+[[detector.patterns]]
+regex = "\"client_email\"\\s*:\\s*\"([a-z0-9-]+@[a-z0-9-]+\\.iam\\.gserviceaccount\\.com)\"[^}]*\"private_key_id\""
 description = "Google service account email pattern with private key ID for GAR auth"
+group = 1
+
+[[detector.tests]]
+test_positive = '''_json_key={\"type\":\"service_account\",\"private_key\":\"-----BEGIN PRIVATE KEY-----\\nMIIE\\n-----END PRIVATE KEY-----\"}'''
+test_negative = '''_json_key={\"type\": \"service_account\", \"project_id\": \"demo\"}'''

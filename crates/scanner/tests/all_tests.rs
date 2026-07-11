@@ -131,6 +131,8 @@ pub mod regression_private_key_variant_matrix;
 pub mod regression_putty_private_key;
 #[path = "regression_quoted_printable_uuid_suffix_suppression.rs"]
 pub mod regression_quoted_printable_uuid_suffix_suppression;
+#[path = "regression_r2b_detector_fixtures.rs"]
+pub mod regression_r2b_detector_fixtures;
 #[path = "regression_recall_new_prefixes.rs"]
 pub mod regression_recall_new_prefixes;
 #[path = "regression_resolution_algorithmic_dos.rs"]

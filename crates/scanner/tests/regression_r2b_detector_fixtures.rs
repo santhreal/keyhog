@@ -1,16 +1,27 @@
-//! One-off probe for R2-B contract fixture tuning.
-#![allow(dead_code)]
+//! R2-B detector truth fixtures. These began as a print-only tuning probe; each
+//! row is now a release-blocking positive contract.
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
+use std::sync::LazyLock;
 
-fn scan(detector_id: &str, text: &str) -> Vec<String> {
-    let mut d = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    let detectors = keyhog_core::load_detectors(&d).expect("load");
-    let scanner = CompiledScanner::compile(detectors).expect("compile");
+#[path = "support/mod.rs"]
+mod support;
+use support::paths::detector_dir;
+
+static DETECTORS: LazyLock<Vec<keyhog_core::DetectorSpec>> =
+    LazyLock::new(|| keyhog_core::load_detectors(&detector_dir()).expect("load detectors"));
+
+fn scanner(detector_id: &str) -> CompiledScanner {
+    let detector = DETECTORS
+        .iter()
+        .find(|detector| detector.id == detector_id)
+        .unwrap_or_else(|| panic!("missing detector {detector_id}"))
+        .clone();
+    CompiledScanner::compile(vec![detector]).expect("compile focused detector")
+}
+
+fn scan(scanner: &CompiledScanner, detector_id: &str, text: &str) -> Vec<String> {
     scanner.clear_fragment_cache();
     let chunk = Chunk {
         data: text.into(),
@@ -29,7 +40,7 @@ fn scan(detector_id: &str, text: &str) -> Vec<String> {
 }
 
 #[test]
-fn probe_r2b_top50_candidates() {
+fn r2b_top50_candidates_are_detected() {
     let cases: &[(&str, &[(&str, &str)])] = &[
         (
             "foundation-api-key",
@@ -62,7 +73,7 @@ fn probe_r2b_top50_candidates() {
             &[
                 (
                     "-----BEGIN RSA PRIVATE KEY-----\ndlV24zQrYwR9Sp8Rc182G8EmK6e2QyaZs/mHkr2CHwPzwWeq99cv5x18sWmE8aWZ\n02TE7k6yGCaz19klBt3oxH8sn20kPTZPbD8l848y8zn5+4b8VauL81Yo5DrW3XKB\nxNA6kEdkADdGjpXsZbe3yaoZKSV5n5HQN48qBcCFyCu6bnuOFniyJwvUuVnrjkAY\nJsdt7Ag8XuB1E85A46rqL/fDPQPD78PcCzz7/7JkG1dlOCFPV2PKwVDx/Y8RBjiG\nit8PLSWzqJt0dK1SLhUnCCrjIVQjacw5wTfEEQ==\n-----END RSA PRIVATE KEY-----\n",
-                    "-----BEGIN RSA PRIVATE KEY-----",
+                    "-----BEGIN RSA PRIVATE KEY-----\ndlV24zQrYwR9Sp8Rc182G8EmK6e2QyaZs/mHkr2CHwPzwWeq99cv5x18sWmE8aWZ\n02TE7k6yGCaz19klBt3oxH8sn20kPTZPbD8l848y8zn5+4b8VauL81Yo5DrW3XKB\nxNA6kEdkADdGjpXsZbe3yaoZKSV5n5HQN48qBcCFyCu6bnuOFniyJwvUuVnrjkAY\nJsdt7Ag8XuB1E85A46rqL/fDPQPD78PcCzz7/7JkG1dlOCFPV2PKwVDx/Y8RBjiG\nit8PLSWzqJt0dK1SLhUnCCrjIVQjacw5wTfEEQ==\n-----END RSA PRIVATE KEY-----",
                 ),
             ],
         ),
@@ -187,8 +198,8 @@ fn probe_r2b_top50_candidates() {
             "ibm-cloud-government-credentials",
             &[
                 (
-                    "IBM_CLOUD_GOV API KEY=\"AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIj\"",
-                    "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIj",
+                    "IBM_CLOUD_GOV API KEY=\"AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGh\"",
+                    "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGh",
                 ),
                 (
                     "IBM_CLOUD_GOV REGION=us-south",
@@ -217,8 +228,8 @@ fn probe_r2b_top50_candidates() {
                     "2963950e3ed2e3dc49d5740982bac6a9",
                 ),
                 (
-                    "JOTFORM_API_KEY 53f2da167246ebe0e04dc37c9e74a75b5",
-                    "53f2da167246ebe0e04dc37c9e74a75b5",
+                    "JOTFORM_API_KEY 53f2da167246ebe0e04dc37c9e74a75b",
+                    "53f2da167246ebe0e04dc37c9e74a75b",
                 ),
             ],
         ),
@@ -262,13 +273,6 @@ fn probe_r2b_top50_candidates() {
             ],
         ),
         (
-            "kubernetes-secret",
-            &[(
-                "NEVER__MATCH__K8S_DISABLED__SENTINEL",
-                "NEVER__MATCH__K8S_DISABLED__SENTINEL",
-            )],
-        ),
-        (
             "lastpass-dev-creds",
             &[
                 ("lastpass id=9860386", "9860386"),
@@ -293,7 +297,7 @@ fn probe_r2b_top50_candidates() {
             &[
                 (
                     "postgresql://neondb:w0kVdGwi5GpLapAX@ep-cool-name-123456.us-east-2.aws.neon.tech/neondb",
-                    "w0kVdGwi5GpLapAX",
+                    "postgresql://neondb:w0kVdGwi5GpLapAX@ep-cool-name-123456.us-east-2.aws.neon.tech",
                 ),
             ],
         ),
@@ -319,7 +323,7 @@ fn probe_r2b_top50_candidates() {
             "sanity-api-token",
             &[
                 (
-                    "sk4VI2EWMzmLvb5a9dd9403a8d3b0f37f91f289",
+                    "SANITY_API_TOKEN=sk4VI2EWMzmLvb5a9dd9403a8d3b0f37f91f289",
                     "sk4VI2EWMzmLvb5a9dd9403a8d3b0f37f91f289",
                 ),
                 (
@@ -346,7 +350,7 @@ fn probe_r2b_top50_candidates() {
             &[
                 (
                     "split_io_api_key=YWJjZGVmZ2hpamtsbW5vcA==",
-                    "YWJjZGVmZ2hpamtsbW5vcA=",
+                    "YWJjZGVmZ2hpamtsbW5vcA==",
                 ),
             ],
         ),
@@ -367,8 +371,8 @@ fn probe_r2b_top50_candidates() {
             "google-artifact-registry-key",
             &[
                 (
-                    "_json_key=\"{\\\"type\\\": \\\"service_account\\\", \\\"project_id\\\": \\\"demo\\\"}\"",
-                    "{\"type\": \"service_account\", \"project_id\": \"demo\"}",
+                    r#"_json_key="{\"type\":\"service_account\",\"private_key\":\"-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\"}""#,
+                    "-----BEGIN PRIVATE KEY-----",
                 ),
             ],
         ),
@@ -419,26 +423,20 @@ fn probe_r2b_top50_candidates() {
         ),
     ];
 
-    let mut ok = 0usize;
-    let mut fail = 0usize;
     for (det, texts) in cases {
+        let scanner = scanner(det);
         for (text, expected) in *texts {
-            let creds = scan(det, text);
-            let hit = creds.iter().any(|c| c.contains(expected));
-            if hit {
-                ok += 1;
-                eprintln!("OK {det}: {text:?} => {creds:?}");
-            } else {
-                fail += 1;
-                eprintln!("FAIL {det}: {text:?} expected {expected:?} => {creds:?}");
-            }
+            let creds = scan(&scanner, det, text);
+            assert!(
+                creds.iter().any(|credential| credential == expected),
+                "{det} missed expected credential {expected:?} in {text:?}; got {creds:?}"
+            );
         }
     }
-    eprintln!("probe summary: {ok} ok, {fail} fail");
 }
 
 #[test]
-fn probe_r2b_retry_failures() {
+fn r2b_retry_fixtures_are_detected() {
     let cases: &[(&str, &str, &str)] = &[
         (
             "genesys-cloud-credentials",
@@ -477,8 +475,8 @@ fn probe_r2b_retry_failures() {
         ),
         (
             "ibm-cloud-government-credentials",
-            "IBM_CLOUD_GOV API_KEY=\"AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIj\"",
-            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIj",
+            "IBM_CLOUD_GOV API_KEY=\"AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGh\"",
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGh",
         ),
         (
             "google-artifact-registry-key",
@@ -502,25 +500,22 @@ fn probe_r2b_retry_failures() {
         ),
         (
             "google-cloud-sovereign-credentials",
-            "GOOGLE_SOVEREIGN PRIVATE_KEY_ID=0123456789abcdef0123456789abcdef0123456789ab",
-            "0123456789abcdef0123456789abcdef0123456789ab",
+            "GOOGLE_SOVEREIGN PRIVATE_KEY_ID=0123456789abcdef0123456789abcdef01234567",
+            "0123456789abcdef0123456789abcdef01234567",
         ),
     ];
     for (det, text, expected) in cases {
-        let creds = scan(det, text);
-        let hit = creds.iter().any(|c| c.contains(expected));
-        eprintln!(
-            "{}: {} => {:?} ({})",
-            if hit { "OK" } else { "FAIL" },
-            text,
-            creds,
-            expected
+        let scanner = scanner(det);
+        let creds = scan(&scanner, det, text);
+        assert!(
+            creds.iter().any(|credential| credential == expected),
+            "{det} missed expected credential {expected:?} in {text:?}; got {creds:?}"
         );
     }
 }
 
 #[test]
-fn probe_path_shape_remaining() {
+fn r2b_path_shape_fixtures_are_detected() {
     let cases = [
         (
             "marketo-api-credentials",
@@ -554,14 +549,11 @@ fn probe_path_shape_remaining() {
         ),
     ];
     for (det, text, expected) in cases {
-        let creds = scan(det, text);
-        let hit = creds.iter().any(|c| c.contains(expected));
-        eprintln!(
-            "{}: {} => {:?} ({})",
-            if hit { "OK" } else { "FAIL" },
-            text,
-            creds,
-            expected
+        let scanner = scanner(det);
+        let creds = scan(&scanner, det, text);
+        assert!(
+            creds.iter().any(|credential| credential == expected),
+            "{det} missed expected credential {expected:?} in {text:?}; got {creds:?}"
         );
     }
 }

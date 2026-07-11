@@ -11,7 +11,7 @@ severity = "high"
 keywords = ["jotform", "JOTFORM_API_KEY", "jotform_key"]
 
 [[detector.patterns]]
-regex = "(?:jotform|JOTFORM)[_.\\s]*(?:api[_\\s]*key|API[_\\s]*KEY)[\\s\"''']+([a-f0-9]{32})"
+regex = "(?:jotform|JOTFORM)[_.\\s]*(?:api[_\\s]*key|API[_\\s]*KEY)[=:\\s\"''']+([a-f0-9]{32})(?:[^a-f0-9]|$)"
 description = "JotForm API key with context anchor"
 group = 1
 
@@ -26,3 +26,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "JOTFORM_API_KEY 53f2da167246ebe0e04dc37c9e74a75b"
+test_negative = "JOTFORM_API_KEY 53f2da167246ebe0e04dc37c9e74a75b5"
