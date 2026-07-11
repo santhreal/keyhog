@@ -15,3 +15,7 @@ regex = 'shpss_[a-f0-9]{32}'
 description = "Shopify Storefront API access token (shpss_ prefix)"
 
 # NOTE: live verification disabled. `{{shop}}` was undefined. kimi-wave3 §1.
+
+[[detector.tests]]
+test_positive = "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"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

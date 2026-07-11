@@ -27,3 +27,7 @@ group = 1
 regex = "ShippoToken[=:\\s\"'']+(shippo_[a-f0-9_]+)"
 description = "ShippoToken header value"
 group = 1
+
+[[detector.tests]]
+test_positive = "shippo_live_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+test_negative = "shippo_live_short"

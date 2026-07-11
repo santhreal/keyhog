@@ -43,3 +43,7 @@ json_path = "name"
 [[detector.verify.metadata]]
 name = "email"
 json_path = "email"
+
+[[detector.tests]]
+test_positive = "sketch_api_key=abcdefghijklmnopqrstuvwxyz1234567890"
+test_negative = "sketch_api_key=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

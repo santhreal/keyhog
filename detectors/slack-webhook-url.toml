@@ -38,3 +38,7 @@ value = "application/json"
 [detector.verify.success]
 status = 400
 body_contains = "invalid_payload"
+
+[[detector.tests]]
+test_positive = "https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx"
+test_negative = "https://hooks.slack.com/services/T123/B456/secret"

@@ -19,3 +19,7 @@ group = 1
 regex = "(?:smartthings|SMARTTHINGS)[._-]?(?:PAT|pat|PERSONAL[_-]?ACCESS[_-]?TOKEN|personal[_-]?access[_-]?token|ACCESS[_-]?TOKEN|access[_-]?token)[=:\\s\"'']+([a-f0-9]{36,64})"
 description = "SmartThings API token (hex format)"
 group = 1
+
+[[detector.tests]]
+test_positive = "SMARTTHINGS_ACCESS_TOKEN=be96d2f7-20dc-a4ec-aa3a-c4179112746d"
+test_negative = "SMARTTHINGS_ACCESS_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

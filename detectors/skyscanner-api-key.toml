@@ -31,3 +31,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "SKYSCANNER_API_KEY=JEA8DfgFxzo9YbHh99eKuvHZUH62tIOeNPCQWBgg"
+test_negative = "SKYSCANNER_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

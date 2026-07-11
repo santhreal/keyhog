@@ -19,3 +19,7 @@ group = 1
 regex = "(?:SA[_\\-\\s]?USER[_\\-\\s]?ID|simpleanalytics[_\\-\\s]?user)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
 description = "SimpleAnalytics user ID in UUID format"
 group = 1
+
+[[detector.tests]]
+test_positive = "SA_API_KEY=8c88efc1-6389-f9c8-aa10-49a8b9341dc3"
+test_negative = "SA_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

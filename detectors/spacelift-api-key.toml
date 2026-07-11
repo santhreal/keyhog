@@ -29,3 +29,7 @@ group = 1
 regex = "apiKeyUser\\s*\\(\\s*id\\s*:\\s*\"([a-zA-Z0-9_-]+)\""
 description = "Spacelift API Key ID in GraphQL mutation"
 group = 1
+
+[[detector.tests]]
+test_positive = "SPACELIFT_TOKEN=eyJlh4gmpKuEvkwmoEhlBA1QPdLCTuoARuZx70KNqa6sYa6CucvELAWX-rSml4JuHm66N5_FJv7ONZs3urH.eyJ_Y-lC08IeiZDhXg-1jL475aE_LHd7Uu1E5C9N1.682JzA4aHBY6IEDHZhBz9uu2yN3cULBuNnWy"
+test_negative = "SPACELIFT_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

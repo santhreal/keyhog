@@ -19,3 +19,7 @@ group = 1
 regex = "trackjs.*token[=:\\s\\\"']+([A-Za-z0-9+/]{32}:[A-Za-z0-9+/]{24})"
 description = "TrackJS token with context"
 group = 1
+
+[[detector.tests]]
+test_positive = "trackJs     \"  =   \"=:= : =   ' ::\"  ='    = :\"\" =:\"    \" =:'  :     :   \"  =   '   {\"g$U!9Sn;9jh1?I<{ACM_CwKKy4gunU65OTL9>~token   = ::  :   ::=      \": = '     ': ' =   ': ZCLsL1ZLqacFatMzJYNYaxTkv/MBCWDu:bV8PI58J4RjmL5n1DLvmSZYO"
+test_negative = "trackJs     \"  =   \"=:= : =   ' ::\"  ='    = :\"\" =:\"    \" =:'  :     :   \"  =   '   {\"g$U!9Sn;9jh1?I<{ACM_CwKKy4gunU65OTL9>~token   = ::  :   ::=      \": = '     ': ' =   ': YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

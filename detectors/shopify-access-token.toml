@@ -27,3 +27,7 @@ description = "Shopify custom app access token"
 # NOTE: live verification disabled. `{{shop}}` was never defined as a
 # capture group or companion. kimi-wave3 §1. To re-enable, add a
 # companion `shop` constrained to actual store handles.
+
+[[detector.tests]]
+test_positive = "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"
+test_negative = "shpca_short"

@@ -14,3 +14,7 @@ keywords = ["supabase", "anon", "anon key", "SUPABASE_ANON_KEY"]
 regex = "(?:SUPABASE_ANON_KEY|anon key)[=:\\s\"'']+(eyJ[a-zA-Z0-9_-]+\\.eyJ[a-zA-Z0-9_-]+\\.[a-zA-Z0-9_-]+)"
 description = "Supabase anon key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "SUPABASE_ANON_KEY=eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"
+test_negative = "SUPABASE_ANON_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

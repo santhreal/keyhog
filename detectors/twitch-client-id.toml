@@ -19,3 +19,7 @@ group = 1
 name = "twitch_client_secret"
 regex = "(?i)twitch[_\\-\\s]*client[_\\-\\s]*secret[=:\\s\\\"']+([a-z0-9]{30})"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "TWITCH client        _        - -    _        -   _   - - _   id::'=  '   \" ms2uvf52y6in49bdtvr079w81jvoa4"
+test_negative = "TWITCH client        _        - -    _        -   _   - - _   id::'=  '   \" YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

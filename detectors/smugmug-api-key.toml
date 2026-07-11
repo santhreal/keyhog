@@ -36,3 +36,7 @@ name = "smugmug-oauth-secret"
 # false-positive rate bounded.
 regex = '(?i:smug[._-]?mug)?[._-]?(?:oauth)?[._-]?secret[=:\s""]+[a-zA-Z0-9]{16,48}'
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "SMUGMUG_API_KEY=TxmLs09HULxSNfTW"
+test_negative = "SMUGMUG_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

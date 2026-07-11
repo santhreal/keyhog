@@ -19,3 +19,7 @@ group = 1
 name = "time4vps_username"
 regex = "(?:TIME4VPS_USERNAME|time4vps_username)[=:\\s\"'']+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})"
 within_lines = 3
+
+[[detector.tests]]
+test_positive = "TIME4VPS_PASSWORD\" =  \"   :\"  '= =     \"\"\"      =  \"      =\": : :'   :    :' :'   ' '      =    ==l38Q;d$kByGv"
+test_negative = "TIME4VPS_PASSWORD\" =  \"   :\"  '= =     \"\"\"      =  \"      =\": : :'   :    :' :'   ' '      =    ==YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

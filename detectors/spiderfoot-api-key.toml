@@ -14,3 +14,7 @@ keywords = ["spiderfoot", "SPIDERFOOT_API_KEY", "sf_api_key"]
 regex = "(?:spiderfoot|SPIDERFOOT|sf_)[\\s_-]*(?:api[_-]?key|token)[=:\\s\"'']+([a-zA-Z0-9_-]{20,64})"
 description = "SpiderFoot API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "spiderfoottoken=QT3EUl0GUeQm_rjcUr_T"
+test_negative = "spiderfoottoken=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

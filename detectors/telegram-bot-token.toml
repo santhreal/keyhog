@@ -29,3 +29,7 @@ equals = "true"
 [[detector.verify.metadata]]
 name = "bot_name"
 json_path = "result.username"
+
+[[detector.tests]]
+test_positive = "TELEGRAM_BOT_TOKEN=612543247:aJRI90OF9-juNtbtBMOHM7jaF-HcmtNbAnx"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

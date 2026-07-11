@@ -40,3 +40,7 @@ group = 1
 regex = "(?:TABLEAU|tableau)[._-]?(?:password|pass|pwd)[=:\\s\"'']+([a-zA-Z0-9!@#$%^&*._-]{8,})"
 description = "Tableau password"
 group = 1
+
+[[detector.tests]]
+test_positive = "tableauhost     = =   ::     : ' =   :':'\" '   \": :  '     :\"'  =\"  \" =   := ': https://bykdk.3g95t0-fowsha52wde-3d00ste1678p5eq98.9p"
+test_negative = "tableauhost     = =   ::     : ' =   :':'\" '   \": :  '     :\"'  =\"  \" =   := ': YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

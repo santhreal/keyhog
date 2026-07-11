@@ -19,3 +19,7 @@ group = 1
 regex = "(?:snapchat|SNAPCHAT)[_\\-\\s]*(?:client[_\\-\\s]*id|CLIENT[_\\-\\s]*ID)[=: \\s\"'']+([a-f0-9]{32,})"
 description = "Snapchat client ID with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "SNAPCHAT_API_KEY=a573881b385d7370d17ec84d8f8264a6f9a8d7709bc9323e8be592ba1c474c1a"
+test_negative = "SNAPCHAT_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

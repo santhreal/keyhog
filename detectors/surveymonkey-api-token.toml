@@ -25,3 +25,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "SurveyMonkey .        _      _   .      ..   _  _    ._ .._      _    .___  .  _  api     _             _        _          _   _   _ _                __ _  _      _ key             '\"  ' ' \"   \"     '      '        \"           ' \"\"    '  ''  \"\"  o2y1LDibIOSdNQZA1XyFNFSLTuKMIJn"
+test_negative = "SurveyMonkey .        _      _   .      ..   _  _    ._ .._      _    .___  .  _  api     _             _        _          _   _   _ _                __ _  _      _ key             '\"  ' ' \"   \"     '      '        \"           ' \"\"    '  ''  \"\"  YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

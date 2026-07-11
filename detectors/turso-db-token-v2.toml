@@ -30,3 +30,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "TURSOAPI TOKEN   \" ==           :':\" ' : :=  : \"    \" \":  = \"  \"    ' = \"  '  ' \" \"   ' ''   '\"  \": 'eyJU392wf3w4AmX6yLP72s_1rUYhYZWSj9UYKJLuIzr_ulMtybIjXyy1iSP1H_E74oL.eyJB8MkQam9OUqV_yYiSxd32BrO6nOEv_k6I5q_--lX8EmNFFR02589yzf7vs0EprMgUhdZ9lEWu3rKKFnBLuMnZOQBAErME.QQ8ACgDR3OdN5Irt0xYLD93NPc0bD"
+test_negative = "TURSOAPI TOKEN   \" ==           :':\" ' : :=  : \"    \" \":  = \"  \"    ' = \"  '  ' \" \"   ' ''   '\"  \": 'YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

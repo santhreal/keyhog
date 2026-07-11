@@ -13,3 +13,7 @@ keywords = ["project-", "stytch"]
 [[detector.patterns]]
 regex = 'project-[a-zA-Z0-9]{36}'
 description = "Stytch project ID (project- prefix followed by UUID)"
+
+[[detector.tests]]
+test_positive = "project-Ri8GQF7iFI1hBMUaHDOQX42iATqA8cBOO9kv"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

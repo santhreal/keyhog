@@ -19,3 +19,7 @@ group = 1
 name = "app_id"
 regex = "[0-9]{10,}"
 within_lines = 3
+
+[[detector.tests]]
+test_positive = "TIKTOK      -_   -     -      _           - -   -    _     -   access     -   -token    \"::   ' =\" :DNL9QfTsgehDL3sLMGsQBSEHc0mBjZii2Cg04YdzAlcm"
+test_negative = "TIKTOK      -_   -     -      _           - -   -    _     -   access     -   -token    \"::   ' =\" :YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

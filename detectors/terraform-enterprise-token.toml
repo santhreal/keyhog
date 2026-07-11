@@ -30,3 +30,7 @@ template = "Bearer {{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "gI0K0lFi9sRt6a.atlasv1.pjqKbeILsS9prSy4rJKA1mJkK4NG3iIsHrn4dAeHHYYvyPyGSVh8TcjSx4sgN3ONTyqGEUhq40bJJtI6OFNkZRN"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

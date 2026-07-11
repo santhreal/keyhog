@@ -24,3 +24,7 @@ group = 1
 regex = "(?:api\\.data\\.go\\.kr|data\\.go\\.kr).{0,40}serviceKey[=:]+([a-zA-Z0-9%]{30,60})"
 description = "Korea data.go.kr serviceKey in URL"
 group = 1
+
+[[detector.tests]]
+test_positive = "data.go.krapi_key kVZ1IaWiI91uDEBI6tzGKy9soXY7baXffP0dRA9FjLiH1CWx"
+test_negative = "data.go.krapi_key YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

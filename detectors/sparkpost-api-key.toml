@@ -26,3 +26,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "SPARKPOST_API_KEY=a1ef083b518e8cda65a1acb5d443e2b7"
+test_negative = "SPARKPOST_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

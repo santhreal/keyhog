@@ -38,3 +38,7 @@ group = 1
 regex = "(?:SNOWFLAKE|snowflake)[._-]?(?:role)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
 description = "Snowflake role"
 group = 1
+
+[[detector.tests]]
+test_positive = "snowflake.account=xy12345.us-east-1"
+test_negative = "snowflake.account=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

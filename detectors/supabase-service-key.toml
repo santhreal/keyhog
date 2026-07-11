@@ -19,3 +19,7 @@ group = 1
 regex = '(?:supabase|SUPABASE)[_\s]*(?:service|SERVICE)[_\s]*(?:key|KEY)[=:\s"]+(eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)'
 description = "Supabase service key from environment variable"
 group = 1
+
+[[detector.tests]]
+test_positive = "SUPABASE_SERVICE_KEY=eyJ4pWJ7Z0IaxtZTdfU2cFSSw5znAxWtf3-HfoXJeFD0bcc5zE1smwbmdPqpQ1gPjHsI7kOxEA5WbH8PikNzX8o0Re5vz1Cq4.eyJZc7Ao-7s5EiTMGSg_pwIMw4eX40ezGTXRM5kVCfTRD27wyWR53Gr2l.xpT0SzBM-TakzTkMmGBf31e6nc03sD7OX0-GwVjAshVQ_HJGhkFUMSAN3Aa8SRX"
+test_negative = "SUPABASE_SERVICE_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

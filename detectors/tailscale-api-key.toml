@@ -24,3 +24,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "tskey-api-bHbEzy1zf6wCro8yiOZ8HEFGG742OVcXgVErdxjAWQUaHqRRfdcjvAe-UZ2bOS0aRNzaoiZNmL3QqvhSyYOPeMhhlFrr7U3l"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

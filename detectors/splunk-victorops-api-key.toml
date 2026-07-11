@@ -30,3 +30,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "VICTOROPS_API_KEY=5f6ecfe44ed06debf36ca32b776b8f61a60221a3"
+test_negative = "VICTOROPS_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

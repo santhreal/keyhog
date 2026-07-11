@@ -14,3 +14,7 @@ keywords = ["threads", "THREADS", "thread_id", "THREADS_ACCESS_TOKEN"]
 regex = '''(?:threads|THREADS|thread[_-]?id|THREADS[_-]?ACCESS[_-]?TOKEN)[=:\s"\']+([a-zA-Z0-9]{100,})'''
 description = "Threads API access token with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "threadid=\":   \"   :=  '   ==\"'  =::      '\"       ' \"'\"  \"    =    :   :          '  '= '   \"  \" \"   \": 7K4lq8YH2dZbHWOzNLjPPa3mCnnalyOSJlEGrPQvurQBHIAR9Y6G1D5CEsBOITC7AbByJxV8ZjRQuFECSQ5GnqrGsRSawQJxGZLH"
+test_negative = "threadid=\":   \"   :=  '   ==\"'  =::      '\"       ' \"'\"  \"    =    :   :          '  '= '   \"  \" \"   \": YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

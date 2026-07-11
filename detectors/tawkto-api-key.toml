@@ -24,3 +24,7 @@ group = 1
 name = "tawkto_credentials_pair"
 regex = "(?i)(?:TAWK|TAWKTO|TAWK_TO)[_\\s]?(?:api_key|key|token|property_id|site_id)[=:\\s\"'']+[a-f0-9]{20,}"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "TAWK_TOTOKEN=6c452aaae4137a470868ddf5d894d06d"
+test_negative = "TAWK_TOTOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

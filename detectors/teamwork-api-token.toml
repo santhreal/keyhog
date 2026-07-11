@@ -25,3 +25,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "TEAMWORK_API_TOKEN=Br3i8EE3pYXqvoXwCoXB"
+test_negative = "TEAMWORK_API_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

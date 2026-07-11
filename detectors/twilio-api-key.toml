@@ -50,3 +50,7 @@ json_path = "friendly_name"
 [[detector.verify.metadata]]
 name = "status"
 json_path = "status"
+
+[[detector.tests]]
+test_positive = "TWILIO_API_KEY=SK3d5f7b9c1e2a4d6f8b0c2e4a6d8f1b3c\nTWILIO_API_SECRET=7a2c4e6f8b1d3a5c7e9f2b4d6a8c1e3f"
+test_negative = "TWILIO_API_KEY=SK3d5f7b9c1e2a4d6f8b0c2e4a6d8f1b3c"

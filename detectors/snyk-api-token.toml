@@ -26,3 +26,7 @@ template = "token {{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "SNYK_TOKEN=01234567-89ab-cdef-0123-456789abcdef"
+test_negative = "SNYK_TOKEN=not-a-uuid"

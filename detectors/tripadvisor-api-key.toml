@@ -19,3 +19,7 @@ group = 1
 regex = "(?:TRIPADVISOR|tripadvisor)[=:\\s\"'']+([A-Za-z0-9_-]{32,64})"
 description = "TripAdvisor API key generic format with context"
 group = 1
+
+[[detector.tests]]
+test_positive = "trip_advisor=aedf902ad3666643f5392685a7ca4a50"
+test_negative = "trip_advisor=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

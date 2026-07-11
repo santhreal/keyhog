@@ -19,3 +19,7 @@ group = 1
 regex = "Authorization:\\s*[Bb]earer\\s+([a-zA-Z0-9]{30,})[^\\n]*strapi"
 description = "Strapi bearer token with context"
 group = 1
+
+[[detector.tests]]
+test_positive = "STRAPI_API_TOKEN=OrJrppxooyD3eXgeGAD6"
+test_negative = "STRAPI_API_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

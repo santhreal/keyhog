@@ -14,3 +14,7 @@ keywords = ["thehive", "THEHIVE_API_KEY", "hive_api_key"]
 regex = "(?:thehive|THEHIVE|hive)[\\s_-]*(?:api[_-]?key|key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,64})"
 description = "TheHive API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "thehivekey=RZZb2fgi8yCQFuZNb2lJ"
+test_negative = "thehivekey=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

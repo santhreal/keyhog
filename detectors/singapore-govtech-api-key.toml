@@ -24,3 +24,7 @@ group = 1
 regex = "(?:SG-API|SG_API|sg-api)[\\s\"''=:]+([a-zA-Z0-9]{32,48})"
 description = "Singapore Government API key"
 group = 1
+
+[[detector.tests]]
+test_positive = "SINGAPORE_GOVTECH_API_KEY=PDsuJtQ1j69J6nI4deWgxnRlCTHmcYgbmcRfsLA4"
+test_negative = "SINGAPORE_GOVTECH_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

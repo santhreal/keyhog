@@ -34,3 +34,7 @@ group = 1
 name = "Transifex API Password/Token"
 regex = "(?:TRANSIFEX|TRANSIFEX_API)[_\\s]?PASSWORD[=:\\s\"'']+([a-zA-Z0-9_-]{40,})"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "TRANSIFEX_APIAPI KEY=:=  fVhbDg-4JFCsChNTF3Orb3eHG4rmKVZVLSp3B961_xO02X6O3vo_9cpuqmzYJvqEy"
+test_negative = "TRANSIFEX_APIAPI KEY=:=  YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
