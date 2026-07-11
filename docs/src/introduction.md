@@ -8,7 +8,7 @@ credentials.
 $ keyhog scan .
     K E Y H O G
     ───────────
-    v0.5.40 · secret scanner · 920 detectors
+    v0.5.40 · secret scanner · 923 detectors
     by santh
 
   ┌    CRITICAL ─── Stripe Secret Key
@@ -36,9 +36,11 @@ has:
 - an **entropy score** + **confidence**
 - an optional **live verification** result if you pass `--verify`
 
-The list of detectors ships in TOML files under `detectors/`. There are 920
-of them today, covering ~750 distinct services. Anyone can add or override
-them without touching Rust code.
+The detector corpus ships as TOML files under `detectors/`. Run
+`keyhog detectors --format json` to inspect the exact corpus embedded in the
+installed binary. A custom `--detectors <DIR>` selects an explicit replacement
+corpus, so detector policy can change without changing scanner code and without
+a hidden merge with embedded rules.
 
 ## What it doesn't do
 
@@ -70,10 +72,12 @@ Three things, in order of how much they matter:
    reversed via Caesar cipher). If a shape isn't in the suite, the
    detector isn't shipped.
 
-3. **Speed.** Hyperscan SIMD prefilter, AVX-512 entropy gate, GPU
-   literal scan for big workloads. A million-LOC monorepo scans in
-   under three minutes on a modern laptop without warming any caches.
-   Pre-commit incremental scans are sub-100 ms.
+3. **Speed.** Hyperscan SIMD prefilter, vectorized entropy, and a GPU
+   region-presence route can accelerate different workloads. The winning route
+   depends on the binary, detector/config digest, source shape, candidate
+   density, cache state, CPU, GPU, driver, and storage. KeyHog records
+   fastest-correct calibration for the installed host instead of treating a
+   benchmark from another machine as a routing threshold.
 
 ## Get going
 
