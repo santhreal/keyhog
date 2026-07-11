@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="KeyHog">
+  <rect width="64" height="64" rx="15" fill="#0a0a0a"/>
+  <path d="M18 11v42h9V38l4-4 11 19h11L37 28l15-17H41L27 27V11z" fill="#f5c518"/>
+  <path d="M8 47h48" stroke="#fff" stroke-opacity=".18" stroke-width="2"/>
+</svg>

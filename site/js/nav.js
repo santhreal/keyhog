@@ -1,6 +1,69 @@
 // keyhog docs — sidebar active state, copy buttons, catalog filter.
 
 (function () {
+  // Compact mobile navigation. The sidebar remains a normal in-flow document
+  // when JavaScript is unavailable; enhancement hides it behind this control.
+  const siteHeader = document.querySelector('header.site');
+  const topNav = siteHeader && siteHeader.querySelector('nav.top');
+  const sidebar = document.querySelector('aside.sidebar');
+  if (siteHeader && topNav && sidebar) {
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'nav-toggle';
+    toggle.textContent = 'Menu';
+    toggle.setAttribute('aria-controls', 'site-sidebar');
+    toggle.setAttribute('aria-expanded', 'false');
+    sidebar.id = 'site-sidebar';
+    siteHeader.insertBefore(toggle, topNav);
+    document.documentElement.classList.add('nav-enhanced');
+
+    const closeNav = () => {
+      document.documentElement.classList.remove('nav-open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.textContent = 'Menu';
+    };
+    toggle.addEventListener('click', () => {
+      const open = document.documentElement.classList.toggle('nav-open');
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.textContent = open ? 'Close' : 'Menu';
+    });
+    sidebar.addEventListener('click', event => {
+      if (event.target.closest('a')) closeNav();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') closeNav();
+    });
+    document.addEventListener('click', event => {
+      if (!document.documentElement.classList.contains('nav-open')) return;
+      if (!sidebar.contains(event.target) && !toggle.contains(event.target)) closeNav();
+    });
+  }
+
+  // Subtle entrance motion for the product surface. Content stays visible when
+  // JavaScript is unavailable, and CSS disables motion for reduced-motion users.
+  const revealTargets = document.querySelectorAll(
+    '.hero > *, .terminal-shell, .stats, main.content h2, .card'
+  );
+  if (revealTargets.length && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.documentElement.classList.add('motion-ready');
+    const revealObserver = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('is-visible');
+        revealObserver.unobserve(entry.target);
+      });
+    }, { rootMargin: '0px 0px -7% 0px', threshold: 0.08 });
+    revealTargets.forEach((node, index) => {
+      // Never blank or fade the initial viewport. Motion below the fold starts
+      // only when the element approaches the viewport.
+      if (node.getBoundingClientRect().top >= window.innerHeight * 1.05) {
+        node.classList.add('reveal');
+        node.style.transitionDelay = Math.min(index % 6, 3) * 55 + 'ms';
+        revealObserver.observe(node);
+      }
+    });
+  }
+
   // Highlight the active page in the sidebar.
   const path = location.pathname.split('/').pop() || 'index.html';
   document.querySelectorAll('aside.sidebar a').forEach(a => {

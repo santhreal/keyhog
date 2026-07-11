@@ -74,6 +74,7 @@ SHELL = """<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title} · keyhog</title>
   <meta name="description" content="{description}">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/style.css">
 {extra_head}</head>
 <body>
