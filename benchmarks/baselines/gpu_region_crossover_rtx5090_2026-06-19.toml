@@ -8,6 +8,7 @@ payload = "benign-sparse"
 command = "cargo test --release -p keyhog-scanner --test backend_crossover_sweep backend_crossover_sweep -- --ignored --nocapture"
 max_measured_mib = 64
 first_gpu_win_mib = 0
+notes = "HISTORICAL, NOT ROUTING EVIDENCE. This baseline predates the production-window parity-safe crossover gate and must not select a backend. Use gpu_8mib_crossover_rtx5090_2026-07-10.toml."
 
 [[points]]
 mib = 1
