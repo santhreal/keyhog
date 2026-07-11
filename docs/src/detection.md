@@ -7,10 +7,11 @@ the other. In between, four stages:
 files → [chunker] → [prefilter] → [detector match] → [post-process] → findings
 ```
 
-Each stage is a hard filter - if a chunk fails the prefilter, no
-detector ever runs on it. That's where the speed comes from: the
-expensive regex evaluation only sees chunks that already plausibly
-contain something.
+Most chunks that fail the cheap prefilter stop there, which keeps full regex
+evaluation focused on plausible inputs. This is not an unconditional hard drop:
+a rejected chunk that looks encoded can enter a bounded decode-only recovery
+pass, so an encoded secret is not lost merely because its plaintext anchor is
+absent from the original bytes.
 
 ## Detection mechanisms
 
@@ -75,13 +76,16 @@ Specialized chunkers run too:
 Three gates, in order, each cheaper than the next:
 
 1. **Alphabet screen.** A 256-bit mask of which bytes the corpus's
-   detectors care about. If a chunk doesn't contain ANY byte in the
-   mask, it's discarded. Most random-binary chunks fail here.
+   detectors care about. A chunk with no relevant byte becomes a prefilter miss.
 
 2. **Bigram bloom.** A 4096-bit bloom filter of 2-byte sequences from
-   detector keyword prefixes. If a chunk has no overlapping bigram,
-   discard. Catches the "this is a Go source file with no `key=`
-   anywhere" case in microseconds.
+   detector keyword prefixes. A chunk with no overlapping bigram becomes a
+   prefilter miss. This cheaply recognizes source that carries no relevant
+   anchor vocabulary.
+
+After these screens, ordinary misses stop. Decode-shaped misses instead take
+the bounded decode-only path described above; transformed plaintext is then
+attributed back to the original source.
 
 3. **SIMD prefilter (`simd-regex`).** A multi-pattern trigger scanner.
    When the `simd` feature is compiled, the detector corpus is also compiled
@@ -169,14 +173,11 @@ A finding that survives stage 4 makes it to output.
 
 ## Where the speed comes from
 
-| Stage             | Throughput on a modern laptop |
-|-------------------|-------------------------------|
-| Chunker           | ~5 GB/s (mmap + magic-byte sniff) |
-| Alphabet screen   | ~12 GB/s (256-bit table lookup, vectorized) |
-| Bigram bloom      | ~8 GB/s (4096-bit table, vectorized) |
-| `simd-regex` trigger scan | Host- and corpus-dependent; calibration measures the installed Hyperscan path |
-| Per-detector regex | ~150 MB/s × detectors flagged |
-| Post-process      | ~200 MB/s |
+The alphabet screen and bigram bloom reject irrelevant chunks before regex
+confirmation. Literal triggers narrow the active detector set, and the scanner
+shares confirmation, suppression, and reporting tails across CPU and GPU
+backends. Windowing bounds scratch space for large inputs; caches avoid repeated
+compiler and index work.
 
 End-to-end throughput depends on the detector/config digest, source shape,
 candidate density, decoding and verification policy, cache state, CPU, GPU,
