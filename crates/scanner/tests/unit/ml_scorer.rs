@@ -1,12 +1,29 @@
 use keyhog_core::ScanConfig;
 use keyhog_scanner::entropy::{shannon_entropy, VERY_HIGH_ENTROPY_THRESHOLD};
 use keyhog_scanner::ml_scorer::score_with_config;
-use keyhog_scanner::testing::compute_features_public;
+use keyhog_scanner::testing::{
+    compute_features_public, ml_unique_bigram_stats, ML_BIGRAM_BITSET_WORDS,
+};
 
 const FILE_TYPE_OFFSET: usize = 32;
 const CONFIG_FILE_TYPE_INDEX: usize = FILE_TYPE_OFFSET;
 const CI_FILE_TYPE_INDEX: usize = FILE_TYPE_OFFSET + 2;
 const VERY_HIGH_ENTROPY_FEATURE_INDEX: usize = 7;
+
+#[test]
+fn ml_bigram_bitset_covers_every_possible_bigram() {
+    assert_eq!(ML_BIGRAM_BITSET_WORDS, 1024);
+    let max_idx = (0xFFusize << 8) | 0xFF;
+    assert!(max_idx / 64 < ML_BIGRAM_BITSET_WORDS);
+}
+
+#[test]
+fn ml_bigram_stats_count_distinct_windows() {
+    assert_eq!(ml_unique_bigram_stats(b"abcd"), (3, 3));
+    assert_eq!(ml_unique_bigram_stats(b"aaaa"), (1, 3));
+    assert_eq!(ml_unique_bigram_stats(b"a"), (0, 0));
+    assert_eq!(ml_unique_bigram_stats(b""), (0, 0));
+}
 
 fn test_score(text: &str, context: &str) -> f64 {
     score_with_config(

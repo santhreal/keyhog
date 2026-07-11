@@ -481,26 +481,9 @@ fn summarize_text_bytes(text_bytes: &[u8]) -> TextSummary {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bigram_bitset_covers_every_possible_bigram() {
-        // 65_536 distinct byte bigrams, 64 per u64 word.
-        assert_eq!(BIGRAM_BITSET_WORDS, 1024);
-        // The largest bigram index (0xFF,0xFF) = 65_535 must land in the buffer.
-        let max_idx = (0xFFusize << 8) | 0xFF;
-        assert!(max_idx / 64 < BIGRAM_BITSET_WORDS);
-    }
-
-    #[test]
-    fn unique_bigram_stats_counts_distinct_windows() {
-        // "abcd" -> ab, bc, cd : 3 distinct of 3 windows.
-        assert_eq!(unique_bigram_stats(b"abcd"), (3, 3));
-        // "aaaa" -> aa repeated : 1 distinct of 3 windows.
-        assert_eq!(unique_bigram_stats(b"aaaa"), (1, 3));
-        // Degenerate lengths.
-        assert_eq!(unique_bigram_stats(b"a"), (0, 0));
-        assert_eq!(unique_bigram_stats(b""), (0, 0));
-    }
+pub(crate) fn unique_bigram_stats_for_test(bytes: &[u8]) -> (usize, usize) {
+    unique_bigram_stats(bytes)
 }
+
+#[cfg(test)]
+pub(crate) const BIGRAM_BITSET_WORDS_FOR_TEST: usize = BIGRAM_BITSET_WORDS;

@@ -21,6 +21,8 @@ use std::cell::RefCell;
 mod ml_features;
 #[cfg(test)]
 pub(crate) use ml_features::compute_features_public;
+#[cfg(test)]
+pub(crate) use ml_features::{BIGRAM_BITSET_WORDS_FOR_TEST, unique_bigram_stats_for_test};
 pub use ml_features::compute_features_with_config;
 pub(crate) use ml_features::NUM_FEATURES;
 

@@ -2608,6 +2608,15 @@ pub(crate) fn compute_features_public(text: &str, context: &str) -> [f32; NUM_FE
     crate::ml_scorer::compute_features_public(text, context)
 }
 
+#[cfg(test)]
+pub(crate) fn ml_unique_bigram_stats(bytes: &[u8]) -> (usize, usize) {
+    crate::ml_scorer::unique_bigram_stats_for_test(bytes)
+}
+
+#[cfg(test)]
+pub(crate) const ML_BIGRAM_BITSET_WORDS: usize =
+    crate::ml_scorer::BIGRAM_BITSET_WORDS_FOR_TEST;
+
 /// Full feature extractor (with detector-config keyword lists) exposed for
 /// the ML training-pipeline parity harness (`ml/parity_check.py`), which
 /// must compute byte-identical features to the serve path.
