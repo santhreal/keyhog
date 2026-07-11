@@ -48,6 +48,21 @@ status = 200
 That's the whole contract for one service. Every other detector
 follows the same shape.
 
+Each shipped detector also owns a canonical positive/negative truth pair:
+
+```toml
+[[detector.tests]]
+test_positive = "STRIPE_SECRET_KEY=sk_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD"
+test_negative = "sk_live_short"
+```
+
+These are executable production-path fixtures, not documentation examples.
+The positive must surface that exact detector id and the negative must leave
+that detector silent. Keeping the pair beside the detector's patterns and
+policy makes a TOML change reviewable and independently tunable without hunting
+through a second registry. Larger adversarial, evasion, performance, and scale
+corpora remain separate because one compact pair cannot prove those contracts.
+
 ### Fields
 
 `detector.id` - kebab-case, globally unique. Shows up in JSON output

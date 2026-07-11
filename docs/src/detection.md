@@ -132,7 +132,7 @@ Detectors fall into two camps:
   secrets usually require many short tokens. The mechanisms are complementary,
   and generic detector TOMLs may own their token-efficiency ceiling through
   `bpe_max_bytes_per_token`. Opaque API-key/secret policies use the measured
-  2.2 ceiling; password/passphrase policies set `bpe_enabled = false` because
+  2.3 ceiling; password/passphrase policies set `bpe_enabled = false` because
   human-chosen credentials may intentionally be word-like. Disabled policies
   skip tokenizer work entirely rather than using a magic oversized ceiling.
 
