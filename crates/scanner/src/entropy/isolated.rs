@@ -1,18 +1,31 @@
 use super::keywords::{is_likely_innocuous_line, KeywordContext};
 use super::plausibility::is_isolated_bare_secret_plausible;
 use super::{
-    shannon_entropy, EntropyMatch, FIRST_SOURCE_LINE_NUMBER, HIGH_ENTROPY_THRESHOLD,
-    ISOLATED_BARE_ENTROPY_LABEL, MIXED_ALNUM_TOKEN_THRESHOLD,
+    operator_entropy_override, shannon_entropy, EntropyMatch, FIRST_SOURCE_LINE_NUMBER,
+    ISOLATED_BARE_ENTROPY_LABEL, KEYWORD_FREE_MIN_LEN, MIXED_ALNUM_TOKEN_THRESHOLD,
 };
 use crate::adjudicate::{EntropyShapeStage, StageId};
 
-const KEYWORD_FREE_ISOLATED_MIN_LEN: usize = 16;
+/// Shannon floor for a mixed-charset isolated token (separator-joined or
+/// contiguous). Single owner for the value both mixed-token floor predicates
+/// share; two byte-identical inline copies used to drift independently.
+const MIXED_TOKEN_ENTROPY_FLOOR: f64 = 3.65;
+
+/// Minimum length for a digit-free, symbol-bearing all-alpha opaque token
+/// (`symbolic_alpha_only_opaque_candidate`). Named beside the other isolated
+/// length floors instead of an inline literal so the shape gate has one owner.
+const SYMBOLIC_ALPHA_ONLY_MIN_LEN: usize = 18;
+/// Right-hand component of a colon-separated opaque token has a slightly shorter
+/// floor than the global keyword-free minimum so `user:token` forms where token
+/// is 16 characters can still pass.
+const COLON_RIGHT_PART_MIN_LEN: usize = 16;
 
 #[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
 pub(crate) fn has_isolated_bare_secret_candidate(
     text: &str,
     entropy_threshold: f64,
     placeholder_keywords: &[String],
+    min_len: usize,
 ) -> bool {
     // Stream `text.lines()` straight into `.any()` instead of collecting a
     // `Vec<&str>` first (Law 7: this runs twice per coalesced chunk in
@@ -21,7 +34,12 @@ pub(crate) fn has_isolated_bare_secret_candidate(
     // collected slice did, so this is byte-for-byte equivalent.
     let threshold = isolated_bare_entropy_threshold(entropy_threshold);
     text.lines()
-        .any(|line| line_has_isolated_bare_secret_candidate(line, threshold, placeholder_keywords))
+        .any(|line| line_has_isolated_bare_secret_candidate(
+            line,
+            threshold,
+            placeholder_keywords,
+            min_len
+        ))
 }
 
 #[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
@@ -29,11 +47,19 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_lines(
     lines: &[&str],
     entropy_threshold: f64,
     placeholder_keywords: &[String],
+    min_len: usize,
 ) -> bool {
     let threshold = isolated_bare_entropy_threshold(entropy_threshold);
     lines
         .iter()
-        .any(|line| line_has_isolated_bare_secret_candidate(line, threshold, placeholder_keywords))
+        .any(|line| {
+            line_has_isolated_bare_secret_candidate(
+                line,
+                threshold,
+                placeholder_keywords,
+                min_len,
+            )
+        })
 }
 
 /// Per-line predicate shared by the `&str` and `&[&str]` entry points so the
@@ -44,23 +70,26 @@ fn line_has_isolated_bare_secret_candidate(
     line: &str,
     threshold: f64,
     placeholder_keywords: &[String],
+    min_len: usize,
 ) -> bool {
     if is_likely_innocuous_line(line) {
         return false;
     }
     let mut found = false;
-    visit_isolated_bare_candidates(line, KEYWORD_FREE_ISOLATED_MIN_LEN, |candidate, _| {
+    visit_isolated_bare_candidates(line, min_len.max(1), |candidate, _| {
         found |= isolated_bare_secret_entropy(candidate, threshold, placeholder_keywords).is_some();
     });
     found
 }
 
+/// The isolated-bare floor: an opaque anchor-free token runs at the
+/// [`MIXED_ALNUM_TOKEN_THRESHOLD`] floor unless the operator's Tier-A threshold
+/// is stricter than the blanket high floor, in which case the shared
+/// [`operator_entropy_override`] owner honors it verbatim. One owner for the
+/// `> HIGH` override decision, shared with `scanner::keyword_context` — the two
+/// sites used to inline divergent copies of the same test.
 fn isolated_bare_entropy_threshold(entropy_threshold: f64) -> f64 {
-    if entropy_threshold.is_finite() && entropy_threshold > HIGH_ENTROPY_THRESHOLD {
-        entropy_threshold
-    } else {
-        MIXED_ALNUM_TOKEN_THRESHOLD
-    }
+    operator_entropy_override(entropy_threshold).unwrap_or(MIXED_ALNUM_TOKEN_THRESHOLD)
 }
 
 fn isolated_bare_entropy_floor_met(candidate: &str, entropy: f64, threshold: f64) -> bool {
@@ -75,19 +104,23 @@ fn isolated_bare_entropy_floor_met(candidate: &str, entropy: f64, threshold: f64
         || mixed_contiguous_token_floor_met(candidate, entropy)
 }
 
-pub(super) fn isolated_bare_keyword_context(entropy_threshold: f64) -> KeywordContext {
+pub(super) fn isolated_bare_keyword_context(
+    entropy_threshold: f64,
+    min_len: usize,
+) -> KeywordContext {
     KeywordContext {
         keyword: ISOLATED_BARE_ENTROPY_LABEL.to_string(),
         threshold: isolated_bare_entropy_threshold(entropy_threshold),
-        min_len: KEYWORD_FREE_ISOLATED_MIN_LEN,
+        min_len: min_len.max(1),
         is_credential_context: false,
         allow_canonical_shapes: false,
     }
 }
 
 pub(crate) fn mixed_separator_token_floor_met(candidate: &str, entropy: f64) -> bool {
-    const MIXED_SEPARATOR_TOKEN_THRESHOLD: f64 = 3.65;
-    if entropy < MIXED_SEPARATOR_TOKEN_THRESHOLD || candidate.len() < 20 || !candidate.contains('_')
+    if entropy < MIXED_TOKEN_ENTROPY_FLOOR
+        || candidate.len() < KEYWORD_FREE_MIN_LEN
+        || !candidate.contains('_')
     {
         return false;
     }
@@ -110,7 +143,10 @@ pub(crate) fn mixed_separator_token_floor_met(candidate: &str, entropy: f64) -> 
 
 pub(crate) fn lower_dash_app_password_floor_met(candidate: &str, entropy: f64) -> bool {
     const LOWER_DASH_APP_PASSWORD_THRESHOLD: f64 = 3.9;
-    if entropy < LOWER_DASH_APP_PASSWORD_THRESHOLD || candidate.len() != 19 {
+    // Four `-`-separated groups of 4 chars + 3 dashes = 19 (e.g. `a1b2-c3d4-e5f6-g7h8`).
+    const LOWER_DASH_APP_PASSWORD_LEN: usize = 19;
+    if entropy < LOWER_DASH_APP_PASSWORD_THRESHOLD || candidate.len() != LOWER_DASH_APP_PASSWORD_LEN
+    {
         return false;
     }
 
@@ -140,8 +176,7 @@ pub(crate) fn lower_dash_app_password_floor_met(candidate: &str, entropy: f64) -
 }
 
 pub(crate) fn mixed_contiguous_token_floor_met(candidate: &str, entropy: f64) -> bool {
-    const MIXED_CONTIGUOUS_TOKEN_THRESHOLD: f64 = 3.65;
-    if entropy < MIXED_CONTIGUOUS_TOKEN_THRESHOLD || candidate.len() < 20 {
+    if entropy < MIXED_TOKEN_ENTROPY_FLOOR || candidate.len() < KEYWORD_FREE_MIN_LEN {
         return false;
     }
     let mut has_upper = false;
@@ -162,6 +197,30 @@ pub(crate) fn mixed_contiguous_token_floor_met(candidate: &str, entropy: f64) ->
         && has_digit
         && !all_hex
         && crate::suppression::token_randomness::is_random_token(candidate)
+}
+
+#[allow(dead_code)] // Retained as wrapper; production uses _inner variant
+pub(super) fn collect_isolated_bare_candidates(
+    line: &str,
+    line_idx: usize,
+    line_offset: usize,
+    context: &KeywordContext,
+    seen: &mut std::collections::HashSet<String>,
+    matches: &mut Vec<EntropyMatch>,
+    placeholder_keywords: &[String],
+) {
+    if is_likely_innocuous_line(line) {
+        return;
+    }
+    collect_isolated_bare_candidates_inner(
+        line,
+        line_idx,
+        line_offset,
+        context,
+        seen,
+        matches,
+        placeholder_keywords,
+    );
 }
 
 /// Inner extraction logic without the `is_likely_innocuous_line` gate.
@@ -215,8 +274,10 @@ fn isolated_bare_secret_entropy(
 ) -> Option<f64> {
     match isolated_bare_secret_entropy_decision(candidate, threshold, placeholder_keywords) {
         Ok(entropy) => Some(entropy),
-        Err(_error) => {
-            // LAW10: test/probe adapter only; production calls the Result-returning decision helper and records typed adjudication stages.
+        Err(_stage) => {
+            // Boolean-predicate adapter: a rejection is simply "not an isolated
+            // bare secret" (None/false). The emit path calls the Result-returning
+            // decision helper directly and records the typed adjudication stage.
             None
         }
     }
@@ -249,17 +310,28 @@ fn visit_isolated_bare_candidates<'a>(
     min_len: usize,
     mut visit: impl FnMut(&'a str, usize),
 ) {
-    if let Some(candidate) = isolated_bare_candidate(line, min_len) {
-        let candidate_offset = candidate.as_ptr() as usize - line.as_ptr() as usize;
-        visit(candidate, candidate_offset);
-        return;
-    }
-
-    if !line.bytes().any(|b| b.is_ascii_whitespace()) {
-        return;
-    }
-
+    // Fast path: check for whitespace BEFORE the expensive full-line
+    // `isolated_bare_candidate` call. `isolated_bare_candidate` does
+    // `line.trim().trim_matches(...)` + length + whitespace check, which is
+    // ~3 byte passes over the full line. For multi-word lines (the common
+    // case in source code — ~99% of lines), the full-line check always
+    // returns None because the candidate has whitespace. Checking for
+    // whitespace first lets us skip straight to per-token scanning, saving
+    // ~2 byte passes per line (~24ms across 9 windows at 8 MiB).
     let bytes = line.as_bytes();
+    let has_whitespace = bytes.iter().any(|&b| b.is_ascii_whitespace());
+    if !has_whitespace {
+        if let Some(candidate) = isolated_bare_candidate(line, min_len) {
+            // SAFETY: `candidate` is returned by `isolated_bare_candidate(line, ...)`,
+            // which derives it solely from `line.trim().trim_matches(...)`. Both `trim`
+            // operations return subslices of `line`, so `candidate.as_ptr() >= line.as_ptr()`
+            // is guaranteed by the standard library's trim contract; subtraction cannot wrap.
+            let candidate_offset = candidate.as_ptr() as usize - line.as_ptr() as usize;
+            visit(candidate, candidate_offset);
+        }
+        return;
+    }
+
     let mut cursor = 0usize;
     while cursor < bytes.len() {
         while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
@@ -287,6 +359,13 @@ fn isolated_bare_candidate_in_span(
     token_end: usize,
     min_len: usize,
 ) -> Option<(&str, usize)> {
+    let token_len = token_end - token_start;
+    // Fast length reject: even without stripping `;`/`,`, if the token is
+    // shorter than min_len, no candidate from it can pass. This saves the
+    // leading/trailing strip + `isolated_bare_candidate` call for short tokens.
+    if token_len < min_len {
+        return None;
+    }
     let token = &line[token_start..token_end];
     let leading = token
         .bytes()
@@ -303,7 +382,38 @@ fn isolated_bare_candidate_in_span(
     let candidate_start = token_start + leading;
     let candidate_end = token_end - trailing;
     let candidate = &line[candidate_start..candidate_end];
+    // Per-token entropy-run prefilter using the same lookup table as the
+    // per-line scan in `scan_keyword_free_candidates`. A real secret of length
+    // ≥ min_len consists almost entirely of entropy candidate bytes. If the
+    // longest such run in the candidate is < min_len, skip the expensive
+    // `isolated_bare_candidate` + Shannon entropy computation.
+    //
+    // This is the key optimization for source-code filler: tokens like
+    // `compute_value(42)` (17 chars) have `(` and `)` breaking the entropy run,
+    // giving max_entropy_run = 13 (`compute_value`), which is < 16. Without
+    // this check, `symbolic_isolated_bare_candidate` would accept it (2
+    // non-alphanumeric graphic chars ≥ 2), and the full Shannon entropy
+    // computation would run — only to reject it for low entropy.
+    let mut max_ent_run = 0usize;
+    let mut cur_ent_run = 0usize;
+    for &b in candidate.as_bytes() {
+        if super::scanner::BYTE_CLASS[b as usize] & 2 != 0 {
+            cur_ent_run += 1;
+            if cur_ent_run > max_ent_run {
+                max_ent_run = cur_ent_run;
+            }
+        } else {
+            cur_ent_run = 0;
+        }
+    }
+    if max_ent_run < min_len {
+        return None;
+    }
     isolated_bare_candidate(candidate, min_len).map(|value| {
+        // SAFETY: `value` is a subslice of `candidate` (via str::trim/trim_matches inside
+        // `isolated_bare_candidate`), and `candidate` is `&line[candidate_start..candidate_end]`
+        // — a direct subslice of `line`. Therefore `value.as_ptr() >= line.as_ptr()` is
+        // guaranteed; subtraction cannot underflow.
         let offset = value.as_ptr() as usize - line.as_ptr() as usize;
         (value, offset)
     })
@@ -366,7 +476,7 @@ pub(crate) fn colon_separated_opaque_candidate(candidate: &str) -> bool {
     let Some((left, right)) = candidate.split_once(':') else {
         return false;
     };
-    if left.len() < 20 || right.len() < 16 {
+    if left.len() < KEYWORD_FREE_MIN_LEN || right.len() < COLON_RIGHT_PART_MIN_LEN {
         return false;
     }
     [left, right].into_iter().all(|part| {
@@ -384,7 +494,7 @@ pub(crate) fn colon_separated_opaque_candidate(candidate: &str) -> bool {
 }
 
 pub(crate) fn symbolic_alpha_only_opaque_candidate(candidate: &str) -> bool {
-    if candidate.len() < 18 || candidate.contains("://") {
+    if candidate.len() < SYMBOLIC_ALPHA_ONLY_MIN_LEN || candidate.contains("://") {
         return false;
     }
     let mut has_upper = false;
@@ -427,4 +537,37 @@ pub(crate) fn symbolic_isolated_bare_candidate(candidate: &str) -> bool {
         }
     }
     symbol_count >= 2
+}
+
+#[cfg(test)]
+mod threshold_tests {
+    use super::isolated_bare_entropy_threshold;
+    use crate::entropy::{HIGH_ENTROPY_THRESHOLD, MIXED_ALNUM_TOKEN_THRESHOLD};
+
+    /// The isolated-bare floor defaults to [`MIXED_ALNUM_TOKEN_THRESHOLD`] (4.0)
+    /// for the default 4.5 threshold, every value at or below the high floor, and
+    /// non-finite inputs; only a threshold STRICTLY above the high floor is
+    /// honored verbatim (the shared override owner). Proves the dedup preserved
+    /// the isolated site's exact resolution at every band.
+    #[test]
+    fn isolated_floor_defaults_to_mixed_and_overrides_only_above_high() {
+        assert_eq!(
+            isolated_bare_entropy_threshold(HIGH_ENTROPY_THRESHOLD),
+            MIXED_ALNUM_TOKEN_THRESHOLD
+        );
+        assert_eq!(
+            isolated_bare_entropy_threshold(4.0),
+            MIXED_ALNUM_TOKEN_THRESHOLD
+        );
+        assert_eq!(
+            isolated_bare_entropy_threshold(2.0),
+            MIXED_ALNUM_TOKEN_THRESHOLD
+        );
+        assert_eq!(
+            isolated_bare_entropy_threshold(f64::NAN),
+            MIXED_ALNUM_TOKEN_THRESHOLD
+        );
+        assert_eq!(isolated_bare_entropy_threshold(5.8), 5.8);
+        assert_eq!(isolated_bare_entropy_threshold(8.0), 8.0);
+    }
 }

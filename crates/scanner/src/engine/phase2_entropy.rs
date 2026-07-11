@@ -63,11 +63,18 @@ impl CompiledScanner {
         );
         let source_entropy_requires_same_line_credential =
             !self.config.entropy_in_source_files && source_path;
+        let generic_keyword_secret_min_len = self
+            .generic_owning_detector
+            .generic_keyword_secret_index()
+            .and_then(|index| self.detectors.get(index))
+            .and_then(|spec| spec.keyword_free_min_len)
+            .unwrap_or(crate::entropy::KEYWORD_FREE_MIN_LEN);
         let isolated_bare_candidate = !path_entropy_appropriate
             && crate::entropy::scanner::has_isolated_bare_secret_candidate_with_lines(
                 &entropy_lines,
                 self.config.entropy_threshold,
                 &self.config.placeholder_keywords,
+                generic_keyword_secret_min_len,
             );
         #[cfg(feature = "simd")]
         let lower_dash_app_password_candidate = path_entropy_appropriate

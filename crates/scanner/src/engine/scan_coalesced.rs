@@ -9,6 +9,16 @@ use super::*;
 #[cfg(feature = "simd")]
 use std::cell::RefCell;
 
+/// Upper size bound for admitting a no-phase-1-hit chunk to the keyword-free
+/// entropy fallback. A no-hit chunk larger than this that carries a bare
+/// high-entropy secret with no keyword/assignment anchor is NOT admitted to the
+/// entropy path — the bound caps the cost of the entropy scan on chunks that
+/// produced no literal trigger. Raising it trades scan time for recall on large
+/// anchorless blobs. Recall-affecting; kept beside the other engine thresholds
+/// (`MAX_INNER_LOOP_ITERS`, `BIGRAM_BLOOM_MIN_CHUNK_BYTES`).
+#[cfg(feature = "simd")]
+pub(crate) const NO_HIT_ENTROPY_ADMISSION_MAX_BYTES: usize = 32 * 1024;
+
 // The trigger-buffer pool is only used in the Hyperscan-prefilter scratch path
 // of `scan_coalesced`. The pool's win is reuse of buffers that stay inside the
 // pool; extending it to per-chunk trigger builders regressed long-lines benches.
@@ -93,24 +103,15 @@ impl CompiledScanner {
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
         if backend == crate::hw_probe::ScanBackend::SimdCpu {
             self.deny_silent_selected_backend_degrade(backend);
-            return self.scan_coalesced_simd(chunks);
+            return self.scan_coalesced(chunks);
         }
         self.scan_chunks_with_backend(chunks, backend)
     }
 
-    /// Scan a batch through the deterministic portable CPU reference backend.
-    /// Accelerated callers use [`Self::scan_coalesced_with_backend`] after
-    /// measurement; the CLI supplies its persisted fastest-correct decision.
-    pub fn scan_coalesced(&self, chunks: &[keyhog_core::Chunk]) -> Vec<Vec<keyhog_core::RawMatch>> {
-        self.scan_chunks_with_backend(chunks, crate::hw_probe::ScanBackend::CpuFallback)
-    }
-
-    /// Hyperscan coalesced implementation for an explicitly selected SIMD route.
+    /// High-throughput coalesced scan: all files scanned in parallel, zero
+    /// overhead for non-hit files.
     #[allow(clippy::needless_return)] // return needed under non-simd cfg branch
-    fn scan_coalesced_simd(
-        &self,
-        chunks: &[keyhog_core::Chunk],
-    ) -> Vec<Vec<keyhog_core::RawMatch>> {
+    pub fn scan_coalesced(&self, chunks: &[keyhog_core::Chunk]) -> Vec<Vec<keyhog_core::RawMatch>> {
         use rayon::prelude::*;
 
         #[cfg(not(feature = "simd"))]
@@ -232,10 +233,16 @@ impl CompiledScanner {
             return true;
         }
         let data = text.as_bytes();
-        let small_chunk = text.len() <= 32 * 1024;
+        let small_chunk = text.len() <= NO_HIT_ENTROPY_ADMISSION_MAX_BYTES;
+        let generic_keyword_secret_min_len = self
+            .generic_owning_detector
+            .generic_keyword_secret_index()
+            .and_then(|index| self.detectors.get(index))
+            .and_then(|spec| spec.keyword_free_min_len)
+            .unwrap_or(crate::entropy::KEYWORD_FREE_MIN_LEN);
         #[cfg(feature = "multiline")]
         if crate::multiline::has_concatenation_indicators(text) {
-            if self.generic_assignment.stems.contains(data) || has_secret_keyword_fast(data) {
+            if has_generic_assignment_keyword(data) || has_secret_keyword_fast(data) {
                 return true;
             }
             if small_chunk && self.config.entropy_enabled {
@@ -243,6 +250,7 @@ impl CompiledScanner {
                     text,
                     self.config.entropy_threshold,
                     &self.config.placeholder_keywords,
+                    generic_keyword_secret_min_len,
                 ) {
                     return true;
                 }
@@ -260,9 +268,10 @@ impl CompiledScanner {
                     text,
                     self.config.entropy_threshold,
                     &self.config.placeholder_keywords,
+                    generic_keyword_secret_min_len,
                 ));
         small_chunk
-            && (self.generic_assignment.stems.contains(data)
+            && (has_generic_assignment_keyword(data)
                 || has_secret_keyword_fast(data)
                 || entropy_admits)
     }

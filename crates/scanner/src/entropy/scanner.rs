@@ -238,7 +238,7 @@ pub(crate) fn find_entropy_secrets_with_canonical_lift_and_lines(
     // on sensitive paths (a recall boost), and a Tier-A operator can RAISE it for
     // a stricter scan. A second spec read here silently clobbered both — a dead
     // knob (WIRING) and a lost sensitive-file recall boost.
-    debug_assert!(
+    assert!(
         line_offsets.len() >= lines.len(),
         "entropy line offsets must cover every split line"
     );
@@ -316,7 +316,7 @@ pub(crate) fn find_entropy_secrets_with_precomputed_keywords_and_policy(
     allow_canonical_lift: bool,
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) -> Vec<EntropyMatch> {
-    debug_assert!(
+    assert!(
         line_offsets.len() >= lines.len(),
         "entropy line offsets must cover every split line"
     );
@@ -479,6 +479,9 @@ fn scan_keyword_free_candidates(
     let keyword_free_min_len = spec
         .and_then(|s| s.keyword_free_min_len)
         .unwrap_or(KEYWORD_FREE_MIN_LEN);
+    let generic_keyword_secret_min_len = get_spec(active_policy, crate::detector_ids::GENERIC_KEYWORD_SECRET)
+        .and_then(|s| s.keyword_free_min_len)
+        .unwrap_or(KEYWORD_FREE_MIN_LEN);
     let keyword_free_context = KeywordContext {
         keyword: KEYWORD_FREE_LABEL.to_string(),
         threshold: effective_keyword_free_threshold,
@@ -489,35 +492,16 @@ fn scan_keyword_free_candidates(
         // regardless of model authority. The lift is anchor-gated.
         allow_canonical_shapes: false,
     };
-    // PER-DETECTOR-MIGRATION-BLOCKED: isolated_bare_keyword_context is defined in isolated.rs and acts on unattributed bare/isolated tokens.
-    let isolated_token_context = isolated_bare_keyword_context(entropy_threshold);
+    let isolated_token_context = isolated_bare_keyword_context(
+        entropy_threshold,
+        generic_keyword_secret_min_len,
+    );
     let isolated_min_len = isolated_token_context.min_len;
-    // Dogfood traces must observe candidates rejected inside extraction. Cache
-    // the per-scan capability once so normal scans keep the length prefilter
-    // without paying an atomic/thread-local lookup for every line.
-    let dogfood_enabled = crate::telemetry::is_dogfood_enabled();
-    let mut previous_scanned_line: Option<&str> = None;
     for (line_idx, line) in lines.iter().enumerate() {
         if let Some(skip) = skip_lines {
             if skip.contains(&line_idx) {
                 continue;
             }
-        }
-        // The output contract already deduplicates entropy candidates by value
-        // through `seen`. An adjacent byte-identical line therefore cannot add
-        // a finding after the first copy, but re-running its innocuous checks,
-        // byte classification, extraction, entropy, and shape gates is costly
-        // in generated source and repeated log/config blocks. Exact `str`
-        // equality keeps this recall-safe without a hash-collision cache or an
-        // unbounded per-chunk memo table. Do this after `skip_lines`: a skipped
-        // first copy must not suppress the next eligible copy. Dogfood mode
-        // deliberately keeps every occurrence so its suppression counts remain
-        // an occurrence-level diagnostic rather than an output-level count.
-        if !dogfood_enabled {
-            if previous_scanned_line == Some(*line) {
-                continue;
-            }
-            previous_scanned_line = Some(line);
         }
         // Single innocuous check for both paths (was called twice, once per
         // collect function). This is the single biggest per-line CPU saving
@@ -593,11 +577,21 @@ fn scan_keyword_free_candidates(
         // `cleaned.len() < keyword_free_min_len`. A candidate of length ≥
         // keyword_free_min_len that is a plausible secret consists entirely of
         // entropy candidate bytes, so max_entropy_run ≥ keyword_free_min_len
-        // is a necessary condition. Skip extraction for lines without it during
-        // normal scans. Dogfood scans still enter extraction so line-level
-        // rejection stages (which can precede the candidate length check) are
-        // recorded instead of disappearing behind this optimization.
-        if has_trigger && (dogfood_enabled || max_entropy_run >= keyword_free_min_len) {
+        // is a necessary condition. Skip extraction for lines without it.
+        //
+        // DOGFOOD EXEMPTION: when dogfood telemetry is enabled, we must still
+        // process triggered lines with short entropy runs because
+        // `extract_candidates_internal` records line-level rejections (e.g.
+        // `ConcatenationFragmentLine`) BEFORE the per-candidate length check.
+        // Skipping such lines would lose suppression events that are visible
+        // to the dogfood pipeline. The prefilter only applies in production
+        // (dogfood disabled) where suppression events are not recorded.
+        let keyword_free_admit = if crate::telemetry::is_dogfood_enabled() {
+            has_trigger
+        } else {
+            has_trigger && max_entropy_run >= keyword_free_min_len
+        };
+        if keyword_free_admit {
             collect_line_candidates_inner(
                 line,
                 line_idx,
@@ -1039,6 +1033,23 @@ fn compact_keyword_contains(keyword: &str, needle: &[u8]) -> bool {
     false
 }
 
+pub(crate) fn keyword_context(
+    keyword_line: &str,
+    min_length: usize,
+    entropy_threshold: f64,
+    secret_keywords: &[String],
+    allow_canonical_lift: bool,
+) -> KeywordContext {
+    keyword_context_with_policy(
+        keyword_line,
+        min_length,
+        entropy_threshold,
+        secret_keywords,
+        allow_canonical_lift,
+        None,
+    )
+}
+
 fn keyword_context_with_policy(
     keyword_line: &str,
     min_length: usize,
@@ -1081,10 +1092,14 @@ fn keyword_context_with_policy(
         .and_then(|s| s.entropy_high)
         .unwrap_or(HIGH_ENTROPY_THRESHOLD);
 
-    // Keyword-anchored floor policy. The active detector owns its low/high
-    // entropy bands in TOML; the Tier-A operator threshold can only tighten the
-    // detector's high band. Otherwise a finite request may loosen the detector's
-    // recall-oriented low band, while non-finite input resolves to that low band.
+    // Keyword-anchored floor policy — a NAMED, tested rule, not a silent clamp.
+    // Inside a credential-keyword context the keyword IS the positive evidence,
+    // so the entropy bar is the LOW floor. The operator's Tier-A threshold
+    // engages only when it is stricter than the blanket HIGH floor — that shared
+    // decision lives in one owner, `operator_entropy_override` (see its doc). It
+    // is honored verbatim when it overrides; otherwise the keyword floor is
+    // `min(threshold, LOW)` for a finite request (a below-LOW request may still
+    // loosen the recall-oriented keyword path) and LOW for a non-finite one.
     let operator_override = (entropy_threshold.is_finite() && entropy_threshold > entropy_high)
         .then_some(entropy_threshold);
     let base_threshold = operator_override.unwrap_or_else(|| {
