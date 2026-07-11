@@ -12,8 +12,15 @@
 mod support;
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{CompiledScanner, ScanBackend};
-use support::paths::detector_dir;
+use keyhog_scanner::ScanBackend;
+use support::compile_full_detector_scanner;
+
+fn backends() -> Vec<ScanBackend> {
+    let mut backends = vec![ScanBackend::SimdCpu, ScanBackend::CpuFallback];
+    #[cfg(feature = "gpu")]
+    backends.extend([ScanBackend::Gpu, ScanBackend::MegaScan]);
+    backends
+}
 
 fn make_chunk(text: &str, path: &str, base_offset: usize) -> Chunk {
     Chunk {
@@ -29,120 +36,56 @@ fn make_chunk(text: &str, path: &str, base_offset: usize) -> Chunk {
 
 #[test]
 fn empty_chunk_all_backends_produce_zero_findings() {
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors directory unavailable: {e}");
-            return;
-        }
-    };
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let scanner = compile_full_detector_scanner();
 
     let empty_chunk = make_chunk("", "empty.txt", 0);
 
-    let backends = [
-        ScanBackend::SimdCpu,
-        ScanBackend::CpuFallback,
-        ScanBackend::Gpu,
-        ScanBackend::MegaScan,
-    ];
-
-    for backend in backends {
+    for backend in backends() {
+        scanner.clear_fragment_cache();
+        let degrade_before = scanner.runtime_status().gpu_degrade_count;
         let results = scanner.scan_chunks_with_backend(&[empty_chunk.clone()], backend);
-        let total_findings: usize = results.iter().map(|chunk| chunk.len()).sum();
+        let degrade_after = scanner.runtime_status().gpu_degrade_count;
 
-        // Empty input should produce zero findings on every backend.
-        assert_eq!(
-            total_findings, 0,
-            "Empty chunk on {backend:?} produced {total_findings} findings (expected 0)"
-        );
+        assert_eq!(results, vec![Vec::new()], "empty chunk on {backend:?}");
+        assert_eq!(degrade_after, degrade_before, "{backend:?} degraded");
     }
 }
 
 #[test]
 fn whitespace_only_chunk_all_backends_produce_zero_findings() {
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors directory unavailable: {e}");
-            return;
-        }
-    };
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let scanner = compile_full_detector_scanner();
 
     let whitespace_chunk = make_chunk("   \n\t\n   \r\n   ", "whitespace.txt", 0);
 
-    let backends = [
-        ScanBackend::SimdCpu,
-        ScanBackend::CpuFallback,
-        ScanBackend::Gpu,
-        ScanBackend::MegaScan,
-    ];
-
-    let mut failures = Vec::new();
-    scanner.clear_fragment_cache();
-    let simd_results =
-        scanner.scan_chunks_with_backend(&[whitespace_chunk.clone()], ScanBackend::SimdCpu);
-    let simd_count: usize = simd_results.iter().map(|chunk| chunk.len()).sum();
-
-    for backend in &backends[1..] {
+    for backend in backends() {
         scanner.clear_fragment_cache();
-        let results = scanner.scan_chunks_with_backend(&[whitespace_chunk.clone()], *backend);
-        let count: usize = results.iter().map(|chunk| chunk.len()).sum();
-
-        if count != simd_count {
-            failures.push(format!(
-                "[whitespace/{backend:?}] count mismatch: simd={simd_count} got={count}"
-            ));
-        }
+        let degrade_before = scanner.runtime_status().gpu_degrade_count;
+        let results = scanner.scan_chunks_with_backend(&[whitespace_chunk.clone()], backend);
+        let degrade_after = scanner.runtime_status().gpu_degrade_count;
+        assert_eq!(results, vec![Vec::new()], "whitespace chunk on {backend:?}");
+        assert_eq!(degrade_after, degrade_before, "{backend:?} degraded");
     }
-
-    assert!(
-        failures.is_empty(),
-        "whitespace-only chunk parity failures:\n  - {}",
-        failures.join("\n  - ")
-    );
 }
 
 #[test]
-fn single_byte_chunk_no_panic_all_backends() {
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors directory unavailable: {e}");
-            return;
-        }
-    };
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+fn single_byte_chunk_is_empty_on_all_backends_without_degrade() {
+    let scanner = compile_full_detector_scanner();
 
     let single_byte_chunk = make_chunk("x", "one.txt", 0);
 
-    let backends = [
-        ScanBackend::SimdCpu,
-        ScanBackend::CpuFallback,
-        ScanBackend::Gpu,
-        ScanBackend::MegaScan,
-    ];
-
-    for backend in backends {
+    for backend in backends() {
         scanner.clear_fragment_cache();
-        // Should not panic on single-byte input.
+        let degrade_before = scanner.runtime_status().gpu_degrade_count;
         let results = scanner.scan_chunks_with_backend(&[single_byte_chunk.clone()], backend);
-        let _total_findings: usize = results.iter().map(|chunk| chunk.len()).sum();
-        // No assertion on finding count; just verify no panic.
+        let degrade_after = scanner.runtime_status().gpu_degrade_count;
+        assert_eq!(results, vec![Vec::new()], "single byte on {backend:?}");
+        assert_eq!(degrade_after, degrade_before, "{backend:?} degraded");
     }
 }
 
 #[test]
 fn mixed_empty_and_nonempty_chunks_coalesced_dispatch_parity() {
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors directory unavailable: {e}");
-            return;
-        }
-    };
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let scanner = compile_full_detector_scanner();
 
     // Mix of empty and non-empty chunks in a single batch.
     let chunks = vec![
@@ -157,34 +100,22 @@ fn mixed_empty_and_nonempty_chunks_coalesced_dispatch_parity() {
         ),
     ];
 
-    let backends = [
-        ScanBackend::SimdCpu,
-        ScanBackend::CpuFallback,
-        ScanBackend::Gpu,
-        ScanBackend::MegaScan,
-    ];
-
     scanner.clear_fragment_cache();
     let simd_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu);
-    let simd_counts: Vec<usize> = simd_results.iter().map(|chunk| chunk.len()).collect();
-
-    let mut failures = Vec::new();
-    for backend in &backends[1..] {
-        scanner.clear_fragment_cache();
-        let results = scanner.scan_chunks_with_backend(&chunks, *backend);
-        let counts: Vec<usize> = results.iter().map(|chunk| chunk.len()).collect();
-
-        if counts != simd_counts {
-            failures.push(format!(
-                "[mixed/{backend:?}] per-chunk count mismatch: \
-                 simd={simd_counts:?} got={counts:?}"
-            ));
-        }
-    }
-
     assert!(
-        failures.is_empty(),
-        "mixed empty/non-empty chunk parity failures:\n  - {}",
-        failures.join("\n  - ")
+        simd_results.iter().flatten().next().is_some(),
+        "mixed reference must contain a real finding"
     );
+
+    for backend in backends().into_iter().skip(1) {
+        scanner.clear_fragment_cache();
+        let degrade_before = scanner.runtime_status().gpu_degrade_count;
+        let results = scanner.scan_chunks_with_backend(&chunks, backend);
+        let degrade_after = scanner.runtime_status().gpu_degrade_count;
+        assert_eq!(
+            results, simd_results,
+            "{backend:?} must preserve complete findings and per-chunk grouping"
+        );
+        assert_eq!(degrade_after, degrade_before, "{backend:?} degraded");
+    }
 }
