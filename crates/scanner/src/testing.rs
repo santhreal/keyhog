@@ -3567,6 +3567,11 @@ pub fn hyperscan_oversubscribed_match_ids_are_stable(
     }
 }
 
+#[cfg(feature = "gpu")]
+pub fn finite_gpu_scores_for_test(scores: &[f32]) -> Result<Vec<f64>, usize> {
+    crate::gpu::finite_gpu_scores_for_test(scores)
+}
+
 #[cfg(all(test, feature = "simd"))]
 pub(crate) fn cache_dir_under_allowed_root(
     path: &std::path::Path,

@@ -33,6 +33,10 @@ mod gpu_shader;
 #[cfg(feature = "gpu")]
 mod backend;
 
+pub(crate) fn finite_gpu_scores_for_test(scores: &[f32]) -> Result<Vec<f64>, usize> {
+    backend::finite_gpu_scores(scores)
+}
+
 mod policy;
 pub use policy::*;
 mod self_test;

@@ -332,10 +332,10 @@ this scan are scored on the CPU MoE (identical scores, lower throughput). Set \
 /// Surface NaN / ±Inf scores returned by the GPU MoE staging buffer. A
 /// non-finite probability is not a routing choice — it can only come from a GPU
 /// driver bug, a shader miscompile, or a corrupt weights buffer, i.e. a GPU
-/// CORRECTNESS fault. Each bad value is sanitized to a neutral `0.5` at the GPU
-/// boundary (so downstream `confidence` math never sees NaN and the finding
-/// still surfaces on its heuristic score), but Law 10 forbids doing that
-/// silently: the operator must be told their GPU produced garbage. Gating
+/// CORRECTNESS fault. The whole GPU score vector is rejected so the caller
+/// recomputes byte-identical CPU MoE scores; downstream confidence never sees
+/// NaN and GPU/CPU finding parity is preserved. The operator is told their GPU
+/// produced garbage. Gating
 /// mirrors [`moe_runtime_degrade`] — hard-fail under `--require-gpu` (a GPU
 /// emitting NaN is exactly the malfunction that flag exists to catch), one loud
 /// stderr line on an ordinary run, and quiet under `--no-gpu` where the CPU MoE
@@ -347,7 +347,7 @@ fn moe_nonfinite_degrade(nonfinite: usize, total: usize) {
         crate::process_exit::require_gpu_unmet(format!(
             "--require-gpu requested but the GPU MoE returned {nonfinite}/{total} \
 non-finite (NaN/Inf) confidence score(s) — a GPU driver/shader/weights malfunction. \
-Refusing to silently sanitize and continue."
+Refusing to continue with invalid accelerator output."
         ));
     }
     if no_gpu {
@@ -356,13 +356,13 @@ Refusing to silently sanitize and continue."
     tracing::error!(
         nonfinite,
         total,
-        "GPU MoE produced non-finite confidence scores; scores were sanitized to neutral 0.5"
+        "GPU MoE produced non-finite confidence scores; routing the batch to CPU MoE"
     );
     if !MOE_NONFINITE_WARNED.swap(true, Ordering::Relaxed) {
         eprintln!(
             "keyhog: GPU MoE produced {nonfinite}/{total} non-finite (NaN/Inf) confidence \
-score(s); each was sanitized to a neutral 0.5 so the finding still surfaces on its \
-heuristic score, but this indicates a GPU driver/shader/weights bug worth investigating. \
+score(s); the entire batch is being recomputed on the CPU MoE to preserve exact \
+finding parity. This indicates a GPU driver/shader/weights bug worth investigating. \
 Use --no-gpu to score on the CPU MoE, or --require-gpu to hard-fail next time."
         );
     }
@@ -438,7 +438,7 @@ pub(crate) fn batch_score_features(
 }
 
 /// Raw GPU MoE dispatch: upload features, run the compute shader, read back and
-/// sanitize the per-candidate scores. Split out of [`batch_score_features`] so
+/// validate the per-candidate scores. Split out of [`batch_score_features`] so
 /// the parity self-test ([`gpu_moe_parity_max_divergence`]) can exercise the
 /// exact production dispatch without re-entering the trustworthiness gate (which
 /// would recurse). Callers own the size/policy/trust guards.
@@ -611,43 +611,28 @@ fn dispatch_moe_batch(
         staging_buf.unmap();
         return None;
     }
-    // kimi-confidence audit: a GPU driver bug, shader miscompile, or
-    // adversarial weights buffer can produce NaN/Inf in the f32
-    // staging buffer. The previous flow forwarded those values
-    // verbatim into the confidence pipeline, where `.clamp(0, 1)`
-    // does NOT sanitize NaN (Rust f64::clamp leaves NaN as NaN),
-    // and the NaN propagated all the way to SARIF `confidence: NaN`.
-    // Sanitize at the GPU boundary so every downstream consumer
-    // sees a finite probability in [0, 1].
-    let mut nonfinite = 0usize;
-    let result: Vec<f64> = scores
-        .iter()
-        .map(|&s| {
-            let v = s as f64;
-            if v.is_finite() {
-                v.clamp(0.0, 1.0)
-            } else {
-                // NaN or +/-Inf: a GPU correctness fault. Sanitize to the neutral
-                // 0.5 sentinel so the heuristic score dominates the downstream
-                // blend (the finding still surfaces on the rule's own score), but
-                // COUNT it so the operator is told loudly below rather than the
-                // garbage being silently swallowed (Law 10).
-                nonfinite += 1;
-                0.5
-            }
-        })
-        .collect();
+    let result = finite_gpu_scores(scores);
     drop(data);
     staging_buf.unmap();
 
-    // Law 10: never sanitize NaN/Inf silently. If the GPU emitted any non-finite
-    // score, surface it (hard-fail under --require-gpu, one loud line
-    // otherwise) so a driver/shader/weights bug is visible, not invisible.
-    if nonfinite > 0 {
-        moe_nonfinite_degrade(nonfinite, result.len());
+    match result {
+        Ok(scores) => Some(scores),
+        Err(nonfinite) => {
+            moe_nonfinite_degrade(nonfinite, batch_size);
+            None
+        }
     }
+}
 
-    Some(result)
+pub(crate) fn finite_gpu_scores(scores: &[f32]) -> Result<Vec<f64>, usize> {
+    let nonfinite = scores.iter().filter(|score| !score.is_finite()).count();
+    if nonfinite != 0 {
+        return Err(nonfinite);
+    }
+    Ok(scores
+        .iter()
+        .map(|&score| f64::from(score).clamp(0.0, 1.0))
+        .collect())
 }
 
 /// Maximum tolerated GPU-vs-CPU MoE score divergence on the parity probe. The
