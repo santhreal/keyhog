@@ -26,3 +26,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "VIRUSTOTAL=94006201bd6c02ff2503b0a5791efdf15c370afd7e58806ee5633b46ce6cbdc6"
+test_negative = "VIRUSTOTAL=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

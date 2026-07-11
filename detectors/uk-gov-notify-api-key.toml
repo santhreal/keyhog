@@ -24,3 +24,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "govuk-notifycvj5q0z_sqygTVcSMHZ-AGEWPRIIbtAxcECtinRP-19f80e1f-0cc6-1d86-1a58-b15f0bcac555-1U0ujQHOU0ZrRq2lGlZtsOIEHykwtcTBlzNCxdAtsCp729RVcIRCxhhj9xRglS7DIHbAR3gKUf7Oevf_Um_zBi9zvV8ovXo_YVqj"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

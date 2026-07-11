@@ -14,3 +14,7 @@ keywords = ["TYPESENSE_API_KEY", "typesense_api_key", "TYPESENSE_APIKEY", "types
 regex = "(?:TYPESENSE[_-]?API[_-]?KEY|typesense[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{16,})"
 description = "Typesense API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "typesense_apikey  =  \":=:          '\"      :\"    '    \" ' '_NwUTwDJ0AkkHfG_SILwMoE_aPXONvjo_PoY4rp"
+test_negative = "typesense_apikey  =  \":=:          '\"      :\"    '    \" ' 'YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

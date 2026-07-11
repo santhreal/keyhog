@@ -14,3 +14,7 @@ keywords = ["X-AUTH-CLIENT", "veriff", "vrf"]
 regex = "(?:X-AUTH-CLIENT|veriff|vrf)[=:;\\s\"'']{0,10}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
 description = "Veriff API key with context anchor (UUID format)"
 group = 1
+
+[[detector.tests]]
+test_positive = "X-AUTH-CLIENT:':  ;\" bd3e5ab3-5b99-d7d5-9427-3a5531a1dfed"
+test_negative = "X-AUTH-CLIENT:':  ;\" YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

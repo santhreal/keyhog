@@ -19,3 +19,7 @@ group = 1
 name = "api_secret"
 regex = "[a-zA-Z0-9]{50}"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "twitter  -_ - -  _-_     -----_     _     _   __   __   - API-        _       - _ __   _          - -            _    _     -  -    -        --_    -     _ KEY =  ::\" :==\"\"     =    :='\"      ==  = \" \" =' '   \" \"= === \"=\"\"=  =  := :     \" '\" G3tqEig6CnktLXcpgyRhIVvp0"
+test_negative = "twitter  -_ - -  _-_     -----_     _     _   __   __   - API-        _       - _ __   _          - -            _    _     -  -    -        --_    -     _ KEY =  ::\" :==\"\"     =    :='\"      ==  = \" \" =' '   \" \"= === \"=\"\"=  =  := :     \" '\" YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

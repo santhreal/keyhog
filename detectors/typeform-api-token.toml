@@ -25,3 +25,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "TYPEFORM       _    ..   _ . .         _     .  .           .  _  __.._ .     ._   _   _   ..__ _ _      api _   ___ _      _  _     _        _   _ __    _        _          _                 _   _ token'    '      \"      \"      \"      ''   ' \"                  \"   93c8225363ba8480f1cdaad7c91d23f71d6c7902"
+test_negative = "TYPEFORM       _    ..   _ . .         _     .  .           .  _  __.._ .     ._   _   _   ..__ _ _      api _   ___ _      _  _     _        _   _ __    _        _          _                 _   _ token'    '      \"      \"      \"      ''   ' \"                  \"   YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

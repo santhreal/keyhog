@@ -24,3 +24,7 @@ status = 200
 [[detector.verify.headers]]
 name = "Authorization"
 value = "Bearer {{match}}"
+
+[[detector.tests]]
+test_positive = "Wise-Token                                                                                  :=:==:=:::=::=:::::===:=:====:=:==:=:====:::==:===:==:::::=::::=               hHntXBBhcMghHhw15s27KqbT1Q8'"
+test_negative = "Wise-Token                                                                                  :=:==:=:::=::=:::::===:=:====:=:==:=:====:::==:===:==:::::=::::=               YOUR_API_KEY_HERE_PLACEHOLDER_VALUE'"

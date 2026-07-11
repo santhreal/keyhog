@@ -19,3 +19,7 @@ group = 1
 name = "zscaler_client_secret"
 regex = "(?:ZSCALER|zscaler|ZPA|zpa)[_\\s]*(?:CLIENT[_\\s]*)?(?:SECRET|KEY)[=:\\s\"'']+[a-zA-Z0-9_-]{32,64}"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "ZSCALERID=tNQHjfW1z0NhsUM9rf5jQ2MF"
+test_negative = "ZSCALERID=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

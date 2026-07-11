@@ -24,3 +24,7 @@ group = 1
 regex = 'Client-ID\s+([a-zA-Z0-9_-]{43})'
 description = "Unsplash Client-ID header value"
 group = 1
+
+[[detector.tests]]
+test_positive = "UNSPLASHACCESSKEY=b56N2Squqb-gGnPqf5VOZGsBl15UBi9LJhkMOwkSOxB"
+test_negative = "UNSPLASHACCESSKEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

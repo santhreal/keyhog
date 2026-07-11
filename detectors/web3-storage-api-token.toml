@@ -25,3 +25,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "WEB3_STORAGE_api\" :''= :  : =  =:' '    '     =':  :  =  ' ' :  :=   ' :' '   :  :  = \" = ztBgX8885i7cJJ3AFamWevxVwRRNP17GA1vuF3j6uPcjvc5i7NBFchxP2Cf8izK47yUGqPT3x8aDqrxeX"
+test_negative = "WEB3_STORAGE_api\" :''= :  : =  =:' '    '     =':  :  =  ' ' :  :=   ' :' '   :  :  = \" = YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

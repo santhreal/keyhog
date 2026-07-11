@@ -13,3 +13,7 @@ keywords = ["UCA-", "UNITY_API_KEY", "unity_cloud_api", "UnityProjectID"]
 [[detector.patterns]]
 regex = 'UCA-[a-zA-Z0-9]{32,}'
 description = "Unity Cloud API key (UCA- prefix followed by 32 alphanumeric characters)"
+
+[[detector.tests]]
+test_positive = "UCA-Z7aLR0tW7QWBqHSP89uZk8UIOiWtFvrodTd9E1rCPCUIz5Vd113Zzedwsvor3GP5aVL5ZUvY1zdWm2X6Jy9SV4lIFWGGBVcD5"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

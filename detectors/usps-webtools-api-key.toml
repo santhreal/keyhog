@@ -24,3 +24,7 @@ group = 1
 regex = "usps.*?user.?id[=:\\s\"'']+([A-Za-z0-9_]{6,20})"
 description = "USPS User ID with context"
 group = 1
+
+[[detector.tests]]
+test_positive = "USPS_USER=prEZZ_"
+test_negative = "USPS_USER=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

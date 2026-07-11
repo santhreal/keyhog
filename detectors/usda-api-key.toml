@@ -19,3 +19,7 @@ group = 1
 regex = "fdc\\.nal\\.usda\\.gov.*[?&]api_key=([a-zA-Z0-9]{36,40})"
 description = "USDA API key in URL query parameter"
 group = 1
+
+[[detector.tests]]
+test_positive = "USDA_API_KEY=1XcqoEeyy5Y9Vh0tDmTMEw04Uksa5KSO8uRS"
+test_negative = "USDA_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

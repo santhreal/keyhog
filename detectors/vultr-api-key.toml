@@ -38,3 +38,7 @@ json_path = "account.email"
 [[detector.verify.metadata]]
 name = "name"
 json_path = "account.name"
+
+[[detector.tests]]
+test_positive = "VULTR     _       --   -        -   _    _ _       -   api       -       - _ _       -         _  - -    key \"  :    \"\"\"  :    ' \":  \"  M49195NUQSS5Y3NI88IUJABUUEJM9QWZZERI"
+test_negative = "VULTR     _       --   -        -   _    _ _       -   api       -       - _ _       -         _  - -    key \"  :    \"\"\"  :    ' \":  \"  YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

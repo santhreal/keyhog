@@ -29,3 +29,7 @@ type = "none"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "WORLD WEATHER ONLINE          _          _       __  _   _  __           _  _          __ _  _KEY   :  '  '  '\":   =:     \" \"\"          R2GcANPDiinhD4nWMPii9"
+test_negative = "WORLD WEATHER ONLINE          _          _       __  _   _  __           _  _          __ _  _KEY   :  '  '  '\":   =:     \" \"\"          YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

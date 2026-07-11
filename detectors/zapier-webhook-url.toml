@@ -13,3 +13,7 @@ keywords = ["hooks.zapier.com", "zapier.com/hooks"]
 [[detector.patterns]]
 regex = 'https://hooks\.zapier\.com/hooks/catch/\d+/[a-zA-Z0-9]+/'
 description = "Zapier webhook catch URL with account and hook ID"
+
+[[detector.tests]]
+test_positive = "https://hooks.zapier.com/hooks/catch/72839156/Kp4Qx7Rm2Sn5Tb8Vw3Yz/"
+test_negative = "https://example.com/hooks/catch/123/abc/"

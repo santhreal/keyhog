@@ -29,3 +29,7 @@ type = "none"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "VISUAL CROSSING_ _   _    _   _                _             _        _     _         _       _ __    _API               ___      _     __         _   _  _   _ _ _           _         KEY ' '  '  '    \" '      \"  '  \"   \"    :\"  '   =  ' ''\"=' \"   iq54zAtIiU0vSow2ql2EVsFgBHPRUj48B0oV"
+test_negative = "VISUAL CROSSING_ _   _    _   _                _             _        _     _         _       _ __    _API               ___      _     __         _   _  _   _ _ _           _         KEY ' '  '  '    \" '      \"  '  \"   \"    :\"  '   =  ' ''\"=' \"   YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -29,3 +29,7 @@ status = 200
 [[detector.verify.headers]]
 name = "Authorization"
 value = "Bearer {{match}}"
+
+[[detector.tests]]
+test_positive = "wistiaapi_token=f58ba8284e74e6b6500bd0ddecb8e5e4"
+test_negative = "wistiaapi_token=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

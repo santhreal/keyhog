@@ -19,3 +19,7 @@ group = 1
 regex = "X-API-KEY[\\s]*:[\\s]*([a-zA-Z0-9_-]{20,})"
 description = "X2Y2 API key in HTTP header"
 group = 1
+
+[[detector.tests]]
+test_positive = "X-API-KEY                                          :                                                    JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"
+test_negative = "X-API-KEY                                          :                                                    YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

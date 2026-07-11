@@ -14,3 +14,7 @@ keywords = ["UPLOADCARE_PUB_KEY", "UPLOADCARE_PUBLIC_KEY", "pubkey", "pub_key", 
 regex = "(?:UPLOADCARE|uploadcare)[._-]?(?:PUB[._-]?)?(?:KEY|key)[=:\\s\"']+([a-f0-9]{32})"
 description = "Uploadcare public key (32 hex chars) with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "UPLOADCAREKEY=acbb7763f9b872d8aec7e11cbd083acb"
+test_negative = "UPLOADCAREKEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

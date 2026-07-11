@@ -13,3 +13,7 @@ keywords = ["sk_ac_", "zapier_api_key", "ZAPIER_API_KEY"]
 [[detector.patterns]]
 regex = 'sk_ac_[a-zA-Z0-9]{32,}'
 description = "Zapier NLA API key (sk_ac_ prefix)"
+
+[[detector.tests]]
+test_positive = "sk_ac_P8X0zoBwkHBwcsrYIXJ7KZkSG0y3WidORnWoyJp9"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

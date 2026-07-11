@@ -18,3 +18,7 @@ group = 1
 [[detector.patterns]]
 regex = "X-Viber-Auth-Token: [a-zA-Z0-9]{32,48}"
 description = "Viber auth token in HTTP header"
+
+[[detector.tests]]
+test_positive = "viber  _-     -      _   _-_    - -   --  -  _ -    -     --  -     _    _     _    AUTH    _    _ -   -        _  --  _     __  -_ _ ___  --          _    _  TOKEN ==   \" ' : ' :            :    ' ' '::  ==    ' \":     :\"' =     \" :   \":   :\" kUTz4ge6WKM61ydrtTcvV6hHqoiO8zXB3s2Dh"
+test_negative = "viber  _-     -      _   _-_    - -   --  -  _ -    -     --  -     _    _     _    AUTH    _    _ -   -        _  --  _     __  -_ _ ___  --          _    _  TOKEN ==   \" ' : ' :            :    ' ' '::  ==    ' \":     :\"' =     \" :   \":   :\" YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

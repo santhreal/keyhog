@@ -19,3 +19,7 @@ group = 1
 regex = "api_key[=:\\s\"'']+([a-zA-Z0-9_-]{10,})[^\\n]*(?:uptimerobot|UPTIMEROBOT|api\\.uptimerobot\\.com)"
 description = "Uptime Robot API key followed by context"
 group = 1
+
+[[detector.tests]]
+test_positive = "uptimerobot.apikey  =:\"\"\"     '         '   \"    : \" =    \"  '   :     '  = ':'  ''   \"  : :\"'  == ::     := \":: :\"txEAQ75nr5b3EUwg8Z2t_rVOv98Cu6rjH1Gj6XeqNqcKMtTV_va_OGMqcbIYxgaJnFGSwYnVo"
+test_negative = "uptimerobot.apikey  =:\"\"\"     '         '   \"    : \" =    \"  '   :     '  = ':'  ''   \"  : :\"'  == ::     := \":: :\"YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

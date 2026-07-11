@@ -25,3 +25,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "WRIKE_ACCESS_TOKEN=2XE9ph0wHZ8cNfIMR56S5DHN4Pzoa4"
+test_negative = "WRIKE_ACCESS_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

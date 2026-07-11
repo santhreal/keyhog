@@ -19,3 +19,7 @@ group = 1
 regex = "(?:zendesk|ZENDESK)[_\\-\\s]*(?:api[_\\-\\s]*token|API[_\\-\\s]*TOKEN)[=:\\s\\\"']+([a-zA-Z0-9]{40})"
 description = "Zendesk API token with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "agent@subdomain.zendesk.com/token:5wSb6t3sE96nM6VaHoI2GWl6bp7zB8loar6sPi5w"
+test_negative = "ZENDESK_API_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

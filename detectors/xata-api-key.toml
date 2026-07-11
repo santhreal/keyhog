@@ -35,3 +35,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "XATA_API_KEY=xau_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz\nXATA_DATABASE_URL=https://acme-eu-west-1.xata.sh"
+test_negative = "xau_short"

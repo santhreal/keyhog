@@ -29,3 +29,7 @@ type = "none"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "weatherstack _        _   _   _  ___  _ _        _   _    _  _    __          _        KEY BKe3WCBO8JIILnzQeTQgSIMCOhUAEJcABtxlR7lZST6ju3MBJSPfwjkh2Ek5g2ocLW8SSZg"
+test_negative = "weatherstack _        _   _   _  ___  _ _        _   _    _  _    __          _        KEY YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -29,3 +29,7 @@ type = "none"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "WEATHERBIT  __ __    _     __ _  _ _    _ _             _                _     __          _     __      API  _    _   KEY=\":=do7f9H1T085pk2OEzhOjdnH7SnHwHU1dhKaY28nS61FJjZWxUvfnK1xk9Jh"
+test_negative = "WEATHERBIT  __ __    _     __ _  _ _    _ _             _                _     __          _     __      API  _    _   KEY=\":=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

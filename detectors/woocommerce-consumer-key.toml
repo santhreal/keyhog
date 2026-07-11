@@ -18,3 +18,7 @@ description = "WooCommerce REST API consumer key (ck_ prefix)"
 name = "woocommerce_consumer_secret"
 regex = "cs_[a-f0-9]{40}"
 within_lines = 10
+
+[[detector.tests]]
+test_positive = "ck_0a6efc600fa229b936e33cb2e62710fe11c2409e"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
