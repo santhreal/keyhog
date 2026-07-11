@@ -128,6 +128,7 @@ impl CompiledScanner {
             let mut dis_s = std::time::Duration::ZERO;
             let mut region_coalesced_bytes = 0usize;
             let mut region_batch_mode = RegionPresenceBatchMode::FoldedScratch;
+            let region_dispatch_profile = super::profile::span(super::profile::P::BackendDispatch);
             let evidence = match with_region_presence_batch(
                 chunks,
                 |haystack, region_starts, batch_mode| {
@@ -153,8 +154,12 @@ impl CompiledScanner {
                 },
             ) {
                 Ok(evidence) => evidence,
-                Err(error) => return degrade(error),
+                Err(error) => {
+                    drop(region_dispatch_profile);
+                    return degrade(error);
+                }
             };
+            drop(region_dispatch_profile);
             let presence = evidence.presence;
             let confirmed_anchor_literal_matches = evidence.confirmed_anchor_literal_matches;
             let generic_keyword_positions = evidence.generic_keyword_positions;
@@ -280,7 +285,6 @@ impl CompiledScanner {
                 );
             }
 
-            let t_phase2_gpu = std::time::Instant::now();
             if let Err(error) = validate_phase2_gpu_trigger_rows(chunks.len(), triggers.len()) {
                 return degrade(error.to_string());
             }
@@ -306,6 +310,8 @@ impl CompiledScanner {
                 build_phase2_gpu_admission_workload_filtered(chunks, &triggers, |idx, _| {
                     phase2_gpu_row_needed[idx]
                 });
+            let phase2_dispatch_profile = super::profile::span(super::profile::P::BackendDispatch);
+            let t_phase2_gpu = std::time::Instant::now();
             let mut phase2_gpu_empty_complete = false;
             let phase2_gpu_admission = match phase2_gpu_workload {
                 Phase2GpuAdmissionWorkload::Empty => {
@@ -362,6 +368,7 @@ impl CompiledScanner {
                 },
             };
             let phase2_gpu_s = t_phase2_gpu.elapsed();
+            drop(phase2_dispatch_profile);
 
             let trigger_bits: usize = triggers
                 .iter()

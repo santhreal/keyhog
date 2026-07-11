@@ -11,8 +11,9 @@
 //! [`dump`].
 //! Leaf passes never nest within each other (decode recursion re-enters as fresh
 //! leaf recordings that aggregate into the same leaves), so the totals are the
-//! true CPU-time-per-pass summed across all rayon workers and all decode depths —
-//! no double-counting, no per-span stack needed. Times can exceed wall-clock
+//! elapsed time per pass summed across all rayon workers and all decode depths —
+//! no double-counting, no per-span stack needed. Accelerator dispatch contributes
+//! the host-observed elapsed wait for that pass. Totals can exceed wall-clock
 //! because the scan is parallel; read them as proportions.
 //!
 //! Overhead when off: one cached-bool load per `span()` and a no-op `Drop`; no
@@ -29,6 +30,10 @@ use std::time::Instant;
 pub(crate) enum P {
     Preprocess = 0,
     Phase1Triggers,
+    /// Accelerator-side trigger preparation and dispatch outside the shared
+    /// per-chunk phase-1 span (GPU coalescing, upload, kernel, readback, and
+    /// GPU admission). Zero for CPU-only scans.
+    BackendDispatch,
     Hot,
     Confirmed,
     /// Always-active RegexSet prefilter — the anchorless detectors that run on
@@ -51,11 +56,12 @@ pub(crate) enum P {
     Decode,
 }
 
-const N: usize = 13;
+const N: usize = 14;
 
 const NAMES: [&str; N] = [
     "preprocess",
     "phase1",
+    "backend-dispatch",
     "hot",
     "confirmed",
     "phase2:prefilter",
@@ -72,6 +78,7 @@ const NAMES: [&str; N] = [
 macro_rules! zeros {
     () => {
         [
+            AtomicU64::new(0),
             AtomicU64::new(0),
             AtomicU64::new(0),
             AtomicU64::new(0),
@@ -244,6 +251,7 @@ pub fn dump(label: &str) {
     let capture_ns = sum(&PHASE2_CAPTURE_LEAVES);
     let scan_ns = ns[P::Preprocess as usize]
         + ns[P::Phase1Triggers as usize]
+        + ns[P::BackendDispatch as usize]
         + phase2_ns
         + ns[P::Decode as usize];
     let scan_ms = scan_ns as f64 / 1e6;
@@ -262,7 +270,7 @@ pub fn dump(label: &str) {
         0.0
     };
     eprintln!(
-        "SCAN  {scan_ms:>9.1} ms   summed across workers · {} files · {:.2} MiB · {:.1} MB/s (CPU-time sum)",
+        "SCAN  {scan_ms:>9.1} ms   summed across workers · {} files · {:.2} MiB · {:.1} MB/s (pass-time sum)",
         files,
         bytes as f64 / (1024.0 * 1024.0),
         thru
@@ -302,6 +310,7 @@ pub fn dump(label: &str) {
 
     leaf(P::Preprocess as usize, scan_ns, "  ");
     leaf(P::Phase1Triggers as usize, scan_ns, "  ");
+    leaf(P::BackendDispatch as usize, scan_ns, "  ");
     parent("phase2", phase2_ns, "  ");
     leaf(P::Hot as usize, phase2_ns, "    ");
     leaf(P::Confirmed as usize, phase2_ns, "    ");
