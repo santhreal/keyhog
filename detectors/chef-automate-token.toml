@@ -24,3 +24,7 @@ group = 1
 regex = "chef-automate.*auth.*token[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
 description = "Chef Automate authentication token"
 group = 1
+
+[[detector.tests]]
+test_positive = "CHEF_AUTOMATE_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3YzK"
+test_negative = "CHEF_AUTOMATE_TOKEN=short"

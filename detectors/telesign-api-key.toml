@@ -19,3 +19,7 @@ group = 1
 regex = '''(?:telesign|TELESIGN)[_.-]?(?:api|API)[_.-]?(?:key|KEY|secret|SECRET)?[=:\s"\' ]+([A-Za-z0-9+/]{20,}={0,2})'''
 description = "Telesign API Key (Base64-encoded string)"
 group = 1
+
+[[detector.tests]]
+test_positive = "TELESIGNcustomer-   '  : '=    : ='  \"  =    :C640f2E9-9D9D-1baF-5ad2-06a2D0E5BCC1"
+test_negative = "TELESIGNcustomer-   '  : '=    : ='  \"  =    :YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

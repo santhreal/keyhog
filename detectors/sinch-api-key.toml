@@ -24,3 +24,7 @@ group = 1
 regex = '''(?:sinch|SINCH)[_.-]?(?:project|PROJECT)[_.-]?(?:id|ID)?[=:\s"\' ]+([0-9a-fA-F]{32})'''
 description = "Sinch Project ID (32 hex chars)"
 group = 1
+
+[[detector.tests]]
+test_positive = "sinchproject=6fea9b0996bEa7A40e325382d2eEc4CE"
+test_negative = "sinchproject=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -26,3 +26,7 @@ description = "PEM-encoded private key for GitHub App authentication"
 regex = "(?:github[_-]?app|GITHUB[_-]?APP)[=:\\s\"'']+(-----BEGIN (?:RSA|OPENSSH) PRIVATE KEY-----[A-Za-z0-9+/=\\s]{200,}?-----END (?:RSA|OPENSSH) PRIVATE KEY-----)"
 description = "GitHub App private key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5sT6yU0pN2aG4eH7iO9kB1lM3rV5wX8zC0dQ2fS4gJ6kP8mR0tU2wY4aB6cD8eF0gH2iJ4kL6mN8oP0qR2sT4uV6wX8yZ0aB2cD4eF6gH8iJ0kL2mN4oP6qR8sT0uV2wX4yZ6aB8cD0eF2gH4iJ6kL8mN0oP2qR4sT6uV8wX0yZ2aB4cD6eF8gH0iJ2kL4\n-----END RSA PRIVATE KEY-----"
+test_negative = "-----BEGIN RSA PRIVATE KEY-----=short"

@@ -19,3 +19,7 @@ group = 1
 name = "sovos_api_secret"
 regex = "(?:SOVOS|sovos)[._]?(?:API|api)?[._]?(?:SECRET|secret)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "SOVOS_API_KEY=Z5bJgWzWferfBeuIonJB"
+test_negative = "SOVOS_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

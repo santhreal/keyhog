@@ -39,3 +39,7 @@ json_path = "team"
 [[detector.verify.metadata]]
 name = "user"
 json_path = "user"
+
+[[detector.tests]]
+test_positive = "xoxp-1234567890123-2345678901234-3456789012345-7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+test_negative = "xoxp-123-456-789-abc"

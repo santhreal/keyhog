@@ -26,3 +26,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "REDIS_CLOUD_V2_API_KEY=d1935adc5f2e5219091134d0fb1b5822c47225da"
+test_negative = "REDIS_CLOUD_V2_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

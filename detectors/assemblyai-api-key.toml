@@ -26,3 +26,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "ASSEMBLYAI_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+test_negative = "ASSEMBLYAI_API_KEY=short"

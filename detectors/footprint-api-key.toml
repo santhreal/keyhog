@@ -14,3 +14,7 @@ keywords = ["footprint", "FOOTPRINT", "api_key", "apikey"]
 regex = "(?:FOOTPRINT|footprint)[_a-zA-Z0-9]*[=:\\s\"'']+([a-zA-Z0-9]{32})"
 description = "Footprint Analytics API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "footprint_api_key=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S5T"
+test_negative = "footprint=short"

@@ -14,3 +14,7 @@ keywords = ["flipside", "FLIPSIDE", "api_key", "apikey"]
 regex = "(?:FLIPSIDE|flipside)[_a-zA-Z0-9]*[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
 description = "Flipside Crypto API key (UUID format) with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "flipside_api_key=7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d"
+test_negative = "flipside=short"

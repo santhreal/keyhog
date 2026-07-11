@@ -19,3 +19,7 @@ group = 1
 name = "sumo-logic-access-id"
 regex = "(?:SUMOLOGIC_ACCESSID|SUMOLOGIC_ACCESS_ID|sumologic_access_id|accessId)[=:\\s\"']+([A-Za-z0-9]+)"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "SUMOLOGIC_ACCESSKEY=PtgLGdzJjgnbMKh1O99Osc7xcKyF5GLmYCjGSsInlOGGLaOdEckbTo+laJwN9wY9"
+test_negative = "SUMOLOGIC_ACCESSKEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

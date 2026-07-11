@@ -19,3 +19,7 @@ keywords = ["transpose", "TRANSPOSE", "api_key", "apikey"]
 regex = "(?:TRANSPOSE|transpose)(?:[_\\-\\.]?(?:API[_\\-\\.]?KEY|api[_\\-\\.]?key|KEY|key|TOKEN|token|SECRET|secret))?[=:\\s\"'']+([a-f0-9]{32})"
 description = "Transpose API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "TRANSPOSE=cdce91dd51dd450d5b00d6009adc6429"
+test_negative = "TRANSPOSE=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -14,3 +14,7 @@ keywords = ["hashnode", "HASHNODE", "pat", "personal_access_token"]
 regex = '''(?:hashnode|HASHNODE|personal[_-]?access[_-]?token|HASHNODE[_-]?TOKEN)[=:\s"\']+([a-f0-9]{32,})'''
 description = "Hashnode Personal Access Token with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "hashnode=1c4ce02cf2dfde95457503bd91cfa2fb"
+test_negative = "hashnode=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

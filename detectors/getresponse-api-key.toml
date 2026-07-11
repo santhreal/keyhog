@@ -29,3 +29,7 @@ status = 200
 [[detector.verify.headers]]
 name = "X-Auth-Token"
 value = "api-key {{match}}"
+
+[[detector.tests]]
+test_positive = "GETRESPONSE_API_KEY=qcTyZ5O-pgSF5zj9IUMf"
+test_negative = "GETRESPONSE_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

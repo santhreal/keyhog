@@ -23,3 +23,7 @@ group = 1
 [[detector.patterns]]
 regex = "/var/rudder/run/api-token"
 description = "Rudder system token file path"
+
+[[detector.tests]]
+test_positive = "RUDDER_API_TOKEN=cCtjcSNc6txJcRF_v9yQGzlgF8t-GM3K"
+test_negative = "RUDDER_API_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -19,3 +19,7 @@ group = 1
 regex = "maker\\.ifttt\\.com/trigger/[a-zA-Z0-9_]+/with/key/([a-zA-Z0-9]{22})"
 description = "IFTTT maker webhook URL with key"
 group = 1
+
+[[detector.tests]]
+test_positive = "IFTTT=BKrT2666jEnUtrVPk0CJeL"
+test_negative = "IFTTT=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

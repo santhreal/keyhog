@@ -24,3 +24,7 @@ group = 1
 name = "shutterstock-consumer-secret"
 regex = '(?:SHUTTERSTOCK|shutterstock)[._-]?(?:CONSUMER|consumer)[._-]?(?:SECRET|secret)[=:\s""]+([a-zA-Z0-9_-]{32,})'
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "SHUTTERSTOCK_API_KEY=dc14-049UaGtL0KsrlVLnuwXuAU5wooM"
+test_negative = "SHUTTERSTOCK_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

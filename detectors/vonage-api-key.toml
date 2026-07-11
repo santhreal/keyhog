@@ -14,3 +14,7 @@ keywords = ["vonage", "VONAGE", "nexmo", "NEXMO", "api_key", "API_KEY"]
 regex = "(?:vonage|VONAGE|nexmo|NEXMO)[_\\-\\s]*(?:api[_\\-\\s]*key|API[_\\-\\s]*KEY)[=:\\s\\\"']+([a-f0-9]{8})"
 description = "Vonage/Nexmo API Key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "NEXMO_API_KEY=f3ed3778"
+test_negative = "NEXMO_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

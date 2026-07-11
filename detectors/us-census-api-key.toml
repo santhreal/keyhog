@@ -19,3 +19,7 @@ group = 1
 regex = "&key=([a-f0-9]{40})(?:[^a-f0-9]|$)"
 description = "US Census API key in URL query parameter"
 group = 1
+
+[[detector.tests]]
+test_positive = "CENSUS_API_KEY=f009f7236f6fb315ba5bcbffbb3a884b68b8028e"
+test_negative = "CENSUS_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

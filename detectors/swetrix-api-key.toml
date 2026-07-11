@@ -19,3 +19,7 @@ group = 1
 regex = "X-Api-Key[=:\\s\"'']+([a-f0-9]{32}).*swetrix|swetrix.*X-Api-Key[=:\\s\"'']+([a-f0-9]{32})"
 description = "Swetrix API call with X-Api-Key header"
 group = 1
+
+[[detector.tests]]
+test_positive = "X-Api-Key       \"' =  \"\"=  =  b539e4ae802deaca3a83216dd1580f3e xxq<N5%VSp  Cu(#u[ZjLB1Z,[#7TE1Fd+%Npf4-+@@*?\"865 g-swetrix"
+test_negative = "X-Api-Key       \"' =  \"\"=  =  YOUR_API_KEY_HERE_PLACEHOLDER_VALUE xxq<N5%VSp  Cu(#u[ZjLB1Z,[#7TE1Fd+%Npf4-+@@*?\"865 g-swetrix"

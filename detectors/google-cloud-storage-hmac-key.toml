@@ -24,3 +24,7 @@ group = 1
 name = "hmac_secret"
 regex = "[a-zA-Z0-9+/]{40,}"
 within_lines = 3
+
+[[detector.tests]]
+test_positive = "GOOG=GOOG5I75PFW05MEV3YQS371MSJP945GAFH9WQLTHZPVO"
+test_negative = "GOOG=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

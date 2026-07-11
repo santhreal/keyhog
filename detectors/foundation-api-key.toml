@@ -14,3 +14,7 @@ keywords = ["foundation", "FOUNDATION", "foundation.app"]
 regex = "(?:foundation|FOUNDATION)[_\\s]*(?:API[_\\s]*)?KEY[_\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{20,})[\"'']+"
 description = "Foundation API key in assignment context"
 group = 1
+
+[[detector.tests]]
+test_positive = "foundation API KEY= \"M9TBrKrmGsNmjQ8mT3OA12345678\""
+test_negative = "foundation=short"

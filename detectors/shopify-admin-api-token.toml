@@ -15,3 +15,7 @@ regex = 'shpat_[a-f0-9]{32}'
 description = "Shopify admin API access token"
 
 # NOTE: live verification disabled. `{{shop}}` was undefined. kimi-wave3 §1.
+
+[[detector.tests]]
+test_positive = "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"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

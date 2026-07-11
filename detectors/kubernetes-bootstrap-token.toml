@@ -34,3 +34,7 @@ keywords = [
 regex = '\b([a-z0-9]{6}\.[a-z0-9]{16})\b'
 description = "Kubernetes bootstrap token (token-id.token-secret, lowercase alnum)"
 group = 1
+
+[[detector.tests]]
+test_positive = "kubeadm join 10.0.0.1:6443 --token k3m9zq.4r8w2nq3p6vt5b1z --discovery-token-ca-cert-hash sha256:abc"
+test_negative = "kubeadm version: v1.29.3"

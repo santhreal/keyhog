@@ -36,3 +36,7 @@ method = "GET"
 url = "https://api.flickr.com/services/rest/?method=flickr.test.echo&api_key={{match}}"
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "flickr_api_key=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+test_negative = "flickr_api_key=short"

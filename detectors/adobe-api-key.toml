@@ -25,3 +25,7 @@ group = 1
 name = "adobe-client-secret"
 regex = '''(?:ADOBE|adobe)[._-]?(?:CLIENT|client)[._-]?(?:SECRET|secret)[=:\s"']+[a-f0-9]{32,48}'''
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "ADOBE_CLIENT_ID=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+test_negative = "ADOBE_CLIENT_ID=short"

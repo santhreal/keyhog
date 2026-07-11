@@ -55,3 +55,7 @@ service = "sts"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "AKIAQYLPMN5HFIQR7XYA"
+test_negative = "AKIA tag in a sentence with spaces"

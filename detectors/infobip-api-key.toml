@@ -19,3 +19,7 @@ group = 1
 regex = '''Authorization[=:\s"\' ]+(?:App|APP)?\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "Infobip API Key in Authorization header"
 group = 1
+
+[[detector.tests]]
+test_positive = "infobip=521605cd-2e1a-7f93-dc93-62773b2dba23"
+test_negative = "infobip=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

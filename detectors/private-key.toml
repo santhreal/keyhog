@@ -32,3 +32,7 @@ keywords = ["BEGIN", "PRIVATE KEY"]
 [[detector.patterns]]
 regex = '-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED |PGP )?PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH |ENCRYPTED |PGP )?PRIVATE KEY(?: BLOCK)?-----'
 description = "Full PEM private-key block (BEGIN…END)"
+
+[[detector.tests]]
+test_positive = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5sT6yU0pN2aG4eH7iO9kB1lM3rV5wX8zC0dQ2fS4gJ6kP8mR0tU2wY4aB6cD8eF0gH2iJ4kL6mN8oP0qR2sT4uV6wX8yZ0aB2cD4eF6gH8iJ0kL2mN4oP6qR8sT0\n-----END RSA PRIVATE KEY-----"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

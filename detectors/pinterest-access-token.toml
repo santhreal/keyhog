@@ -26,3 +26,7 @@ template = "Bearer {{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "PINTEREST=cvxs2sDMfkbwkGohlpD2BuQhAcqkYTI0nCInqbKrMfyX87TPRTfNvVVq89b9VGLi"
+test_negative = "PINTEREST=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

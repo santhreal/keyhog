@@ -24,3 +24,7 @@ group = 1
 regex = "(?:thingspeak|THINGSPEAK)[._-]?(?:API[_-]?KEY|api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9]{16})"
 description = "ThingSpeak API key"
 group = 1
+
+[[detector.tests]]
+test_positive = "THINGSPEAKwrite-apikey   \"     =\"\"' ' =='= \":  = \"' \"= :: ===      \"   wEEelk6NGtXzvcTN"
+test_negative = "THINGSPEAKwrite-apikey   \"     =\"\"' ' =='= \":  = \"' \"= :: ===      \"   YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

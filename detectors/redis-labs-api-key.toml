@@ -19,3 +19,7 @@ group = 1
 name = "secret_key"
 regex = "(?:REDIS|redis|REDISLABS|redislabs).{0,20}(?:SECRET|secret).{0,5}[=:\\s\"']+([a-f0-9]{64})"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "REDIS_LABS_API_KEY=517cfd95dfd9f72aaf77a72c5fadfc74"
+test_negative = "REDIS_LABS_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

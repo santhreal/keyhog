@@ -22,3 +22,7 @@ client_safe = true
 regex = 'https://[a-f0-9]{32}@[a-z0-9-]+\.ingest\.sentry\.io/[0-9]+'
 description = "Sentry DSN with custom organization subdomain"
 client_safe = true
+
+[[detector.tests]]
+test_positive = "https://9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@o12345.ingest.sentry.io/67890"
+test_negative = "https://abc@o12345.ingest.sentry.io/67890"

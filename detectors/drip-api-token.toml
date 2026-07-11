@@ -24,3 +24,7 @@ group = 1
 regex = """(?i)drip[_-]?(?:oauth[_-]?)?token[=:\\s\"']+([a-zA-Z0-9_-]{20,})"""
 description = "Drip OAuth access token"
 group = 1
+
+[[detector.tests]]
+test_positive = "drip_api_token=kEnydx9qWCA79ISjs8JHUdKF0"
+test_negative = "drip_api_token=short"

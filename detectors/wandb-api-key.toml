@@ -24,3 +24,7 @@ status = 200
 [[detector.verify.headers]]
 name = "Authorization"
 value = "Bearer {{match}}"
+
+[[detector.tests]]
+test_positive = "WANDB_API_KEY=034b1509e9cb1c6131ba5ee7dc30a6d542944a55"
+test_negative = "WANDB_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

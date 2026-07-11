@@ -14,3 +14,7 @@ keywords = ["BAIDU_MAPS_KEY", "baidu.maps.key", "baidu_maps_key", "ak"]
 regex = "(?:BAIDU[_-]?MAPS[_-]?KEY|baidu[_-]?maps[_-]?key|baidu\\.maps\\.key)[=:\\s\"'']+([A-Za-z0-9]{24,32})"
 description = "Baidu Maps API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "BAIDU_MAPS_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Q"
+test_negative = "BAIDU_MAPS_KEY=short"

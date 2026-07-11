@@ -41,3 +41,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "CLICKATELL_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+test_negative = "CLICKATELL_API_KEY=Kp4Qx7Rm2Sn"

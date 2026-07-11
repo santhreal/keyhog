@@ -19,3 +19,7 @@ group = 1
 regex = "(?:ELASTICSEARCH_API_KEY|elasticsearch_api_key)[=:\\s\"']+([A-Za-z0-9_-]{40,}==?)"
 description = "Elasticsearch API key base64 encoded with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "ELASTICSEARCH_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz:Kp4Qx7Rm2Sn5Tb8V"
+test_negative = "ELASTICSEARCH_API_KEY=short"

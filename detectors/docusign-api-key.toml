@@ -19,3 +19,7 @@ group = 1
 regex = '''(?:DOCUSIGN|docusign)[._-]?(?:CLIENT|client)[._-]?(?:ID|id)[=:\s"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "Docusign Client ID with context anchor (GUID format)"
 group = 1
+
+[[detector.tests]]
+test_positive = "DOCUSIGN_INTEGRATION_KEY=0a82d930-0311-5873-e7cb-7c3a6be1eacf"
+test_negative = "DOCUSIGN_INTEGRATION_KEY=short"

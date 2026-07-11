@@ -14,3 +14,7 @@ keywords = ["subgraph", "studio", "api_key", "SUBGRAPH_STUDIO"]
 regex = "(?:SUBGRAPH_STUDIO|subgraph.?studio|studio.?api)[=:\\s\"'']+([a-f0-9]{32})"
 description = "Subgraph Studio API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "SUBGRAPH_STUDIO=3e3ccac4f51f88a6dd87cafaf4951d13"
+test_negative = "SUBGRAPH_STUDIO=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -14,3 +14,7 @@ keywords = ["goldsky", "GOLDSKY", "api_key", "apikey"]
 regex = "(?:GOLDSKY|goldsky)[_a-zA-Z0-9]*[=:\\s\"'']+([a-f0-9]{32})"
 description = "Goldsky API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "GOLDSKY=d659b9c912fa62843c5d8226bcb17ea0"
+test_negative = "GOLDSKY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
