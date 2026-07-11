@@ -125,18 +125,16 @@ fn phase2_gpu_admission_loss_is_operator_visible() {
 }
 
 #[test]
-fn positioned_gpu_candidate_loss_updates_runtime_status() {
+fn gpu_auxiliary_loss_updates_runtime_status() {
     let src = engine_src("gpu_region_dispatch.rs");
     assert!(
         src.matches("self.record_gpu_degrade(").count() >= 4,
-        "coalesced GPU degrade and every positioned-candidate loss branch must update runtime status"
+        "coalesced GPU degrade, under-fire recovery, and both phase-2 admission loss branches must update runtime status"
     );
     assert!(
-        src.contains("positioned literal matcher not built for this scanner")
-            && src.contains("positioned GPU candidate collection failed")
-            && src.contains("still exceeds cap")
-            && src.contains("pathological literal density"),
-        "positioned matcher-missing, scan-error, and unsplittable-over-cap branches must keep concrete degradation reasons"
+        src.matches("phase-2 GPU admission dispatch failed").count() >= 2
+            && src.contains("GPU region-presence under-fire recovered"),
+        "phase-2 admission and under-fire branches must keep concrete degradation reasons"
     );
     let forced = engine_src("gpu_forced.rs");
     assert!(
@@ -180,16 +178,15 @@ fn gpu_matcher_loss_is_operator_visible() {
     assert!(
         helpers.contains("fn report_gpu_matcher_unavailable")
             && helpers.contains("GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED")
-            && helpers.contains("GPU_POSITION_MATCHER_UNAVAILABLE_WARNED")
             && helpers.contains("eprintln!(")
             && helpers.contains("Use --require-gpu when GPU acceleration is mandatory"),
-        "GPU matcher compile loss must be visible to normal CLI stderr, with independent guards per matcher kind"
+        "GPU literal matcher compile loss must be visible to normal CLI stderr"
     );
     assert!(
         src.matches("report_gpu_matcher_unavailable(&error,")
             .count()
-            >= 2,
-        "both literal and positioned-literal matcher compile failures must route through the visible reporter"
+            >= 1,
+        "literal matcher compile failures must route through the visible reporter"
     );
 }
 

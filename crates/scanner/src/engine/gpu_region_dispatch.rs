@@ -320,6 +320,7 @@ impl CompiledScanner {
                                 Err(error) => {
                                     let reason =
                                         format!("phase-2 GPU admission dispatch failed: {error}");
+                                    self.record_gpu_degrade(reason.clone());
                                     super::gpu_forced::deny_silent_gpu_degrade_with_reason(
                                         self,
                                         ScanBackend::Gpu,
@@ -346,6 +347,7 @@ impl CompiledScanner {
                             Err(error) => {
                                 let reason =
                                     format!("phase-2 GPU admission dispatch failed: {error}");
+                                self.record_gpu_degrade(reason.clone());
                                 super::gpu_forced::deny_silent_gpu_degrade_with_reason(
                                     self,
                                     ScanBackend::Gpu,
