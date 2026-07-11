@@ -1,8 +1,9 @@
 # Detectors
 
 A **detector** is a single TOML file that teaches KeyHog one shape of
-credential. There are 920 of them in the embedded corpus today,
-spread across `detectors/*.toml`.
+credential. The embedded corpus is generated from `detectors/*.toml`; query the
+running binary for its exact corpus size rather than relying on a number copied
+into documentation.
 
 ## Pattern counts
 
@@ -165,15 +166,14 @@ The available per-detector tuning fields are:
 
 ```sh
 keyhog detectors                  # human-readable list, grouped by service
-keyhog detectors --json           # one JSON object per detector
-keyhog detectors --json | jq length
-920
+keyhog detectors --format json           # one JSON object per detector
+keyhog detectors --format json | jq length
 ```
 
 Filter by service:
 
 ```sh
-keyhog detectors --json \
+keyhog detectors --format json \
   | jq '.[] | select(.service == "stripe")'
 ```
 
@@ -188,12 +188,12 @@ descriptions, the verification endpoint, and any companions. Useful
 when debugging "why didn't this fire?" - usually the answer is in the
 regex or keywords.
 
-## Custom detectors
+## Custom detector corpora
 
-Drop a `.toml` next to the binary or in `~/.config/keyhog/detectors/`:
+Put custom detector TOMLs in an explicit corpus directory:
 
 ```toml
-# ~/.config/keyhog/detectors/my-internal-token.toml
+# my-detectors/my-internal-token.toml
 
 [detector]
 id = "acme-internal-token"
@@ -207,9 +207,18 @@ regex = "acme_internal_[a-zA-Z0-9]{32}"
 group = 0
 ```
 
-Restart the scanner and the new detector is loaded alongside the
-built-ins. There's no opt-in, no flag, no rebuild - TOML in, detector
-out.
+Then name that corpus on every operator path that should use it:
+
+```sh
+keyhog detectors --detectors my-detectors --audit
+keyhog scan . --detectors my-detectors
+```
+
+`--detectors` selects the directory as the complete active corpus; it does not
+silently merge the directory with embedded detectors. Copy any built-in TOMLs
+you still want into the directory. A named path that is missing, is not a
+directory, contains no detectors, or contains invalid TOML fails closed instead
+of substituting the embedded corpus.
 
 ## Disabling specific detectors
 

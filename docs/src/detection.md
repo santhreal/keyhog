@@ -97,7 +97,7 @@ Three gates, in order, each cheaper than the next:
 
 ## Stage 3 - detector match
 
-For each service-anchored detector that the prefilter flagged, the full regex
+For each pattern-backed detector that the prefilter flagged, the full regex
 evaluates. The regex is `detector.patterns[].regex` in that detector's TOML, and
 its configured capture group becomes the candidate **credential**. Generic
 phase-2 detector TOMLs intentionally carry no regex: their keyword, length,
@@ -212,7 +212,7 @@ stage 2 - alphabet:       PASS (chunk has `=`, alphanumerics from the corpus)
 stage 2 - bigram bloom:   PASS (`AW`, `WS`, `_S` are in the bloom)
 stage 2 - simd-regex:     MATCH → triggers `aws-secret-access-key` + `generic-password`
 stage 3 - regex eval:
-  `aws-secret-access-key` regex `(?i)(?:AWS[_-]?SECRET[_-]?ACCESS[_-]?KEY|...)[=:\s"']+([0-9a-zA-Z/+=]{40})(?:[^0-9a-zA-Z/+=]|$)`
+  `aws-secret-access-key` detector pattern captures the 40-byte value
     captures `ev0BsFtSD7S/4VWYObxiEhME3hJBXeYzR43jgiB1`
   `generic-password` regex doesn't match (no `_password`/`_pwd` substring)
 stage 4 - post-process:
