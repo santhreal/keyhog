@@ -34,3 +34,16 @@ fn scan_config_conversion_preserves_invalid_policy_for_rejection() {
         .try_with_config(converted);
     assert!(result.is_err(), "conversion must not launder invalid policy");
 }
+
+#[test]
+fn strict_scanner_config_rejects_invalid_explicit_bpe_override() {
+    let mut config = ScannerConfig::default();
+    config.entropy_bpe_max_bytes_per_token_override = Some(f64::NAN);
+    let result = CompiledScanner::compile(Vec::new())
+        .expect("empty detector corpus is a valid library scanner")
+        .try_with_config(config);
+    assert!(
+        result.is_err(),
+        "non-finite detector-wide BPE override must fail before installation",
+    );
+}
