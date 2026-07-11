@@ -29,7 +29,7 @@ default = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd", "gpu"]
 # on runners-nightly (which builds with `--features gpu` on real GPU hosts).
 ci-lean = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd"]
 ml = []
-entropy = []
+entropy = ["dep:tiktoken-rs"]
 decode = []
 multiline = []
 simd = ["dep:hyperscan"]  # Vectorscan/Hyperscan SIMD regex compilation (builds HS database)
@@ -130,6 +130,11 @@ tempfile = { workspace = true }
 # moat: shipping data as TOML lets the community PR new phrases
 # without touching Rust.
 toml = { workspace = true }
+# BPE tokenizer for the entropy "rare-not-random" precision gate: tiktoken
+# cl100k_base chars-per-token separates word-like non-secrets (dotted API paths,
+# English prose) from random secrets. Optional, gated by the `entropy` feature so
+# non-entropy builds don't pull it. Vocab ranks are embedded (self-contained).
+tiktoken-rs = { version = "0.6", optional = true }
 
 [build-dependencies]
 serde_json = { workspace = true }

@@ -49,6 +49,7 @@ entropy_in_source_files = true
 entropy_ml_authoritative = false
 generic_keyword_low_entropy = false
 entropy_threshold = 3.75
+entropy_bpe_max_bytes_per_token = 3.0
 min_secret_len = 24
 max_file_size = 2048
 dedup = "File"
@@ -82,6 +83,10 @@ fn default_config_has_exact_shipped_values() {
     assert!(
         (d.entropy_threshold - 4.5).abs() < F64_EPS,
         "entropy_threshold"
+    );
+    assert!(
+        (d.entropy_bpe_max_bytes_per_token - 2.2).abs() < F64_EPS,
+        "entropy_bpe_max_bytes_per_token"
     );
     assert_eq!(d.min_secret_len, 16);
     assert_eq!(d.max_file_size, 100 * 1024 * 1024);
@@ -134,6 +139,7 @@ fn full_toml_parses_every_field_to_exact_value() {
     assert!(!c.entropy_ml_authoritative);
     assert!(!c.generic_keyword_low_entropy);
     assert!((c.entropy_threshold - 3.75).abs() < F64_EPS);
+    assert!((c.entropy_bpe_max_bytes_per_token - 3.0).abs() < F64_EPS);
     assert_eq!(c.min_secret_len, 24);
     assert_eq!(c.max_file_size, 2048);
     assert_eq!(c.dedup, DedupScope::File);
@@ -197,8 +203,8 @@ fn cli_override_beats_toml_beats_default_max_decode_depth() {
 
 #[test]
 fn omitted_optional_fields_take_shipped_defaults() {
-    // REQUIRED_ONLY_TOML omits the three serde-default fields: an older config
-    // must inherit the shipped defaults, never bool's `false`.
+    // REQUIRED_ONLY_TOML omits the four serde-default fields: an older config
+    // must inherit the shipped defaults, never bool's `false` / f64's `0.0`.
     let c = parse(REQUIRED_ONLY_TOML);
     assert!(
         c.entropy_ml_authoritative,
@@ -209,9 +215,27 @@ fn omitted_optional_fields_take_shipped_defaults() {
         "generic_keyword_low_entropy default"
     );
     assert!(!c.scan_comments, "scan_comments default is false");
+    // The BPE bound's serde default is LOAD-BEARING for recall: `f64`'s `0.0`
+    // would treat every non-empty candidate as word-like (bytes-per-token is
+    // always > 0) and suppress the entire entropy/generic surface. An old config
+    // that predates the field must inherit the shipped 2.2, never 0.0.
+    assert!(
+        (c.entropy_bpe_max_bytes_per_token - 2.2).abs() < F64_EPS,
+        "entropy_bpe_max_bytes_per_token must default to the shipped 2.2, not 0.0"
+    );
     // Sanity: the required fields still parsed to their TOML values.
     assert!((c.min_confidence - 0.5).abs() < F64_EPS);
     assert_eq!(c.max_decode_depth, 4);
+}
+
+#[test]
+fn explicit_entropy_bpe_max_bytes_per_token_overrides_default() {
+    let toml_text = format!("{REQUIRED_ONLY_TOML}\nentropy_bpe_max_bytes_per_token = 3.4\n");
+    let c = parse(&toml_text);
+    assert!((c.entropy_bpe_max_bytes_per_token - 3.4).abs() < F64_EPS);
+    // The other optionals still take their shipped defaults.
+    assert!(c.entropy_ml_authoritative);
+    assert!(c.generic_keyword_low_entropy);
 }
 
 #[test]

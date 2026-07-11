@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Add detector-owned BPE token-efficiency policy through
+  `bpe_max_bytes_per_token` in detector TOML. Generic and entropy fallback
+  paths resolve the same owning detector before applying the gate; detector
+  policy takes precedence over the compiled fallback, while an explicitly set
+  scan TOML/CLI value remains the final visible Tier-A override. Invalid
+  non-positive/non-finite bounds fail closed,
+  and the field participates in the detector digest used by caches and
+  calibration identity. Opaque generic API-key/secret policies use the measured
+  2.2 ceiling; password/passphrase-oriented policies explicitly disable the
+  word-likeness rejection so human-chosen phrases do not become false negatives.
 - Add the `aws-bedrock-api-key` detector (critical) — long-term AWS Bedrock
   API keys (`ABSK` prefix + the deterministic `QmVkcm9ja0FQSUtleS` base64
   anchor + 110-char body, 132 chars total; AWS's own published form). The

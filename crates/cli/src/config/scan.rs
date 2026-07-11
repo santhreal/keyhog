@@ -2,8 +2,10 @@ use super::limits::apply_limits_section;
 use super::schema::{ConfigFile, ScanSection};
 use crate::args::ScanArgs;
 use crate::value_parsers::{
-    parse_byte_size, parse_dedup_scope, parse_ml_threshold, parse_output_format,
-    parse_severity_filter,
+    parse_byte_size, parse_dedup_scope, parse_entropy_bpe_max_bytes_per_token,
+    parse_entropy_threshold, parse_min_confidence, parse_ml_threshold, parse_ml_weight,
+    parse_output_format, parse_severity_filter, DEDUP_SCOPE_ACCEPTED, OUTPUT_FORMAT_ACCEPTED,
+    SEVERITY_ACCEPTED,
 };
 use std::path::PathBuf;
 
@@ -52,15 +54,62 @@ fn parse_config_decode_depth(errors: &mut Vec<String>, field: &str, depth: usize
     None
 }
 
-fn parse_config_ml_threshold(errors: &mut Vec<String>, field: &str, threshold: f64) -> Option<f64> {
-    let rendered = threshold.to_string();
-    match parse_ml_threshold(&rendered) {
+/// Validate a `.keyhog.toml` numeric knob by routing its value through the SAME
+/// canonical CLI value_parser the corresponding flag uses (ONE-PLACE: each bound
+/// lives in exactly one validator). Renders the TOML f64 to its string form, runs
+/// the parser, and on rejection pushes a `field = value: <reason>` config error
+/// (returning None so the caller leaves the arg at its default). This is the ONE
+/// body for `min_confidence` / `ml_weight` / `ml_threshold` — the numeric knobs
+/// settable on BOTH the flag AND the `[scan]`/top-level TOML; each wrapper supplies
+/// only its parser. Without this routing, a config value the CLI fails closed on
+/// (e.g. `min_confidence = 5.0`) was applied un-validated and silently broke
+/// scanning (zero recall / distorted confidence) — a Law-10 silent failure.
+fn parse_config_f64(
+    errors: &mut Vec<String>,
+    field: &str,
+    value: f64,
+    parse: impl Fn(&str) -> Result<f64, String>,
+) -> Option<f64> {
+    let rendered = value.to_string();
+    match parse(&rendered) {
         Ok(value) => Some(value),
         Err(error) => {
             errors.push(super::invalid_config_value(field, &rendered, &error));
             None
         }
     }
+}
+
+fn parse_config_ml_threshold(errors: &mut Vec<String>, field: &str, threshold: f64) -> Option<f64> {
+    parse_config_f64(errors, field, threshold, parse_ml_threshold)
+}
+
+pub(super) fn parse_config_min_confidence(
+    errors: &mut Vec<String>,
+    field: &str,
+    confidence: f64,
+) -> Option<f64> {
+    parse_config_f64(errors, field, confidence, parse_min_confidence)
+}
+
+fn parse_config_ml_weight(errors: &mut Vec<String>, field: &str, weight: f64) -> Option<f64> {
+    parse_config_f64(errors, field, weight, parse_ml_weight)
+}
+
+fn parse_config_entropy_bpe_bound(
+    errors: &mut Vec<String>,
+    field: &str,
+    bound: f64,
+) -> Option<f64> {
+    parse_config_f64(errors, field, bound, parse_entropy_bpe_max_bytes_per_token)
+}
+
+fn parse_config_entropy_threshold(
+    errors: &mut Vec<String>,
+    field: &str,
+    threshold: f64,
+) -> Option<f64> {
+    parse_config_f64(errors, field, threshold, parse_entropy_threshold)
 }
 
 pub(super) fn validate_scan_preset_conflicts(
@@ -135,6 +184,9 @@ fn config_fast_noop_fields(config: &ConfigFile) -> Vec<&'static str> {
     if config.entropy_threshold.is_some() {
         fields.push("entropy_threshold");
     }
+    if config.entropy_bpe_max_bytes_per_token.is_some() {
+        fields.push("entropy_bpe_max_bytes_per_token");
+    }
     if config.min_secret_len.is_some() {
         fields.push("min_secret_len");
     }
@@ -144,11 +196,142 @@ fn config_fast_noop_fields(config: &ConfigFile) -> Vec<&'static str> {
     if config
         .scan
         .as_ref()
+        .is_some_and(|scan| scan.entropy_threshold.is_some())
+    {
+        fields.push("[scan].entropy_threshold");
+    }
+    if config
+        .scan
+        .as_ref()
         .is_some_and(|scan| scan.min_secret_len.is_some())
     {
         fields.push("[scan].min_secret_len");
     }
+    if config
+        .scan
+        .as_ref()
+        .is_some_and(|scan| scan.entropy_bpe_max_bytes_per_token.is_some())
+    {
+        fields.push("[scan].entropy_bpe_max_bytes_per_token");
+    }
     fields
+}
+
+/// Reject a scan knob defined through both its legacy flat alias and canonical
+/// `[scan]` key. Choosing either value silently makes the other operator input
+/// inert, and equality today can become a conflict when one side is edited.
+/// CLI flags still override TOML; this gate concerns ambiguity inside one file.
+pub(super) fn validate_scan_alias_conflicts(config: &ConfigFile, config_errors: &mut Vec<String>) {
+    let Some(scan) = config.scan.as_ref() else {
+        return;
+    };
+    macro_rules! reject_duplicate {
+        ($flat:expr, $nested:expr, $name:literal) => {
+            if $flat && $nested {
+                config_errors.push(format!(
+                    "- {0}: defined both as top-level `{0}` and canonical `[scan].{0}`; keep only `[scan].{0}`",
+                    $name
+                ));
+            }
+        };
+    }
+    reject_duplicate!(
+        config.severity.is_some(),
+        scan.severity.is_some(),
+        "severity"
+    );
+    reject_duplicate!(config.format.is_some(), scan.format.is_some(), "format");
+    reject_duplicate!(
+        config.min_confidence.is_some(),
+        scan.min_confidence.is_some(),
+        "min_confidence"
+    );
+    reject_duplicate!(
+        config.ml_threshold.is_some(),
+        scan.ml_threshold.is_some(),
+        "ml_threshold"
+    );
+    reject_duplicate!(config.threads.is_some(), scan.threads.is_some(), "threads");
+    reject_duplicate!(
+        config.reader_threads.is_some(),
+        scan.reader_threads.is_some(),
+        "reader_threads"
+    );
+    reject_duplicate!(
+        config.fused_batch.is_some(),
+        scan.fused_batch.is_some(),
+        "fused_batch"
+    );
+    reject_duplicate!(
+        config.fused_depth.is_some(),
+        scan.fused_depth.is_some(),
+        "fused_depth"
+    );
+    reject_duplicate!(
+        config.per_chunk_timeout_ms.is_some(),
+        scan.per_chunk_timeout_ms.is_some(),
+        "per_chunk_timeout_ms"
+    );
+    reject_duplicate!(config.dedup.is_some(), scan.dedup.is_some(), "dedup");
+    reject_duplicate!(
+        config.incremental.is_some(),
+        scan.incremental.is_some(),
+        "incremental"
+    );
+    reject_duplicate!(
+        config.incremental_cache.is_some(),
+        scan.incremental_cache.is_some(),
+        "incremental_cache"
+    );
+    reject_duplicate!(
+        config.decode_depth.is_some(),
+        scan.decode_depth.is_some(),
+        "decode_depth"
+    );
+    reject_duplicate!(
+        config.entropy_threshold.is_some(),
+        scan.entropy_threshold.is_some(),
+        "entropy_threshold"
+    );
+    reject_duplicate!(
+        config.entropy_bpe_max_bytes_per_token.is_some(),
+        scan.entropy_bpe_max_bytes_per_token.is_some(),
+        "entropy_bpe_max_bytes_per_token"
+    );
+    reject_duplicate!(
+        config.min_secret_len.is_some(),
+        scan.min_secret_len.is_some(),
+        "min_secret_len"
+    );
+    if config.exclude_paths.is_some() && scan.exclude.is_some() {
+        config_errors.push(
+            "- exclude: defined both as top-level `exclude_paths` and canonical `[scan].exclude`; keep only `[scan].exclude`"
+                .to_string(),
+        );
+    }
+}
+
+/// Apply a `.keyhog.toml` positive-integer scan knob: reject `0` with a "use a
+/// positive integer" config error, otherwise fill the CLI arg only when the
+/// operator left it unset (CLI overrides TOML). ONE home for the reject-0 +
+/// CLI-precedence guard that `threads` / `reader_threads` / `fused_batch` /
+/// `fused_depth` / `per_chunk_timeout_ms` / `min_secret_len` all share on BOTH
+/// the flat and `[scan]` config forms — `label` carries the `[scan].`-prefix
+/// distinction, and the generic `T` covers the `usize` knobs plus the `u64`
+/// `per_chunk_timeout_ms`. Before this the guard was pasted 12 times, which is
+/// exactly how `threads` silently diverged from `reader_threads` (missing its
+/// reject-0 check) until RECONCILE#14 — one owner makes that class impossible.
+fn apply_positive_int_field<T: Copy + PartialEq + From<u8>>(
+    config_errors: &mut Vec<String>,
+    target: &mut Option<T>,
+    label: &str,
+    value: T,
+) {
+    if value == T::from(0u8) {
+        config_errors.push(format!("- {label} = 0: use a positive integer"));
+    } else if target.is_none() {
+        *target = Some(value);
+    }
 }
 
 pub(super) fn apply_scan_section(
@@ -158,37 +341,55 @@ pub(super) fn apply_scan_section(
 ) {
     // `[scan]` nested table - the surface the README documents as canonical.
     // Mirrors the flat top-level scalars and fills only fields still at their
-    // default (so the flat form wins if both are present, and a `[scan]`-only
-    // config now actually takes effect instead of being silently dropped).
+    // default. `validate_scan_alias_conflicts` rejects a file that defines both
+    // forms, so this fallback behavior applies only after an explicit CLI value.
     if let Some(scan) = scan {
-        if args.severity.is_none() {
-            if let Some(ref s) = scan.severity {
-                match parse_severity_filter(s) {
-                    Some(severity) => args.severity = Some(severity),
-                    None => config_errors.push(super::invalid_config_value(
-                        "[scan].severity",
-                        s,
-                        "expected one of info, low, medium, high, critical",
-                    )),
+        if let Some(ref s) = scan.severity {
+            match parse_severity_filter(s) {
+                Some(severity) => {
+                    if args.severity.is_none() {
+                        args.severity = Some(severity);
+                    }
                 }
-            }
-        } else if let Some(ref s) = scan.severity {
-            if parse_severity_filter(s).is_none() {
-                config_errors.push(super::invalid_config_value(
+                None => config_errors.push(super::invalid_config_value(
                     "[scan].severity",
                     s,
-                    "expected one of info, low, medium, high, critical",
-                ));
+                    SEVERITY_ACCEPTED,
+                )),
             }
         }
-        if args.min_confidence.is_none() {
-            args.min_confidence = scan.min_confidence;
+        if let Some(confidence) = scan.min_confidence {
+            let parsed_confidence =
+                parse_config_min_confidence(config_errors, "[scan].min_confidence", confidence);
+            if args.min_confidence.is_none() {
+                args.min_confidence = parsed_confidence;
+            }
         }
         if let Some(threshold) = scan.ml_threshold {
             let parsed_threshold =
                 parse_config_ml_threshold(config_errors, "[scan].ml_threshold", threshold);
             if args.ml_threshold.is_none() {
                 args.ml_threshold = parsed_threshold;
+            }
+        }
+        if let Some(threshold) = scan.entropy_threshold {
+            let parsed_threshold = parse_config_entropy_threshold(
+                config_errors,
+                "[scan].entropy_threshold",
+                threshold,
+            );
+            if args.entropy_threshold.is_none() {
+                args.entropy_threshold = parsed_threshold;
+            }
+        }
+        if let Some(bound) = scan.entropy_bpe_max_bytes_per_token {
+            let parsed_bound = parse_config_entropy_bpe_bound(
+                config_errors,
+                "[scan].entropy_bpe_max_bytes_per_token",
+                bound,
+            );
+            if args.entropy_bpe_max_bytes_per_token.is_none() {
+                args.entropy_bpe_max_bytes_per_token = parsed_bound;
             }
         }
         if let Some(depth) = scan.decode_depth {
@@ -198,86 +399,82 @@ pub(super) fn apply_scan_section(
                 args.decode_depth = parsed_depth;
             }
         }
-        if scan.min_secret_len == Some(0) {
-            config_errors.push("- [scan].min_secret_len = 0: use a positive integer".to_string());
-        } else if args.min_secret_len.is_none() {
-            args.min_secret_len = scan.min_secret_len;
+        if let Some(min_secret_len) = scan.min_secret_len {
+            apply_positive_int_field(
+                config_errors,
+                &mut args.min_secret_len,
+                "[scan].min_secret_len",
+                min_secret_len,
+            );
         }
-        if !args.format_cli_explicit && matches!(args.format, crate::args::OutputFormat::Text) {
-            if let Some(ref f) = scan.format {
-                match parse_output_format(f) {
-                    Some(fmt) => args.format = fmt,
-                    None => config_errors.push(super::invalid_config_value(
-                        "[scan].format",
-                        f,
-                        "expected one of text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit",
-                    )),
+        if let Some(ref f) = scan.format {
+            match parse_output_format(f) {
+                Some(fmt) => {
+                    if !args.format_cli_explicit
+                        && matches!(args.format, crate::args::OutputFormat::Text)
+                    {
+                        args.format = fmt;
+                    }
                 }
-            }
-        } else if let Some(ref f) = scan.format {
-            if parse_output_format(f).is_none() {
-                config_errors.push(super::invalid_config_value(
+                None => config_errors.push(super::invalid_config_value(
                     "[scan].format",
                     f,
-                    "expected one of text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit",
-                ));
+                    OUTPUT_FORMAT_ACCEPTED,
+                )),
             }
         }
         if args.exclude_paths.is_none() {
             args.exclude_paths = scan.exclude;
         }
-        if args.threads.is_none() {
-            args.threads = scan.threads;
+        if let Some(threads) = scan.threads {
+            apply_positive_int_field(config_errors, &mut args.threads, "[scan].threads", threads);
         }
         if let Some(threads) = scan.reader_threads {
-            if threads == 0 {
-                config_errors
-                    .push("- [scan].reader_threads = 0: use a positive integer".to_string());
-            } else if args.reader_threads.is_none() {
-                args.reader_threads = Some(threads);
-            }
+            apply_positive_int_field(
+                config_errors,
+                &mut args.reader_threads,
+                "[scan].reader_threads",
+                threads,
+            );
         }
         if let Some(batch) = scan.fused_batch {
-            if batch == 0 {
-                config_errors.push("- [scan].fused_batch = 0: use a positive integer".to_string());
-            } else if args.fused_batch.is_none() {
-                args.fused_batch = Some(batch);
-            }
+            apply_positive_int_field(
+                config_errors,
+                &mut args.fused_batch,
+                "[scan].fused_batch",
+                batch,
+            );
         }
         if let Some(depth) = scan.fused_depth {
-            if depth == 0 {
-                config_errors.push("- [scan].fused_depth = 0: use a positive integer".to_string());
-            } else if args.fused_depth.is_none() {
-                args.fused_depth = Some(depth);
-            }
+            apply_positive_int_field(
+                config_errors,
+                &mut args.fused_depth,
+                "[scan].fused_depth",
+                depth,
+            );
         }
         if let Some(timeout_ms) = scan.per_chunk_timeout_ms {
-            if timeout_ms == 0 {
-                config_errors
-                    .push("- [scan].per_chunk_timeout_ms = 0: use a positive integer".to_string());
-            } else if args.per_chunk_timeout_ms.is_none() {
-                args.per_chunk_timeout_ms = Some(timeout_ms);
-            }
+            apply_positive_int_field(
+                config_errors,
+                &mut args.per_chunk_timeout_ms,
+                "[scan].per_chunk_timeout_ms",
+                timeout_ms,
+            );
         }
-        if !args.dedup_cli_explicit && matches!(args.dedup, crate::args::CliDedupScope::Credential)
-        {
-            if let Some(ref d) = scan.dedup {
-                match parse_dedup_scope(d) {
-                    Some(scope) => args.dedup = scope,
-                    None => config_errors.push(super::invalid_config_value(
-                        "[scan].dedup",
-                        d,
-                        "expected one of credential, file, none",
-                    )),
+        if let Some(ref d) = scan.dedup {
+            match parse_dedup_scope(d) {
+                Some(scope) => {
+                    if !args.dedup_cli_explicit
+                        && matches!(args.dedup, crate::args::CliDedupScope::Credential)
+                    {
+                        args.dedup = scope;
+                    }
                 }
-            }
-        } else if let Some(ref d) = scan.dedup {
-            if parse_dedup_scope(d).is_none() {
-                config_errors.push(super::invalid_config_value(
+                None => config_errors.push(super::invalid_config_value(
                     "[scan].dedup",
                     d,
-                    "expected one of credential, file, none",
-                ));
+                    DEDUP_SCOPE_ACCEPTED,
+                )),
             }
         }
         if let Some(incremental) = scan.incremental {
@@ -317,7 +514,7 @@ pub(super) fn apply_top_level_scan_fields(
             None => config_errors.push(super::invalid_config_value(
                 "format",
                 format_str,
-                "expected one of text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit",
+                OUTPUT_FORMAT_ACCEPTED,
             )),
         }
     }
@@ -332,7 +529,7 @@ pub(super) fn apply_top_level_scan_fields(
             None => config_errors.push(super::invalid_config_value(
                 "severity",
                 severity_str,
-                "expected one of info, low, medium, high, critical",
+                SEVERITY_ACCEPTED,
             )),
         }
     }
@@ -368,8 +565,9 @@ pub(super) fn apply_top_level_scan_fields(
     }
 
     if let Some(min_conf) = config.min_confidence {
+        let parsed = parse_config_min_confidence(config_errors, "min_confidence", min_conf);
         if args.min_confidence.is_none() {
-            args.min_confidence = Some(min_conf);
+            args.min_confidence = parsed;
         }
     }
 
@@ -381,37 +579,29 @@ pub(super) fn apply_top_level_scan_fields(
     }
 
     if let Some(threads) = config.threads {
-        if args.threads.is_none() {
-            args.threads = Some(threads);
-        }
+        apply_positive_int_field(config_errors, &mut args.threads, "threads", threads);
     }
     if let Some(threads) = config.reader_threads {
-        if threads == 0 {
-            config_errors.push("- reader_threads = 0: use a positive integer".to_string());
-        } else if args.reader_threads.is_none() {
-            args.reader_threads = Some(threads);
-        }
+        apply_positive_int_field(
+            config_errors,
+            &mut args.reader_threads,
+            "reader_threads",
+            threads,
+        );
     }
     if let Some(batch) = config.fused_batch {
-        if batch == 0 {
-            config_errors.push("- fused_batch = 0: use a positive integer".to_string());
-        } else if args.fused_batch.is_none() {
-            args.fused_batch = Some(batch);
-        }
+        apply_positive_int_field(config_errors, &mut args.fused_batch, "fused_batch", batch);
     }
     if let Some(depth) = config.fused_depth {
-        if depth == 0 {
-            config_errors.push("- fused_depth = 0: use a positive integer".to_string());
-        } else if args.fused_depth.is_none() {
-            args.fused_depth = Some(depth);
-        }
+        apply_positive_int_field(config_errors, &mut args.fused_depth, "fused_depth", depth);
     }
     if let Some(timeout_ms) = config.per_chunk_timeout_ms {
-        if timeout_ms == 0 {
-            config_errors.push("- per_chunk_timeout_ms = 0: use a positive integer".to_string());
-        } else if args.per_chunk_timeout_ms.is_none() {
-            args.per_chunk_timeout_ms = Some(timeout_ms);
-        }
+        apply_positive_int_field(
+            config_errors,
+            &mut args.per_chunk_timeout_ms,
+            "per_chunk_timeout_ms",
+            timeout_ms,
+        );
     }
 
     if let Some(ref dedup_str) = config.dedup {
@@ -427,7 +617,7 @@ pub(super) fn apply_top_level_scan_fields(
             None => config_errors.push(super::invalid_config_value(
                 "dedup",
                 dedup_str,
-                "expected one of credential, file, none",
+                DEDUP_SCOPE_ACCEPTED,
             )),
         }
     }
@@ -523,17 +713,31 @@ pub(super) fn apply_top_level_scan_fields(
     }
 
     if let Some(entropy_threshold) = config.entropy_threshold {
+        let parsed_threshold =
+            parse_config_entropy_threshold(config_errors, "entropy_threshold", entropy_threshold);
         if args.entropy_threshold.is_none() {
-            args.entropy_threshold = Some(entropy_threshold);
+            args.entropy_threshold = parsed_threshold;
+        }
+    }
+
+    if let Some(bpe_bound) = config.entropy_bpe_max_bytes_per_token {
+        let parsed_bound = parse_config_entropy_bpe_bound(
+            config_errors,
+            "entropy_bpe_max_bytes_per_token",
+            bpe_bound,
+        );
+        if args.entropy_bpe_max_bytes_per_token.is_none() {
+            args.entropy_bpe_max_bytes_per_token = parsed_bound;
         }
     }
 
     if let Some(min_secret_len) = config.min_secret_len {
-        if min_secret_len == 0 {
-            config_errors.push("- min_secret_len = 0: use a positive integer".to_string());
-        } else if args.min_secret_len.is_none() {
-            args.min_secret_len = Some(min_secret_len);
-        }
+        apply_positive_int_field(
+            config_errors,
+            &mut args.min_secret_len,
+            "min_secret_len",
+            min_secret_len,
+        );
     }
 
     if config.generic_keyword_low_entropy == Some(false) && !args.no_keyword_low_entropy {
@@ -553,8 +757,9 @@ pub(super) fn apply_top_level_scan_fields(
     }
 
     if let Some(ml_weight) = config.ml_weight {
+        let parsed = parse_config_ml_weight(config_errors, "ml_weight", ml_weight);
         if args.ml_weight.is_none() {
-            args.ml_weight = Some(ml_weight);
+            args.ml_weight = parsed;
         }
     }
 
@@ -572,6 +777,15 @@ pub(super) fn apply_top_level_scan_fields(
         if args.regex_dfa_limit.is_none() {
             if let Some(size) = parsed_size {
                 args.regex_dfa_limit = Some(size);
+            }
+        }
+    }
+
+    if let Some(ref limit_str) = config.megascan_input_len {
+        let parsed_size = parse_config_byte_size(config_errors, "megascan_input_len", limit_str);
+        if args.megascan_input_len.is_none() {
+            if let Some(size) = parsed_size {
+                args.megascan_input_len = Some(size);
             }
         }
     }

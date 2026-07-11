@@ -1,4 +1,6 @@
-use super::isolated::{collect_isolated_bare_candidates, isolated_bare_keyword_context};
+use super::isolated::{
+    collect_isolated_bare_candidates_inner, isolated_bare_keyword_context,
+};
 #[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
 pub(crate) use super::isolated::{
     colon_separated_opaque_candidate, lower_dash_app_password_floor_met,
@@ -11,15 +13,35 @@ pub(crate) use super::isolated::{
 };
 use super::{
     keywords::*, shannon_entropy, EntropyMatch, FIRST_SOURCE_LINE_NUMBER, HIGH_ENTROPY_THRESHOLD,
-    LOW_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD,
+    KEYWORD_FREE_MIN_LEN, LOW_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD,
 };
+use keyhog_core::DetectorSpec;
+
+fn get_spec(detector_id: &str) -> Option<&'static DetectorSpec> {
+    keyhog_core::detector_spec_by_id(detector_id)
+}
+
+pub(crate) fn classify_keyword_to_detector_id(keyword: &str) -> &'static str {
+    use crate::ascii_ci::ci_find;
+    use crate::detector_ids::{
+        GENERIC_API_KEY, GENERIC_KEYWORD_SECRET, GENERIC_PASSWORD, GENERIC_SECRET,
+    };
+    let bytes = keyword.as_bytes();
+    if keyword == KEYWORD_FREE_LABEL {
+        GENERIC_SECRET
+    } else if crate::entropy::keywords::keyword_is_password_family(keyword) {
+        GENERIC_PASSWORD
+    } else if ci_find(bytes, b"token") {
+        GENERIC_KEYWORD_SECRET
+    } else {
+        GENERIC_API_KEY
+    }
+}
 use crate::adjudicate::{EntropyShapeStage, StageId};
 use crate::entropy::plausibility::{is_secret_plausible, PlausibilityContext};
 
-const CREDENTIAL_CONTEXT_MIN_LEN: usize = 8;
-const KEYWORD_FREE_MIN_LEN: usize = 20;
-const MIN_PASSWORD_LEN: usize = 8;
-const KEYWORD_FREE_LABEL: &str = "none (high-entropy)";
+pub(crate) const CREDENTIAL_CONTEXT_MIN_LEN: usize = 8;
+pub(crate) const KEYWORD_FREE_LABEL: &str = "none (high-entropy)";
 
 /// Test-only constructor for a credential-anchor [`KeywordContext`] using the
 /// production tuning constants (the low-entropy floor and the credential-context
@@ -41,10 +63,18 @@ pub(crate) fn credential_keyword_context_with_lift(
     keyword: &str,
     allow_canonical_lift: bool,
 ) -> KeywordContext {
+    let detector_id = classify_keyword_to_detector_id(keyword);
+    let spec = get_spec(detector_id);
+    let entropy_low = spec
+        .and_then(|s| s.entropy_low)
+        .unwrap_or(LOW_ENTROPY_THRESHOLD);
+    let min_len = spec
+        .and_then(|s| s.min_len)
+        .unwrap_or(CREDENTIAL_CONTEXT_MIN_LEN);
     KeywordContext {
         keyword: keyword.to_string(),
-        threshold: LOW_ENTROPY_THRESHOLD,
-        min_len: CREDENTIAL_CONTEXT_MIN_LEN,
+        threshold: entropy_low,
+        min_len,
         is_credential_context: true,
         allow_canonical_shapes: allow_canonical_lift,
     }
@@ -60,12 +90,16 @@ pub fn find_entropy_secrets(
     test_keywords: &[String],
     placeholder_keywords: &[String],
 ) -> Vec<EntropyMatch> {
+    let spec = get_spec(crate::detector_ids::GENERIC_SECRET);
+    let entropy_very_high = spec
+        .and_then(|s| s.entropy_very_high)
+        .unwrap_or(VERY_HIGH_ENTROPY_THRESHOLD);
     find_entropy_secrets_with_threshold(
         text,
         min_length,
         context_lines,
         entropy_threshold,
-        VERY_HIGH_ENTROPY_THRESHOLD,
+        entropy_very_high,
         secret_keywords,
         test_keywords,
         placeholder_keywords,
@@ -165,18 +199,68 @@ pub(crate) fn find_entropy_secrets_with_canonical_lift_and_lines(
     skip_lines: Option<&std::collections::HashSet<usize>>,
     allow_canonical_lift: bool,
 ) -> Vec<EntropyMatch> {
+    // The explicit `keyword_free_threshold` is authoritative here — do NOT
+    // re-derive it from the generic-secret spec. The spec's `entropy_very_high`
+    // is the single-owner DEFAULT and is read in ONE place, the no-threshold
+    // convenience entry `find_entropy_secrets` (which passes it in as this
+    // param). Callers that pass an ADJUSTED threshold rely on it: the production
+    // `phase2_entropy` lowers it to `SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD`
+    // on sensitive paths (a recall boost), and a Tier-A operator can RAISE it for
+    // a stricter scan. A second spec read here silently clobbered both — a dead
+    // knob (WIRING) and a lost sensitive-file recall boost.
+    debug_assert!(
+        line_offsets.len() >= lines.len(),
+        "entropy line offsets must cover every split line"
+    );
+    let keyword_lines = find_keyword_assignment_lines(lines, secret_keywords);
+    find_entropy_secrets_with_precomputed_keywords(
+        lines,
+        line_offsets,
+        &keyword_lines,
+        min_length,
+        context_lines,
+        entropy_threshold,
+        keyword_free_threshold,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+        skip_lines,
+        allow_canonical_lift,
+    )
+}
+
+/// Same as [`find_entropy_secrets_with_canonical_lift_and_lines`] but accepts
+/// pre-computed keyword assignment lines, avoiding the O(lines × keywords)
+/// `find_keyword_assignment_lines` scan when the caller already has the result.
+/// This is the primary entry point for `scan_entropy_fallback`, which computes
+/// keyword lines once and reuses them across the appropriateness gate, the
+/// lower-dash app-password gate, and the full entropy scan.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn find_entropy_secrets_with_precomputed_keywords(
+    lines: &[&str],
+    line_offsets: &[usize],
+    keyword_lines: &[(usize, &str)],
+    min_length: usize,
+    context_lines: usize,
+    entropy_threshold: f64,
+    keyword_free_threshold: f64,
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+    skip_lines: Option<&std::collections::HashSet<usize>>,
+    allow_canonical_lift: bool,
+) -> Vec<EntropyMatch> {
     debug_assert!(
         line_offsets.len() >= lines.len(),
         "entropy line offsets must cover every split line"
     );
     let mut matches = Vec::new();
     let mut seen = std::collections::HashSet::new();
-    let keyword_lines = find_keyword_assignment_lines(lines, secret_keywords);
 
     scan_keyword_contexts(
         lines,
         line_offsets,
-        &keyword_lines,
+        keyword_lines,
         min_length,
         context_lines,
         entropy_threshold,
@@ -246,6 +330,68 @@ fn scan_keyword_contexts(
     }
 }
 
+/// 256-byte lookup table for fast byte classification in the entropy scan.
+/// Each byte is classified with bit flags:
+/// - bit 0 (1): ASCII whitespace (space, tab, newline, CR)
+/// - bit 1 (2): entropy candidate byte (alphanumeric + -_+/=.:!@#$%^&*)
+/// - bit 2 (4): trigger byte (=, :, ", ', <) — required by `extract_candidates`
+///
+/// Using a lookup table instead of `is_ascii_alphanumeric()` + `matches!()`
+/// per byte cuts the per-line byte scan from ~3-5 comparisons/byte to a single
+/// table lookup, saving ~15ms across 9 windows at 8 MiB.
+pub(super) const BYTE_CLASS: [u8; 256] = {
+    let mut t = [0u8; 256];
+    // Whitespace
+    t[b' ' as usize] |= 1;
+    t[b'\t' as usize] |= 1;
+    t[b'\n' as usize] |= 1;
+    t[b'\r' as usize] |= 1;
+    t[0x0b] |= 1; // vertical tab
+    t[0x0c] |= 1; // form feed
+    // Trigger bytes: =, :, ", ', <
+    t[b'=' as usize] |= 4;
+    t[b':' as usize] |= 4;
+    t[b'"' as usize] |= 4;
+    t[b'\'' as usize] |= 4;
+    t[b'<' as usize] |= 4;
+    // Entropy candidate bytes: alphanumeric + -_+/=.:!@#$%^&*
+    // Digits 0-9
+    let mut i = b'0' as usize;
+    while i <= b'9' as usize {
+        t[i] |= 2;
+        i += 1;
+    }
+    // Uppercase A-Z
+    i = b'A' as usize;
+    while i <= b'Z' as usize {
+        t[i] |= 2;
+        i += 1;
+    }
+    // Lowercase a-z
+    i = b'a' as usize;
+    while i <= b'z' as usize {
+        t[i] |= 2;
+        i += 1;
+    }
+    // Symbol set
+    t[b'-' as usize] |= 2;
+    t[b'_' as usize] |= 2;
+    t[b'+' as usize] |= 2;
+    t[b'/' as usize] |= 2;
+    t[b'=' as usize] |= 2;
+    t[b'.' as usize] |= 2;
+    t[b':' as usize] |= 2;
+    t[b'!' as usize] |= 2;
+    t[b'@' as usize] |= 2;
+    t[b'#' as usize] |= 2;
+    t[b'$' as usize] |= 2;
+    t[b'%' as usize] |= 2;
+    t[b'^' as usize] |= 2;
+    t[b'&' as usize] |= 2;
+    t[b'*' as usize] |= 2;
+    t
+};
+
 fn scan_keyword_free_candidates(
     lines: &[&str],
     line_offsets: &[usize],
@@ -257,50 +403,138 @@ fn scan_keyword_free_candidates(
     skip_lines: Option<&std::collections::HashSet<usize>>,
 ) {
     let effective_keyword_free_threshold = keyword_free_threshold.max(entropy_threshold + 1.0);
+    let spec = get_spec(crate::detector_ids::GENERIC_SECRET);
+    let keyword_free_min_len = spec
+        .and_then(|s| s.keyword_free_min_len)
+        .unwrap_or(KEYWORD_FREE_MIN_LEN);
     let keyword_free_context = KeywordContext {
         keyword: KEYWORD_FREE_LABEL.to_string(),
         threshold: effective_keyword_free_threshold,
-        min_len: KEYWORD_FREE_MIN_LEN,
+        min_len: keyword_free_min_len,
         is_credential_context: false,
         // Keyword-FREE: no credential anchor ⇒ no positive evidence ⇒ the
         // canonical hash/UUID-shape gate stays strict here unconditionally,
         // regardless of model authority. The lift is anchor-gated.
         allow_canonical_shapes: false,
     };
+    // PER-DETECTOR-MIGRATION-BLOCKED: isolated_bare_keyword_context is defined in isolated.rs and acts on unattributed bare/isolated tokens.
     let isolated_token_context = isolated_bare_keyword_context(entropy_threshold);
+    let isolated_min_len = isolated_token_context.min_len;
     for (line_idx, line) in lines.iter().enumerate() {
         if let Some(skip) = skip_lines {
             if skip.contains(&line_idx) {
                 continue;
             }
         }
-        collect_isolated_bare_candidates(
-            line,
-            line_idx,
-            line_offsets[line_idx],
-            &isolated_token_context,
-            seen,
-            matches,
-            placeholder_keywords,
-        );
-        collect_line_candidates(
-            line,
-            line_idx,
-            line_offsets[line_idx],
-            &keyword_free_context,
-            seen,
-            matches,
-            placeholder_keywords,
-        );
+        // Single innocuous check for both paths (was called twice, once per
+        // collect function). This is the single biggest per-line CPU saving
+        // in the keyword-free scan: `is_likely_innocuous_line` does trim +
+        // URI checks + import-prefix scan + hash-label scan + 40-hex check.
+        if is_likely_innocuous_line(line) {
+            continue;
+        }
+        // Single-pass byte scan using a 256-entry lookup table for fast
+        // classification. Tracks three necessary conditions simultaneously:
+        // 1. has_trigger: line contains '=', ':', '"', '\'', or '<'
+        // 2. max_entropy_run: longest run of consecutive entropy candidate bytes
+        // 3. max_nonws_run: longest non-whitespace run
+        let bytes = line.as_bytes();
+        let mut has_trigger = false;
+        let mut max_entropy_run = 0usize;
+        let mut cur_entropy_run = 0usize;
+        let mut max_nonws_run = 0usize;
+        let mut cur_nonws_run = 0usize;
+        for &b in bytes {
+            let class = BYTE_CLASS[b as usize];
+            if class & 1 != 0 {
+                // whitespace
+                if cur_entropy_run > max_entropy_run {
+                    max_entropy_run = cur_entropy_run;
+                }
+                cur_entropy_run = 0;
+                if cur_nonws_run > max_nonws_run {
+                    max_nonws_run = cur_nonws_run;
+                }
+                cur_nonws_run = 0;
+            } else {
+                cur_nonws_run += 1;
+                if class & 2 != 0 {
+                    cur_entropy_run += 1;
+                } else {
+                    if cur_entropy_run > max_entropy_run {
+                        max_entropy_run = cur_entropy_run;
+                    }
+                    cur_entropy_run = 0;
+                }
+                if !has_trigger && class & 4 != 0 {
+                    has_trigger = true;
+                }
+            }
+        }
+        if cur_entropy_run > max_entropy_run {
+            max_entropy_run = cur_entropy_run;
+        }
+        if cur_nonws_run > max_nonws_run {
+            max_nonws_run = cur_nonws_run;
+        }
+        // Isolated-bare path: needs a non-whitespace run ≥ isolated_min_len.
+        // Use max_nonws_run (not max_entropy_run) because isolated_bare_candidate
+        // accepts tokens with non-entropy bytes like `()` — the byte set is
+        // wider than is_entropy_candidate_byte. But also require
+        // max_entropy_run ≥ isolated_min_len as a fast skip for lines where
+        // even the longest entropy run is too short, since the isolated-bare
+        // path's `isolated_bare_candidate` requires alpha+digit or symbolic
+        // opacity, which implies entropy bytes.
+        if max_nonws_run >= isolated_min_len {
+            collect_isolated_bare_candidates_inner(
+                line,
+                line_idx,
+                line_offsets[line_idx],
+                &isolated_token_context,
+                seen,
+                matches,
+                placeholder_keywords,
+            );
+        }
+        // Keyword-free path: `extract_candidates` + `push_candidate` checks
+        // `cleaned.len() < keyword_free_min_len`. A candidate of length ≥
+        // keyword_free_min_len that is a plausible secret consists entirely of
+        // entropy candidate bytes, so max_entropy_run ≥ keyword_free_min_len
+        // is a necessary condition. Skip extraction for lines without it.
+        if has_trigger && max_entropy_run >= keyword_free_min_len {
+            collect_line_candidates_inner(
+                line,
+                line_idx,
+                line_offsets[line_idx],
+                &keyword_free_context,
+                seen,
+                matches,
+                placeholder_keywords,
+            );
+        }
     }
 }
 
 #[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
+#[allow(dead_code)] // Retained as convenience wrapper; production uses _with_precomputed_keywords
 pub(crate) fn has_lower_dash_app_password_candidate_with_lines(
     lines: &[&str],
     config: &crate::ScannerConfig,
 ) -> bool {
-    for (_, keyword_line) in find_keyword_assignment_lines(lines, &config.secret_keywords) {
+    let keyword_lines = find_keyword_assignment_lines(lines, &config.secret_keywords);
+    has_lower_dash_app_password_candidate_with_precomputed_keywords(lines, &keyword_lines, config)
+}
+
+/// Same as [`has_lower_dash_app_password_candidate_with_lines`] but accepts
+/// pre-computed keyword assignment lines, avoiding the redundant
+/// `find_keyword_assignment_lines` scan when the caller already has the result.
+#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
+pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords(
+    _lines: &[&str],
+    keyword_lines: &[(usize, &str)],
+    config: &crate::ScannerConfig,
+) -> bool {
+    for (_, keyword_line) in keyword_lines {
         if is_likely_innocuous_line(keyword_line) {
             continue;
         }
@@ -317,6 +551,7 @@ pub(crate) fn has_lower_dash_app_password_candidate_with_lines(
             &config.placeholder_keywords,
             context.is_credential_context,
             false,
+            Some(classify_keyword_to_detector_id(&context.keyword)),
         ) {
             let entropy = shannon_entropy(candidate.as_bytes());
             if lower_dash_app_password_floor_met(&candidate, entropy)
@@ -346,7 +581,30 @@ fn collect_line_candidates(
     if is_likely_innocuous_line(line) {
         return;
     }
+    collect_line_candidates_inner(
+        line,
+        line_idx,
+        line_offset,
+        context,
+        seen,
+        matches,
+        placeholder_keywords,
+    );
+}
 
+/// Inner extraction logic without the `is_likely_innocuous_line` gate.
+/// The caller MUST have already verified the line is not innocuous.
+/// Used by `scan_keyword_free_candidates` which performs the innocuous check
+/// once per line for both the isolated-bare and line-candidate paths.
+fn collect_line_candidates_inner(
+    line: &str,
+    line_idx: usize,
+    line_offset: usize,
+    context: &KeywordContext,
+    seen: &mut std::collections::HashSet<String>,
+    matches: &mut Vec<EntropyMatch>,
+    placeholder_keywords: &[String],
+) {
     let candidates = if crate::telemetry::is_dogfood_enabled() {
         let extracted = extract_candidates_with_rejections(
             line,
@@ -354,6 +612,7 @@ fn collect_line_candidates(
             placeholder_keywords,
             context.is_credential_context,
             context.allow_canonical_shapes,
+            Some(classify_keyword_to_detector_id(&context.keyword)),
         );
         for rejection in &extracted.rejections {
             let ctx = crate::adjudicate::MatchCtx::for_entropy_generation(
@@ -369,6 +628,7 @@ fn collect_line_candidates(
             placeholder_keywords,
             context.is_credential_context,
             context.allow_canonical_shapes,
+            Some(classify_keyword_to_detector_id(&context.keyword)),
         )
     };
 
@@ -418,10 +678,25 @@ pub(crate) fn candidate_plausibility_rejection_stage(
     context: &KeywordContext,
     placeholder_keywords: &[String],
 ) -> Option<StageId> {
+    let detector_id = classify_keyword_to_detector_id(&context.keyword);
+    let spec = get_spec(detector_id);
+    let keyword_free_min_len = spec
+        .and_then(|s| s.keyword_free_min_len)
+        .unwrap_or(KEYWORD_FREE_MIN_LEN);
+    let credential_context_min_len = spec
+        .and_then(|s| s.min_len)
+        .unwrap_or(CREDENTIAL_CONTEXT_MIN_LEN);
+
     if crate::suppression::shape::is_structured_dotted_token(candidate) {
-        return (candidate.len() < KEYWORD_FREE_MIN_LEN.min(context.min_len)).then_some(
-            StageId::EntropyValueShape(EntropyShapeStage::StructuredDottedTooShort),
-        );
+        if candidate.len() < keyword_free_min_len.min(context.min_len) {
+            return Some(StageId::EntropyValueShape(
+                EntropyShapeStage::StructuredDottedTooShort,
+            ));
+        }
+        // A JWT/Discord-shaped value gets the shape-specific length allowance,
+        // not blanket admission. It must still clear the active entropy floor
+        // and downstream plausibility gates; otherwise repeated-segment dotted
+        // placeholders fail open as secrets.
     }
     if entropy < context.threshold {
         return Some(StageId::EntropyBelowFloor);
@@ -456,11 +731,11 @@ pub(crate) fn candidate_plausibility_rejection_stage(
                 EntropyShapeStage::CanonicalNonSecretShape,
             ));
         }
-        return (candidate.len() < MIN_PASSWORD_LEN).then_some(StageId::EntropyValueShape(
-            EntropyShapeStage::CredentialContextTooShort,
-        ));
+        return (candidate.len() < credential_context_min_len).then_some(
+            StageId::EntropyValueShape(EntropyShapeStage::CredentialContextTooShort),
+        );
     }
-    if candidate.len() < KEYWORD_FREE_MIN_LEN.min(context.min_len) {
+    if candidate.len() < keyword_free_min_len.min(context.min_len) {
         return Some(StageId::EntropyValueShape(
             EntropyShapeStage::KeywordFreeTooShort,
         ));
@@ -513,7 +788,7 @@ pub(crate) fn canonical_shape_lift_allowed(value: &str, keyword: &str) -> bool {
     }
 }
 
-fn keyword_is_crypto_key_material(keyword: &str) -> bool {
+pub(crate) fn keyword_is_crypto_key_material(keyword: &str) -> bool {
     [
         "encryptionkey",
         "masterkey",
@@ -533,7 +808,7 @@ fn keyword_is_crypto_key_material(keyword: &str) -> bool {
     .any(|needle| compact_keyword_contains(keyword, needle.as_bytes()))
 }
 
-fn keyword_is_key_material(keyword: &str) -> bool {
+pub(crate) fn keyword_is_key_material(keyword: &str) -> bool {
     [
         "apikey",
         "accesskey",
@@ -601,7 +876,7 @@ fn compact_keyword_contains(keyword: &str, needle: &[u8]) -> bool {
     false
 }
 
-fn keyword_context(
+pub(crate) fn keyword_context(
     keyword_line: &str,
     min_length: usize,
     entropy_threshold: f64,
@@ -630,20 +905,41 @@ fn keyword_context(
                 crate::ascii_ci::ci_find_nonempty(line_bytes, credential_keyword.as_bytes())
             });
 
-    let base_threshold =
-        if entropy_threshold.is_finite() && entropy_threshold > HIGH_ENTROPY_THRESHOLD {
-            entropy_threshold
-        } else if entropy_threshold.is_finite() {
-            entropy_threshold.min(LOW_ENTROPY_THRESHOLD)
+    let detector_id = classify_keyword_to_detector_id(keyword);
+    let spec = get_spec(detector_id);
+    let entropy_low = spec
+        .and_then(|s| s.entropy_low)
+        .unwrap_or(LOW_ENTROPY_THRESHOLD);
+    let min_len = spec
+        .and_then(|s| s.min_len)
+        .unwrap_or(CREDENTIAL_CONTEXT_MIN_LEN);
+    let entropy_high = spec
+        .and_then(|s| s.entropy_high)
+        .unwrap_or(HIGH_ENTROPY_THRESHOLD);
+
+    // Keyword-anchored floor policy — a NAMED, tested rule, not a silent clamp.
+    // Inside a credential-keyword context the keyword IS the positive evidence,
+    // so the entropy bar is the LOW floor. The operator's Tier-A threshold
+    // engages only when it is stricter than the blanket HIGH floor — that shared
+    // decision lives in one owner, `operator_entropy_override` (see its doc). It
+    // is honored verbatim when it overrides; otherwise the keyword floor is
+    // `min(threshold, LOW)` for a finite request (a below-LOW request may still
+    // loosen the recall-oriented keyword path) and LOW for a non-finite one.
+    let operator_override = (entropy_threshold.is_finite() && entropy_threshold > entropy_high)
+        .then_some(entropy_threshold);
+    let base_threshold = operator_override.unwrap_or_else(|| {
+        if entropy_threshold.is_finite() {
+            entropy_threshold.min(entropy_low)
         } else {
-            LOW_ENTROPY_THRESHOLD
-        };
+            entropy_low
+        }
+    });
 
     KeywordContext {
         keyword: keyword.to_string(),
         threshold: base_threshold,
         min_len: if is_credential_context {
-            CREDENTIAL_CONTEXT_MIN_LEN
+            min_len
         } else {
             min_length
         },

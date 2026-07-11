@@ -29,14 +29,40 @@ impl CompiledScanner {
             return;
         }
         let entropy_lines: Vec<&str> = preprocessed.text.lines().collect();
-        let path_entropy_appropriate = crate::entropy::is_entropy_appropriate_with_content_lines(
-            chunk.metadata.path.as_deref(),
-            self.config.entropy_in_source_files,
+        // Compute keyword assignment lines ONCE and reuse across the
+        // appropriateness gate, the lower-dash app-password gate, and the
+        // full entropy scan. Previously `find_keyword_assignment_lines` was
+        // called 2-3 times per chunk (O(lines × 19 keywords) each), which
+        // was the dominant entropy-scan cost at 8 MiB (~33% of the 18.3ms
+        // per-chunk entropy time).
+        let keyword_assignment_lines = crate::entropy::keywords::find_keyword_assignment_lines(
             &entropy_lines,
             &self.config.secret_keywords,
         );
-        let source_entropy_requires_same_line_credential = !self.config.entropy_in_source_files
-            && crate::decode::caesar::is_program_source_code_path(chunk.metadata.path.as_deref());
+        let source_path =
+            crate::decode::caesar::is_program_source_code_path(chunk.metadata.path.as_deref());
+        // `is_entropy_appropriate_inner` needs `has_secret_keyword_line`. For
+        // source files without `entropy_in_source_files`, the keyword-presence
+        // signal is `line_has_credential_assignment_surface` (a stricter check
+        // that requires a credential-shaped assignment, not just any secret
+        // keyword). For all other paths, `find_keyword_assignment_lines` is
+        // the signal. We reuse the pre-computed `keyword_assignment_lines`
+        // for the latter case.
+        let has_secret_keyword_line = if source_path && !self.config.entropy_in_source_files {
+            entropy_lines
+                .iter()
+                .copied()
+                .any(crate::entropy::keywords::line_has_credential_assignment_surface)
+        } else {
+            !keyword_assignment_lines.is_empty()
+        };
+        let path_entropy_appropriate = crate::entropy::is_entropy_appropriate_inner(
+            chunk.metadata.path.as_deref(),
+            self.config.entropy_in_source_files,
+            has_secret_keyword_line,
+        );
+        let source_entropy_requires_same_line_credential =
+            !self.config.entropy_in_source_files && source_path;
         let isolated_bare_candidate = !path_entropy_appropriate
             && crate::entropy::scanner::has_isolated_bare_secret_candidate_with_lines(
                 &entropy_lines,
@@ -45,8 +71,9 @@ impl CompiledScanner {
             );
         #[cfg(feature = "simd")]
         let lower_dash_app_password_candidate = path_entropy_appropriate
-            && crate::entropy::scanner::has_lower_dash_app_password_candidate_with_lines(
+            && crate::entropy::scanner::has_lower_dash_app_password_candidate_with_precomputed_keywords(
                 &entropy_lines,
+                &keyword_assignment_lines,
                 &self.config,
             );
         if !path_entropy_appropriate && !isolated_bare_candidate {
@@ -106,9 +133,10 @@ impl CompiledScanner {
         #[cfg(not(feature = "ml"))]
         let allow_canonical_lift = false;
         let entropy_matches =
-            crate::entropy::scanner::find_entropy_secrets_with_canonical_lift_and_lines(
+            crate::entropy::scanner::find_entropy_secrets_with_precomputed_keywords(
                 &entropy_lines,
                 line_offsets,
+                &keyword_assignment_lines,
                 self.config.min_secret_len,
                 1,
                 self.config.entropy_threshold,
@@ -119,9 +147,20 @@ impl CompiledScanner {
                 Some(&skip_lines),
                 allow_canonical_lift,
             );
-        for entropy_match in entropy_matches {
+        for mut entropy_match in entropy_matches {
             // Resolve metadata once; emit clones the pre-interned triple.
             let entropy_meta_idx = helpers::classify_entropy_detector_index(&entropy_match.keyword);
+            let policy_detector_id =
+                crate::entropy::scanner::classify_keyword_to_detector_id(&entropy_match.keyword);
+            let policy_detector = self
+                .generic_owning_detector
+                .index_for_id(policy_detector_id)
+                .map(|index| &self.detectors[index]);
+            let bpe_bound = crate::entropy::bpe::max_bytes_per_token_for_detector(
+                policy_detector,
+                self.config.entropy_bpe_max_bytes_per_token,
+                self.config.entropy_bpe_max_bytes_per_token_override,
+            );
             let policy_conf = crate::confidence::policy::entropy_fallback_confidence(
                 entropy_match.entropy,
                 &entropy_match.keyword,
@@ -136,7 +175,9 @@ impl CompiledScanner {
                 entropy_match.offset,
                 &entropy_match.value,
             );
-            let offset = source_offset + chunk.metadata.base_offset;
+            let Some(offset) = absolute_offset(chunk.metadata.base_offset, source_offset) else {
+                continue;
+            };
 
             // Pass the lift switch only after generation; the gauntlet still
             // owns every non-canonical precision gate.
@@ -147,6 +188,7 @@ impl CompiledScanner {
                 chunk,
                 allow_canonical_lift,
                 source_entropy_requires_same_line_credential,
+                bpe_bound,
             ) {
                 let entropy_ctx = crate::adjudicate::MatchCtx::for_entropy_fallback(
                     crate::adjudicate::EntropyFallbackSignal::ValueShape(shape_stage),
@@ -175,7 +217,7 @@ impl CompiledScanner {
             }
 
             let metadata = &self.entropy_metadata_by_index[entropy_meta_idx];
-            let absolute_line = mapped_line + chunk.metadata.base_line;
+            let line_number = absolute_line(chunk.metadata.base_line, mapped_line);
             let build_raw_match = |scan_state: &mut ScanState, report_conf| {
                 // Clone metadata only for candidates that need an owned RawMatch.
                 let detector_id = Arc::clone(&metadata.0);
@@ -187,7 +229,7 @@ impl CompiledScanner {
                     chunk,
                     &entropy_match.value,
                     offset,
-                    Some(absolute_line),
+                    Some(line_number),
                     Some(entropy_match.entropy),
                     report_conf,
                     scan_state,
@@ -206,8 +248,10 @@ impl CompiledScanner {
             // `checksum_adjusted_confidence` tail (the batch path applies both,
             // identically). The shape gates above remain cheap, recall-safe
             // pre-filters.
-            let min_confidence_floor =
-                crate::adjudicate::detectorless_min_confidence_floor(self.config.min_confidence);
+            let min_confidence_floor = crate::adjudicate::detector_min_confidence_floor(
+                policy_detector.and_then(|detector| detector.min_confidence),
+                self.config.min_confidence,
+            );
             #[cfg(feature = "ml")]
             if self.config.ml_enabled && self.config.entropy_ml_authoritative {
                 let raw_match = build_raw_match(scan_state, policy_conf);
@@ -219,7 +263,7 @@ impl CompiledScanner {
                 scan_state.push_entropy_authoritative_ml_pending(
                     raw_match,
                     policy_conf,
-                    entropy_match.value.to_string(),
+                    std::mem::take(&mut entropy_match.value),
                     ml_context,
                     min_confidence_floor,
                 );
@@ -252,7 +296,7 @@ impl CompiledScanner {
                     detector_id: metadata.0.as_ref(),
                     credential: &entropy_match.value,
                     offset,
-                    line: Some(absolute_line),
+                    line: Some(line_number),
                 },
                 self.config.max_matches_per_chunk,
                 |scan_state| build_raw_match(scan_state, report_conf),

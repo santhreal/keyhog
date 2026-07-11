@@ -244,7 +244,7 @@ knockoff_accounts = []
 [tuning]
 fallback_hs = true
 hs_prefilter_max_len = 4096
-hs_shard_target = 80
+hs_shard_target = 320
 fallback_anchor = true
 homoglyph_gate = true
 homoglyph_ascii_skip = true
@@ -289,8 +289,9 @@ gpu_moe_timeout_ms = 30000
 # ============================================================================
 # NESTED TABLES  (must come AFTER every flat key above — TOML rule)
 # ============================================================================
-# All flat keys above also have a nested equivalent. Use either shape; if
-# both set the same value the flat form wins. Full reference:
+# Scan-policy flat keys above also have nested equivalents. Use either shape,
+# never both for one knob: duplicate aliases fail closed and name `[scan]` as
+# the canonical fix. Full reference:
 # docs/src/reference/configuration.md
 
 # [scan] — runtime scan policy (mirrors the flat scalars above).

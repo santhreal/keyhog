@@ -6,15 +6,23 @@ credentials.
 
 ```text
 $ keyhog scan .
-K E Y H O G
-───────────
-v0.5.40 · secret scanner · 916 detectors
-by santh
+    K E Y H O G
+    ───────────
+    v0.5.40 · secret scanner · 920 detectors
+    by santh
 
-⚡ 16 cores | GPU: NVIDIA GeForce RTX 5090 | SIMD: AVX-512 | Hyperscan | 916 detectors (6061 patterns) io_uring | backend=simd-regex | gpu=none
+  ┌    CRITICAL ─── Stripe Secret Key
+  │ Secret:     sk_l...p7dc
+  │ Location:   src/config/staging.env:14
+  │ Confidence: ■■■■■■ 100%
+  │ Action:     Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.
+  │ Docs:       https://docs.stripe.com/keys#roll-api-key
+  └─────────────────────────────────────────────
 
-scanned 12,841 files in 1.4 s
-3 findings · 0 verified live · 1041 example fixtures suppressed
+  ━━━ Results ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  1 secret found · 1 unverified
+
+Scan complete. Found 1 secret in 1.42s.
 ```
 
 ## What it does
@@ -28,7 +36,7 @@ has:
 - an **entropy score** + **confidence**
 - an optional **live verification** result if you pass `--verify`
 
-The list of detectors ships in TOML files under `detectors/`. There are 916
+The list of detectors ships in TOML files under `detectors/`. There are 920
 of them today, covering ~750 distinct services. Anyone can add or override
 them without touching Rust code.
 
@@ -37,10 +45,12 @@ them without touching Rust code.
 - **No telemetry.** Findings stay local. The scanner never phones home.
 - **No agent.** A daemon mode exists for IDE-save and stdin/single-file
   fast-path scans on Unix, but it's opt-in and stays on your machine.
-- **No "AI-powered" detection.** Every detector is a regex with a
-  service-specific anchor and a real verification endpoint. The ML
-  scorer that bumps confidence on ambiguous matches is a tiny on-device
-  MoE; no network calls.
+- **No remote "AI-powered" detection.** Service detectors use TOML regexes and
+  structural validators; generic detectors compose assignment shape, entropy,
+  BPE token efficiency, context, and local confidence policy. The small
+  on-device MoE scores ambiguous candidates without sending content away.
+  Verification is optional and is the only detection-adjacent step that calls a
+  service endpoint.
 
 ## Why another scanner
 

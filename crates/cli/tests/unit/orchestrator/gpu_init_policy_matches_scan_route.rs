@@ -180,6 +180,20 @@ fn autoroute_config_digest_includes_gpu_autoroute_opt_in() {
 }
 
 #[test]
+fn autoroute_config_digest_distinguishes_detector_local_from_explicit_bpe_policy() {
+    let detector_local = keyhog_scanner::ScannerConfig::default();
+    let mut explicit_same_value = detector_local.clone();
+    explicit_same_value.entropy_bpe_max_bytes_per_token_override =
+        Some(detector_local.entropy_bpe_max_bytes_per_token);
+
+    assert_ne!(
+        API.autoroute_config_digest_for_scanner(detector_local),
+        API.autoroute_config_digest_for_scanner(explicit_same_value),
+        "an explicit scan-wide BPE override changes behavior for detector-tuned policies even when its numeric value equals the compiled fallback"
+    );
+}
+
+#[test]
 fn autoroute_config_digest_includes_source_limits() {
     with_route_policy_lock(|| {
         let mut default_limit = scan_args(&["scan", "--no-config", "--stdin"]);

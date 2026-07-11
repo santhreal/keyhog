@@ -1,6 +1,6 @@
 # Configuration
 
-keyhog runs with **zero configuration** — `keyhog scan .` works out of the
+keyhog runs with **zero configuration**: `keyhog scan .` works out of the
 box on the canonical tuned defaults. Everything on this page is optional
 override.
 
@@ -16,7 +16,7 @@ compiled defaults  →  .keyhog.toml  →  CLI flags
 
 - **Compiled defaults** live in one place: `ScanConfig::default()` in
   `crates/core/src/config.rs`. They are the *tuned == benched == shipped*
-  values — the same numbers the SecretBench leaderboard is measured on. The
+  values: the same numbers the SecretBench leaderboard is measured on. The
   unit test `crates/core/tests/unit/config.rs` pins them, so a change to a
   shipped default is a deliberate, test-gated decision.
 - **`.keyhog.toml`** is discovered by walking up from the scan path to the
@@ -39,18 +39,19 @@ Each row is the same knob across all three layers. Defaults are
 
 | Setting | Default | `.keyhog.toml` key | CLI flag | Effect |
 |---|---|---|---|---|
-| Min confidence | **0.40** | `min_confidence` | `--min-confidence` | Drop findings scoring below this (0.0–1.0). Bench-tuned for max F1. |
-| Decode depth | **10** | `decode_depth` | `--decode-depth` | Max recursive decode passes, e.g. `base64(hex(url(secret)))` (1–10). |
+| Min confidence | **0.40** | `min_confidence` | `--min-confidence` | Drop findings scoring below this (0.0-1.0). Bench-tuned for max F1. |
+| Decode depth | **10** | `decode_depth` | `--decode-depth` | Max recursive decode passes, e.g. `base64(hex(url(secret)))` (1-10). |
 | Decode size limit | **512KB** | `decode_size_limit` | `--decode-size-limit` | Per-file ceiling for decode-through; larger files skip encoding detection. |
 | Entropy enabled | on | `no_entropy = true` disables | `--no-entropy` | Shannon-entropy detection for novel high-entropy strings. |
 | Entropy in source | off | `entropy_source_files` | `--entropy-source-files` | Run entropy inside `.py`/`.js`/`.go`/… (off by default to cut FPs). |
-| Entropy threshold | **4.5** | `entropy_threshold` | `--entropy-threshold` | Bits/byte cutoff (3.5 aggressive … 5.5 conservative). |
+| Entropy threshold | **4.5** | `[scan].entropy_threshold` (top-level alias accepted) | `--entropy-threshold` | Bits/byte cutoff (3.5 aggressive … 5.5 conservative). The byte-entropy domain is `[0.0, 8.0]`; non-finite and out-of-range requests fail closed instead of being silently clamped. |
+| BPE word-like bound | **2.2** | `[scan].entropy_bpe_max_bytes_per_token` (top-level alias accepted) | `--entropy-bpe-max-bytes-per-token` | With no explicit scan setting, detector TOML `bpe_max_bytes_per_token` wins over this compiled fallback. Setting either scan TOML form or the CLI flag explicitly becomes the visible Tier-A override for every eligible detector (CLI wins). Defining both TOML aliases in one file fails closed as ambiguous; keep the canonical `[scan]` key. Invalid, zero, negative, NaN, and infinite bounds also fail closed. A surviving candidate above its resolved cl100k_base UTF-8 bytes-per-token ceiling is word-like and dropped. Lower = higher precision/lower recall; a large finite value disables the gate. `config --effective` reports `entropy_bpe_policy = detector-local` or `scan-override`. |
 | Entropy min length | **16** | `min_secret_len` | `--min-secret-len` | Minimum credential length for entropy-fallback candidates. Named detectors keep their own shape-specific length gates. |
 | Keyword low-entropy | on | `generic_keyword_low_entropy` | `--no-keyword-low-entropy` | Admit credential-keyword-anchored values (`PASSWORD=`, `*_PASS=`, `secret:` …) on a low entropy floor; precision is carried by the ML model. Surfaces real-world config passwords. Disabling raises precision but drops real recall. |
 | ML enabled | on | `no_ml = true` disables | `--no-ml` | ML confidence gating. Disabling raises FPs and hurts recall. |
-| ML weight | **0.5** | `ml_weight` | `--ml-weight` | Blend weight of the ML score vs heuristics (0.0–1.0). |
+| ML weight | **0.5** | `ml_weight` | `--ml-weight` | Blend weight of the ML score vs heuristics (0.0-1.0). |
 | Unicode norm | on | `no_unicode_norm = true` disables | `--no-unicode-norm` | Normalise homoglyphs before matching (anti-evasion). |
-| Scan comments | off | — | `--scan-comments` | Treat secrets in code comments at full confidence (default downgrades them). |
+| Scan comments | off | - | `--scan-comments` | Treat secrets in code comments at full confidence (default downgrades them). |
 | Threads | #cores | `threads` | `--threads` | Parallel scan workers. |
 | Reader threads | scan-pool-derived | `reader_threads` | `--reader-threads` | Dedicated filesystem read workers. |
 | Fused batch | `32` | `fused_batch` | `--fused-batch` | Chunk batch size for the fused filesystem pipeline. |
@@ -61,16 +62,16 @@ Each row is the same knob across all three layers. Defaults are
 | Severity floor | (all) | `severity` | `--severity` | Minimum severity to report: info/low/medium/high/critical. |
 | Output format | `text` | `format` | `--format` | text/json/jsonl/sarif/csv/github-annotations/gitlab-sast/html/junit. |
 | Show secrets | off | `show_secrets` | `--show-secrets` | Print plaintext credentials. **Never enable in CI/logs.** |
-| Incremental cache | off | `incremental` / `incremental_cache` | `--incremental` / `--incremental-cache` | BLAKE3 Merkle skip-cache; 10–100× on CI re-runs. |
+| Incremental cache | off | `incremental` / `incremental_cache` | `--incremental` / `--incremental-cache` | BLAKE3 Merkle skip-cache; 10-100× on CI re-runs. |
 | Hyperscan cache dir | platform cache dir | `[system] cache_dir` | `--cache-dir` | Compiled-database cache directory. Must be an absolute user-owned path under the home directory or per-user keyhog temp cache root. |
 | Autoroute cache file | platform cache file | `[system] autoroute_cache` | `--autoroute-cache` | Persisted fastest-correct backend decisions. Use an absolute file path or `off` to disable persistence and force auto-route cache misses to fail loudly. |
 | Bayesian calibration cache | off | `[system] calibration_cache` | `--calibration-cache` | Explicit per-detector confidence calibration file written by `keyhog calibrate`. Missing or damaged explicit files fail closed before scanning. |
 | GPU runtime policy | `auto` | `[system] gpu` | `--no-gpu` / `--require-gpu` | `auto` probes when routing can use GPU, `off` skips GPU init, and `required` fails closed when no usable GPU stack is available. Printed by `keyhog config --effective` and included in autoroute scan identity. |
 | Autoroute GPU candidates | off | `[system] autoroute_gpu` | `--autoroute-gpu` / `--no-autoroute-gpu` | Allows calibration to include GPU candidates for eligible workload buckets. Normal scans still require persisted fastest-correct evidence; this never benchmarks during production scans. |
 | Coalesced batch pipeline | off | `[system] batch_pipeline` | `--batch-pipeline` / `--no-batch-pipeline` | Diagnostic/calibration route that bypasses the fused filesystem pipeline. Printed by `keyhog config --effective` and included in autoroute scan identity. |
-| AWS canary issuer extensions | embedded baseline | `[aws] canary_accounts` / `knockoff_accounts` | — | Extra 12-digit AWS account IDs treated as canary-token issuers during offline access-key metadata classification and verification suppression. |
-| Scanner tuning | compiled scanner defaults | `[tuning]` | — | Detection/recall route gates that affect engine work selection. These are explicit config so autoroute calibration identity includes them; ambient `KEYHOG_*` tuning env vars are ignored. |
-| Backend | `auto` | — | `--backend` | `auto`/`gpu`/`gpu-region-presence`/`mega-scan`/`megascan`/`gpu-mega-scan`/`simd`/`simd-regex`/`cpu`/`cpu-fallback`. Auto uses a persisted installer-calibrated fastest-correct decision for the exact workload bucket; missing/stale/incomplete calibration is an error, not permission to substitute another backend. |
+| AWS canary issuer extensions | embedded baseline | `[aws] canary_accounts` / `knockoff_accounts` | - | Extra 12-digit AWS account IDs treated as canary-token issuers during offline access-key metadata classification and verification suppression. |
+| Scanner tuning | compiled scanner defaults | `[tuning]` | - | Detection/recall route gates that affect engine work selection. These are explicit config so autoroute calibration identity includes them; ambient `KEYHOG_*` tuning env vars are ignored. |
+| Backend | `auto` | - | `--backend` | `auto`/`gpu`/`gpu-region-presence`/`mega-scan`/`megascan`/`gpu-mega-scan`/`simd`/`simd-regex`/`cpu`/`cpu-fallback`. Auto uses a persisted installer-calibrated fastest-correct decision for the exact workload bucket; missing/stale/incomplete calibration is an error, not permission to substitute another backend. |
 
 ## Source limits
 
@@ -97,7 +98,7 @@ compiled `SourceLimits::default()` → `.keyhog.toml` `[limits]` → CLI
 | Binary strings bytes | 64 MiB | `[limits] binary_read_bytes` | `--limit-binary-read-bytes` |
 | Ghidra output bytes | 50 MiB | `[limits] binary_decompiled_bytes` | `--limit-binary-decompiled-bytes` |
 
-> Library note — `ScanConfig::max_file_size` and `ScanConfig::dedup` are scan
+> Library note: `ScanConfig::max_file_size` and `ScanConfig::dedup` are scan
 > pipeline settings, not regex-engine settings. The CLI applies them through
 > the filesystem source and final deduplication stage; `FilesystemSource::new`
 > uses the same `DEFAULT_MAX_FILE_SIZE_BYTES` as `ScanConfig::default()` so the
@@ -107,16 +108,16 @@ compiled `SourceLimits::default()` → `.keyhog.toml` `[limits]` → CLI
 
 | Preset | TOML | CLI | What it does |
 |---|---|---|---|
-| Fast | `fast = true` | `--fast` | Pattern-match only — **disables decode + entropy + ML**. Fastest; largest blind spot. Refused under `--lockdown`. |
+| Fast | `fast = true` | `--fast` | Pattern-match only: **disables decode + entropy + ML**. Fastest; largest blind spot. Refused under `--lockdown`. |
 | Deep | `deep = true` | `--deep` | Everything on, maximum recall. |
-| Precision | — | `--precision` | High-precision mass scanning: drops entropy-only/ML-speculative findings, raises the confidence floor to **0.85**, shallow decode. Stays fully offline and fast. |
+| Precision | - | `--precision` | High-precision mass scanning: drops entropy-only/ML-speculative findings, raises the confidence floor to **0.85**, shallow decode. Stays fully offline and fast. |
 
 `--fast`, `--deep`, and `--precision` are mutually exclusive and conflict with
 `--no-decode`/`--no-entropy`.
 
 **A preset is a BASE, not a terminal state.** It seeds the decode/entropy/ML
 defaults, then any explicit knob you pass on the same command line **overrides**
-that base — `--deep --decode-depth 3` runs the deep base at decode-depth 3, and
+that base; `--deep --decode-depth 3` runs the deep base at decode-depth 3, and
 `--deep --min-confidence 0.9` raises the floor on the deep base. Two overrides
 are one-directional and cannot weaken a precision bar: under `--precision`,
 `--min-confidence` may *raise* the 0.85 floor but never lower it, and
@@ -127,17 +128,19 @@ written.
 ## Nested tables
 
 `.keyhog.toml` also accepts nested tables. They must appear **after** all
-flat top-level keys (a TOML rule). Where a nested key and its flat twin both
-set a value, the flat form wins.
+flat top-level keys (a TOML rule). Define a scan knob through either its flat
+compatibility alias or its canonical nested key, never both. Duplicate aliases
+fail closed with an error naming the canonical `[scan]` key, rather than silently
+discarding either value.
 
 ### `[scan]`
 
 A readable grouping for the scan scalars (`severity`, `min_confidence`,
 `decode_depth`, `format`, `exclude`, `threads`, `reader_threads`, `fused_batch`,
-`fused_depth`, `per_chunk_timeout_ms`, `dedup`) — exactly equivalent to setting
+`fused_depth`, `per_chunk_timeout_ms`, `dedup`), exactly equivalent to setting
 each one flat at the top level, and the form the rest of the docs show for
-readability. Pick one form per key: if the same key is set both ways, the flat
-top-level value wins (per [Nested tables](#nested-tables) above).
+readability. Pick one form per key; duplicate flat and nested definitions fail
+closed (per [Nested tables](#nested-tables) above).
 
 ```toml
 [scan]
@@ -152,7 +155,7 @@ fused_depth = 4
 per_chunk_timeout_ms = 30000
 ```
 
-### `[detector.<id>]` — per-detector overrides
+### `[detector.<id>]`: per-detector overrides
 
 Keyed by detector id (`keyhog detectors` lists them; `keyhog explain <id>`
 shows one):
@@ -162,24 +165,21 @@ shows one):
 enabled = false             # drop this detector from the corpus entirely
 
 [detector.twilio-api-key]
-min_confidence = 0.6        # per-detector floor — OVERRIDES the global one
+min_confidence = 0.6        # per-detector floor, OVERRIDES the global one
 ```
 
-There are **three** per-detector floor sources, in increasing precedence:
+There are **two** per-detector floor sources, in increasing precedence:
 
-1. **Tier-B** — `min_confidence` inside the detector's own TOML under
+1. **Tier-B**: `min_confidence` inside the detector's own TOML under
    `detectors/<id>.toml` (`[detector] min_confidence`). The detector's
    shipped baseline.
-2. **Tier-A compiled** — `SHIPPED_DETECTOR_FLOORS` in
-   `crates/cli/src/config.rs`. Ships in the binary and applies on **every**
-   run, including the no-config bench/default path, so a noisy detector can
-   be reined in without authoring a TOML.
-3. **`.keyhog.toml` `[detector.<id>] min_confidence`** — operator intent;
-   overrides the compiled floor for that id.
+2. **`.keyhog.toml` `[detector.<id>] min_confidence`**: validated operator
+   intent; overrides the detector floor for that id and is compiled into the
+   active scan policy before any candidate can be discarded.
 
-`enabled = false` removes a detector on any path; a file `enabled = true`
-cannot currently re-enable a compiled disable (`SHIPPED_DISABLED_DETECTORS`)
-— the merge is additive by design.
+`enabled = false` removes a detector from the active corpus. Shipped detector
+availability and shipped confidence policy have no hidden Rust override lists;
+the individual detector TOML is their single source.
 
 ### `[lockdown]`
 
@@ -310,5 +310,5 @@ limit fail closed with an operator-visible config error. See
 - The resolved struct the live scanner reads (defaults + file + flags folded
   into one): `crates/cli/src/orchestrator_config.rs`
   (`resolve_scan_config` → `ResolvedScanConfig`). Reading this single struct
-  — rather than re-deriving floors from raw args — is what keeps
+  (rather than re-deriving floors from raw args) is what keeps
   *tuned == benched == shipped* true on the live path.

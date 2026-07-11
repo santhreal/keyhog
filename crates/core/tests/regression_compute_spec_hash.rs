@@ -22,13 +22,18 @@
 //! fields into the hash. That is the intended encoding of a dogfood finding.
 
 use keyhog_core::compute_spec_hash;
-use keyhog_core::{CompanionSpec, DetectorSpec, PatternSpec, Severity};
+use keyhog_core::{
+    CompanionSpec, CredentialShape, DetectorKind, DetectorSpec, EntropyFloorBucket, PatternSpec,
+    Severity, VerifySpec,
+};
 
 /// Fully-populated single-pattern detector. `name`/`service` are set equal to
 /// `id` so a test that changes only `name` keeps `id` (and thus every hashed
 /// key) fixed.
 fn det(id: &str, severity: Severity, regex: &str, keywords: &[&str]) -> DetectorSpec {
     DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: id.to_string(),
         name: id.to_string(),
@@ -42,6 +47,9 @@ fn det(id: &str, severity: Severity, regex: &str, keywords: &[&str]) -> Detector
         }],
         companions: vec![],
         verify: None,
+        // Default any newer optional spec fields so this exhaustive literal does
+        // not break each time DetectorSpec grows a field (explicit fields win).
+        ..Default::default()
     }
 }
 
@@ -65,6 +73,8 @@ fn spec_hash_of_bare_detector_matches_hand_fed_blake3() {
     // newline. Reconstruct the exact pre-image so an accidental salt byte,
     // separator change, or reordering is caught.
     let bare = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "x".to_string(),
         name: "x".to_string(),
@@ -75,6 +85,7 @@ fn spec_hash_of_bare_detector_matches_hand_fed_blake3() {
         patterns: Vec::new(),
         companions: Vec::new(),
         verify: None,
+        ..Default::default()
     };
     let got = compute_spec_hash(std::slice::from_ref(&bare));
     let expect = *blake3::hash(b"id:x\nsev:x:High\n").as_bytes();
@@ -358,5 +369,259 @@ fn bug_spec_hash_must_change_when_pattern_client_safe_toggled() {
         compute_spec_hash(std::slice::from_ref(&base)),
         compute_spec_hash(std::slice::from_ref(&toggled)),
         "toggling a pattern's client_safe downgrade flag changes output and MUST change the digest"
+    );
+}
+
+#[test]
+fn spec_hash_binds_pattern_order_within_a_detector() {
+    let mut original = knob_base();
+    original.patterns.push(PatternSpec {
+        regex: "second-[A-Z0-9]{8}".to_string(),
+        group: Some(0),
+        ..Default::default()
+    });
+    let mut reordered = original.clone();
+    reordered.patterns.swap(0, 1);
+
+    assert_ne!(
+        compute_spec_hash(std::slice::from_ref(&original)),
+        compute_spec_hash(std::slice::from_ref(&reordered)),
+        "pattern order controls compiled pattern indices and must invalidate cached scan state"
+    );
+}
+
+#[test]
+fn spec_hash_binds_companion_order_within_a_detector() {
+    let mut original = knob_base();
+    original.companions = vec![
+        CompanionSpec {
+            name: "first".to_string(),
+            regex: "first=([A-Z0-9]{8})".to_string(),
+            within_lines: 1,
+            required: true,
+        },
+        CompanionSpec {
+            name: "second".to_string(),
+            regex: "second=([A-Z0-9]{8})".to_string(),
+            within_lines: 2,
+            required: false,
+        },
+    ];
+    let mut reordered = original.clone();
+    reordered.companions.swap(0, 1);
+
+    assert_ne!(
+        compute_spec_hash(std::slice::from_ref(&original)),
+        compute_spec_hash(std::slice::from_ref(&reordered)),
+        "companion order controls compiled companion indices and must invalidate cached scan state"
+    );
+}
+
+// ── migration-knob field coverage (2026-07-07 per-detector recall/precision) ──
+// Every per-detector knob added in the 2026-07-07 migration (`kind`,
+// `min_confidence`, `entropy_floor`, the four entropy thresholds,
+// `keyword_free_min_len`, `min_len`, the allowlists/stopwords, the three
+// classification flags, `credential_shape`) OVERRIDES a scan-match/suppress
+// decision, so changing it changes WHICH findings a scan emits. Each MUST enter
+// the digest (Law 10: else the merkle cache keeps a stale skip). Each test flips
+// exactly ONE knob from its default and asserts an EXACT digest inequality; the
+// companion tests pin the non-collision, order, and cache-thrash boundaries.
+
+/// A generic-shaped base detector whose every migration knob is at its default,
+/// so flipping one knob is the sole difference under test.
+fn knob_base() -> DetectorSpec {
+    det("gd", Severity::High, "[A-Za-z0-9]{20}", &["k"])
+}
+
+macro_rules! knob_changes_digest {
+    ($name:ident, $mutate:expr) => {
+        #[test]
+        fn $name() {
+            let base = knob_base();
+            let mut changed = base.clone();
+            let mutate: fn(&mut DetectorSpec) = $mutate;
+            mutate(&mut changed);
+            assert_ne!(
+                compute_spec_hash(std::slice::from_ref(&base)),
+                compute_spec_hash(std::slice::from_ref(&changed)),
+                concat!(
+                    stringify!($name),
+                    ": a non-default knob changes scan output and MUST change the digest"
+                )
+            );
+        }
+    };
+}
+
+knob_changes_digest!(spec_hash_binds_kind, |d| d.kind =
+    DetectorKind::Phase2Generic);
+knob_changes_digest!(spec_hash_binds_min_confidence, |d| d.min_confidence =
+    Some(0.42));
+knob_changes_digest!(spec_hash_binds_entropy_floor, |d| d.entropy_floor =
+    vec![EntropyFloorBucket {
+        max_len: Some(24),
+        floor: 3.0,
+    }]);
+knob_changes_digest!(spec_hash_binds_entropy_high, |d| d.entropy_high = Some(4.5));
+knob_changes_digest!(spec_hash_binds_entropy_low, |d| d.entropy_low = Some(3.1));
+knob_changes_digest!(spec_hash_binds_entropy_very_high, |d| d.entropy_very_high =
+    Some(5.2));
+knob_changes_digest!(spec_hash_binds_mixed_alnum_floor, |d| d.mixed_alnum_floor =
+    Some(3.7));
+knob_changes_digest!(spec_hash_binds_bpe_max_bytes_per_token, |d| d
+    .bpe_max_bytes_per_token =
+    Some(2.4));
+knob_changes_digest!(spec_hash_binds_keyword_free_min_len, |d| d
+    .keyword_free_min_len =
+    Some(32));
+knob_changes_digest!(spec_hash_binds_min_len, |d| d.min_len = Some(16));
+knob_changes_digest!(spec_hash_binds_allowlist_paths, |d| d.allowlist_paths =
+    vec!["(?i)/test/".to_string()]);
+knob_changes_digest!(spec_hash_binds_allowlist_values, |d| d.allowlist_values =
+    vec!["EXAMPLE".to_string()]);
+knob_changes_digest!(spec_hash_binds_stopwords, |d| d.stopwords =
+    vec!["password".to_string()]);
+knob_changes_digest!(spec_hash_binds_structural_password_slot, |d| d
+    .structural_password_slot =
+    true);
+knob_changes_digest!(spec_hash_binds_weak_anchor, |d| d.weak_anchor = true);
+knob_changes_digest!(spec_hash_binds_private_key_block, |d| d.private_key_block =
+    true);
+knob_changes_digest!(spec_hash_binds_credential_shape, |d| d.credential_shape =
+    Some(CredentialShape {
+        exact_length: Some(20),
+        ..Default::default()
+    }));
+
+#[test]
+fn spec_hash_distinguishes_entropy_thresholds_from_one_another() {
+    // The SAME f64 assigned to DIFFERENT threshold fields must NOT collide: each
+    // field carries a distinct key prefix (`eh:`/`el:`/`evh:`/`maf:`), so the
+    // digest reflects which gate the operator actually moved.
+    let mut high = knob_base();
+    high.entropy_high = Some(4.0);
+    let mut low = knob_base();
+    low.entropy_low = Some(4.0);
+    assert_ne!(
+        compute_spec_hash(std::slice::from_ref(&high)),
+        compute_spec_hash(std::slice::from_ref(&low)),
+        "the same value on entropy_high vs entropy_low must not collide"
+    );
+}
+
+#[test]
+fn spec_hash_entropy_floor_bucket_order_is_load_bearing() {
+    // Buckets are consulted in listed order (first `max_len >= L` wins), so a
+    // reordered floor table is a DIFFERENT gate and must change the digest.
+    let mut a = knob_base();
+    a.entropy_floor = vec![
+        EntropyFloorBucket {
+            max_len: Some(24),
+            floor: 3.0,
+        },
+        EntropyFloorBucket {
+            max_len: None,
+            floor: 3.5,
+        },
+    ];
+    let mut b = knob_base();
+    b.entropy_floor = vec![
+        EntropyFloorBucket {
+            max_len: None,
+            floor: 3.5,
+        },
+        EntropyFloorBucket {
+            max_len: Some(24),
+            floor: 3.0,
+        },
+    ];
+    assert_ne!(
+        compute_spec_hash(std::slice::from_ref(&a)),
+        compute_spec_hash(std::slice::from_ref(&b)),
+        "entropy_floor bucket order is semantic and must change the digest"
+    );
+}
+
+#[test]
+fn spec_hash_allowlist_order_is_not_load_bearing() {
+    // Allowlist entries are OR-any membership: a mere reorder is the SAME gate and
+    // must NOT thrash the cache (they are sorted before hashing).
+    let mut a = knob_base();
+    a.allowlist_values = vec!["AAA".to_string(), "BBB".to_string()];
+    let mut b = knob_base();
+    b.allowlist_values = vec!["BBB".to_string(), "AAA".to_string()];
+    assert_eq!(
+        compute_spec_hash(std::slice::from_ref(&a)),
+        compute_spec_hash(std::slice::from_ref(&b)),
+        "reordering an OR-any allowlist must not change the digest"
+    );
+}
+
+#[test]
+fn spec_hash_binds_each_knob_to_its_detector_id() {
+    // A knob set on detector A vs the same knob set on detector B must differ:
+    // every knob key is id-bound, mirroring `spec_hash_binds_each_keyword_to_its_
+    // detector_id`. Uses `weak_anchor` as the representative id-bound flag.
+    let left = compute_spec_hash(&[
+        {
+            let mut d = det("a", Severity::High, "RA", &[]);
+            d.weak_anchor = true;
+            d
+        },
+        det("b", Severity::High, "RB", &[]),
+    ]);
+    let right = compute_spec_hash(&[det("a", Severity::High, "RA", &[]), {
+        let mut d = det("b", Severity::High, "RB", &[]);
+        d.weak_anchor = true;
+        d
+    }]);
+    assert_ne!(
+        left, right,
+        "moving a knob to a different detector id must change the digest (knobs are id-bound)"
+    );
+}
+
+#[test]
+fn spec_hash_ignores_live_verify_and_cosmetic_description() {
+    // `verify` (live-verification config) changes a finding's post-scan verdict,
+    // not the scanned finding SET the merkle cache reuses; a pattern's
+    // `description` is display-only. Like `name`, neither may thrash the cache.
+    let base = knob_base();
+    let mut with_verify = knob_base();
+    with_verify.verify = Some(VerifySpec {
+        service: "example".to_string(),
+        ..Default::default()
+    });
+    let mut with_desc = knob_base();
+    with_desc.patterns[0].description = Some("a friendly description".to_string());
+    assert_eq!(
+        compute_spec_hash(std::slice::from_ref(&base)),
+        compute_spec_hash(std::slice::from_ref(&with_verify)),
+        "live-verify config must not thrash the scan cache"
+    );
+    assert_eq!(
+        compute_spec_hash(std::slice::from_ref(&base)),
+        compute_spec_hash(std::slice::from_ref(&with_desc)),
+        "a pattern's cosmetic description must not thrash the scan cache"
+    );
+}
+
+#[test]
+fn spec_hash_bare_detector_preimage_survives_knob_migration() {
+    // The all-default detector must STILL hash the exact two-key pre-image: the
+    // migration knobs are emitted only when non-default, so a corpus that sets
+    // none of them is byte-for-byte unchanged (no spurious full re-scan on
+    // upgrade). This is the gating invariant the whole design rests on.
+    let bare = DetectorSpec {
+        id: "x".to_string(),
+        name: "x".to_string(),
+        service: "x".to_string(),
+        severity: Severity::High,
+        ..Default::default()
+    };
+    assert_eq!(
+        compute_spec_hash(std::slice::from_ref(&bare)),
+        *blake3::hash(b"id:x\nsev:x:High\n").as_bytes(),
+        "an all-default detector must still hash BLAKE3(\"id:x\\nsev:x:High\\n\") after the knob migration"
     );
 }

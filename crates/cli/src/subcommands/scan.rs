@@ -74,35 +74,53 @@ pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
     // live. Merge onto a throwaway clone so the real `args` the orchestrator
     // consumes is untouched (it re-merges identically), then route on the
     // EFFECTIVE values.
+    //
+    // That probe re-reads and re-parses `.keyhog.toml` a SECOND time (the
+    // orchestrator parses it again in `ScanOrchestrator::new`). It is only
+    // load-bearing when a daemon could actually take the scan: `--daemon=on`, or
+    // an auto route with a live socket at the address we would connect to. When
+    // no daemon is reachable — the common case (`--daemon=off`, or auto with no
+    // socket) — the route is Forbidden regardless, so skip the probe entirely
+    // and go straight to the in-process orchestrator, which resolves the config
+    // exactly ONCE. `effective_daemon_socket` is the same address `daemon_route`
+    // and `run_via_daemon` use, so this gate never diverges from the real route.
     #[cfg(unix)]
-    let policy = EffectivePolicy::resolve(&args);
-    #[cfg(unix)]
-    match daemon_route(&args, &policy) {
-        DaemonRoute::Required => run_via_daemon(&policy.effective_args).await,
-        DaemonRoute::Opportunistic => match run_via_daemon(&policy.effective_args).await {
-            Ok(exit) => Ok(exit),
-            Err(e) => {
-                if policy.effective_args.daemon_mode() == DaemonMode::Auto {
-                    let palette = crate::style::for_stderr();
-                    eprintln!(
-                        "{}: daemon auto route unavailable ({e:#}); running in-process scanner",
-                        crate::style::warn("keyhog", &palette)
+    {
+        let mode = args.daemon_mode();
+        let daemon_reachable = mode == DaemonMode::On
+            || (mode != DaemonMode::Off && effective_daemon_socket(&args).exists());
+        if !daemon_reachable {
+            let orchestrator = ScanOrchestrator::new(args)?;
+            return orchestrator.run().await;
+        }
+        let policy = EffectivePolicy::resolve(&args);
+        match daemon_route(&args, &policy) {
+            DaemonRoute::Required => run_via_daemon(&policy.effective_args).await,
+            DaemonRoute::Opportunistic => match run_via_daemon(&policy.effective_args).await {
+                Ok(exit) => Ok(exit),
+                Err(e) => {
+                    if policy.effective_args.daemon_mode() == DaemonMode::Auto {
+                        let palette = crate::style::for_stderr();
+                        eprintln!(
+                            "{}: daemon auto route unavailable ({e:#}); running in-process scanner",
+                            crate::style::warn("keyhog", &palette)
+                        );
+                    }
+                    // LAW10: opportunistic daemon failure is reported on stderr in
+                    // auto mode, then the same scan runs in-process.
+                    tracing::debug!(
+                        error = %e,
+                        "daemon auto route unavailable; running in-process scanner"
                     );
+                    let orchestrator = ScanOrchestrator::new(args)?;
+                    orchestrator.run().await
                 }
-                // LAW10: opportunistic daemon failure is reported on stderr in
-                // auto mode, then the same scan runs in-process.
-                tracing::debug!(
-                    error = %e,
-                    "daemon auto route unavailable; running in-process scanner"
-                );
+            },
+            DaemonRoute::Rejected(reason) => bail!("{reason}"),
+            DaemonRoute::Forbidden => {
                 let orchestrator = ScanOrchestrator::new(args)?;
                 orchestrator.run().await
             }
-        },
-        DaemonRoute::Rejected(reason) => bail!("{reason}"),
-        DaemonRoute::Forbidden => {
-            let orchestrator = ScanOrchestrator::new(args)?;
-            orchestrator.run().await
         }
     }
 }
@@ -192,6 +210,11 @@ struct EffectivePolicy {
     /// route intentionally loads only the default local `.keyhogignore`, so a
     /// configured allowlist policy must stay in-process.
     has_allowlist_config: bool,
+    /// Per-detector confidence policy from `.keyhog.toml`. The daemon owns a
+    /// long-lived scanner compiled without the client's local detector policy,
+    /// and client-side finalization cannot recover findings an engine floor
+    /// already dropped. Any such policy therefore requires the in-process path.
+    has_detector_min_confidence: bool,
 }
 
 #[cfg(unix)]
@@ -233,6 +256,7 @@ impl EffectivePolicy {
                 || outcome.allowlist_require_reason
                 || outcome.allowlist_require_approved_by
                 || outcome.allowlist_max_expires_days.is_some(),
+            has_detector_min_confidence: !outcome.detector_min_confidence.is_empty(),
         }
     }
 }
@@ -329,6 +353,7 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         || policy.has_config_errors
         || policy.custom_aws_canary_accounts
         || policy.has_allowlist_config
+        || policy.has_detector_min_confidence
         || args.hide_client_safe
     {
         if let Some(route) = reject_forced_daemon(
@@ -473,10 +498,12 @@ fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
     if args.decode_depth.is_some()
         || args.decode_size_limit.is_some()
         || args.entropy_threshold.is_some()
+        || args.entropy_bpe_max_bytes_per_token.is_some()
         || args.min_secret_len.is_some()
         || args.ml_weight.is_some()
         || args.max_file_size.is_some()
         || args.regex_dfa_limit.is_some()
+        || args.megascan_input_len.is_some()
         || args.cache_dir.is_some()
         || args.ml_threshold.is_some()
     {

@@ -1,32 +1,6 @@
+use super::scan::parse_config_min_confidence;
 use super::schema::ConfigFile;
 use std::path::{Path, PathBuf};
-
-/// Compiled-in Tier-A per-detector confidence floors that ship inside the
-/// binary, independent of any on-disk `.keyhog.toml`. This is the fix for the
-/// "tuned != benched != shipped" leak: `[detector.<id>] min_confidence`
-/// overrides used to exist ONLY in a user-authored `.keyhog.toml`, so the
-/// bench and every default scan (which find no such file and short-circuit to
-/// `ConfigOutcome::default()`) never exercised them. Floors listed here are
-/// seeded into every `ConfigOutcome` regardless of whether a config file is
-/// present, so the benched/default path runs the same per-detector tuning the
-/// shipped binary carries. A user `.keyhog.toml` `[detector.<id>]
-/// min_confidence` overrides the compiled value for that id (operator intent
-/// wins per-detector); ids only listed here still apply on the no-file path.
-///
-/// Entries are `(detector_id, floor)`. Edit this table to raise the floor on a
-/// specific noisy detector (e.g. loosened twilio / connection-string ones)
-/// without requiring the operator to author a TOML; the change ships in the
-/// binary and the bench picks it up automatically. Tier B (the detector
-/// corpus) stays in `rules/`; this is the Tier-A scalar knob.
-const SHIPPED_DETECTOR_FLOORS: &[(&str, f64)] = &[];
-
-/// Compiled-in Tier-A detector disables that ship inside the binary, same
-/// rationale as [`SHIPPED_DETECTOR_FLOORS`]: a detector listed here is dropped
-/// from the loaded corpus on every path, including the no-config bench/default
-/// path. A user `.keyhog.toml` `[detector.<id>] enabled = true` cannot
-/// re-enable a compiled disable today (the merge is additive); keep this table
-/// for detectors that must never fire by default.
-const SHIPPED_DISABLED_DETECTORS: &[&str] = &[];
 
 /// Outcome of merging `.keyhog.toml` into `ScanArgs`, beyond the in-place
 /// `args` mutations: the things the caller must still act on.
@@ -35,10 +9,11 @@ const SHIPPED_DISABLED_DETECTORS: &[&str] = &[];
 /// [`super::apply_config_file`] directly: it runs this same merge and then
 /// folds the result into a single
 /// [`crate::orchestrator_config::ResolvedScanConfig`] - the engine
-/// `ScannerConfig` PLUS the post-scan floors - so the live worker reads one
+/// `ScannerConfig` plus the per-detector overrides - so the live worker reads one
 /// resolved struct instead of re-deriving the confidence floor from raw `args`
-/// (the "tuned != benched != shipped" leak). `detector_min_confidence` here is
-/// the source the resolved struct carries through to post-processing.
+/// (the "tuned != benched != shipped" leak). The orchestrator composes
+/// `detector_min_confidence` into the active corpus before scanner compilation
+/// and retains it for the matching post-scan check.
 #[derive(Debug, Default)]
 pub(crate) struct ConfigOutcome {
     /// Detector ids disabled via `[detector.<id>] enabled = false`; the caller
@@ -50,12 +25,10 @@ pub(crate) struct ConfigOutcome {
     /// wiring, parsed and silently ignored - a security control that looked
     /// active but never enforced.
     pub require_lockdown: bool,
-    /// Per-detector `[detector.<id>] min_confidence = <f>` overrides keyed by
-    /// detector id. Applied in scan post-processing: a finding from detector
-    /// `id` is dropped when its confidence is below this threshold, taking
-    /// precedence over the global `--min-confidence`. Was parsed into
-    /// `DetectorSection.min_confidence` and silently ignored before this
-    /// wiring (the README documents it as active).
+    /// Validated per-detector `[detector.<id>] min_confidence = <f>` overrides.
+    /// The orchestrator writes these into the active detector specs before
+    /// compilation and retains the same map for post-processing, so engine and
+    /// reporter enforce one resolved floor.
     pub detector_min_confidence: std::collections::HashMap<String, f64>,
     /// Semantic config errors that TOML parsing alone cannot catch, such as
     /// invalid enum strings or byte-size strings. The real scan path fails
@@ -79,22 +52,14 @@ pub(crate) struct ConfigOutcome {
     pub allowlist_max_expires_days: Option<u64>,
 }
 
-/// Build the baseline [`ConfigOutcome`] from the compiled-in Tier-A defaults.
-/// Every return path of [`super::apply_config_file`] starts from this (not the
-/// empty `ConfigOutcome::default()`), so the per-detector floors / disables
-/// that ship in the binary reach the benched and default scans even when no
-/// `.keyhog.toml` exists on disk.
-pub(super) fn shipped_config_outcome() -> ConfigOutcome {
+/// Build the empty operator-policy baseline. Shipped per-detector behavior lives
+/// only in each detector TOML; this outcome contains only repository/operator
+/// overrides discovered from `.keyhog.toml`.
+pub(super) fn base_config_outcome() -> ConfigOutcome {
     ConfigOutcome {
-        disabled_detectors: SHIPPED_DISABLED_DETECTORS
-            .iter()
-            .map(|id| (*id).to_string())
-            .collect(),
+        disabled_detectors: Vec::new(),
         require_lockdown: false,
-        detector_min_confidence: SHIPPED_DETECTOR_FLOORS
-            .iter()
-            .map(|(id, floor)| ((*id).to_string(), *floor))
-            .collect(),
+        detector_min_confidence: std::collections::HashMap::new(),
         config_errors: Vec::new(),
         trusted_bin_dirs: Vec::new(),
         aws_canary_accounts: Vec::new(),
@@ -111,7 +76,7 @@ pub(super) fn config_file_error(
     detail: impl std::fmt::Display,
     fix: &str,
 ) -> ConfigOutcome {
-    let mut outcome = shipped_config_outcome();
+    let mut outcome = base_config_outcome();
     outcome
         .config_errors
         .push(format!("- {}: {detail}. Fix: {fix}", path.display()));
@@ -121,7 +86,7 @@ pub(super) fn config_file_error(
 pub(super) fn resolve_policy_outcome(config: &mut ConfigFile) -> ConfigOutcome {
     // `[lockdown] require = true` -> the caller refuses to run unless
     // `--lockdown` was passed (README: "refuse to run without --lockdown").
-    let mut outcome = shipped_config_outcome();
+    let mut outcome = base_config_outcome();
     outcome.require_lockdown = config
         .lockdown
         .as_ref()
@@ -130,23 +95,27 @@ pub(super) fn resolve_policy_outcome(config: &mut ConfigFile) -> ConfigOutcome {
 
     // `[detector.<id>]` table: `enabled = false` drops the detector from the
     // loaded corpus after `load_detectors`; `min_confidence = <f>` becomes a
-    // per-detector confidence floor applied in scan post-processing. Both keys
+    // per-detector confidence floor applied before scanner compilation and in
+    // post-processing. Both keys
     // were README-documented; the confidence floor used to be parsed and
     // silently ignored (the disabled toggle was wired earlier). Drain the map
     // once into both outputs.
     //
-    // Start from the compiled Tier-A defaults (`shipped_config_outcome`) so the
-    // shipped floors/disables apply even when the `.keyhog.toml` does not
-    // mention that detector, then layer the file on top: a file
-    // `min_confidence` overrides the compiled floor for that id, and file
-    // disables union with the compiled disables.
+    // Detector TOML owns shipped defaults. This map contains only operator
+    // overrides/disables from the repository config and is composed with the
+    // active detector specs before scanner compilation.
     if let Some(map) = config.detector.take() {
         for (id, section) in map {
             if section.enabled == Some(false) && !outcome.disabled_detectors.contains(&id) {
                 outcome.disabled_detectors.push(id.clone());
             }
             if let Some(conf) = section.min_confidence {
-                outcome.detector_min_confidence.insert(id, conf);
+                let field = format!("[detector.{id}].min_confidence");
+                if let Some(conf) =
+                    parse_config_min_confidence(&mut outcome.config_errors, &field, conf)
+                {
+                    outcome.detector_min_confidence.insert(id, conf);
+                }
             }
         }
     }

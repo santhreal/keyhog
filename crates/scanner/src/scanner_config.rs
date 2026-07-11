@@ -35,6 +35,19 @@ pub struct ScannerTuningConfig {
 
 impl ScannerTuningConfig {
     pub(crate) const FALLBACK_HS_DEFAULT: bool = true;
+    /// Chunk-size ceiling above which the always-active prefilter falls back from
+    /// the Hyperscan engine to the portable RegexSet batches. Held at 4096: HS is
+    /// findings-identical to the RegexSet AND ~2× faster on large ASCII chunks (the
+    /// `|| is_ascii` clause in `hs_prefilter_engages` runs HS there), but on
+    /// large NON-ASCII chunks HS is NOT a win. Forcing HS on non-ASCII was tried
+    /// (route the unicode-vs-byte divergent `.`/`\w`/`\s` patterns to a supplemental
+    /// unicode host RegexSet so byte-mode HS stays recall-exact) — recall held, but
+    /// it cost **2.75× more CPU** than the RegexSet (51.9s vs 18.8s on a 2 MiB
+    /// non-ASCII corpus): HS byte-mode ≈ the RegexSet's cost there, and the
+    /// supplemental divergent set is dot-heavy and CANNOT be prefix-AC-gated the
+    /// way the portable batches are, so it is pure overhead. DEAD END (Law 7) — the
+    /// recall-required work dominates non-ASCII either way, so the RegexSet (with
+    /// its prefix gating) is strictly faster. Gate stays a Tier-A knob for opt-in.
     pub(crate) const HS_PREFILTER_MAX_LEN_DEFAULT: usize = 4096;
     pub(crate) const HS_SHARD_TARGET_DEFAULT: usize = 320;
     pub(crate) const FALLBACK_ANCHOR_DEFAULT: bool = true;
@@ -216,6 +229,13 @@ pub struct ScannerConfig {
     /// knob the engine and CLI agree on. Reached transparently via `Deref`, so
     /// callers write `config.min_confidence`, not `config.scan.min_confidence`.
     pub scan: ScanConfig,
+    /// Explicit Tier-A scan override for detector-local BPE policy. `None`
+    /// means each detector TOML owns its ceiling and the wrapped ScanConfig
+    /// value is only the compatibility fallback. `Some` means TOML/CLI scan
+    /// configuration explicitly requested one ceiling for every eligible
+    /// detector; CLI/config presence is preserved so precedence remains
+    /// compiled default -> detector TOML -> scan TOML -> CLI.
+    pub entropy_bpe_max_bytes_per_token_override: Option<f64>,
     /// Configuration for multiline concatenation (scanner-local type).
     pub multiline: crate::multiline::MultilineConfig,
     /// Apply test/example path confidence and hard-suppression heuristics.
@@ -362,6 +382,29 @@ impl ScannerConfig {
         } else if self.entropy_threshold > 8.0 {
             self.entropy_threshold = 8.0;
         }
+        // BPE bytes-per-token suppression bound. NaN would silently break the
+        // `cpt > bound` gate (NaN comparisons are always false → nothing ever
+        // suppressed), and a negative bound would suppress EVERY candidate
+        // (cpt is always ≥ ~0.5 > any negative). Both scrub to the CANONICAL
+        // shipped bound, read from `canon` like the scrubs above — never a
+        // forked literal. No upper clamp: a deliberately large bound is the
+        // documented way to disable the gate (trade precision for recall).
+        if !self.entropy_bpe_max_bytes_per_token.is_finite()
+            || self.entropy_bpe_max_bytes_per_token <= 0.0
+        {
+            self.entropy_bpe_max_bytes_per_token = canon.entropy_bpe_max_bytes_per_token;
+        }
+        if self
+            .entropy_bpe_max_bytes_per_token_override
+            .is_some_and(|bound| !bound.is_finite() || bound <= 0.0)
+        {
+            // Invalid presence must not manufacture a scan-wide override. Drop
+            // it so detector-local TOML policy remains authoritative; the
+            // operator-facing CLI/TOML boundaries reject these values before
+            // construction, while this defensive library scrub stays safe for
+            // programmatic callers.
+            self.entropy_bpe_max_bytes_per_token_override = None;
+        }
         // Recursion-depth + chunk-size caps. The decode-depth ceiling is the
         // same contract used by CLI parsing and TOML validation.
         let max_decode_depth = keyhog_core::max_decode_depth_limit();
@@ -383,6 +426,23 @@ impl ScannerConfig {
         self.calibration = Some(calibration);
         self
     }
+
+    /// Set an explicit scan-wide BPE ceiling while preserving presence even
+    /// when `bound` equals the compiled fallback. Library callers should use
+    /// this instead of relying on [`From<ScanConfig>`] when they intend a value
+    /// of `2.2` to override detector-local TOML policy: `ScanConfig` stores only
+    /// the number and cannot distinguish “omitted default” from “explicitly set
+    /// to the default.” The complete shared scan config is validated before the
+    /// override is accepted, so invalid programmatic policy fails closed.
+    pub fn with_entropy_bpe_max_bytes_per_token_override(
+        mut self,
+        bound: f64,
+    ) -> Result<Self, keyhog_core::ConfigError> {
+        self.scan.entropy_bpe_max_bytes_per_token = bound;
+        self.scan.validate()?;
+        self.entropy_bpe_max_bytes_per_token_override = Some(bound);
+        Ok(self)
+    }
 }
 
 impl From<ScanConfig> for ScannerConfig {
@@ -399,8 +459,13 @@ impl From<ScanConfig> for ScannerConfig {
         //     `ScanConfig`. Takes the scanner default here.
         //   - `penalize_test_paths` — defaults on; the CLI flips it off for
         //     `--no-suppress-test-fixtures`.
+        let canonical_bpe_bound = ScanConfig::default().entropy_bpe_max_bytes_per_token;
+        let entropy_bpe_max_bytes_per_token_override =
+            (scan.entropy_bpe_max_bytes_per_token.to_bits() != canonical_bpe_bound.to_bits())
+                .then_some(scan.entropy_bpe_max_bytes_per_token);
         let mut out = Self {
             scan,
+            entropy_bpe_max_bytes_per_token_override,
             multiline: crate::multiline::MultilineConfig::default(),
             penalize_test_paths: true,
             per_chunk_timeout_ms: None,
@@ -413,5 +478,157 @@ impl From<ScanConfig> for ScannerConfig {
         // See `ScannerConfig::sanitise` for rationale.
         out.sanitise();
         out
+    }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    #[test]
+    fn tuning_effective_resolves_compiled_defaults_when_unset() {
+        let cfg = ScannerTuningConfig::default();
+        assert!(cfg.fallback_hs_effective());
+        assert_eq!(
+            cfg.hs_prefilter_max_len_effective(),
+            ScannerTuningConfig::HS_PREFILTER_MAX_LEN_DEFAULT
+        );
+        assert_eq!(
+            cfg.hs_shard_target_effective(),
+            ScannerTuningConfig::HS_SHARD_TARGET_DEFAULT
+        );
+        assert!(cfg.fallback_anchor_effective());
+        assert!(!cfg.fallback_reverse_effective()); // FALLBACK_REVERSE_DEFAULT = false
+        assert_eq!(
+            cfg.gpu_moe_timeout_ms_effective(),
+            ScannerTuningConfig::GPU_MOE_TIMEOUT_MS_DEFAULT
+        );
+    }
+
+    #[test]
+    fn tuning_effective_honors_explicit_overrides() {
+        let cfg = ScannerTuningConfig {
+            phase2_hs: Some(false),
+            hs_shard_target: Some(999),
+            fallback_reverse: Some(true),
+            gpu_moe_timeout_ms: Some(1_500),
+            ..ScannerTuningConfig::default()
+        };
+        assert!(!cfg.fallback_hs_effective());
+        assert_eq!(cfg.hs_shard_target_effective(), 999);
+        assert!(cfg.fallback_reverse_effective());
+        assert_eq!(cfg.gpu_moe_timeout_ms_effective(), 1_500);
+    }
+
+    #[test]
+    fn sanitise_scrubs_nan_probabilities_to_canonical_defaults() {
+        let canon = keyhog_core::ScanConfig::default();
+        let mut cfg = ScannerConfig::default();
+        cfg.ml_weight = f64::NAN;
+        cfg.min_confidence = f64::NAN;
+        cfg.sanitise();
+        assert_eq!(cfg.ml_weight, canon.ml_weight);
+        assert_eq!(cfg.min_confidence, canon.min_confidence);
+    }
+
+    #[test]
+    fn sanitise_clamps_out_of_range_probabilities() {
+        let mut cfg = ScannerConfig::default();
+        cfg.ml_weight = 5.0;
+        cfg.min_confidence = -2.0;
+        cfg.sanitise();
+        assert_eq!(cfg.ml_weight, 1.0);
+        assert_eq!(cfg.min_confidence, 0.0);
+    }
+
+    #[test]
+    fn sanitise_bounds_entropy_threshold() {
+        let canon = keyhog_core::ScanConfig::default();
+        // NaN and negative both scrub to the canonical shipped floor.
+        let mut nanned = ScannerConfig::default();
+        nanned.entropy_threshold = f64::NAN;
+        nanned.sanitise();
+        assert_eq!(nanned.entropy_threshold, canon.entropy_threshold);
+        let mut negative = ScannerConfig::default();
+        negative.entropy_threshold = -1.0;
+        negative.sanitise();
+        assert_eq!(negative.entropy_threshold, canon.entropy_threshold);
+        // Above the 8-bit byte-entropy ceiling clamps to exactly 8.0.
+        let mut high = ScannerConfig::default();
+        high.entropy_threshold = 99.0;
+        high.sanitise();
+        assert_eq!(high.entropy_threshold, 8.0);
+    }
+
+    #[test]
+    fn sanitise_scrubs_bpe_bound_nan_and_nonpositive_but_keeps_high() {
+        let canon = keyhog_core::ScanConfig::default();
+        // NaN would silently break the `cpt > bound` gate (all comparisons false
+        // → nothing ever suppressed); it must scrub to the canonical 2.2.
+        let mut nanned = ScannerConfig::default();
+        nanned.entropy_bpe_max_bytes_per_token = f64::NAN;
+        nanned.sanitise();
+        assert_eq!(
+            nanned.entropy_bpe_max_bytes_per_token,
+            canon.entropy_bpe_max_bytes_per_token
+        );
+        // A negative bound would suppress EVERY candidate (cpt is always ≥ ~0.5 >
+        // any negative); it scrubs to the canonical default, not left as a footgun.
+        let mut negative = ScannerConfig::default();
+        negative.entropy_bpe_max_bytes_per_token = -1.0;
+        negative.sanitise();
+        assert_eq!(
+            negative.entropy_bpe_max_bytes_per_token,
+            canon.entropy_bpe_max_bytes_per_token
+        );
+        let mut zero = ScannerConfig::default();
+        zero.entropy_bpe_max_bytes_per_token = 0.0;
+        zero.sanitise();
+        assert_eq!(
+            zero.entropy_bpe_max_bytes_per_token,
+            canon.entropy_bpe_max_bytes_per_token
+        );
+        // A deliberately HIGH bound is the documented way to disable the gate
+        // (trade precision for recall) and must be preserved, NOT clamped.
+        let mut high = ScannerConfig::default();
+        high.entropy_bpe_max_bytes_per_token = 99.0;
+        high.sanitise();
+        assert_eq!(high.entropy_bpe_max_bytes_per_token, 99.0);
+    }
+
+    #[test]
+    fn scan_config_conversion_preserves_explicit_bpe_precedence() {
+        let default = ScannerConfig::default();
+        assert_eq!(default.entropy_bpe_max_bytes_per_token_override, None);
+
+        let mut scan = ScanConfig::default();
+        scan.entropy_bpe_max_bytes_per_token = 3.4;
+        let explicit = ScannerConfig::from(scan);
+        assert_eq!(explicit.entropy_bpe_max_bytes_per_token_override, Some(3.4));
+
+        let explicit_default = ScannerConfig::default()
+            .with_entropy_bpe_max_bytes_per_token_override(2.2)
+            .expect("the compiled default is a valid explicit override");
+        assert_eq!(
+            explicit_default.entropy_bpe_max_bytes_per_token_override,
+            Some(2.2),
+            "library callers must be able to preserve an explicit default-valued override"
+        );
+
+        let rejected = ScannerConfig::default()
+            .with_entropy_bpe_max_bytes_per_token_override(0.0)
+            .expect_err("a zero BPE ceiling must fail closed");
+        assert!(matches!(
+            rejected,
+            keyhog_core::ConfigError::InvalidBpeBound(bound) if bound == 0.0
+        ));
+
+        let mut invalid = ScannerConfig::default();
+        invalid.entropy_bpe_max_bytes_per_token_override = Some(f64::NAN);
+        invalid.sanitise();
+        assert_eq!(
+            invalid.entropy_bpe_max_bytes_per_token_override, None,
+            "an invalid programmatic override must restore detector-local policy"
+        );
     }
 }

@@ -3,6 +3,10 @@
 //! Real secrets have high entropy (4.5+), while hashes, UUIDs, and placeholders
 //! have characteristic entropy profiles that help separate true positives.
 
+/// BPE "rare-not-random" precision gate (tiktoken cl100k_base bytes-per-token).
+/// Gated on `entropy` — the tokenizer dep rides that feature.
+#[cfg(feature = "entropy")]
+pub(crate) mod bpe;
 mod isolated;
 pub(crate) mod keywords;
 pub(crate) mod plausibility;
@@ -20,18 +24,45 @@ pub(crate) mod fast_neon;
 #[cfg(target_arch = "x86_64")]
 pub(crate) mod fast_x86;
 
+pub(crate) use scanner::KEYWORD_FREE_LABEL;
 pub use scanner::{find_entropy_secrets, find_entropy_secrets_with_threshold};
 
 /// Threshold for keyword-context entropy detection.
+///
+/// This is the single-owner default for the per-detector `DetectorSpec::entropy_low` field,
+/// applied only when a detector leaves that field unset — not a global gate applied uniformly.
 pub const LOW_ENTROPY_THRESHOLD: f64 = 3.0;
+
+/// Default threshold for keyword-independent entropy detection.
+///
+/// This is the single-owner default for the per-detector `DetectorSpec::entropy_high` field,
+/// applied only when a detector leaves that field unset — not a global gate applied uniformly.
 pub const HIGH_ENTROPY_THRESHOLD: f64 = 4.5;
+
 /// Floor for mixed alpha+digit tokens that carry stronger evidence than a
 /// normal keyword-free substring: either the whole line is the token, or a
 /// credential/auth anchor owns the quoted value. Kept below the global 4.5
 /// floor but above low-entropy identifiers.
+///
+/// This is the single-owner default for the per-detector `DetectorSpec::mixed_alnum_floor` field,
+/// applied only when a detector leaves that field unset — not a global gate applied uniformly.
 pub(crate) const MIXED_ALNUM_TOKEN_THRESHOLD: f64 = 4.0;
+
 pub(crate) const ISOLATED_BARE_ENTROPY_LABEL: &str = "none (isolated-token)";
+
+/// Minimum length for an anchor-free (keyword-free / isolated) entropy token.
+/// Single owner for the 20-char floor referenced by the keyword-free candidate
+/// path (`scanner`) and the isolated-token mixed/colon shape floors
+/// (`isolated`), which previously pasted the bare literal `20` in each predicate.
+///
+/// This is the single-owner default for the per-detector `DetectorSpec::keyword_free_min_len` field,
+/// applied only when a detector leaves that field unset — not a global gate applied uniformly.
+pub(crate) const KEYWORD_FREE_MIN_LEN: usize = 20;
+
 /// Threshold for keyword-independent entropy detection.
+///
+/// This is the single-owner default for the per-detector `DetectorSpec::entropy_very_high` field,
+/// applied only when a detector leaves that field unset — not a global gate applied uniformly.
 pub const VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.8;
 /// Threshold for keyword-independent detection in clearly sensitive files.
 pub const SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.5;
@@ -43,6 +74,132 @@ pub const SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.5;
 /// path (`isolated::collect_isolated_bare_candidates`) — both add it to their
 /// enumerated line index, so the convention lives in exactly one place.
 pub(crate) const FIRST_SOURCE_LINE_NUMBER: usize = 1;
+
+/// The single decision shared by the keyword-anchored and isolated-bare floor
+/// policies: does the operator's Tier-A `entropy_threshold` OVERRIDE the
+/// anchored floor?
+///
+/// An assignment keyword (`api_key=`) or an isolated opaque token is positive
+/// evidence, so the anchored paths run at a LOW named floor by default
+/// (recall-oriented — the anchor, not raw entropy, carries the signal). The
+/// operator knob therefore engages ONLY when it is *stricter* than the blanket
+/// [`HIGH_ENTROPY_THRESHOLD`]: a caller asking for a bar tighter than the global
+/// high floor is honored verbatim (`Some(threshold)`); at or below HIGH — or
+/// non-finite — the anchored floor applies (`None`) and each caller supplies its
+/// own floor ([`LOW_ENTROPY_THRESHOLD`] for the keyword path,
+/// [`MIXED_ALNUM_TOKEN_THRESHOLD`] for the isolated path).
+///
+/// This is a NAMED, TESTED policy — explicitly NOT a silent clamp. The two call
+/// sites (`scanner::keyword_context`, `isolated::isolated_bare_entropy_threshold`)
+/// used to inline byte-divergent copies of this same `> HIGH` test, which is the
+/// exact ONE-PLACE hazard: one owner means a change to the override rule reaches
+/// both floors at once, and the resolution at every band is pinned by tests.
+pub(super) fn operator_entropy_override(entropy_threshold: f64) -> Option<f64> {
+    (entropy_threshold.is_finite() && entropy_threshold > HIGH_ENTROPY_THRESHOLD)
+        .then_some(entropy_threshold)
+}
+
+/// Config/secret file extensions that mark a path as entropy-appropriate. Single
+/// owner: both the direct extension check and the stem+extension check in
+/// [`is_entropy_appropriate_inner`] reference this set (the latter also allows
+/// the [`extra_stem_config_extensions`] tail).
+#[derive(serde::Deserialize)]
+struct ConfigFileExtensionsFile {
+    extensions: Vec<String>,
+    stem_only_extensions: Vec<String>,
+}
+
+fn parse_config_file_extensions(raw: &str) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>), String> {
+    toml::from_str::<ConfigFileExtensionsFile>(raw)
+        .map(|parsed| {
+            (
+                parsed
+                    .extensions
+                    .into_iter()
+                    .map(String::into_bytes)
+                    .collect(),
+                parsed
+                    .stem_only_extensions
+                    .into_iter()
+                    .map(String::into_bytes)
+                    .collect(),
+            )
+        })
+        .map_err(|error| error.to_string())
+}
+
+/// `(direct extensions, stem-only extensions)`, loaded once from the bundled
+/// Tier-B `rules/config-file-extensions.toml`. `include_str!` embeds the file at
+/// compile time, so a parse failure is a build defect in the bundled data — not
+/// a runtime hostile-input risk — and fails closed (Law 10), naming the file.
+static CONFIG_EXTENSION_LISTS: std::sync::LazyLock<(Vec<Vec<u8>>, Vec<Vec<u8>>)> =
+    std::sync::LazyLock::new(|| {
+        match parse_config_file_extensions(include_str!(
+            "../../../../rules/config-file-extensions.toml"
+        )) {
+            Ok(lists) => lists,
+            Err(error) => panic!(
+                "rules/config-file-extensions.toml is invalid: {error}. Fix the bundled Tier-B \
+                 config-file-extension list."
+            ),
+        }
+    });
+
+/// Config/secrets file extensions matched directly on any filename tail.
+fn config_file_extensions() -> &'static [Vec<u8>] {
+    &CONFIG_EXTENSION_LISTS.0
+}
+
+/// Extra extensions accepted only after a known credential stem
+/// (`secrets.enc`, `credentials.vault`, …), on top of [`config_file_extensions`].
+fn extra_stem_config_extensions() -> &'static [Vec<u8>] {
+    &CONFIG_EXTENSION_LISTS.1
+}
+
+#[derive(serde::Deserialize)]
+struct CredentialFileNamesFile {
+    prefix_match: Vec<String>,
+    exact_or_config_ext: Vec<String>,
+}
+
+/// Parse the Tier-B credential-store filename lists. Returns an error (rather
+/// than panicking) so the single `CREDENTIAL_FILE_NAME_LISTS` owner below is the
+/// one fail-closed site, and enforces that BOTH lists are non-empty.
+fn parse_credential_file_names(raw: &str) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>), String> {
+    let parsed: CredentialFileNamesFile = toml::from_str(raw).map_err(|error| error.to_string())?;
+    if parsed.prefix_match.is_empty() || parsed.exact_or_config_ext.is_empty() {
+        return Err("prefix_match and exact_or_config_ext must both be non-empty".to_string());
+    }
+    Ok((
+        parsed
+            .prefix_match
+            .into_iter()
+            .map(String::into_bytes)
+            .collect(),
+        parsed
+            .exact_or_config_ext
+            .into_iter()
+            .map(String::into_bytes)
+            .collect(),
+    ))
+}
+
+/// `(prefix-match names, exact-or-config-ext names)` — the credential-store
+/// filenames the entropy fallback treats as secret files, loaded once from the
+/// bundled Tier-B `rules/credential-file-names.toml`. Fails closed (Law 10),
+/// naming the file, since a parse failure is a build defect in bundled data.
+static CREDENTIAL_FILE_NAME_LISTS: std::sync::LazyLock<(Vec<Vec<u8>>, Vec<Vec<u8>>)> =
+    std::sync::LazyLock::new(|| {
+        match parse_credential_file_names(include_str!(
+            "../../../../rules/credential-file-names.toml"
+        )) {
+            Ok(lists) => lists,
+            Err(error) => panic!(
+                "rules/credential-file-names.toml is invalid: {error}. Fix the bundled Tier-B \
+                 credential-file-name list."
+            ),
+        }
+    });
 
 /// Shannon entropy in bits per byte, with thread-local caching for repeat
 /// inputs ≤1KB (typical credential size). Cache evicts wholesale when full
@@ -198,7 +355,7 @@ pub(crate) fn is_entropy_appropriate_with_content_lines(
     is_entropy_appropriate_inner(path, allow_source_files, has_secret_keyword_line)
 }
 
-fn is_entropy_appropriate_inner(
+pub(crate) fn is_entropy_appropriate_inner(
     path: Option<&str>,
     allow_source_files: bool,
     has_secret_keyword_line: bool,
@@ -265,22 +422,7 @@ fn is_entropy_appropriate_inner(
         }
     }
 
-    for extension in [
-        b".env".as_slice(),
-        b".yaml",
-        b".yml",
-        b".toml",
-        b".properties",
-        b".cfg",
-        b".conf",
-        b".ini",
-        b".config",
-        b".secrets",
-        b".pem",
-        b".key",
-        b".tfvars",
-        b".hcl",
-    ] {
+    for extension in config_file_extensions() {
         if ends_ci(extension) {
             return true;
         }
@@ -304,8 +446,7 @@ fn is_entropy_appropriate_inner(
     // every `Style`/`Paragraph::new` call because filename prefix
     // "secrets" matched. After this filter, scanning a `secrets.rs`
     // requires `--entropy-source-files`.
-    const PREFIX_MATCH_NAMES: &[&[u8]] = &[b".env", b".npmrc", b".pypirc", b".netrc"];
-    for name in PREFIX_MATCH_NAMES {
+    for name in &CREDENTIAL_FILE_NAME_LISTS.0 {
         let starts_ci =
             filename.len() >= name.len() && filename[..name.len()].eq_ignore_ascii_case(name);
         if starts_ci {
@@ -313,29 +454,7 @@ fn is_entropy_appropriate_inner(
         }
     }
 
-    const EXACT_OR_CONFIG_EXT_NAMES: &[&[u8]] =
-        &[b"credentials", b"secrets", b"apikeys", b"docker-compose"];
-    const CONFIG_EXTENSIONS_AFTER_STEM: &[&[u8]] = &[
-        b".env",
-        b".yaml",
-        b".yml",
-        b".toml",
-        b".properties",
-        b".cfg",
-        b".conf",
-        b".ini",
-        b".config",
-        b".secrets",
-        b".pem",
-        b".key",
-        b".tfvars",
-        b".hcl",
-        b".enc",
-        b".vault",
-        b".prod",
-        b".txt",
-    ];
-    for name in EXACT_OR_CONFIG_EXT_NAMES {
+    for name in &CREDENTIAL_FILE_NAME_LISTS.1 {
         if filename.eq_ignore_ascii_case(name) {
             return true;
         }
@@ -345,7 +464,10 @@ fn is_entropy_appropriate_inner(
         // source-code path (skipped unless --entropy-source-files).
         if filename.len() > name.len() && filename[..name.len()].eq_ignore_ascii_case(name) {
             let tail = &filename[name.len()..];
-            for ext in CONFIG_EXTENSIONS_AFTER_STEM {
+            for ext in config_file_extensions()
+                .iter()
+                .chain(extra_stem_config_extensions())
+            {
                 if tail.len() >= ext.len()
                     && tail[tail.len() - ext.len()..].eq_ignore_ascii_case(ext)
                 {
@@ -377,7 +499,67 @@ mod tests {
         LEADING_SLASH_BASE64_ENTROPY_FLOOR, SECOND_HALF_ENTROPY_FLOOR,
         SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR,
     };
-    use super::{FIRST_SOURCE_LINE_NUMBER, HIGH_ENTROPY_THRESHOLD, MIXED_ALNUM_TOKEN_THRESHOLD};
+    use super::{
+        operator_entropy_override, FIRST_SOURCE_LINE_NUMBER, HIGH_ENTROPY_THRESHOLD,
+        LOW_ENTROPY_THRESHOLD, MIXED_ALNUM_TOKEN_THRESHOLD,
+    };
+
+    /// The shared `> HIGH` override owner: only a finite value STRICTLY above the
+    /// blanket high floor overrides the anchored floor (honored verbatim); the
+    /// default 4.5 (== HIGH), every value in the recall band, and non-finite
+    /// inputs all decline (`None`) so each caller keeps its own anchored floor.
+    /// Pinning every band here is what makes this a policy, not a silent clamp.
+    #[test]
+    fn operator_override_engages_only_strictly_above_the_high_floor() {
+        // Strictly-above-HIGH: honored verbatim.
+        assert_eq!(operator_entropy_override(4.6), Some(4.6));
+        assert_eq!(operator_entropy_override(5.8), Some(5.8));
+        assert_eq!(operator_entropy_override(8.0), Some(8.0));
+        // The default threshold sits exactly ON the high floor: it does NOT
+        // override, so the keyword path stays at its LOW recall floor.
+        assert_eq!(operator_entropy_override(HIGH_ENTROPY_THRESHOLD), None);
+        // Recall band (LOW, HIGH] and below-LOW: no override.
+        assert_eq!(operator_entropy_override(4.0), None);
+        assert_eq!(operator_entropy_override(LOW_ENTROPY_THRESHOLD), None);
+        assert_eq!(operator_entropy_override(0.0), None);
+        // Non-finite is never an override: NaN AND ±infinity all fail the
+        // `is_finite()` guard (an infinite entropy threshold is a nonsensical
+        // override input — nothing could ever exceed it), so all return None.
+        assert_eq!(operator_entropy_override(f64::NAN), None);
+        assert_eq!(operator_entropy_override(f64::INFINITY), None);
+        assert_eq!(operator_entropy_override(f64::NEG_INFINITY), None);
+    }
+
+    /// The two anchored floor sites compose the shared override with their own
+    /// default floors: the keyword path with [`LOW_ENTROPY_THRESHOLD`] (via
+    /// `min`), the isolated path with [`MIXED_ALNUM_TOKEN_THRESHOLD`]. Reproduce
+    /// each site's resolution to prove the dedup preserved both behaviors byte
+    /// for byte.
+    #[test]
+    fn anchored_floor_sites_compose_the_shared_override() {
+        let keyword_floor = |t: f64| {
+            operator_entropy_override(t).unwrap_or_else(|| {
+                if t.is_finite() {
+                    t.min(LOW_ENTROPY_THRESHOLD)
+                } else {
+                    LOW_ENTROPY_THRESHOLD
+                }
+            })
+        };
+        let isolated_floor =
+            |t: f64| operator_entropy_override(t).unwrap_or(MIXED_ALNUM_TOKEN_THRESHOLD);
+
+        // Default 4.5: keyword path floors to LOW (3.0), isolated to MIXED (4.0).
+        assert_eq!(keyword_floor(4.5), LOW_ENTROPY_THRESHOLD);
+        assert_eq!(isolated_floor(4.5), MIXED_ALNUM_TOKEN_THRESHOLD);
+        // A stricter operator bar overrides both floors verbatim.
+        assert_eq!(keyword_floor(6.0), 6.0);
+        assert_eq!(isolated_floor(6.0), 6.0);
+        // A below-LOW request loosens only the keyword path (min), never lifts
+        // the isolated path above its MIXED floor.
+        assert_eq!(keyword_floor(2.0), 2.0);
+        assert_eq!(isolated_floor(2.0), MIXED_ALNUM_TOKEN_THRESHOLD);
+    }
 
     /// The three entropy floors hoisted out of `plausibility.rs` keep their exact
     /// tuned values. These are the single named owners for the literals that were

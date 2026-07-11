@@ -122,19 +122,26 @@ fn embedded_corpus_contains_aws_access_key_with_exact_fields() {
 /// A zero-count for each failure class is a stronger claim than
 /// "the vector is non-empty".
 #[test]
-fn every_embedded_detector_has_nonempty_id_and_patterns() {
+fn every_embedded_detector_has_nonempty_id_and_a_matcher() {
     let detectors = load_embedded_detectors_or_fail().expect("embedded corpus loads");
 
     let empty_id = detectors.iter().filter(|d| d.id.is_empty()).count();
-    let no_patterns = detectors.iter().filter(|d| d.patterns.is_empty()).count();
+    // A detector must be able to MATCH: via a regex pattern, OR — for phase-2
+    // keyword/entropy generic detectors (generic-api-key / generic-secret /
+    // generic-keyword-secret, which carry NO regex anchor by design) — via a
+    // keyword. Only a detector with NEITHER could never fire.
+    let unmatchable = detectors
+        .iter()
+        .filter(|d| d.patterns.is_empty() && d.keywords.is_empty())
+        .count();
 
     assert_eq!(
         empty_id, 0,
         "{empty_id} embedded detectors have an empty id"
     );
     assert_eq!(
-        no_patterns, 0,
-        "{no_patterns} embedded detectors have zero patterns and could never match",
+        unmatchable, 0,
+        "{unmatchable} embedded detectors have neither patterns nor keywords and could never match",
     );
 }
 
@@ -337,6 +344,209 @@ fn dir_mixing_valid_and_malformed_fails_closed_not_partial() {
     }
 }
 
+/// Two detector files sharing an `id` are a shadowing bug — the loser's
+/// patterns/companions never fire and finding attribution is ambiguous. Under
+/// the enforced gate the whole corpus is rejected, naming the duplicate id;
+/// gate-off keeps both (the explicit escape hatch), proving the gate is what
+/// rejects — mirroring the patternless case. The two files carry DIFFERENT
+/// bodies so this is a genuine id collision, not a duplicate file.
+#[test]
+fn dir_with_duplicate_detector_ids_is_gate_rejected_naming_the_id() {
+    let dupe = r#"
+[detector]
+id = "demo"
+name = "Demo Two"
+service = "demo"
+severity = "low"
+keywords = ["demo2_"]
+
+[[detector.patterns]]
+regex = "demo2_[A-Z0-9]{8}"
+"#;
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_toml(dir.path(), "demo_a.toml", VALID_DETECTOR_TOML); // id = "demo"
+    write_toml(dir.path(), "demo_b.toml", dupe); // id = "demo" too
+
+    // gate ON → whole corpus rejected, the duplicate id named.
+    let err = load_detectors(dir.path())
+        .expect_err("a duplicate detector id must fail closed under the enforced gate");
+    match &err {
+        SpecError::DetectorCorpusRejected { detail, total, .. } => {
+            assert_eq!(*total, 2, "both files count toward total");
+            assert!(
+                detail.contains("duplicate detector id") && detail.contains("demo"),
+                "rejection detail must name the duplicate id; got: {detail}"
+            );
+        }
+        other => panic!("expected DetectorCorpusRejected, got {other:?}"),
+    }
+
+    // gate OFF → both load (the explicit escape hatch); the gate is the only
+    // difference, exactly as for the patternless case above.
+    let specs = with_gate(dir.path(), false).expect("gate-off load keeps both same-id detectors");
+    assert_eq!(specs.len(), 2, "gate-off retains both colliding detectors");
+    assert!(
+        specs.iter().all(|d| d.id == "demo"),
+        "both loaded specs carry the colliding id"
+    );
+}
+
+/// A pattern with an EMPTY regex parses and COMPILES cleanly, but matches the
+/// empty string at every position — a detector carrying one fires on every byte
+/// of every file (a catastrophic FP flood the compile check cannot catch). The
+/// quality gate must reject it up front, naming the cause.
+#[test]
+fn dir_with_empty_regex_pattern_is_gate_rejected() {
+    let empty_regex = r#"
+[detector]
+id = "voidmatch"
+name = "Void Match"
+service = "x"
+severity = "high"
+keywords = ["x_"]
+
+[[detector.patterns]]
+regex = ""
+"#;
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_toml(dir.path(), "void.toml", empty_regex);
+
+    let err = load_detectors(dir.path())
+        .expect_err("an empty-regex pattern must fail closed — it matches everywhere");
+    match &err {
+        SpecError::DetectorCorpusRejected { detail, .. } => {
+            assert!(
+                detail.contains("empty") && detail.contains("every position"),
+                "rejection must name the empty-regex FP-flood cause; got: {detail}"
+            );
+        }
+        other => panic!("expected DetectorCorpusRejected, got {other:?}"),
+    }
+}
+
+/// `min_confidence` is a probability in [0.0, 1.0]. A value outside it (here 1.5)
+/// silently breaks the gate — the detector could never clear its own floor — so
+/// the quality gate rejects it. The inclusive boundary (1.0) still loads, proving
+/// the check rejects only genuinely out-of-range values, not the edge.
+#[test]
+fn dir_with_out_of_range_min_confidence_is_gate_rejected() {
+    let over = r#"
+[detector]
+id = "confd"
+name = "Conf Detector"
+service = "x"
+severity = "high"
+min_confidence = 1.5
+keywords = ["x_"]
+
+[[detector.patterns]]
+regex = "x_[A-Z0-9]{8}"
+"#;
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_toml(dir.path(), "over.toml", over);
+    let err = load_detectors(dir.path())
+        .expect_err("min_confidence > 1.0 must fail closed (the detector could never fire)");
+    match &err {
+        SpecError::DetectorCorpusRejected { detail, .. } => assert!(
+            detail.contains("min_confidence") && detail.contains("out of range"),
+            "rejection must name the out-of-range min_confidence; got: {detail}"
+        ),
+        other => panic!("expected DetectorCorpusRejected, got {other:?}"),
+    }
+
+    // 1.0 is the inclusive boundary → loads (the gate rejects only real violations).
+    let edge = r#"
+[detector]
+id = "confd"
+name = "Conf Detector"
+service = "x"
+severity = "high"
+min_confidence = 1.0
+keywords = ["x_"]
+
+[[detector.patterns]]
+regex = "x_[A-Z0-9]{8}"
+"#;
+    let dir2 = tempfile::tempdir().expect("tempdir");
+    write_toml(dir2.path(), "edge.toml", edge);
+    let specs =
+        load_detectors(dir2.path()).expect("min_confidence = 1.0 is in range and must load");
+    assert_eq!(specs.len(), 1);
+    assert_eq!(specs[0].min_confidence, Some(1.0));
+}
+
+/// Token-efficiency bounds participate directly in candidate suppression. A
+/// non-positive or non-finite detector-owned value would either suppress the
+/// entire detector or make the comparison undefined, so detector loading must
+/// reject it before any scan can run.
+#[test]
+fn dir_with_invalid_detector_bpe_bound_is_gate_rejected() {
+    for invalid in ["0.0", "-1.0", "nan", "inf"] {
+        let body = VALID_DETECTOR_TOML.replace(
+            "keywords = [\"demo_\"]",
+            &format!("keywords = [\"demo_\"]\nbpe_max_bytes_per_token = {invalid}"),
+        );
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_toml(dir.path(), "invalid-bpe.toml", &body);
+        let err = load_detectors(dir.path())
+            .expect_err("a non-positive or non-finite detector BPE bound must fail closed");
+        match &err {
+            SpecError::DetectorCorpusRejected { detail, .. } => assert!(
+                detail.contains("bpe_max_bytes_per_token"),
+                "rejection must name the invalid detector BPE field; value={invalid}, detail={detail}"
+            ),
+            other => panic!("expected DetectorCorpusRejected, got {other:?}"),
+        }
+    }
+
+    let valid = VALID_DETECTOR_TOML.replace(
+        "keywords = [\"demo_\"]",
+        "keywords = [\"demo_\"]\nbpe_max_bytes_per_token = 2.4",
+    );
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_toml(dir.path(), "valid-bpe.toml", &valid);
+    let specs = load_detectors(dir.path()).expect("a finite positive BPE bound must load");
+    assert_eq!(specs[0].bpe_max_bytes_per_token, Some(2.4));
+}
+
+#[test]
+fn dir_with_invalid_detector_local_policy_is_gate_rejected() {
+    let cases = [
+        ("entropy_high = nan", "entropy_high"),
+        ("min_len = 0", "min_len must be greater than 0"),
+        (
+            "keyword_free_min_len = 0",
+            "keyword_free_min_len must be greater than 0",
+        ),
+        (
+            "entropy_floor = [{ max_len = 24, floor = 3.0 }]",
+            "final bucket",
+        ),
+        ("allowlist_paths = [\"(\"]", "allowlist_paths"),
+        (
+            "[detector.credential_shape]\nprefix = \"sk_\"",
+            "prefix but no length constraint",
+        ),
+    ];
+    for (policy, expected_detail) in cases {
+        let body = VALID_DETECTOR_TOML.replace(
+            "keywords = [\"demo_\"]",
+            &format!("keywords = [\"demo_\"]\n{policy}"),
+        );
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_toml(dir.path(), "invalid-policy.toml", &body);
+        let err = load_detectors(dir.path())
+            .expect_err("malformed detector-local policy must fail at the spec boundary");
+        match &err {
+            SpecError::DetectorCorpusRejected { detail, .. } => assert!(
+                detail.contains(expected_detail),
+                "rejection must identify malformed policy {policy:?}; detail={detail}"
+            ),
+            other => panic!("expected DetectorCorpusRejected, got {other:?}"),
+        }
+    }
+}
+
 /// An empty directory (no `*.toml`) is rejected, not treated as a valid
 /// zero-detector corpus. `failed_count` and `total` are both 0 and the message
 /// tells the operator to add a detector.
@@ -419,7 +629,7 @@ patterns = []
 fn embedded_corpus_corrupt_error_renders_full_contract() {
     let err = SpecError::EmbeddedCorpusCorrupt {
         failed_count: 3,
-        total: 916,
+        total: 919,
         detail: "  - discord-bot-token: invalid char class\n  - foo: trailing comma\n  - bar: eof"
             .to_string(),
     };
@@ -429,7 +639,7 @@ fn embedded_corpus_corrupt_error_renders_full_contract() {
         r.contains("discord-bot-token: invalid char class"),
         "must name each offender; got: {r}"
     );
-    assert!(r.contains("3 of 916"), "must report X of Y; got: {r}");
+    assert!(r.contains("3 of 919"), "must report X of Y; got: {r}");
     assert!(
         r.contains("silently degraded"),
         "must call out the silent recall loss (Law 10); got: {r}"

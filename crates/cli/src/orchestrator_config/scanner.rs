@@ -14,6 +14,7 @@ pub(super) struct ScannerConfigInput {
     no_suppress_test_fixtures: bool,
     no_entropy: bool,
     entropy_threshold: Option<f64>,
+    entropy_bpe_max_bytes_per_token: Option<f64>,
     min_secret_len: Option<usize>,
     per_chunk_timeout_ms: Option<u64>,
     profile: bool,
@@ -45,6 +46,7 @@ impl ScannerConfigInput {
             no_suppress_test_fixtures: args.no_suppress_test_fixtures,
             no_entropy: args.no_entropy,
             entropy_threshold: args.entropy_threshold,
+            entropy_bpe_max_bytes_per_token: args.entropy_bpe_max_bytes_per_token,
             min_secret_len: args.min_secret_len,
             per_chunk_timeout_ms: args.per_chunk_timeout_ms,
             profile: args.profile,
@@ -139,6 +141,10 @@ pub(super) fn build_scanner_config_from_input(input: &ScannerConfigInput) -> Sca
     }
     if let Some(threshold) = input.entropy_threshold {
         config.entropy_threshold = threshold;
+    }
+    if let Some(bpe_bound) = input.entropy_bpe_max_bytes_per_token {
+        config.entropy_bpe_max_bytes_per_token = bpe_bound;
+        config.entropy_bpe_max_bytes_per_token_override = Some(bpe_bound);
     }
     if let Some(min_secret_len) = input.min_secret_len {
         config.min_secret_len = min_secret_len;

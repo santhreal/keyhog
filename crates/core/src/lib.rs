@@ -143,6 +143,52 @@ pub fn load_embedded_detectors_or_fail() -> Result<Vec<DetectorSpec>, SpecError>
     Ok(detectors)
 }
 
+/// Every embedded detector spec, parsed EXACTLY ONCE for the whole process.
+///
+/// This is the single materialization of the compiled-in corpus: both the
+/// id-keyed lookup ([`detector_spec_by_id`]) and whole-corpus consumers (the ML
+/// service-vocabulary derivation in `keyhog-scanner`, registry audits) borrow
+/// from this one `Vec` instead of re-running [`load_embedded_detectors_or_fail`]
+/// and holding their own copy of every spec. Fails closed on a corrupt embedded
+/// corpus: a bundled TOML that will not parse is a build/source defect, never a
+/// silent empty set (Law 10).
+pub fn embedded_detector_specs() -> &'static [DetectorSpec] {
+    static SPECS: std::sync::LazyLock<Vec<DetectorSpec>> = std::sync::LazyLock::new(|| {
+        load_embedded_detectors_or_fail().unwrap_or_else(|error| {
+            panic!(
+                "embedded detector corpus failed to load: {error}. The detector \
+                 specifications live in the bundled TOMLs; refusing to run without them."
+            )
+        })
+    });
+    &SPECS
+}
+
+/// Canonical `id → DetectorSpec` lookup over the embedded corpus, built EXACTLY
+/// ONCE.
+///
+/// This is the single owner every "give me the spec for detector id X" consumer
+/// shares (entropy plausibility gates, entropy-scanner resolution, adjudication
+/// confidence/length floors). Before this, three separate
+/// `LazyLock<HashMap<String, DetectorSpec>>` statics each called
+/// [`load_embedded_detectors_or_fail`] and rebuilt an identical map — the
+/// compiled-in corpus was parsed three times at startup (Law 7) and the same
+/// lookup lived in three places (ONE PLACE). The map borrows from
+/// [`embedded_detector_specs`] (the one materialized corpus) rather than holding
+/// a second by-value copy of every spec. Fails closed on a corrupt embedded
+/// corpus, matching every prior consumer's contract.
+pub fn detector_spec_by_id(id: &str) -> Option<&'static DetectorSpec> {
+    static BY_ID: std::sync::LazyLock<
+        std::collections::HashMap<&'static str, &'static DetectorSpec>,
+    > = std::sync::LazyLock::new(|| {
+        embedded_detector_specs()
+            .iter()
+            .map(|spec| (spec.id.as_str(), spec))
+            .collect()
+    });
+    BY_ID.get(id).copied()
+}
+
 /// Git commit SHA the binary was built from, or `"unknown"` for a build with no
 /// reachable `.git` tree (e.g. a `cargo package` / crates.io build). Stamped by
 /// `build.rs` via `cargo:rustc-env=GIT_HASH`; `env!` resolves here because the

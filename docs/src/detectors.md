@@ -1,8 +1,19 @@
 # Detectors
 
 A **detector** is a single TOML file that teaches KeyHog one shape of
-credential. There are 905 of them in the embedded corpus today,
+credential. There are 920 of them in the embedded corpus today,
 spread across `detectors/*.toml`.
+
+## Pattern counts
+
+KeyHog counts **detectors** and **patterns** separately. A detector is one
+TOML file; each file may define one or more `[[detector.patterns]]` rows.
+The startup banner's parenthesized pattern total is the compiled scanner
+count after the engine expands those rows (and related trigger keywords)
+into the literal and regex slots it actually runs, so it is always larger
+than the raw TOML row count. Use `keyhog detectors --json | jq length` for
+the embedded detector count; the banner line shows the live compiled total
+for your binary.
 
 ## Anatomy of a detector
 
@@ -66,15 +77,18 @@ public and the secret prefix (Stripe `pk_*` vs `sk_*`, Mapbox `pk.`
 vs `sk.`) tag only the public pattern so a misused secret key still
 surfaces at its nominal severity.
 
-`detector.keywords` - strings the prefilter ahokorasick matches on.
+`detector.keywords` - strings the prefilter Aho-Corasick automaton matches on.
 At least ONE keyword in the chunk is required before the regex even
 runs. Pick keywords that are short, distinctive, and likely to appear
 near a real credential (`stripe`, `sk_live_`, `STRIPE_SECRET_KEY`).
 
 `detector.patterns[]` - one or more regexes. Each carries:
 
-- `regex` - the pattern. Compiled with `CASELESS` (matches both cases
-  without explicit alternation).
+- `regex` - the pattern. Every regex is compiled `case_insensitive`, so
+  it matches both cases without explicit alternation. To make a single
+  pattern case-SENSITIVE (AWS `AKIA` is uppercase; some GCP/Snowflake ids
+  are lowercase), prefix its regex with the inline flag `(?-i)` in the
+  TOML - no schema field needed.
 - `group` - which capture group is the credential. `0` = whole match,
   `1` = first captured group, etc.
 - `description` - what shape this captures (env var, header, URL, …).
@@ -87,7 +101,7 @@ near a real credential (`stripe`, `sk_live_`, `STRIPE_SECRET_KEY`).
   can tag only the public one.
 
 Multiple patterns means "any of these shapes". A typical detector has
-1–3 patterns covering env-var, JSON, and inline forms.
+1-3 patterns covering env-var, JSON, and inline forms.
 
 `detector.companions[]` - optional. Some credentials are only useful
 in pairs (AWS access key + secret key). A companion is a second regex
@@ -99,13 +113,61 @@ makes the documented API call with the captured credential and:
 - live + valid -> keep severity, mark `verification: "live"`
 - live + invalid -> downgrade severity one tier, mark `verification: "dead"`
 
+## Per-detector recall/precision knobs
+
+Under KeyHog's architecture, there is no global or overall entropy, length, or recall/precision gate applied uniformly to every candidate. Instead, every threshold, filter, allowlist, and tuning parameter that affects whether a candidate match is reported is a **per-detector field**, owned directly inside the detector's TOML file under the `[detector]` table.
+
+This follows the design precedent established by `min_confidence` (the per-detector confidence floor) and `entropy_floor` (the low-entropy suppression floor).
+
+If a detector leaves these fields unset, KeyHog falls back to single-owner global defaults (e.g. the default thresholds defined in the scanner's entropy module). However, if set, the detector's TOML configuration overrides the defaults.
+
+The available per-detector tuning fields are:
+
+### Entropy Thresholds
+*   **`entropy_high`** (float, optional): Per-detector high-entropy threshold (bits/byte) for keyword-independent detection. Falls back to `HIGH_ENTROPY_THRESHOLD` (4.5) if unset.
+*   **`entropy_low`** (float, optional): Per-detector keyword-context (low) entropy threshold. Falls back to `LOW_ENTROPY_THRESHOLD` (3.0) if unset.
+*   **`entropy_very_high`** (float, optional): Per-detector very-high entropy threshold for keyword-free or isolated tokens. Falls back to `VERY_HIGH_ENTROPY_THRESHOLD` (5.8) if unset.
+*   **`mixed_alnum_floor`** (float, optional): Per-detector mixed alpha-numeric token entropy floor. Falls back to `MIXED_ALNUM_TOKEN_THRESHOLD` (4.0) if unset.
+*   **`entropy_floor`** (array of tables, optional): Length-bucketed low-entropy suppression floor mapping maximum lengths to minimum entropy scores. Falls back to `EntropyFloorTable::DEFAULT_FLOOR` if unset.
+
+### BPE token efficiency
+*   **`bpe_max_bytes_per_token`** (float, optional): Per-detector
+    `cl100k_base` characters-per-token ceiling. Values above the ceiling are
+    efficiently tokenized, word-like candidates and are suppressed after the
+    cheaper shape and entropy gates. The detector field takes precedence over
+    the compiled scan fallback. An explicitly configured
+    `[scan].entropy_bpe_max_bytes_per_token` or CLI flag is the final Tier-A
+    override for all eligible detectors. Lower ceilings favor precision and
+    higher ceilings favor recall. This is the
+    token-efficiency mechanism popularized by Betterleaks, not another Shannon
+    entropy calculation: it measures language-model subword compressibility.
+    A generic detector may use it as the main **precision discriminator** by
+    choosing a permissive detector-local entropy floor and a measured BPE
+    ceiling, or compose both gates when byte-distribution and language-likeness
+    each reject different noise. It is not a candidate generator: the
+    detector's regex or phase-2 assignment/entropy discovery path must first
+    produce a candidate. Betterleaks' current source calls this Token Efficiency,
+    not BPD; KeyHog uses `bpe_...` field names to keep that distinction explicit.
+
+### Candidate Lengths
+*   **`keyword_free_min_len`** (integer, optional): Per-detector minimum length for an anchor-free (keyword-free or isolated) candidate. Falls back to `KEYWORD_FREE_MIN_LEN` (20) if unset.
+*   **`min_len`** (integer, optional): Per-detector minimum candidate length for any candidate this detector emits. Falls back to no detector-specific floor beyond the path-wide default if unset.
+
+### Allowlists & Exclusions
+*   **`allowlist_paths`** (array of strings, optional): Per-detector path-exclusion regexes (betterleaks-style allowlist). Any candidate match whose file path matches any of these regexes is suppressed.
+*   **`allowlist_values`** (array of strings, optional): Per-detector value-exclusion regexes. Any candidate secret value matching any of these regexes is suppressed (useful for filtering out test, example, or placeholder values).
+*   **`stopwords`** (array of strings, optional): Per-detector literal stopwords. A matched value equal to or containing any of these strings (case-insensitive) is suppressed.
+
+### Confidence Floors
+*   **`min_confidence`** (float, optional): Per-detector minimum confidence floor. Overrides the global scan confidence floor.
+
 ## Listing detectors
 
 ```sh
 keyhog detectors                  # human-readable list, grouped by service
 keyhog detectors --json           # one JSON object per detector
 keyhog detectors --json | jq length
-905
+920
 ```
 
 Filter by service:

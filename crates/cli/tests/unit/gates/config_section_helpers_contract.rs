@@ -44,11 +44,9 @@ fn config_file_merge_uses_section_helpers() {
 
     for helper in [
         "fn resolve_policy_outcome(",
-        "fn shipped_config_outcome(",
+        "fn base_config_outcome(",
         "fn config_file_error(",
         "struct ConfigOutcome",
-        "const SHIPPED_DETECTOR_FLOORS",
-        "const SHIPPED_DISABLED_DETECTORS",
     ] {
         assert!(
             policy.contains(helper),

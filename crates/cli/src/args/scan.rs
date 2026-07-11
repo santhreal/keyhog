@@ -50,6 +50,20 @@ pub enum CliDedupScope {
     None,
 }
 
+impl std::fmt::Display for CliDedupScope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Render the exact CLI spelling from the ONE owner — the `ValueEnum`
+        // derive — so the `--dedup` default (`default_value_t`) can never drift
+        // from the accepted `--dedup` values. Every variant is non-skipped, so
+        // `to_possible_value` is always `Some`.
+        f.write_str(
+            clap::ValueEnum::to_possible_value(self)
+                .expect("CliDedupScope variants are never skipped")
+                .get_name(),
+        )
+    }
+}
+
 impl CliDedupScope {
     pub fn to_core(&self) -> DedupScope {
         match self {
@@ -302,6 +316,27 @@ pub struct ScanArgs {
     #[arg(long)]
     pub insecure: bool,
 
+    /// Allow cloud sources (`--s3-endpoint`, GCS / Azure container URLs) to reach
+    /// an endpoint whose host — literal or DNS-resolved — is private, loopback,
+    /// link-local, or cloud-metadata. OFF by default: the cloud SSRF screen
+    /// refuses every such endpoint. Enable ONLY for a trusted private-network
+    /// deployment (self-hosted MinIO / Ceph on an internal gateway). This flag
+    /// (or its `[http].allow_private_endpoint` TOML equivalent) is the ONLY way
+    /// to relax the screen — no environment variable can, so an ambient toggle
+    /// can never silently turn keyhog into an SSRF proxy for internal services.
+    #[cfg(any(
+        feature = "web",
+        feature = "github",
+        feature = "gitlab",
+        feature = "bitbucket",
+        feature = "s3",
+        feature = "gcs",
+        feature = "azure",
+        feature = "verify"
+    ))]
+    #[arg(long)]
+    pub allow_private_cloud_endpoint: bool,
+
     /// Max git commits to traverse
     #[cfg(feature = "git")]
     #[arg(long)]
@@ -409,6 +444,19 @@ pub struct ScanArgs {
     /// Show progress bar
     #[arg(long)]
     pub progress: bool,
+
+    /// Suppress the interactive stderr chrome (banner, live progress ticker,
+    /// and the "Scan complete" summary). Coverage FAIL/WARN lines and fatal
+    /// errors are still printed so a quiet scan can never read as clean when it
+    /// was not. Findings still go to stdout / `--output`. Mutually exclusive
+    /// with `--progress`.
+    #[arg(long, conflicts_with = "progress")]
+    pub quiet: bool,
+
+    /// Disable ANSI color in the report and the stderr summary, regardless of
+    /// whether the output is a TTY (the `NO_COLOR` convention is also honored).
+    #[arg(long)]
+    pub no_color: bool,
 
     /// Emit a redacted `[stream]` preview line on stderr for every REPORTED
     /// finding (`SEVERITY  SERVICE/DETECTOR  PATH:LINE  redacted`), so a quick
@@ -590,6 +638,14 @@ pub struct ScanArgs {
     #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
     pub regex_dfa_limit: Option<usize>,
 
+    /// MegaScan GPU input-buffer byte budget, e.g. "256MB" or "1GB". Overrides
+    /// the VRAM-adaptive default (128 MiB–1 GiB by detected VRAM); the value is
+    /// clamped into that range. Larger buffers scan more bytes per GPU dispatch
+    /// on big inputs at higher VRAM cost. Config: `megascan_input_len` in
+    /// `.keyhog.toml`; this flag overrides it.
+    #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
+    pub megascan_input_len: Option<usize>,
+
     #[command(flatten)]
     pub limits: SourceLimitArgs,
 
@@ -723,7 +779,7 @@ pub struct ScanArgs {
     pub per_chunk_timeout_ms: Option<u64>,
 
     /// Deduplication scope for findings.
-    #[arg(long, default_value = "credential", value_enum)]
+    #[arg(long, default_value_t = CliDedupScope::Credential, value_enum)]
     pub dedup: CliDedupScope,
     #[arg(skip)]
     pub(crate) dedup_cli_explicit: bool,
@@ -775,8 +831,26 @@ pub struct ScanArgs {
     pub exclude_paths: Option<Vec<String>>,
 
     /// Entropy threshold in bits per byte (default: 4.5).
-    #[arg(long, value_name = "BITS")]
+    #[arg(
+        long,
+        value_name = "BITS",
+        allow_hyphen_values = true,
+        value_parser = crate::value_parsers::parse_entropy_threshold
+    )]
     pub entropy_threshold: Option<f64>,
+
+    /// BPE "rare-not-random" suppression bound in bytes-per-token (default: 2.2).
+    /// A surviving entropy/generic candidate whose cl100k_base bytes-per-token is
+    /// above this is treated as word-like (dotted API paths, prose) and dropped.
+    /// Lower = more aggressive suppression (higher precision, lower recall);
+    /// a large value effectively disables the gate.
+    #[arg(
+        long,
+        value_name = "RATIO",
+        allow_hyphen_values = true,
+        value_parser = crate::value_parsers::parse_entropy_bpe_max_bytes_per_token
+    )]
+    pub entropy_bpe_max_bytes_per_token: Option<f64>,
 
     /// Minimum credential length for entropy-fallback candidates (default: 16).
     /// Named detectors keep their own shape-specific length gates.
@@ -820,7 +894,7 @@ pub struct ScanArgs {
     pub dogfood: bool,
 
     /// ML weight for confidence scoring, 0.0-1.0 (default: 0.5).
-    #[arg(long, value_name = "WEIGHT")]
+    #[arg(long, value_name = "WEIGHT", value_parser = crate::value_parsers::parse_ml_weight)]
     pub ml_weight: Option<f64>,
 
     /// Drop every `client-safe` finding before reporting. Use this

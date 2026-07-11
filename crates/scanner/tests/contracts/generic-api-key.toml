@@ -1,0 +1,38 @@
+schema_version = 1
+detector_id = "generic-api-key"
+service = "generic"
+severity = "medium"
+
+# Phase-2 entropy-gated bridge for a shapeless API key: no vendor prefix, fires
+# on an api_key/access_key-family keyword next to a high-entropy value above the
+# length-bucketed floor (len<=24 -> 3.0). Values are 16-char lowercase.
+
+[[positive]]
+text = "api_key=ufnlbbavawsdeecn"
+credential = "ufnlbbavawsdeecn"
+reason = "api_key anchor + 16-char high-entropy body clears the len<=24 floor (3.0)."
+
+[[positive]]
+text = "access_key = \"tbvnwmxkqjrhdlcp\""
+credential = "tbvnwmxkqjrhdlcp"
+reason = "access_key keyword + quoted high-entropy body."
+
+[[negative]]
+text = "api_key=example"
+reason = "Dictionary body 'example' — entropy ~2.5 below the 3.0 len-bucket floor, generic-api-key must not fire."
+
+[[evasion]]
+text = "x-api-key: \"ufnlbbavawsdeecn\""
+credential = "ufnlbbavawsdeecn"
+reason = "x-api-key header-style keyword + colon-quoted body."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted generic API key."

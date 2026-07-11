@@ -15,6 +15,28 @@ use crate::DedupScope;
 /// `max_file_size = 0` through the source layer to mean "unlimited".
 pub const DEFAULT_MAX_FILE_SIZE_BYTES: u64 = 100 * 1024 * 1024;
 
+/// Single owner of the Tier-A generic-entropy gate default (the
+/// `ScanConfig::default().entropy_threshold` knob). The scanner's adjudicate
+/// fallback (`generic_entropy_floor`) resolves an absent per-scan value to this
+/// SAME number, so it references this const rather than re-spelling `4.5` — the
+/// two must stay equal by construction, not by two hand-kept literals.
+pub const DEFAULT_ENTROPY_THRESHOLD: f64 = 4.5;
+
+/// Single owner of the BPE "rare-not-random" gate default (the
+/// `ScanConfig::default().entropy_bpe_max_bytes_per_token` knob). An entropy /
+/// generic candidate whose `cl100k_base` bytes-per-token is STRICTLY GREATER
+/// than this compresses into few common subword tokens — word-like (a probable
+/// false positive: dotted API paths, prose, XML) rather than a random secret —
+/// and is suppressed. `2.2` is the empirical CredData F1 peak (see
+/// `keyhog_scanner::entropy::bpe`; the offline A/B lifted F1 0.368→0.424).
+///
+/// This lives in `keyhog-core` (not next to the gate in `keyhog-scanner`) so
+/// `ScanConfig` can default to it WITHOUT a scanner↔core dependency cycle — the
+/// gate imports it back. There is exactly ONE definitional home for the value;
+/// the scanner re-exports this const under its historical name for the gate's
+/// compiled default and its tests, so the two can never drift.
+pub const DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN: f64 = 2.2;
+
 /// Configuration for a scan run.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -51,6 +73,20 @@ pub struct ScanConfig {
     pub generic_keyword_low_entropy: bool,
     /// Shannon entropy threshold (typical secrets are 4.5+).
     pub entropy_threshold: f64,
+    /// BPE "rare-not-random" precision bound: a surviving entropy / generic
+    /// candidate whose `cl100k_base` bytes-per-token is STRICTLY GREATER than
+    /// this is treated as word-like (a probable false positive — dotted API
+    /// paths, prose, XML) and suppressed. Lower = more aggressive suppression
+    /// (higher precision, lower recall); higher = looser (a very large value
+    /// effectively disables the gate). The compiled default is
+    /// [`DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN`]. Operators trade precision
+    /// for recall per corpus via the `[scan]` TOML key or `--entropy-bpe-max-bytes-per-token`.
+    /// A `#[serde(default)]` keeps configs that predate the field on the shipped
+    /// bound instead of `f64`'s `0.0` — which would suppress EVERY candidate
+    /// (bytes-per-token is always > 0), a silent recall wipeout. No-op unless the
+    /// entropy feature is compiled and the gate is reached.
+    #[serde(default = "default_entropy_bpe_max_bytes_per_token")]
+    pub entropy_bpe_max_bytes_per_token: f64,
     /// Minimum credential length for entropy-based secret detection.
     ///
     /// Named detectors keep their own shape-specific lengths; this floor is
@@ -129,9 +165,19 @@ fn default_generic_keyword_low_entropy() -> bool {
     true
 }
 
+/// Serde default for [`ScanConfig::entropy_bpe_max_bytes_per_token`]: configs
+/// that predate the field get the shipped bound
+/// [`DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN`] rather than `f64`'s `0.0` — a
+/// `0.0` bound would treat every non-empty candidate as word-like and suppress
+/// the entire entropy/generic surface (bytes-per-token is always > 0), a silent
+/// recall wipeout on old configs. One owner for the value (the core const).
+fn default_entropy_bpe_max_bytes_per_token() -> f64 {
+    DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN
+}
+
 /// Errors returned while validating a scan configuration.
 #[derive(Debug, Error)]
-pub(crate) enum ConfigError {
+pub enum ConfigError {
     /// `min_confidence` was outside the closed unit interval `[0.0, 1.0]`.
     #[error("min_confidence must be between 0.0 and 1.0, found {0}")]
     InvalidConfidence(f64),
@@ -139,7 +185,59 @@ pub(crate) enum ConfigError {
     /// [`MAX_DECODE_DEPTH_LIMIT`].
     #[error("max_decode_depth exceeds limit of {MAX_DECODE_DEPTH_LIMIT}, found {0}")]
     DepthTooHigh(usize),
+    /// `ml_weight` was outside the closed unit interval `[0.0, 1.0]`. The score
+    /// blend multiplies by this weight; a value above 1.0 over-weights the model
+    /// and a negative one inverts it — both silently distort every confidence.
+    #[error("ml_weight must be between 0.0 and 1.0, found {0}")]
+    InvalidMlWeight(f64),
+    /// `entropy_bpe_max_bytes_per_token` was not a finite value strictly greater
+    /// than zero. A `0.0` (or negative / NaN) bound treats EVERY candidate as
+    /// word-like and suppresses the entire entropy/generic surface — a silent
+    /// recall wipeout (the `#[serde(default)]` guards only configs that OMIT the
+    /// key, not an explicit out-of-range value).
+    #[error("entropy_bpe_max_bytes_per_token must be a finite value > 0.0, found {0}")]
+    InvalidBpeBound(f64),
+    /// `entropy_threshold` was not finite. A `NaN` threshold makes every
+    /// `entropy >= threshold` comparison false, silently suppressing every
+    /// entropy candidate; `±inf` is equally nonsensical as a bits-per-byte floor.
+    #[error("entropy_threshold must be a finite number, found {0}")]
+    NonFiniteEntropyThreshold(f64),
+    /// `entropy_threshold` exceeded the mathematical byte-entropy range.
+    #[error("entropy_threshold must be between 0.0 and 8.0 bits per byte, found {0}")]
+    InvalidEntropyThreshold(f64),
+    /// The TOML text could not be deserialized into a [`ScanConfig`] (syntax
+    /// error, wrong type, or an unknown field — the struct is
+    /// `#[serde(deny_unknown_fields)]`). The inner string is the `toml` crate's
+    /// diagnostic, kept as a `String` so the public error type does not leak the
+    /// `toml` version into the API.
+    #[error("failed to parse ScanConfig TOML: {0}")]
+    Parse(String),
 }
+
+/// Shipped default keyword lists for [`ScanConfig`], loaded once from the Tier-B
+/// data file `rules/config-keywords.toml` so the defaults have exactly one owner
+/// (they used to be inline `vec![...]` literals in `ScanConfig::default`).
+#[derive(serde::Deserialize)]
+struct ConfigKeywords {
+    known_prefixes: Vec<String>,
+    secret_keywords: Vec<String>,
+    test_keywords: Vec<String>,
+    placeholder_keywords: Vec<String>,
+}
+
+fn parse_config_keywords(raw: &str) -> Result<ConfigKeywords, String> {
+    toml::from_str::<ConfigKeywords>(raw).map_err(|error| error.to_string())
+}
+
+static CONFIG_KEYWORDS: std::sync::LazyLock<ConfigKeywords> = std::sync::LazyLock::new(|| {
+    match parse_config_keywords(include_str!("../../../rules/config-keywords.toml")) {
+        Ok(keywords) => keywords,
+        Err(error) => panic!(
+            "rules/config-keywords.toml is invalid: {error}. \
+             Fix the Tier-B config keyword defaults."
+        ),
+    }
+});
 
 impl Default for ScanConfig {
     fn default() -> Self {
@@ -159,7 +257,8 @@ impl Default for ScanConfig {
             entropy_in_source_files: false,
             entropy_ml_authoritative: true,
             generic_keyword_low_entropy: true,
-            entropy_threshold: 4.5,
+            entropy_threshold: DEFAULT_ENTROPY_THRESHOLD,
+            entropy_bpe_max_bytes_per_token: DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN,
             min_secret_len: 16,
             max_file_size: DEFAULT_MAX_FILE_SIZE_BYTES,
             dedup: DedupScope::Credential,
@@ -171,52 +270,10 @@ impl Default for ScanConfig {
             max_decode_bytes: 512 * 1024,
             max_matches_per_chunk: 1000,
             scan_comments: false,
-            known_prefixes: vec!["AKIA".into(), "ASIA".into(), "ghp_".into(), "sk_".into()],
-            secret_keywords: vec![
-                "password".into(),
-                "passwd".into(),
-                "pwd".into(),
-                "secret".into(),
-                "token".into(),
-                "api_key".into(),
-                "apikey".into(),
-                "api-key".into(),
-                "access_key".into(),
-                "auth".into(),
-                "authorization".into(),
-                "auth_token".into(),
-                "auth_key".into(),
-                "private_key".into(),
-                "client_secret".into(),
-                "encryption_key".into(),
-                "signing_key".into(),
-                "bearer".into(),
-                "credential".into(),
-                "license_key".into(),
-            ],
-            test_keywords: vec![
-                "test".into(),
-                "mock".into(),
-                "fake".into(),
-                "stub".into(),
-                "fixture".into(),
-                "example".into(),
-                "sample".into(),
-                "sandbox".into(),
-                "staging".into(),
-            ],
-            placeholder_keywords: vec![
-                "change_me".into(),
-                "changeme".into(),
-                "replace_me".into(),
-                "todo".into(),
-                "fixme".into(),
-                "your_".into(),
-                "insert_".into(),
-                "put_your".into(),
-                "fill_in".into(),
-                "<your".into(),
-            ],
+            known_prefixes: CONFIG_KEYWORDS.known_prefixes.clone(),
+            secret_keywords: CONFIG_KEYWORDS.secret_keywords.clone(),
+            test_keywords: CONFIG_KEYWORDS.test_keywords.clone(),
+            placeholder_keywords: CONFIG_KEYWORDS.placeholder_keywords.clone(),
         }
     }
 }
@@ -233,77 +290,65 @@ impl ScanConfig {
     // until MC-01 collapses `ScannerConfig` back into `ScanConfig`, the presets
     // stay with the config the engine runs, and there is exactly one preset path.
 
-    /// Validate the configuration parameters.
-    pub(crate) fn validate(&self) -> Result<(), ConfigError> {
+    /// Validate the configuration parameters, failing closed on any value that
+    /// would silently break scanning. This is the "separate later step" the
+    /// deserialize path deliberately omits (see the `regression_scan_config_fields`
+    /// contract): [`ScanConfig::from_toml_str`] composes deserialize + this into
+    /// one validated load, and a library consumer who builds a [`ScanConfig`] by
+    /// hand calls it directly before handing the config to the engine.
+    ///
+    /// Every check is NaN-safe: `RangeInclusive::contains` is `false` for `NaN`
+    /// (so a `NaN` bound is rejected, not silently admitted), and the entropy
+    /// checks reject non-finite values explicitly.
+    pub fn validate(&self) -> Result<(), ConfigError> {
         if !(0.0..=1.0).contains(&self.min_confidence) {
             return Err(ConfigError::InvalidConfidence(self.min_confidence));
         }
         if self.max_decode_depth > MAX_DECODE_DEPTH_LIMIT {
             return Err(ConfigError::DepthTooHigh(self.max_decode_depth));
         }
+        if !(0.0..=1.0).contains(&self.ml_weight) {
+            return Err(ConfigError::InvalidMlWeight(self.ml_weight));
+        }
+        // A very large FINITE bound is legal (it "effectively disables the gate"
+        // per the field docs); only 0.0, negatives, NaN, and ±inf are rejected.
+        if !self.entropy_bpe_max_bytes_per_token.is_finite()
+            || self.entropy_bpe_max_bytes_per_token <= 0.0
+        {
+            return Err(ConfigError::InvalidBpeBound(
+                self.entropy_bpe_max_bytes_per_token,
+            ));
+        }
+        // A finite negative threshold is merely permissive (every string clears
+        // it); only non-finite values (NaN/±inf) are rejected, because NaN
+        // silently suppresses the entire entropy surface.
+        if !self.entropy_threshold.is_finite() {
+            return Err(ConfigError::NonFiniteEntropyThreshold(
+                self.entropy_threshold,
+            ));
+        }
+        if !(0.0..=8.0).contains(&self.entropy_threshold) {
+            return Err(ConfigError::InvalidEntropyThreshold(self.entropy_threshold));
+        }
         Ok(())
     }
-}
 
-/// List of filenames that typically contain secrets (e.g. .env, config.json).
-/// Return a list of filenames that typically contain secrets (e.g., .env, id_rsa).
-pub(crate) fn secret_filenames() -> Vec<String> {
-    vec![
-        ".env",
-        ".env.local",
-        ".env.production",
-        ".env.development",
-        ".env.test",
-        "config.json",
-        "config.yaml",
-        "config.yml",
-        "credentials.json",
-        "secrets.json",
-        "settings.json",
-        "production.json",
-        "development.json",
-        "local.json",
-        "appsettings.json",
-        "web.config",
-        "web.Debug.config",
-        "web.Release.config",
-        "Application.xml",
-        "Settings.xml",
-        "App.config",
-        "pom.xml",
-        "build.gradle",
-        "build.gradle.kts",
-        "package.json",
-        "package-lock.json",
-        "yarn.lock",
-        "composer.json",
-        "composer.lock",
-        "pipfile",
-        "pipfile.lock",
-        "requirements.txt",
-        "gemfile",
-        "gemfile.lock",
-        "cargo.toml",
-        "cargo.lock",
-        "go.mod",
-        "go.sum",
-        "docker-compose.yml",
-        "docker-compose.yaml",
-        "dockerfile",
-        "kubernetes.yml",
-        "kubernetes.yaml",
-        "k8s.yml",
-        "k8s.yaml",
-        "deploy.yml",
-        "deploy.yaml",
-        "service.yml",
-        "service.yaml",
-        "configmap.yml",
-        "configmap.yaml",
-        "secret.yml",
-        "secret.yaml",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect()
+    /// Deserialize a [`ScanConfig`] from a TOML string and validate it, failing
+    /// closed on either a parse error or an out-of-range value.
+    ///
+    /// This is the public, fail-closed loader for the published `keyhog-core`
+    /// config surface. `ScanConfig` derives `Deserialize`, so a consumer can
+    /// always `toml::from_str` it directly — but that path is UNVALIDATED by
+    /// design (validation is a separate step). `from_toml_str` is the ONE place
+    /// that composes both, so an external `min_confidence = 5.0` / `ml_weight =
+    /// 2.0` / `entropy_bpe_max_bytes_per_token = 0.0` is rejected here exactly as
+    /// the CLI rejects it, instead of being silently honored and zeroing recall
+    /// downstream. Callers that already hold a `ScanConfig` (e.g. built field by
+    /// field) should call [`ScanConfig::validate`] directly.
+    pub fn from_toml_str(raw: &str) -> Result<Self, ConfigError> {
+        let config: ScanConfig =
+            toml::from_str(raw).map_err(|error| ConfigError::Parse(error.to_string()))?;
+        config.validate()?;
+        Ok(config)
+    }
 }

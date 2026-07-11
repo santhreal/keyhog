@@ -3,10 +3,10 @@
 A suppression is a filter that drops a candidate match before it becomes a
 reported finding. KeyHog has **two kinds**:
 
-- **Operator surfaces** — things *you* configure to silence findings you have
+- **Operator surfaces**: things *you* configure to silence findings you have
   reviewed and accepted (allowlists, inline directives, per-detector floors,
   baselines). This page is the single map of all of them.
-- **Always-on shape/path heuristics** — built-in precision filters that drop
+- **Always-on shape/path heuristics**: built-in precision filters that drop
   shapes that are universally not credentials. You cannot turn these off; they
   are summarised at the bottom and detailed in
   [How detection works](./detection.md#stage-4-post-process).
@@ -28,9 +28,9 @@ matches (before dedup/verify); later ones act on resolved findings.
 | 1 | `[detector.<id>] enabled = false` (Tier-A compiled + Tier-B `.keyhog.toml`) | detector id | raw match | per-detector |
 | 2 | Bundled `test-fixtures.toml` | exact / substring of the credential value | raw match | `--no-suppress-test-fixtures` |
 | 3 | Self-scan test-data paths (keyhog repo only) | `detectors/` `tests/` `fixtures/` `benches/` segment | raw match | `--no-suppress-test-fixtures`; only inside keyhog's own tree |
-| 4 | `.keyhogignore` — `path:` | path glob | raw match | file |
-| 5 | `.keyhogignore` — `hash:` / bare hash | SHA-256 of value | raw match | file |
-| 6 | `.keyhogignore` — `detector:` | detector id | raw match | file |
+| 4 | `.keyhogignore`: `path:` | path glob | raw match | file |
+| 5 | `.keyhogignore`: `hash:` / bare hash | SHA-256 of value | raw match | file |
+| 6 | `.keyhogignore`: `detector:` | detector id | raw match | file |
 | 7 | `[detector.<id>] min_confidence` / `--min-confidence` | confidence score | raw match | floor |
 | 8 | `--severity` | severity rank | raw match | floor |
 | 9 | Inline `keyhog:ignore` (and aliases) | the line itself | raw match | in-source |
@@ -40,13 +40,13 @@ matches (before dedup/verify); later ones act on resolved findings.
 
 Everything is wired through `filter_and_resolve` (raw stage) and the run loop
 (resolved stage), so the `--daemon` route and every output format apply the
-exact same set — there is no path that scans under a weaker suppression policy.
+exact same set; there is no path that scans under a weaker suppression policy.
 
 ---
 
 ## Operator surfaces
 
-### `.keyhogignore` — line-based allowlist (opt-in, project-scoped)
+### `.keyhogignore`: line-based allowlist (opt-in, project-scoped)
 
 A `.keyhogignore` at your scan root, one rule per line. This is the zero-config
 allowlist: the format is deliberately a superset of `.gitignore`, so a copied
@@ -75,8 +75,12 @@ Hashes are bare 64-character hex (no `sha256:` prefix). Generate the exact line
 to append from an existing run:
 
 ```sh
-keyhog scan . --format jsonl | jq -r '.credential_hash' >> .keyhogignore
+keyhog scan . --format jsonl | jq -r '"hash:" + .credential_hash' >> .keyhogignore
 ```
+
+The `"hash:" +` prefix is required: a bare hex line with no prefix is a path
+glob, not a hash rule, so it would never match a credential. `.credential_hash`
+is already the bare 64-character SHA-256 hex the `hash:` entry expects.
 
 **Governance metadata** (optional) trails an entry after `;`:
 
@@ -90,7 +94,7 @@ The `require_reason` / `require_approved_by` / `max_expires_days` governance
 flags under `[allowlist]` in `.keyhog.toml` are enforced before any suppression
 is active; missing required metadata or an overlong expiry stops the scan.
 
-### `.keyhogignore.toml` — declarative rule allowlist (opt-in, composable)
+### `.keyhogignore.toml`: declarative rule allowlist (opt-in, composable)
 
 When a single glob/hash/detector line is too blunt, a `.keyhogignore.toml`
 alongside it gives composable `[[suppress]]` rules. Fields within one table AND
@@ -119,7 +123,7 @@ every finding); write `literal_true = true` if you truly mean "drop all". A
 malformed present `.keyhogignore.toml` is a policy failure and stops the scan
 instead of being treated as an empty suppressor.
 
-### Inline directives — suppress at the source line
+### Inline directives: suppress at the source line
 
 Put a directive in a comment on the finding's line, or the line directly above
 it. Recognised forms: `keyhog:ignore`, `keyhog:allow`, `gitleaks:allow`,
@@ -138,7 +142,7 @@ const token = "…";  // keyhog:ignore detector=stripe-secret-key
 
 With no `detector=` token the directive suppresses every finding on that line.
 
-### Per-detector control — `.keyhog.toml [detector.<id>]`
+### Per-detector control: `.keyhog.toml [detector.<id>]`
 
 ```toml
 # Turn a noisy detector off entirely.
@@ -150,11 +154,10 @@ enabled = false
 min_confidence = 0.85
 ```
 
-These same per-detector floors/disables also ship **compiled into the binary**
-(Tier-A `SHIPPED_DETECTOR_FLOORS` / `SHIPPED_DISABLED_DETECTORS`), so the bench
-and every default scan apply them even with no `.keyhog.toml` present — a file
-entry overrides the compiled value for that id. This is why "tuned == benched ==
-shipped" holds for detector policy.
+Shipped floors and availability live in each detector's own TOML, which is
+embedded into the binary and used by benches and default scans. Repository
+`.keyhog.toml` entries are validated operator overrides composed into that
+active corpus before scanning; there is no hidden Rust floor or disable list.
 
 ### Bundled test fixtures (always on, opt-out)
 
@@ -188,7 +191,7 @@ own source tree.
 - `--severity <level>` drops findings below a severity rank.
 - `--hide-client-safe` drops the client-safe tier (public-by-design keys).
 
-### Baselines — suppress what already existed
+### Baselines: suppress what already existed
 
 Record the current findings, then on later runs report only *new* ones:
 
@@ -235,7 +238,7 @@ opt-in would only make the scanner louder. If one suppresses a path you care
 about, that is a bug worth reporting.
 
 > Not a suppression surface: `[lockdown] require = true` in `.keyhog.toml` (and
-> `--lockdown`) is a fail-*closed* hardening control — it refuses to run, mlocks
+> `--lockdown`) is a fail-*closed* hardening control: it refuses to run, mlocks
 > memory, and forbids disk cache / `--verify` / `--show-secrets`. It never hides
 > a finding. Likewise `audit.toml` is cargo-audit's RustSec advisory ignore-list
 > for keyhog's *own* dependencies (a supply-chain CI gate), unrelated to scan
@@ -243,13 +246,21 @@ about, that is a bug worth reporting.
 
 ## Telemetry: what got suppressed
 
+`--dogfood` prints a single JSON object to **stderr** (separate from the
+findings report on stdout): `{"dogfood": {"example_suppressions_total": N,
+"events": [...]}}`. Capture stderr to inspect it:
+
 ```sh
-keyhog scan . --dogfood --format json | jq '.dogfood.events[]'
+keyhog scan . --dogfood 2>&1 >/dev/null | jq '.dogfood.events[]'
 ```
+
+`2>&1 >/dev/null` sends the dogfood object (stderr) to `jq` while discarding
+the normal report (stdout). `--dogfood` is independent of `--format`, so the
+report format does not matter here.
 
 Each event carries the suppressor name (`test_fixture_suppression`,
 `pure_identifier_no_digit`, `vendored_minified_path`, …), the path, the redacted
-credential, and the rule that fired — the answer to "is the scanner being too
+credential, and the rule that fired: the answer to "is the scanner being too
 aggressive on my code?".
 
 ## Adding a suppression for an FP cluster
@@ -262,5 +273,5 @@ If you find a cluster of 5+ FPs that share a shape, file an issue with:
    should have caught it).
 
 The right fix is a tightened regex, a new shape filter, or a path exclusion.
-Adding the literal credential to the test-fixtures list is the LAST resort — it
+Adding the literal credential to the test-fixtures list is the LAST resort: it
 hides one specific value, not the underlying shape.

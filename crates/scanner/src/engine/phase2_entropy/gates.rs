@@ -19,6 +19,10 @@ pub(crate) fn entropy_match_suppression_stage(
     // gates; all other precision gates stay live.
     allow_canonical_lift: bool,
     source_entropy_requires_same_line_credential: bool,
+    // Per-scan BPE "rare-not-random" bound (`ScanConfig::entropy_bpe_max_bytes_per_token`,
+    // Tier-A). Threaded in so the config value — not a compiled const — is the
+    // single runtime authority for the word-like suppression boundary.
+    bpe_max_bytes_per_token: f64,
 ) -> Option<EntropyShapeStage> {
     let randomness =
         crate::suppression::token_randomness::TokenRandomness::for_candidate(&entropy_match.value);
@@ -59,7 +63,7 @@ pub(crate) fn entropy_match_suppression_stage(
         &entropy_match.keyword,
         entropy_match.entropy,
         chunk.metadata.path.as_deref(),
-        Some(chunk.metadata.source_type.as_str()),
+        Some(chunk.metadata.source_type.as_ref()),
         canonical_lift,
     ) {
         return Some(stage);
@@ -229,36 +233,26 @@ pub(crate) fn entropy_match_suppression_stage(
     // preprocessed text + line_offsets table.
     if let Some(line_text) = entropy_value_line(entropy_match, preprocessed, line_offsets) {
         let line_upper = line_text.to_ascii_uppercase();
-        const BLOCKCHAIN_ADDR_KEYWORDS: &[&str] = &[
-            "_ADDR=",
-            "_ADDR ",
-            "_ADDR\"",
-            "_ADDR:",
-            "_ADDRS=",
-            "_ADDRS ",
-            "_ADDRS\"",
-            "_ADDRESS=",
-            "_ADDRESS ",
-            "_ADDRESS\"",
-            "_WALLET=",
-            "_WALLET ",
-            "_WALLET\"",
-            "_MINT_ADDR",
-            "_PUBKEY=",
-            "_PUBKEY ",
-            "_PUBLIC_KEY=",
-            "_PUBLIC_KEY ",
-            "_PUBLIC_KEY\"",
-            "_CONTRACT=",
-            "_CONTRACT ",
-            "_OWNER=",
-            "_ACCOUNT_ID=",
-            "_PEER_ID=",
-            "_NODE_ID=",
-        ];
+        #[derive(serde::Deserialize)]
+        struct BlockchainAddrKeywordsFile {
+            keywords: Vec<String>,
+        }
+        // One owner: rules/blockchain-address-keywords.toml (Tier-B data).
+        static BLOCKCHAIN_ADDR_KEYWORDS: std::sync::LazyLock<Vec<String>> =
+            std::sync::LazyLock::new(|| {
+                match toml::from_str::<BlockchainAddrKeywordsFile>(include_str!(
+                    "../../../../../rules/blockchain-address-keywords.toml"
+                )) {
+                    Ok(parsed) => parsed.keywords,
+                    Err(error) => panic!(
+                        "rules/blockchain-address-keywords.toml is invalid: {error}. \
+                         Fix the Tier-B blockchain keyword list."
+                    ),
+                }
+            });
         if BLOCKCHAIN_ADDR_KEYWORDS
             .iter()
-            .any(|kw| line_upper.contains(kw))
+            .any(|kw| line_upper.contains(kw.as_str()))
         {
             return Some(EntropyShapeStage::BlockchainOrNetworkAddress);
         }
@@ -383,6 +377,17 @@ pub(crate) fn entropy_match_suppression_stage(
     // Keep parity with the generic-secret emit path.
     if decode_evidence.decoded_contains_placeholder() {
         return Some(EntropyShapeStage::DecodedPlaceholder);
+    }
+    // BPE "rare-not-random" precision gate — LAST, so it only tokenizes the few
+    // candidates that survived every cheaper shape gate above. Word-like values
+    // (dotted API paths like `PInvoke.User32.WM_*`, prose, XML) compress into a
+    // handful of common cl100k_base subword tokens; real secrets tokenize into
+    // many short pieces. Unconditional (a word-like token is never a secret, even
+    // under a credential anchor or the canonical lift): validated as a large
+    // CredData precision win (F1 0.368→0.424) for a small recall cost. See
+    // `crate::entropy::bpe`.
+    if crate::entropy::bpe::is_word_like_low_bpe(&entropy_match.value, bpe_max_bytes_per_token) {
+        return Some(EntropyShapeStage::WordLikeLowBpe);
     }
     None
 }

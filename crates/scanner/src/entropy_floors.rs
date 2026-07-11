@@ -1,159 +1,135 @@
-//! Per-family generic-detector entropy floors, loaded from Tier-B data.
+//! Per-detector generic entropy floors, sourced from the detector TOMLs.
 //!
-//! The floor table consumed by [`crate::adjudicate::generic_entropy_floor`] —
-//! the minimum Shannon entropy a generic-detector candidate must clear to survive
-//! the low-entropy suppression gate — lives in the Tier-B `rules/entropy-floors.toml`
-//! file, NOT as a hardcoded `match` in code (CLAUDE.md: "Hardcoded lists are
-//! banned"). Floors are calibrated per detector family and per length bucket, so
-//! re-tuning a family (or adding one) is a data edit in the rules file, never a
-//! source change. This module parses and caches that table once and exposes the
-//! single [`family_floor`] lookup; the Tier-A `entropy_threshold` override stays
-//! in `adjudicate` so this module owns only the calibration DATA.
+//! The floor a generic-detector candidate must clear to survive the low-entropy
+//! suppression gate ([`crate::adjudicate::generic_entropy_floor`]) is owned in
+//! each generic detector's OWN `detectors/<id>.toml` `entropy_floor` field — the
+//! single home for that knob (there is no separate `rules/entropy-floors.toml`,
+//! no hardcoded `match`, no override). This module builds the runtime lookup
+//! ONCE from the embedded detector corpus and exposes the single [`family_floor`]
+//! lookup. Floors are length-bucketed, so re-tuning a family is a data edit in
+//! that detector's TOML, never a source change. The Tier-A `entropy_threshold`
+//! override stays in `adjudicate`, so this module owns only the calibration DATA.
 
+use keyhog_core::{DetectorSpec, EntropyFloorBucket};
 use std::sync::LazyLock;
 
-const ENTROPY_FLOORS_TOML: &str = include_str!("../../../rules/entropy-floors.toml");
+/// Floor for any generic detector that declares no `entropy_floor` bucket. The
+/// ONE owner of the generic default (was `rules/entropy-floors.toml`
+/// `default_floor`). A detector opts into a stricter/looser floor by declaring
+/// `entropy_floor` in its TOML; everything else clears this default.
+pub(crate) const DEFAULT_FLOOR: f64 = 3.5;
 
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct EntropyFloorFile {
-    default_floor: f64,
-    #[serde(default)]
-    family: Vec<FamilyEntry>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FamilyEntry {
-    detector: String,
-    bucket: Vec<FloorBucket>,
-}
-
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FloorBucket {
-    #[serde(default)]
-    max_len: Option<usize>,
-    floor: f64,
-}
-
-/// A validated, length-bucketed entropy-floor table keyed by detector family.
+/// A validated, length-bucketed entropy-floor table keyed by detector id.
+///
+/// Keyed lookup, NOT a linear scan: `family_floor` runs per surviving generic
+/// candidate on the scan path, and the per-detector-everything direction (A5)
+/// means the family count grows from a handful toward the full corpus — an
+/// O(families) string-compare walk per candidate would silently become a
+/// Law-7 hot-path regression as detectors adopt `entropy_floor`.
 #[derive(Debug)]
 pub(crate) struct EntropyFloorTable {
-    default_floor: f64,
-    families: Vec<FamilyEntry>,
+    families: std::collections::HashMap<String, Vec<EntropyFloorBucket>>,
 }
 
 impl EntropyFloorTable {
     /// The calibrated Shannon-entropy floor for `detector_id` at `credential_len`.
     ///
-    /// Returns the first bucket (in file order) whose `max_len >= credential_len`,
-    /// or the family catch-all bucket, or `default_floor` for any detector with no
-    /// family entry. Never applies the Tier-A `entropy_threshold` override — that
-    /// is the caller's job (`adjudicate::generic_entropy_floor`).
+    /// Returns the first bucket (in TOML order) whose `max_len >= credential_len`,
+    /// or the family catch-all bucket, or [`DEFAULT_FLOOR`] for any detector that
+    /// declares no `entropy_floor`. Never applies the Tier-A `entropy_threshold`
+    /// override — that is the caller's job (`adjudicate::generic_entropy_floor`).
     pub(crate) fn family_floor(&self, detector_id: &str, credential_len: usize) -> f64 {
-        let Some(family) = self.families.iter().find(|f| f.detector == detector_id) else {
-            return self.default_floor;
+        let Some(buckets) = self.families.get(detector_id) else {
+            return DEFAULT_FLOOR;
         };
-        family
-            .bucket
+        buckets
             .iter()
             .find(|bucket| bucket.max_len.is_none_or(|max| credential_len <= max))
-            .map_or(self.default_floor, |bucket| bucket.floor)
+            .map_or(DEFAULT_FLOOR, |bucket| bucket.floor)
+    }
+
+    /// Build the table from the detector corpus: every detector that declares an
+    /// `entropy_floor` contributes one family. Each detector's buckets are
+    /// validated for well-formedness; an invalid floor is a corpus bug and is
+    /// returned as an error (the caller fails closed — see [`ENTROPY_FLOORS`]).
+    fn from_specs(specs: &[DetectorSpec]) -> Result<Self, String> {
+        let mut families = std::collections::HashMap::new();
+        for spec in specs {
+            if spec.entropy_floor.is_empty() {
+                continue;
+            }
+            validate_buckets(&spec.id, &spec.entropy_floor)?;
+            families.insert(spec.id.clone(), spec.entropy_floor.clone());
+        }
+        Ok(Self { families })
     }
 }
 
-static ENTROPY_FLOORS: LazyLock<EntropyFloorTable> =
-    LazyLock::new(|| match parse_entropy_floors(ENTROPY_FLOORS_TOML) {
-        Ok(table) => table,
-        Err(error) => panic!(
-            "rules/entropy-floors.toml is invalid: {error}. Fix the bundled Tier-B \
-             entropy-floor calibration; refusing to run without generic-detector \
-             entropy-floor truth."
-        ),
+static ENTROPY_FLOORS: LazyLock<EntropyFloorTable> = LazyLock::new(|| {
+    let specs = keyhog_core::load_embedded_detectors_or_fail().unwrap_or_else(|error| {
+        panic!(
+            "embedded detector corpus failed to load for entropy floors: {error}. \
+             The generic-detector entropy floors live in the detector TOMLs; refusing \
+             to run without them."
+        )
     });
+    EntropyFloorTable::from_specs(&specs).unwrap_or_else(|error| {
+        panic!(
+            "a detector's entropy_floor is invalid: {error}. Fix the offending \
+             detector TOML's `entropy_floor` buckets."
+        )
+    })
+});
 
 /// The calibrated base entropy floor for `detector_id` at `credential_len`.
 pub(crate) fn family_floor(detector_id: &str, credential_len: usize) -> f64 {
     ENTROPY_FLOORS.family_floor(detector_id, credential_len)
 }
 
-fn parse_entropy_floors(raw: &str) -> Result<EntropyFloorTable, String> {
-    let file: EntropyFloorFile =
-        toml::from_str(raw).map_err(|error| format!("invalid entropy-floor rules: {error}"))?;
-    validate(&file)?;
-    Ok(EntropyFloorTable {
-        default_floor: file.default_floor,
-        families: file.family,
-    })
-}
-
 fn finite_non_negative(value: f64) -> bool {
     value.is_finite() && value >= 0.0
 }
 
-fn validate(file: &EntropyFloorFile) -> Result<(), String> {
-    if !finite_non_negative(file.default_floor) {
-        return Err(format!(
-            "default_floor must be finite and >= 0 (got {})",
-            file.default_floor
-        ));
+/// Validate one detector's `entropy_floor` buckets. Same well-formedness contract
+/// the separate rules file used to enforce, now applied per detector: only the
+/// LAST bucket may omit `max_len` (the catch-all); a non-final catch-all would
+/// shadow later buckets, and a final bucket WITH `max_len` would leave longer
+/// values with no floor (a silent recall hole); `max_len` must strictly increase;
+/// every floor must be finite and non-negative.
+fn validate_buckets(detector_id: &str, buckets: &[EntropyFloorBucket]) -> Result<(), String> {
+    // Empty is handled by the caller (skipped = no floor), so buckets is non-empty here.
+    let last = buckets.len() - 1;
+    for (index, bucket) in buckets.iter().enumerate() {
+        if !finite_non_negative(bucket.floor) {
+            return Err(format!(
+                "detector '{detector_id}' entropy_floor bucket {index} has a non-finite or \
+                 negative floor ({})",
+                bucket.floor
+            ));
+        }
+        if index < last && bucket.max_len.is_none() {
+            return Err(format!(
+                "detector '{detector_id}' entropy_floor has a catch-all bucket before the last \
+                 position (only the final bucket may omit max_len)"
+            ));
+        }
+        if index == last && bucket.max_len.is_some() {
+            return Err(format!(
+                "detector '{detector_id}' entropy_floor final bucket must be the catch-all \
+                 (omit max_len)"
+            ));
+        }
     }
-    let mut seen = std::collections::HashSet::new();
-    for family in &file.family {
-        if family.detector.trim().is_empty() {
-            return Err("entropy-floor family has an empty detector id".to_string());
-        }
-        if !seen.insert(family.detector.as_str()) {
-            return Err(format!(
-                "entropy-floor family '{}' is defined more than once",
-                family.detector
-            ));
-        }
-        if family.bucket.is_empty() {
-            return Err(format!(
-                "entropy-floor family '{}' has no buckets",
-                family.detector
-            ));
-        }
-        let last = family.bucket.len() - 1;
-        for (index, bucket) in family.bucket.iter().enumerate() {
-            if !finite_non_negative(bucket.floor) {
+    let mut previous = 0usize;
+    for bucket in buckets {
+        if let Some(max) = bucket.max_len {
+            if max <= previous {
                 return Err(format!(
-                    "entropy-floor family '{}' bucket {index} has a non-finite or negative floor ({})",
-                    family.detector, bucket.floor
+                    "detector '{detector_id}' entropy_floor max_len values must strictly increase \
+                     (got {max} after {previous})"
                 ));
             }
-            // Only the LAST bucket may omit max_len (the catch-all). A non-final
-            // bucket without max_len would shadow every later bucket; a final
-            // bucket WITH max_len would leave longer values with no floor, which
-            // silently drops them to the default — a precision/recall hole.
-            if index < last && bucket.max_len.is_none() {
-                return Err(format!(
-                    "entropy-floor family '{}' has a catch-all bucket before the last position \
-                     (only the final bucket may omit max_len)",
-                    family.detector
-                ));
-            }
-            if index == last && bucket.max_len.is_some() {
-                return Err(format!(
-                    "entropy-floor family '{}' final bucket must be the catch-all (omit max_len)",
-                    family.detector
-                ));
-            }
-        }
-        let mut previous = 0usize;
-        for bucket in &family.bucket {
-            if let Some(max) = bucket.max_len {
-                if max <= previous {
-                    return Err(format!(
-                        "entropy-floor family '{}' bucket max_len values must strictly increase \
-                         (got {max} after {previous})",
-                        family.detector
-                    ));
-                }
-                previous = max;
-            }
+            previous = max;
         }
     }
     Ok(())
@@ -166,25 +142,27 @@ mod tests {
     // be the sole owner of scanner detector-identity literals.
     use super::*;
     use crate::detector_ids::{
-        GENERIC_API_KEY, GENERIC_DATABASE_URL, GENERIC_KEYWORD_SECRET, GENERIC_PASSWORD,
-        GENERIC_SECRET,
+        GENERIC_API_KEY, GENERIC_KEYWORD_SECRET, GENERIC_PASSWORD, GENERIC_SECRET,
     };
 
+    /// The live table, built from the embedded detector corpus — the exact path
+    /// production uses. Every value assertion below therefore proves the shipped
+    /// detector TOMLs carry the intended floors.
     fn table() -> EntropyFloorTable {
-        parse_entropy_floors(ENTROPY_FLOORS_TOML).expect("bundled entropy-floors.toml parses")
+        let specs = keyhog_core::load_embedded_detectors_or_fail().expect("embedded corpus loads");
+        EntropyFloorTable::from_specs(&specs).expect("corpus entropy_floor buckets are valid")
     }
 
     /// The exact floor logic this refactor replaced (adjudicate `generic_entropy_floor`
-    /// match arms, before the Tier-B move). The parity test below proves the loaded
-    /// table reproduces this for every family and length bucket — no floor changed,
-    /// so recall is unaffected.
+    /// match arms, before the Tier-B move to the detector TOMLs). The parity test below
+    /// proves the corpus-loaded table reproduces this for every family and length
+    /// bucket — no floor changed, so recall is unaffected.
     fn legacy_base_floor(detector_id: &str, credential_len: usize) -> f64 {
         match detector_id {
             id if id == GENERIC_API_KEY && credential_len <= 24 => 3.0,
             id if id == GENERIC_API_KEY && credential_len <= 40 => 2.8,
             id if id == GENERIC_API_KEY => 3.5,
             id if id == GENERIC_PASSWORD => 2.5,
-            id if id == GENERIC_DATABASE_URL => 2.0,
             id if id == GENERIC_SECRET && credential_len <= 24 => 2.8,
             id if id == GENERIC_SECRET && credential_len <= 40 => 3.2,
             id if id == GENERIC_SECRET => 3.5,
@@ -194,7 +172,7 @@ mod tests {
     }
 
     #[test]
-    fn bundled_table_parses() {
+    fn corpus_table_builds() {
         let _ = table();
     }
 
@@ -276,11 +254,6 @@ mod tests {
     }
 
     #[test]
-    fn database_url_floor_is_2_0() {
-        assert_eq!(table().family_floor(GENERIC_DATABASE_URL, 30), 2.0);
-    }
-
-    #[test]
     fn keyword_secret_floor_is_1_5() {
         assert_eq!(table().family_floor(GENERIC_KEYWORD_SECRET, 12), 1.5);
     }
@@ -300,7 +273,6 @@ mod tests {
             GENERIC_API_KEY,
             GENERIC_SECRET,
             GENERIC_PASSWORD,
-            GENERIC_DATABASE_URL,
             GENERIC_KEYWORD_SECRET,
             "some-named-vendor-detector",
             "",
@@ -318,68 +290,33 @@ mod tests {
     }
 
     #[test]
-    fn family_detectors_are_exactly_the_generic_constants() {
-        let file: EntropyFloorFile = toml::from_str(ENTROPY_FLOORS_TOML).unwrap();
-        let mut ids: Vec<&str> = file.family.iter().map(|f| f.detector.as_str()).collect();
+    fn floor_declaring_detectors_are_exactly_the_generic_ids() {
+        let t = table();
+        let mut ids: Vec<&str> = t.families.keys().map(String::as_str).collect();
         ids.sort_unstable();
         let mut expected = vec![
             GENERIC_API_KEY,
             GENERIC_SECRET,
             GENERIC_PASSWORD,
-            GENERIC_DATABASE_URL,
             GENERIC_KEYWORD_SECRET,
         ];
         expected.sort_unstable();
         assert_eq!(
             ids, expected,
-            "entropy-floor families must be exactly the generic detector ids"
+            "exactly the generic detectors declare an entropy_floor in their TOML"
         );
     }
 
-    // Parse-rejection fixtures use non-detector family ids (`fam-a`/`fam-b`) so the
-    // tests exercise structural validation without embedding detector-id literals.
-    #[test]
-    fn parse_rejects_duplicate_family() {
-        let err = parse_entropy_floors(
-            r#"
-default_floor = 3.5
-[[family]]
-detector = "fam-a"
-bucket = [{ floor = 3.0 }]
-[[family]]
-detector = "fam-a"
-bucket = [{ floor = 2.0 }]
-"#,
-        )
-        .unwrap_err();
-        assert!(err.contains("more than once"), "got: {err}");
+    // Bucket-validation fixtures use a non-detector id (`fam-a`) so the tests
+    // exercise structural validation without embedding real detector-id literals.
+    fn bucket(max_len: Option<usize>, floor: f64) -> EntropyFloorBucket {
+        EntropyFloorBucket { max_len, floor }
     }
 
     #[test]
-    fn parse_rejects_empty_detector_id() {
-        let err = parse_entropy_floors(
-            r#"
-default_floor = 3.5
-[[family]]
-detector = "  "
-bucket = [{ floor = 3.0 }]
-"#,
-        )
-        .unwrap_err();
-        assert!(err.contains("empty detector id"), "got: {err}");
-    }
-
-    #[test]
-    fn parse_rejects_catch_all_before_last() {
-        let err = parse_entropy_floors(
-            r#"
-default_floor = 3.5
-[[family]]
-detector = "fam-a"
-bucket = [{ floor = 3.0 }, { max_len = 40, floor = 2.8 }]
-"#,
-        )
-        .unwrap_err();
+    fn validate_rejects_catch_all_before_last() {
+        let err =
+            validate_buckets("fam-a", &[bucket(None, 3.0), bucket(Some(40), 2.8)]).unwrap_err();
         assert!(
             err.contains("catch-all bucket before the last"),
             "got: {err}"
@@ -387,16 +324,9 @@ bucket = [{ floor = 3.0 }, { max_len = 40, floor = 2.8 }]
     }
 
     #[test]
-    fn parse_rejects_final_bucket_with_max_len() {
-        let err = parse_entropy_floors(
-            r#"
-default_floor = 3.5
-[[family]]
-detector = "fam-a"
-bucket = [{ max_len = 24, floor = 3.0 }, { max_len = 40, floor = 2.8 }]
-"#,
-        )
-        .unwrap_err();
+    fn validate_rejects_final_bucket_with_max_len() {
+        let err =
+            validate_buckets("fam-a", &[bucket(Some(24), 3.0), bucket(Some(40), 2.8)]).unwrap_err();
         assert!(
             err.contains("final bucket must be the catch-all"),
             "got: {err}"
@@ -404,71 +334,37 @@ bucket = [{ max_len = 24, floor = 3.0 }, { max_len = 40, floor = 2.8 }]
     }
 
     #[test]
-    fn parse_rejects_non_increasing_max_len() {
-        let err = parse_entropy_floors(
-            r#"
-default_floor = 3.5
-[[family]]
-detector = "fam-a"
-bucket = [{ max_len = 40, floor = 3.0 }, { max_len = 24, floor = 2.8 }, { floor = 3.5 }]
-"#,
+    fn validate_rejects_non_increasing_max_len() {
+        let err = validate_buckets(
+            "fam-a",
+            &[
+                bucket(Some(40), 3.0),
+                bucket(Some(24), 2.8),
+                bucket(None, 3.5),
+            ],
         )
         .unwrap_err();
         assert!(err.contains("strictly increase"), "got: {err}");
     }
 
     #[test]
-    fn parse_rejects_negative_default_floor() {
-        let err = parse_entropy_floors(
-            r#"
-default_floor = -1.0
-[[family]]
-detector = "fam-a"
-bucket = [{ floor = 3.0 }]
-"#,
-        )
-        .unwrap_err();
-        assert!(err.contains("default_floor must be finite"), "got: {err}");
-    }
-
-    #[test]
-    fn parse_rejects_negative_bucket_floor() {
-        let err = parse_entropy_floors(
-            r#"
-default_floor = 3.5
-[[family]]
-detector = "fam-a"
-bucket = [{ floor = -0.5 }]
-"#,
-        )
-        .unwrap_err();
+    fn validate_rejects_negative_bucket_floor() {
+        let err = validate_buckets("fam-a", &[bucket(None, -0.5)]).unwrap_err();
         assert!(err.contains("non-finite or negative floor"), "got: {err}");
     }
 
     #[test]
-    fn parse_rejects_empty_bucket_list() {
-        let err = parse_entropy_floors(
-            r#"
-default_floor = 3.5
-[[family]]
-detector = "fam-a"
-bucket = []
-"#,
+    fn validate_accepts_well_formed_single_and_multi_bucket() {
+        validate_buckets("fam-a", &[bucket(None, 2.5)]).expect("single catch-all is valid");
+        validate_buckets(
+            "fam-a",
+            &[
+                bucket(Some(24), 3.0),
+                bucket(Some(40), 2.8),
+                bucket(None, 3.5),
+            ],
         )
-        .unwrap_err();
-        assert!(err.contains("has no buckets"), "got: {err}");
-    }
-
-    #[test]
-    fn parse_rejects_unknown_field() {
-        let err = parse_entropy_floors(
-            r#"
-default_floor = 3.5
-surprise = 1
-"#,
-        )
-        .unwrap_err();
-        assert!(err.contains("invalid entropy-floor rules"), "got: {err}");
+        .expect("increasing buckets with final catch-all are valid");
     }
 
     #[test]

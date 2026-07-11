@@ -59,6 +59,8 @@ pub(super) struct ConfigFile {
     pub entropy_source_files: Option<bool>,
     /// Entropy threshold in bits per byte.
     pub entropy_threshold: Option<f64>,
+    /// BPE "rare-not-random" suppression bound in bytes-per-token (default 2.2).
+    pub entropy_bpe_max_bytes_per_token: Option<f64>,
     /// Minimum credential length for entropy-fallback candidates.
     pub min_secret_len: Option<usize>,
     /// Admit credential-keyword-anchored generic values on a relaxed entropy floor.
@@ -73,6 +75,8 @@ pub(super) struct ConfigFile {
     pub max_file_size: Option<String>,
     /// Per-regex lazy-DFA cache ceiling.
     pub regex_dfa_limit: Option<String>,
+    /// MegaScan GPU input-buffer byte budget (overrides the VRAM-adaptive default).
+    pub megascan_input_len: Option<String>,
     /// ML weight for confidence scoring, 0.0-1.0.
     pub ml_weight: Option<f64>,
     /// Known secret prefixes used to boost confidence.
@@ -112,6 +116,10 @@ pub(super) struct ScanSection {
     pub severity: Option<String>,
     pub min_confidence: Option<f64>,
     pub ml_threshold: Option<f64>,
+    /// Shannon entropy threshold in bits per byte.
+    pub entropy_threshold: Option<f64>,
+    /// BPE word-likeness ceiling; mirrors the top-level compatibility key.
+    pub entropy_bpe_max_bytes_per_token: Option<f64>,
     pub decode_depth: Option<usize>,
     pub min_secret_len: Option<usize>,
     pub format: Option<String>,
@@ -181,6 +189,11 @@ pub(super) struct HttpSection {
     pub proxy: Option<String>,
     /// Disable TLS certificate verification for outbound HTTP.
     pub insecure_tls: Option<bool>,
+    /// Allow cloud endpoints (`--s3-endpoint`, GCS / Azure container URLs) whose
+    /// host resolves private / loopback / link-local / cloud-metadata. Off by
+    /// default (the SSRF screen refuses them); the `--allow-private-cloud-endpoint`
+    /// CLI flag overrides. For trusted private-network deployments only.
+    pub allow_private_endpoint: Option<bool>,
 }
 
 /// `[system]` host integration settings.

@@ -246,6 +246,12 @@ pub struct CompiledScanner {
     /// this to avoid emitting a weaker generic finding for an LHS that a loaded
     /// named detector explicitly owns.
     pub(crate) generic_named_assignment_keywords: Vec<Arc<str>>,
+    /// Compiled generic-assignment keyword → owning generic `Phase2Generic`
+    /// detector index. Replaces the per-candidate linear `detectors.iter()
+    /// .find(...)` scan in the generic value-shape path with an O(1) lookup that
+    /// preserves the exact first-match-by-exact-or-normalized semantics. Built
+    /// ONCE at construction (see [`crate::generic_keyword_owner::GenericOwningDetectorIndex`]).
+    pub(crate) generic_owning_detector: crate::generic_keyword_owner::GenericOwningDetectorIndex,
     /// Per-`ac_map` regex byte upper bound for GPU hit-local validation. `None`
     /// means the detector regex is unbounded or unparsable by the AST bounder,
     /// so GPU validation must keep the full prepared-chunk oracle.

@@ -13,32 +13,89 @@ use self::keywords::{
 use self::line_mapping::line_at_index;
 pub(crate) use self::metrics::{generic_profile_dump, generic_profile_reset};
 
-static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
-    // Group 1 is the keyword, group 2 is the value. The regex accepts common
-    // assignment syntaxes, benign secret suffixes, and bounded vendor-prefixed
-    // `*_key` / `*_secret` / `*_token` anchors. Whole-word and shape precision
-    // stay in code gates below, where camelCase and hash-decoy handling are
-    // testable without regex lookbehind.
-    match regex::Regex::new(
-        r#"(?i)(secret|passphrase|password|passwd|pwd|pass|token|webhook[._-]?url|api[._-]?key|apikey|auth[._-]?token|auth[._-]?key|authorization|auth|credential|private[._-]?key|signing[._-]?key|encryption[._-]?key|access[._-]?key|client[._-]?secret|app[._-]?secret|master[._-]?key|license[._-]?key|[a-z][a-z0-9]*(?:[._-][a-z0-9]+){0,2}[._-](?:key|secret|token))(?:[._-]?(?:key|base|value|val|string|str|enc|raw|b64)){0,2}["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{0,31}\s*[=:]\s*)?|=\s*)["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#,
-    ) {
-        Ok(re) => Some(re),
-        // Law 10: this static, build-from-constant regex compiling is a build
-        // invariant. If it ever fails the generic value bridge (the dominant
-        // CredData `*_PASS=` / `secret:` surface) goes dark — there is no
-        // recall-preserving alternative, so surface it as loudly as possible.
-        Err(e) => {
-            crate::prefilter_degrade::warn_prefilter_disabled(
-                "generic-assignment value bridge (GENERIC_RE)",
-                &e,
-            );
-            None
-        }
+// The value/assignment tail of `GENERIC_RE`: the assignment-syntax grammar,
+// benign secret-suffix hops, and the group-2 value shape. Held as ONE named
+// constant so the alternation builder (below) and any test compile the exact
+// same grammar — there is no second copy of this pattern.
+// PER-DETECTOR-MIGRATION-BLOCKED: The static regex tail bounds (8..128) cannot be made per-detector at compile-time as they are baked into the single global GENERIC_RE.
+const GENERIC_RE_ASSIGNMENT_TAIL: &str = r#"(?:[._-]?(?:key|base|value|val|string|str|enc|raw|b64)){0,2}["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{0,31}\s*[=:]\s*)?|=\s*)["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#;
+
+// Structural (non-literal) group-1 arm: any bounded `<vendor>_key` / `_secret` /
+// `_token` compound, so a vendor-prefixed credential key bridges even when its
+// exact spelling is not one of the derived keyword literals. This is a SHAPE, not
+// a keyword, so it is NOT part of the vocabulary — it is appended after the
+// derived literals. (The `regression_creddata_vendor_prefixed_key_recall` test
+// locks its behavior.)
+pub(crate) const GENERIC_RE_VENDOR_SUFFIX_ARM: &str =
+    r"[a-z][a-z0-9]*(?:[._-][a-z0-9]+){0,2}[._-](?:key|secret|token)";
+
+/// Build the group-1 keyword alternation from the SINGLE derived vocabulary
+/// (`crate::assignment_keywords::assignment_keywords()`): regex-escaped literals,
+/// longest-first, with the vendor structural arm appended last.
+///
+/// ONE HOME: the keyword vocabulary is NOT hand-maintained here — it is the same
+/// list the phase-2 prefilter (`assignment_keywords`) derives by unioning the
+/// generic phase-2 detector specs. Widening a generic detector's `keywords`
+/// widens this alternation automatically, and a second hand-kept list cannot
+/// reappear without the dedup-lock test failing.
+pub(crate) fn generic_keyword_alternation() -> String {
+    let mut literals: Vec<&str> = crate::assignment_keywords::assignment_keywords()
+        .iter()
+        .map(String::as_str)
+        .collect();
+    // Longest-first (ties broken lexically) keeps a longer keyword alternative
+    // preferred and the alternation byte-stable across builds. (The assignment
+    // tail already forces the longest full match, so this is determinism, not
+    // correctness.)
+    literals.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+    let mut alternation = String::new();
+    for literal in literals {
+        alternation.push_str(&regex::escape(literal));
+        alternation.push('|');
     }
+    alternation.push_str(GENERIC_RE_VENDOR_SUFFIX_ARM);
+    alternation
+}
+
+/// Compile `GENERIC_RE` from a pre-built group-1 alternation. Kept separate from
+/// the `LazyLock` init so the exact construction is unit-testable AND so the
+/// fail-closed contract can be exercised with a deliberately malformed alternation.
+pub(crate) fn compile_generic_re(
+    alternation: &str,
+) -> std::result::Result<regex::Regex, regex::Error> {
+    // Group 1 is the keyword, group 2 is the value.
+    regex::Regex::new(&format!("(?i)({alternation}){GENERIC_RE_ASSIGNMENT_TAIL}"))
+}
+
+/// Compile `GENERIC_RE` from the live derived vocabulary.
+pub(crate) fn build_generic_re() -> std::result::Result<regex::Regex, regex::Error> {
+    compile_generic_re(&generic_keyword_alternation())
+}
+
+pub(crate) static GENERIC_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    // LAW 10 — FAIL CLOSED. This regex is built from a hardcoded assignment
+    // grammar plus the binary-baked derived keyword vocabulary. A compile failure
+    // is a BUILD/SOURCE defect, never a runtime condition an operator can act on.
+    // The previous code returned `None` on failure, which SILENTLY disabled the
+    // ENTIRE generic value bridge (the dominant CredData `*_PASS=` / `secret:`
+    // recall surface) — an invisible recall hole. There is no recall-preserving
+    // alternative, so panic: the build/CI must catch it, and we refuse to ship a
+    // scanner with its generic bridge gone dark.
+    build_generic_re().unwrap_or_else(|error| {
+        panic!(
+            "GENERIC_RE failed to compile: {error}. It is built from a hardcoded assignment \
+             grammar and the derived generic-keyword vocabulary \
+             (crate::assignment_keywords::assignment_keywords()); a compile failure is a build \
+             defect, not a runtime condition. Refusing to run with the generic-secret value \
+             bridge disabled."
+        )
+    })
 });
 
 pub(crate) fn warm_generic_assignment_runtime() {
-    let _ = GENERIC_RE.as_ref(); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
+    // LAW10: eager init/warm-up. Also validates the fail-closed compile invariant
+    // up front (a broken vocabulary panics here, at warm-up, not mid-scan).
+    LazyLock::force(&GENERIC_RE);
 }
 
 thread_local! {
@@ -57,7 +114,8 @@ impl CompiledScanner {
     /// This is the precision-gated equivalent of Gitleaks's `generic-api-key`.
     /// Only fires when:
     ///   1. The variable name contains a secret-related keyword
-    ///   2. The value has entropy >= 3.5 (random-looking)
+    ///   2. The value clears the length-tiered Tier-B family entropy floor
+    ///      (random-looking), tightened further by the `--entropy-threshold` knob
     ///   3. No named detector already matched the same line
     ///   4. The value is not a known placeholder/example
     pub(crate) fn scan_generic_assignments(
@@ -71,9 +129,10 @@ impl CompiledScanner {
         generic_keyword_positions: Option<&[u32]>,
         deadline: Option<std::time::Instant>,
     ) {
-        let Some(generic_re) = GENERIC_RE.as_ref() else {
-            return;
-        };
+        // LAW10 fail-closed: `GENERIC_RE` is an infallible `LazyLock<Regex>` — a
+        // compile failure panics at init (build defect), it never silently
+        // disables the bridge here.
+        let generic_re: &regex::Regex = &GENERIC_RE;
 
         // Lines already carrying named findings do not need a generic bridge
         // echo. Include ML-pending findings too: they have not been finalized
@@ -152,8 +211,8 @@ impl CompiledScanner {
             };
             let mapped_line =
                 crate::pipeline::match_line_number(preprocessed, line_offsets, line_offset);
-            let absolute_line = mapped_line + chunk.metadata.base_line;
-            if covered_lines.contains(&absolute_line) {
+            let abs_line_num = absolute_line(chunk.metadata.base_line, mapped_line);
+            if covered_lines.contains(&abs_line_num) {
                 continue;
             }
             let Some(raw_line) = line_at_index(scan_text, line_offsets, line_idx) else {
@@ -251,13 +310,14 @@ impl CompiledScanner {
                 }
                 // Entropy gate: reject low-entropy values (variable names, prose).
                 // Routed through the SINGLE threshold-aware
-                // `generic_entropy_floor` helper (engine/scan_filters.rs) — the
-                // same source of truth the named-detector generic path uses — so
-                // the per-length base floor (2.8 / 3.2 / 3.5 at the default) is
-                // identical AND the operator's Tier-A `--entropy-threshold`
-                // tightens this gate too. Raising the knob above its 4.5 default
-                // lifts the floor to that bits/byte value, suppressing values
-                // below it.
+                // `crate::adjudicate::generic_entropy_floor` owner (via
+                // `generic_bridge_entropy_below_floor`) — the same source of truth
+                // the named-detector generic path uses — so the per-family,
+                // length-bucketed base floor (Tier-B `entropy_floor` data in each
+                // generic detector's TOML) is identical AND the operator's Tier-A
+                // `--entropy-threshold` tightens this gate too. Raising the knob
+                // above its 4.5 default lifts the floor to that bits/byte value,
+                // suppressing values below it.
                 let entropy = crate::pipeline::match_entropy(value.as_bytes());
                 // KH-L-0110: a complete pure-hex value of canonical key length
                 // (32/48) under a STRONG credential keyword is a real key, not a
@@ -269,21 +329,135 @@ impl CompiledScanner {
                 let allow_encoded_text_secret =
                     is_strong_keyword_anchored_encoded_text_secret(keyword_match.as_str(), value)
                         || crate::decode_structure::decodes_to_printable_text(value);
+
+                // O(1) compiled lookup of the owning generic detector (or the
+                // GENERIC_SECRET fallback), replacing a per-candidate linear
+                // `self.detectors.iter().find(...)` scan over every detector.
+                // `generic_owning_detector` preserves the exact original
+                // first-match-by-exact-or-normalized-keyword semantics.
+                let owning_detector = self
+                    .generic_owning_detector
+                    .owning_index(keyword)
+                    .map(|index| &self.detectors[index]);
+
+                let owning_detector_min_len = owning_detector.and_then(|d| d.min_len).unwrap_or(8);
+                let owning_detector_entropy_high = owning_detector
+                    .and_then(|d| d.entropy_high)
+                    .unwrap_or(crate::entropy::HIGH_ENTROPY_THRESHOLD);
+                let owning_detector_id = owning_detector
+                    .map(|d| d.id.as_str())
+                    .unwrap_or(crate::detector_ids::GENERIC_SECRET);
+                let owning_detector_name = owning_detector
+                    .map(|d| d.name.as_str())
+                    .unwrap_or("Generic Secret (Key=Value)");
+                let owning_detector_service = owning_detector
+                    .map(|d| d.service.as_str())
+                    .unwrap_or("generic");
+                let owning_detector_severity = owning_detector
+                    .map(|d| d.severity)
+                    .unwrap_or(keyhog_core::Severity::Medium);
+
+                let entropy_threshold = if self.config.entropy_threshold.is_finite()
+                    && self.config.entropy_threshold > crate::entropy::HIGH_ENTROPY_THRESHOLD
+                {
+                    owning_detector_entropy_high.max(self.config.entropy_threshold)
+                } else {
+                    owning_detector_entropy_high
+                };
+
                 // KH-L-0412: the generic-bridge shape gauntlet was the last
                 // SILENT suppression path. Record the firing gate's name so a
                 // dropped generic-secret candidate is visible to `--dogfood`
                 // (Law-10), then continue. Zero-cost when dogfood is off (the
                 // `is_dogfood_enabled()` atomic short-circuits before any work).
-                if let Some(reason) = self.generic_value_shape_rejected(
+                let mut shape_rejected = self.generic_value_shape_rejected(
                     value,
                     entropy,
                     chunk,
                     allow_canonical_hex_key,
                     allow_encoded_text_secret,
-                ) {
+                );
+
+                // The `--keyword-low-entropy` knob relaxes the generic-bridge
+                // entropy floor to the GENERIC_KEYWORD_SECRET floor for EVERY
+                // generic assignment; when off, each candidate is held to its
+                // owning detector's calibrated floor. This per-detector
+                // re-validation MUST honor the knob exactly as the shape-file
+                // gate (`generic_value_shape_rejected` →
+                // `generic_bridge_entropy_below_floor`) does — otherwise the knob
+                // is silently HALF-WIRED: the shape gate admits the low-entropy
+                // value under the relaxed floor, then this re-check drops it again
+                // under the strict owning-detector floor (the #9 regression).
+                let floor_detector_id = if self.config.generic_keyword_low_entropy {
+                    crate::detector_ids::GENERIC_KEYWORD_SECRET
+                } else {
+                    owning_detector_id
+                };
+                if let Some(reason) = shape_rejected {
+                    match reason {
+                        crate::adjudicate::GenericValueShapeStage::ValueTooShort => {
+                            if value.len() >= owning_detector_min_len {
+                                shape_rejected = None;
+                            }
+                        }
+                        crate::adjudicate::GenericValueShapeStage::EntropyBelowFloor => {
+                            if !crate::adjudicate::generic_entropy_below_floor(
+                                entropy,
+                                entropy_threshold,
+                                floor_detector_id,
+                                value.len(),
+                            ) {
+                                shape_rejected = None;
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    // Even if shape_rejected is None, we still need to enforce the per-detector length & entropy gates!
+                    if value.len() < owning_detector_min_len {
+                        shape_rejected =
+                            Some(crate::adjudicate::GenericValueShapeStage::ValueTooShort);
+                    } else if crate::adjudicate::generic_entropy_below_floor(
+                        entropy,
+                        entropy_threshold,
+                        floor_detector_id,
+                        value.len(),
+                    ) {
+                        shape_rejected =
+                            Some(crate::adjudicate::GenericValueShapeStage::EntropyBelowFloor);
+                    }
+                }
+
+                // BPE "rare-not-random" gate — LAST, so it only tokenizes values
+                // that survived every cheaper generic shape gate (bounded cost),
+                // mirroring the entropy path. Word-like values (dotted API paths,
+                // prose, XML) are non-secrets. Mirror-safe: verified 0 word-like
+                // generic TP on the mirror corpus, so recall is untouched. Gated on
+                // `entropy` (the tokenizer rides that feature); when off, generic
+                // FP simply aren't BPE-filtered.
+                #[cfg(feature = "entropy")]
+                if shape_rejected.is_none() {
+                    let bpe_bound = crate::entropy::bpe::max_bytes_per_token_for_detector(
+                        owning_detector,
+                        self.config.entropy_bpe_max_bytes_per_token,
+                        self.config.entropy_bpe_max_bytes_per_token_override,
+                    );
+                    if crate::entropy::bpe::is_word_like_low_bpe(value, bpe_bound) {
+                        shape_rejected =
+                            Some(crate::adjudicate::GenericValueShapeStage::WordLikeLowBpe);
+                    }
+                }
+
+                if let Some(reason) = shape_rejected {
                     let generic_ctx = crate::adjudicate::MatchCtx::for_generic_bridge(
                         crate::adjudicate::GenericBridgeSignal::ValueShape(reason),
                     );
+                    // A VALUE-SHAPE rejection is about the captured value's shape,
+                    // so the suppression telemetry must be keyed on `value` — NOT
+                    // the anchoring `keyword` (matching the `BareAuthUnstructured`
+                    // value-based drop above). Keying it on the keyword hid the
+                    // gate name (`base64_blob`, …) behind the keyword token, so the
+                    // dropped value was untraceable through `--dogfood` (KH-L-0412).
                     crate::adjudicate::record_suppression(
                         chunk.metadata.path.as_deref(),
                         value,
@@ -334,14 +508,15 @@ impl CompiledScanner {
                 // named-detector emit paths use. `is_named=false` keeps the
                 // generic fallback's shape penalties active; the encoded-text
                 // lift is the one extra raw signal this path contributes.
-                let min_confidence_floor = crate::adjudicate::detectorless_min_confidence_floor(
+                let min_confidence_floor = crate::adjudicate::detector_min_confidence_floor(
+                    owning_detector.and_then(|detector| detector.min_confidence),
                     self.config.min_confidence,
                 );
                 let Some(report_conf) = crate::adjudicate::finalize_report_candidate(
                     chunk.metadata.path.as_deref(),
                     value,
                     crate::adjudicate::ReportAdjudicationPolicy {
-                        detector_id: crate::detector_ids::GENERIC_SECRET,
+                        detector_id: owning_detector_id,
                         code_context: context,
                         confidence: policy_conf,
                         min_confidence_floor,
@@ -371,18 +546,22 @@ impl CompiledScanner {
                 );
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, preprocessed_offset, value);
-                let absolute_offset = chunk.metadata.base_offset + source_offset;
+                let Some(absolute_offset) =
+                    absolute_offset(chunk.metadata.base_offset, source_offset)
+                else {
+                    continue;
+                };
                 let raw = crate::pipeline::build_synthetic_raw_match(
                     (
-                        Arc::from(crate::detector_ids::GENERIC_SECRET),
-                        Arc::from("Generic Secret (Key=Value)"),
-                        Arc::from("generic"),
+                        Arc::from(owning_detector_id),
+                        Arc::from(owning_detector_name),
+                        Arc::from(owning_detector_service),
                     ),
-                    keyhog_core::Severity::Medium,
+                    owning_detector_severity,
                     chunk,
                     value,
                     absolute_offset,
-                    Some(mapped_line + chunk.metadata.base_line),
+                    Some(absolute_line(chunk.metadata.base_line, mapped_line)),
                     Some(entropy),
                     report_conf,
                     scan_state,

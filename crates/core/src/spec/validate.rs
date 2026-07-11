@@ -1,6 +1,6 @@
 //! Detector quality gate validation rules used while loading TOML specs.
 
-use super::{DetectorSpec, VerifySpec};
+use super::{DetectorKind, DetectorSpec, VerifySpec};
 use regex_syntax::ast;
 use serde::Serialize;
 use std::collections::{hash_map::Entry, HashMap};
@@ -39,7 +39,7 @@ pub enum QualityIssue {
 /// ```rust
 /// use keyhog_core::{DetectorSpec, PatternSpec, Severity, validate_detector};
 ///
-/// let detector = DetectorSpec { tests: Vec::new(),
+/// let detector = DetectorSpec {
 ///     id: "demo".into(),
 ///     name: "Demo".into(),
 ///     service: "demo".into(),
@@ -48,10 +48,8 @@ pub enum QualityIssue {
 ///         regex: "demo_[A-Z0-9]{8}".into(),
 ///         ..Default::default()
 ///     }],
-///     companions: Vec::new(),
-///     verify: None,
 ///     keywords: vec!["demo_".into()],
-///     min_confidence: None,
+///     ..Default::default()
 /// };
 ///
 /// assert!(validate_detector(&detector).is_empty());
@@ -66,12 +64,145 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_pattern_specificity(spec, &mut issues, &mut regex_cache);
     validate_companions(spec, &mut issues, &mut regex_cache);
     validate_verify_spec(spec, &mut issues);
+    validate_thresholds(spec, &mut issues);
+    validate_entropy_floor(spec, &mut issues);
+    validate_credential_shape(spec, &mut issues);
+    validate_detector_allowlists(spec, &mut issues);
     issues
 }
 
+/// `min_confidence` is a probability in `[0.0, 1.0]`. It is a bare `Option<f64>`
+/// with no serde bound, so a typo'd value parses cleanly and then silently
+/// breaks the gate: `< 0.0` always clears the confidence floor (every candidate
+/// surfaces), `> 1.0` can never clear it (the detector never fires), and `NaN`
+/// makes every comparison false. Reject anything outside the closed unit range
+/// (a `RangeInclusive::contains` check is false for `NaN`, so NaN is caught too).
+fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    for (name, value) in [
+        ("min_len", spec.min_len),
+        ("keyword_free_min_len", spec.keyword_free_min_len),
+    ] {
+        if value == Some(0) {
+            issues.push(QualityIssue::Error(format!(
+                "{name} must be greater than 0 when present; use omission to inherit the path default"
+            )));
+        }
+    }
+    if let Some(mc) = spec.min_confidence {
+        if !(0.0..=1.0).contains(&mc) {
+            issues.push(QualityIssue::Error(format!(
+                "min_confidence {mc} is out of range; confidence is a probability in [0.0, 1.0] \
+                 (outside it silently breaks the gate: < 0 always passes, > 1 never fires, NaN is undefined)"
+            )));
+        }
+    }
+    if let Some(bound) = spec.bpe_max_bytes_per_token {
+        if !bound.is_finite() || bound <= 0.0 {
+            issues.push(QualityIssue::Error(format!(
+                "bpe_max_bytes_per_token {bound} must be finite and greater than 0; \
+                 zero or a negative value suppresses every candidate and NaN/inf makes the gate undefined"
+            )));
+        }
+    }
+    for (name, value) in [
+        ("entropy_high", spec.entropy_high),
+        ("entropy_low", spec.entropy_low),
+        ("entropy_very_high", spec.entropy_very_high),
+        ("mixed_alnum_floor", spec.mixed_alnum_floor),
+    ] {
+        let Some(score) = value else {
+            continue;
+        };
+        if !score.is_finite() || !(0.0..=8.0).contains(&score) {
+            issues.push(QualityIssue::Error(format!(
+                "{name} must be a finite Shannon entropy score in [0.0, 8.0], found {score}"
+            )));
+        }
+    }
+}
+
+fn validate_entropy_floor(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    if spec.entropy_floor.is_empty() {
+        return;
+    }
+    let last = spec.entropy_floor.len() - 1;
+    let mut previous_max = 0usize;
+    for (index, bucket) in spec.entropy_floor.iter().enumerate() {
+        if !bucket.floor.is_finite() || !(0.0..=8.0).contains(&bucket.floor) {
+            issues.push(QualityIssue::Error(format!(
+                "entropy_floor bucket {index} floor must be finite and in [0.0, 8.0], found {}",
+                bucket.floor
+            )));
+        }
+        if index < last && bucket.max_len.is_none() {
+            issues.push(QualityIssue::Error(format!(
+                "entropy_floor bucket {index} is an early catch-all; only the final bucket may omit max_len"
+            )));
+        }
+        if index == last && bucket.max_len.is_some() {
+            issues.push(QualityIssue::Error(
+                "entropy_floor final bucket must omit max_len so longer candidates cannot bypass the floor"
+                    .into(),
+            ));
+        }
+        if let Some(max_len) = bucket.max_len {
+            if max_len <= previous_max {
+                issues.push(QualityIssue::Error(format!(
+                    "entropy_floor max_len values must strictly increase from a positive length; found {max_len} after {previous_max}"
+                )));
+            }
+            previous_max = max_len;
+        }
+    }
+}
+
+fn validate_credential_shape(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    if let Some(shape) = &spec.credential_shape {
+        if let Err(error) = shape.validate(&spec.id) {
+            issues.push(QualityIssue::Error(error));
+        }
+    }
+}
+
+fn validate_detector_allowlists(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    for (field, patterns) in [
+        ("allowlist_paths", &spec.allowlist_paths),
+        ("allowlist_values", &spec.allowlist_values),
+    ] {
+        for (index, pattern) in patterns.iter().enumerate() {
+            if let Err(error) = regex::Regex::new(pattern) {
+                issues.push(QualityIssue::Error(format!(
+                    "{field}[{index}] is not a valid regex ({pattern:?}): {error}"
+                )));
+            }
+        }
+    }
+}
+
 fn validate_patterns_present(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
-    if spec.patterns.is_empty() {
-        issues.push(QualityIssue::Error("no patterns defined".into()));
+    match spec.kind {
+        // A phase-1 regex detector is defined by its anchors — no patterns is an error.
+        DetectorKind::Regex => {
+            if spec.patterns.is_empty() {
+                issues.push(QualityIssue::Error("no patterns defined".into()));
+            }
+        }
+        // A phase-2 generic bridge is defined by keywords + entropy_floor and has
+        // NO anchor to match: patterns are forbidden, keywords are required.
+        DetectorKind::Phase2Generic => {
+            if !spec.patterns.is_empty() {
+                issues.push(QualityIssue::Error(
+                    "phase2-generic detector must not define regex patterns (it fires on \
+                     keywords + entropy_floor, not an anchor)"
+                        .into(),
+                ));
+            }
+            if spec.keywords.is_empty() {
+                issues.push(QualityIssue::Error(
+                    "phase2-generic detector must define keywords (its only pre-filter)".into(),
+                ));
+            }
+        }
     }
 }
 
@@ -242,6 +373,17 @@ fn validate_regex_definition<'a>(
     regex_cache: &mut RegexAstCache<'a>,
 ) {
     let kind = kind.label();
+    // An empty regex is VALID syntax — it parses cleanly and matches the empty
+    // string at EVERY position, so a detector carrying one fires on every byte
+    // of every file: a catastrophic false-positive flood that the parse check
+    // below cannot catch (it compiles fine). Reject it up front, fail closed.
+    if regex.is_empty() {
+        issues.push(QualityIssue::Error(format!(
+            "{kind} {index} regex is empty; an empty pattern matches at every position \
+             (a catastrophic false-positive flood) — define a real anchor or remove the pattern"
+        )));
+        return;
+    }
     if regex.len() > MAX_REGEX_PATTERN_LEN {
         issues.push(QualityIssue::Error(format!(
             "{kind} {index} regex is too large ({} bytes > {} byte limit)",
@@ -525,11 +667,38 @@ fn validate_url(url: &str, issues: &mut Vec<QualityIssue>) {
     if url.is_empty() {
         issues.push(QualityIssue::Error("verify URL is empty".into()));
     }
-    if url.starts_with("http://") && !url.contains("localhost") {
+    if url.starts_with("http://") && !is_loopback_http_host(url) {
         issues.push(QualityIssue::Warning(
             "verify URL uses HTTP instead of HTTPS".into(),
         ));
     }
+}
+
+/// True when the `http://` URL's authority HOST is a loopback address
+/// (`localhost` / `127.0.0.1` / `[::1]`), for which plaintext HTTP carries no
+/// exfil risk. Matches the parsed host, not any occurrence of the literal, so
+/// `http://evil.example.com/callback?host=localhost` is NOT exempt.
+fn is_loopback_http_host(url: &str) -> bool {
+    let Some(after_scheme) = url.strip_prefix("http://") else {
+        return false;
+    };
+    let authority = after_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or(after_scheme);
+    let host_port = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    let host = if let Some(rest) = host_port.strip_prefix('[') {
+        // IPv6 literal `[::1]:port` -> `::1`
+        match rest.split_once(']') {
+            Some((inner, _)) => inner,
+            None => return false,
+        }
+    } else {
+        host_port.split(':').next().unwrap_or(host_port)
+    };
+    matches!(host, "localhost" | "127.0.0.1" | "::1")
 }
 
 fn has_literal_prefix<'a>(

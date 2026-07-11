@@ -55,6 +55,21 @@ impl CompiledScanner {
             return Some(GenericValueShapeStage::CaesarGenericFallback);
         }
 
+        // Generic-secret min length comes from adjudicate, which owns the
+        // `GENERIC_SECRET` identity selection (this leaf never names the id —
+        // see suppression_named_detector_ctx_owner gate). The base64-shape gates
+        // below take the RAW `entropy`: their boundary is the base64-blob shape
+        // constant `HIGH_ENTROPY_BASE64_CUTOFF` (owned once inside the decoy
+        // predicate), NOT generic-secret's confidence-boost `entropy_high` — those
+        // are two distinct thresholds and must not be conflated (a marshalled-binary
+        // blob is a blob regardless of the generic-secret confidence floor).
+        let crate::adjudicate::GenericSecretShapeFloors { min_len } =
+            crate::adjudicate::generic_secret_shape_floors(
+                self.generic_owning_detector
+                    .generic_secret_index()
+                    .and_then(|index| self.detectors.get(index)),
+            );
+
         if crate::adjudicate::generic_bridge_entropy_below_floor(
             entropy,
             self.config.entropy_threshold,
@@ -65,7 +80,7 @@ impl CompiledScanner {
         }
 
         // Length gate
-        if value.len() < 8 {
+        if value.len() < min_len {
             return Some(GenericValueShapeStage::ValueTooShort);
         }
         let randomness = TokenRandomness::for_candidate(value);
@@ -132,7 +147,7 @@ impl CompiledScanner {
         // clusters and a digit triplet is overwhelmingly a type
         // identifier.
         if keep_identifier_gate_with_randomness(value, &randomness)
-            && value.len() >= 8
+            && value.len() >= min_len
             && value.len() <= 40
             && value.as_bytes()[0].is_ascii_uppercase()
             && value.bytes().all(|b| b.is_ascii_alphanumeric())
@@ -297,7 +312,7 @@ impl CompiledScanner {
         let example_ctx = crate::suppression::api::KnownExampleSuppressionCtx::with_entropy(
             chunk.metadata.path.as_deref(),
             crate::context::CodeContext::Unknown,
-            Some(chunk.metadata.source_type.as_str()),
+            Some(chunk.metadata.source_type.as_ref()),
             entropy,
             allow_canonical_hex_key,
             allow_ambiguous_base64_candidate,
@@ -324,7 +339,21 @@ impl CompiledScanner {
             return Some(GenericValueShapeStage::DecodedPlaceholder);
         }
         if let Some(reason) = crate::suppression::decision::decoded_benign_text_reason(value) {
-            if reason == "decoded_placeholder" && allow_decoded_hex_key_material {
+            // A decoded canonical hex KEY (32/40/48) assigned to a STRONG
+            // credential keyword is real AES key material, not a benign digest:
+            // the SAME anchor+shape exemption that already spares
+            // `decoded_placeholder` must spare the `decoded_bare_hash_digest`
+            // arm, or a base64-wrapped AES-128/192/256 key under `api-key:` /
+            // `token:` is silently dropped (the
+            // `..._canonical_hex_keys_still_surface` contract). This mirrors the
+            // direct path's `is_strong_keyword_anchored_hex_key` exemption — one
+            // key-vs-hash policy across both paths. A bare md5/sha1 with no strong
+            // anchor keeps `allow_decoded_hex_key_material == false` and stays
+            // suppressed (`decoded_benign_text_reason` is unchanged; the
+            // md5/sha1 decode-suppression contract holds).
+            if allow_decoded_hex_key_material
+                && matches!(reason, "decoded_placeholder" | "decoded_bare_hash_digest")
+            {
                 return None;
             }
             return Some(GenericValueShapeStage::DecodedBenignText(reason));

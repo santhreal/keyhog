@@ -74,6 +74,18 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     ));
     out.push_str(&format!("entropy_threshold = {}\n", s.entropy_threshold));
     out.push_str(&format!(
+        "entropy_bpe_max_bytes_per_token = {}\n",
+        s.entropy_bpe_max_bytes_per_token
+    ));
+    out.push_str(&format!(
+        "entropy_bpe_policy = {}\n",
+        if s.entropy_bpe_max_bytes_per_token_override.is_some() {
+            "scan-override"
+        } else {
+            "detector-local"
+        }
+    ));
+    out.push_str(&format!(
         "entropy_in_source_files = {}\n",
         s.entropy_in_source_files
     ));
@@ -92,6 +104,15 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         "regex_dfa_limit = {}\n",
         resolved.regex_dfa_limit.map_or_else(
             || format!("{} (default)", keyhog_scanner::regex_dfa_limit_default()),
+            |bytes| bytes.to_string()
+        )
+    ));
+    // MegaScan input length has no single compiled default — it is VRAM-adaptive
+    // until a Tier-A override pins it, so report that rather than a fixed number.
+    out.push_str(&format!(
+        "megascan_input_len = {}\n",
+        resolved.megascan_input_len.map_or_else(
+            || "VRAM-adaptive (default)".to_string(),
             |bytes| bytes.to_string()
         )
     ));
@@ -325,6 +346,20 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
         s.generic_keyword_low_entropy,
     );
     h.field_f64_bits("scanner.entropy_threshold", s.entropy_threshold);
+    h.field_f64_bits(
+        "scanner.entropy_bpe_max_bytes_per_token",
+        s.entropy_bpe_max_bytes_per_token,
+    );
+    h.field_bool(
+        "scanner.entropy_bpe_max_bytes_per_token_override.present",
+        s.entropy_bpe_max_bytes_per_token_override.is_some(),
+    );
+    if let Some(bound) = s.entropy_bpe_max_bytes_per_token_override {
+        h.field_f64_bits(
+            "scanner.entropy_bpe_max_bytes_per_token_override.value",
+            bound,
+        );
+    }
     h.field_bool("scanner.entropy_in_source_files", s.entropy_in_source_files);
     h.field_usize("scanner.max_decode_depth", s.max_decode_depth);
     h.field_usize("scanner.max_decode_bytes", s.max_decode_bytes);
@@ -396,6 +431,7 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
     );
     h.field_bool("autoroute_gpu", resolved.autoroute_gpu);
     h.field_option_usize("regex_dfa_limit", resolved.regex_dfa_limit);
+    h.field_option_usize("megascan_input_len", resolved.megascan_input_len);
     h.field_option_usize("source_policy.max_file_size", resolved.max_file_size);
     #[cfg(feature = "git")]
     h.field_usize("source_policy.max_commits", resolved.max_commits);

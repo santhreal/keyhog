@@ -154,6 +154,19 @@ fn entropy_generation_rejection_stage_is_named() {
 }
 
 #[test]
+fn structured_dotted_shape_does_not_bypass_entropy_floor() {
+    let ctx = credential_keyword_context("api_key");
+    let repeated_segments = format!("{}.{}.{}", "A".repeat(24), "B".repeat(7), "C".repeat(30));
+    let entropy = shannon_entropy(repeated_segments.as_bytes());
+    assert!(entropy < HIGH_ENTROPY_THRESHOLD);
+    assert_eq!(
+        candidate_plausibility_rejection_reason(&repeated_segments, entropy, &ctx, &[]),
+        Some("entropy_below_floor"),
+        "credential-shaped dots grant only a length allowance, never a low-entropy bypass"
+    );
+}
+
+#[test]
 fn entropy_generation_rejection_is_dogfood_visible() {
     let _guard = super::telemetry_serial::lock();
     let low_entropy = "abc123ABCabc123ABC12";
@@ -1048,4 +1061,48 @@ fn innocuous_label_prefix_only_no_false_substring_match() {
     // The label must be a PREFIX (after quote-trim), not merely contained: a
     // value that only mentions `sha256:` mid-line is not dropped by this arm.
     assert!(!innocuous_line("token=abc-sha256:notadigest"));
+}
+
+/// Per-detector entropy-gate wiring (moved out of an inline `plausibility.rs`
+/// test to satisfy the `entropy_plausibility_no_inline_tests` folder contract).
+/// The plausibility strength gate resolves `entropy_high` / `mixed_alnum_floor`
+/// PER DETECTOR from `keyhog_core::detector_spec_by_id` (which the module-private
+/// `plausibility::get_spec` merely delegates to). So every generic entropy
+/// detector's embedded TOML MUST supply those overrides in a valid Shannon band,
+/// and an unknown/absent id must resolve NO spec (the gate then uses its module
+/// `HIGH_ENTROPY_THRESHOLD` fallback). This pins that public resolution chain.
+#[test]
+fn generic_detectors_declare_valid_per_detector_entropy_floors() {
+    // Literals (not the `detector_ids` consts) because those consts are
+    // `pub(crate)` and unreachable from this external test crate; a rename would
+    // fail this test loudly, which is the intended drift signal.
+    for id in [
+        "generic-secret",
+        "generic-api-key",
+        "generic-keyword-secret",
+        "generic-password",
+    ] {
+        let spec = keyhog_core::detector_spec_by_id(id)
+            .unwrap_or_else(|| panic!("{id} must be an embedded detector"));
+        let entropy_high = spec
+            .entropy_high
+            .unwrap_or_else(|| panic!("{id} must set entropy_high in its TOML"));
+        let mixed = spec
+            .mixed_alnum_floor
+            .unwrap_or_else(|| panic!("{id} must set mixed_alnum_floor in its TOML"));
+        assert!(
+            (3.0..=6.0).contains(&entropy_high),
+            "{id} entropy_high {entropy_high} outside the valid Shannon band"
+        );
+        assert!(
+            (3.0..=6.0).contains(&mixed),
+            "{id} mixed_alnum_floor {mixed} outside the valid Shannon band"
+        );
+    }
+    // Absent/unknown id → no spec → the plausibility gate falls back to the
+    // module HIGH_ENTROPY_THRESHOLD (the `get_spec` None path).
+    assert!(
+        keyhog_core::detector_spec_by_id("definitely-not-a-detector-xyz").is_none(),
+        "an unknown id must resolve no spec so the gate uses its constant fallback"
+    );
 }

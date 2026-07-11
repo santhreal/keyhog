@@ -33,6 +33,9 @@ pub(crate) enum EntropyShapeStage {
     DecodedPlaceholder,
     ConcatenationFragmentLine,
     StructuredDottedTooShort,
+    /// Word-like non-secret by tiktoken cl100k_base bytes-per-token (dotted API
+    /// paths, prose, XML) — the BPE "rare-not-random" gate.
+    WordLikeLowBpe,
     CanonicalNonSecretShape,
     CredentialContextTooShort,
     KeywordFreeTooShort,
@@ -74,6 +77,7 @@ impl EntropyShapeStage {
             Self::DecodedPlaceholder => "entropy_decoded_placeholder",
             Self::ConcatenationFragmentLine => "entropy_concatenation_fragment_line",
             Self::StructuredDottedTooShort => "entropy_structured_dotted_too_short",
+            Self::WordLikeLowBpe => "entropy_word_like_low_bpe",
             Self::CanonicalNonSecretShape => "entropy_canonical_non_secret_shape",
             Self::CredentialContextTooShort => "entropy_credential_context_too_short",
             Self::KeywordFreeTooShort => "entropy_keyword_free_too_short",
@@ -146,6 +150,12 @@ pub(crate) fn entropy_fallback_example_suppression_stage(
         return Some(EntropyShapeStage::SuppressionStage(
             "algorithmic_placeholder",
         ));
+    }
+    // Entropy-scoped: a monotonic keyboard/sequence run (`12345678`, alphabet)
+    // is a placeholder. NOT in the universal is_known_example_credential above,
+    // so strong vendor-anchored detectors keep surfacing sequential filler.
+    if crate::context::is_monotonic_sequence_placeholder(value) {
+        return Some(EntropyShapeStage::SuppressionStage("sequential_run"));
     }
     if crate::confidence::contains_placeholder_word(value) {
         return Some(EntropyShapeStage::SuppressionStage("placeholder_word"));

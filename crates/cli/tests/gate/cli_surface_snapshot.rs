@@ -3,7 +3,7 @@
 //! silently churn via rename) without a deliberate edit to this file.
 //!
 //! This snapshot flags the concern directly: "scan carries
-//! 68 flags; the binary exposes 18 subcommands. Surface this large is hard to
+//! 71 flags; the binary exposes 18 subcommands. Surface this large is hard to
 //! keep coherent, document, and test." This gate makes every addition show up
 //! as a failing test that names exactly what was added/removed, forcing the
 //! author to (a) confirm the new surface is intentional and (b) update the
@@ -54,7 +54,7 @@ fn expected_subcommands() -> BTreeSet<String> {
 }
 
 /// `scan` long-flags that are ALWAYS compiled in (no feature gate). This is the
-/// 68-flag monster this snapshot protects; the feature-gated source/verify/binary
+/// 71-flag monster this snapshot protects; the feature-gated source/verify/binary
 /// flags are layered on in [`expected_scan_long_flags`] under the SAME `#[cfg]`
 /// gates the real args carry, so a new flag fails this gate until it is added
 /// here (or in the matching cfg block) on purpose. A rename shows up as one
@@ -79,6 +79,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "deep",
     "detectors",
     "dogfood",
+    "entropy-bpe-max-bytes-per-token",
     "entropy-source-files",
     "entropy-threshold",
     "exclude-paths",
@@ -92,6 +93,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "limit-stdin-bytes",
     "lockdown",
     "max-file-size",
+    "megascan-input-len",
     "min-confidence",
     "min-secret-len",
     "ml-threshold",
@@ -110,6 +112,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "no-keyword-low-entropy",
     "no-ml",
     "no-gpu",
+    "no-color",
     "no-suppress-test-fixtures",
     "no-unicode-norm",
     "output",
@@ -119,6 +122,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "precision",
     "profile",
     "progress",
+    "quiet",
     "rate",
     "regex-dfa-limit",
     "reader-threads",

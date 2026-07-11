@@ -4,7 +4,7 @@
 //! is reportable and names the stage that made the decision.
 
 mod entropy;
-mod generic;
+pub(crate) mod generic;
 mod stage;
 
 use crate::suppression::NamedDetectorSuppressionCtx;
@@ -64,7 +64,7 @@ impl ProcessCandidateSignals {
         if crate::pipeline::is_within_hex_context(data, credential_start, match_end) {
             return Self::suppress(StageId::WithinHexContext);
         }
-        if is_hex_digest_fragment(data, credential_start, match_end, credential) {
+        if is_hex_digest_fragment(detector_id, data, credential_start, match_end, credential) {
             return Self::suppress(StageId::HexDigestFragment);
         }
         if crate::detector_ids::is_generic_detector(detector_id)
@@ -169,6 +169,10 @@ fn final_emit_suppression_stage(
         return Some(StageId::HardSuppressedContext);
     }
 
+    // `min_confidence_floor` is resolved from the ACTIVE detector corpus by the
+    // producer. Never re-read the embedded registry here: custom detector specs
+    // and operator overrides may differ from the embedded copy, and a second
+    // lookup would silently replace the policy that actually compiled.
     if confidence < min_confidence_floor {
         if crate::detector_ids::is_generic_detector(detector_id) {
             if crate::confidence::known_prefix_confidence_floor(credential).is_some()
@@ -231,19 +235,18 @@ pub(crate) fn detector_min_confidence_floor(
     detector_floor.unwrap_or(default_floor) // LAW10: absent detector floor => explicit Tier-A scan default floor, recall-safe
 }
 
-pub(crate) fn detectorless_min_confidence_floor(default_floor: f64) -> f64 {
-    detector_min_confidence_floor(None, default_floor)
-}
-
-/// The compiled default for the Tier-A `entropy_threshold` knob
-/// (`keyhog_core::ScanConfig::default().entropy_threshold == 4.5`).
-const DEFAULT_GENERIC_ENTROPY_THRESHOLD: f64 = 4.5;
+/// The compiled default for the Tier-A `entropy_threshold` knob. Single-sourced
+/// from `keyhog_core::DEFAULT_ENTROPY_THRESHOLD` so this fallback and
+/// `ScanConfig::default().entropy_threshold` can never drift apart (they were two
+/// hand-kept `4.5` literals before).
+use keyhog_core::DEFAULT_ENTROPY_THRESHOLD as DEFAULT_GENERIC_ENTROPY_THRESHOLD;
 
 /// Single source of truth for the generic-detector entropy gate used by named
 /// generic/weak-anchor processing and the generic-secret fallback bridge.
 ///
 /// The per-family, length-bucketed base floors are Tier-B calibration DATA
-/// (`crate::entropy_floors`, backed by `rules/entropy-floors.toml`); this owner
+/// owned in each generic detector's own TOML `entropy_floor` field and built into
+/// the runtime table by `crate::entropy_floors`; this owner
 /// keeps only the policy that layers the Tier-A `entropy_threshold` scan knob on
 /// top — an operator can RAISE the floor above the default for a stricter scan
 /// but never lower a calibrated family floor.
@@ -252,9 +255,26 @@ pub(crate) fn generic_entropy_floor(
     detector_id: &str,
     credential_len: usize,
 ) -> f64 {
-    let base = crate::entropy_floors::family_floor(detector_id, credential_len);
+    let spec = keyhog_core::detector_spec_by_id(detector_id);
 
-    if entropy_threshold.is_finite() && entropy_threshold > DEFAULT_GENERIC_ENTROPY_THRESHOLD {
+    let base = if let Some(s) = spec {
+        if s.entropy_floor.is_empty() {
+            crate::entropy_floors::family_floor(detector_id, credential_len)
+        } else {
+            s.entropy_floor
+                .iter()
+                .find(|bucket| bucket.max_len.is_none_or(|max| credential_len <= max))
+                .map_or(crate::entropy_floors::DEFAULT_FLOOR, |bucket| bucket.floor)
+        }
+    } else {
+        crate::entropy_floors::family_floor(detector_id, credential_len)
+    };
+
+    let threshold_val = spec
+        .and_then(|s| s.entropy_high)
+        .unwrap_or(DEFAULT_GENERIC_ENTROPY_THRESHOLD);
+
+    if entropy_threshold.is_finite() && entropy_threshold > threshold_val {
         base.max(entropy_threshold)
     } else {
         base
@@ -282,6 +302,36 @@ pub(crate) fn generic_bridge_entropy_below_floor(
         crate::detector_ids::GENERIC_SECRET
     };
     generic_entropy_below_floor(entropy, entropy_threshold, detector_id, credential_len)
+}
+
+/// Resolved shape-gate parameters of the `generic-secret` detector: its
+/// configured minimum credential length, with the engine's historical fallback
+/// (`8`) when the spec omits it. (The detector's `entropy_high` is a
+/// confidence-boost threshold read directly from the spec where confidence is
+/// scored; the base64 value-shape gates own their OWN `HIGH_ENTROPY_BASE64_CUTOFF`
+/// and never borrow this one — the two must not be conflated.)
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct GenericSecretShapeFloors {
+    pub(crate) min_len: usize,
+}
+
+/// Select the `generic-secret` detector from the ACTIVE detector set and read its
+/// shape-gate floors. This owns the generic-secret floor VALUE so the generic
+/// value-shape leaf never names the detector id itself — the
+/// `suppression_named_detector_ctx_owner` gate requires generic floor policy to
+/// live in adjudicate, not in engine leaves (ONE PLACE). The `GENERIC_SECRET`
+/// detector is resolved ONCE at scanner build through the shared compiled
+/// [`crate::generic_keyword_owner::GenericOwningDetectorIndex`] (the single owner
+/// of the `id == GENERIC_SECRET` selection) and passed in here, replacing a
+/// per-candidate linear `detectors.iter().find(...)`. `None` (no GENERIC_SECRET
+/// detector loaded) yields the literal default floor, identical to the old
+/// `find(...)` returning `None`.
+pub(crate) fn generic_secret_shape_floors(
+    generic_secret: Option<&keyhog_core::DetectorSpec>,
+) -> GenericSecretShapeFloors {
+    GenericSecretShapeFloors {
+        min_len: generic_secret.and_then(|s| s.min_len).unwrap_or(8),
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -588,6 +638,38 @@ fn decoded_reverse_placeholder_marker(reversed: &str) -> bool {
         || reversed.contains("YOUR_")
 }
 
+/// A decoded sub-chunk is SYNTHESIZED content — the bytes that fall out of a
+/// base64/hex/url/reverse decode, with NO surrounding keyword or structural
+/// context from the real file. A generic/entropy detector fires on shape/entropy
+/// ALONE, so on decoded content its "evidence" is nothing but the decoded bytes
+/// happening to look token-shaped. Decoding ordinary readable text routinely
+/// produces exactly that: exception names (`InvalidNextTokenException"}`), HTTP
+/// headers (`max-age1536000;includeSubdomains;preload`), library prose
+/// (`PythonlibraryimplementingthefullGithubAPIv3`), XML paths, `OAuth2.0`. On the
+/// full CredData tree, decode-through surfaced +264 such generic/entropy hits
+/// that are ALL non-secrets (measured decode-on−decode-off diff), for ~0 real
+/// TP — pure precision loss. A decoded match must carry its OWN structural
+/// evidence — a required vendor literal / anchored slot that survives the decode
+/// — to be trusted (KH-L-0404 "anchor decoded matches"). The generic/entropy
+/// family has none. Vendor/key detectors on decoded content (genuine encoded
+/// secrets — backblaze/confluent/wordpress tokens, `-----BEGIN`-headed key
+/// bodies) self-anchor on their required literal and are UNAFFECTED: this gate
+/// keys on the detector id only, never the value. Scoped to the decode path
+/// (`#[cfg(feature = "decode")]`) — top-level generic/entropy matches, which DO
+/// have real file context, are untouched.
+#[cfg(feature = "decode")]
+pub(crate) fn record_decoded_generic_entropy_suppression(
+    m: &RawMatch,
+    fallback_path: Option<&str>,
+) -> bool {
+    if crate::detector_ids::is_generic_or_entropy_detector(m.detector_id.as_ref()) {
+        record_match_example_suppression(m, fallback_path, "decoded_generic_entropy_unanchored");
+        true
+    } else {
+        false
+    }
+}
+
 fn explicit_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {
     if let Some(stage_id) = ctx.explicit_stage {
         StageOutcome::Suppress(stage_id)
@@ -671,13 +753,17 @@ fn final_emit_stage(candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageO
     StageOutcome::Pass
 }
 
-/// True when `credential` (a pure-hex token at `data[start..end]`) is a slice
-/// of a longer contiguous hex run reaching digest length (>=40 chars: SHA-1,
-/// git commit SHA, or SHA-256). Genuine fixed-length hex API keys are
-/// delimiter-bounded, so no surrounding hex run is present and this returns
-/// false.
-fn is_hex_digest_fragment(data: &str, start: usize, end: usize, credential: &str) -> bool {
-    if credential.len() < 16 || !credential.bytes().all(|b| b.is_ascii_hexdigit()) {
+pub(crate) fn is_hex_digest_fragment(
+    detector_id: &str,
+    data: &str,
+    start: usize,
+    end: usize,
+    credential: &str,
+) -> bool {
+    let min_len = keyhog_core::detector_spec_by_id(detector_id)
+        .and_then(|s| s.min_len)
+        .unwrap_or(16);
+    if credential.len() < min_len || !credential.bytes().all(|b| b.is_ascii_hexdigit()) {
         return false;
     }
     let bytes = data.as_bytes();

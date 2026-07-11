@@ -6,10 +6,14 @@ use super::compile_helpers::validate_compiled_pattern_detector_indices;
 use super::*;
 
 impl CompiledScanner {
+    /// Compile detector specs into a [`CompiledScanner`] using the process-wide
+    /// runtime GPU policy and default tuning. The common entry point.
     pub fn compile(detectors: Vec<DetectorSpec>) -> Result<Self> {
         Self::compile_with_gpu_policy(detectors, GpuInitPolicy::FromRuntimePolicy)
     }
 
+    /// Compile with an explicit [`GpuInitPolicy`] (overriding the runtime
+    /// policy) and default scanner tuning.
     pub fn compile_with_gpu_policy(
         detectors: Vec<DetectorSpec>,
         gpu_policy: GpuInitPolicy,
@@ -21,6 +25,8 @@ impl CompiledScanner {
         )
     }
 
+    /// Full-control compile entry point: explicit [`GpuInitPolicy`] and scanner
+    /// [`ScannerTuningConfig`]. The other `compile*` methods delegate here.
     pub fn compile_with_gpu_policy_and_tuning(
         detectors: Vec<DetectorSpec>,
         gpu_policy: GpuInitPolicy,
@@ -363,6 +369,8 @@ impl CompiledScanner {
             .map_err(crate::error::ScanError::Config)?;
         let generic_named_assignment_keywords =
             crate::generic_keyword_owner::build_generic_named_assignment_keywords(&detectors);
+        let generic_owning_detector =
+            crate::generic_keyword_owner::GenericOwningDetectorIndex::build(&detectors);
 
         let stripe_hot_confirmed_prefixes =
             crate::detector_classification::stripe_hot_confirmed_prefixes()
@@ -442,6 +450,7 @@ impl CompiledScanner {
             metadata_by_index,
             detector_weak_anchor_base_by_index,
             generic_named_assignment_keywords,
+            generic_owning_detector,
             #[cfg(feature = "gpu")]
             ac_match_upper_bounds,
             suffix_gate_ac,

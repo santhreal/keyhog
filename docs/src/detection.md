@@ -12,13 +12,48 @@ detector ever runs on it. That's where the speed comes from: the
 expensive regex evaluation only sees chunks that already plausibly
 contain something.
 
+## Detection mechanisms
+
+KeyHog does not use one universal test for "secret-like." It composes several
+mechanisms, and their roles are deliberately different:
+
+| Mechanism | Role | Can create a candidate? |
+|---|---|---|
+| Service-anchored detector regex | Matches a vendor or credential-specific shape from detector TOML | Yes |
+| Companion patterns | Requires related fields or fragments near a primary match | Confirms an existing candidate |
+| Structured and multiline extraction | Reassembles assignments and strings that syntax splits across lines or nodes | Yes |
+| Decode-through transforms | Scans supported encoded or transformed representations while preserving source attribution | Yes |
+| Generic assignment bridge | Extracts values beside credential-role keys when no vendor shape exists | Yes |
+| Shannon entropy | Measures byte-distribution uncertainty for opaque generic values | Yes, on the entropy fallback path |
+| BPE token efficiency | Rejects language-like values that compress into common subword tokens | No; precision gate |
+| Shape, placeholder, path, and context policy | Rejects examples, references, prose, identifiers, and context-specific noise | No; precision gates |
+| Checksums and structural validators | Proves or rejects formats that carry intrinsic validity bits or grammar | Adjusts acceptance/confidence |
+| On-device MoE scoring | Scores ambiguous candidates using local features; never sends content away | Adjusts confidence |
+| Live verification | Optionally asks the owning service whether a surviving credential is active | Adds a verdict after detection |
+
+Regex, generic extraction, entropy, and decode-through therefore find different
+candidate classes. BPE is not a replacement name for entropy: it is an
+independent post-candidate signal. Betterleaks calls the approach
+[Token Efficiency](https://github.com/betterleaks/betterleaks#notable-features);
+KeyHog uses the same broad BPE idea while keeping its own detector schema,
+thresholds, pipeline, and behavioral evidence.
+
+Terminology matters here: Betterleaks' current source calls the predicate
+[`failsTokenEfficiency`](https://github.com/betterleaks/betterleaks/blob/0b4063d7990e0ab6366a5b4eb58789584af5f945/internal/exprruntime/bindings_filter.go#L111-L139),
+not “BPD.” It uses `cl100k_base`, a byte-length/token ratio, word-list checks,
+and short-value threshold branches. KeyHog names its related mechanism **BPE
+token efficiency**, measures Unicode characters per token, and resolves the
+ceiling per detector. If “BPD” is being used informally to mean a bits/byte or
+bytes/token density, do not treat it as a third implemented score: Shannon
+entropy and BPE token efficiency are the two separate signals documented here.
+
 ## Stage 1 - chunker
 
 A file becomes one or more **chunks**. A chunk is `{data: str, metadata:
 {source_type, path, line_offsets, …}}`. The chunker:
 
 - Skips obvious binaries via magic-byte sniffing (PDF, PNG, zip, …).
-- Skips files matching `is_default_excluded` (node_modules, .min.js,
+- Skips files matching `is_default_excluded_path` (node_modules, .min.js,
   build/, etc.).
 - Splits files larger than the 1 MiB window size into overlapping ~1 MiB
   windows so a single giant log file doesn't blow scratch memory. Each
@@ -61,14 +96,18 @@ Three gates, in order, each cheaper than the next:
 
 ## Stage 3 - detector match
 
-For each detector that the prefilter flagged, the FULL regex evaluates.
-The regex is what's in the `.toml` file - `detector.patterns[].regex`.
-The capture group becomes the candidate **credential**.
+For each service-anchored detector that the prefilter flagged, the full regex
+evaluates. The regex is `detector.patterns[].regex` in that detector's TOML, and
+its configured capture group becomes the candidate **credential**. Generic
+phase-2 detector TOMLs intentionally carry no regex: their keyword, length,
+entropy, token-efficiency, and shape policy governs candidates extracted from
+assignments or isolated opaque values.
 
 A detector's `.toml` carries:
 
 - `id`, `name`, `service`, `severity`, `keywords`
-- one or more `patterns`, each with `regex` + `group` + optional `description`
+- zero or more `patterns`, each with `regex` + `group` + optional `description`
+  (required for service-anchored detectors; absent for `phase2-generic`)
 - optional `companions` (e.g. AWS access key needs the secret key nearby)
 - optional `verify` block - HTTP method, URL template, auth scheme,
   success status
@@ -84,6 +123,16 @@ Detectors fall into two camps:
   `entropy-token`). Triggered by entropy + assignment shape only -
   `password = "..."`, `secret: "..."`, JSON `{ "token": "..." }`. Lower
   precision; suppression filters do most of the work.
+
+  Surviving candidates also pass a BPE token-efficiency gate. Shannon entropy
+  asks how evenly bytes are distributed; token efficiency asks how readily a
+  fixed subword vocabulary compresses the value. Dotted API names and prose can
+  have high Shannon entropy but tokenize into a few common pieces, while opaque
+  secrets usually require many short tokens. The mechanisms are complementary,
+  and generic detector TOMLs may own their token-efficiency ceiling through
+  `bpe_max_bytes_per_token`. Opaque API-key/secret policies use the measured
+  2.2 ceiling; password/passphrase policies disable this rejection because
+  human-chosen credentials may intentionally be word-like.
 
 The split matters for the post-process stage.
 

@@ -98,6 +98,8 @@ fn config_effective_prints_and_exits_without_source() {
         "profile = false",
         "perf_trace = false",
         "min_confidence = 0.4",
+        "entropy_bpe_max_bytes_per_token = 2.2",
+        "entropy_bpe_policy = detector-local",
         "ml_enabled = true",
         "max_decode_depth = 10",
         "max_decode_bytes = 524288",
@@ -127,6 +129,146 @@ fn config_effective_example_file_parses_on_default_build() {
         !stderr.contains("invalid .keyhog.toml configuration"),
         "example config must not be a stale or feature-incompatible template; stderr={stderr}"
     );
+}
+
+#[test]
+fn config_effective_reflects_bpe_bound_cli_flag_and_toml() {
+    // WIRING proof for `entropy_bpe_max_bytes_per_token`: the flag and the TOML
+    // key must reach the resolved ScanConfig and surface in the effective dump —
+    // a flag that only parses is not wired. The default is 2.2 (asserted above);
+    // an explicit override must change the emitted value end to end.
+    let (stdout, stderr, code) = effective_config(&["--entropy-bpe-max-bytes-per-token", "3.5"]);
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("entropy_bpe_max_bytes_per_token = 3.5"),
+        "CLI --entropy-bpe-max-bytes-per-token 3.5 must reach the effective ScanConfig; stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("entropy_bpe_policy = scan-override"),
+        "an explicit CLI BPE value must visibly override detector-local policy; stdout={stdout}"
+    );
+
+    // Same via the `[scan]` TOML key (CLI absent → TOML value wins over default).
+    let (stdout, stderr, code) = effective_config_with_toml(
+        "[scan]\nmin_confidence = 0.4\nentropy_bpe_max_bytes_per_token = 1.9\n",
+    );
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("entropy_bpe_max_bytes_per_token = 1.9"),
+        "[scan] entropy_bpe_max_bytes_per_token = 1.9 must reach the effective ScanConfig; stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("entropy_bpe_policy = scan-override"),
+        "an explicit TOML BPE value must visibly override detector-local policy; stdout={stdout}"
+    );
+
+    // Defining both aliases is ambiguous and must fail closed instead of
+    // silently discarding the canonical nested value.
+    let (stdout, stderr, code) = effective_config_with_toml(
+        "entropy_bpe_max_bytes_per_token = 1.8\n[scan]\nentropy_bpe_max_bytes_per_token = 1.9\n",
+    );
+    assert_eq!(code, Some(2), "stdout={stdout}\nstderr={stderr}");
+    assert!(
+        stderr.contains("defined both as top-level `entropy_bpe_max_bytes_per_token`")
+            && stderr.contains("keep only `[scan].entropy_bpe_max_bytes_per_token`"),
+        "duplicate aliases must name the conflict and canonical fix; stderr={stderr}"
+    );
+
+    // Presence is semantic even when the numeric value equals the compiled
+    // fallback: detector-local policies may differ from 2.2, so an explicitly
+    // typed 2.2 still overrides them and must not collapse into "unset".
+    let (stdout, stderr, code) = effective_config(&["--entropy-bpe-max-bytes-per-token", "2.2"]);
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("entropy_bpe_policy = scan-override"),
+        "an explicit default-valued BPE flag must preserve override intent; stdout={stdout}"
+    );
+
+    let (stdout, stderr, code) =
+        effective_config_with_toml("[scan]\nentropy_bpe_max_bytes_per_token = 2.2\n");
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("entropy_bpe_policy = scan-override"),
+        "an explicit default-valued [scan] BPE key must preserve override intent; stdout={stdout}"
+    );
+}
+
+#[test]
+fn config_effective_rejects_invalid_bpe_bounds_on_cli_and_toml() {
+    for invalid in ["0", "-1", "NaN", "inf"] {
+        let (stdout, stderr, code) =
+            effective_config(&["--entropy-bpe-max-bytes-per-token", invalid]);
+        assert_eq!(
+            code,
+            Some(2),
+            "invalid CLI ratio {invalid:?}; stdout={stdout}\nstderr={stderr}"
+        );
+        assert!(
+            stderr.contains("must be finite and greater than 0.0"),
+            "CLI rejection must state the valid domain for {invalid:?}; stderr={stderr}"
+        );
+    }
+
+    for toml in [
+        "entropy_bpe_max_bytes_per_token = 0.0\n",
+        "[scan]\nentropy_bpe_max_bytes_per_token = -1.0\n",
+        "entropy_bpe_max_bytes_per_token = nan\n",
+        "[scan]\nentropy_bpe_max_bytes_per_token = inf\n",
+    ] {
+        let (stdout, stderr, code) = effective_config_with_toml(toml);
+        assert_eq!(
+            code,
+            Some(2),
+            "invalid TOML ratio; stdout={stdout}\nstderr={stderr}"
+        );
+        assert!(
+            stderr.contains("invalid .keyhog.toml configuration")
+                && stderr.contains("must be finite and greater than 0.0"),
+            "TOML rejection must fail closed with the shared bound; stderr={stderr}"
+        );
+    }
+}
+
+#[test]
+fn config_effective_validates_entropy_threshold_on_every_surface() {
+    let (stdout, stderr, code) = effective_config_with_toml("[scan]\nentropy_threshold = 5.25\n");
+    assert_eq!(code, Some(0), "stdout={stdout}\nstderr={stderr}");
+    assert!(
+        stdout.contains("entropy_threshold = 5.25"),
+        "nested entropy threshold must reach the effective scanner config; stdout={stdout}"
+    );
+
+    for invalid in ["-1", "8.1", "NaN", "inf"] {
+        let (stdout, stderr, code) = effective_config(&["--entropy-threshold", invalid]);
+        assert_eq!(
+            code,
+            Some(2),
+            "invalid CLI entropy threshold {invalid}; stdout={stdout}\nstderr={stderr}"
+        );
+        assert!(
+            stderr.contains("finite value between 0.0 and 8.0"),
+            "CLI error must state the mathematical entropy range; stderr={stderr}"
+        );
+    }
+
+    for toml in [
+        "entropy_threshold = -1.0\n",
+        "[scan]\nentropy_threshold = 8.1\n",
+        "entropy_threshold = nan\n",
+        "[scan]\nentropy_threshold = inf\n",
+    ] {
+        let (stdout, stderr, code) = effective_config_with_toml(toml);
+        assert_eq!(
+            code,
+            Some(2),
+            "invalid TOML entropy threshold; stdout={stdout}\nstderr={stderr}"
+        );
+        assert!(
+            stderr.contains("invalid .keyhog.toml configuration")
+                && stderr.contains("finite value between 0.0 and 8.0"),
+            "TOML error must fail closed with the shared entropy range; stderr={stderr}"
+        );
+    }
 }
 
 #[test]
@@ -416,6 +558,33 @@ fn config_effective_prints_regex_dfa_limit_cli_and_toml() {
     assert!(
         stdout.contains("regex_dfa_limit = 262144"),
         "regex_dfa_limit TOML key must be visible in resolved config; stdout={stdout}"
+    );
+}
+
+#[test]
+fn config_effective_prints_megascan_input_len_cli_and_toml() {
+    // Unset must report VRAM-adaptive, never a fixed byte count.
+    let (stdout, stderr, code) = effective_config(&[]);
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("megascan_input_len = VRAM-adaptive"),
+        "unset megascan_input_len must report the VRAM-adaptive default; stdout={stdout}"
+    );
+
+    // `--megascan-input-len 256MB` (= 256 MiB) must reach the resolved config.
+    let (stdout, stderr, code) = effective_config(&["--megascan-input-len", "256MB"]);
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("megascan_input_len = 268435456"),
+        "--megascan-input-len must be visible in resolved config; stdout={stdout}"
+    );
+
+    // The `.keyhog.toml` `megascan_input_len` key must resolve identically.
+    let (stdout, stderr, code) = effective_config_with_toml("megascan_input_len = \"512MB\"\n");
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("megascan_input_len = 536870912"),
+        "megascan_input_len TOML key must be visible in resolved config; stdout={stdout}"
     );
 }
 

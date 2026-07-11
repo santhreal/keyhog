@@ -418,6 +418,24 @@ fn docs_scan_banners_match_live_binary_banner_contract() {
             "{rel} still contains the stale one-line fabricated banner"
         );
     }
+
+    let readme = doc_text("README.md");
+    assert!(
+        readme.contains(&version_fragment),
+        "README.md must use the live --version/detector banner `{version_fragment}`"
+    );
+    assert!(
+        readme.contains(&compiled_count_fragment),
+        "README.md must pin the live compiled scanner pattern count `{compiled_count_fragment}`"
+    );
+    assert!(
+        readme.contains("backend="),
+        "README.md must show the operator-visible backend decision field"
+    );
+    assert!(
+        !readme.contains("AVX-512 + Hyperscan + CUDA") && !readme.contains("1666 patterns"),
+        "README.md still contains the stale one-line fabricated banner"
+    );
 }
 
 #[test]
@@ -1642,6 +1660,60 @@ fn config_detector_min_confidence_floor_drops_findings() {
         Some(1),
         "a per-detector min_confidence floor below the finding confidence must keep it"
     );
+
+    // Lowering override: the detector now self-declares a floor above the
+    // finding's 0.5 score. The operator's 0.4 override must be compiled into the
+    // active detector policy before scanning; applying it only after the engine
+    // would be too late because the 0.8 detector floor would already drop the
+    // candidate.
+    std::fs::write(
+        detectors_dir.join("demo-only.toml"),
+        r#"
+        [detector]
+        id = "demo-only"
+        name = "Demo Only"
+        service = "demo"
+        severity = "high"
+        min_confidence = 0.8
+        keywords = ["demo_secret_"]
+
+        [[detector.patterns]]
+        regex = "demo_secret_[A-Z0-9]{8}"
+        "#,
+    )
+    .expect("rewrite detector with a self-declared floor");
+
+    let (out_self, err_self, code_self) = run("");
+    assert_eq!(
+        code_self,
+        Some(0),
+        "the detector's own 0.8 floor must suppress its 0.5 finding; stdout={out_self}\nstderr={err_self}"
+    );
+    let (out_lowered, err_lowered, code_lowered) =
+        run("[detector.demo-only]\nmin_confidence = 0.4\n");
+    assert_eq!(
+        code_lowered,
+        Some(1),
+        "an operator floor below the detector default must preserve the 0.5 finding before engine adjudication; stdout={out_lowered}\nstderr={err_lowered}"
+    );
+    assert!(
+        out_lowered.contains("\"detector_id\":\"demo-only\""),
+        "the lowered-floor run must emit a finding attributed to the custom detector; stdout={out_lowered}"
+    );
+
+    for invalid in ["5.0", "-1.0", "nan", "inf"] {
+        let config = format!("[detector.demo-only]\nmin_confidence = {invalid}\n");
+        let (stdout, stderr, code) = run(&config);
+        assert_eq!(
+            code,
+            Some(2),
+            "invalid per-detector floor {invalid} must fail closed; stdout={stdout}\nstderr={stderr}"
+        );
+        assert!(
+            stderr.contains("min_confidence must be between 0.0 and 1.0"),
+            "invalid per-detector floor must state the accepted range; stderr={stderr}"
+        );
+    }
 }
 
 #[test]

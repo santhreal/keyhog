@@ -46,26 +46,39 @@ pub(crate) fn generic_bridge_canonical_hex_placeholder_stage(
     }
 }
 
-fn generic_bridge_keyword_requires_word_boundary(keyword: &str) -> bool {
+pub(crate) fn generic_bridge_keyword_requires_word_boundary(keyword: &str) -> bool {
     keyword.eq_ignore_ascii_case("pass") || keyword.eq_ignore_ascii_case("auth")
 }
 
 /// Whole-word left boundary for substring-ambiguous generic bridge keywords,
 /// including camelCase hinges while rejecting substring tails such as `bypass`.
-fn keyword_has_word_boundary(line: &str, keyword_start: usize) -> bool {
+pub(crate) fn keyword_has_word_boundary(line: &str, keyword_start: usize) -> bool {
     if keyword_start == 0 {
         return true;
     }
     let bytes = line.as_bytes();
-    let prev = bytes[keyword_start - 1];
+    // SAFETY: keyword_start > 0 is proven above, so keyword_start - 1 is a
+    // valid index. bytes.get avoids a panic if keyword_start >= bytes.len()
+    // (e.g. a zero-width regex match at end-of-string): treat as no camelCase
+    // hinge (conservative — preserves recall by not suppressing on ambiguity).
+    let prev = match bytes.get(keyword_start - 1) {
+        Some(&b) => b,
+        None => return true, // keyword_start - 1 out of range: assume boundary
+    };
     if !prev.is_ascii_alphabetic() {
         return true;
     }
-    let keyword_first = bytes[keyword_start];
+    // LAW10: if keyword_start is out-of-range (attacker-supplied offset past
+    // end of line), default to true (word boundary present) — do NOT suppress
+    // the match on a missing camelCase join; recall is preserved.
+    let keyword_first = match bytes.get(keyword_start) {
+        Some(&b) => b,
+        None => return true, // offset past end: no camelCase tail to inspect
+    };
     prev.is_ascii_lowercase() && keyword_first.is_ascii_uppercase()
 }
 
-fn bare_auth_value_allowed(value: &str) -> bool {
+pub(crate) fn bare_auth_value_allowed(value: &str) -> bool {
     let context = PlausibilityContext::new(true, false);
     crate::suppression::shape::is_structured_dotted_token(value)
         || (!value.contains('.')
@@ -77,6 +90,7 @@ fn bare_auth_value_allowed(value: &str) -> bool {
 pub(crate) enum GenericValueShapeStage {
     CaesarGenericFallback,
     EntropyBelowFloor,
+    // PER-DETECTOR-MIGRATION-BLOCKED: ValueTooShort length gate (value.len() < 8) resides in crates/scanner/src/engine/phase2_generic_shape.rs, which cannot be edited under this migration.
     ValueTooShort,
     SharedShape(&'static str),
     CodeExpressionChars,
@@ -88,6 +102,10 @@ pub(crate) enum GenericValueShapeStage {
     PureIdentifierNoDigit,
     PureIdentifier,
     WordSeparatedIdentifier,
+    /// Word-like non-secret by tiktoken cl100k_base bytes-per-token — the BPE
+    /// "rare-not-random" gate, the principled superset of the heuristic word-like
+    /// stages above (catches dotted API paths / prose the heuristics miss).
+    WordLikeLowBpe,
     SchemePrefixedUri,
     PunctuationDecoratedIdentifier,
     UrlOrPathSegment,
@@ -118,6 +136,7 @@ impl GenericValueShapeStage {
             Self::PureIdentifierNoDigit => "pure_identifier_no_digit",
             Self::PureIdentifier => "pure_identifier",
             Self::WordSeparatedIdentifier => "word_separated_identifier",
+            Self::WordLikeLowBpe => "generic_word_like_low_bpe",
             Self::SchemePrefixedUri => "scheme_prefixed_uri",
             Self::PunctuationDecoratedIdentifier => "punctuation_decorated_identifier",
             Self::UrlOrPathSegment => "url_or_path_segment",

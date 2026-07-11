@@ -2,6 +2,7 @@
 
 mod allowlist;
 mod dispatch;
+pub(crate) use dispatch::{COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB};
 mod postprocess;
 mod reporting;
 mod run;
@@ -33,6 +34,7 @@ const LOW_RAM_MAX_MATCHES_PER_CHUNK: usize = 500;
 /// is capped at (never raised to) this on a low-RAM host.
 const LOW_RAM_MAX_DECODE_BYTES: usize = 256 * 1024;
 
+pub(crate) use postprocess::render_credential;
 /// Offline (no-verify, no-network) structural metadata for a finding's
 /// credential. Single source of truth shared by every scan-output route so the
 /// JWT analysis and the offline-decoded AWS account ID never diverge by route.
@@ -93,6 +95,46 @@ pub(crate) fn cached_autoroute_router_for_default_config(
     )
 }
 
+/// The resolved post-scan suppression policy a [`DefaultScanRuntime`] applies so
+/// `keyhog watch` honors the SAME `.keyhog.toml` / `.keyhogignore` pipeline as
+/// `keyhog scan` (Law 10: watch must not silently un-suppress a finding that
+/// scan would drop). Built once at setup from the resolved config plus the
+/// loaded allowlist, and fed into the shared [`postprocess::MatchFilter`].
+pub(crate) struct DefaultScanFilter {
+    signatures: std::collections::HashSet<Arc<str>>,
+    disabled_detectors: std::collections::HashSet<String>,
+    detector_min_confidence: std::collections::HashMap<String, f64>,
+    test_fixture_suppressions: crate::test_fixture_suppressions::TestFixtureSuppressions,
+    no_suppress_test_fixtures: bool,
+    min_confidence: f64,
+    min_severity: Option<keyhog_core::Severity>,
+    allowlist: keyhog_core::Allowlist,
+}
+
+/// Compose detector-declared confidence floors with operator overrides and
+/// write the effective value back into the ACTIVE corpus before compilation.
+/// The returned map is the same policy used by post-processing, so early engine
+/// adjudication and final filtering cannot disagree. Operator entries win;
+/// detector TOML values fill only missing ids. Both sources are validated at
+/// their load boundaries, so this function never clamps or silently rewrites a
+/// value.
+fn compose_detector_min_confidence(
+    detectors: &mut [DetectorSpec],
+    mut floors: std::collections::HashMap<String, f64>,
+) -> std::collections::HashMap<String, f64> {
+    for detector in detectors.iter() {
+        if let Some(floor) = detector.min_confidence {
+            floors.entry(detector.id.clone()).or_insert(floor);
+        }
+    }
+    for detector in detectors {
+        if let Some(floor) = floors.get(&detector.id) {
+            detector.min_confidence = Some(*floor);
+        }
+    }
+    floors
+}
+
 pub(crate) struct DefaultScanRuntime {
     scanner: Arc<CompiledScanner>,
     router: CachedBackendRouter,
@@ -102,6 +144,10 @@ pub(crate) struct DefaultScanRuntime {
     /// calibration). When `Some`, the per-file scan never consults the autoroute
     /// cache, so the runtime works on an uncalibrated binary.
     backend_override: Option<keyhog_scanner::ScanBackend>,
+    /// Resolved suppression filter. `None` for the daemon runtime (which does its
+    /// own client-side finalize via `into_parts`); `Some` for `keyhog watch`,
+    /// installed by [`setup_default_scan_runtime`].
+    filter: Option<DefaultScanFilter>,
 }
 
 impl DefaultScanRuntime {
@@ -112,7 +158,40 @@ impl DefaultScanRuntime {
             router,
             detector_count: detectors.len(),
             backend_override: None,
+            filter: None,
         }
+    }
+
+    /// Install the resolved `.keyhog.toml` / `.keyhogignore` suppression filter so
+    /// `filter_and_resolve` routes matches through the exact `keyhog scan`
+    /// pipeline before they are surfaced.
+    pub(crate) fn with_filter(mut self, filter: DefaultScanFilter) -> Self {
+        self.filter = Some(filter);
+        self
+    }
+
+    /// Run scanner matches through the SAME filter + resolution pipeline
+    /// `keyhog scan` uses (signatures, disabled detectors, test-fixture +
+    /// self-scan suppression, allowlist, confidence floors, severity, match
+    /// resolution, inline suppression). Fails closed if no filter was installed
+    /// — a missing filter is a wiring bug, never a silent "emit everything".
+    pub(crate) fn filter_and_resolve(&self, matches: Vec<RawMatch>) -> Result<Vec<RawMatch>> {
+        let Some(f) = self.filter.as_ref() else {
+            anyhow::bail!(
+                "internal: DefaultScanRuntime has no resolved suppression filter; \
+                 setup_default_scan_runtime must install one before filtering matches"
+            );
+        };
+        let filter = postprocess::MatchFilter {
+            signatures: &f.signatures,
+            disabled_detectors: &f.disabled_detectors,
+            test_fixture_suppressions: &f.test_fixture_suppressions,
+            no_suppress_test_fixtures: f.no_suppress_test_fixtures,
+            detector_min_confidence: &f.detector_min_confidence,
+            min_confidence: f.min_confidence,
+            min_severity: f.min_severity,
+        };
+        postprocess::filter_and_resolve_matches(&filter, matches, &f.allowlist)
     }
 
     /// Force a specific scan backend instead of the persisted autoroute decision,
@@ -158,23 +237,128 @@ pub(crate) fn compile_default_scan_runtime(
     Ok(DefaultScanRuntime::new(scanner, &detectors))
 }
 
+/// Build the compile-once/scan-many runtime shared by `keyhog watch` and
+/// `keyhog scan-system`, WITH the operator's `.keyhog.toml` fully resolved and
+/// applied.
+///
+/// Historically this compiled the raw embedded corpus and never touched
+/// `.keyhog.toml`, so both callers silently ignored configured exclusions,
+/// confidence thresholds, and `[detector.<id>] enabled = false` toggles — a scan
+/// and a watch of the same tree could disagree on what is a finding (Law 10).
+/// Now it resolves the config via [`resolve_scan_config`] (rooted at
+/// `filter_root`, matching scan's walk-up), drops disabled detectors before
+/// compilation, and applies the resolved [`keyhog_scanner::ScannerConfig`] +
+/// tuning to the scanner. When `filter_root` is `Some`, it additionally loads the
+/// allowlist and installs a [`DefaultScanFilter`] so `filter_and_resolve` applies
+/// the identical post-scan suppression pipeline `keyhog scan` uses.
+/// `scan-system` passes `None`: it runs paranoid (ignores the local allowlist by
+/// design) but still gets the resolved detector/scanner config.
 pub(crate) fn setup_default_scan_runtime(
     detectors_path: &std::path::Path,
     cache_dir: Option<std::path::PathBuf>,
     threads: Option<usize>,
     subcommand_name: &'static str,
     warm: bool,
+    filter_root: Option<&std::path::Path>,
 ) -> Result<DefaultScanRuntime> {
+    use clap::Parser;
     crate::runtime_preflight::validate_scan_runtime_config()?;
-    crate::orchestrator_config::configure_hyperscan_cache_dir(cache_dir)?;
+
+    // Resolve `.keyhog.toml` exactly as `keyhog scan` does. A synthetic default
+    // `ScanArgs` carries only what this runtime can honor (detector dir, cache
+    // dir, threads, and the scan root that anchors config discovery); every other
+    // field stays at its shipped default so the merge yields the same effective
+    // config an equivalent `keyhog scan <root>` would. `resolve_scan_config`
+    // also configures the Hyperscan cache dir and canary/trusted-dir globals.
+    let mut synthetic = ScanArgs::try_parse_from(["keyhog-scan"]).context(
+        "internal: constructing default ScanArgs for watch/scan-system config resolution",
+    )?;
+    synthetic.detectors = detectors_path.to_path_buf();
+    synthetic.cache_dir = cache_dir;
+    synthetic.threads = threads;
+    synthetic.path = filter_root.map(std::path::Path::to_path_buf);
+    let effective_config = resolve_scan_config(&mut synthetic)?;
 
     let hw = keyhog_scanner::hw_probe::probe_hardware();
-    crate::orchestrator_config::configure_threads(threads, hw.physical_cores);
+    configure_threads(threads, hw.physical_cores);
 
-    let detectors = crate::orchestrator_config::load_detectors_or_embedded(detectors_path)?;
-    let scan_runtime = compile_default_scan_runtime(detectors, |e| {
-        crate::orchestrator_config::detector_compile_failed(subcommand_name, detectors_path, e)
-    })?;
+    let mut detectors = crate::orchestrator_config::load_detectors_or_embedded(detectors_path)?;
+
+    // Apply `[detector.<id>] enabled = false`: drop the disabled detectors before
+    // compilation so they never fire (mirrors `ScanOrchestrator::new`). The
+    // hardcoded hot-pattern fast path is not in this corpus, so those ids are
+    // also carried in the post-scan filter's `disabled_detectors` below.
+    let disabled_detectors = effective_config.disabled_detectors.clone();
+    if !disabled_detectors.is_empty() {
+        let before = detectors.len();
+        detectors.retain(|d| !disabled_detectors.contains(d.id.as_str()));
+        if detectors.is_empty() && before > 0 {
+            anyhow::bail!(
+                "all {before} loaded detector(s) were disabled by .keyhog.toml \
+                 [detector.<id>] enabled = false. Leave at least one detector enabled to run \
+                 `{subcommand_name}`, or remove the config."
+            );
+        }
+    }
+
+    // Compose detector TOML defaults and operator overrides BEFORE compilation.
+    // `watch` and `scan-system` use this runtime; compiling first would let the
+    // engine irreversibly drop a finding under the old floor before the shared
+    // post-scan filter could apply a lower operator override.
+    let detector_min_confidence = compose_detector_min_confidence(
+        &mut detectors,
+        effective_config.detector_min_confidence.clone(),
+    );
+
+    // Compile WITH the resolved engine config + tuning so thresholds (decode
+    // window, entropy, min-confidence, ml gate) take effect — not the bare
+    // compiled defaults the raw `compile()` would leave.
+    let scanner = Arc::new(
+        CompiledScanner::compile(detectors.clone())
+            .map_err(|error| {
+                crate::orchestrator_config::detector_compile_failed(
+                    subcommand_name,
+                    detectors_path,
+                    &error,
+                )
+            })?
+            .with_config(effective_config.scanner.clone())
+            .with_tuning_config(effective_config.scanner_tuning.clone()),
+    );
+
+    let mut scan_runtime = DefaultScanRuntime::new(scanner, &detectors);
+
+    if let Some(root) = filter_root {
+        let signatures: std::collections::HashSet<Arc<str>> = detectors
+            .iter()
+            .flat_map(|d| d.patterns.iter().map(|p| Arc::from(p.regex.as_str())))
+            .chain(
+                detectors
+                    .iter()
+                    .flat_map(|d| d.companions.iter().map(|c| Arc::from(c.regex.as_str()))),
+            )
+            .collect();
+        let allowlist = allowlist::load_allowlist(Some(root), &effective_config.allowlist)?;
+        let test_fixture_suppressions = if effective_config.report.no_suppress_test_fixtures {
+            crate::test_fixture_suppressions::TestFixtureSuppressions::empty()
+        } else {
+            crate::test_fixture_suppressions::TestFixtureSuppressions::bundled()
+        };
+        scan_runtime = scan_runtime.with_filter(DefaultScanFilter {
+            signatures,
+            disabled_detectors,
+            detector_min_confidence,
+            test_fixture_suppressions,
+            no_suppress_test_fixtures: effective_config.report.no_suppress_test_fixtures,
+            min_confidence: effective_config.min_confidence,
+            min_severity: effective_config
+                .report
+                .severity
+                .as_ref()
+                .map(|s| s.to_severity()),
+            allowlist,
+        });
+    }
 
     if warm {
         scan_runtime.warm();
@@ -323,6 +507,11 @@ impl ScanOrchestrator {
         // compiles, so the cap takes effect on the per-worker DFA caches that
         // dominate scan memory. 0 = use the compiled default.
         keyhog_scanner::set_regex_dfa_limit(args.regex_dfa_limit.unwrap_or(0)); // LAW10: empty/absent => documented numeric default, recall-safe
+                                                                                // Tier-A: MegaScan GPU input-buffer byte budget (VRAM-adaptive default →
+                                                                                // .keyhog.toml → --megascan-input-len). Set the process-global BEFORE the
+                                                                                // first megascan routing/cache-key read caches the value; 0 = keep the
+                                                                                // VRAM-adaptive default. Clamped into the sizing table's [128 MiB, 1 GiB].
+        keyhog_scanner::set_megascan_input_len(args.megascan_input_len.unwrap_or(0)); // LAW10: empty/absent => VRAM-adaptive default, recall-safe
         keyhog_scanner::set_profile_enabled(effective_config.scanner.profile);
         keyhog_scanner::set_perf_trace_enabled(effective_config.scanner.perf_trace);
 
@@ -336,20 +525,6 @@ impl ScanOrchestrator {
         } else {
             load_detectors_with_cache(&detectors_path)?
         };
-
-        // Seed self-declared per-detector floors from the corpus. `or_insert`
-        // means an operator `.keyhog.toml` value (already present) wins; a
-        // detector that declares `min_confidence` in its own TOML supplies the
-        // default for any id the operator did not pin. Clamped to [0,1] so a
-        // malformed spec can never invert the gate. Zero scan-time cost: the
-        // post-scan floor gate already does this map lookup per finding.
-        for d in &detectors {
-            if let Some(mc) = d.min_confidence {
-                detector_min_confidence
-                    .entry(d.id.clone())
-                    .or_insert(mc.clamp(0.0, 1.0));
-            }
-        }
 
         // Apply `[detector.<id>] enabled = false` from .keyhog.toml: drop the
         // disabled detectors from the corpus so they never compile or fire.
@@ -416,7 +591,7 @@ impl ScanOrchestrator {
                     static LOW_RAM_CAP_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
                     if LOW_RAM_CAP_WARNED.set(()).is_ok() {
                         eprintln!(
-                            "keyhog: low-RAM host ({mem_mb} MiB < {LOW_RAM_HOST_THRESHOLD_MB}) — capping scan limits to \
+                            "keyhog: low-RAM host ({mem_mb} MiB < {LOW_RAM_HOST_THRESHOLD_MB}): capping scan limits to \
                              avoid OOM: max_decode_bytes {prev_decode} → {new_decode}, \
                              max_matches_per_chunk {prev_matches} → {new_matches}. Set these \
                              explicitly in .keyhog.toml or via flags to override; run \
@@ -442,6 +617,12 @@ impl ScanOrchestrator {
                 *v = v.max(floor);
             }
         }
+
+        // Compile the ACTIVE detector corpus with the fully resolved floor.
+        // This is the only point where detector TOML defaults, operator
+        // overrides, and precision-mode clamping have all been composed.
+        detector_min_confidence =
+            compose_detector_min_confidence(&mut detectors, detector_min_confidence);
 
         let detector_spec_hash = keyhog_core::compute_spec_hash(&detectors);
         let detector_rules_digest = keyhog_core::hex_encode(&detector_spec_hash);
@@ -620,6 +801,7 @@ impl ScanOrchestrator {
                 disabled_detectors: std::collections::HashSet::new(),
                 require_lockdown: false,
                 regex_dfa_limit: None,
+                megascan_input_len: None,
                 max_file_size: None,
                 #[cfg(feature = "git")]
                 max_commits: crate::orchestrator_config::MAX_COMMITS_DEFAULT,
@@ -810,34 +992,4 @@ fn filesystem_auto_scan_cannot_route_gpu(args: &ScanArgs) -> bool {
 // that lived here was unused and tripped the unused-imports lint.
 
 #[cfg(test)]
-mod low_ram_cap_tests {
-    use super::{
-        LOW_RAM_HOST_THRESHOLD_MB, LOW_RAM_MAX_DECODE_BYTES, LOW_RAM_MAX_MATCHES_PER_CHUNK,
-    };
-
-    /// Pin the OOM-guard thresholds and the 256-KiB decode-window derivation, so
-    /// a silent edit to any of the three cannot change the low-RAM scan envelope
-    /// unnoticed.
-    #[test]
-    fn low_ram_caps_have_expected_values() {
-        assert_eq!(LOW_RAM_HOST_THRESHOLD_MB, 4096);
-        assert_eq!(LOW_RAM_MAX_MATCHES_PER_CHUNK, 500);
-        assert_eq!(LOW_RAM_MAX_DECODE_BYTES, 256 * 1024);
-    }
-
-    /// The caps are applied via `.min()`, i.e. they clamp DOWN and never raise a
-    /// smaller configured value — the exact semantics the low-RAM adaptation
-    /// relies on. Prove both directions with the named constants.
-    #[test]
-    fn low_ram_caps_clamp_down_never_up() {
-        // Above the cap: reduced to the cap.
-        assert_eq!(4096usize.min(LOW_RAM_MAX_MATCHES_PER_CHUNK), 500);
-        assert_eq!(
-            (4 * 1024 * 1024usize).min(LOW_RAM_MAX_DECODE_BYTES),
-            256 * 1024
-        );
-        // Below the cap: left untouched.
-        assert_eq!(100usize.min(LOW_RAM_MAX_MATCHES_PER_CHUNK), 100);
-        assert_eq!((64 * 1024usize).min(LOW_RAM_MAX_DECODE_BYTES), 64 * 1024);
-    }
-}
+mod tests;

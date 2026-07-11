@@ -10,7 +10,7 @@ mod schema;
 mod sections;
 
 pub(crate) use policy::ConfigOutcome;
-use policy::{config_file_error, resolve_policy_outcome, shipped_config_outcome};
+use policy::{base_config_outcome, config_file_error, resolve_policy_outcome};
 use scan::{apply_scan_section, apply_top_level_scan_fields, validate_scan_preset_conflicts};
 use schema::ConfigFile;
 use sections::{
@@ -80,9 +80,10 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     // what the bench harness passes so the benched config is the shipped
     // default BY DESIGN, not by the accident of no config happening to be found
     // on the walk-up from a corpus that lives inside the repo tree (MC-07). The
-    // shipped Tier-A floors/disables still apply — they ARE the default.
+    // Detector-owned TOML policy remains embedded in the active corpus; only
+    // repository/operator overrides are skipped.
     if args.no_config {
-        return shipped_config_outcome();
+        return base_config_outcome();
     }
     let config_path = args
         .config
@@ -91,10 +92,10 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
 
     let config_path = match config_path {
         Some(path) => path,
-        // No `.keyhog.toml` on the walk-up path (the bench/default case): still
-        // ship the compiled Tier-A floors/disables so tuned == benched ==
-        // shipped, instead of the empty `ConfigOutcome::default()`.
-        None => return shipped_config_outcome(),
+        // No `.keyhog.toml` on the walk-up path (the bench/default case): use an
+        // empty operator-policy outcome. Detector-owned TOML defaults are loaded
+        // from the corpus by the orchestrator, so tuned == benched == shipped.
+        None => return base_config_outcome(),
     };
 
     let raw = match std::fs::read_to_string(&config_path) {
@@ -194,10 +195,15 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     )))]
     apply_http_section(args, &mut config_errors, config.http.as_ref());
 
+    scan::validate_scan_alias_conflicts(&config, &mut config_errors);
     apply_top_level_scan_fields(args, &mut config_errors, &mut config);
     apply_scan_section(args, &mut config_errors, config.scan.take());
 
     let mut outcome = resolve_policy_outcome(&mut config);
+    // Policy resolution may add errors for `[detector.<id>]` values. Preserve
+    // them after the earlier scan/system validation errors instead of replacing
+    // either set.
+    config_errors.append(&mut outcome.config_errors);
     outcome.config_errors = config_errors;
     outcome.trusted_bin_dirs = trusted_bin_dirs;
     outcome.aws_canary_accounts = aws_canary_accounts;

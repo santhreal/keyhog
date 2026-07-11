@@ -147,6 +147,42 @@ fn forced_daemon_rejects_unenforceable_policy_without_in_process_fallback() {
 }
 
 #[test]
+fn forced_daemon_rejects_per_detector_confidence_policy() {
+    let work = TempDir::new().expect("work dir");
+    let path = work.path().join("leak.env");
+    std::fs::write(&path, aws_key_line()).expect("write fixture");
+    std::fs::write(
+        work.path().join(".keyhog.toml"),
+        "[detector.aws-access-key]\nmin_confidence = 0.95\n",
+    )
+    .expect("write config");
+    let runtime = TempDir::new().expect("isolated runtime");
+
+    let out = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", runtime.path())
+        .args(["scan", "--daemon=on", "--format", "json"])
+        .arg(&path)
+        .output()
+        .expect("spawn keyhog scan");
+
+    let combined = combined_output(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "forced daemon must not bypass client-local per-detector confidence policy; output={combined}"
+    );
+    assert!(
+        combined.contains("--daemon=on cannot be honored")
+            && combined.contains("policy the daemon cannot enforce"),
+        "forced-daemon rejection must expose the policy mismatch; output={combined}"
+    );
+    assert!(
+        !combined.contains("aws-access-key"),
+        "forced daemon rejection must not scan after discarding detector policy; output={combined}"
+    );
+}
+
+#[test]
 fn forced_daemon_rejects_multiple_primary_sources() {
     let work = TempDir::new().expect("work dir");
     let path = work.path().join("leak.env");
