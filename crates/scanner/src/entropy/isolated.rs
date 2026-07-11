@@ -164,29 +164,6 @@ pub(crate) fn mixed_contiguous_token_floor_met(candidate: &str, entropy: f64) ->
         && crate::suppression::token_randomness::is_random_token(candidate)
 }
 
-pub(super) fn collect_isolated_bare_candidates(
-    line: &str,
-    line_idx: usize,
-    line_offset: usize,
-    context: &KeywordContext,
-    seen: &mut std::collections::HashSet<String>,
-    matches: &mut Vec<EntropyMatch>,
-    placeholder_keywords: &[String],
-) {
-    if is_likely_innocuous_line(line) {
-        return;
-    }
-    collect_isolated_bare_candidates_inner(
-        line,
-        line_idx,
-        line_offset,
-        context,
-        seen,
-        matches,
-        placeholder_keywords,
-    );
-}
-
 /// Inner extraction logic without the `is_likely_innocuous_line` gate.
 /// The caller MUST have already verified the line is not innocuous.
 /// Used by `scan_keyword_free_candidates` which performs the innocuous check

@@ -2,7 +2,6 @@
 
 mod allowlist;
 mod dispatch;
-pub(crate) use dispatch::{COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB};
 mod postprocess;
 mod reporting;
 mod run;

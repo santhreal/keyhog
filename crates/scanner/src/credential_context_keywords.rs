@@ -1,6 +1,6 @@
 //! Tier-B credential-context keywords for the entropy scanner.
 //!
-//! `entropy::scanner::keyword_context` treats a high-entropy value as
+//! The entropy scanner treats a high-entropy value as
 //! credential-context when its line contains any of these keywords (matched
 //! case-insensitively as a substring). This module owns that vocabulary as a
 //! Tier-B data file (`rules/credential_context_keywords.toml`) instead of a
@@ -61,7 +61,7 @@ mod tests {
     use super::*;
 
     /// The exact list that lived as the `CREDENTIAL_KEYWORDS` array inside
-    /// `entropy::scanner::keyword_context` before this migration. The Tier-B file
+    /// the entropy scanner before this migration. The Tier-B file
     /// MUST parse to precisely this, in this order — the migration is a pure
     /// relocation with zero behavioural change.
     const LEGACY: &[&str] = &[

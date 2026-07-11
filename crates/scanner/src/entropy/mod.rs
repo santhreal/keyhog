@@ -24,7 +24,6 @@ pub(crate) mod fast_neon;
 #[cfg(target_arch = "x86_64")]
 pub(crate) mod fast_x86;
 
-pub(crate) use scanner::KEYWORD_FREE_LABEL;
 pub use scanner::{find_entropy_secrets, find_entropy_secrets_with_threshold};
 
 /// Threshold for keyword-context entropy detection.
@@ -71,33 +70,9 @@ pub const SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.5;
 /// [`EntropyMatch::line`] source line number. Single canonical owner for the
 /// 0→1 line-base convention shared by the line-scoped scanner
 /// (`scanner::find_entropy_secrets_with_threshold`) and the isolated-bare token
-/// path (`isolated::collect_isolated_bare_candidates`) — both add it to their
+/// path (`isolated::collect_isolated_bare_candidates_inner`) — both add it to their
 /// enumerated line index, so the convention lives in exactly one place.
 pub(crate) const FIRST_SOURCE_LINE_NUMBER: usize = 1;
-
-/// The single decision shared by the keyword-anchored and isolated-bare floor
-/// policies: does the operator's Tier-A `entropy_threshold` OVERRIDE the
-/// anchored floor?
-///
-/// An assignment keyword (`api_key=`) or an isolated opaque token is positive
-/// evidence, so the anchored paths run at a LOW named floor by default
-/// (recall-oriented — the anchor, not raw entropy, carries the signal). The
-/// operator knob therefore engages ONLY when it is *stricter* than the blanket
-/// [`HIGH_ENTROPY_THRESHOLD`]: a caller asking for a bar tighter than the global
-/// high floor is honored verbatim (`Some(threshold)`); at or below HIGH — or
-/// non-finite — the anchored floor applies (`None`) and each caller supplies its
-/// own floor ([`LOW_ENTROPY_THRESHOLD`] for the keyword path,
-/// [`MIXED_ALNUM_TOKEN_THRESHOLD`] for the isolated path).
-///
-/// This is a NAMED, TESTED policy — explicitly NOT a silent clamp. The two call
-/// sites (`scanner::keyword_context`, `isolated::isolated_bare_entropy_threshold`)
-/// used to inline byte-divergent copies of this same `> HIGH` test, which is the
-/// exact ONE-PLACE hazard: one owner means a change to the override rule reaches
-/// both floors at once, and the resolution at every band is pinned by tests.
-pub(super) fn operator_entropy_override(entropy_threshold: f64) -> Option<f64> {
-    (entropy_threshold.is_finite() && entropy_threshold > HIGH_ENTROPY_THRESHOLD)
-        .then_some(entropy_threshold)
-}
 
 /// Config/secret file extensions that mark a path as entropy-appropriate. Single
 /// owner: both the direct extension check and the stem+extension check in
@@ -500,66 +475,8 @@ mod tests {
         SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR,
     };
     use super::{
-        operator_entropy_override, FIRST_SOURCE_LINE_NUMBER, HIGH_ENTROPY_THRESHOLD,
-        LOW_ENTROPY_THRESHOLD, MIXED_ALNUM_TOKEN_THRESHOLD,
+        FIRST_SOURCE_LINE_NUMBER, HIGH_ENTROPY_THRESHOLD, MIXED_ALNUM_TOKEN_THRESHOLD,
     };
-
-    /// The shared `> HIGH` override owner: only a finite value STRICTLY above the
-    /// blanket high floor overrides the anchored floor (honored verbatim); the
-    /// default 4.5 (== HIGH), every value in the recall band, and non-finite
-    /// inputs all decline (`None`) so each caller keeps its own anchored floor.
-    /// Pinning every band here is what makes this a policy, not a silent clamp.
-    #[test]
-    fn operator_override_engages_only_strictly_above_the_high_floor() {
-        // Strictly-above-HIGH: honored verbatim.
-        assert_eq!(operator_entropy_override(4.6), Some(4.6));
-        assert_eq!(operator_entropy_override(5.8), Some(5.8));
-        assert_eq!(operator_entropy_override(8.0), Some(8.0));
-        // The default threshold sits exactly ON the high floor: it does NOT
-        // override, so the keyword path stays at its LOW recall floor.
-        assert_eq!(operator_entropy_override(HIGH_ENTROPY_THRESHOLD), None);
-        // Recall band (LOW, HIGH] and below-LOW: no override.
-        assert_eq!(operator_entropy_override(4.0), None);
-        assert_eq!(operator_entropy_override(LOW_ENTROPY_THRESHOLD), None);
-        assert_eq!(operator_entropy_override(0.0), None);
-        // Non-finite is never an override: NaN AND ±infinity all fail the
-        // `is_finite()` guard (an infinite entropy threshold is a nonsensical
-        // override input — nothing could ever exceed it), so all return None.
-        assert_eq!(operator_entropy_override(f64::NAN), None);
-        assert_eq!(operator_entropy_override(f64::INFINITY), None);
-        assert_eq!(operator_entropy_override(f64::NEG_INFINITY), None);
-    }
-
-    /// The two anchored floor sites compose the shared override with their own
-    /// default floors: the keyword path with [`LOW_ENTROPY_THRESHOLD`] (via
-    /// `min`), the isolated path with [`MIXED_ALNUM_TOKEN_THRESHOLD`]. Reproduce
-    /// each site's resolution to prove the dedup preserved both behaviors byte
-    /// for byte.
-    #[test]
-    fn anchored_floor_sites_compose_the_shared_override() {
-        let keyword_floor = |t: f64| {
-            operator_entropy_override(t).unwrap_or_else(|| {
-                if t.is_finite() {
-                    t.min(LOW_ENTROPY_THRESHOLD)
-                } else {
-                    LOW_ENTROPY_THRESHOLD
-                }
-            })
-        };
-        let isolated_floor =
-            |t: f64| operator_entropy_override(t).unwrap_or(MIXED_ALNUM_TOKEN_THRESHOLD);
-
-        // Default 4.5: keyword path floors to LOW (3.0), isolated to MIXED (4.0).
-        assert_eq!(keyword_floor(4.5), LOW_ENTROPY_THRESHOLD);
-        assert_eq!(isolated_floor(4.5), MIXED_ALNUM_TOKEN_THRESHOLD);
-        // A stricter operator bar overrides both floors verbatim.
-        assert_eq!(keyword_floor(6.0), 6.0);
-        assert_eq!(isolated_floor(6.0), 6.0);
-        // A below-LOW request loosens only the keyword path (min), never lifts
-        // the isolated path above its MIXED floor.
-        assert_eq!(keyword_floor(2.0), 2.0);
-        assert_eq!(isolated_floor(2.0), MIXED_ALNUM_TOKEN_THRESHOLD);
-    }
 
     /// The three entropy floors hoisted out of `plausibility.rs` keep their exact
     /// tuned values. These are the single named owners for the literals that were

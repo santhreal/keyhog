@@ -1015,23 +1015,6 @@ fn compact_keyword_contains(keyword: &str, needle: &[u8]) -> bool {
     false
 }
 
-pub(crate) fn keyword_context(
-    keyword_line: &str,
-    min_length: usize,
-    entropy_threshold: f64,
-    secret_keywords: &[String],
-    allow_canonical_lift: bool,
-) -> KeywordContext {
-    keyword_context_with_policy(
-        keyword_line,
-        min_length,
-        entropy_threshold,
-        secret_keywords,
-        allow_canonical_lift,
-        None,
-    )
-}
-
 fn keyword_context_with_policy(
     keyword_line: &str,
     min_length: usize,
@@ -1074,14 +1057,10 @@ fn keyword_context_with_policy(
         .and_then(|s| s.entropy_high)
         .unwrap_or(HIGH_ENTROPY_THRESHOLD);
 
-    // Keyword-anchored floor policy — a NAMED, tested rule, not a silent clamp.
-    // Inside a credential-keyword context the keyword IS the positive evidence,
-    // so the entropy bar is the LOW floor. The operator's Tier-A threshold
-    // engages only when it is stricter than the blanket HIGH floor — that shared
-    // decision lives in one owner, `operator_entropy_override` (see its doc). It
-    // is honored verbatim when it overrides; otherwise the keyword floor is
-    // `min(threshold, LOW)` for a finite request (a below-LOW request may still
-    // loosen the recall-oriented keyword path) and LOW for a non-finite one.
+    // Keyword-anchored floor policy. The active detector owns its low/high
+    // entropy bands in TOML; the Tier-A operator threshold can only tighten the
+    // detector's high band. Otherwise a finite request may loosen the detector's
+    // recall-oriented low band, while non-finite input resolves to that low band.
     let operator_override = (entropy_threshold.is_finite() && entropy_threshold > entropy_high)
         .then_some(entropy_threshold);
     let base_threshold = operator_override.unwrap_or_else(|| {

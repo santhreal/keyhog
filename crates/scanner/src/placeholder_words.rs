@@ -259,7 +259,9 @@ fn looks_like_high_entropy_marker_collision(credential: &str, entropy_hint: Opti
 
 /// Back-compat wrapper: parse only the placeholder-word list. Kept so the
 /// `parse_placeholder_words_for_test` facade and its callers (which pass
-/// `[placeholder_words]`-only TOMLs) keep working unchanged (Law 3).
+/// `[placeholder_words]`-only TOMLs) keep working unchanged (Law 3). Test-only:
+/// production parses the full vocabulary through [`parse_vocab`].
+#[cfg(test)]
 pub(crate) fn parse_placeholder_words(raw: &str) -> Result<Vec<PlaceholderWord>, String> {
     Ok(parse_vocab(raw)?.words)
 }

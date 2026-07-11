@@ -29,6 +29,7 @@
 //! Core types shared across all KeyHog crates.
 mod allowlist;
 mod api;
+/// Allocation-free ASCII case-insensitive matching primitives.
 pub mod ascii_ci;
 /// Offline AWS account-ID decode + canary-token classification (single source
 /// of truth shared by the scanner's finding metadata and the verifier's
