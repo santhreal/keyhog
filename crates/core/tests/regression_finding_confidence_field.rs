@@ -266,11 +266,12 @@ fn raw_match_ord_none_confidence_sorts_below_some() {
 }
 
 #[test]
-fn raw_match_ord_some_zero_equals_none_on_confidence_key() {
+fn raw_match_ord_some_zero_and_none_have_distinct_identity_order() {
     // Some(0.0) and None both map to 0.0 for the confidence sort key, so they
-    // tie on confidence and fall through to the later keys (which are equal
-    // here) => Equal overall.
+    // tie on the priority confidence key, but the final identity tiebreaker
+    // keeps them distinct so `cmp == Equal` remains equivalent to `Eq`.
     let some_zero = make_raw(Some(0.0));
     let none_conf = make_raw(None);
-    assert_eq!(some_zero.cmp(&none_conf), std::cmp::Ordering::Equal);
+    assert_ne!(some_zero.cmp(&none_conf), std::cmp::Ordering::Equal);
+    assert_ne!(some_zero, none_conf);
 }

@@ -221,6 +221,56 @@ fn opt_f64_total_eq(a: Option<f64>, b: Option<f64>) -> bool {
     }
 }
 
+#[inline]
+fn opt_f64_total_cmp(a: Option<f64>, b: Option<f64>) -> std::cmp::Ordering {
+    match (a, b) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, Some(_)) => std::cmp::Ordering::Less,
+        (Some(_), None) => std::cmp::Ordering::Greater,
+        (Some(x), Some(y)) => x.total_cmp(&y),
+    }
+}
+
+fn companion_map_cmp(
+    a: &std::collections::HashMap<String, String>,
+    b: &std::collections::HashMap<String, String>,
+) -> std::cmp::Ordering {
+    if a == b {
+        return std::cmp::Ordering::Equal;
+    }
+    match a.len().cmp(&b.len()) {
+        std::cmp::Ordering::Equal => {}
+        ordering => return ordering,
+    }
+
+    // Companion sets are tiny and this path runs only after every priority key
+    // ties. Walk each map in lexical-key order without allocating comparator
+    // scratch; the O(n²) selection cost is bounded by companion count and avoids
+    // heap traffic inside BinaryHeap/sort comparators.
+    let mut a_after: Option<&str> = None;
+    let mut b_after: Option<&str> = None;
+    for _ in 0..a.len() {
+        let a_entry = a
+            .iter()
+            .filter(|(key, _)| a_after.is_none_or(|after| key.as_str() > after))
+            .min_by(|left, right| left.0.cmp(right.0))
+            .expect("non-empty remainder implied by companion count");
+        let b_entry = b
+            .iter()
+            .filter(|(key, _)| b_after.is_none_or(|after| key.as_str() > after))
+            .min_by(|left, right| left.0.cmp(right.0))
+            .expect("non-empty remainder implied by companion count");
+        match a_entry.cmp(&b_entry) {
+            std::cmp::Ordering::Equal => {
+                a_after = Some(a_entry.0.as_str());
+                b_after = Some(b_entry.0.as_str());
+            }
+            ordering => return ordering,
+        }
+    }
+    std::cmp::Ordering::Equal
+}
+
 impl PartialOrd for RawMatch {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -257,9 +307,9 @@ impl Ord for RawMatch {
             ord => return ord,
         }
 
-        // Finally by location (offset, then line) so the order is TOTAL with
-        // respect to the dedup identity (detector, credential, offset). Without
-        // this last key, two matches of the same secret at different offsets
+        // Next by location (offset, then line) so the priority prefix is total
+        // with respect to the dedup identity (detector, credential, offset).
+        // Without this key, two matches of the same secret at different offsets
         // compare Equal, so when the capped per-chunk match heap
         // (`ScanState::push_match`) evicts among them at `max_matches_per_chunk`,
         // the survivor is chosen by insertion order — which is HashMap-iteration
@@ -269,9 +319,31 @@ impl Ord for RawMatch {
         // makes eviction content-determined: the kept set is reproducible
         // regardless of marking volume or thread interleaving.
         match self.location.offset.cmp(&other.location.offset) {
-            std::cmp::Ordering::Equal => self.location.line.cmp(&other.location.line),
-            ord => ord,
+            std::cmp::Ordering::Equal => {}
+            ord => return ord,
         }
+        match self.location.line.cmp(&other.location.line) {
+            std::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+
+        // The priority keys above intentionally determine user-visible order.
+        // The remaining fields are deterministic identity tiebreakers only:
+        // `Ord` must compare Equal exactly when field-wise `Eq` does, otherwise
+        // BTree collections and unstable sorts can silently merge or reorder
+        // distinct findings.
+        self.detector_name
+            .cmp(&other.detector_name)
+            .then_with(|| self.service.cmp(&other.service))
+            .then_with(|| self.credential_hash.cmp(&other.credential_hash))
+            .then_with(|| companion_map_cmp(&self.companions, &other.companions))
+            .then_with(|| self.location.source.cmp(&other.location.source))
+            .then_with(|| self.location.file_path.cmp(&other.location.file_path))
+            .then_with(|| self.location.commit.cmp(&other.location.commit))
+            .then_with(|| self.location.author.cmp(&other.location.author))
+            .then_with(|| self.location.date.cmp(&other.location.date))
+            .then_with(|| opt_f64_total_cmp(self.entropy, other.entropy))
+            .then_with(|| opt_f64_total_cmp(self.confidence, other.confidence))
     }
 }
 

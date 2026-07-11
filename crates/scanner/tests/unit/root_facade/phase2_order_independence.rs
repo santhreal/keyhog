@@ -10,6 +10,7 @@ use support::paths::{corpus_dir, corpus_files, detector_dir};
 use keyhog_core::{Chunk, ChunkMetadata, MatchLocation, RawMatch, Severity};
 use keyhog_scanner::testing::{
     scan_state_drain, scan_state_lazy_duplicate_probe_for_test,
+    scan_state_lazy_identity_tiebreak_probe_for_test,
     scan_state_lazy_overestimated_priority_probe_for_test,
 };
 use keyhog_scanner::{CompiledScanner, ScanBackend};
@@ -276,5 +277,24 @@ fn push_match_lazy_rechecks_built_match_before_replacing_worst() {
         kept[0].credential.as_ref(),
         "retained",
         "lazy candidate whose built RawMatch is worse than the heap worst must not replace it"
+    );
+}
+
+#[test]
+fn push_match_lazy_builds_equal_priority_before_identity_tiebreak() {
+    let (built, kept) = scan_state_lazy_identity_tiebreak_probe_for_test();
+    assert!(
+        built,
+        "an equal borrowed priority must build before identity-only fields can break the tie"
+    );
+    assert_eq!(
+        kept.len(),
+        1,
+        "duplicate identity must still occupy one slot"
+    );
+    assert_eq!(
+        kept[0].detector_name.as_ref(),
+        "Alpha detector",
+        "lazy and eager insertion must choose the same full RawMatch ordering winner"
     );
 }

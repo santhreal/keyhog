@@ -14,9 +14,8 @@
 //!
 //! `Vec::sort` places the cmp-"smallest" element first, so the highest-priority
 //! finding (highest confidence, then highest severity, ...) lands at index 0.
-//! detector_name is deliberately NOT a cmp key, so it is used here purely as a
-//! stable per-finding TAG to assert exact sorted positions, and it also exposes
-//! the (real) property that `cmp == Equal` does NOT imply `PartialEq == true`.
+//! The remaining fields are identity-only tiebreakers so `cmp == Equal` is
+//! exactly equivalent to field-wise equality.
 //!
 //! Every assertion pins a CONCRETE value: an exact tag sequence, an exact
 //! `Ordering` variant, or an exact index. No `is_empty()`/`len()>0`-only checks.
@@ -321,29 +320,111 @@ fn iter_min_selects_highest_priority_finding() {
 }
 
 // ---------------------------------------------------------------------------
-// Adversarial: cmp==Equal does NOT imply PartialEq, and sort is STABLE so the
-// tie-break preserves input order among cmp-Equal findings.
+// Adversarial: identity-only fields must prevent distinct BTree keys from
+// comparing Equal after every priority key ties.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn cmp_equal_but_not_eq_and_stable_sort_preserves_input_order() {
-    // Identical on every cmp KEY (conf, severity, detector_id, credential,
-    // offset, line) but differing detector_name, which cmp ignores and
-    // PartialEq compares.
+fn detector_name_breaks_a_complete_priority_tie() {
+    // Identical on every priority key (conf, severity, detector_id, credential,
+    // offset, line) but differing in the detector-name identity tiebreaker.
     let make = |tag: &str| rm("det", tag, Severity::High, "same-cred", Some(0.5), 4, 2);
     let x = make("X");
     let y = make("Y");
-    // cmp sees them as Equal ...
-    assert_eq!(x.cmp(&y), Ordering::Equal);
-    // ... yet PartialEq distinguishes them (detector_name differs).
+    assert_ne!(x.cmp(&y), Ordering::Equal);
     assert_ne!(x, y);
 
-    // Stable sort keeps the original relative order of equal elements.
     let mut xy = vec![make("X"), make("Y")];
     xy.sort();
     assert_eq!(tags(&xy), vec!["X", "Y"]);
 
     let mut yx = vec![make("Y"), make("X")];
     yx.sort();
-    assert_eq!(tags(&yx), vec!["Y", "X"]);
+    assert_eq!(tags(&yx), vec!["X", "Y"]);
+
+    let set = std::collections::BTreeSet::from([make("X"), make("Y")]);
+    assert_eq!(
+        set.len(),
+        2,
+        "distinct findings must remain distinct BTree keys"
+    );
+}
+
+#[test]
+fn every_fieldwise_identity_difference_breaks_cmp_equality() {
+    let base = rm("det", "name", Severity::High, "same-cred", Some(0.0), 4, 2);
+    let mut variants = Vec::new();
+
+    let mut changed = base.clone();
+    changed.service = Arc::from("other-service");
+    variants.push(("service", changed));
+
+    let mut changed = base.clone();
+    changed.credential_hash = sha256("other-hash-input");
+    variants.push(("credential_hash", changed));
+
+    let mut changed = base.clone();
+    changed
+        .companions
+        .insert("client_id".into(), "other".into());
+    variants.push(("companions", changed));
+
+    let mut changed = base.clone();
+    changed.location.source = Arc::from("git");
+    variants.push(("location.source", changed));
+
+    let mut changed = base.clone();
+    changed.location.file_path = Some(Arc::from("other.env"));
+    variants.push(("location.file_path", changed));
+
+    let mut changed = base.clone();
+    changed.location.commit = Some(Arc::from("deadbeef"));
+    variants.push(("location.commit", changed));
+
+    let mut changed = base.clone();
+    changed.location.author = Some(Arc::from("operator"));
+    variants.push(("location.author", changed));
+
+    let mut changed = base.clone();
+    changed.location.date = Some(Arc::from("2026-07-10"));
+    variants.push(("location.date", changed));
+
+    let mut changed = base.clone();
+    changed.entropy = Some(3.75);
+    variants.push(("entropy", changed));
+
+    let mut changed = base.clone();
+    changed.confidence = None;
+    variants.push(("confidence identity", changed));
+
+    for (field, changed) in variants {
+        assert_ne!(base, changed, "fixture must differ in {field}");
+        assert_ne!(
+            base.cmp(&changed),
+            Ordering::Equal,
+            "fieldwise difference in {field} must break cmp equality"
+        );
+    }
+}
+
+#[test]
+fn companion_ordering_is_insertion_order_independent() {
+    let mut forward = rm("det", "name", Severity::High, "same-cred", Some(0.5), 4, 2);
+    forward.companions.insert("alpha".into(), "one".into());
+    forward.companions.insert("beta".into(), "two".into());
+
+    let mut reverse = rm("det", "name", Severity::High, "same-cred", Some(0.5), 4, 2);
+    reverse.companions.insert("beta".into(), "two".into());
+    reverse.companions.insert("alpha".into(), "one".into());
+
+    assert_eq!(forward, reverse);
+    assert_eq!(forward.cmp(&reverse), Ordering::Equal);
+
+    reverse.companions.insert("beta".into(), "three".into());
+    assert_eq!(
+        forward.cmp(&reverse),
+        reverse.cmp(&forward).reverse(),
+        "different companion maps must retain an antisymmetric lexical order"
+    );
+    assert_ne!(forward.cmp(&reverse), Ordering::Equal);
 }

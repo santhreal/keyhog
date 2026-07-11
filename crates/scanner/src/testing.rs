@@ -1931,6 +1931,36 @@ pub fn scan_state_lazy_overestimated_priority_probe_for_test() -> (bool, Vec<key
 
     (built, state.into_matches())
 }
+#[cfg(any(feature = "entropy", feature = "simdsieve"))]
+pub fn scan_state_lazy_identity_tiebreak_probe_for_test() -> (bool, Vec<keyhog_core::RawMatch>) {
+    const LIMIT: usize = 1;
+    let mut state = crate::scan_state::ScanState::default();
+    let mut retained = scan_state_probe_match("duplicate", 7, 0.50);
+    retained.detector_name = std::sync::Arc::from("Zulu detector");
+    state.push_match(retained, LIMIT);
+
+    let mut built = false;
+    state.push_match_lazy(
+        crate::scan_state::RawMatchPriority {
+            confidence: Some(0.50),
+            severity: keyhog_core::Severity::High,
+            detector_id: "gate",
+            credential: "duplicate",
+            offset: 7,
+            line: Some(8),
+        },
+        LIMIT,
+        |_| {
+            built = true;
+            let mut candidate = scan_state_probe_match("duplicate", 7, 0.50);
+            candidate.detector_name = std::sync::Arc::from("Alpha detector");
+            candidate
+        },
+    );
+
+    (built, state.into_matches())
+}
+
 
 #[cfg(any(feature = "entropy", feature = "simdsieve"))]
 fn scan_state_probe_match(

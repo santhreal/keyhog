@@ -396,7 +396,7 @@ impl ScanState {
         self.matches
             .iter()
             .find(|existing| OwnedMatchIdentity::from(*existing) == *identity)
-            .is_none_or(|existing| priority.cmp_raw_match(existing).is_lt())
+            .is_none_or(|existing| !priority.cmp_raw_match(existing).is_gt())
     }
 
     #[cfg(any(feature = "entropy", feature = "simdsieve"))]
@@ -428,7 +428,7 @@ impl ScanState {
         let admit = self
             .matches
             .peek()
-            .is_some_and(|worst| priority.cmp_raw_match(worst).is_lt());
+            .is_some_and(|worst| !priority.cmp_raw_match(worst).is_gt());
         if admit {
             let m = build(self);
             if let Some(mut worst) = self.matches.peek_mut() {
