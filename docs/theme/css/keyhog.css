@@ -1,5 +1,5 @@
 /*
- * KeyHog docs theme - clean, minimal, B&W. Not too serious.
+ * KeyHog docs theme - clean graphite type with restrained signal amber.
  *
  * Loaded by mdBook on top of the default light theme. Overrides
  * colors, typography, and the chrome that makes the default mdBook
@@ -7,7 +7,7 @@
  */
 
 :root {
-    /* B&W palette. Greys for hierarchy, no accent color elsewhere. */
+    /* Neutral reading palette. Greys carry hierarchy; amber carries identity. */
     --ink: #0a0a0a;
     --ink-soft: #1a1a1a;
     --grey-9: #2d2d2d;
@@ -19,8 +19,15 @@
     --paper: #fafafa;
     --paper-pure: #ffffff;
 
-    /* Just one accent: a faint underline color for links. Keeps the
-     * page from being all grey. */
+    /* Product identity. The banner and CLI use signal amber against graphite;
+     * the docs keep the same cue restrained enough for long-form reading. */
+    --brand: #8a6500;
+    --brand-bright: #ffd60a;
+    --brand-wash: #fff8d6;
+    --graphite: #0d1017;
+    --elevation-soft: 0 10px 30px rgb(13 16 23 / 8%);
+
+    /* Links stay neutral so the product accent remains meaningful. */
     --rule: #d0d0d0;
     --accent-link: #0a0a0a;
     --accent-link-hover: #555555;
@@ -123,6 +130,14 @@ body, html {
     text-decoration-color: var(--ink);
 }
 
+.content a:focus-visible,
+.icon-button:focus-visible,
+.chapter li > a:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 3px;
+    border-radius: 3px;
+}
+
 /* Inline code - slightly off-white background, no border. */
 .content code {
     background: var(--grey-0);
@@ -142,6 +157,15 @@ body, html {
     overflow-x: auto;
     font-size: 0.875rem;
     line-height: 1.55;
+    box-shadow: 0 1px 0 rgb(13 16 23 / 4%);
+    transition: border-color 160ms ease, box-shadow 160ms ease,
+                transform 160ms ease;
+}
+
+.content pre:hover {
+    border-color: var(--grey-3);
+    box-shadow: var(--elevation-soft);
+    transform: translateY(-1px);
 }
 
 .content pre > code {
@@ -207,6 +231,8 @@ body, html {
 .chapter li.active > a {
     color: var(--sidebar-active);
     font-weight: 500;
+    background: linear-gradient(90deg, var(--brand-wash), transparent 88%);
+    box-shadow: inset 2px 0 0 var(--brand);
 }
 
 .sidebar .sidebar-resize-handle {
@@ -215,13 +241,47 @@ body, html {
 
 /* Top nav - flatten the icon row. */
 .menu-title {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
     font-weight: 600;
-    color: var(--ink);
+    color: var(--graphite);
+    letter-spacing: 0.01em;
+    overflow: hidden;
+}
+
+/* A compact keyhole/scan mark gives the docs a recognizable product signature
+ * without injecting custom HTML into mdBook's navigation. */
+.menu-title::before {
+    content: "";
+    width: 0.72rem;
+    height: 0.82rem;
+    flex: 0 0 auto;
+    border-radius: 55% 55% 42% 42%;
+    background:
+        radial-gradient(circle at 50% 35%, var(--paper-pure) 0 15%, transparent 17%),
+        linear-gradient(145deg, var(--brand-bright), #d79e00);
+    box-shadow: 0 0 0 1px rgb(13 16 23 / 12%),
+                0 3px 10px rgb(138 101 0 / 20%);
+}
+
+.menu-title::after {
+    content: "";
+    position: absolute;
+    left: 1.25rem;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--brand), transparent);
+    transform: translateX(-125%);
+    animation: keyhog-scanline 4.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
 #menu-bar {
-    background: var(--paper-pure);
+    background: linear-gradient(90deg, var(--paper-pure), var(--paper) 55%, var(--paper-pure));
     border-bottom: 1px solid var(--rule);
+    box-shadow: 0 1px 10px rgb(13 16 23 / 4%);
 }
 
 .icon-button {
@@ -254,6 +314,11 @@ body, html {
 
 .content table tbody tr {
     border-bottom: 1px solid var(--grey-1);
+    transition: background-color 140ms ease;
+}
+
+.content table tbody tr:hover {
+    background: var(--brand-wash);
 }
 
 .content table tbody tr:last-child {
@@ -262,7 +327,7 @@ body, html {
 
 /* Blockquotes - left rule, no italics, just inset prose. */
 .content blockquote {
-    border-left: 3px solid var(--ink);
+    border-left: 3px solid var(--brand);
     padding: 0.6em 1em;
     margin: 1.2em 0;
     background: var(--paper);
@@ -302,10 +367,23 @@ body, html {
 }
 
 mark {
-    background: var(--search-mark-bg);
+    background: var(--brand-wash);
     color: var(--ink);
     padding: 0 2px;
     border-radius: 2px;
+}
+
+@keyframes keyhog-scanline {
+    0%, 68% { transform: translateX(-125%); opacity: 0; }
+    74% { opacity: 0.8; }
+    92%, 100% { transform: translateX(125%); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .menu-title::after { animation: none; }
+    .content pre,
+    .content table tbody tr { transition: none; }
+    .content pre:hover { transform: none; }
 }
 
 /* Print - clean white with full-bleed text. */
