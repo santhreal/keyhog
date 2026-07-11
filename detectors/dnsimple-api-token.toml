@@ -29,3 +29,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "account"
 json_path = "data.account.email"
+
+[[detector.tests]]
+test_positive = "DNSIMPLE_API_TOKEN=C372xGw30nSx5QdQuTxy"
+test_negative = "DNSIMPLE_API_TOKEN=short"

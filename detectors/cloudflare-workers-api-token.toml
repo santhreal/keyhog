@@ -40,3 +40,7 @@ field = "match"
 status = 200
 json_path = "success"
 equals = "true"
+
+[[detector.tests]]
+test_positive = "CLOUDFLARE_WORKERS_API_TOKEN=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"
+test_negative = "CLOUDFLARE_WORKERS_API_TOKEN=short"

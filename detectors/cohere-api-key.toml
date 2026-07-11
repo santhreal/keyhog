@@ -34,3 +34,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "co_K3p7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU"
+test_negative = "co_short"

@@ -21,3 +21,7 @@ description = "ChromaDB API token with header context"
 group = 1
 
 # SKIP verify: ChromaDB is self-hosted, no public verification endpoint
+
+[[detector.tests]]
+test_positive = "CHROMA_AUTH_TOKEN=Kp4Qx7Rm2Sn5Tb8V"
+test_negative = "CHROMA_AUTH_TOKEN=short"

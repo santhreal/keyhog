@@ -19,3 +19,7 @@ group = 1
 regex = "Countly\\.init.*app_key[=:\\s\"'']+([a-f0-9]{32})"
 description = "Countly SDK initialization with app_key"
 group = 1
+
+[[detector.tests]]
+test_positive = "COUNTLY_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+test_negative = "COUNTLY_KEY=7b3e5d8c1a9f4e2b6c8d3a5e"

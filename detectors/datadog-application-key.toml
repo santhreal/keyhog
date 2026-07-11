@@ -38,3 +38,7 @@ value = "{{companion.datadog_api_key}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "DATADOG_APP_KEY=3b70df2c347b7e02b642198793dc0b8a9827bb4c"
+test_negative = "datadog_app_key=1234"

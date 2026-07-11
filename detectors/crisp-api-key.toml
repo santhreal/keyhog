@@ -19,3 +19,7 @@ group = 1
 name = "crisp_secret"
 regex = "(?i)(?:CRISP|crisp)[_\\s]?(?:SECRET|API[_\\s]?SECRET)[=:\\s\"'']+([a-f0-9a-zA-Z]{32,64})"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "CRISP_API_KEY=a5e95c2c-2e61-575f-5f7f-8f3b3462918d"
+test_negative = "crisp_api_key=short"

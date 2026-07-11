@@ -19,3 +19,7 @@ group = 1
 name = "client_secret"
 regex = "(?:CF-Access-Client-Secret|CF.Access.Client.Secret)[=:\\s\"'']+[a-zA-Z0-9_-]{40,}"
 within_lines = 3
+
+[[detector.tests]]
+test_positive = "CF-Access-Client-Id=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d.access"
+test_negative = "CF-Access-Client-Id=short.access"

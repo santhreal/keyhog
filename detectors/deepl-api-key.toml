@@ -39,3 +39,7 @@ template = "DeepL-Auth-Key {{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "DEEPL_API_KEY=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d:fx"
+test_negative = "DEEPL_API_KEY=7b3e5d8c-1a9f"

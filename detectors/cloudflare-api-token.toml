@@ -40,3 +40,7 @@ equals = "true"
 [[detector.verify.metadata]]
 name = "status"
 json_path = "result.status"
+
+[[detector.tests]]
+test_positive = "CF_API_TOKEN=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"
+test_negative = "CF_API_TOKEN=short"

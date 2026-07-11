@@ -22,3 +22,7 @@ description = "EasyPost Test API key (EZTK prefix)"
 regex = "(?:EASYPOST|easypost)[._](?:API|api)[._](?:KEY|key)[=:\\s\"'']+(EZ[AT]K[0-9A-Za-z_-]+)"
 description = "EasyPost API key with context"
 group = 1
+
+[[detector.tests]]
+test_positive = "EZAKKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+test_negative = "EZAKshort"

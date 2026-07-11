@@ -29,3 +29,7 @@ group = 1
 regex = """(?i)constant[_-]?contact[_-]?(?:access[_-]?)?token[=:\\s\"']+([a-zA-Z0-9_-]{20,})"""
 description = "Constant Contact Access Token"
 group = 1
+
+[[detector.tests]]
+test_positive = "CONSTANT_CONTACT_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK"
+test_negative = "CONSTANT_CONTACT_API_KEY=short"

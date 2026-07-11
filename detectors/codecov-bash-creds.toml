@@ -9,3 +9,7 @@ keywords = ["codecov", "token", "upload"]
 [[detector.patterns]]
 regex = 'https://codecov\.io/upload/v4\?package=bash-[0-9.]+&token=([a-zA-Z0-9-]{32,})'
 group = 1
+
+[[detector.tests]]
+test_positive = "https://codecov.io/upload/v4?package=bash-1.2.3&token=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+test_negative = "https://codecov.io/upload/v4?package=bash-1.0"

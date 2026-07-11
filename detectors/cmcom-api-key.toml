@@ -24,3 +24,7 @@ group = 1
 regex = '''(?:cm|CM)[_.-]?(?:com|COM)?[_.-]?(?:api|API)?[_.-]?(?:key|KEY)?[=:\s"\' ]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "CM.com API Key (UUID format)"
 group = 1
+
+[[detector.tests]]
+test_positive = "X-CM-PRODUCTTOKEN=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+test_negative = "X-CM-PRODUCTTOKEN=short"

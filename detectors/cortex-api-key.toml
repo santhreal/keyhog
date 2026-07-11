@@ -14,3 +14,7 @@ keywords = ["cortex", "CORTEX_API_KEY", "cortex_key"]
 regex = "(?:cortex|CORTEX)[\\s_-]*(?:api[_-]?key|key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,64})"
 description = "Cortex API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "CORTEX_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+test_negative = "cortex_api_key=Kp4Qx7Rm2Sn5Tb8"

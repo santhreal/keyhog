@@ -27,3 +27,7 @@ status = 200
 [[detector.verify.headers]]
 name = "Authorization"
 value = "Bearer {{match}}"
+
+[[detector.tests]]
+test_positive = "csb_api_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+test_negative = "csb_api_short"

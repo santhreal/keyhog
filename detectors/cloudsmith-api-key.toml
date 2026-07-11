@@ -20,3 +20,7 @@ description = "Cloudsmith API key with cs_ prefix"
 regex = "(?:cloudsmith|CLOUDSMITH)[_\\s]*(?:API[_\\s]*KEY|api[_\\s]*key)[=:\\s\"'']+([a-zA-Z0-9_]{32,64})"
 description = "Cloudsmith API key in configuration context"
 group = 1
+
+[[detector.tests]]
+test_positive = "cs_AbCdEfGhIjKlMnOpQrStUvWxYz01234567"
+test_negative = "cs_short"

@@ -36,3 +36,7 @@ template = "{{match}}"
 status = 200
 json_path = "success"
 equals = "true"
+
+[[detector.tests]]
+test_positive = "CLOUDFLARE_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9"
+test_negative = "CLOUDFLARE_API_KEY=short"

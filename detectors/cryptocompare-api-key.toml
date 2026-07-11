@@ -31,3 +31,7 @@ template = "Apikey {{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "cryptocompare-apikey:I0KlQV3zt8j3ItZqVtLrUbpqepvgWw1r"
+test_negative = "cryptocompare key short"

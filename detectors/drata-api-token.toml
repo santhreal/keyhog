@@ -26,3 +26,7 @@ template = "Bearer {{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "DRATA_API_KEY=01ac616f8fd0ba84a167fe482ed4a92c8c8050eed40ef171cc2784d638b34fa7"
+test_negative = "DRATA_API_KEY=short"

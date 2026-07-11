@@ -45,3 +45,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "CB API KEY=7B3E5D8C1A9F4E2B6C8D3A5E"
+test_negative = "CB API KEY=short"

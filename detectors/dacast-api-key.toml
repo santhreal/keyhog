@@ -24,3 +24,7 @@ group = 1
 regex = "(?:BROADKEY|broadkey)[=:\\s\"'']+([a-f0-9]{32})"
 description = "Dacast Broadkey (legacy name) with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "DACAST_apikey = e8b57db06c18562a458356bda6c62f31"
+test_negative = "dacast_api_key=94b3"

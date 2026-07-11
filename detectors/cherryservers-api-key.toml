@@ -25,3 +25,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "CHERRY_AUTH_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+test_negative = "CHERRY_AUTH_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3Yz"

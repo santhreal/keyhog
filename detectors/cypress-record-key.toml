@@ -24,3 +24,7 @@ group = 1
 name = "cypress-project-id"
 regex = "(?:projectId|CYPRESS_PROJECT_ID)[=:\\s\"']+([a-zA-Z0-9]{6,})"
 within_lines = 10
+
+[[detector.tests]]
+test_positive = "CYPRESS_RECORD_KEY=42136df0-709e-8c36-3ba2-01818f559a75"
+test_negative = "cypress_record_key=not-a-uuid"

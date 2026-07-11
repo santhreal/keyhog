@@ -38,3 +38,7 @@ description = "Discord bot token (production base64 snowflake form, 70-99 prefix
 regex = '''(?i)discord[A-Za-z0-9_."' :=-]{0,40}?([A-Za-z0-9_-]{23,28}\.[A-Za-z0-9_-]{6,8}\.[A-Za-z0-9_-]{27,38})'''
 description = "Discord bot token (synthetic/non-[MN] shape, requires in-window discord literal)"
 group = 1
+
+[[detector.tests]]
+test_positive = "DISCORD_BOT_TOKEN=MTAxK3p7QxR4mN9sBv2Ta5Yc.Gd7Wx2A.Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm"
+test_negative = "MTAabc.Vk9.Kp4"

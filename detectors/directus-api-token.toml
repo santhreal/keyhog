@@ -19,3 +19,7 @@ group = 1
 regex = "Authorization:\\s*Bearer\\s+([a-zA-Z0-9_-]{30,})[^\\n]*directus"
 description = "Directus bearer token with context"
 group = 1
+
+[[detector.tests]]
+test_positive = "DIRECTUS_TOKEN=C372xGw30nSx5QdQuTxy"
+test_negative = "DIRECTUS_TOKEN=short"

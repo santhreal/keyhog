@@ -37,3 +37,7 @@ password = "companion.confluent_api_secret"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "cfltKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+test_negative = "cfltKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"

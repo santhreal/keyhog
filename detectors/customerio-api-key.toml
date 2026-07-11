@@ -45,3 +45,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "region"
 json_path = "$.region"
+
+[[detector.tests]]
+test_positive = "CIO_SITE_ID=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Q"
+test_negative = "CIO_SITE_ID=short"

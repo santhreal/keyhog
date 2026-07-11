@@ -19,3 +19,7 @@ group = 1
 name = "management_key"
 regex = "(?:management[_-]?key|api[_-]?secret)[\"\\']?\\s*[:=]\\s*[\"\\']([a-zA-Z0-9_-]{20,})[\"\\']"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "descope project P2Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+test_negative = "descope project P2"

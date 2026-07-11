@@ -31,3 +31,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "dune_api_key=466426fae9480469a7737ec218a5dca3"
+test_negative = "dune_api_key=short"

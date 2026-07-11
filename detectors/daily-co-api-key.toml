@@ -30,3 +30,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "DAILY_API_KEY = a223af74096e28e3dda4f9d71fd2d696644154aeb843d9d779616433e1e04344"
+test_negative = "daily_api_key=94b30f1916f5b1d8a784a71660c14f04"
