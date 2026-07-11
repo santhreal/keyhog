@@ -339,7 +339,8 @@ pub(crate) fn setup_default_scan_runtime(
                     &error,
                 )
             })?
-            .with_config(effective_config.scanner.clone())
+            .try_with_config(effective_config.scanner.clone())
+            .with_context(|| "validating resolved scanner configuration")?
             .with_tuning_config(effective_config.scanner_tuning.clone()),
     );
 
@@ -669,7 +670,8 @@ impl ScanOrchestrator {
                 &effective_config.scanner_tuning,
             )
             .with_context(|| format!("compiling scanner from {} detector specs", detectors.len()))?
-            .with_config(effective_config.scanner.clone())
+            .try_with_config(effective_config.scanner.clone())
+            .with_context(|| "validating resolved scanner configuration")?
             .with_tuning_config(effective_config.scanner_tuning.clone()),
         );
 
