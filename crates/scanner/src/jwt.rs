@@ -96,9 +96,9 @@ pub(crate) fn anomalies_to_metadata(analysis: &JwtAnalysis) -> Option<BTreeMap<S
 /// findings carry no JWT keys); otherwise returns the claim evidence the
 /// module doc promises - `jwt.alg`, and any of `jwt.iss` / `jwt.sub` /
 /// `jwt.aud` / `jwt.exp` that are present - PLUS every anomaly key from
-/// [`anomalies_to_metadata`] (notably `jwt.alg_none` for an unsigned forgery).
+/// `anomalies_to_metadata` (notably `jwt.alg_none` for an unsigned forgery).
 ///
-/// This is the single, shared bridge between the fully-built [`analyze`] and
+/// This is the single, shared bridge between the fully-built `analyze` and
 /// the scan output: the in-process finalize, the verify skip branch, and the
 /// daemon-route finalize all call it, so the JWT evidence reaches the operator
 /// regardless of route (no `jwt.alg_none` divergence between in-process and

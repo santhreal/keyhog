@@ -7,33 +7,33 @@
 //!
 //! The modules below are declared in dependency order, but they READ in pipeline
 //! order — the same bytes→finding flow as the repository's `docs/ARCHITECTURE.md` and the
-//! method-level map in [`engine`] (`engine::mod` "# The one flow"). To find a
+//! method-level map in `engine` (`engine::mod` "# The one flow"). To find a
 //! responsibility, locate its stage:
 //!
-//! - **Config / state / shared types** — [`scanner_config`], [`scan_state`],
-//!   [`types`], [`hw_probe`] (hardware routing), [`error`].
+//! - **Config / state / shared types** — `scanner_config`, `scan_state`,
+//!   `types`, [`hw_probe`] (hardware routing), `error`.
 //! - **Phase 1 · prefilter** (cheap "could a detector fire here?") —
-//!   [`alphabet_filter`], [`bigram_bloom`], [`prefix_trie`], `ascii_ci`,
+//!   `alphabet_filter`, `bigram_bloom`, `prefix_trie`, `ascii_ci`,
 //!   `simd` / `simdsieve_prefilter` (feature-gated), `prefilter_degrade`
 //!   (loud Law-10 fallback).
-//! - **Compile** (detectors → matchers) — [`compiler`], `shared_regexes`,
-//!   [`static_intern`].
+//! - **Compile** (detectors → matchers) — `compiler`, `shared_regexes`,
+//!   `static_intern`.
 //! - **Scan engine** (phase 1 triggers + phase 2 extraction; CPU or GPU) —
-//!   [`engine`] (start at its header doc), [`pipeline`], [`gpu`].
+//!   `engine` (start at its header doc), `pipeline`, [`gpu`].
 //! - **Decode-through** (nested base64/hex/url/unicode, recursive) —
-//!   [`decode`], [`decode_structure`].
+//!   [`decode`], `decode_structure`.
 //! - **Entropy** — [`entropy`] is now the single home for all of it: the
 //!   keyword/scanner detection logic plus the fast Shannon-entropy primitive
 //!   `entropy::fast` (+ `entropy::avx512` / `entropy::fast_x86` /
 //!   `entropy::fast_neon` SIMD impls, arch-gated).
 //! - **Confidence / ML** — [`ml_scorer`] (serves the embedded `weights.bin`;
-//!   trained out-of-band by the repo's `ml/`), [`confidence`],
+//!   trained out-of-band by the repo's `ml/`), `confidence`,
 //!   `probabilistic_gate`.
 //! - **Context, fragment reassembly, multiline, suppression, resolution** —
-//!   [`context`], `fragment_cache`, [`multiline`], `suppression`,
+//!   [`context`], `fragment_cache`, `multiline`, `suppression`,
 //!   [`resolution`], `structured`.
 //! - **Specialized validators** — [`checksum`], [`jwt`], [`aws`],
-//!   `homoglyph`, [`unicode_hardening`].
+//!   `homoglyph`, `unicode_hardening`.
 //! - **Cross-cutting** — `platform_compat`, `placeholder_words`,
 //!   `process_exit`, [`telemetry`], `util_hash`.
 //!
@@ -215,7 +215,7 @@ pub fn validate_hyperscan_cache_dir(path: &std::path::Path) -> std::result::Resu
 /// finding by detector family — and the contract test harness, which must not
 /// gate context-dependent firings all-or-nothing — use this to distinguish the
 /// entropy fallback from service-anchored detectors without re-encoding the
-/// naming contract owned by [`detector_ids`].
+/// naming contract owned by `detector_ids`.
 #[inline]
 pub fn is_entropy_detector(detector_id: &str) -> bool {
     detector_ids::is_entropy_detector(detector_id)

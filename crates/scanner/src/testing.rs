@@ -1660,7 +1660,7 @@ pub fn normalize_chunk_data(data: &str) -> std::borrow::Cow<'_, str> {
 /// `named_detector_anchor_floor` regression test.
 pub const NAMED_DETECTOR_ANCHOR_FLOOR: f64 = crate::confidence::policy::NAMED_DETECTOR_ANCHOR_FLOOR;
 
-/// Test seam for [`crate::confidence::policy::apply_named_detector_anchor_floor`].
+/// Test seam for `crate::confidence::policy::apply_named_detector_anchor_floor`.
 /// `has_anchor` is `has_context_anchor || has_literal_prefix` at the call site.
 pub fn apply_named_detector_anchor_floor(
     confidence: f64,
@@ -1685,7 +1685,7 @@ pub fn generic_entropy_floor_for_test(
     crate::adjudicate::generic_entropy_floor(entropy_threshold, detector, credential_len)
 }
 
-/// Test seam for [`crate::confidence::policy::generic_secret_confidence`].
+/// Test seam for `crate::confidence::policy::generic_secret_confidence`.
 /// `context_label` selects the `CodeContext` ("test" / "comment" / "doc" /
 /// anything else = ordinary source) so a gap test can pin the exact confidence
 /// formula without depending on the crate-internal `CodeContext` enum.
@@ -1711,7 +1711,7 @@ pub fn generic_secret_confidence_for_test(
     )
 }
 
-/// Test seam for [`crate::suppression::shape::is_canonical_service_hex_key`]: the
+/// Test seam for `crate::suppression::shape::is_canonical_service_hex_key`: the
 /// predicate that exempts a service-anchored detector's canonical-length pure-hex
 /// capture from the bare-hex-digest shape gate.
 pub fn is_canonical_service_hex_key(credential: &str) -> bool {

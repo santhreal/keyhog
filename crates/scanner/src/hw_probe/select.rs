@@ -283,7 +283,7 @@ fn select_backend_for_workload(
 /// 3. **CpuFallback** - pure scalar AC + regex. Works everywhere.
 ///
 /// The historical crossover thresholds came from a fixed reference corpus and
-/// are not transferable routing evidence. See [`super::thresholds`].
+/// are not transferable routing evidence. See `super::thresholds`.
 #[must_use]
 pub fn select_backend(
     caps: &HardwareCaps,
@@ -380,7 +380,7 @@ pub(crate) fn select_backend_for_batch_verdict(
 /// tier's GPU floor at all.
 ///
 /// On a many-tiny-file corpus the per-batch byte total never reaches the
-/// high-tier measured-safe floor (see [`super::thresholds`]), so this returns
+/// high-tier measured-safe floor (see `super::thresholds`), so this returns
 /// `false` and the caller can skip paying for a device no chunk will ever touch.
 /// It does **not** consult explicit backend overrides or `--no-gpu`;
 /// callers that need an override should pass it through their own resolved

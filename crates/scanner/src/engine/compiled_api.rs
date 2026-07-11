@@ -177,7 +177,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     /// Warm regex transition caches in parallel before scanning.
     ///
     /// Detector regexes are already builder-validated and seeded during scanner
-    /// construction (see [`crate::types::LazyRegex`]), so this is now mostly
+    /// construction (see `crate::types::LazyRegex`), so this is now mostly
     /// DFA/transition-cache first-touch work plus generated/plain fallback
     /// regexes. For a LONG-lived or LARGE scan - the daemon, `watch`,
     /// `scan-system`, or a big repo where a detector fires across thousands of
