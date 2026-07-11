@@ -28,16 +28,15 @@ fn detectors_help_exits_zero() {
         "detectors help must not advertise the redundant list verb: {stdout}"
     );
 
-    let legacy = Command::new(binary())
+    let retired_json = Command::new(binary())
         .args(["detectors", "--json"])
         .output()
-        .expect("spawn legacy spelling");
-    assert_eq!(legacy.status.code(), Some(0));
-    let stderr = String::from_utf8_lossy(&legacy.stderr);
+        .expect("spawn retired json spelling");
+    assert_eq!(retired_json.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&retired_json.stderr);
     assert!(
-        stderr.contains("compatibility spelling")
-            && stderr.contains("keyhog detectors --format json"),
-        "legacy spelling must give an actionable migration warning; got: {stderr}"
+        stderr.contains("unexpected argument '--json'"),
+        "retired detector JSON flag must be rejected visibly; got: {stderr}"
     );
 
     let retired_list = Command::new(binary())

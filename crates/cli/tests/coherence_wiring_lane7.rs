@@ -419,15 +419,15 @@ fn exit_code_matrix_holds() {
 }
 
 /// README's cited detector count must equal the live embedded count
-/// (`detectors --json` array length). Drift-proof: both numbers are read at
+/// (`detectors --format json` array length). Drift-proof: both numbers are read at
 /// runtime / from the committed README, never hardcoded in the test.
 #[test]
 fn readme_detector_count_matches_embedded() {
-    let (_c, json, _e) = run(&["detectors", "--json"]);
+    let (_c, json, _e) = run(&["detectors", "--format", "json"]);
     let trimmed = json.trim();
     assert!(
         trimmed.starts_with('[') && trimmed.ends_with(']'),
-        "detectors --json must be a JSON array; got first 80: {:?}",
+        "detectors --format json must be a JSON array; got first 80: {:?}",
         &trimmed.chars().take(80).collect::<String>()
     );
     let actual = json.matches("\"companions\":").count();

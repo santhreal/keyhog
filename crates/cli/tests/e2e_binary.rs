@@ -324,9 +324,9 @@ fn readme_banner_counts_match_loaded_corpus() {
 
     let output = Command::new(binary())
         .arg("detectors")
-        .arg("--json")
+        .args(["--format", "json"])
         .output()
-        .expect("spawn keyhog detectors --json");
+        .expect("spawn keyhog detectors --format json");
     assert_eq!(output.status.code(), Some(0));
     let arr: Vec<serde_json::Value> =
         serde_json::from_slice(&output.stdout).expect("detectors JSON parse");
@@ -442,19 +442,19 @@ fn docs_scan_banners_match_live_binary_banner_contract() {
 fn detectors_subcommand_emits_json_array() {
     let output = Command::new(binary())
         .arg("detectors")
-        .arg("--json")
+        .args(["--format", "json"])
         .output()
-        .expect("spawn keyhog detectors --json");
+        .expect("spawn keyhog detectors --format json");
     assert_eq!(
         output.status.code(),
         Some(0),
-        "detectors --json should exit 0; stderr={}",
+        "detectors --format json should exit 0; stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parsed: serde_json::Value =
-        serde_json::from_str(&stdout).expect("detectors --json stdout is valid JSON");
-    let arr = parsed.as_array().expect("--json output is a JSON array");
+        serde_json::from_str(&stdout).expect("detectors --format json stdout is valid JSON");
+    let arr = parsed.as_array().expect("--format json output is a JSON array");
     assert!(
         arr.len() > 100,
         "expected hundreds of detectors; got {}",
@@ -466,7 +466,7 @@ fn detectors_subcommand_emits_json_array() {
         .find(|d| d.get("id").and_then(|v| v.as_str()) == Some("aws-access-key"));
     assert!(
         aws.is_some(),
-        "aws-access-key should appear in --json output"
+        "aws-access-key should appear in --format json output"
     );
     let aws = aws.unwrap();
     assert_eq!(
@@ -477,21 +477,21 @@ fn detectors_subcommand_emits_json_array() {
 }
 
 #[test]
-fn detectors_format_json_matches_json_alias() {
-    let legacy = Command::new(binary())
+fn detectors_format_json_is_canonical_and_json_alias_is_retired() {
+    let retired = Command::new(binary())
         .args(["detectors", "--json"])
         .output()
-        .expect("spawn keyhog detectors --json");
+        .expect("spawn retired detector json flag");
     let canonical = Command::new(binary())
         .args(["detectors", "--format", "json"])
         .output()
         .expect("spawn keyhog detectors --format json");
 
     assert_eq!(
-        legacy.status.code(),
-        Some(0),
-        "detectors --json should exit 0; stderr={}",
-        String::from_utf8_lossy(&legacy.stderr)
+        retired.status.code(),
+        Some(2),
+        "retired detectors --json must exit 2; stderr={}",
+        String::from_utf8_lossy(&retired.stderr)
     );
     assert_eq!(
         canonical.status.code(),
@@ -499,10 +499,7 @@ fn detectors_format_json_matches_json_alias() {
         "detectors --format json should exit 0; stderr={}",
         String::from_utf8_lossy(&canonical.stderr)
     );
-    assert_eq!(
-        canonical.stdout, legacy.stdout,
-        "detectors --format json must be the exact structured listing alias for --json"
-    );
+    assert!(String::from_utf8_lossy(&retired.stderr).contains("unexpected argument '--json'"));
     let parsed: serde_json::Value = serde_json::from_slice(&canonical.stdout)
         .expect("detectors --format json stdout is valid JSON");
     assert!(

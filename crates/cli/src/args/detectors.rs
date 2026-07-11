@@ -46,12 +46,8 @@ pub struct DetectorArgs {
     /// detector listing, so the format set is intentionally narrower than
     /// `scan`'s. Mutually exclusive with `--audit` / `--fix` (they emit their own
     /// structured formats).
-    #[arg(long, value_enum, conflicts_with_all = ["audit", "fix", "json"])]
+    #[arg(long, value_enum, conflicts_with_all = ["audit", "fix"])]
     pub format: Option<DetectorFormat>,
-    /// Compatibility spelling for `--format json`. It remains accepted with a
-    /// visible migration warning but is hidden from the canonical help surface.
-    #[arg(long, hide = true, conflicts_with_all = ["audit", "fix"])]
-    pub json: bool,
 }
 
 /// Output formats valid for the `detectors` listing. Deliberately a narrow

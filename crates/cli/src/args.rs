@@ -136,7 +136,7 @@ pub enum Command {
 /// drift AUD-coherence-1 documented — a hardcoded "894-strong" while the binary
 /// loaded 899). Instead we render the long help here, at runtime, from
 /// [`keyhog_core::embedded_detector_count`] — the *same* slice that backs
-/// `keyhog detectors --json`. The cited corpus size therefore tracks the real
+/// `keyhog detectors --format json`. The cited corpus size therefore tracks the real
 /// corpus exactly and can never undercount it.
 ///
 /// Both `Cli::parse()`-equivalent paths and the `print_help` / completion paths

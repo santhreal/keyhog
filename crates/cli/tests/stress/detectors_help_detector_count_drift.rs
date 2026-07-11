@@ -2,25 +2,25 @@
 //! must both report the SAME corpus size the binary actually loads — derived at
 //! runtime, never hardcoded. The count is rendered from
 //! `keyhog_core::embedded_detector_count()`, so the expected value here comes
-//! from the binary's own `detectors --json` output rather than a literal that
+//! from the binary's own `detectors --format json` output rather than a literal that
 //! goes stale every time a detector is added.
 
 use crate::e2e::support::binary;
 use std::process::Command;
 
-/// Embedded detector count = number of objects in `keyhog detectors --json`,
+/// Embedded detector count = number of objects in `keyhog detectors --format json`,
 /// counted via the per-detector `"companions":` key (one per detector) to avoid
 /// a JSON dependency in the test.
 fn embedded_count() -> usize {
     let out = Command::new(binary())
-        .args(["detectors", "--json"])
+        .args(["detectors", "--format", "json"])
         .output()
-        .expect("spawn detectors --json");
+        .expect("spawn detectors --format json");
     let json = String::from_utf8_lossy(&out.stdout);
     let trimmed = json.trim();
     assert!(
         trimmed.starts_with('['),
-        "detectors --json must emit a JSON array; got first 80 bytes: {:?}",
+        "detectors --format json must emit a JSON array; got first 80 bytes: {:?}",
         &trimmed[..trimmed.len().min(80)]
     );
     json.matches("\"companions\":").count()

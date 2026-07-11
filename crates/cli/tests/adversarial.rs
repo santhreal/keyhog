@@ -103,8 +103,8 @@ mod r5t_daemon_start_help_documents_socket_flag;
 mod r5t_daemon_status_missing_socket_exits_two;
 #[path = "adversarial/r5t_daemon_stop_missing_socket_exits_two.rs"]
 mod r5t_daemon_stop_missing_socket_exits_two;
-#[path = "adversarial/r5t_detectors_json_flag_emits_array.rs"]
-mod r5t_detectors_json_flag_emits_array;
+#[path = "adversarial/r5t_detectors_format_json_emits_array.rs"]
+mod r5t_detectors_format_json_emits_array;
 #[path = "adversarial/r5t_detectors_search_no_match_empty_stdout.rs"]
 mod r5t_detectors_search_no_match_empty_stdout;
 #[path = "adversarial/r5t_diff_before_not_json_exits_two.rs"]

@@ -25,7 +25,7 @@ fn r5t_detectors_format_json_emits_corpus_and_policy() {
     assert_eq!(
         arr.len(),
         expected,
-        "`detectors --json` emitted {} entries but the binary embeds {expected} detectors; \
+        "`detectors --format json` emitted {} entries but the binary embeds {expected} detectors; \
          the JSON listing and the embedded corpus disagree.",
         arr.len()
     );
@@ -46,16 +46,16 @@ fn r5t_detectors_format_json_emits_corpus_and_policy() {
     ] {
         assert!(
             first.get(field).is_some(),
-            "`detectors --json` element is missing the documented `{field}` field: {first}"
+            "`detectors --format json` element is missing the documented `{field}` field: {first}"
         );
     }
     assert!(
         first["id"].as_str().map(|s| !s.is_empty()).unwrap_or(false),
-        "`detectors --json` element `id` must be a non-empty string: {first}"
+        "`detectors --format json` element `id` must be a non-empty string: {first}"
     );
     assert!(
         first["verify"].is_boolean(),
-        "`detectors --json` element `verify` must be a boolean per the documented shape: {first}"
+        "`detectors --format json` element `verify` must be a boolean per the documented shape: {first}"
     );
 
     let password = arr

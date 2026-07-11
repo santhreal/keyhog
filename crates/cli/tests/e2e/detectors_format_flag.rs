@@ -5,24 +5,23 @@
 //! Dogfood (DF-01) hit `keyhog detectors --format json` → exit 2 "unexpected
 //! argument '--format'": the `detectors` listing exposed only a boolean `--json`
 //! while `scan` used `--format <text|json|...>`, so the two surfaces disagreed on
-//! the output-format convention (CLI-01). The fix makes `--format` the canonical
-//! flag on `detectors` (text|json) with `--json` kept as a back-compat alias.
+//! the output-format convention (CLI-01). `--format` is now the sole detector
+//! listing format surface.
 //!
 //! WHAT THIS GUARDS
 //! ----------------
-//! 1. `detectors --format json` is accepted (no exit-2 unknown-arg regression)
-//!    and emits the SAME structured array as the legacy `--json` alias.
+//! 1. `detectors --format json` is accepted and emits the structured array.
 //! 2. `detectors --format text` is accepted and is NOT JSON (human summary).
 //! 3. The narrow format set is enforced: a findings-report-only format
 //!    (`sarif`) is rejected for `detectors` rather than silently accepted —
 //!    the `detectors` surface intentionally offers only text|json.
-//! 4. Passing both `--format json` and the `--json` alias is a clean clap
-//!    conflict (exit 2), never a contradictory double-select.
+//! 4. The retired `--json` duplicate is rejected instead of silently choosing
+//!    a second path to the same behavior.
 
 use crate::e2e::support::run;
 
 #[test]
-fn detectors_format_json_equals_json_alias() {
+fn detectors_format_json_emits_the_embedded_corpus() {
     let via_format = run(&["detectors", "--format", "json"]);
     assert_eq!(
         via_format.status.code(),
@@ -31,23 +30,15 @@ fn detectors_format_json_equals_json_alias() {
         via_format.status.code(),
         String::from_utf8_lossy(&via_format.stderr),
     );
-    let via_alias = run(&["detectors", "--json"]);
-    assert_eq!(via_alias.status.code(), Some(0));
-
     let from_format: Vec<serde_json::Value> =
         serde_json::from_slice(&via_format.stdout).expect("--format json emits a JSON array");
-    let from_alias: Vec<serde_json::Value> =
-        serde_json::from_slice(&via_alias.stdout).expect("--json emits a JSON array");
 
     assert!(
         from_format.len() > 100,
         "expected hundreds of detectors via --format json; got {}",
         from_format.len()
     );
-    assert_eq!(
-        from_format, from_alias,
-        "`--format json` and the `--json` alias must produce byte-identical detector arrays"
-    );
+    assert_eq!(from_format.len(), keyhog_core::embedded_detector_count());
 }
 
 #[test]
@@ -91,11 +82,12 @@ fn detectors_format_rejects_findings_only_format() {
 }
 
 #[test]
-fn detectors_format_and_json_alias_conflict() {
-    let out = run(&["detectors", "--format", "json", "--json"]);
+fn detectors_json_alias_is_retired() {
+    let out = run(&["detectors", "--json"]);
     assert_eq!(
         out.status.code(),
         Some(2),
-        "passing both `--format` and the `--json` alias must be a clean clap conflict (exit 2)"
+        "the retired `--json` duplicate must be rejected (exit 2)"
     );
+    assert!(String::from_utf8_lossy(&out.stderr).contains("unexpected argument '--json'"));
 }
