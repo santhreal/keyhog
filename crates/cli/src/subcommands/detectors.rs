@@ -17,6 +17,12 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 pub(crate) fn run(args: DetectorArgs) -> Result<ExitCode> {
+    if args.verb.as_deref() == Some("list") {
+        eprintln!(
+            "warning: `keyhog detectors list` is a compatibility spelling; \
+             use `keyhog detectors`"
+        );
+    }
     // The optional `list` verb names the default action explicitly, so it is
     // incompatible with the alternate actions `--audit` / `--fix`: `keyhog
     // detectors list --audit` would be asking for two different verbs at once.
@@ -40,6 +46,12 @@ pub(crate) fn run(args: DetectorArgs) -> Result<ExitCode> {
 }
 
 fn run_list(args: DetectorArgs) -> Result<()> {
+    if args.json {
+        eprintln!(
+            "warning: `keyhog detectors --json` is a compatibility spelling; \
+             use `keyhog detectors --format json`"
+        );
+    }
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
     let source = if args.detectors.exists() {
         format!("{}", args.detectors.display())
@@ -67,8 +79,8 @@ fn run_list(args: DetectorArgs) -> Result<()> {
         .collect();
 
     // Resolve the effective output format. `--format` is canonical (CLI-01);
-    // `--json` is the back-compat alias. They are mutually exclusive at the clap
-    // layer, so at most one is set — either selecting JSON yields JSON.
+    // `--json` is the visibly warned compatibility spelling. They are mutually
+    // exclusive at the clap layer, so at most one is set.
     let want_json = args.json || matches!(args.format, Some(crate::args::DetectorFormat::Json));
     if want_json {
         print_detectors_json(&filtered)?;

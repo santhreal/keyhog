@@ -167,6 +167,8 @@ fn print_explanation(d: &DetectorSpec) {
         }
     }
 
+    print_detection_policy(d, &style);
+
     if !d.companions.is_empty() {
         println!("  {}Companions:{}", style.bold, style.reset);
         for c in &d.companions {
@@ -231,6 +233,101 @@ fn print_explanation(d: &DetectorSpec) {
         style.dim, style.reset
     );
     println!();
+}
+
+/// Print the detector-local policy that changes candidate admission. This is
+/// deliberately part of `explain`, not a second policy registry: every value
+/// comes from the loaded detector TOML and absent values are identified as scan
+/// fallbacks rather than rendered as invented detector defaults.
+fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
+    let kind = match d.kind {
+        keyhog_core::DetectorKind::Regex => "regex",
+        keyhog_core::DetectorKind::Phase2Generic => "phase2-generic",
+    };
+    println!("  {}Detection policy:{}", style.bold, style.reset);
+    println!("    kind: {kind}");
+
+    let mut declared = 0usize;
+    macro_rules! optional_policy {
+        ($name:literal, $value:expr, $unit:literal) => {
+            if let Some(value) = $value {
+                println!("    {}: {}{}", $name, value, $unit);
+                declared += 1;
+            }
+        };
+    }
+    optional_policy!("min_confidence", d.min_confidence, "");
+    optional_policy!("entropy_high", d.entropy_high, " bits/byte");
+    optional_policy!("entropy_low", d.entropy_low, " bits/byte");
+    optional_policy!("entropy_very_high", d.entropy_very_high, " bits/byte");
+    optional_policy!("mixed_alnum_floor", d.mixed_alnum_floor, " bits/byte");
+    optional_policy!(
+        "bpe_max_bytes_per_token",
+        d.bpe_max_bytes_per_token,
+        " UTF-8 bytes/token"
+    );
+    optional_policy!("keyword_free_min_len", d.keyword_free_min_len, " bytes");
+    optional_policy!("min_len", d.min_len, " bytes");
+
+    for bucket in &d.entropy_floor {
+        match bucket.max_len {
+            Some(max_len) => println!(
+                "    entropy_floor: {} bits/byte through {} bytes",
+                bucket.floor, max_len
+            ),
+            None => println!("    entropy_floor: {} bits/byte (remainder)", bucket.floor),
+        }
+        declared += 1;
+    }
+    if !d.stopwords.is_empty() {
+        println!("    stopwords: {}", d.stopwords.join(", "));
+        declared += 1;
+    }
+    for path in &d.allowlist_paths {
+        println!("    allowlist_path: {path}");
+        declared += 1;
+    }
+    for value in &d.allowlist_values {
+        println!("    allowlist_value: {value}");
+        declared += 1;
+    }
+    for (name, enabled) in [
+        ("structural_password_slot", d.structural_password_slot),
+        ("weak_anchor", d.weak_anchor),
+        ("private_key_block", d.private_key_block),
+    ] {
+        if enabled {
+            println!("    {name}: true");
+            declared += 1;
+        }
+    }
+    if let Some(shape) = &d.credential_shape {
+        if let Some(length) = shape.exact_length {
+            println!("    credential_shape.exact_length: {length} bytes");
+        }
+        if let Some(prefix) = &shape.prefix {
+            println!("    credential_shape.prefix: {prefix}");
+        }
+        if let Some(length) = shape.body_min_length {
+            println!("    credential_shape.body_min_length: {length} bytes");
+        }
+        if let Some(length) = shape.body_max_length {
+            println!("    credential_shape.body_max_length: {length} bytes");
+        }
+        declared += 1;
+    }
+
+    if declared == 0 {
+        println!(
+            "    {}detector-local overrides: none (scan defaults apply){}",
+            style.dim, style.reset
+        );
+    } else {
+        println!(
+            "    {}source: detectors/{}.toml{}",
+            style.dim, d.id, style.reset
+        );
+    }
 }
 
 /// Service-keyed rotation guide. The map is curated for the most-leaked

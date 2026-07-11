@@ -4,12 +4,12 @@ use clap::{Parser, ValueEnum};
 
 #[derive(Parser)]
 pub struct DetectorArgs {
-    /// Optional verb. `keyhog detectors` lists detectors by default, so the
-    /// only accepted positional is the explicit `list` (a no-op alias kept for
-    /// muscle-memory and for the historically-suggested
-    /// `keyhog detectors list --detectors <DIR>` invocation). Any other token
-    /// is rejected with a precise message rather than misparsed.
-    #[arg(value_name = "VERB", value_parser = crate::value_parsers::parse_detectors_verb)]
+    /// Compatibility positional for the former redundant `list` verb.
+    #[arg(
+        hide = true,
+        value_name = "VERB",
+        value_parser = crate::value_parsers::parse_detectors_verb
+    )]
     pub verb: Option<String>,
     /// Detector TOML directory
     #[arg(short, long, default_value = "detectors")]
@@ -47,26 +47,17 @@ pub struct DetectorArgs {
     #[arg(long, requires = "fix")]
     pub dry_run: bool,
     /// Output format for the detector listing. `text` (default) is the grouped,
-    /// human-readable summary; `json` emits the structured array described under
-    /// `--json`. This is the canonical flag — it matches `scan --format` so the
+    /// human-readable summary; `json` emits the structured detector array. This
+    /// is the canonical flag — it matches `scan --format` so the
     /// two surfaces share one convention (CLI-01). Only `text`/`json` apply to a
     /// detector listing, so the format set is intentionally narrower than
     /// `scan`'s. Mutually exclusive with `--audit` / `--fix` (they emit their own
-    /// structured formats) and with the legacy `--json` alias.
+    /// structured formats).
     #[arg(long, value_enum, conflicts_with_all = ["audit", "fix", "json"])]
     pub format: Option<DetectorFormat>,
-    /// Emit the detector listing as a JSON array on stdout instead of the
-    /// human-readable grouped summary. Pairs with `--search` for filtered
-    /// programmatic discovery (CI gates, bench harnesses, IDE plugins).
-    /// Mutually exclusive with `--audit` / `--fix` since those emit their
-    /// own structured output formats. JSON shape mirrors the human surface:
-    /// `[{ "id", "name", "service", "severity", "keywords": [..],
-    /// "patterns": [{ "regex", "description", "group" }, ..],
-    /// "companions": [{ "name", "regex", "within_lines", "required" }, ..],
-    /// "verify": <bool> }, ..]`.
-    ///
-    /// Back-compat alias for `--format json`; prefer `--format` in new scripts.
-    #[arg(long, conflicts_with_all = ["audit", "fix"])]
+    /// Compatibility spelling for `--format json`. It remains accepted with a
+    /// visible migration warning but is hidden from the canonical help surface.
+    #[arg(long, hide = true, conflicts_with_all = ["audit", "fix"])]
     pub json: bool,
 }
 

@@ -16,7 +16,38 @@ fn detectors_help_exits_zero() {
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("--json"),
-        "detectors help must document --json; got: {stdout}"
+        stdout.contains("--format"),
+        "detectors help must document canonical --format; got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("--json"),
+        "detectors help must not advertise the compatibility spelling: {stdout}"
+    );
+    assert!(
+        !stdout.contains("[VERB]") && !stdout.contains("detectors list"),
+        "detectors help must not advertise the redundant list verb: {stdout}"
+    );
+
+    let legacy = Command::new(binary())
+        .args(["detectors", "--json"])
+        .output()
+        .expect("spawn legacy spelling");
+    assert_eq!(legacy.status.code(), Some(0));
+    let stderr = String::from_utf8_lossy(&legacy.stderr);
+    assert!(
+        stderr.contains("compatibility spelling")
+            && stderr.contains("keyhog detectors --format json"),
+        "legacy spelling must give an actionable migration warning; got: {stderr}"
+    );
+
+    let legacy_list = Command::new(binary())
+        .args(["detectors", "list"])
+        .output()
+        .expect("spawn legacy list spelling");
+    assert_eq!(legacy_list.status.code(), Some(0));
+    let stderr = String::from_utf8_lossy(&legacy_list.stderr);
+    assert!(
+        stderr.contains("compatibility spelling") && stderr.contains("use `keyhog detectors`"),
+        "legacy list verb must give an actionable migration warning; got: {stderr}"
     );
 }
