@@ -32,7 +32,7 @@ pub(crate) fn clear_test_backend_override() {
 /// visibility, but they do not by themselves prove the `simd-regex` backend
 /// exists. This is the SINGLE source of truth for the "no GPU in play"
 /// decision - every router that needs a non-GPU backend (`select_backend`,
-/// `select_backend_for_file`, `select_backend_for_batch`, and the CLI's
+/// `select_backend`, `select_backend_for_batch`, and the CLI's
 /// measured autoroute default) routes through here so the four-way ladder can
 /// never drift between sites.
 #[must_use]
@@ -294,15 +294,6 @@ pub fn select_backend_verdict(
     pattern_count: usize,
 ) -> BackendRoutingVerdict {
     select_backend_for_workload(caps, BackendWorkload::file(workload_bytes, pattern_count))
-}
-
-#[must_use]
-pub(crate) fn select_backend_for_file(
-    caps: &HardwareCaps,
-    file_bytes: u64,
-    pattern_count: usize,
-) -> ScanBackend {
-    select_backend_for_workload(caps, BackendWorkload::file(file_bytes, pattern_count)).backend
 }
 
 /// Batch-aware backend routing — a pure, hardware-only library router.

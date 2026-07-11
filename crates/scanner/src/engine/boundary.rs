@@ -321,8 +321,11 @@ fn boundary_context_for_pair(
 }
 
 fn scan_boundary_chunk_whole(scanner: &CompiledScanner, chunk: &Chunk) -> Vec<RawMatch> {
-    let backend = scanner.select_backend_for_file(chunk.data.len() as u64);
-    super::gpu_forced::deny_silent_gpu_degrade(scanner, backend);
+    // Boundary reassembly is a shared semantic tail, not a new autoroute
+    // decision. Keep it on the deterministic reference backend so an explicit
+    // or calibrated parent route cannot be silently replaced by fresh hardware
+    // heuristics for the synthetic seam chunk.
+    let backend = crate::hw_probe::ScanBackend::CpuFallback;
     let mut matches = scanner.scan_inner(chunk, backend, None);
     scanner.post_process_matches(chunk, &mut matches, None);
     matches
