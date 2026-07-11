@@ -99,7 +99,7 @@ fn config_effective_prints_and_exits_without_source() {
         "perf_trace = false",
         "min_confidence = 0.4",
         "entropy_bpe_max_bytes_per_token = 2.2",
-        "entropy_bpe_policy = detector-local",
+        "entropy_bpe_policy = scan-fallback",
         "ml_enabled = true",
         "max_decode_depth = 10",
         "max_decode_bytes = 524288",
@@ -145,7 +145,7 @@ fn config_effective_reflects_bpe_bound_cli_flag_and_toml() {
     );
     assert!(
         stdout.contains("entropy_bpe_policy = scan-override"),
-        "an explicit CLI BPE value must visibly override detector-local policy; stdout={stdout}"
+        "an explicit CLI BPE value must visibly override detector-local/scan fallback policy; stdout={stdout}"
     );
 
     // Same via the `[scan]` TOML key (CLI absent → TOML value wins over default).

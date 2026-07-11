@@ -83,7 +83,7 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         if s.entropy_bpe_max_bytes_per_token_override.is_some() {
             "scan-override"
         } else {
-            "detector-local"
+            "scan-fallback"
         }
     ));
     out.push_str(&format!(
