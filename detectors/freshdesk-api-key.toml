@@ -17,3 +17,7 @@ group = 1
 
 # NOTE: live verification disabled. `{{subdomain}}` was undefined.
 # kimi-wave3 §1.
+
+[[detector.tests]]
+test_positive = "FRESHDESK_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+test_negative = "FRESHDESK_API_KEY=short"

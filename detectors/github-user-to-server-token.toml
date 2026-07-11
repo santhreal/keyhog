@@ -27,3 +27,7 @@ value = "keyhog-secret-scanner/{{version}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh"
+test_negative = "ghu_short"

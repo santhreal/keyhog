@@ -26,3 +26,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "hibp-api-key=1d8744f744361c8c3e27549b337d5863"
+test_negative = "hibp-api-key=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

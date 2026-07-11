@@ -18,3 +18,7 @@ group = 1
 [[detector.patterns]]
 regex = "(?:gk_|GK_)[a-zA-Z0-9_-]{32,}"
 description = "GitKraken token with gk_ prefix"
+
+[[detector.tests]]
+test_positive = "GITKRAKEN_API_TOKEN=kNs3EZ4wEbUKziWzK4NuOvNHax3qKZLS"
+test_negative = "GITKRAKEN_API_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

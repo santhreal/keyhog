@@ -22,3 +22,7 @@ description = "GitLab CI Job Token for Package Registry"
 regex = "(?:CI_JOB_TOKEN|CI_DEPLOY_TOKEN|GITLAB_DEPLOY_TOKEN)[=:\\s\"'']+(gldt-[a-zA-Z0-9_-]{20,}|glcbt-[a-zA-Z0-9_-]{20,})"
 description = "GitLab Package Registry token in environment variable"
 group = 1
+
+[[detector.tests]]
+test_positive = "gldt-L0z4c8YgKC47G6B4E8vwb7hrm8K030EO"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

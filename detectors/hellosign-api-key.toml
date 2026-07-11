@@ -14,3 +14,7 @@ keywords = ["HELLOSIGN_API_KEY", "HELLOSIGN_KEY", "hellosign_api_key", "HelloSig
 regex = "(?:HELLOSIGN|hellosign)[_\\s]?(?:API[_\\s]?KEY|KEY)[=:\\s\"'']+([a-f0-9]{64})"
 description = "HelloSign API key (64 hex characters)"
 group = 1
+
+[[detector.tests]]
+test_positive = "HELLOSIGN_API_KEY=81fc3a20ce0cad006fce26868e24bc50b88514eaa4dc7c5d9676e7c1b184e9a4"
+test_negative = "HELLOSIGN_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

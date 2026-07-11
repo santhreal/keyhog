@@ -14,3 +14,7 @@ keywords = ["ghost", "GHOST", "admin_api_key", "ghost_admin"]
 regex = '''(?:ghost|GHOST|admin[_-]?api[_-]?key|GHOST[_-]?ADMIN)[=:\s"\']+([a-f0-9]{24}:[a-f0-9]{64})'''
 description = "Ghost Admin API key in id:secret format"
 group = 1
+
+[[detector.tests]]
+test_positive = "ghost=7ad8f0e2b92e5ced64d451b1:4cd92e59a6c00bd1bae3cb0e5e60f5fc4caeb9820206cf156659251c39592cb5"
+test_negative = "ghost=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

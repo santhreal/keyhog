@@ -19,3 +19,7 @@ group = 1
 regex = "(?:api[_-]?key|X-Api-Key)[=:\\s\"'\\']+([a-zA-Z0-9]{32,40}).*(?:epa\\.gov|EPA)"
 description = "EPA API key in header or query with EPA context"
 group = 1
+
+[[detector.tests]]
+test_positive = "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+test_negative = "EPA_API_KEY=short"

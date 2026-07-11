@@ -29,3 +29,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "fpt_HjJD61TscR_QHUxJKpNEzF2eY6S1P6ObM-U__68h"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

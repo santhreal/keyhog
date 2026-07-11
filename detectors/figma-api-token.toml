@@ -22,3 +22,7 @@ description = "Figma personal access token (figd_ prefix, 20-48 chars)"
 regex = "(?:figma|FIGMA)[=:\\s\"'']{1,5}([a-zA-Z0-9_-]{30,48})"
 description = "Figma OAuth token or API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "figd_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn"
+test_negative = "figd_short"

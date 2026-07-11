@@ -14,3 +14,7 @@ keywords = ["EPIC_API_KEY", "EPIC_GAMES_API", "epic_games_api_key", "EG_CLIENT_I
 regex = '''(?:EPIC_API_KEY|EPIC_GAMES_API|epic_games_api_key|EG_CLIENT_ID)[=:\s"']+([a-f0-9]{32,64})'''
 description = "Epic Games API key (32-64 hex chars with context anchor)"
 group = 1
+
+[[detector.tests]]
+test_positive = "EPIC_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+test_negative = "EPIC_API_KEY=short"

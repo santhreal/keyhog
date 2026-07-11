@@ -14,3 +14,7 @@ keywords = ["GOTIFY", "gotify", "GOTIFY_TOKEN", "GOTIFY_APP_TOKEN"]
 regex = '(?:GOTIFY|gotify)[=:][\s"]*([A-Za-z0-9]{15,})'
 description = "Gotify application token with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "GOTIFY=HNGeqyx6CjQ29z3"
+test_negative = "GOTIFY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

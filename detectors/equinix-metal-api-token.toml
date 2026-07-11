@@ -26,3 +26,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "EQUINIX_API_TOKEN=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+test_negative = "equinix_token=short"

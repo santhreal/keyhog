@@ -19,3 +19,7 @@ group = 1
 regex = "(?:GOTO[_\\-\\s]?MEETING[_\\-\\s]?API[_\\-\\s]?KEY|G2M[_\\-\\s]?TOKEN|GOTO[_\\-\\s]?SECRET)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-]{32,})"
 description = "GoTo Meeting API credential in environment variable format"
 group = 1
+
+[[detector.tests]]
+test_positive = "GOTO_MEETING_API_KEY=\"JodFX1GOZrhrztAQpiN0k8s0Rc3VgTg9abcd\""
+test_negative = "GOTO_MEETING=short"

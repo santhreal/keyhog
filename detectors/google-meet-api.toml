@@ -19,3 +19,7 @@ group = 1
 regex = "(?:GOOGLE[_\\-\\s]?MEET[_\\-\\s]?API[_\\-\\s]?KEY|GMEET[_\\-\\s]?SECRET|MEET[_\\-\\s]?CREDENTIALS)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-]{32,})"
 description = "Google Meet API credential in environment variable format"
 group = 1
+
+[[detector.tests]]
+test_positive = "GOOGLE_MEET_API_KEY=\"JodFX1GOZrhrztAQpiN0k8s0Rc3VgTg9abcd\""
+test_negative = "GOOGLE_MEET=short"

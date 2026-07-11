@@ -19,3 +19,7 @@ group = 1
 regex = "(?:HEAP[_.-]?APP[_.-]?ID|heap[_.-]?app[_.-]?id)[=:\\s\"'']+(\\d{3,})"
 description = "Heap Analytics app ID with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "heap.load(73405814"
+test_negative = "heap.load(YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

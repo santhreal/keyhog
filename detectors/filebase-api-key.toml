@@ -19,3 +19,7 @@ group = 1
 name = "secret_access_key"
 regex = "(?:FILEBASE[_-]?SECRET(?:[_-]?KEY)?|secret[_-]?access[_-]?key|aws[_-]?secret[_-]?access[_-]?key)[=:\\s\"']+([A-Za-z0-9/+=]{40})"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "FILEBASE_ACCESS_KEY=K4Q7R2S5T8V3Y6Z9B1N2"
+test_negative = "FILEBASE_ACCESS_KEY=short"

@@ -31,3 +31,7 @@ password = "X"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "HELPSCOUT_API_KEY=f5b0cdd4581ec28b6767"
+test_negative = "HELPSCOUT_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

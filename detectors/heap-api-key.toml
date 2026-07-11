@@ -14,3 +14,7 @@ keywords = ["heap", "HEAP_APP_ID", "heap.load", "HEAP_ID"]
 regex = "(?:heap|HEAP)[_.]?(?:app[_.]?id|id|env|environment)[=:\\s\"']+(\\d{10,12})"
 description = "Heap environment/app ID (10-12 digits) with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "HEAP_APP_ID=4876475938"
+test_negative = "HEAP_APP_ID=short"

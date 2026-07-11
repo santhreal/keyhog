@@ -13,3 +13,7 @@ keywords = ["flipt_", "FLIPT_TOKEN"]
 [[detector.patterns]]
 regex = 'flipt_[a-f0-9]{40,}'
 description = "Flipt API authentication token"
+
+[[detector.tests]]
+test_positive = "flipt_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7"
+test_negative = "flipt_short"

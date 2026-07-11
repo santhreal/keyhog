@@ -24,3 +24,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "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"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

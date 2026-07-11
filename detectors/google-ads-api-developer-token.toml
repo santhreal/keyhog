@@ -14,3 +14,7 @@ keywords = ["developer_token", "DEVELOPER_TOKEN", "google_ads", "googleads"]
 regex = "(?:developer_token|DEVELOPER_TOKEN|google\\.ads\\.developerToken)[=:\\s\"'']+([a-zA-Z0-9]{22})"
 description = "Google Ads API developer token with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "developer_token=je2gdlQ8IG3e0QIQ2y4xsT"
+test_negative = "developer_token=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

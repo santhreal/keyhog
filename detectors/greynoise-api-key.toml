@@ -24,3 +24,7 @@ type = "none"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "GREYNOISE=_4XCZ6jfqICQrr43YH0c"
+test_negative = "GREYNOISE=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

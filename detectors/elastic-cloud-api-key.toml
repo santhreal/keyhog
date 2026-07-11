@@ -31,3 +31,7 @@ template = "ApiKey {{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "ELASTIC_CLOUD_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz:Kp4Qx7Rm2Sn5Tb8V"
+test_negative = "ELASTIC_CLOUD_API_KEY=short"

@@ -24,3 +24,7 @@ group = 1
 regex = "(?:data\\.europa|EDP)[_.-]?(?:API[_-]?TOKEN|token)[\\s\"''=:]+([a-zA-Z0-9_-]{30,})"
 description = "EU Open Data Portal API token"
 group = 1
+
+[[detector.tests]]
+test_positive = "party_token EU_CLIENT-ID=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+test_negative = "EU_CLIENT_ID=short"

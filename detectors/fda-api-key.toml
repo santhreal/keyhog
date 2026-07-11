@@ -19,3 +19,7 @@ group = 1
 regex = "open\\.fda\\.gov.*[?&]api_key=([a-zA-Z0-9]{40})"
 description = "FDA API key in URL query parameter"
 group = 1
+
+[[detector.tests]]
+test_positive = "FDA_API_KEY=P9Zu9Et3gR9l0wzCFBMXTtYj4rssu8aHN3ahXjJd"
+test_negative = "FDA_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

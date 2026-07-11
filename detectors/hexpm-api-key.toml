@@ -18,3 +18,7 @@ description = "Hex.pm API key with hexpm_ prefix (new format)"
 regex = "(?:HEX_API_KEY|HEXPM_API_KEY|hex_api_key)[=:\\s\"'']+(hexpm_[A-Za-z0-9+/]{40,}={0,2}|[a-f0-9]{64})"
 description = "Hex.pm API key in environment/config context"
 group = 1
+
+[[detector.tests]]
+test_positive = "hexpm_QzweGR+iCsrFqlpYB40b/3ctNZZ9kdTqkx2OJ0nFLx="
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -29,3 +29,7 @@ status = 200
 [[detector.verify.headers]]
 name = "Authorization"
 value = "Basic {{match}}"
+
+[[detector.tests]]
+test_positive = "FULLSTORY_API_KEY=na1.ylPfzLN_HDUWbwrKqwThoQUtlcBtscgCtYvQG04QvayuUORdk1v1QdsZZWUOoHw5jFS52CijRBH1MSO6dcQ9NmJQG2ae4hn"
+test_negative = "FULLSTORY_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

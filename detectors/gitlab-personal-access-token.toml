@@ -34,3 +34,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "username"
 json_path = "username"
+
+[[detector.tests]]
+test_positive = "glpat-aB3kQp7VbT2hYRzNcMfW"
+test_negative = "glpat-short"

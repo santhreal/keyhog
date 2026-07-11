@@ -14,3 +14,7 @@ keywords = ["graph", "deploy", "DEPLOY_KEY", "thegraph"]
 regex = "(?:GRAPH_DEPLOY_KEY|deploy.?key)[=:\\s\"'']+([a-f0-9]{32})"
 description = "The Graph deploy key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "GRAPH deploy_key=37cb496acf2f25e15b2485167eab3182"
+test_negative = "GRAPH_DEPLOY_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

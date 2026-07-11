@@ -19,3 +19,7 @@ group = 1
 regex = "(?:hanko\\.io|hanko\\.cloud).*[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
 description = "Hanko API key with URL context"
 group = 1
+
+[[detector.tests]]
+test_positive = "HANKO_API_KEY=QXjK-nCvdgB1eKnjRTfl"
+test_negative = "HANKO_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

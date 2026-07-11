@@ -14,3 +14,7 @@ keywords = ["GOCARDLESS_ACCESS_TOKEN", "gocardless_token", "access_token"]
 regex = "(?:GOCARDLESS|gocardless)[._-]?(?:ACCESS|access)?[._-]?(?:TOKEN|token)[=:\\s\"'']+([a-zA-Z0-9_-]{30,60})"
 description = "GoCardless access token for API authentication"
 group = 1
+
+[[detector.tests]]
+test_positive = "GOCARDLESS_ACCESS_TOKEN=YBg4mNl8_wKuNd9dve0UagftXjR4RTS4pLin0z"
+test_negative = "GOCARDLESS_ACCESS_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

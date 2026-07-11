@@ -18,3 +18,7 @@ group = 1
 [[detector.patterns]]
 regex = "https://[a-z0-9-]*\\.headspin\\.io[^\\s\"'']*"
 description = "HeadSpin API endpoint URL"
+
+[[detector.tests]]
+test_positive = "HEADSPIN_API_TOKEN=31c67e127d98564a16c172d54be4e7f8"
+test_negative = "HEADSPIN_API_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

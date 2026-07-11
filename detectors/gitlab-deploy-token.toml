@@ -18,3 +18,7 @@ description = "GitLab deploy token (gldt- prefix)"
 name = "username"
 regex = "(?:GITLAB[_-]?DEPLOY[_-]?TOKEN[_-]?USER|username|user)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "gldt-WEB2chP8PWNtgxZLf3EXHXmiDke0c1FH"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

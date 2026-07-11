@@ -29,3 +29,7 @@ group = 1
 name = "env0_api_secret"
 regex = "(?:ENV0_API_SECRET|env0_api_secret)[=:\\s\"'']+([a-zA-Z0-9]{40,})"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "ENV0_API_KEY=a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+test_negative = "ENV0_API_KEY=short"

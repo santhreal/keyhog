@@ -13,3 +13,7 @@ keywords = ["figd_", "figma"]
 [[detector.patterns]]
 regex = 'figd_[a-zA-Z0-9-_]{20,50}'
 description = "Figma personal access token (figd_ prefix)"
+
+[[detector.tests]]
+test_positive = "figd_9X3kQp7VbT2hYRzNcMfW"
+test_negative = "figd_short"

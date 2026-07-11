@@ -19,3 +19,7 @@ group = 1
 regex = "(?:Authorization)[=:\\s\"'']+(?:Bearer\\s+)?([a-zA-Z0-9]{40,})"
 description = "Potential Gentrace Bearer token"
 group = 1
+
+[[detector.tests]]
+test_positive = "GENTRACE_API_KEY=gZsBR3cpTBBZqmJqeUvRZDGSzZDL95OkEUPtSwRW"
+test_negative = "GENTRACE_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -13,3 +13,7 @@ keywords = ["glptt-", "gitlab"]
 [[detector.patterns]]
 regex = 'glptt-[a-zA-Z0-9\-]{20,}'
 description = "GitLab pipeline trigger token (glptt- prefix)"
+
+[[detector.tests]]
+test_positive = "glptt-Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+test_negative = "glptt-short"

@@ -31,3 +31,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "HOLOGRAM_API_KEY=0hJbPI18aekE205Bq4osIbrsNwBPn5EaLtbbmfpG"
+test_negative = "HOLOGRAM_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
