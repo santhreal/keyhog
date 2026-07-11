@@ -6,12 +6,16 @@ authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+
 repository = "https://github.com/santhsecurity/keyhog"
 homepage = "https://github.com/santhsecurity/keyhog"
 documentation = "https://docs.rs/keyhog-sources"
 keywords.workspace = true
 categories.workspace = true
 readme = "README.md"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 
 [package.metadata.santh]
 status = "alpha"
