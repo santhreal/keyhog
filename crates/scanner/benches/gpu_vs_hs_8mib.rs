@@ -1,10 +1,12 @@
 //! Apples-to-apples 8 MiB baseline: Hyperscan/SimdCpu vs GPU region presence.
 //!
-//! Same `CompiledScanner` (real detector catalog), same single 8 MiB chunk,
-//! same `scan_chunks_with_backend` batch entry. `SimdCpu` runs the Hyperscan
-//! literal prefilter phase-1; `Gpu` routes the batch through Vyre
-//! `GpuLiteralSet::scan_presence_by_region_with_scratch`. Both share
-//! `scan_coalesced_phase2`, so the delta is phase-1 backend only.
+//! Same `CompiledScanner` (real detector catalog), same 8 × 1 MiB batch,
+//! same `scan_chunks_with_backend` entry. The chunk layout matches the scanner's
+//! production maximum and lets the Hyperscan path use its real Rayon parallelism
+//! instead of handicapping it behind one oversized sequential chunk. `SimdCpu`
+//! runs the Hyperscan literal prefilter; `Gpu` routes the batch through Vyre
+//! `GpuLiteralSet::scan_presence_by_region_with_scratch`. Timing includes each
+//! backend's production batching, scheduling, phase 2, and post-processing.
 //!
 //! Pass `-- --perf-trace` to get the region-presence phase breakdown
 //! (matcher / coalesce / dispatch / floor / phase2_gpu / phase2) and Vyre
@@ -13,7 +15,7 @@
 //! This is a plain `main()` (harness = false) so the numbers are raw wall-time
 //! medians, not criterion's adaptive sampling — every number is one timed call.
 
-use keyhog_core::{load_detectors, Chunk, ChunkMetadata};
+use keyhog_core::{load_detectors, Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{
     set_perf_trace_enabled, set_profile_enabled, CompiledScanner, ScanBackend, ScannerTuningConfig,
 };
@@ -28,12 +30,12 @@ fn detectors_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors")
 }
 
-fn make_chunk(data: String, path: &str) -> Chunk {
+fn make_chunk(data: String, path: &str, base_offset: usize, base_line: usize) -> Chunk {
     Chunk {
         data: data.into(),
         metadata: ChunkMetadata {
-            base_offset: 0,
-            base_line: 0,
+            base_offset,
+            base_line,
             source_type: "benchmark".into(),
             path: Some(path.into()),
             commit: None,
@@ -44,6 +46,29 @@ fn make_chunk(data: String, path: &str) -> Chunk {
             ..Default::default()
         },
     }
+}
+
+fn make_chunks(data: String, chunk_bytes: usize) -> Vec<Chunk> {
+    let mut chunks = Vec::with_capacity(data.len().div_ceil(chunk_bytes));
+    let mut offset = 0usize;
+    let mut base_line = 0usize;
+    while offset < data.len() {
+        let end = (offset + chunk_bytes).min(data.len());
+        let chunk = &data[offset..end];
+        chunks.push(make_chunk(
+            chunk.to_owned(),
+            "src/bench_8mib.rs",
+            offset,
+            base_line,
+        ));
+        base_line += chunk
+            .as_bytes()
+            .iter()
+            .filter(|&&byte| byte == b'\n')
+            .count();
+        offset = end;
+    }
+    chunks
 }
 
 /// Realistic source-like text with a sparse real hit every ~64 KiB, so phase-2
@@ -72,6 +97,12 @@ fn median(mut v: Vec<Duration>) -> Duration {
     v[v.len() / 2]
 }
 
+fn canonicalize_results(results: &mut [Vec<RawMatch>]) {
+    for matches in results {
+        matches.sort();
+    }
+}
+
 fn time_backend(
     label: &str,
     scanner: &CompiledScanner,
@@ -79,25 +110,48 @@ fn time_backend(
     backend: ScanBackend,
     iters: usize,
     profile: bool,
-) -> (Duration, usize) {
+) -> (Duration, Vec<Vec<RawMatch>>) {
     // Warm: first GPU call pays the one-time catalog upload + pipeline compile;
     // first SimdCpu call warms caches. Exclude it from the steady-state median.
-    let warm = scanner.scan_chunks_with_backend(chunks, backend);
-    let hits: usize = warm.iter().map(Vec::len).sum();
+    scanner.clear_fragment_cache();
+    let mut warm = scanner.scan_chunks_with_backend(chunks, backend);
+    canonicalize_results(&mut warm);
     if profile {
         scanner.reset_profile_reports();
     }
     let mut samples = Vec::with_capacity(iters);
     for _ in 0..iters {
+        // The fragment cache is scan-operation state used for cross-file
+        // reassembly. Reusing it across logical benchmark scans changes results
+        // and does not model a fresh production scan over this workload.
+        scanner.clear_fragment_cache();
         let t = Instant::now();
-        let r = scanner.scan_chunks_with_backend(chunks, backend);
+        let mut r = scanner.scan_chunks_with_backend(chunks, backend);
         samples.push(t.elapsed());
+        canonicalize_results(&mut r);
+        if r != warm {
+            let chunk_index = r
+                .iter()
+                .zip(&warm)
+                .position(|(actual, expected)| actual != expected)
+                .unwrap_or_else(|| r.len().min(warm.len()));
+            let actual = r.get(chunk_index);
+            let expected = warm.get(chunk_index);
+            panic!(
+                "{label} produced nondeterministic full finding results across timed calls: \
+                 first differing chunk={chunk_index}, actual={actual:?}, expected={expected:?}"
+            );
+        }
         std::hint::black_box(&r);
     }
     if profile {
         scanner.dump_profile_reports(label);
     }
-    (median(samples), hits)
+    (median(samples), warm)
+}
+
+fn hit_count(results: &[Vec<RawMatch>]) -> usize {
+    results.iter().map(Vec::len).sum()
 }
 
 fn report(label: &str, d: Duration, bytes: usize, hits: usize) {
@@ -175,13 +229,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scanner = CompiledScanner::compile(detectors)?.with_tuning_config(tuning);
 
     let payload = gen_payload(size);
-    let chunk = make_chunk(payload, "src/bench_8mib.rs");
-    let chunks = vec![chunk];
+    let chunks = make_chunks(payload, MIB);
+
+    assert!(
+        scanner.warm_backend(ScanBackend::SimdCpu),
+        "Hyperscan/SimdCpu is unavailable; refusing to benchmark a CPU fallback"
+    );
+    #[cfg(feature = "gpu")]
+    assert!(
+        scanner.warm_backend(ScanBackend::Gpu),
+        "GPU region-presence backend is unavailable; refusing to benchmark a CPU fallback"
+    );
 
     println!("=== keyhog 8 MiB matching baseline (GPU region presence vs Hyperscan/SimdCpu) ===");
     println!(
-        "input={} MiB  detectors={}  iters={}  (median of {} steady-state calls, 1 warm-up excluded)",
+        "input={} MiB  chunks={}  detectors={}  iters={}  (median of {} steady-state calls, 1 warm-up excluded)",
         size / MIB,
+        chunks.len(),
         n_det,
         iters,
         iters
@@ -195,7 +259,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // SimdCpu / Hyperscan phase-1 path.
-    let (hs, hs_hits) = time_backend(
+    let (hs, hs_results) = time_backend(
         "bench-simd-hyperscan",
         &scanner,
         &chunks,
@@ -203,19 +267,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         iters,
         profile,
     );
+    let hs_hits = hit_count(&hs_results);
     report("SimdCpu (Hyperscan)", hs, size, hs_hits);
 
     // GPU region-presence path. --perf-trace prints the internal phase
     // breakdown plus Vyre dispatch telemetry.
     #[cfg(feature = "gpu")]
     {
-        // Surface the live GPU backend label so a silent degrade is visible.
-        if let Some(lbl) = scanner.runtime_status().gpu_backend {
-            println!("(gpu backend: {lbl})");
-        } else {
-            println!("(gpu backend: NONE acquired — Gpu path will degrade loudly)");
-        }
-        let (gpu, gpu_hits) = time_backend(
+        let degrade_before = scanner.gpu_degrade_count();
+        let (gpu, gpu_results) = time_backend(
             "bench-gpu-region",
             &scanner,
             &chunks,
@@ -223,14 +283,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             iters,
             profile,
         );
+        let gpu_hits = hit_count(&gpu_results);
         report("Gpu (region presence)", gpu, size, gpu_hits);
         let status = scanner.runtime_status();
-        if status.gpu_degrade_count > 0 {
-            println!(
-                "!! GPU degraded during scan; count={}",
-                status.gpu_degrade_count
-            );
-        }
+        assert_eq!(
+            status.gpu_degrade_count, degrade_before,
+            "GPU degraded during the measured run; refusing to report fallback timing as GPU"
+        );
         let ratio = gpu.as_secs_f64() / hs.as_secs_f64();
         println!(
             "\nGPU / Hyperscan wall ratio = {ratio:.2}x  ({})",
@@ -240,9 +299,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "GPU faster"
             }
         );
-        assert_eq!(
-            gpu_hits, hs_hits,
-            "recall parity broken: GPU={gpu_hits} hits, Hyperscan={hs_hits} hits on the same 8 MiB input"
+        assert!(
+            gpu_results == hs_results,
+            "exact parity broken: GPU and Hyperscan returned different full RawMatch results on the same 8 MiB input (GPU hits={gpu_hits}, Hyperscan hits={hs_hits})"
         );
     }
     #[cfg(not(feature = "gpu"))]
