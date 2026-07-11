@@ -60,6 +60,10 @@ fn random_lowercase_passwords_under_keyword_are_surfaced() {
         ("password = \"ufnlbbavawsdeecn\"", "ufnlbbavawsdeecn"),
         ("self.password = \"rwwjfwpbqxzkdv\"", "rwwjfwpbqxzkdv"),
         ("SES_PASS=dzdvnffvqp", "dzdvnffvqp"),
+        (
+            "passphrase = \"CorrectHorseBatteryStaple!9\"",
+            "CorrectHorseBatteryStaple!9",
+        ),
     ] {
         assert!(
             caught(&s, line, val),
@@ -91,4 +95,18 @@ fn dictionary_identifiers_under_keyword_stay_suppressed() {
              it is a code reference, not a secret; line {line:?}"
         );
     }
+}
+
+#[test]
+fn detector_owned_bpe_policy_distinguishes_passphrases_from_opaque_api_keys() {
+    let s = scanner();
+    let value = "CorrectHorseBatteryStaple!9";
+    assert!(
+        caught(&s, &format!("passphrase = \"{value}\""), value),
+        "the passphrase detector disables BPE because word-like passwords are legitimate"
+    );
+    assert!(
+        !caught(&s, &format!("api_key = \"{value}\""), value),
+        "the opaque API-key detector keeps BPE enabled and must reject the same language-compressible value"
+    );
 }

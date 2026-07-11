@@ -104,6 +104,12 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             )));
         }
     }
+    if spec.bpe_enabled == Some(false) && spec.bpe_max_bytes_per_token.is_some() {
+        issues.push(QualityIssue::Error(
+            "bpe_enabled = false conflicts with bpe_max_bytes_per_token; remove the ceiling when token efficiency is disabled"
+                .into(),
+        ));
+    }
     for (name, value) in [
         ("entropy_high", spec.entropy_high),
         ("entropy_low", spec.entropy_low),

@@ -25,7 +25,7 @@ mechanisms, and their roles are deliberately different:
 | Decode-through transforms | Scans supported encoded or transformed representations while preserving source attribution | Yes |
 | Generic assignment bridge | Extracts values beside credential-role keys when no vendor shape exists | Yes |
 | Shannon entropy | Measures byte-distribution uncertainty for opaque generic values | Yes, on the entropy fallback path |
-| BPE token efficiency | Rejects language-like values that compress into common subword tokens | No; precision gate |
+| BPE token efficiency | Rejects language-like values that compress into common subword tokens when the owning detector enables it | No; precision gate |
 | Shape, placeholder, path, and context policy | Rejects examples, references, prose, identifiers, and context-specific noise | No; precision gates |
 | Checksums and structural validators | Proves or rejects formats that carry intrinsic validity bits or grammar | Adjusts acceptance/confidence |
 | On-device MoE scoring | Scores ambiguous candidates using local features; never sends content away | Adjusts confidence |
@@ -132,8 +132,9 @@ Detectors fall into two camps:
   secrets usually require many short tokens. The mechanisms are complementary,
   and generic detector TOMLs may own their token-efficiency ceiling through
   `bpe_max_bytes_per_token`. Opaque API-key/secret policies use the measured
-  2.2 ceiling; password/passphrase policies disable this rejection because
-  human-chosen credentials may intentionally be word-like.
+  2.2 ceiling; password/passphrase policies set `bpe_enabled = false` because
+  human-chosen credentials may intentionally be word-like. Disabled policies
+  skip tokenizer work entirely rather than using a magic oversized ceiling.
 
 The split matters for the post-process stage.
 

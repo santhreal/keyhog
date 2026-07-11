@@ -94,6 +94,14 @@ pub(crate) fn max_bytes_per_token_for_detector(
     })
 }
 
+/// Whether one detector opts into token-efficiency suppression. Absence keeps
+/// the compatible enabled default. An explicit `false` skips tokenizer work
+/// entirely instead of relying on a magic oversized ceiling.
+#[inline]
+pub(crate) fn enabled_for_detector(detector: Option<&keyhog_core::DetectorSpec>) -> bool {
+    detector.and_then(|spec| spec.bpe_enabled).unwrap_or(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,6 +274,19 @@ mod tests {
     }
 
     #[test]
+    fn detector_can_disable_token_efficiency_without_a_magic_ceiling() {
+        let disabled = keyhog_core::DetectorSpec {
+            bpe_enabled: Some(false),
+            ..Default::default()
+        };
+        assert!(!enabled_for_detector(Some(&disabled)));
+        assert!(enabled_for_detector(None));
+        assert!(enabled_for_detector(Some(
+            &keyhog_core::DetectorSpec::default()
+        )));
+    }
+
+    #[test]
     fn shipped_opaque_and_password_policies_make_different_bpe_decisions() {
         let word_like = "correcthorsebatterystaple";
         let api_key = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_API_KEY)
@@ -273,15 +294,15 @@ mod tests {
         let password = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_PASSWORD)
             .expect("generic-password detector exists");
         let api_bound = max_bytes_per_token_for_detector(Some(api_key), 2.2, None);
-        let password_bound = max_bytes_per_token_for_detector(Some(password), 2.2, None);
 
+        assert!(enabled_for_detector(Some(api_key)));
         assert!(
             is_word_like_low_bpe(word_like, api_bound),
             "opaque API-key policy should reject a language-compressible value"
         );
         assert!(
-            !is_word_like_low_bpe(word_like, password_bound),
-            "password policy must keep a human-chosen word-like passphrase for downstream evidence"
+            !enabled_for_detector(Some(password)),
+            "password policy must skip BPE so human-chosen passphrases reach downstream evidence"
         );
     }
 

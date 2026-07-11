@@ -132,6 +132,11 @@ The available per-detector tuning fields are:
 *   **`entropy_floor`** (array of tables, optional): Length-bucketed low-entropy suppression floor mapping maximum lengths to minimum entropy scores. Falls back to `EntropyFloorTable::DEFAULT_FLOOR` if unset.
 
 ### BPE token efficiency
+*   **`bpe_enabled`** (bool, optional): Detector-local token-efficiency switch.
+    Omission inherits the enabled default. Set `false` for families such as
+    human-chosen passwords where word-like values are legitimate; the scanner
+    then skips BPE tokenization for that detector. Do not combine `false` with a
+    `bpe_max_bytes_per_token` ceiling; detector validation rejects the conflict.
 *   **`bpe_max_bytes_per_token`** (float, optional): Per-detector
     `cl100k_base` UTF-8-bytes-per-token ceiling. Values above the ceiling are
     efficiently tokenized, word-like candidates and are suppressed after the
@@ -169,6 +174,11 @@ keyhog detectors                  # human-readable list, grouped by service
 keyhog detectors --format json           # one JSON object per detector
 keyhog detectors --format json | jq length
 ```
+
+Structured listings include a `policy` object for every detector. It carries
+the loaded detector-local kind, entropy/BPE/length thresholds, stopwords,
+allowlists, classifications, and credential shape; absent optional fields are
+`null`, not silently filled with an undocumented value.
 
 Filter by service:
 

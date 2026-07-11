@@ -141,6 +141,13 @@ pub struct DetectorSpec {
     /// makes this detector TOML the policy owner.
     #[serde(default)]
     pub bpe_max_bytes_per_token: Option<f64>,
+    /// Whether the BPE token-efficiency precision gate applies to this
+    /// detector. `None` inherits the enabled default; `Some(false)` disables
+    /// tokenization for detector families such as human-chosen passwords where
+    /// word-like values are legitimate. A disabled detector must not also set a
+    /// BPE ceiling.
+    #[serde(default)]
+    pub bpe_enabled: Option<bool>,
     /// Per-detector minimum length for an anchor-free (keyword-free/isolated)
     /// candidate. `None` → the single-owner default `KEYWORD_FREE_MIN_LEN`.
     #[serde(default)]

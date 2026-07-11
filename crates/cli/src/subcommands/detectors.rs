@@ -149,8 +149,9 @@ fn run_list(args: DetectorArgs) -> Result<()> {
 }
 
 /// Programmatic detector discovery: emits a JSON array on stdout in
-/// schema-stable form. Same field shape as `print_detector_verbose`
-/// so the human and machine views stay in sync.
+/// schema-stable form. The `policy` object exposes detector-local admission
+/// knobs so automation never has to reconstruct them from scanner defaults or
+/// a Rust-side detector-id table.
 fn print_detectors_json(detectors: &[&DetectorSpec]) -> Result<()> {
     use serde_json::{json, Value};
     let items: Vec<Value> = detectors
@@ -188,6 +189,26 @@ fn print_detectors_json(detectors: &[&DetectorSpec]) -> Result<()> {
                 "patterns": patterns,
                 "companions": companions,
                 "verify": d.verify.is_some(),
+                "policy": {
+                    "kind": d.kind,
+                    "min_confidence": d.min_confidence,
+                    "entropy_floor": d.entropy_floor,
+                    "entropy_high": d.entropy_high,
+                    "entropy_low": d.entropy_low,
+                    "entropy_very_high": d.entropy_very_high,
+                    "mixed_alnum_floor": d.mixed_alnum_floor,
+                    "bpe_enabled": d.bpe_enabled,
+                    "bpe_max_bytes_per_token": d.bpe_max_bytes_per_token,
+                    "keyword_free_min_len": d.keyword_free_min_len,
+                    "min_len": d.min_len,
+                    "allowlist_paths": d.allowlist_paths,
+                    "allowlist_values": d.allowlist_values,
+                    "stopwords": d.stopwords,
+                    "structural_password_slot": d.structural_password_slot,
+                    "weak_anchor": d.weak_anchor,
+                    "private_key_block": d.private_key_block,
+                    "credential_shape": d.credential_shape,
+                },
             })
         })
         .collect();

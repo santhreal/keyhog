@@ -98,6 +98,9 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             if let Some(v) = d.bpe_max_bytes_per_token {
                 entries.push(format!("bpe:{}:{:016x}", d.id, v.to_bits()));
             }
+            if let Some(v) = d.bpe_enabled {
+                entries.push(format!("bpe-enabled:{}:{v}", d.id));
+            }
             if let Some(v) = d.keyword_free_min_len {
                 entries.push(format!("kfml:{}:{}", d.id, v));
             }

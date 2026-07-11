@@ -440,7 +440,9 @@ impl CompiledScanner {
                 // `entropy` (the tokenizer rides that feature); when off, generic
                 // FP simply aren't BPE-filtered.
                 #[cfg(feature = "entropy")]
-                if shape_rejected.is_none() {
+                if shape_rejected.is_none()
+                    && crate::entropy::bpe::enabled_for_detector(owning_detector)
+                {
                     let bpe_bound = crate::entropy::bpe::max_bytes_per_token_for_detector(
                         owning_detector,
                         self.config.entropy_bpe_max_bytes_per_token,

@@ -510,6 +510,34 @@ fn dir_with_invalid_detector_bpe_bound_is_gate_rejected() {
 }
 
 #[test]
+fn disabled_detector_bpe_rejects_a_conflicting_ceiling() {
+    let body = VALID_DETECTOR_TOML.replace(
+        "keywords = [\"demo_\"]",
+        "keywords = [\"demo_\"]\nbpe_enabled = false\nbpe_max_bytes_per_token = 2.4",
+    );
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_toml(dir.path(), "conflicting-bpe.toml", &body);
+    let err = load_detectors(dir.path())
+        .expect_err("disabled BPE plus a detector ceiling must fail closed");
+    match &err {
+        SpecError::DetectorCorpusRejected { detail, .. } => assert!(
+            detail.contains("bpe_enabled = false") && detail.contains("bpe_max_bytes_per_token"),
+            "rejection must name both conflicting fields; got: {detail}"
+        ),
+        other => panic!("expected DetectorCorpusRejected, got {other:?}"),
+    }
+
+    let valid = VALID_DETECTOR_TOML.replace(
+        "keywords = [\"demo_\"]",
+        "keywords = [\"demo_\"]\nbpe_enabled = false",
+    );
+    let valid_dir = tempfile::tempdir().expect("tempdir");
+    write_toml(valid_dir.path(), "disabled-bpe.toml", &valid);
+    let specs = load_detectors(valid_dir.path()).expect("disabled BPE without a ceiling must load");
+    assert_eq!(specs[0].bpe_enabled, Some(false));
+}
+
+#[test]
 fn dir_with_invalid_detector_local_policy_is_gate_rejected() {
     let cases = [
         ("entropy_high = nan", "entropy_high"),

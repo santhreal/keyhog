@@ -266,6 +266,7 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
         d.bpe_max_bytes_per_token,
         " UTF-8 bytes/token"
     );
+    optional_policy!("bpe_enabled", d.bpe_enabled, "");
     optional_policy!("keyword_free_min_len", d.keyword_free_min_len, " bytes");
     optional_policy!("min_len", d.min_len, " bytes");
 
@@ -324,8 +325,8 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
         );
     } else {
         println!(
-            "    {}source: detectors/{}.toml{}",
-            style.dim, d.id, style.reset
+            "    {}policy owner: [detector] in the loaded detector TOML{}",
+            style.dim, style.reset
         );
     }
 }

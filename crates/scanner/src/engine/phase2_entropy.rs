@@ -163,11 +163,13 @@ impl CompiledScanner {
                 .generic_owning_detector
                 .index_for_id(policy_detector_id)
                 .map(|index| &self.detectors[index]);
-            let bpe_bound = crate::entropy::bpe::max_bytes_per_token_for_detector(
-                policy_detector,
-                self.config.entropy_bpe_max_bytes_per_token,
-                self.config.entropy_bpe_max_bytes_per_token_override,
-            );
+            let bpe_bound = crate::entropy::bpe::enabled_for_detector(policy_detector).then(|| {
+                crate::entropy::bpe::max_bytes_per_token_for_detector(
+                    policy_detector,
+                    self.config.entropy_bpe_max_bytes_per_token,
+                    self.config.entropy_bpe_max_bytes_per_token_override,
+                )
+            });
             let policy_conf = crate::confidence::policy::entropy_fallback_confidence(
                 entropy_match.entropy,
                 &entropy_match.keyword,

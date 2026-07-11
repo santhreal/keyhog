@@ -471,6 +471,7 @@ knob_changes_digest!(spec_hash_binds_mixed_alnum_floor, |d| d.mixed_alnum_floor 
 knob_changes_digest!(spec_hash_binds_bpe_max_bytes_per_token, |d| d
     .bpe_max_bytes_per_token =
     Some(2.4));
+knob_changes_digest!(spec_hash_binds_bpe_enabled, |d| d.bpe_enabled = Some(false));
 knob_changes_digest!(spec_hash_binds_keyword_free_min_len, |d| d
     .keyword_free_min_len =
     Some(32));

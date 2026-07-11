@@ -19,10 +19,10 @@ pub(crate) fn entropy_match_suppression_stage(
     // gates; all other precision gates stay live.
     allow_canonical_lift: bool,
     source_entropy_requires_same_line_credential: bool,
-    // Per-scan BPE "rare-not-random" bound (`ScanConfig::entropy_bpe_max_bytes_per_token`,
-    // Tier-A). Threaded in so the config value — not a compiled const — is the
-    // single runtime authority for the word-like suppression boundary.
-    bpe_max_bytes_per_token: f64,
+    // Resolved BPE "rare-not-random" bound. `None` means the owning detector
+    // explicitly disabled token efficiency; `Some` carries detector policy
+    // with any Tier-A scan ceiling override already applied.
+    bpe_max_bytes_per_token: Option<f64>,
 ) -> Option<EntropyShapeStage> {
     let randomness =
         crate::suppression::token_randomness::TokenRandomness::for_candidate(&entropy_match.value);
@@ -382,11 +382,13 @@ pub(crate) fn entropy_match_suppression_stage(
     // candidates that survived every cheaper shape gate above. Word-like values
     // (dotted API paths like `PInvoke.User32.WM_*`, prose, XML) compress into a
     // handful of common cl100k_base subword tokens; real secrets tokenize into
-    // many short pieces. Unconditional (a word-like token is never a secret, even
-    // under a credential anchor or the canonical lift): validated as a large
-    // CredData precision win (F1 0.368→0.424) for a small recall cost. See
-    // `crate::entropy::bpe`.
-    if crate::entropy::bpe::is_word_like_low_bpe(&entropy_match.value, bpe_max_bytes_per_token) {
+    // many short pieces. Opaque-token detectors enable this as a final gate;
+    // human-password detectors explicitly disable it because word-like values
+    // are legitimate there. Validated as a large CredData precision win (F1
+    // 0.368→0.424) for a small recall cost. See `crate::entropy::bpe`.
+    if bpe_max_bytes_per_token
+        .is_some_and(|bound| crate::entropy::bpe::is_word_like_low_bpe(&entropy_match.value, bound))
+    {
         return Some(EntropyShapeStage::WordLikeLowBpe);
     }
     None

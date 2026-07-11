@@ -1,20 +1,21 @@
-//! R5-T adversarial non-scan: detectors --json emits JSON array.
+//! R5-T adversarial non-scan: canonical detector JSON exposes the live corpus
+//! and detector-owned policy.
 
 use crate::support::binary;
 use std::process::Command;
 
 #[test]
-fn r5t_detectors_json_flag_emits_array() {
+fn r5t_detectors_format_json_emits_corpus_and_policy() {
     let output = Command::new(binary())
-        .args(["detectors", "--json"])
+        .args(["detectors", "--format", "json"])
         .output()
         .expect("spawn");
     assert_eq!(output.status.code(), Some(0));
     let parsed: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("detectors --json");
+        serde_json::from_slice(&output.stdout).expect("detectors --format json");
     let arr = parsed
         .as_array()
-        .expect("detectors --json must be a JSON array");
+        .expect("detectors --format json must be a JSON array");
 
     // Truth, not shape: the array length must equal the live embedded detector
     // count the binary itself reports — the two surfaces (`--json` array and
@@ -29,8 +30,8 @@ fn r5t_detectors_json_flag_emits_array() {
         arr.len()
     );
 
-    // Each element must carry the documented object shape (args.rs `--json`
-    // contract: id/name/service/severity/keywords/patterns/companions/verify).
+    // Each element carries identity, patterns, verification, and its
+    // detector-local policy.
     let first = &arr[0];
     for field in [
         "id",
@@ -41,6 +42,7 @@ fn r5t_detectors_json_flag_emits_array() {
         "patterns",
         "companions",
         "verify",
+        "policy",
     ] {
         assert!(
             first.get(field).is_some(),
@@ -54,5 +56,18 @@ fn r5t_detectors_json_flag_emits_array() {
     assert!(
         first["verify"].is_boolean(),
         "`detectors --json` element `verify` must be a boolean per the documented shape: {first}"
+    );
+
+    let password = arr
+        .iter()
+        .find(|detector| detector["id"] == "generic-password")
+        .expect("generic-password policy in detector listing");
+    assert_eq!(
+        password["policy"]["bpe_enabled"], false,
+        "generic-password must expose detector-owned BPE disablement"
+    );
+    assert!(
+        password["policy"]["bpe_max_bytes_per_token"].is_null(),
+        "disabled BPE policy must not retain a magic ceiling: {password}"
     );
 }
