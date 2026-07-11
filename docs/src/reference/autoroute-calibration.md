@@ -74,8 +74,21 @@ calibration, even when they do not change which backend is fastest:
 - Flags hashed into the scan config (for example `--threads` or
   `--min-confidence`) fork the decision; `keyhog calibrate-autoroute` sweeps the
   documented presets so the common combinations are covered.
+- Candidate-shape knobs (`--min-secret-len`, `--entropy-threshold`, decode depth,
+  entropy/ML/keyword floors) fork the decision, because they change what reaches
+  scan-phase output and can therefore change backend crossover.
+- Pipeline knobs (`--threads`, `--reader-threads`, `--fused-batch`,
+  `--fused-depth`) and `[tuning]` settings fork the decision because they change
+  work partitioning and backend warm-up behavior.
+- Source policy (`--limit-*`, `--max-file-size`, `--no-default-excludes`) and detector
+  floors fork the decision for real `stdin`/directory buckets that feed different cache/chunk
+  geometry.
 - Workload **shape** matters: a single file, a directory, and a piped `stdin`
   stream are distinct buckets, and `stdin` is content-sensitive.
+
+`keyhog config --effective` prints the exact resolved settings that are hashed into
+this identity; pair it with `keyhog backend --autoroute --json` to verify that a single
+setting change in `ScanConfig` produced a new `config_digest` row.
 
 Every lookup is exact at the complete workload-key level. A neighbouring size
 bucket—even one with the same CPU winner—is not evidence that the same backend
@@ -90,7 +103,7 @@ The error names the missing workload bucket. Resolve it by either:
   --calibrate` / `install.ps1 -Calibrate`) so the bucket gets a measured
   decision, or
 - Passing an explicit backend for a one-off diagnostic scan:
-  `keyhog scan --backend simd` (or `gpu`, `cpu`). An explicit `--backend`
+  `keyhog scan --backend simd` (or `gpu`, `cpu`, …). An explicit `--backend`
   bypasses autoroute entirely; it is a diagnostic/benchmark override and does
   not prove autoroute correctness.
 

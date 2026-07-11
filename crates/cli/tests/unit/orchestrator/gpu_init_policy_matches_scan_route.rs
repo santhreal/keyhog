@@ -28,7 +28,7 @@ fn explicit_simd_backend_skips_gpu_compile() {
 #[test]
 fn explicit_gpu_backend_forces_gpu_compile() {
     with_route_policy_lock(|| {
-        let args = scan_args(&["scan", "--backend", "gpu", "--path", "."]);
+        let args = scan_args(&["scan", "--backend", "megascan", "--path", "."]);
         assert_eq!(
             API.gpu_init_policy_for_args_for_test(&args),
             GpuInitPolicy::ForceEnabled
@@ -219,10 +219,33 @@ fn autoroute_config_digest_includes_source_limits() {
     });
 }
 
+#[test]
+fn autoroute_config_digest_includes_min_secret_len() {
+    let mut default_len = scan_args(&["scan", "--no-config", "--stdin"]);
+    let default_digest = API
+        .autoroute_config_digest_for_args(&mut default_len)
+        .expect("resolved default config digest");
+
+    let mut longer_secret_len =
+        scan_args(&["scan", "--no-config", "--stdin", "--min-secret-len", "48"]);
+    let longer_digest = API
+        .autoroute_config_digest_for_args(&mut longer_secret_len)
+        .expect("resolved min_secret_len digest");
+
+    assert_ne!(
+        default_digest,
+        longer_digest,
+        "autoroute cache identity must include min_secret_len because it changes entropy fallback candidate admission"
+    );
+}
+
 /// Coherence gate: every value the `--backend` flag ADVERTISES (clap
 /// `PossibleValuesParser`) must be RECOGNIZED by the canonical
 /// `parse_backend_str`, which both the gpu-init policy and the actual scan
-/// routing delegate to. This pins them together so a future
+/// routing delegate to. The two lists had drifted: clap accepted `megascan`
+/// (no hyphen) but the parser dropped it to `None`, so `--backend megascan`
+/// silently fell through to auto-routing — the gpu-init policy and the routing
+/// disagreed about the same flag. This pins them together so a future
 /// advertised value that nobody teaches the parser fails CI instead of
 /// silently no-op'ing.
 #[test]
@@ -249,7 +272,12 @@ fn every_advertised_backend_value_is_recognized_by_the_canonical_parser() {
         advertised, expected,
         "Clap --backend values must come from the scanner-owned backend override contract"
     );
-    for canonical_label in ["auto", "gpu", "simd", "cpu"] {
+    for canonical_label in [
+        "gpu-region-presence",
+        "gpu-mega-scan",
+        "simd-regex",
+        "cpu-fallback",
+    ] {
         assert!(
             advertised.iter().any(|value| value == canonical_label),
             "canonical backend label `{canonical_label}` must be accepted at the CLI boundary"

@@ -73,6 +73,7 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         s.generic_keyword_low_entropy
     ));
     out.push_str(&format!("entropy_threshold = {}\n", s.entropy_threshold));
+    out.push_str(&format!("min_secret_len = {}\n", s.min_secret_len));
     out.push_str(&format!(
         "entropy_bpe_max_bytes_per_token = {}\n",
         s.entropy_bpe_max_bytes_per_token
@@ -346,6 +347,7 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
         s.generic_keyword_low_entropy,
     );
     h.field_f64_bits("scanner.entropy_threshold", s.entropy_threshold);
+    h.field_usize("scanner.min_secret_len", s.min_secret_len);
     h.field_f64_bits(
         "scanner.entropy_bpe_max_bytes_per_token",
         s.entropy_bpe_max_bytes_per_token,

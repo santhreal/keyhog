@@ -196,6 +196,7 @@ fn config_effective_emits_all_core_default_keys() {
         "secret_keywords",
         "test_keywords",
         "placeholder_keywords",
+        "min_secret_len",
     ];
     for key in required_keys {
         let needle = format!("\n{key} = ");
@@ -289,6 +290,27 @@ fn config_effective_threads_override_reaches_output() {
     assert!(
         stdout.contains("\nthreads = 3\n"),
         "the --threads 3 override must reach the resolved threads; got:\n{stdout}"
+    );
+}
+
+#[test]
+fn config_effective_min_secret_len_override_reaches_output() {
+    let (code, stdout, stderr) = run(&[
+        "config",
+        "--effective",
+        "--no-config",
+        "--no-daemon",
+        "--min-secret-len",
+        "24",
+    ]);
+    assert_eq!(
+        code,
+        Some(0),
+        "config --effective must exit 0; stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("\nmin_secret_len = 24\n"),
+        "the --min-secret-len 24 override must reach the resolved dump; got:\n{stdout}"
     );
 }
 
