@@ -485,12 +485,7 @@ impl CompiledScanner {
         mut self,
         config: ScannerConfig,
     ) -> std::result::Result<Self, keyhog_core::ConfigError> {
-        config.scan.validate()?;
-        if let Some(bound) = config.entropy_bpe_max_bytes_per_token_override {
-            if !bound.is_finite() || bound <= 0.0 {
-                return Err(keyhog_core::ConfigError::InvalidBpeBound(bound));
-            }
-        }
+        config.validate()?;
         profile::set_profile_enabled(config.profile);
         profile::set_perf_trace_enabled(config.perf_trace);
         self.config = config;

@@ -279,6 +279,17 @@ impl ScannerConfig {
     /// trades recall for a near-zero false-positive rate at mass-scan scale.
     pub const HIGH_PRECISION_MIN_CONFIDENCE: f64 = 0.85;
 
+    /// Validate shared and scanner-local detection policy without mutating it.
+    pub fn validate(&self) -> Result<(), keyhog_core::ConfigError> {
+        self.scan.validate()?;
+        if let Some(bound) = self.entropy_bpe_max_bytes_per_token_override {
+            if !bound.is_finite() || bound <= 0.0 {
+                return Err(keyhog_core::ConfigError::InvalidBpeBound(bound));
+            }
+        }
+        Ok(())
+    }
+
     pub fn fast() -> Self {
         let mut config = Self::default();
         config.max_decode_depth = 0;
@@ -439,8 +450,8 @@ impl ScannerConfig {
         bound: f64,
     ) -> Result<Self, keyhog_core::ConfigError> {
         self.scan.entropy_bpe_max_bytes_per_token = bound;
-        self.scan.validate()?;
         self.entropy_bpe_max_bytes_per_token_override = Some(bound);
+        self.validate()?;
         Ok(self)
     }
 }
