@@ -70,9 +70,9 @@ contract:
 
 | Layer / Backend | When | How |
 |---|---|---|
-| `simdsieve` prefilter | AVX-512 / AVX2 / NEON | Layer 1: skims every file for the 8 highest-value secret prefixes (AWS `AKIA`/`ASIA`, GitHub `ghp_`, OpenAI `sk-proj-`, Slack `xoxb-`/`xoxp-`, SendGrid `SG.`, Square `sq0csp-`) in a single SIMD pass, before the regex backend runs |
+| `simdsieve` prefilter | AVX-512 / AVX2 / NEON | Layer 1: skims every file for 12 high-value literal prefixes in one SIMD pass: AWS `AKIA`/`ASIA`, GitHub `ghp_`, OpenAI `sk-proj-`, Slack `xoxb-`/`xoxp-`, SendGrid `SG.`, Square `sq0csp-`, and Stripe `sk_live_`/`sk_test_`/`rk_live_`/`rk_test_` |
 | `gpu-region-presence` | discrete GPU + persisted calibration proof | vyre literal-set region-presence pass on GPU via WGPU (cross-platform) or optional CUDA backend, followed by the shared CPU validation tail |
-| `simd-regex` | AVX-512 / AVX2 / NEON; Hyperscan when compiled | parallel trigger scan plus full-regex extraction; portable builds keep the same backend label without linking Hyperscan |
+| `simd-regex` | Hyperscan compiled and live | parallel Hyperscan trigger scan plus full-regex extraction; portable builds do not expose this backend and report `cpu-fallback` instead |
 | `cpu-fallback` | no SIMD, no GPU | Aho-Corasick prefix + Rust `regex` extraction |
 
 ### Autoroute Contract
