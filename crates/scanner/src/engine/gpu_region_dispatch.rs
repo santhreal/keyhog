@@ -442,14 +442,6 @@ impl CompiledScanner {
                     full_recall_floor,
                 );
             }
-            // Diagnostic: dump the phase-2 leaf breakdown (confirmed / phase2:prefilter /
-            // Generic / Entropy / Ml …) so the localizable-vs-whole-chunk cost split
-            // is visible — the data Part B (localized phase 2) is designed against.
-            // Gated through the single profiler owner, so dispatch does not grow
-            // a second environment-control path.
-            if super::profile::enabled() {
-                super::profile::dump("gpu-region-presence-phase2");
-            }
             results
         }
     }
