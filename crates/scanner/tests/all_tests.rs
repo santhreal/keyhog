@@ -107,6 +107,8 @@ pub mod regression_keyword_predicate_union;
 pub mod regression_kubeconfig_k8s_recall;
 #[path = "regression_messaging_vendor_token_recall.rs"]
 pub mod regression_messaging_vendor_token_recall;
+#[path = "regression_multiline_concat_markers.rs"]
+pub mod regression_multiline_concat_markers;
 #[path = "regression_observability_ci_token_recall.rs"]
 pub mod regression_observability_ci_token_recall;
 #[path = "regression_observability_token_recall.rs"]

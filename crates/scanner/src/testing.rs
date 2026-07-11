@@ -442,6 +442,18 @@ pub fn entropy_unique_byte_count_for_test(bytes: &[u8]) -> usize {
     crate::entropy::unique_byte_count(bytes)
 }
 
+/// Function-style concatenation marker used by multiline admission.
+#[cfg(feature = "multiline")]
+pub fn multiline_has_function_concat_marker_for_test(value: &str) -> bool {
+    crate::multiline::has_function_concat_marker(value)
+}
+
+/// Full multiline concatenation-indicator admission predicate.
+#[cfg(feature = "multiline")]
+pub fn multiline_has_concatenation_indicators_for_test(value: &str) -> bool {
+    crate::multiline::has_concatenation_indicators(value)
+}
+
 /// The fast probabilistic noise gate (`probabilistic_gate`) — rejects obvious
 /// high-entropy non-secrets (UUIDs, low-diversity pads) before heavy ML scoring.
 /// Lets a gap test pin its exact promising/not-promising decisions, in

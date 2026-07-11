@@ -246,7 +246,7 @@ impl Default for MultilineConfig {
 /// the per-line extractor in `string_extract`, so the marker set can never drift
 /// across the three call sites.
 #[cfg(feature = "multiline")]
-pub(super) fn has_function_concat_marker(s: &str) -> bool {
+pub(crate) fn has_function_concat_marker(s: &str) -> bool {
     s.contains("paste0(") || s.contains("paste(") || s.contains("concat!(")
 }
 
@@ -467,35 +467,4 @@ pub(crate) fn should_passthrough(text: &str) -> bool {
             .lines()
             .any(|line| line.len() > MAX_MULTILINE_LINE_BYTES)
         || !has_concatenation_indicators(text)
-}
-
-#[cfg(all(test, feature = "multiline"))]
-mod tests {
-    use super::{has_concatenation_indicators, has_function_concat_marker};
-
-    #[test]
-    fn function_concat_marker_matches_all_three_forms_only() {
-        // Every form the single-owner marker set must recognize.
-        assert!(has_function_concat_marker("x = paste0(\"a\", \"b\")"));
-        assert!(has_function_concat_marker("x <- paste(\"a\", \"b\")"));
-        assert!(has_function_concat_marker("let x = concat!(\"a\", \"b\");"));
-        // Near-misses that must NOT trip it: a different macro, and an
-        // identifier that merely embeds "paste" without the call paren.
-        assert!(!has_function_concat_marker("let x = format!(\"a\")"));
-        assert!(!has_function_concat_marker("let pastexyz = 3"));
-        assert!(!has_function_concat_marker("let x = 3.14"));
-    }
-
-    #[test]
-    fn has_indicators_uses_function_concat_marker_at_both_scans() {
-        // paste0 line: whole-text scan and per-line scan both route through the
-        // shared marker and flag it as a concatenation indicator.
-        assert!(has_concatenation_indicators(
-            "token = paste0(\"gh\", \"p_deadbeefdeadbeef\")"
-        ));
-        // JSON-shaped body is rejected up front regardless of markers.
-        assert!(!has_concatenation_indicators("{\"a\": \"b\"}"));
-        // Plain assignment with no concat shape is not an indicator.
-        assert!(!has_concatenation_indicators("token = \"static_value\""));
-    }
 }

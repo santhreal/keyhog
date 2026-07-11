@@ -12,7 +12,7 @@ mod string_extract;
 mod structural;
 
 #[cfg(feature = "multiline")]
-pub(crate) use config::has_concatenation_indicators;
+pub(crate) use config::{has_concatenation_indicators, has_function_concat_marker};
 pub use config::MultilineConfig;
 #[cfg(feature = "multiline")]
 pub(crate) use config::{LineMapping, PreprocessedText};
