@@ -31,3 +31,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "LATTICE_API_KEY=FoqEOhu9N6j7B1gltUOv"
+test_negative = "LATTICE_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

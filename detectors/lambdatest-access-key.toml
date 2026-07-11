@@ -27,3 +27,7 @@ group = 1
 name = "lambdatest-username"
 regex = "(?:LT_USERNAME|username)[=:\\s\"']+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}|[a-zA-Z0-9_-]+)"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "LT_ACCESS_KEY=6dJgVjy73OISJi6bZbRlyM7MKBgOejYcf3oSjGnK"
+test_negative = "LT_ACCESS_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

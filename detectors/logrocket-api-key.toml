@@ -19,3 +19,7 @@ group = 1
 regex = "logrocket[\\s\\w]*upload[^\\n]{0,100}[=:\\s\"'']([a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+)"
 description = "LogRocket CLI upload command with API key"
 group = 1
+
+[[detector.tests]]
+test_positive = "LOGROCKET_API_KEY=XTgWG3ko9u_47Xtuf6XF4bdjMdsEGaG3bqFIpzl0kYmlBk-s5-Jhtml7WjUqI4C_av3g7x8-CM7gXgALSqNPXe06VT_:wQSo-54VIvNBiRC3vqN3AY3EJbZ9LD0odjTcHgQ5134_v3Kza6g4xs6nTS9hsLzL_aAnQ58ISu71FaiIZ:tQW7kunT"
+test_negative = "LOGROCKET_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

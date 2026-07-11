@@ -14,3 +14,7 @@ keywords = ["KEYCDN", "keycdn", "KEYCDN_API_KEY", "keycdn_api_key"]
 regex = "(?:KEYCDN|keycdn)(?:_API)?[_-]?(?:KEY|key)[=:\\s\"']+([a-f0-9]{40})"
 description = "KeyCDN API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "KEYCDN_API_KEY=98a6d7ef4d61aa77f78b7f2ceec670e21f05783f"
+test_negative = "KEYCDN_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

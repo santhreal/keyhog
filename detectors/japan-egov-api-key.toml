@@ -24,3 +24,7 @@ group = 1
 regex = "appId[\\s\"''=:]+([a-zA-Z0-9]{20,40}).{0,30}(?:e-stat|stat\\.go\\.jp)"
 description = "Japan e-Stat appId with trailing context"
 group = 1
+
+[[detector.tests]]
+test_positive = "e-Statapi_key=8K2IWCe8Ib6RIp7hlOzI"
+test_negative = "e-Statapi_key=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -19,3 +19,7 @@ group = 1
 regex = "(?:long[_-]?lived[_-]?access[_-]?token|LONG[_-]?LIVED[_-]?ACCESS[_-]?TOKEN)[=:\\s\"'']+([a-zA-Z0-9_\\-]{40,})"
 description = "Home Assistant long-lived access token by name"
 group = 1
+
+[[detector.tests]]
+test_positive = "HOME_ASSISTANT_API_TOKEN=TZZU1V1fRiBnY5xwsDZXovveco9_68C1kCDSkKv4"
+test_negative = "HOME_ASSISTANT_API_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

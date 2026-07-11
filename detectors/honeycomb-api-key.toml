@@ -13,3 +13,7 @@ keywords = ["hcai_", "honeycomb", "x-honeycomb-team"]
 [[detector.patterns]]
 regex = 'hcai_[a-zA-Z0-9]{22}'
 description = "Honeycomb Ingest API Key (hcai_ prefix)"
+
+[[detector.tests]]
+test_positive = "hcai_AbCdEfGhIjKlMnOpQrStUv"
+test_negative = "hcai_short"

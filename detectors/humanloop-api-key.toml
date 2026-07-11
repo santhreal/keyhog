@@ -14,3 +14,7 @@ keywords = ["HUMANLOOP_API_KEY", "Humanloop", "humanloop"]
 regex = "(?:HUMANLOOP_API_KEY|humanloop.api.key)[=:\\s\"'']+([a-f0-9]{32})"
 description = "Humanloop API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "HUMANLOOP_API_KEY=24ed7c1290d4ed5e45bd69c30994238c"
+test_negative = "HUMANLOOP_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

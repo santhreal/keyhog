@@ -31,3 +31,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "MEDUSA_API_KEY=kjxEBj2xZsZQ7L7gLbFmaoEWoFnUU0WUHceGVW0y"
+test_negative = "MEDUSA_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

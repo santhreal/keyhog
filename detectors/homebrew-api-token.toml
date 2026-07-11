@@ -14,3 +14,7 @@ keywords = ["HOMEBREW_GITHUB_API_TOKEN", "HOMEBREW_GITHUB_PACKAGES_TOKEN"]
 regex = "(?:HOMEBREW_GITHUB_API_TOKEN|HOMEBREW_GITHUB_PACKAGES_TOKEN)[=:\\s\"'']+(ghp_[a-zA-Z0-9]{36}|[a-f0-9]{40})"
 description = "Homebrew GitHub API token environment variable"
 group = 1
+
+[[detector.tests]]
+test_positive = "HOMEBREW_GITHUB_API_TOKEN=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"
+test_negative = "HOMEBREW_GITHUB_API_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

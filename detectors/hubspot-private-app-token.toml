@@ -13,3 +13,7 @@ keywords = ["pat-"]
 [[detector.patterns]]
 regex = 'pat-(na1|eu1|na2)-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
 description = "HubSpot private app access token"
+
+[[detector.tests]]
+test_positive = "pat-na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+test_negative = "pat-=short"

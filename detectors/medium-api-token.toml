@@ -14,3 +14,7 @@ keywords = ["medium", "MEDIUM", "integration_token", "MEDIUM_INTEGRATION_TOKEN"]
 regex = '''(?:medium|MEDIUM|integration[_-]?token|MEDIUM[_-]?INTEGRATION[_-]?TOKEN)[=:\s"\']+([a-f0-9]{32})'''
 description = "Medium integration token with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "medium=b6559e279ed5ab9ef6f25fed4628f8e6"
+test_negative = "medium=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

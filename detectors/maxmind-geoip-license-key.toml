@@ -19,3 +19,7 @@ group = 1
 regex = "(?:MAXMIND|maxmind)_ACCOUNT_ID[=:\\s\"'']+([0-9]{5,})"
 description = "MaxMind account ID with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "MAXMIND=avH2zSZWSvN8xcCT"
+test_negative = "MAXMIND=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

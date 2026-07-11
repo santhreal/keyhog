@@ -14,3 +14,7 @@ keywords = ["magento", "integration", "MAGE", "MAGENTO", "access_token"]
 regex = "(?:magento|integration|MAGE|MAGENTO)[_=:\\s\"']+(?:token|access_token)?[=:\\s\"']*([a-f0-9]{32})"
 description = "Magento integration/admin access token with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "magento=e32420577b893886ed061724f6c4474e"
+test_negative = "magento=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

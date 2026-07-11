@@ -14,3 +14,7 @@ keywords = ["loggly", "LOGGLY_TOKEN", "loggly_token", "customer_token", "loggly.
 regex = "(?:loggly|LOGGLY_TOKEN|loggly_token|customer_token)[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
 description = "Loggly customer token (UUID format) with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "loggly=c2dc9879-849a-2cf5-83e5-1ad58caad492"
+test_negative = "loggly=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

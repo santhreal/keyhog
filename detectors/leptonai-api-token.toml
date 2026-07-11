@@ -19,3 +19,7 @@ group = 1
 regex = "(?:lepton\\.(?:ai|run).{0,120}\\btoken|\\btoken.{0,120}lepton\\.(?:ai|run)|LEPTON(?:AI)?[_-]?(?:API[_-]?)?TOKEN)[=:\\s\"\\']+([a-zA-Z0-9_-]{20,})"
 description = "Lepton token with Lepton-specific domain or variable context"
 group = 1
+
+[[detector.tests]]
+test_positive = "LEPTONAI_API_KEY=7wh1PSp4KeB8aF3mmkib"
+test_negative = "LEPTONAI_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

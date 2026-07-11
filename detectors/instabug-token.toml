@@ -19,3 +19,7 @@ group = 1
 regex = "Instabug\\.Builder\\([^,]+,\\s*[\"'']([a-zA-Z0-9_-]{20,})[\"'']"
 description = "Instabug Android builder with app token"
 group = 1
+
+[[detector.tests]]
+test_positive = "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1VU34hlJRd_QIzCvD\""
+test_negative = "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'YOUR_API_KEY_HERE_PLACEHOLDER_VALUE\""

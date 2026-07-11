@@ -19,3 +19,7 @@ group = 1
 regex = "(?:LAST[_\\\\s-]?FM|last[_\\\\s-]?fm)[\\\\s_-]?(?:SHARED|shared)?[\\\\s_-]?(?:SECRET|secret)[=:\\s\"'']+([a-f0-9]{32})"
 description = "Last.fm shared secret with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "LASTFM=e7a40edf8635d0cdb47ea9f156d972bc"
+test_negative = "LASTFM=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -29,3 +29,7 @@ group = 1
 name = "IBM Watson Service URL"
 regex = "(?:WATSON|IBM_TRANSLATOR|language-translator)[_\\s]?(?:URL|SERVICE_URL)[=:\\s\"'']+(https://api\\.[a-z-]+\\.language-translator\\.watson\\.cloud\\.ibm\\.com)"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "IBM_WATSON=9L9h4aeLVfr2jH1xPSxwKcksZMTREx"
+test_negative = "IBM_WATSON=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -19,3 +19,7 @@ group = 1
 regex = "(?:infinite[_\\s-]*campus|icampus)[_\\s.-]*(?:client[_\\s.-]*id)[=:\\s\"'']+([a-zA-Z0-9]{20,40})"
 description = "Infinite Campus client ID with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "icampustoken=ANZcW4wlbGyKxSYTt7tRd9mTWo12cjlV"
+test_negative = "icampustoken=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -13,3 +13,7 @@ keywords = ["sdk-"]
 [[detector.patterns]]
 regex = "sdk-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
 description = "LaunchDarkly SDK key (sdk- prefix with UUID)"
+
+[[detector.tests]]
+test_positive = "sdk-1c162122-82ea-de71-015d-081b713d154f"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

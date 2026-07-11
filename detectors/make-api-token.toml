@@ -26,3 +26,7 @@ template = "Token {{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "MAKE_API_KEY=14609521-cd2f-544c-595f-3590c5bafa3e"
+test_negative = "MAKE_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

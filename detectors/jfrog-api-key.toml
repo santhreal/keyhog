@@ -16,3 +16,7 @@ description = "JFrog/Artifactory API key (AKCp8)"
 
 # NOTE: live verification disabled. `{instance}` was single-brace and
 # never resolved. kimi-wave3 §1.
+
+[[detector.tests]]
+test_positive = "AKCp8RQwP3EiFJyJ7RheUfKWvbbor0VgYr8Sr"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

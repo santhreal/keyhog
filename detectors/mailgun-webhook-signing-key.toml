@@ -23,3 +23,7 @@ group = 1
 regex = "(?:MAILGUN|mailgun)[._-]?(?:API|api)[._-]?(?:KEY|key)[=:\\s\"'']+(key-[a-f0-9]{32})"
 description = "Mailgun API key (companion for webhook verification)"
 group = 1
+
+[[detector.tests]]
+test_positive = "MAILGUNWEBHOOKSIGNING=7Mx3bxEAyReNbK3gqOQNcp7nWrfTFS6n"
+test_negative = "MAILGUNWEBHOOKSIGNING=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -14,3 +14,7 @@ keywords = ["mastodon", "MASTODON", "access_token", "access token"]
 regex = '''(?:mastodon|MASTODON|access[_-]?token)[=:\s"\']+([a-f0-9]{64})'''
 description = "Mastodon OAuth access token with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "mastodon=ed60ba139c8585a100f4e152ccbb8e98725b17fbddb5169c6d27e2bc86085f9f"
+test_negative = "mastodon=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

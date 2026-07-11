@@ -14,3 +14,7 @@ keywords = ["maltego", "MALTEGO_API_KEY", "transform_hub"]
 regex = "(?:maltego|MALTEGO)[\\s_-]*(?:api[_-]?key|key)[=:\\s\"'']+([a-zA-Z0-9_-]{16,64})"
 description = "Maltego API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "maltegokey=QaoH6LgKMjTTuEuU"
+test_negative = "maltegokey=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

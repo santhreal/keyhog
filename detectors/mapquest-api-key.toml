@@ -26,3 +26,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "MAPQUEST_API_KEY=dVwxYfM2hWRAGmgpCyRcAZUJGrlt7uU4"
+test_negative = "MAPQUEST_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

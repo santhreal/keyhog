@@ -14,3 +14,7 @@ keywords = ["LOGZIO_TOKEN", "logzio_token", "logz.io", "LOGZIO_SHIPPING_TOKEN", 
 regex = "(?:LOGZIO_TOKEN|logzio_token|LOGZIO_SHIPPING_TOKEN)[=:\\s\"']+([a-f0-9]{32})"
 description = "Logz.io log shipping token (32 hex chars) with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "LOGZIO_TOKEN=f2fa077663b2c802ba773043ea4c1058"
+test_negative = "LOGZIO_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

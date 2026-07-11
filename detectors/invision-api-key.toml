@@ -19,3 +19,7 @@ group = 1
 regex = "(?:INVISION|invision)[_=:\\s\"'']+(?:access[_-]?)?token[=:\\s\"'']+([a-zA-Z0-9]{90,100})"
 description = "InVision OAuth access token"
 group = 1
+
+[[detector.tests]]
+test_positive = "IPS4 api_key=2963950e3ed2e3dc49d5740982bac6a9"
+test_negative = "IPS4_API_KEY=short"

@@ -43,3 +43,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "data"
 json_path = "$.data"
+
+[[detector.tests]]
+test_positive = "pk_a4XfZQFqVQ39GLNmbBMF2LMaiwZjZoEb"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

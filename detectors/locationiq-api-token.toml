@@ -25,3 +25,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "LOCATIONIQ_API_KEY=pk.b02a70db24b788f217af47231d91e27e96c388b92f008b39c24addc0706"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

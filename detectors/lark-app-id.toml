@@ -18,3 +18,7 @@ description = "Lark/Feishu App ID (cli_ prefix)"
 name = "lark_app_secret"
 regex = "[a-zA-Z0-9]{32}"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "lark app_id cli_a1b2c3d4e5f67890"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -14,3 +14,7 @@ keywords = ["intelowl", "INTELOWL_API_KEY", "intel_owl"]
 regex = "(?:intelowl|INTELOWL|intel[_-]?owl)[\\s_-]*(?:api[_-]?key|key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,64})"
 description = "IntelOwl API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "intelowlkey=3hjArTco0NPvH-0aKSYr"
+test_negative = "intelowlkey=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

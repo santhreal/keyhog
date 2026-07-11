@@ -19,3 +19,7 @@ group = 1
 name = "secret_access_key"
 regex = "(?:LINODE[_-]?SECRET(?:[_-]?KEY)?|linode[_-]?object[_-]?storage[_-]?secret|secret[_-]?access[_-]?key|aws[_-]?secret[_-]?access[_-]?key)[=:\\s\"']+([A-Za-z0-9/+=]{40})"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "LINODE_OBJECT_STORAGE_ACCESS_KEY=KPQXRMSNTBVWYZK4Q7M2\nLINODE_OBJECT_STORAGE_SECRET_KEY=Vk9Bn3Lp7Qm2Rs5Tw8/+Vk9Bn3Lp7Qm2Rs5Tw8=A"
+test_negative = "linode_access_key=keyTooShort"

@@ -18,3 +18,7 @@ group = 1
 [[detector.patterns]]
 regex = "glc_[A-Za-z0-9+/=]{100,}"
 description = "InfluxDB Cloud token (glc_ prefix)"
+
+[[detector.tests]]
+test_positive = "INFLUXDB_TOKEN=6IsytRMjujrSGkTlWFg5t8XrmiF2EN-XFnmhw_1tO_pJCBwBwJ"
+test_negative = "INFLUXDB_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

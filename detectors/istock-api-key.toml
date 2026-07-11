@@ -19,3 +19,7 @@ group = 1
 regex = '(?:ISTOCK|istock)[._-]?(?:CLIENT|client)[._-]?(?:ID|id)[=:\s""]+([a-zA-Z0-9_-]{32,})'
 description = "iStock Client ID with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "ISTOCK_API_KEY=xqaL6boKvK9T28agUy-2UKclZ___ijuK"
+test_negative = "ISTOCK_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

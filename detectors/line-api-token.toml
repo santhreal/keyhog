@@ -19,3 +19,7 @@ group = 1
 regex = "(?:line|LINE)[_\\-\\s]*(?:channel[_\\-\\s]*secret|CHANNEL[_\\-\\s]*SECRET)[=: \\s\"'']+([a-f0-9]{32})"
 description = "LINE channel secret with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "LINE CHANNEL_ACCESS_TOKEN=\"/ZM9TBrKrmGsNmjQ8mT3OA94HhblZa+QFPiyCEs5lkO/nMLpQAK4lXOELxyxeH8ilqtekYJEB1J5+TkPo/QyFcIoCVvQ2hmsCfjd==\""
+test_negative = "CHANNEL_ACCESS_TOKEN=short"

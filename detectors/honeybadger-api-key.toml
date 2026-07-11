@@ -38,3 +38,7 @@ password = ""
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "HONEYBADGER_API_KEY=eb9bba259a9ddafe89e911d116ebdf68"
+test_negative = "api_key=eb9bba259a9ddafe89e911d116ebdf68"

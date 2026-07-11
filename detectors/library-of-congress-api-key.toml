@@ -19,3 +19,7 @@ group = 1
 regex = "(?:loc\\.gov|congress\\.gov).*[?&]api_key=([a-zA-Z0-9_-]{20,50})"
 description = "Library of Congress API key in URL query parameter"
 group = 1
+
+[[detector.tests]]
+test_positive = "LIBRARY_OF_CONGRESS_API_KEY=7SV8BoWRCkMYwW_50l67mLp7zeC1"
+test_negative = "LIBRARY_OF_CONGRESS_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

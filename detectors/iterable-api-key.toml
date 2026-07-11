@@ -36,3 +36,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "ITERABLE=425d50e126cedeee2e523de4e609df80"
+test_negative = "ITERABLE=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

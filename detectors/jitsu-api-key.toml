@@ -31,3 +31,7 @@ template = "Token {{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "JITSU_API_KEY=x9sOFf4U7wNLtG1T"
+test_negative = "JITSU_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -19,3 +19,7 @@ group = 1
 name = "hotjar-client-secret"
 regex = "(?:HOTJAR[_.-]?CLIENT|hotjar[_.-]?client)[_.-]?(?:SECRET|secret)[=:\\s\"'']+[a-zA-Z0-9_-]{20,}"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "HOTJAR_CLIENT_ID=zsJWFf-VUjCAnz7_l4YP"
+test_negative = "HOTJAR_CLIENT_ID=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

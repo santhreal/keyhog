@@ -36,3 +36,7 @@ json_path = "$.email"
 [[detector.verify.metadata]]
 name = "organization"
 json_path = "$.orgs[0].name"
+
+[[detector.tests]]
+test_positive = "hf_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb"
+test_negative = "hf_short"

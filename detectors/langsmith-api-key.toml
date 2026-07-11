@@ -13,3 +13,7 @@ keywords = ["lsv2_", "LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"]
 [[detector.patterns]]
 regex = 'lsv2_[a-zA-Z0-9_-]{40,}'
 description = "LangSmith API key (lsv2_ prefix)"
+
+[[detector.tests]]
+test_positive = "lsv2_2N3dA6wXmQZ_VE_a5BVw1MJiCSD_9g3UNuU331_CHUDbpwbCvIcW6Xr2MkH0iMzzAI0icqZYux-IOHF7uuMj6WIktqXwNq"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

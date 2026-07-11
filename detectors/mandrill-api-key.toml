@@ -14,3 +14,7 @@ keywords = ["MANDRILL_API_KEY", "mandrill_api_key", "mandrill", "MANDRILL_KEY"]
 regex = "(?:MANDRILL|mandrill)[_\\s]*(?:API|api)?[_\\s]*(?:KEY|key)?[=:\\s\"']+([a-zA-Z0-9]{22})"
 description = "Mandrill API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "MANDRILL=SzsANQcSgpqa5WgOrklNRy"
+test_negative = "MANDRILL=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

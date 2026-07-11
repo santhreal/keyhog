@@ -19,3 +19,7 @@ group = 1
 regex = "(?:HUBSPOT|hubspot)[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
 description = "HubSpot OAuth token or app ID in UUID format"
 group = 1
+
+[[detector.tests]]
+test_positive = "hubspot_api_key = ::\"':==41620948a172aa650b54e7969c9cdece-eu7"
+test_negative = "hubspot_api_key = ::\"':==YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
