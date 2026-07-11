@@ -141,6 +141,18 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 ))]
 pub(crate) const REDIRECT_LIMIT: usize = 5;
 
+/// Return a normalized media type without Content-Type parameters.
+///
+/// This always-available HTTP helper is shared by web and cloud classifiers,
+/// so enabling web does not create an undeclared dependency on a cloud feature.
+#[cfg(any(feature = "web", feature = "azure", feature = "s3", feature = "gcs"))]
+pub(crate) fn media_type(content_type: &str) -> &str {
+    content_type
+        .split_once(';')
+        .map_or(content_type, |(media_type, _)| media_type)
+        .trim()
+}
+
 pub(crate) fn user_agent(suffix: Option<&str>) -> String {
     let base = concat!("keyhog/", env!("CARGO_PKG_VERSION"));
     match suffix {

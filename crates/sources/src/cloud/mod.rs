@@ -557,20 +557,8 @@ fn cloud_key_extension(key: &str) -> Option<&str> {
     Some(ext)
 }
 
-/// Extract the bare media type from a `Content-Type` header value: the text
-/// before the first `;` (dropping any `charset=`/`boundary=` parameters), with
-/// surrounding whitespace trimmed. Single owner so every content-type
-/// classifier (cloud binary/unknown checks here, the web-response router in
-/// `crate::web`) splits the header the same way.
-pub(crate) fn media_type(content_type: &str) -> &str {
-    content_type
-        .split_once(';')
-        .map_or(content_type, |(media_type, _)| media_type)
-        .trim()
-}
-
 pub(crate) fn is_binary_content_type(content_type: &str) -> bool {
-    let media_type = media_type(content_type);
+    let media_type = crate::http::media_type(content_type);
     starts_with_ignore_ascii_case(media_type, "image/")
         || starts_with_ignore_ascii_case(media_type, "audio/")
         || starts_with_ignore_ascii_case(media_type, "video/")
@@ -579,7 +567,7 @@ pub(crate) fn is_binary_content_type(content_type: &str) -> bool {
 }
 
 fn is_unknown_binary_content_type(content_type: &str) -> bool {
-    media_type(content_type).eq_ignore_ascii_case("application/octet-stream")
+    crate::http::media_type(content_type).eq_ignore_ascii_case("application/octet-stream")
 }
 
 fn starts_with_ignore_ascii_case(value: &str, prefix: &str) -> bool {
@@ -632,7 +620,8 @@ pub(crate) fn record_source_truncated_once(
 
 #[cfg(test)]
 mod media_type_tests {
-    use super::{is_binary_content_type, media_type};
+    use super::is_binary_content_type;
+    use crate::http::media_type;
 
     #[test]
     fn strips_parameters_and_trims() {

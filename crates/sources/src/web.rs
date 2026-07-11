@@ -313,7 +313,7 @@ fn web_response_kind_from_content_type(
             return None;
         }
     };
-    let media_type = crate::cloud::media_type(raw);
+    let media_type = crate::http::media_type(raw);
     if media_type.eq_ignore_ascii_case("application/wasm") {
         Some(WebResponseKind::Wasm)
     } else if media_type.eq_ignore_ascii_case("application/source-map") {

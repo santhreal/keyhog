@@ -11,7 +11,10 @@ pub(crate) struct CappedReadPrefix {
     pub(crate) error: Option<io::Error>,
 }
 
-const MAX_PREALLOCATED_READ_BYTES: u64 = 64 * 1024;
+/// Upper bound on initial allocation for capped reads and their source-side
+/// capacity hints. Keeping this 64 KiB ceiling visible within the crate lets
+/// cloud, hosted-git, and web readers share the same resource-exhaustion bound.
+pub(crate) const MAX_PREALLOCATED_READ_BYTES: u64 = 64 * 1024;
 
 pub(crate) fn read_to_cap(
     reader: impl Read,
