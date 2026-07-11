@@ -4,8 +4,8 @@ service = "flipside"
 severity = "high"
 
 [[positive]]
-text = "flipside_api_key=7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d"
-credential = "7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d"
+text = "flipside_api_key=7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d2"
+credential = "7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d2"
 reason = "Standard env-var assignment with UUID-format credential."
 
 [[positive]]
@@ -17,9 +17,13 @@ reason = "Bare keyword prefix with equals separator."
 text = "flipside=short"
 reason = "Body too short and not UUID format."
 
+[[negative]]
+text = "flipside_api_key=7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d"
+reason = "UUID tail is 11 hexadecimal characters instead of the required 12."
+
 [[evasion]]
-text = '"flipside_apikey":"7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d"'
-credential = "7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d"
+text = '"flipside_apikey":"7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d2"'
+credential = "7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d2"
 reason = "JSON object form with colon and quotes."
 
 [perf]

@@ -19,5 +19,5 @@ description = "Flipside Crypto API key (UUID format) with context anchor"
 group = 1
 
 [[detector.tests]]
-test_positive = "flipside_api_key=7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d"
-test_negative = "flipside=short"
+test_positive = "flipside_api_key=7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d2"
+test_negative = "flipside_api_key=7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d"

@@ -117,6 +117,38 @@ fn inline_test_fixtures_are_present() {
     );
 }
 
+/// Every shipped detector owns at least one complete truth pair in its TOML.
+/// Counting fixtures globally is insufficient: two fixtures on one detector
+/// must not hide a different detector with no local contract.
+#[test]
+fn every_detector_owns_a_complete_inline_truth_pair() {
+    let detectors = keyhog_core::load_detectors(&detector_dir())
+        .expect("detectors/ must load while checking inline truth ownership");
+    let mut missing = Vec::new();
+
+    for detector in &detectors {
+        let owns_pair = detector.tests.iter().any(|case| {
+            case.test_positive
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+                && case
+                    .test_negative
+                    .as_deref()
+                    .is_some_and(|value| !value.trim().is_empty())
+        });
+        if !owns_pair {
+            missing.push(detector.id.as_str());
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "{} detector(s) have no complete detector-owned positive/negative truth pair: {}",
+        missing.len(),
+        missing.join(", ")
+    );
+}
+
 /// Every inline `test_positive` MUST surface its OWN detector id through the
 /// real scan path. The author wrote this example into the detector; if the
 /// detector's regex no longer fires on it, the example is decoration and the
