@@ -1,0 +1,64 @@
+# Tier-B data: the default keyword lists a `ScanConfig` classifies a candidate's
+# KEY / surrounding context with. These are the SHIPPED DEFAULTS; a user config
+# can still override each field at runtime — this file is the one place the
+# built-in defaults live (previously inline `vec![...]` in ScanConfig::default).
+#
+#   secret_keywords      — key names that indicate a credential value follows.
+#   test_keywords        — context words marking a value as test / non-production.
+#   placeholder_keywords — words marking a value as an unfilled placeholder.
+#   known_prefixes       — credential prefixes to prioritize during scanning.
+
+known_prefixes = [
+  "AKIA",
+  "ASIA",
+  "ghp_",
+  "sk_",
+]
+
+secret_keywords = [
+  "password",
+  "passwd",
+  "pwd",
+  "secret",
+  "token",
+  "api_key",
+  "apikey",
+  "api-key",
+  "access_key",
+  "auth",
+  "authorization",
+  "auth_token",
+  "auth_key",
+  "private_key",
+  "client_secret",
+  "encryption_key",
+  "signing_key",
+  "bearer",
+  "credential",
+  "license_key",
+]
+
+test_keywords = [
+  "test",
+  "mock",
+  "fake",
+  "stub",
+  "fixture",
+  "example",
+  "sample",
+  "sandbox",
+  "staging",
+]
+
+placeholder_keywords = [
+  "change_me",
+  "changeme",
+  "replace_me",
+  "todo",
+  "fixme",
+  "your_",
+  "insert_",
+  "put_your",
+  "fill_in",
+  "<your",
+]
