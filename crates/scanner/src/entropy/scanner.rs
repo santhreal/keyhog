@@ -492,6 +492,10 @@ fn scan_keyword_free_candidates(
     // PER-DETECTOR-MIGRATION-BLOCKED: isolated_bare_keyword_context is defined in isolated.rs and acts on unattributed bare/isolated tokens.
     let isolated_token_context = isolated_bare_keyword_context(entropy_threshold);
     let isolated_min_len = isolated_token_context.min_len;
+    // Dogfood traces must observe candidates rejected inside extraction. Cache
+    // the per-scan capability once so normal scans keep the length prefilter
+    // without paying an atomic/thread-local lookup for every line.
+    let dogfood_enabled = crate::telemetry::is_dogfood_enabled();
     for (line_idx, line) in lines.iter().enumerate() {
         if let Some(skip) = skip_lines {
             if skip.contains(&line_idx) {
@@ -572,8 +576,11 @@ fn scan_keyword_free_candidates(
         // `cleaned.len() < keyword_free_min_len`. A candidate of length ≥
         // keyword_free_min_len that is a plausible secret consists entirely of
         // entropy candidate bytes, so max_entropy_run ≥ keyword_free_min_len
-        // is a necessary condition. Skip extraction for lines without it.
-        if has_trigger && max_entropy_run >= keyword_free_min_len {
+        // is a necessary condition. Skip extraction for lines without it during
+        // normal scans. Dogfood scans still enter extraction so line-level
+        // rejection stages (which can precede the candidate length check) are
+        // recorded instead of disappearing behind this optimization.
+        if has_trigger && (dogfood_enabled || max_entropy_run >= keyword_free_min_len) {
             collect_line_candidates_inner(
                 line,
                 line_idx,
