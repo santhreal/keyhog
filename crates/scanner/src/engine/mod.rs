@@ -152,7 +152,7 @@ pub(crate) use scan_inner_profile::scan_inner_profile_dump;
 #[cfg(test)]
 pub(crate) use scan_postprocess::decode_profile_dump;
 pub(crate) use scan_postprocess_suffix_gate::suffix_gate_literals;
-pub(crate) use windowed_support::ceil_char_boundary;
+pub(crate) use windowed_support::{absolute_line, absolute_offset, ceil_char_boundary};
 pub use windowed_support::{
     floor_char_boundary, line_number_for_offset, next_window_offset, record_window_match,
     window_chunk, window_end_offset, window_ranges,

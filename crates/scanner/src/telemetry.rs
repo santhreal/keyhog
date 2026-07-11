@@ -181,6 +181,15 @@ static GPU_DISPATCHES: AtomicUsize = AtomicUsize::new(0);
 /// is filtered out at default verbosity) so the scan can surface the coverage
 /// gap loudly at completion (Law 10).
 static STRUCTURED_PARSE_FAILURES: AtomicUsize = AtomicUsize::new(0);
+/// A chunk matched a structured decode-through format (k8s Secret /
+/// docker-compose / tfstate / Jupyter notebook) but exceeded
+/// `MAX_STRUCTURED_PARSE_BYTES`, so its structured decode-through (base64
+/// `data:` decoding) was skipped. Distinct from a parse FAILURE: the file is
+/// well-formed, just too large for the structured pass. The raw bytes are still
+/// scanned, but the regular scan does not recover base64-encoded values, so this
+/// is a real recall gap the reporter must surface (Law 10) rather than the bare
+/// `return None` that previously dropped it silently.
+static STRUCTURED_OVERSIZE_SKIPS: AtomicUsize = AtomicUsize::new(0);
 /// Decode-through work was truncated by a safety budget/cap. The raw chunk is
 /// still scanned, but secrets only reachable after an omitted recursive decode
 /// layer may be missed, so the CLI must surface this as a coverage gap.
@@ -207,6 +216,7 @@ static LINE_OFFSET_MAPPING_MISMATCHES: AtomicUsize = AtomicUsize::new(0);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ScannerCoverageGapEvent {
     StructuredParseFailure,
+    StructuredOversizeSkip,
     DecodeTruncation,
     InvalidPatternIndexSkip,
     BoundaryResultCardinalityMismatch,
@@ -214,9 +224,21 @@ pub(crate) enum ScannerCoverageGapEvent {
 }
 
 impl ScannerCoverageGapEvent {
-    fn counter(self) -> &'static AtomicUsize {
+    /// Every variant, so the per-scan reset owner (`reset_for_scan`) can zero the
+    /// full coverage-gap counter set without a new gap counter ever being forgotten.
+    pub(crate) const ALL: [Self; 6] = [
+        Self::StructuredParseFailure,
+        Self::StructuredOversizeSkip,
+        Self::DecodeTruncation,
+        Self::InvalidPatternIndexSkip,
+        Self::BoundaryResultCardinalityMismatch,
+        Self::LineOffsetMappingMismatch,
+    ];
+
+    pub(crate) fn counter(self) -> &'static AtomicUsize {
         match self {
             Self::StructuredParseFailure => &STRUCTURED_PARSE_FAILURES,
+            Self::StructuredOversizeSkip => &STRUCTURED_OVERSIZE_SKIPS,
             Self::DecodeTruncation => &DECODE_TRUNCATIONS,
             Self::InvalidPatternIndexSkip => &INVALID_PATTERN_INDEX_SKIPS,
             Self::BoundaryResultCardinalityMismatch => &BOUNDARY_RESULT_CARDINALITY_MISMATCHES,
@@ -458,6 +480,21 @@ pub fn structured_parse_failure_count() -> usize {
     STRUCTURED_PARSE_FAILURES.load(Ordering::Relaxed)
 }
 
+/// Record that a well-formed structured decode-through file (k8s Secret /
+/// docker-compose / tfstate / Jupyter notebook) exceeded
+/// `MAX_STRUCTURED_PARSE_BYTES`, so its base64 `data:` decode-through was
+/// skipped. Always counts: like a parse failure this is a recall-coverage fact
+/// the reporter surfaces unconditionally (Law 10), not a silent `return None`.
+pub(crate) fn record_structured_oversize_skip() {
+    let _receipt = record_scanner_coverage_gap(ScannerCoverageGapEvent::StructuredOversizeSkip);
+}
+
+/// Count of decode-through structured files skipped this scan for exceeding the
+/// structured-parse size cap.
+pub fn structured_oversize_skip_count() -> usize {
+    STRUCTURED_OVERSIZE_SKIPS.load(Ordering::Relaxed)
+}
+
 /// Record that recursive decode-through stopped before exhausting all available
 /// decoder output because a safety budget/cap fired.
 pub(crate) fn record_decode_truncation() {
@@ -589,13 +626,11 @@ pub fn reset_for_scan() {
     SKIPPED_FILES.store(0, Ordering::Relaxed);
     TOTAL_MATCHES.store(0, Ordering::Relaxed);
     GPU_DISPATCHES.store(0, Ordering::Relaxed);
-    STRUCTURED_PARSE_FAILURES.store(0, Ordering::Relaxed);
-    DECODE_TRUNCATIONS.store(0, Ordering::Relaxed);
+    for gap in ScannerCoverageGapEvent::ALL {
+        gap.counter().store(0, Ordering::Relaxed);
+    }
     #[cfg(test)]
     THREAD_DECODE_TRUNCATIONS.with(|count| count.set(0));
-    INVALID_PATTERN_INDEX_SKIPS.store(0, Ordering::Relaxed);
-    BOUNDARY_RESULT_CARDINALITY_MISMATCHES.store(0, Ordering::Relaxed);
-    LINE_OFFSET_MAPPING_MISMATCHES.store(0, Ordering::Relaxed);
     if let Ok(mut events) = t.events.lock() {
         // LAW10: reset of poisoned dogfood diagnostics cannot hide findings; telemetry event reset only, scan counters are reset above.
         events.clear();

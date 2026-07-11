@@ -106,6 +106,29 @@ pub(crate) fn is_sequential_placeholder(credential: &str) -> bool {
     false
 }
 
+/// True when the known-prefix-stripped body is an overwhelmingly monotonic
+/// ascending or descending ASCII run. This is entropy-path evidence, not a
+/// universal vendor-detector suppression.
+pub(crate) fn is_monotonic_sequence_placeholder(credential: &str) -> bool {
+    let body = credential_body_without_known_prefix(credential);
+    if body.len() < 8 {
+        return false;
+    }
+    let bytes = body.as_bytes();
+    let ascending = count_adjacent_hex_steps(bytes, ascii_forward_step);
+    let descending = count_adjacent_hex_steps(bytes, ascii_reverse_step);
+    let threshold = sequential_step_threshold(bytes.len().saturating_sub(1));
+    ascending > threshold || descending > threshold
+}
+
+fn ascii_forward_step(previous: u8, next: u8) -> bool {
+    next == previous.wrapping_add(1)
+}
+
+fn ascii_reverse_step(previous: u8, next: u8) -> bool {
+    previous == next.wrapping_add(1)
+}
+
 fn is_hex_sequential_placeholder(credential: &str) -> bool {
     // Same canonical prefix list as is_sequential_placeholder. Strip the
     // prefix before the hex-sequence check so e.g. `ghp_0123456789abcdef`

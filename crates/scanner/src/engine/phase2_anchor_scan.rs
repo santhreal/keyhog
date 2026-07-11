@@ -63,8 +63,6 @@ impl CompiledScanner {
                         documentation_lines,
                         chunk,
                         scan_state,
-                        0,
-                        0,
                         deadline,
                     );
                     return;
@@ -190,8 +188,6 @@ impl CompiledScanner {
                 credential,
                 credential_start,
                 credential_end,
-                0,
-                0,
                 keyword_nearby,
                 sensitive_file,
             );

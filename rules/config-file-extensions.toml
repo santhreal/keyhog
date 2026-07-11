@@ -1,0 +1,29 @@
+# Tier-B data: file extensions that mark a path as a config / secrets file for
+# the entropy scanner's file-context gate. A config/secrets extension raises the
+# path onto the entropy-appropriate path (scanned for high-entropy secrets)
+# instead of the source-code path (skipped unless --entropy-source-files).
+#
+# Single source of truth for `entropy::is_entropy_appropriate_inner` — adding a
+# new ecosystem's config extension is a data edit here, not a source edit. All
+# comparisons are ASCII-case-insensitive, so lowercase entries suffice.
+#
+# `extensions`          : matched directly on any filename tail.
+# `stem_only_extensions`: matched ONLY after a known credential stem
+#                         (`secrets.enc`, `credentials.vault`, …), never alone.
+extensions = [
+    ".env",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".properties",
+    ".cfg",
+    ".conf",
+    ".ini",
+    ".config",
+    ".secrets",
+    ".pem",
+    ".key",
+    ".tfvars",
+    ".hcl",
+]
+stem_only_extensions = [".enc", ".vault", ".prod", ".txt"]

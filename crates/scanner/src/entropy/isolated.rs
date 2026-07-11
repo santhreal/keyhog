@@ -176,6 +176,30 @@ pub(super) fn collect_isolated_bare_candidates(
     if is_likely_innocuous_line(line) {
         return;
     }
+    collect_isolated_bare_candidates_inner(
+        line,
+        line_idx,
+        line_offset,
+        context,
+        seen,
+        matches,
+        placeholder_keywords,
+    );
+}
+
+/// Inner extraction logic without the `is_likely_innocuous_line` gate.
+/// The caller MUST have already verified the line is not innocuous.
+/// Used by `scan_keyword_free_candidates` which performs the innocuous check
+/// once per line for both the isolated-bare and line-candidate paths.
+pub(super) fn collect_isolated_bare_candidates_inner(
+    line: &str,
+    line_idx: usize,
+    line_offset: usize,
+    context: &KeywordContext,
+    seen: &mut std::collections::HashSet<String>,
+    matches: &mut Vec<EntropyMatch>,
+    placeholder_keywords: &[String],
+) {
     visit_isolated_bare_candidates(line, context.min_len, |candidate, candidate_offset| {
         let entropy = match isolated_bare_secret_entropy_decision(
             candidate,

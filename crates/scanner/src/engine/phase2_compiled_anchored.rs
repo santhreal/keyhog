@@ -93,8 +93,6 @@ impl CompiledScanner {
                     documentation_lines,
                     chunk,
                     scan_state,
-                    0,
-                    0,
                     cursor,
                     deadline,
                 ),
@@ -253,8 +251,6 @@ impl CompiledScanner {
                             documentation_lines,
                             chunk,
                             scan_state,
-                            0,
-                            0,
                             cursor,
                             deadline,
                         );
@@ -288,8 +284,6 @@ impl CompiledScanner {
                         documentation_lines,
                         chunk,
                         scan_state,
-                        0,
-                        0,
                         cursor,
                         deadline,
                     );

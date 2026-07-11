@@ -230,7 +230,7 @@ fn parse_config_keywords(raw: &str) -> Result<ConfigKeywords, String> {
 }
 
 static CONFIG_KEYWORDS: std::sync::LazyLock<ConfigKeywords> = std::sync::LazyLock::new(|| {
-    match parse_config_keywords(include_str!("../../../rules/config-keywords.toml")) {
+    match parse_config_keywords(include_str!("../rules/config-keywords.toml")) {
         Ok(keywords) => keywords,
         Err(error) => panic!(
             "rules/config-keywords.toml is invalid: {error}. \

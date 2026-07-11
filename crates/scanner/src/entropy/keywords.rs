@@ -29,7 +29,7 @@ pub(crate) struct KeywordContext {
     pub(crate) allow_canonical_shapes: bool,
 }
 
-pub(super) fn find_keyword_assignment_lines<'a>(
+pub(crate) fn find_keyword_assignment_lines<'a>(
     lines: &'a [&str],
     secret_keywords: &[String],
 ) -> Vec<(usize, &'a str)> {
@@ -347,6 +347,20 @@ pub(crate) fn normalized_assignment_keyword_is_credential(normalized: &str) -> b
         len += 1;
     }
     compact_assignment_keyword_bytes_are_credential(&compact[..len])
+}
+
+/// Whether an assignment key names a password-family slot. A bare `pass` must
+/// be its final separator-delimited segment so `bypass` remains non-secret.
+pub(crate) fn keyword_is_password_family(keyword: &str) -> bool {
+    use crate::ascii_ci::ci_find;
+    let bytes = keyword.as_bytes();
+    if ci_find(bytes, b"password") || ci_find(bytes, b"pwd") {
+        return true;
+    }
+    keyword
+        .rsplit(|c: char| matches!(c, '_' | '-' | '.'))
+        .next()
+        .is_some_and(|segment| segment.eq_ignore_ascii_case("pass"))
 }
 
 const CREDENTIAL_COMPACT_KEYWORDS: &[&[u8]] = &[

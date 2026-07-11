@@ -111,3 +111,42 @@ pub(crate) fn ceil_char_boundary(text: &str, index: usize) -> usize {
     }
     i
 }
+
+/// Compose an absolute file offset from a chunk `base_offset` and a chunk-local
+/// offset. Returns `None` on overflow so callers skip the unit instead of
+/// emitting a wrapped (release) or debug-panicking bogus offset; overflow needs
+/// a multi-exabyte `base_offset` a malformed source could report. This is the
+/// single owner of that guard for every emit and cross-seam reassembly path.
+pub(crate) fn absolute_offset(base_offset: usize, local: usize) -> Option<usize> {
+    base_offset.checked_add(local)
+}
+
+/// Compose an absolute line number from a chunk `base_line` and a chunk-local
+/// line index. Line counts cannot realistically overflow, so saturating keeps
+/// the value monotone without a skip path, colocated with the offset owner.
+pub(crate) fn absolute_line(base_line: usize, local_line: usize) -> usize {
+    base_line.saturating_add(local_line)
+}
+
+#[cfg(test)]
+mod absolute_composition_tests {
+    use super::{absolute_line, absolute_offset};
+
+    #[test]
+    fn absolute_offset_composes_in_range() {
+        assert_eq!(absolute_offset(64 * 1024 * 1024, 845), Some(67_109_709));
+        assert_eq!(absolute_offset(0, 0), Some(0));
+    }
+
+    #[test]
+    fn absolute_offset_returns_none_on_overflow() {
+        assert_eq!(absolute_offset(usize::MAX, 1), None);
+        assert_eq!(absolute_offset(usize::MAX - 3, 10), None);
+    }
+
+    #[test]
+    fn absolute_line_composes_and_saturates() {
+        assert_eq!(absolute_line(100, 44), 144);
+        assert_eq!(absolute_line(usize::MAX, 1), usize::MAX);
+    }
+}

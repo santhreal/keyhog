@@ -27,8 +27,6 @@ impl CompiledScanner {
         documentation_lines: &[bool],
         chunk: &Chunk,
         scan_state: &mut ScanState,
-        base_line: usize,
-        base_offset: usize,
         // Per-pattern deadline. Inner regex loops can produce many
         // matches on adversarial inputs (false_prefix_storm); without
         // a deadline-check inside those loops, --timeout is a lie for
@@ -43,8 +41,6 @@ impl CompiledScanner {
             documentation_lines,
             chunk,
             scan_state,
-            base_line,
-            base_offset,
             None,
             deadline,
         );
@@ -60,8 +56,6 @@ impl CompiledScanner {
         documentation_lines: &[bool],
         chunk: &Chunk,
         scan_state: &mut ScanState,
-        base_line: usize,
-        base_offset: usize,
         cursor_range: Option<(usize, usize)>,
         deadline: Option<std::time::Instant>,
     ) {
@@ -78,8 +72,6 @@ impl CompiledScanner {
                 documentation_lines,
                 chunk,
                 scan_state,
-                base_line,
-                base_offset,
                 cursor_range,
                 deadline,
             );
@@ -94,8 +86,6 @@ impl CompiledScanner {
             documentation_lines,
             chunk,
             scan_state,
-            base_line,
-            base_offset,
             cursor_range,
             deadline,
         );
@@ -113,8 +103,6 @@ impl CompiledScanner {
         documentation_lines: &[bool],
         chunk: &Chunk,
         scan_state: &mut ScanState,
-        base_line: usize,
-        base_offset: usize,
         cursor_range: Option<(usize, usize)>,
         deadline: Option<std::time::Instant>,
     ) {
@@ -255,8 +243,6 @@ impl CompiledScanner {
                 credential,
                 credential_range.0,
                 credential_range.1,
-                base_line,
-                base_offset,
                 keyword_nearby,
                 sensitive_file,
             );
@@ -277,8 +263,6 @@ impl CompiledScanner {
         documentation_lines: &[bool],
         chunk: &Chunk,
         scan_state: &mut ScanState,
-        base_line: usize,
-        base_offset: usize,
         cursor_range: Option<(usize, usize)>,
         deadline: Option<std::time::Instant>,
     ) {
@@ -371,8 +355,6 @@ impl CompiledScanner {
                 matched.as_str(),
                 matched.start(),
                 matched.end(),
-                base_line,
-                base_offset,
                 keyword_nearby,
                 sensitive_file,
             );

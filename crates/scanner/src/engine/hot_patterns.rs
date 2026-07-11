@@ -158,8 +158,6 @@ impl CompiledScanner {
                     credential,
                     offset,
                     offset + credential.len(),
-                    0,
-                    0,
                     keyword_nearby,
                     sensitive_file,
                 );

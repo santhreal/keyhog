@@ -161,8 +161,6 @@ impl CompiledScanner {
                                     documentation_lines,
                                     chunk,
                                     scan_state,
-                                    0,
-                                    0,
                                     deadline,
                                 ),
                             }
@@ -224,8 +222,6 @@ impl CompiledScanner {
                 documentation_lines,
                 chunk,
                 scan_state,
-                0,
-                0,
                 deadline,
             );
             if let Some(t0) = t0 {
