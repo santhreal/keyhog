@@ -18,3 +18,7 @@ description = "Salesforce session ID/access token with instance ID prefix (00D)"
 regex = "(?i)(?:salesforce|sf)[_.-]?(?:access[_.-]?)?token[=:\\s\"']+([a-zA-Z0-9]{120,})"
 description = "Salesforce OAuth access token with context anchor (long alphanumeric)"
 group = 1
+
+[[detector.tests]]
+test_positive = "00Dl9EknYBnvVPAD5pXo5!tqBk6FKee.qQU89ru6oLQ2bJPgvjXk1.gKc4VP7pwxJAhDxk0hQ4WkRQRnOTvzj2R040Zk18jojez.HumrM7hrkdRMU0sSHMXdxB"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

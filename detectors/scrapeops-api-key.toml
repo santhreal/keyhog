@@ -31,3 +31,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "scrapeops=42lzch6Jg83lGwx5zyvvoA4A5ClC9pjf"
+test_negative = "scrapeops=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

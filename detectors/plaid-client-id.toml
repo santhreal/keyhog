@@ -19,3 +19,7 @@ group = 1
 name = "plaid_secret"
 regex = "(?:PLAID|plaid)[._-]?(?:SECRET|secret)[=:\\s\"']+([a-f0-9]{30,40})"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "PLAID=c1517b308bdbe0ebd278e1b7"
+test_negative = "PLAID=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

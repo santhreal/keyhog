@@ -24,3 +24,7 @@ group = 1
 regex = "puppet-access\\s+login.*--service-url.*([a-zA-Z0-9_-]{20,})"
 description = "Puppet Enterprise token from puppet-access command"
 group = 1
+
+[[detector.tests]]
+test_positive = "PE_TOKEN=df2C-IwsG2vZK2btF61X"
+test_negative = "PE_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

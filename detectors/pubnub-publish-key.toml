@@ -13,3 +13,7 @@ keywords = ["pub-c-"]
 [[detector.patterns]]
 regex = 'pub-c-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
 description = "PubNub publish key (UUID format with pub-c- prefix)"
+
+[[detector.tests]]
+test_positive = "pub-c-d0743bdf-c3fe-a88e-492a-0ccb2ea13ddc"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

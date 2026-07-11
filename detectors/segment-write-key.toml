@@ -21,3 +21,7 @@ group = 1
 # access uses a Segment Sources API token (separate detector,
 # segment-sources-api-token, which stays high).
 client_safe = true
+
+[[detector.tests]]
+test_positive = "segment_write_key=YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+test_negative = "segment_write_key=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

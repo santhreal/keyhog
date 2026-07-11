@@ -18,3 +18,7 @@ group = 1
 [[detector.patterns]]
 regex = "replit_token_[a-zA-Z0-9_-]{30,}"
 description = "Replit token with replit_token_ prefix"
+
+[[detector.tests]]
+test_positive = "REPLIT_TOKEN=9qtUzgH7dMqUlSTEoivR8-oPFmpLxB"
+test_negative = "REPLIT_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

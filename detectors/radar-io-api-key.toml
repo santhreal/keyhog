@@ -25,3 +25,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "prj_live_eZXI8wIQE11eWntR0gMwrohdFkqbTcI4npM6AovMe5Wowx31UK"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

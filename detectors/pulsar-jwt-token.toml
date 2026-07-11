@@ -36,3 +36,7 @@ group = 1
 regex = "webServiceUrl[^\\n]{0,128}pulsar[^\\n]{0,128}\\n[^\\n]{0,128}token[\"'\\']?\\s*[=:]\\s*[\"'\\']?(eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]+)"
 description = "Pulsar client configuration with JWT token"
 group = 1
+
+[[detector.tests]]
+test_positive = "brokerClientAuthenticationParameters=eyJz71Tv_Gmh0V_KtJCgVbPIexNGw700lJQaTvkQDlJYbgmxsdivQ.eyJ5o-IGUtCapgIby0OMCNwMDpfpR0sWHVAY1_jIzaj6wkLhcJ_sz-kEbf91MNjIR0KKJehwLO.gn_9DfLqm_bwK6rWrjOWWWO2nlhNSIjOV8w_O5AcZswADZYBBW5hTMTDpXMKJIyzb"
+test_negative = "brokerClientAuthenticationParameters=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

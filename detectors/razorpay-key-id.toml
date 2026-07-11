@@ -22,3 +22,7 @@ description = "Razorpay Live Key ID"
 name = "razorpay_key_secret"
 regex = "(?:RAZORPAY|razorpay).{0,20}(?:SECRET|secret|password|pass).{0,5}[=:\\s\"']+([a-zA-Z0-9]{20,40})"
 within_lines = 10
+
+[[detector.tests]]
+test_positive = "RAZORPAY_KEY_ID=rzp_test_Kp4Qx7Rm2Sn5Tb\nRAZORPAY_KEY_SECRET=Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3"
+test_negative = "rzp_test_short"

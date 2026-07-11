@@ -23,3 +23,7 @@ min_confidence = 0.2
 # surface matches the existing contract harness.
 regex = '''(?:postgresql|postgres)://[^:]*:[^@\s"'']+@[a-zA-Z0-9._-]+'''
 description = "PostgreSQL connection string with credentials (host-bounded capture)"
+
+[[detector.tests]]
+test_positive = "postgresql://neondb:w0kVdGwi5GpLapAX@ep-cool-name-123456.us-east-2.aws.neon.tech/neondb"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

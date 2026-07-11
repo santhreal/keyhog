@@ -14,3 +14,7 @@ keywords = ["PRACTICEPANTHER_API_KEY", "PRACTICEPANTHER_TOKEN", "practicepanther
 regex = "(?:PRACTICEPANTHER|practicepanther)[_\\s]?(?:API[_\\s]?KEY|TOKEN|token)[=:\\s\"'']+([a-zA-Z0-9_\\-]{40,})"
 description = "PracticePanther API key or token"
 group = 1
+
+[[detector.tests]]
+test_positive = "PRACTICEPANTHER_API_KEY=7YyNdbgZbHjVYPyfQSEuWajO7Ei3lyUMx24hMWUY"
+test_negative = "PRACTICEPANTHER_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

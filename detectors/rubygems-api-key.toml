@@ -23,3 +23,7 @@ group = 1
 regex = "(?:RUBYGEMS_API_KEY|rubygems.api.key|:rubygems_api_key:)[=:\\s\"'']([a-f0-9]{48})\\b"
 description = "Legacy RubyGems API key in environment/config context without prefix"
 group = 1
+
+[[detector.tests]]
+test_positive = "rubygems_8ba813318e80dc5764a1f36c0d275492825aa46472f2d75f"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

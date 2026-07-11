@@ -18,3 +18,7 @@ description = "PubNub subscribe key (UUID format with sub-c- prefix)"
 name = "publish_key"
 regex = 'pub-c-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "sub-c-b424e2b7-3480-5c69-2564-52b5fde37b98"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

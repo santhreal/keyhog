@@ -19,3 +19,7 @@ group = 1
 regex = '''(?:routee|ROUTEE)[_.-]?(?:application|APPLICATION)?[_.-]?(?:secret|SECRET)?[=:\s"\' ]+([a-zA-Z0-9]{12,32})'''
 description = "Routee Application Secret (alphanumeric string)"
 group = 1
+
+[[detector.tests]]
+test_positive = "routee=efd599b0b2565062026f2555"
+test_negative = "routee=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

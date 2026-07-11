@@ -34,3 +34,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "user_id"
 json_path = "data.me.id"
+
+[[detector.tests]]
+test_positive = "RAILWAY_TOKEN=5b6f0b69-5f6b-8bfc-2209-8840057e3182"
+test_negative = "RAILWAY_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

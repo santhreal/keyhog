@@ -25,3 +25,7 @@ group = 1
 name = "scaleway_access_key"
 regex = "(?:SCW|SCALEWAY_ACCESS_KEY|scaleway.access.key)[=:\\s\"'']+(SCW[A-Z0-9]{20})"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "SCW_SECRET_KEY=6179c5db-a4be-f4b3-0d77-79da118cfc39"
+test_negative = "SCW_SECRET_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

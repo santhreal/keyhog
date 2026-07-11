@@ -26,3 +26,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "SECURITYTRAILS=89KxsottTaOI1AwvEP1nwB-xlX1oBgDN"
+test_negative = "SECURITYTRAILS=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -19,3 +19,7 @@ group = 1
 name = "saucelabs-username"
 regex = "(?:SAUCE_USERNAME|sauce_username)[=:\\s\"']+([a-zA-Z0-9_-]+)"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "SAUCE_ACCESS_KEY=020932ee-9a19-8c18-b71b-8fb4c1643844"
+test_negative = "SAUCE_ACCESS_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

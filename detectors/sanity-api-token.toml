@@ -23,3 +23,7 @@ group = 1
 name = "sanity_project_id"
 regex = "(?:SANITY|sanity)[_\\s]?(?:PROJECT[_\\s]?ID|project[_\\s]?id)[=:\\s\"']+([a-z0-9]{8,12})"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "SANITY_API_TOKEN=sk4VI2EWMzmLvb5a9dd9403a8d3b0f37f91f289"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -25,3 +25,7 @@ template = "token {{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "pul-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b"
+test_negative = "pul-short"

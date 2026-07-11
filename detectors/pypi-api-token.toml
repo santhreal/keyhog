@@ -26,3 +26,7 @@ password = "match"
 [detector.verify.success]
 status_not = 403
 status = 200
+
+[[detector.tests]]
+test_positive = "pypi-EUJykml7ZgrfPCV8aS7QTdFqbB2uTkz8KP4a8d3M1JxnuJn7UfyK_Dalj4zgPh-hecYl8DYcWbo6yT2c7xfyT0QjAXikOrHrbMNH"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

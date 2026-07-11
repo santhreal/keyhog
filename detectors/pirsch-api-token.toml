@@ -24,3 +24,7 @@ description = "Pirsch access key starting with pa_ prefix (length-bounded)"
 regex = "(?:PIRSCH[_\\-\\s]?CLIENT[_\\-\\s]?ID|pirsch[_\\-\\s]?client[_\\-\\s]?id)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
 description = "Pirsch OAuth client ID with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "pa_6p9KJHPwVUfCna4zMLnGUFMfL7SXbkwN"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

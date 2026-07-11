@@ -24,3 +24,7 @@ keywords = ["api_", "pipedream", "PIPEDREAM_API_KEY"]
 # lowercase (the real key prefix) and `[A-Z]` means a genuine uppercase byte.
 regex = '(?-i)api_[a-z0-9]*[A-Z][a-zA-Z0-9]{39,}'
 description = "Pipedream API key (api_ prefix)"
+
+[[detector.tests]]
+test_positive = "api_kaxHrCzkGkCZm0h4Zg42FLRQ1Iqt8C3BqyDXJdHXjYDOxYxMyWbUshf83I2z8LS5NF42L57S3Wv0rftjdzgVoFuwd5"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

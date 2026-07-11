@@ -19,3 +19,7 @@ group = 1
 regex = "ws_key[=:\\s\"'']+([a-zA-Z0-9]{32})"
 description = "PrestaShop WebService key via ws_key parameter"
 group = 1
+
+[[detector.tests]]
+test_positive = "prestashop=7t5dnTAM6RRaSPjZYCjoE8fkySGigMY0"
+test_negative = "prestashop=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

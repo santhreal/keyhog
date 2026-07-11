@@ -14,3 +14,7 @@ keywords = ["QDRANT_API_KEY", "qdrant_api_key", "QDRANT_APIKEY", "qdrantApiKey"]
 regex = "(?:QDRANT[_-]?API[_-]?KEY|qdrant[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{16,})"
 description = "Qdrant API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "QDRANT_API_KEY=qrp1jXxt6sBi2v6e"
+test_negative = "QDRANT_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

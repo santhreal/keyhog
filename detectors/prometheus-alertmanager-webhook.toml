@@ -19,3 +19,7 @@ group = 1
 regex = "(?:webhook_url|webhook\\.url)[=:\\s\"\\']+(https?://[a-zA-Z0-9._-]+/hooks/[a-zA-Z0-9/_-]+)"
 description = "Generic webhook URL in Alertmanager config"
 group = 1
+
+[[detector.tests]]
+test_positive = "webhook_url=https://_EAl6PnnHt219ecRFVqmq.KCUwXJEgxe8lSfCNbSuBUhXRem2nao7nKXJrNvv/hooks/Iy"
+test_negative = "webhook_url=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

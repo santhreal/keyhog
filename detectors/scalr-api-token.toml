@@ -24,3 +24,7 @@ group = 1
 regex = "Authorization[=:\\s\"'']+[Bb]earer\\s+(eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]*)"
 description = "Scalr Bearer JWT token"
 group = 1
+
+[[detector.tests]]
+test_positive = "SCALR_TOKEN=eyJqEn0DWRqaI8.eyJ2EZmQ0rQI1KS2vAHKhbVxPEJrwHqJUcpDGcDzG5b6ZjeO_rTJlAFLwM_mj9M4z90pm5indkRJqaMe_7qcLhcbk.zatKoCFZ3LnYyOgxIRh6SRcFLfddJzxS8Kk2_emw-BnII8IGYXfjppfEeEqE_K0IGediMBiPhaX7Te67vFmO6XL7wc-93hJ"
+test_negative = "SCALR_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

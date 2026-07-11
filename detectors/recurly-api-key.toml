@@ -14,3 +14,7 @@ keywords = ["RECURLY", "recurly", "RECURLY_API_KEY"]
 regex = "(?:RECURLY[_\\s]*API[_\\s]*KEY|recurly[_\\s]*api[_\\s]*key)[=:\\s\"'']+([a-f0-9]{32})"
 description = "Recurly private API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "RECURLY_API_KEY=25168b919a519680ded6beb446bde58f"
+test_negative = "RECURLY_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

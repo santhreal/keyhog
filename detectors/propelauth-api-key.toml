@@ -14,3 +14,7 @@ keywords = ["PROPELAUTH_API_KEY", "PROPELAUTH_AUTH_URL", "propelauth"]
 regex = "(?:PROPELAUTH_API_KEY|propelauth[_-]?api[_-]?key)[=:\\s\"'']+([a-f0-9]{32})"
 description = "PropelAuth API key with context anchor (32 hex chars)"
 group = 1
+
+[[detector.tests]]
+test_positive = "PROPELAUTH_API_KEY=b3265b7c389276d437c18f7c28d04f34"
+test_negative = "PROPELAUTH_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

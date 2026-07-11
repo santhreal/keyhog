@@ -19,3 +19,7 @@ group = 1
 regex = "x-plasmic-api-(?:project-tokens|cms-tokens)[=:\\s\"'']+([a-zA-Z0-9_-]{20,50})"
 description = "Plasmic API token in header format"
 group = 1
+
+[[detector.tests]]
+test_positive = "PLASMIC project_token=T4JeFsi6fN-FyUg6Wr3P1KYlHUA8u5jAyLrpabcd1234"
+test_negative = "PLASMIC project_token=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

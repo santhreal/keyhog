@@ -34,3 +34,7 @@ group = 1
 regex = "(?:sap)[._-]?(?:password|pass|pwd)[=:\\s\"'']+([a-zA-Z0-9!@#$%^&*._-]{8,})"
 description = "SAP password with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "sap_client_id=SapClientId12"
+test_negative = "sap_client_id=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

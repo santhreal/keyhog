@@ -18,3 +18,7 @@ description = "Render deploy hook URL with service ID and key"
 regex = "(?:RENDER|render)[_\\-\\s]*(?:DEPLOY|deploy)[_\\-\\s]*(?:HOOK|hook)[_\\-\\s]*(?:URL|url)?[=:\\s\"'\\']+(https://api\\.render\\.com/deploy/srv-[a-z0-9]+\\?key=[a-zA-Z0-9_-]{20,})"
 description = "Render deploy hook URL with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "https://api.render.com/deploy/srv-io418fk5icxm3yawaaove0uasyyelq6t5818ilo9b92bkw1pt15ff3jkwo0y6h80mz4zp1ho6h5p3r84ra0f3fjh6sk03mtpz9?key=6EW1MZSw_KYtNzt_qVhQ2jVpB8XWuRi8lXju"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

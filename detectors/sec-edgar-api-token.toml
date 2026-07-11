@@ -19,3 +19,7 @@ group = 1
 regex = "(?:SEC_EDGAR_TOKEN|EDGAR_API|sec_filer_token|SEC_API_KEY)[=:\\s\"'\\']+([a-zA-Z0-9]{32,})"
 description = "SEC EDGAR alphanumeric API token with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "EDGAR_API vNymNhkRusErbZf8JQ7LhW-77W4yTk1CM2D9LyQG1r-IPu71kc2PGahzHZ_LFgQfK2Rv5ewycQQmqKv3Ox9059uiKFJ17k.BYKt9YjY09.Cj"
+test_negative = "EDGAR_API YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

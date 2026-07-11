@@ -30,3 +30,7 @@ group = 1
 name = "plivo_auth_token"
 regex = "[a-zA-Z0-9]{40}"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "PLIVO_AUTH_ID=XFhdBgXfaJMpNGaxRRsX"
+test_negative = "PLIVO_AUTH_ID=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

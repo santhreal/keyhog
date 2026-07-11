@@ -19,3 +19,7 @@ group = 1
 regex = "(?:rome2rio|Rome2rio|Rome2Rio)[=:\\s\"'']+([A-Za-z0-9]{32,64})"
 description = "Rome2Rio key generic context"
 group = 1
+
+[[detector.tests]]
+test_positive = "ROME2RIO=EQyfbMZcdFc6SF9DRRkxIwJyyING7kfZ5GzIprLv"
+test_negative = "ROME2RIO=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

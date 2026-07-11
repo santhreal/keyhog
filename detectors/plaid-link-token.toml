@@ -23,3 +23,7 @@ group = 1
 name = "plaid_client_id"
 regex = "(?:PLAID|plaid)[._-]?(?:CLIENT|client)?[._-]?(?:ID|id)?[=:\\s\"'']+([a-f0-9]{24})"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "link-production-c416000d-63bb-0db9-d70a-0e03cd885ce7"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
