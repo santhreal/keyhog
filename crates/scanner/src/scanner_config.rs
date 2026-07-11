@@ -4,6 +4,8 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+pub(crate) const MAX_MATCHES_PER_CHUNK_LIMIT: usize = 1_000_000;
+
 use keyhog_core::{Calibration, ScanConfig};
 
 /// Explicit per-scanner performance-route tuning.
@@ -263,6 +265,12 @@ pub enum ScannerConfigInstallError {
     /// A present zero timeout expires before scanning any bytes.
     #[error("per_chunk_timeout_ms must be greater than zero when set; use None to disable the deadline")]
     ZeroPerChunkTimeout,
+    /// A zero cap discards every candidate.
+    #[error("max_matches_per_chunk must be greater than zero")]
+    ZeroMaxMatchesPerChunk,
+    /// Excessive retained-match capacity risks runaway memory use.
+    #[error("max_matches_per_chunk must not exceed {max}, found {found}")]
+    MaxMatchesPerChunkTooHigh { found: usize, max: usize },
 }
 
 impl Deref for ScannerConfig {
@@ -433,8 +441,8 @@ impl ScannerConfig {
         if self.max_decode_depth > max_decode_depth {
             self.max_decode_depth = max_decode_depth;
         }
-        if self.max_matches_per_chunk > 1_000_000 {
-            self.max_matches_per_chunk = 1_000_000;
+        if self.max_matches_per_chunk > MAX_MATCHES_PER_CHUNK_LIMIT {
+            self.max_matches_per_chunk = MAX_MATCHES_PER_CHUNK_LIMIT;
         }
         if self.max_matches_per_chunk == 0 {
             self.max_matches_per_chunk = 1000;

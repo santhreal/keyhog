@@ -61,3 +61,22 @@ fn strict_scanner_config_rejects_zero_chunk_timeout() {
     };
     assert!(error.to_string().contains("greater than zero"));
 }
+
+#[test]
+fn strict_scanner_config_rejects_invalid_match_caps() {
+    for cap in [0, 1_000_001] {
+        let mut config = ScannerConfig::default();
+        config.max_matches_per_chunk = cap;
+        let result = CompiledScanner::compile(Vec::new())
+            .expect("empty detector corpus is a valid library scanner")
+            .try_with_config(config);
+        assert!(result.is_err(), "match cap {cap} must fail installation");
+    }
+
+    let mut config = ScannerConfig::default();
+    config.max_matches_per_chunk = 1_000_000;
+    CompiledScanner::compile(Vec::new())
+        .expect("empty detector corpus is a valid library scanner")
+        .try_with_config(config)
+        .expect("the documented maximum match cap must remain valid");
+}

@@ -491,6 +491,19 @@ impl CompiledScanner {
                 crate::scanner_config::ScannerConfigInstallError::ZeroPerChunkTimeout,
             );
         }
+        if config.max_matches_per_chunk == 0 {
+            return Err(
+                crate::scanner_config::ScannerConfigInstallError::ZeroMaxMatchesPerChunk,
+            );
+        }
+        if config.max_matches_per_chunk > crate::scanner_config::MAX_MATCHES_PER_CHUNK_LIMIT {
+            return Err(
+                crate::scanner_config::ScannerConfigInstallError::MaxMatchesPerChunkTooHigh {
+                    found: config.max_matches_per_chunk,
+                    max: crate::scanner_config::MAX_MATCHES_PER_CHUNK_LIMIT,
+                },
+            );
+        }
         profile::set_profile_enabled(config.profile);
         profile::set_perf_trace_enabled(config.perf_trace);
         self.config = config;
