@@ -165,6 +165,8 @@ pub mod regression_structured_nested_key_recall;
 pub mod regression_structured_oversize_partition;
 #[path = "regression_structured_parse_failure_counted.rs"]
 pub mod regression_structured_parse_failure_counted;
+#[path = "regression_structured_traversal_depth.rs"]
+pub mod regression_structured_traversal_depth;
 #[path = "regression_symbolic_password_weak_wrappers.rs"]
 pub mod regression_symbolic_password_weak_wrappers;
 #[path = "regression_telegram_bot_token_recall.rs"]

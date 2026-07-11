@@ -5,7 +5,7 @@ use super::ExtractedPair;
 /// any real Terraform state, docker-compose schema, or Kubernetes List wrapper.
 /// Single owner for the JSON (tfstate/jupyter) and YAML (k8s/compose) depth
 /// guards so the two caps cannot silently drift apart.
-pub(super) const MAX_STRUCTURED_TRAVERSAL_DEPTH: usize = 256;
+pub(crate) const MAX_STRUCTURED_TRAVERSAL_DEPTH: usize = 256;
 
 mod env;
 mod hcl;
@@ -17,19 +17,6 @@ pub(crate) use env::parse_env;
 pub(crate) use hcl::parse_hcl;
 pub(crate) use json::{parse_jupyter, parse_tfstate};
 pub(crate) use yaml::{parse_docker_compose, parse_k8s_secret};
-
-#[cfg(test)]
-mod owner_tests {
-    // The JSON (tfstate/jupyter) and YAML (k8s/compose) recursion guards both
-    // read THIS constant. It was previously two separate consts with the same
-    // value (MAX_TFSTATE_DEPTH / MAX_YAML_TRAVERSAL_DEPTH) — a same-value
-    // divergence risk where retuning one would silently leave the other stale.
-    // Locked to one owner at 256.
-    #[test]
-    fn structured_traversal_depth_has_one_owner() {
-        assert_eq!(super::MAX_STRUCTURED_TRAVERSAL_DEPTH, 256);
-    }
-}
 
 /// Decide whether a structured-format parse/shape gap is a REAL lost decode
 /// surface, recording it against the structured-parse-failure telemetry when so.

@@ -454,6 +454,11 @@ pub fn multiline_has_concatenation_indicators_for_test(value: &str) -> bool {
     crate::multiline::has_concatenation_indicators(value)
 }
 
+/// Shared recursion-depth cap used by JSON and YAML structured parsers.
+pub fn structured_max_traversal_depth_for_test() -> usize {
+    crate::structured::parsers::MAX_STRUCTURED_TRAVERSAL_DEPTH
+}
+
 /// The fast probabilistic noise gate (`probabilistic_gate`) — rejects obvious
 /// high-entropy non-secrets (UUIDs, low-diversity pads) before heavy ML scoring.
 /// Lets a gap test pin its exact promising/not-promising decisions, in
