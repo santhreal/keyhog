@@ -10,6 +10,10 @@ service = "aws"
 severity = "critical"
 keywords = ["AKIA", "ASIA"]
 
+# AWS access key IDs are exactly 20 bytes: AKIA/ASIA plus 16 characters.
+[detector.credential_shape]
+exact_length = 20
+
 [[detector.patterns]]
 # `(?-i)` forces case-sensitive matching (keyhog compiles every regex
 # case-insensitive by default). AKIA/ASIA ids are ALWAYS uppercase; without

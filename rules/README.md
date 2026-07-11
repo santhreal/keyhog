@@ -11,7 +11,6 @@ inside the file itself.
 | `aws-canary-accounts.toml` | AWS account IDs known to issue canary tokens. A detected AWS access key whose offline-decoded account ID matches is marked `metadata.is_canary=true`, and live verification refuses to probe it. |
 | `default_excludes.toml` | Default source exclusion policy for binary extensions, generated/build directories, lockfiles, source maps, and related low-signal paths. |
 | `detector-classification.toml` | Detector classification overrides, such as weak-anchor detectors whose regex shapes still need generic suppression gates. |
-| `detector-credential-shapes.toml` | Detector-specific credential shape constraints, such as exact lengths or prefix body ranges, consumed by scanner adjudication without hardcoding detector IDs in code. |
 | `placeholder_words.toml` | Shared placeholder/sample words consumed by scanner surface, decoded, and doc-marker suppression paths. |
 
 ## Adding a new rule file

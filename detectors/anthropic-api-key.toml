@@ -10,6 +10,13 @@ service = "anthropic"
 severity = "critical"
 keywords = ["sk-ant-", "anthropic"]
 
+# This constraint owns the legacy api03 family only. Other sk-ant- forms pass
+# through because body bounds apply only when the declared prefix matches.
+[detector.credential_shape]
+prefix = "sk-ant-api03-"
+body_min_length = 80
+body_max_length = 120
+
 [[detector.patterns]]
 # The `regex` crate has no lookahead/lookbehind, so a pure non-consuming boundary
 # anchor is not possible. The length cap `{80,120}` provides a soft boundary:
