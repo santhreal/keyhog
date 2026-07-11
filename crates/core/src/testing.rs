@@ -130,7 +130,6 @@ pub trait CoreTestApi {
     fn dedup_lost_singleton_load(&self, ordering: std::sync::atomic::Ordering) -> u64;
     fn scan_config_validate(&self, config: &ScanConfig) -> Result<(), String>;
     fn max_decode_depth_limit(&self) -> usize;
-    fn secret_filenames(&self) -> Vec<String>;
     fn source_registry_registered_name(
         &self,
         source: std::sync::Arc<dyn crate::Source + Send + Sync>,
@@ -423,10 +422,6 @@ impl CoreTestApi for TestApi {
 
     fn max_decode_depth_limit(&self) -> usize {
         crate::config::MAX_DECODE_DEPTH_LIMIT
-    }
-
-    fn secret_filenames(&self) -> Vec<String> {
-        crate::config::secret_filenames()
     }
 
     fn source_registry_registered_name(
