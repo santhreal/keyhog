@@ -1126,3 +1126,60 @@ fn keyword_context_with_policy(
         allow_canonical_shapes: allow_canonical_lift && is_credential_context,
     }
 }
+
+#[cfg(test)]
+mod policy_owner_tests {
+    use super::*;
+    use crate::generic_keyword_owner::GenericOwningDetectorIndex;
+    use keyhog_core::DetectorSpec;
+
+    fn detector(id: &str, keyword_free_min_len: usize) -> DetectorSpec {
+        let mut spec = DetectorSpec::default();
+        spec.id = id.to_string();
+        spec.name = id.to_string();
+        spec.service = "generic".to_string();
+        spec.keyword_free_min_len = Some(keyword_free_min_len);
+        spec
+    }
+
+    fn scan_with_generic_keyword_min_len(secret: &str, generic_keyword_secret_min_len: usize) -> usize {
+        let detectors = vec![
+            detector("generic-secret", 20),
+            detector("generic-keyword-secret", generic_keyword_secret_min_len),
+        ];
+        let index = GenericOwningDetectorIndex::build(&detectors);
+        let active_policy = ActiveDetectorPolicy::new(&detectors, &index);
+        let lines = vec![secret];
+        let line_offsets = vec![0usize];
+        let mut seen = std::collections::HashSet::new();
+        let mut matches = Vec::new();
+        scan_keyword_free_candidates(
+            &lines,
+            &line_offsets,
+            HIGH_ENTROPY_THRESHOLD,
+            VERY_HIGH_ENTROPY_THRESHOLD,
+            &mut seen,
+            &mut matches,
+            &[],
+            None,
+            Some(active_policy),
+        );
+        matches
+            .into_iter()
+            .filter(|m| m.keyword == "none (isolated-token)")
+            .count()
+    }
+
+    #[test]
+    fn isolated_keyword_free_min_len_comes_from_active_generic_keyword_secret_spec() {
+        let secret = "A1b2C3d4E5f6g7H8i9J";
+        assert!(
+            scan_with_generic_keyword_min_len(secret, 30) == 0,
+            "a strict generic-keyword-secret min length must suppress short anchored-free tokens"
+        );
+        assert!(
+            scan_with_generic_keyword_min_len(secret, 10) > 0,
+            "a per-detector keyword_free_min_len override should admit the same token"
+        );
+    }
+}
