@@ -7,7 +7,8 @@
 //! none for `Bearer`, and the dominant token shape is a 36-40 char hex /
 //! alphanumeric string the generic entropy/shape pipeline suppresses as a bare
 //! hash digest. `bearer-authorization` is a STRONG-anchor structural detector
-//! (the `is_structural_password_slot_detector` family): the suppression pipeline
+//! (`structural_password_slot = true` in its own detector TOML): the suppression
+//! pipeline
 //! skips the Tier-B randomness/digest floor (`apply_tier_b == false`), so those
 //! bare tokens surface, while precision against placeholders is held by three
 //! orthogonal gates that do NOT penalise a random token —

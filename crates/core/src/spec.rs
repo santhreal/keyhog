@@ -169,9 +169,8 @@ pub struct DetectorSpec {
     #[serde(default)]
     pub stopwords: Vec<String>,
     /// Per-detector "structural password slot" classification, OWNED HERE per the
-    /// architecture law above (was a hardcoded id list in
-    /// `scanner::detector_ids::is_structural_password_slot_detector`, so a
-    /// detector's family lived in a second place — code — not its TOML).
+    /// architecture law above (was a hardcoded detector-id list in scanner
+    /// code, so a detector's family lived outside its TOML).
     ///
     /// `true` marks a STRONG-anchor detector whose regex proves a syntactic
     /// credential SLOT (`scheme://user:<x>@host`, `IDENTIFIED BY '<x>'`,

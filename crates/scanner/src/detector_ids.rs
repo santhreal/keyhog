@@ -7,7 +7,6 @@ pub(crate) const GENERIC_SECRET: &str = "generic-secret";
 pub(crate) const GENERIC_KEYWORD_SECRET: &str = "generic-keyword-secret";
 pub(crate) const GENERIC_API_KEY: &str = "generic-api-key";
 pub(crate) const GENERIC_PASSWORD: &str = "generic-password";
-pub(crate) const GENERIC_DATABASE_URL: &str = "generic-database-url";
 
 pub(crate) const ENTROPY: &str = "entropy";
 #[cfg(feature = "entropy")]
@@ -40,9 +39,6 @@ pub(crate) const SLACK_USER_TOKEN: &str = "slack-user-token";
 pub(crate) const SQUARE_ACCESS_TOKEN: &str = "square-access-token";
 pub(crate) const STRIPE_API_KEY: &str = "stripe-api-key";
 pub(crate) const STRIPE_SECRET_KEY: &str = "stripe-secret-key";
-pub(crate) const URL_CREDENTIALS: &str = "url-credentials";
-pub(crate) const SQL_PASSWORD: &str = "sql-password";
-pub(crate) const CLI_PASSWORD_FLAG: &str = "cli-password-flag";
 
 #[inline]
 pub(crate) fn is_generic_detector(detector_id: &str) -> bool {
@@ -57,22 +53,6 @@ pub(crate) fn is_entropy_detector(detector_id: &str) -> bool {
 #[inline]
 pub(crate) fn is_private_key_fallback(detector_id: &str) -> bool {
     detector_id == PRIVATE_KEY
-}
-
-/// The "structural password slot" family: STRONG-anchor detectors whose regex
-/// proves a syntactic credential SLOT (`scheme://user:<x>@host`,
-/// `IDENTIFIED BY '<x>'`, `--password <x>`) but captures a FREE-FORM value the
-/// way a real password is written — so the dominant SHORT all-lowercase random
-/// passwords surface (the Tier-B randomness floor is skipped) while the
-/// `dictionary_word_placeholder` gate (api.rs) drops the literal placeholder
-/// words (`password`, `secret`) a service-anchored detector's structured capture
-/// never produces. The `{6,128}` value floor in each detector drops the short
-/// placeholders the bigram model cannot judge.
-#[inline]
-pub(crate) fn is_structural_password_slot_detector(detector_id: &str) -> bool {
-    detector_id == URL_CREDENTIALS
-        || detector_id == SQL_PASSWORD
-        || detector_id == CLI_PASSWORD_FLAG
 }
 
 #[inline]

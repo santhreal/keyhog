@@ -20,7 +20,7 @@
 #   (`Bearer eyJ...`) is already covered by `jwt-token` and dedup'd by value. So
 #   this detector is deliberately strong-anchor (NOT in the `weak_anchor` list):
 #   the suppression pipeline skips the Tier-B randomness/digest floor
-#   (`apply_tier_b=false`) via `is_structural_password_slot_detector`, and
+#   (`apply_tier_b=false`) via this detector's `structural_password_slot`, and
 #   placeholder precision is restored WITHOUT that floor by:
 #     * the value is `{16,}` — short placeholders (`token`, `secret`) never match;
 #     * the regex char class excludes `<` `>`, so `Bearer <token>` templates and

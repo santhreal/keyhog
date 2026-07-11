@@ -179,6 +179,30 @@ The available per-detector tuning fields are:
 *   **`allowlist_values`** (array of strings, optional): Per-detector value-exclusion regexes. Any candidate secret value matching any of these regexes is suppressed (useful for filtering out test, example, or placeholder values).
 *   **`stopwords`** (array of strings, optional): Per-detector literal stopwords. A matched value equal to or containing any of these strings (case-insensitive) is suppressed.
 
+### Classification and shape policy
+
+These fields are detector facts, not operator preferences. They therefore live
+only in the individual detector TOML and have no CLI or global-config override:
+
+*   **`structural_password_slot`** (bool, default `false`): The pattern proves a
+    syntactic password slot, such as URL userinfo, `IDENTIFIED BY`, a password
+    CLI flag, or an authorization scheme. The scanner keeps the dedicated
+    placeholder checks but does not reject a legitimate free-form password with
+    the generic randomness floor.
+*   **`weak_anchor`** (bool, default `false`): The service context is useful but
+    the captured value still collides with broad hex/base64/identifier shapes.
+    Generic shape and randomness safeguards remain active for that detector.
+*   **`private_key_block`** (bool, default `false`): The match spans an enclosing
+    PEM/OpenSSH private-key block. Resolution suppresses lower-specificity child
+    findings inside that span instead of reporting the key body repeatedly.
+*   **`[detector.credential_shape]`** (table, optional): A fail-closed byte-shape
+    contract. It can declare `exact_length`, `prefix`, `body_min_length`, and
+    `body_max_length`; candidates outside the declared shape are suppressed.
+
+Because these values are loaded from the active detector corpus, custom corpora
+carry their classifications with them. There is no separate detector-id list or
+hidden Rust-side family table to keep synchronized.
+
 ### Confidence Floors
 *   **`min_confidence`** (float, optional): Per-detector minimum confidence floor. Overrides the global scan confidence floor.
 
