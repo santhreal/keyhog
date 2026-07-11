@@ -380,18 +380,22 @@ impl CompiledScanner {
 
                 // The `--keyword-low-entropy` knob relaxes the generic-bridge
                 // entropy floor to the GENERIC_KEYWORD_SECRET floor for EVERY
-                // generic assignment; when off, each candidate is held to its
-                // owning detector's calibrated floor. This per-detector
+                // generic assignment; when off, each candidate is held to the
+                // GENERIC_SECRET floor. This per-detector
                 // re-validation MUST honor the knob exactly as the shape-file
                 // gate (`generic_value_shape_rejected` →
                 // `generic_bridge_entropy_below_floor`) does — otherwise the knob
                 // is silently HALF-WIRED: the shape gate admits the low-entropy
                 // value under the relaxed floor, then this re-check drops it again
                 // under the strict owning-detector floor (the #9 regression).
-                let floor_detector_id = if self.config.generic_keyword_low_entropy {
-                    crate::detector_ids::GENERIC_KEYWORD_SECRET
+                let floor_detector = if self.config.generic_keyword_low_entropy {
+                    self.generic_owning_detector
+                        .generic_keyword_secret_index()
+                        .and_then(|index| self.detectors.get(index))
                 } else {
-                    owning_detector_id
+                    self.generic_owning_detector
+                        .generic_secret_index()
+                        .and_then(|index| self.detectors.get(index))
                 };
                 if let Some(reason) = shape_rejected {
                     match reason {
@@ -404,7 +408,7 @@ impl CompiledScanner {
                             if !crate::adjudicate::generic_entropy_below_floor(
                                 entropy,
                                 entropy_threshold,
-                                floor_detector_id,
+                                floor_detector,
                                 value.len(),
                             ) {
                                 shape_rejected = None;
@@ -420,7 +424,7 @@ impl CompiledScanner {
                     } else if crate::adjudicate::generic_entropy_below_floor(
                         entropy,
                         entropy_threshold,
-                        floor_detector_id,
+                        floor_detector,
                         value.len(),
                     ) {
                         shape_rejected =

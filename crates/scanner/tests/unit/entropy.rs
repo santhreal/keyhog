@@ -5,6 +5,7 @@ use keyhog_scanner::testing::entropy_keywords::{is_candidate_plausible, is_secre
 use keyhog_scanner::testing::entropy_scanner::{
     candidate_plausibility_rejection_reason, credential_keyword_context,
 };
+use keyhog_scanner::testing::generic_entropy_floor_for_test;
 use keyhog_scanner::testing::is_likely_innocuous_line_for_test as innocuous_line;
 use std::sync::Arc;
 
@@ -164,6 +165,34 @@ fn structured_dotted_shape_does_not_bypass_entropy_floor() {
         Some("entropy_below_floor"),
         "credential-shaped dots grant only a length allowance, never a low-entropy bypass"
     );
+}
+
+#[test]
+fn generic_entropy_floor_uses_the_supplied_active_spec() {
+    let custom = keyhog_core::DetectorSpec {
+        id: "generic-custom".to_string(),
+        entropy_high: Some(4.5),
+        entropy_floor: vec![
+            keyhog_core::EntropyFloorBucket {
+                max_len: Some(12),
+                floor: 1.25,
+            },
+            keyhog_core::EntropyFloorBucket {
+                max_len: None,
+                floor: 2.75,
+            },
+        ],
+        ..Default::default()
+    };
+
+    assert_eq!(generic_entropy_floor_for_test(Some(&custom), 4.5, 12), 1.25);
+    assert_eq!(generic_entropy_floor_for_test(Some(&custom), 4.5, 13), 2.75);
+    assert_eq!(
+        generic_entropy_floor_for_test(Some(&custom), 6.0, 12),
+        6.0,
+        "a stricter Tier-A threshold composes above the active detector floor"
+    );
+    assert_eq!(generic_entropy_floor_for_test(None, 4.5, 12), 3.5);
 }
 
 #[test]

@@ -24,10 +24,10 @@ fn engine_phase2_entropy_non_empty() {
         "engine::phase2_entropy must split preprocessed text once and share the line slice"
     );
     for required in [
-        "is_entropy_appropriate_with_content_lines(",
+        "is_entropy_appropriate_inner(",
         "has_isolated_bare_secret_candidate_with_lines(",
-        "has_lower_dash_app_password_candidate_with_lines(",
-        "find_entropy_secrets_with_canonical_lift_and_lines(",
+        "has_lower_dash_app_password_candidate_with_precomputed_keywords_and_policy(",
+        "find_entropy_secrets_with_precomputed_keywords_and_policy(",
     ] {
         assert!(
             prod.contains(required),

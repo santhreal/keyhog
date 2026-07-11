@@ -1,6 +1,7 @@
 use super::plausibility::{is_candidate_plausible, is_secret_plausible, PlausibilityContext};
 use crate::adjudicate::{EntropyShapeStage, StageId};
 use crate::engine::phase2_generic::keywords::normalize_assignment_keyword;
+use keyhog_core::DetectorSpec;
 
 pub(crate) struct KeywordContext {
     pub(crate) keyword: String,
@@ -118,6 +119,11 @@ pub(super) fn extract_candidates(
     // This is the third (and earliest) of the three generation gates the lift
     // must release for the `UUID`/`hex64` miss classes.
     allow_canonical_shapes: bool,
+    // Per-detector entropy-gate resolution: the classified generic detector id
+    // (`generic-secret`/`generic-api-key`/…) whose `DetectorSpec` overrides the
+    // `HIGH_ENTROPY_THRESHOLD` / `MIXED_ALNUM_TOKEN_THRESHOLD` gate floors in
+    // `passes_secret_strength_checks`. `None` falls back to the module constants.
+    detector: Option<&DetectorSpec>,
 ) -> Vec<String> {
     extract_candidates_internal(
         line,
@@ -126,6 +132,7 @@ pub(super) fn extract_candidates(
         is_credential_context,
         allow_canonical_shapes,
         false,
+        detector,
     )
     .candidates
 }
@@ -146,6 +153,7 @@ pub(super) fn extract_candidates_with_rejections(
     placeholder_keywords: &[String],
     is_credential_context: bool,
     allow_canonical_shapes: bool,
+    detector: Option<&DetectorSpec>,
 ) -> ExtractedCandidates {
     extract_candidates_internal(
         line,
@@ -154,6 +162,7 @@ pub(super) fn extract_candidates_with_rejections(
         is_credential_context,
         allow_canonical_shapes,
         true,
+        detector,
     )
 }
 
@@ -164,6 +173,7 @@ fn extract_candidates_internal(
     is_credential_context: bool,
     allow_canonical_shapes: bool,
     trace_rejections: bool,
+    detector: Option<&DetectorSpec>,
 ) -> ExtractedCandidates {
     let mut candidates = Vec::new();
     let mut rejections = Vec::new();
@@ -198,7 +208,8 @@ fn extract_candidates_internal(
         let structured_dotted = allow_structured_dotted
             && crate::suppression::shape::is_structured_dotted_token(cleaned);
         let plausibility_context =
-            PlausibilityContext::new(is_credential_context, allow_canonical_shapes);
+            PlausibilityContext::new(is_credential_context, allow_canonical_shapes)
+                .with_detector(detector);
         let plausible = structured_dotted
             || if strict {
                 is_secret_plausible(cleaned, placeholder_keywords, plausibility_context)

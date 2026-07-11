@@ -98,15 +98,6 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // deliberately not part of the crate's public API, so external placement
     // would force exposing them `pub` solely for the test.
     "detector_classification.rs",
-    // The entropy-floor tests drive the crate-private `validate_buckets` bucket
-    // validator and the private `EntropyFloorTable::family_floor` lookup, built
-    // from the embedded detector corpus's per-detector `entropy_floor` fields
-    // (bucket ordering, catch-all placement, and the parity proof that the
-    // corpus-loaded table reproduces the old hardcoded floors exactly). The
-    // table type and validator are crate-internal, so external placement would
-    // force them `pub` solely for the test — the same white-box justification as
-    // `detector_classification.rs`.
-    "entropy_floors.rs",
     // The placeholder/doc-marker tests drive the crate-private `parse_vocab`
     // parser, the private `validate_markers` helper, and the private
     // `PlaceholderVocab` fields against the bundled `placeholder_words.toml`
@@ -114,7 +105,7 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // the parity proof that the Tier-B `[doc_markers]` lists reproduce the old
     // `INSTRUCTIONAL_FRAGMENTS` / `DOC_MARKER_SUBSTRINGS` consts exactly). The
     // parser, vocab type, and marker validator are all crate-internal — the same
-    // white-box justification as `entropy_floors.rs`.
+    // white-box justification as other private Tier-B parsers.
     "placeholder_words.rs",
     // The assignment-keyword tests drive the crate-private `derive_assignment_keywords`
     // builder and the private `ASSIGNMENT_KEYWORDS` static (separator expansion, case
@@ -197,15 +188,14 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // private `isolated_bare_entropy_threshold` reproduces the isolated site's
     // exact per-band resolution (default→MIXED, ≤high→MIXED, non-finite→MIXED,
     // >high→verbatim) after unifying onto the shared override owner. Parity
-    // proofs over a crate-private helper are the same white-box justification as
-    // `entropy_floors.rs`.
+    // proofs over a crate-private helper justify co-location.
     "entropy/isolated.rs",
     // `entropy/bpe.rs` co-locates white-box tests for the `pub(crate)`
     // `bytes_per_token` / `is_word_like_low_bpe` BPE gate: they assert the exact
     // tiktoken bytes-per-token of the crate-private FP/secret taxonomies and the
     // strictly-`>`-than-the-owner-const suppression boundary — crate-internal
     // predicates unreachable from `tests/` (no public surface), same white-box
-    // justification as `entropy_floors.rs` / `entropy/isolated.rs`.
+    // justification as `entropy/isolated.rs`.
     "entropy/bpe.rs",
     // NOTE: `entropy/plausibility.rs` was removed here — its inline `#[cfg(test)]`
     // tests were migrated to `tests/unit/entropy.rs` (they now exercise the

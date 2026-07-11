@@ -57,8 +57,6 @@ impl CompiledScanner {
         credential: &str,
         credential_start: usize,
         credential_end: usize,
-        base_line: usize,
-        base_offset: usize,
         keyword_nearby: bool,
         sensitive_file: bool,
     ) {
@@ -68,6 +66,7 @@ impl CompiledScanner {
 
         let process_signals = crate::adjudicate::ProcessCandidateSignals::from_match(
             detector.id.as_ref(),
+            detector.min_len,
             self.credential_shape_by_detector_index
                 .get(entry.detector_index)
                 .and_then(Option::as_ref),
@@ -125,9 +124,10 @@ impl CompiledScanner {
             crate::suppression::NamedDetectorSuppressionCtx::with_weak_anchor(
                 chunk.metadata.path.as_deref(),
                 inferred_context,
-                Some(chunk.metadata.source_type.as_str()),
+                Some(chunk.metadata.source_type.as_ref()),
                 detector.id.as_ref(),
                 weak_anchor,
+                detector.structural_password_slot,
             );
         let match_ctx = crate::adjudicate::MatchCtx::for_named_detector(named_suppression_ctx);
         if crate::adjudicate::record_suppression(
@@ -164,13 +164,20 @@ impl CompiledScanner {
 
         let is_generic = crate::detector_ids::is_generic_detector(detector.id.as_ref());
         let is_weakly_anchored = weak_anchor;
+        let entropy_floor_detector = if is_weakly_anchored {
+            self.generic_owning_detector
+                .index_for_id(crate::detector_ids::GENERIC_API_KEY)
+                .and_then(|index| self.detectors.get(index))
+        } else {
+            Some(detector)
+        };
         let entropy_shape_ctx = crate::adjudicate::MatchCtx::for_process_signals(
             crate::adjudicate::ProcessCandidateSignals::from_process_entropy_shape(
                 is_generic,
                 is_weakly_anchored,
                 entropy,
                 self.config.entropy_threshold,
-                detector.id.as_ref(),
+                entropy_floor_detector,
                 credential,
             ),
         );
@@ -265,8 +272,8 @@ impl CompiledScanner {
                     chunk,
                     credential,
                     companions,
-                    source_offset + base_offset,
-                    line + base_line,
+                    source_offset,
+                    line,
                     entropy,
                     report_conf,
                     scan_state,
@@ -295,8 +302,8 @@ impl CompiledScanner {
                     chunk,
                     credential,
                     companions,
-                    source_offset + base_offset,
-                    line + base_line,
+                    source_offset,
+                    line,
                     entropy,
                     heuristic_conf,
                     scan_state,

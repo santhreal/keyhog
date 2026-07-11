@@ -1,6 +1,4 @@
-use super::isolated::{
-    collect_isolated_bare_candidates_inner, isolated_bare_keyword_context,
-};
+use super::isolated::{collect_isolated_bare_candidates_inner, isolated_bare_keyword_context};
 #[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
 pub(crate) use super::isolated::{
     colon_separated_opaque_candidate, lower_dash_app_password_floor_met,
@@ -17,8 +15,40 @@ use super::{
 };
 use keyhog_core::DetectorSpec;
 
-fn get_spec(detector_id: &str) -> Option<&'static DetectorSpec> {
-    keyhog_core::detector_spec_by_id(detector_id)
+/// Borrowed view of the detector corpus that actually compiled for this scan.
+/// Production phase-2 paths pass this view so custom detector directories and
+/// operator-composed specs remain authoritative. Stable public convenience
+/// APIs pass `None` and retain the embedded-corpus defaults they historically
+/// exposed.
+#[derive(Clone, Copy)]
+pub(crate) struct ActiveDetectorPolicy<'a> {
+    detectors: &'a [DetectorSpec],
+    index: &'a crate::generic_keyword_owner::GenericOwningDetectorIndex,
+}
+
+impl<'a> ActiveDetectorPolicy<'a> {
+    pub(crate) fn new(
+        detectors: &'a [DetectorSpec],
+        index: &'a crate::generic_keyword_owner::GenericOwningDetectorIndex,
+    ) -> Self {
+        Self { detectors, index }
+    }
+
+    fn spec(self, detector_id: &str) -> Option<&'a DetectorSpec> {
+        self.index
+            .index_for_id(detector_id)
+            .and_then(|index| self.detectors.get(index))
+    }
+}
+
+fn get_spec<'a>(
+    active_policy: Option<ActiveDetectorPolicy<'a>>,
+    detector_id: &str,
+) -> Option<&'a DetectorSpec> {
+    match active_policy {
+        Some(policy) => policy.spec(detector_id),
+        None => keyhog_core::detector_spec_by_id(detector_id),
+    }
 }
 
 pub(crate) fn classify_keyword_to_detector_id(keyword: &str) -> &'static str {
@@ -64,7 +94,7 @@ pub(crate) fn credential_keyword_context_with_lift(
     allow_canonical_lift: bool,
 ) -> KeywordContext {
     let detector_id = classify_keyword_to_detector_id(keyword);
-    let spec = get_spec(detector_id);
+    let spec = get_spec(None, detector_id);
     let entropy_low = spec
         .and_then(|s| s.entropy_low)
         .unwrap_or(LOW_ENTROPY_THRESHOLD);
@@ -90,7 +120,7 @@ pub fn find_entropy_secrets(
     test_keywords: &[String],
     placeholder_keywords: &[String],
 ) -> Vec<EntropyMatch> {
-    let spec = get_spec(crate::detector_ids::GENERIC_SECRET);
+    let spec = get_spec(None, crate::detector_ids::GENERIC_SECRET);
     let entropy_very_high = spec
         .and_then(|s| s.entropy_very_high)
         .unwrap_or(VERY_HIGH_ENTROPY_THRESHOLD);
@@ -250,6 +280,42 @@ pub(crate) fn find_entropy_secrets_with_precomputed_keywords(
     skip_lines: Option<&std::collections::HashSet<usize>>,
     allow_canonical_lift: bool,
 ) -> Vec<EntropyMatch> {
+    find_entropy_secrets_with_precomputed_keywords_and_policy(
+        lines,
+        line_offsets,
+        keyword_lines,
+        min_length,
+        context_lines,
+        entropy_threshold,
+        keyword_free_threshold,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+        skip_lines,
+        allow_canonical_lift,
+        None,
+    )
+}
+
+/// Production sibling of [`find_entropy_secrets_with_precomputed_keywords`]
+/// that resolves all detector-specific thresholds from the active compiled
+/// corpus rather than the embedded defaults.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn find_entropy_secrets_with_precomputed_keywords_and_policy(
+    lines: &[&str],
+    line_offsets: &[usize],
+    keyword_lines: &[(usize, &str)],
+    min_length: usize,
+    context_lines: usize,
+    entropy_threshold: f64,
+    keyword_free_threshold: f64,
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+    skip_lines: Option<&std::collections::HashSet<usize>>,
+    allow_canonical_lift: bool,
+    active_policy: Option<ActiveDetectorPolicy<'_>>,
+) -> Vec<EntropyMatch> {
     debug_assert!(
         line_offsets.len() >= lines.len(),
         "entropy line offsets must cover every split line"
@@ -271,6 +337,7 @@ pub(crate) fn find_entropy_secrets_with_precomputed_keywords(
         placeholder_keywords,
         skip_lines,
         allow_canonical_lift,
+        active_policy,
     );
     scan_keyword_free_candidates(
         lines,
@@ -281,6 +348,7 @@ pub(crate) fn find_entropy_secrets_with_precomputed_keywords(
         &mut matches,
         placeholder_keywords,
         skip_lines,
+        active_policy,
     );
     matches
 }
@@ -300,14 +368,16 @@ fn scan_keyword_contexts(
     placeholder_keywords: &[String],
     skip_lines: Option<&std::collections::HashSet<usize>>,
     allow_canonical_lift: bool,
+    active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) {
     for (keyword_line_index, keyword_line) in keyword_lines {
-        let context = keyword_context(
+        let context = keyword_context_with_policy(
             keyword_line,
             min_length,
             entropy_threshold,
             secret_keywords,
             allow_canonical_lift,
+            active_policy,
         );
         let start = keyword_line_index.saturating_sub(context_lines);
         let end = (*keyword_line_index + context_lines + 1).min(lines.len());
@@ -325,6 +395,7 @@ fn scan_keyword_contexts(
                 seen,
                 matches,
                 placeholder_keywords,
+                active_policy,
             );
         }
     }
@@ -348,7 +419,7 @@ pub(super) const BYTE_CLASS: [u8; 256] = {
     t[b'\r' as usize] |= 1;
     t[0x0b] |= 1; // vertical tab
     t[0x0c] |= 1; // form feed
-    // Trigger bytes: =, :, ", ', <
+                  // Trigger bytes: =, :, ", ', <
     t[b'=' as usize] |= 4;
     t[b':' as usize] |= 4;
     t[b'"' as usize] |= 4;
@@ -401,9 +472,10 @@ fn scan_keyword_free_candidates(
     matches: &mut Vec<EntropyMatch>,
     placeholder_keywords: &[String],
     skip_lines: Option<&std::collections::HashSet<usize>>,
+    active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) {
     let effective_keyword_free_threshold = keyword_free_threshold.max(entropy_threshold + 1.0);
-    let spec = get_spec(crate::detector_ids::GENERIC_SECRET);
+    let spec = get_spec(active_policy, crate::detector_ids::GENERIC_SECRET);
     let keyword_free_min_len = spec
         .and_then(|s| s.keyword_free_min_len)
         .unwrap_or(KEYWORD_FREE_MIN_LEN);
@@ -510,6 +582,7 @@ fn scan_keyword_free_candidates(
                 seen,
                 matches,
                 placeholder_keywords,
+                active_policy,
             );
         }
     }
@@ -534,16 +607,39 @@ pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords(
     keyword_lines: &[(usize, &str)],
     config: &crate::ScannerConfig,
 ) -> bool {
+    has_lower_dash_app_password_candidate_with_precomputed_keywords_and_policy(
+        keyword_lines,
+        config,
+        None,
+    )
+}
+
+/// Production sibling of
+/// [`has_lower_dash_app_password_candidate_with_precomputed_keywords`] that
+/// resolves the prefilter's detector thresholds from the active corpus. The
+/// prefilter can decide whether phase 2 runs at all, so consulting embedded
+/// defaults here would be a silent policy override rather than an optimization.
+#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
+pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_and_policy(
+    keyword_lines: &[(usize, &str)],
+    config: &crate::ScannerConfig,
+    active_policy: Option<ActiveDetectorPolicy<'_>>,
+) -> bool {
     for (_, keyword_line) in keyword_lines {
         if is_likely_innocuous_line(keyword_line) {
             continue;
         }
-        let context = keyword_context(
+        let context = keyword_context_with_policy(
             keyword_line,
             config.min_secret_len,
             config.entropy_threshold,
             &config.secret_keywords,
             false,
+            active_policy,
+        );
+        let detector = get_spec(
+            active_policy,
+            classify_keyword_to_detector_id(&context.keyword),
         );
         for candidate in extract_candidates(
             keyword_line,
@@ -551,15 +647,16 @@ pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords(
             &config.placeholder_keywords,
             context.is_credential_context,
             false,
-            Some(classify_keyword_to_detector_id(&context.keyword)),
+            detector,
         ) {
             let entropy = shannon_entropy(candidate.as_bytes());
             if lower_dash_app_password_floor_met(&candidate, entropy)
-                && candidate_is_plausible(
+                && candidate_is_plausible_with_policy(
                     &candidate,
                     entropy,
                     &context,
                     &config.placeholder_keywords,
+                    active_policy,
                 )
             {
                 return true;
@@ -577,6 +674,7 @@ fn collect_line_candidates(
     seen: &mut std::collections::HashSet<String>,
     matches: &mut Vec<EntropyMatch>,
     placeholder_keywords: &[String],
+    active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) {
     if is_likely_innocuous_line(line) {
         return;
@@ -589,6 +687,7 @@ fn collect_line_candidates(
         seen,
         matches,
         placeholder_keywords,
+        active_policy,
     );
 }
 
@@ -604,7 +703,12 @@ fn collect_line_candidates_inner(
     seen: &mut std::collections::HashSet<String>,
     matches: &mut Vec<EntropyMatch>,
     placeholder_keywords: &[String],
+    active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) {
+    let detector = get_spec(
+        active_policy,
+        classify_keyword_to_detector_id(&context.keyword),
+    );
     let candidates = if crate::telemetry::is_dogfood_enabled() {
         let extracted = extract_candidates_with_rejections(
             line,
@@ -612,7 +716,7 @@ fn collect_line_candidates_inner(
             placeholder_keywords,
             context.is_credential_context,
             context.allow_canonical_shapes,
-            Some(classify_keyword_to_detector_id(&context.keyword)),
+            detector,
         );
         for rejection in &extracted.rejections {
             let ctx = crate::adjudicate::MatchCtx::for_entropy_generation(
@@ -628,17 +732,18 @@ fn collect_line_candidates_inner(
             placeholder_keywords,
             context.is_credential_context,
             context.allow_canonical_shapes,
-            Some(classify_keyword_to_detector_id(&context.keyword)),
+            detector,
         )
     };
 
     for candidate in candidates {
         let entropy = shannon_entropy(candidate.as_bytes());
-        if let Some(stage_id) = candidate_plausibility_rejection_stage(
+        if let Some(stage_id) = candidate_plausibility_rejection_stage_with_policy(
             &candidate,
             entropy,
             context,
             placeholder_keywords,
+            active_policy,
         ) {
             if crate::telemetry::is_dogfood_enabled() {
                 let ctx = crate::adjudicate::MatchCtx::for_entropy_generation(
@@ -672,14 +777,47 @@ pub(crate) fn candidate_is_plausible(
         .is_none()
 }
 
+fn candidate_is_plausible_with_policy(
+    candidate: &str,
+    entropy: f64,
+    context: &KeywordContext,
+    placeholder_keywords: &[String],
+    active_policy: Option<ActiveDetectorPolicy<'_>>,
+) -> bool {
+    candidate_plausibility_rejection_stage_with_policy(
+        candidate,
+        entropy,
+        context,
+        placeholder_keywords,
+        active_policy,
+    )
+    .is_none()
+}
+
 pub(crate) fn candidate_plausibility_rejection_stage(
     candidate: &str,
     entropy: f64,
     context: &KeywordContext,
     placeholder_keywords: &[String],
 ) -> Option<StageId> {
+    candidate_plausibility_rejection_stage_with_policy(
+        candidate,
+        entropy,
+        context,
+        placeholder_keywords,
+        None,
+    )
+}
+
+fn candidate_plausibility_rejection_stage_with_policy(
+    candidate: &str,
+    entropy: f64,
+    context: &KeywordContext,
+    placeholder_keywords: &[String],
+    active_policy: Option<ActiveDetectorPolicy<'_>>,
+) -> Option<StageId> {
     let detector_id = classify_keyword_to_detector_id(&context.keyword);
-    let spec = get_spec(detector_id);
+    let spec = get_spec(active_policy, detector_id);
     let keyword_free_min_len = spec
         .and_then(|s| s.keyword_free_min_len)
         .unwrap_or(KEYWORD_FREE_MIN_LEN);
@@ -740,11 +878,12 @@ pub(crate) fn candidate_plausibility_rejection_stage(
             EntropyShapeStage::KeywordFreeTooShort,
         ));
     }
-    if !is_secret_plausible(
-        candidate,
-        placeholder_keywords,
-        PlausibilityContext::default(),
-    ) {
+    let plausibility_context = PlausibilityContext::new(
+        context.is_credential_context,
+        context.allow_canonical_shapes,
+    )
+    .with_detector(spec);
+    if !is_secret_plausible(candidate, placeholder_keywords, plausibility_context) {
         return Some(StageId::EntropyValueShape(
             EntropyShapeStage::SecretPlausibilityRejected,
         ));
@@ -883,6 +1022,24 @@ pub(crate) fn keyword_context(
     secret_keywords: &[String],
     allow_canonical_lift: bool,
 ) -> KeywordContext {
+    keyword_context_with_policy(
+        keyword_line,
+        min_length,
+        entropy_threshold,
+        secret_keywords,
+        allow_canonical_lift,
+        None,
+    )
+}
+
+fn keyword_context_with_policy(
+    keyword_line: &str,
+    min_length: usize,
+    entropy_threshold: f64,
+    secret_keywords: &[String],
+    allow_canonical_lift: bool,
+    active_policy: Option<ActiveDetectorPolicy<'_>>,
+) -> KeywordContext {
     let line_bytes = keyword_line.as_bytes();
     let exact_assignment_keyword =
         crate::entropy::keywords::assignment_keyword_for_line(keyword_line);
@@ -906,7 +1063,7 @@ pub(crate) fn keyword_context(
             });
 
     let detector_id = classify_keyword_to_detector_id(keyword);
-    let spec = get_spec(detector_id);
+    let spec = get_spec(active_policy, detector_id);
     let entropy_low = spec
         .and_then(|s| s.entropy_low)
         .unwrap_or(LOW_ENTROPY_THRESHOLD);

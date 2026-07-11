@@ -63,17 +63,22 @@ impl CompiledScanner {
         // predicate), NOT generic-secret's confidence-boost `entropy_high` — those
         // are two distinct thresholds and must not be conflated (a marshalled-binary
         // blob is a blob regardless of the generic-secret confidence floor).
+        let generic_secret_detector = self
+            .generic_owning_detector
+            .generic_secret_index()
+            .and_then(|index| self.detectors.get(index));
+        let generic_keyword_detector = self
+            .generic_owning_detector
+            .generic_keyword_secret_index()
+            .and_then(|index| self.detectors.get(index));
         let crate::adjudicate::GenericSecretShapeFloors { min_len } =
-            crate::adjudicate::generic_secret_shape_floors(
-                self.generic_owning_detector
-                    .generic_secret_index()
-                    .and_then(|index| self.detectors.get(index)),
-            );
-
+            crate::adjudicate::generic_secret_shape_floors(generic_secret_detector);
         if crate::adjudicate::generic_bridge_entropy_below_floor(
             entropy,
             self.config.entropy_threshold,
             self.config.generic_keyword_low_entropy,
+            generic_secret_detector,
+            generic_keyword_detector,
             value.len(),
         ) {
             return Some(GenericValueShapeStage::EntropyBelowFloor);

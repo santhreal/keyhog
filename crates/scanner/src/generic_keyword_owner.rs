@@ -34,6 +34,7 @@ pub(crate) struct GenericOwningDetectorIndex {
     normalized: HashMap<String, usize>,
     by_id: HashMap<String, usize>,
     generic_secret_index: Option<usize>,
+    generic_keyword_secret_index: Option<usize>,
 }
 
 impl GenericOwningDetectorIndex {
@@ -42,15 +43,26 @@ impl GenericOwningDetectorIndex {
         let mut normalized = HashMap::new();
         let mut by_id = HashMap::new();
         let mut generic_secret_index = None;
+        let mut generic_keyword_secret_index = None;
         for (index, detector) in detectors.iter().enumerate() {
             if generic_secret_index.is_none() && detector.id == crate::detector_ids::GENERIC_SECRET
             {
                 generic_secret_index = Some(index);
             }
+            if generic_keyword_secret_index.is_none()
+                && detector.id == crate::detector_ids::GENERIC_KEYWORD_SECRET
+            {
+                generic_keyword_secret_index = Some(index);
+            }
+            // Policy lookup covers every active generic detector, including
+            // regex-backed families such as `generic-password`. Assignment-key
+            // ownership below remains limited to Phase2Generic detectors.
+            if detector.service == "generic" {
+                by_id.entry(detector.id.clone()).or_insert(index);
+            }
             if detector.service != "generic" || detector.kind != DetectorKind::Phase2Generic {
                 continue;
             }
-            by_id.entry(detector.id.clone()).or_insert(index);
             for keyword in &detector.keywords {
                 let kw_lower = keyword.to_ascii_lowercase();
                 if let Some(norm) = normalize_assignment_keyword(&kw_lower) {
@@ -64,6 +76,7 @@ impl GenericOwningDetectorIndex {
             normalized,
             by_id,
             generic_secret_index,
+            generic_keyword_secret_index,
         }
     }
 
@@ -91,6 +104,11 @@ impl GenericOwningDetectorIndex {
     /// run their own separate linear `detectors.iter().find(id == GENERIC_SECRET)`.
     pub(crate) fn generic_secret_index(&self) -> Option<usize> {
         self.generic_secret_index
+    }
+
+    #[inline]
+    pub(crate) fn generic_keyword_secret_index(&self) -> Option<usize> {
+        self.generic_keyword_secret_index
     }
 
     /// Index of an active generic policy detector by its stable id. Synthetic
@@ -472,6 +490,25 @@ mod tests {
             "synthetic entropy policy must resolve the active generic-secret spec"
         );
         assert_eq!(index.index_for_id("not-loaded"), None);
+    }
+
+    #[test]
+    fn policy_index_includes_regex_backed_generic_password() {
+        let mut password = generic_detector(crate::detector_ids::GENERIC_PASSWORD, &["password"]);
+        password.kind = DetectorKind::Regex;
+        let detectors = vec![generic_secret_detector(), password];
+        let index = GenericOwningDetectorIndex::build(&detectors);
+
+        assert_eq!(
+            index.index_for_id(crate::detector_ids::GENERIC_PASSWORD),
+            Some(1),
+            "entropy-password policy must resolve the active regex-backed detector"
+        );
+        assert_eq!(
+            index.owning_index("password"),
+            Some(0),
+            "regex-backed generic detectors must not claim Phase2 assignment ownership"
+        );
     }
 
     #[test]

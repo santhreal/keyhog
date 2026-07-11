@@ -1645,6 +1645,17 @@ pub fn apply_named_detector_anchor_floor(
     )
 }
 
+/// Test seam for the active-spec generic entropy floor. Accepts the exact
+/// detector spec a compiled scanner would pass, so tests can prove a custom
+/// detector policy wins without mutating the embedded corpus.
+pub fn generic_entropy_floor_for_test(
+    detector: Option<&keyhog_core::DetectorSpec>,
+    entropy_threshold: f64,
+    credential_len: usize,
+) -> f64 {
+    crate::adjudicate::generic_entropy_floor(entropy_threshold, detector, credential_len)
+}
+
 /// Test seam for [`crate::confidence::policy::generic_secret_confidence`].
 /// `context_label` selects the `CodeContext` ("test" / "comment" / "doc" /
 /// anything else = ordinary source) so a gap test can pin the exact confidence
@@ -1821,6 +1832,8 @@ pub fn named_detector_suppressed(
     source_type: Option<&str>,
     detector_id: &str,
 ) -> bool {
+    let structural_password_slot = keyhog_core::detector_spec_by_id(detector_id)
+        .is_some_and(|spec| spec.structural_password_slot);
     crate::suppression::api::suppress_named_detector_finding(
         credential,
         crate::suppression::api::NamedDetectorSuppressionCtx::with_weak_anchor(
@@ -1829,6 +1842,7 @@ pub fn named_detector_suppressed(
             source_type,
             detector_id,
             false,
+            structural_password_slot,
         ),
     )
 }

@@ -52,6 +52,7 @@ impl ProcessCandidateSignals {
 
     pub(crate) fn from_match(
         detector_id: &str,
+        detector_min_len: Option<usize>,
         credential_shape: Option<&crate::credential_shapes::CredentialShapeRule>,
         credential: &str,
         data: &str,
@@ -64,7 +65,13 @@ impl ProcessCandidateSignals {
         if crate::pipeline::is_within_hex_context(data, credential_start, match_end) {
             return Self::suppress(StageId::WithinHexContext);
         }
-        if is_hex_digest_fragment(detector_id, data, credential_start, match_end, credential) {
+        if is_hex_digest_fragment(
+            detector_min_len,
+            data,
+            credential_start,
+            match_end,
+            credential,
+        ) {
             return Self::suppress(StageId::HexDigestFragment);
         }
         if crate::detector_ids::is_generic_detector(detector_id)
@@ -124,19 +131,19 @@ impl ProcessCandidateSignals {
         is_weakly_anchored: bool,
         entropy: f64,
         entropy_threshold: f64,
-        detector_id: &str,
+        floor_detector: Option<&keyhog_core::DetectorSpec>,
         credential: &str,
     ) -> Self {
         if !(is_generic || is_weakly_anchored) {
             return Self::pass();
         }
-        let floor_id = if is_weakly_anchored {
-            crate::detector_ids::GENERIC_API_KEY
-        } else {
-            detector_id
-        };
         Self::from_entropy_shape(
-            generic_entropy_below_floor(entropy, entropy_threshold, floor_id, credential.len()),
+            generic_entropy_below_floor(
+                entropy,
+                entropy_threshold,
+                floor_detector,
+                credential.len(),
+            ),
             crate::suppression::shape::looks_like_camel_case_no_digit(credential),
         )
     }
@@ -241,36 +248,33 @@ pub(crate) fn detector_min_confidence_floor(
 /// hand-kept `4.5` literals before).
 use keyhog_core::DEFAULT_ENTROPY_THRESHOLD as DEFAULT_GENERIC_ENTROPY_THRESHOLD;
 
+/// Recall-safe base floor for a detector that declares no length-bucketed
+/// `entropy_floor`. Detector TOMLs override this through the active spec passed
+/// by the compiled scanner; no embedded registry or parallel floor table exists.
+const DEFAULT_GENERIC_ENTROPY_FLOOR: f64 = 3.5;
+
 /// Single source of truth for the generic-detector entropy gate used by named
 /// generic/weak-anchor processing and the generic-secret fallback bridge.
 ///
-/// The per-family, length-bucketed base floors are Tier-B calibration DATA
-/// owned in each generic detector's own TOML `entropy_floor` field and built into
-/// the runtime table by `crate::entropy_floors`; this owner
-/// keeps only the policy that layers the Tier-A `entropy_threshold` scan knob on
-/// top — an operator can RAISE the floor above the default for a stricter scan
-/// but never lower a calibrated family floor.
+/// The per-family, length-bucketed base floors are Tier-B calibration data owned
+/// in each generic detector's TOML `entropy_floor` field. The active spec is
+/// passed directly from the compiled scanner; this owner layers only the Tier-A
+/// `entropy_threshold` knob on top. An operator can raise the floor above the
+/// detector calibration for a stricter scan but cannot silently replace it.
 pub(crate) fn generic_entropy_floor(
     entropy_threshold: f64,
-    detector_id: &str,
+    detector: Option<&keyhog_core::DetectorSpec>,
     credential_len: usize,
 ) -> f64 {
-    let spec = keyhog_core::detector_spec_by_id(detector_id);
-
-    let base = if let Some(s) = spec {
-        if s.entropy_floor.is_empty() {
-            crate::entropy_floors::family_floor(detector_id, credential_len)
-        } else {
-            s.entropy_floor
+    let base = detector
+        .and_then(|spec| {
+            spec.entropy_floor
                 .iter()
                 .find(|bucket| bucket.max_len.is_none_or(|max| credential_len <= max))
-                .map_or(crate::entropy_floors::DEFAULT_FLOOR, |bucket| bucket.floor)
-        }
-    } else {
-        crate::entropy_floors::family_floor(detector_id, credential_len)
-    };
+        })
+        .map_or(DEFAULT_GENERIC_ENTROPY_FLOOR, |bucket| bucket.floor);
 
-    let threshold_val = spec
+    let threshold_val = detector
         .and_then(|s| s.entropy_high)
         .unwrap_or(DEFAULT_GENERIC_ENTROPY_THRESHOLD);
 
@@ -284,24 +288,26 @@ pub(crate) fn generic_entropy_floor(
 pub(crate) fn generic_entropy_below_floor(
     entropy: f64,
     entropy_threshold: f64,
-    detector_id: &str,
+    detector: Option<&keyhog_core::DetectorSpec>,
     credential_len: usize,
 ) -> bool {
-    entropy < generic_entropy_floor(entropy_threshold, detector_id, credential_len)
+    entropy < generic_entropy_floor(entropy_threshold, detector, credential_len)
 }
 
 pub(crate) fn generic_bridge_entropy_below_floor(
     entropy: f64,
     entropy_threshold: f64,
     generic_keyword_low_entropy: bool,
+    generic_secret_detector: Option<&keyhog_core::DetectorSpec>,
+    generic_keyword_detector: Option<&keyhog_core::DetectorSpec>,
     credential_len: usize,
 ) -> bool {
-    let detector_id = if generic_keyword_low_entropy {
-        crate::detector_ids::GENERIC_KEYWORD_SECRET
+    let detector = if generic_keyword_low_entropy {
+        generic_keyword_detector
     } else {
-        crate::detector_ids::GENERIC_SECRET
+        generic_secret_detector
     };
-    generic_entropy_below_floor(entropy, entropy_threshold, detector_id, credential_len)
+    generic_entropy_below_floor(entropy, entropy_threshold, detector, credential_len)
 }
 
 /// Resolved shape-gate parameters of the `generic-secret` detector: its
@@ -754,15 +760,13 @@ fn final_emit_stage(candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageO
 }
 
 pub(crate) fn is_hex_digest_fragment(
-    detector_id: &str,
+    detector_min_len: Option<usize>,
     data: &str,
     start: usize,
     end: usize,
     credential: &str,
 ) -> bool {
-    let min_len = keyhog_core::detector_spec_by_id(detector_id)
-        .and_then(|s| s.min_len)
-        .unwrap_or(16);
+    let min_len = detector_min_len.unwrap_or(16);
     if credential.len() < min_len || !credential.bytes().all(|b| b.is_ascii_hexdigit()) {
         return false;
     }

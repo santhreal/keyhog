@@ -138,6 +138,7 @@ mod tests {
         "sk_live_51Hq8xKp3Nz9Rv2Tw7Yb4Lc6Md8",
         "c7f3a1e9b2d84051a6f8c3e9f1b2d4a6c8e0f1a2",
         "3d5b7f9a1c2e4068a0c2e4f6b8d0f2a4",
+        "Y2FsaWNvLW9uLWt1YmUtYXV0aC1rZXk=",
     ];
 
     #[test]
@@ -267,9 +268,9 @@ mod tests {
     #[test]
     fn shipped_opaque_and_password_policies_make_different_bpe_decisions() {
         let word_like = "correcthorsebatterystaple";
-        let api_key = keyhog_core::detector_spec_by_id("generic-api-key")
+        let api_key = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_API_KEY)
             .expect("generic-api-key detector exists");
-        let password = keyhog_core::detector_spec_by_id("generic-password")
+        let password = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_PASSWORD)
             .expect("generic-password detector exists");
         let api_bound = max_bytes_per_token_for_detector(Some(api_key), 2.2, None);
         let password_bound = max_bytes_per_token_for_detector(Some(password), 2.2, None);

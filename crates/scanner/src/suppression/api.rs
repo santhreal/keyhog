@@ -94,6 +94,7 @@ pub(crate) struct NamedDetectorSuppressionCtx<'a> {
     source_type: Option<&'a str>,
     detector_id: &'a str,
     weak_anchor: bool,
+    structural_password_slot: bool,
 }
 
 impl<'a> NamedDetectorSuppressionCtx<'a> {
@@ -103,6 +104,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
         source_type: Option<&'a str>,
         detector_id: &'a str,
         weak_anchor: bool,
+        structural_password_slot: bool,
     ) -> Self {
         Self {
             path,
@@ -110,6 +112,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
             source_type,
             detector_id,
             weak_anchor,
+            structural_password_slot,
         }
     }
 }
@@ -138,6 +141,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
     let source_type = ctx.source_type;
     let detector_id = ctx.detector_id;
     let weak_anchor = ctx.weak_anchor;
+    let structural_password_slot = ctx.structural_password_slot;
     let randomness = TokenRandomness::for_candidate(credential);
     let shape_stage = |reason| Some(crate::adjudicate::StageId::ShapeGate(reason));
 
@@ -189,15 +193,15 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // (hex / prefixed key) is never a free-form word, and applying the gate to
     // all strong anchors wrongly suppressed hex keys whose a..f bigrams read as
     // English (rollbar, steam, matomo, …).
-    if crate::detector_ids::is_structural_password_slot_detector(detector_id) {
-        let placeholder_reason = if super::token_randomness::is_confident_dictionary_word(credential)
-        {
-            Some("dictionary_word_placeholder")
-        } else if super::token_randomness::has_low_letter_diversity(credential) {
-            Some("low_letter_diversity_mask")
-        } else {
-            None
-        };
+    if structural_password_slot {
+        let placeholder_reason =
+            if super::token_randomness::is_confident_dictionary_word(credential) {
+                Some("dictionary_word_placeholder")
+            } else if super::token_randomness::has_low_letter_diversity(credential) {
+                Some("low_letter_diversity_mask")
+            } else {
+                None
+            };
         if let Some(reason) = placeholder_reason {
             crate::adjudicate::record_example_suppression("pipeline", path, credential, reason);
             return shape_stage(reason);

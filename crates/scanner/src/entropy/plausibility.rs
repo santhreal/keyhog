@@ -22,10 +22,12 @@ pub(crate) const LEADING_SLASH_BASE64_ENTROPY_FLOOR: f64 = 4.8;
 /// the floor in [`passes_secret_shape_checks`].
 pub(crate) const SECOND_HALF_ENTROPY_FLOOR: f64 = 2.5;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct PlausibilityContext {
     pub(crate) is_credential_context: bool,
     pub(crate) allow_canonical_shapes: bool,
+    entropy_high: Option<f64>,
+    mixed_alnum_floor: Option<f64>,
 }
 
 impl PlausibilityContext {
@@ -33,7 +35,15 @@ impl PlausibilityContext {
         Self {
             is_credential_context,
             allow_canonical_shapes,
+            entropy_high: None,
+            mixed_alnum_floor: None,
         }
+    }
+
+    pub(crate) fn with_detector(mut self, detector: Option<&keyhog_core::DetectorSpec>) -> Self {
+        self.entropy_high = detector.and_then(|spec| spec.entropy_high);
+        self.mixed_alnum_floor = detector.and_then(|spec| spec.mixed_alnum_floor);
+        self
     }
 }
 
@@ -162,7 +172,12 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
     // keep the original 4.5 floor (those are harder to distinguish
     // from CamelCase/snake_case identifiers).
     let entropy = shannon_entropy(value.as_bytes());
-    if entropy >= HIGH_ENTROPY_THRESHOLD {
+    // Per-detector entropy-gate resolution: the active generic detector's values
+    // are copied into `PlausibilityContext` at extraction, so custom corpora and
+    // operator-composed specs override the blanket high-entropy / mixed-alnum
+    // floors without any embedded-registry read here.
+    let entropy_high = context.entropy_high.unwrap_or(HIGH_ENTROPY_THRESHOLD);
+    if entropy >= entropy_high {
         return true;
     }
     if context.is_credential_context {
@@ -172,11 +187,14 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
         if has_symbol && entropy >= SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR {
             return true;
         }
+        let mixed_alnum_floor = context
+            .mixed_alnum_floor
+            .unwrap_or(MIXED_ALNUM_TOKEN_THRESHOLD);
         if !has_symbol
             && has_alpha
             && has_digit
             && value.len() >= 20
-            && entropy >= MIXED_ALNUM_TOKEN_THRESHOLD
+            && entropy >= mixed_alnum_floor
         {
             return true;
         }

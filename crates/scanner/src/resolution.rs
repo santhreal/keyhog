@@ -1,7 +1,7 @@
 //! Match resolution: when multiple detectors match the same region, keep only
 //! the most specific, highest-confidence match. Eliminates duplicates.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use keyhog_core::RawMatch;
@@ -34,21 +34,42 @@ pub fn resolve_matches(matches: Vec<RawMatch>) -> Vec<RawMatch> {
 /// Checked match resolution for operator paths that must report rule failures
 /// instead of aborting through the compatibility API.
 pub fn try_resolve_matches(mut matches: Vec<RawMatch>) -> Result<Vec<RawMatch>, String> {
+    try_resolve_matches_with_policy(&mut matches, None)?;
+    Ok(matches)
+}
+
+/// Resolve matches using the private-key-block family declared by the active
+/// detector corpus. Custom detector directories call this path so resolution
+/// never re-reads embedded classification policy by detector id.
+pub fn try_resolve_matches_with_private_key_blocks(
+    mut matches: Vec<RawMatch>,
+    private_key_block_detectors: &HashSet<String>,
+) -> Result<Vec<RawMatch>, String> {
+    try_resolve_matches_with_policy(&mut matches, Some(private_key_block_detectors))?;
+    Ok(matches)
+}
+
+fn try_resolve_matches_with_policy(
+    matches: &mut Vec<RawMatch>,
+    private_key_block_detectors: Option<&HashSet<String>>,
+) -> Result<(), String> {
     if matches.len() <= SINGLE_MATCH_COUNT {
-        return Ok(matches);
+        return Ok(());
     }
-    suppress_matches_nested_in_private_key_blocks(&mut matches)?;
-    suppress_entropy_matches_near_named_detectors(&mut matches);
-    Ok(resolve_match_groups(matches))
+    suppress_matches_nested_in_private_key_blocks(matches, private_key_block_detectors)?;
+    suppress_entropy_matches_near_named_detectors(matches);
+    *matches = resolve_match_groups(std::mem::take(matches));
+    Ok(())
 }
 
 fn suppress_matches_nested_in_private_key_blocks(
     matches: &mut Vec<RawMatch>,
+    private_key_block_detectors: Option<&HashSet<String>>,
 ) -> Result<(), String> {
     let private_key_spans: Vec<(Arc<str>, usize, usize)> = matches
         .iter()
         .filter_map(|m| {
-            is_private_key_block_detector(m.detector_id.as_ref())
+            is_private_key_block_detector(m.detector_id.as_ref(), private_key_block_detectors)
                 .map(|is_block| is_block.then(|| m))
                 .transpose()
         })
@@ -73,7 +94,7 @@ fn suppress_matches_nested_in_private_key_blocks(
 
     let mut retain = Vec::with_capacity(matches.len());
     for m in matches.iter() {
-        if is_private_key_block_detector(m.detector_id.as_ref())? {
+        if is_private_key_block_detector(m.detector_id.as_ref(), private_key_block_detectors)? {
             retain.push(true);
             continue;
         }
@@ -156,7 +177,9 @@ fn span_contains(
     let Some(spans) = by_file.get(file) else {
         return false;
     };
-    let count = spans.starts.partition_point(|&span_start| span_start <= start);
+    let count = spans
+        .starts
+        .partition_point(|&span_start| span_start <= start);
     count > 0 && spans.prefix_max_end[count - 1] >= end
 }
 
@@ -204,8 +227,14 @@ fn suppress_entropy_matches_near_named_detectors(matches: &mut Vec<RawMatch>) {
     });
 }
 
-fn is_private_key_block_detector(detector_id: &str) -> Result<bool, String> {
-    crate::detector_ids::is_private_key_block_detector(detector_id)
+fn is_private_key_block_detector(
+    detector_id: &str,
+    active: Option<&HashSet<String>>,
+) -> Result<bool, String> {
+    match active {
+        Some(detectors) => Ok(detectors.contains(detector_id)),
+        None => crate::detector_ids::is_private_key_block_detector(detector_id),
+    }
 }
 
 /// Whether a detector carries a service contract — not generic, not entropy,
@@ -220,29 +249,72 @@ pub(crate) fn is_service_specific_detector(detector_id: &str) -> bool {
 }
 
 fn resolve_match_groups(mut matches: Vec<RawMatch>) -> Vec<RawMatch> {
-    // Group by (file_path, line) - matches on the same line in the same file
-    // are competing for the same secret, even if their credential strings differ
-    // slightly (e.g., exact-length vs greedy regex match).
-    let mut groups: HashMap<(Arc<str>, usize), Vec<RawMatch>> = HashMap::new();
+    // Group by (file_path, line). For a source with no line attribution, build
+    // connected components of overlapping credential spans: slightly different
+    // regex captures of one secret still compete, while disjoint binary findings
+    // remain independent instead of collapsing into a synthetic line zero.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    enum GroupLocation {
+        Line(usize),
+        Offset(usize),
+    }
+
+    let mut groups: BTreeMap<(Arc<str>, GroupLocation), Vec<RawMatch>> = BTreeMap::new();
+    let mut line_free: BTreeMap<Arc<str>, Vec<RawMatch>> = BTreeMap::new();
     for m in matches.drain(..) {
         let file = m
             .location
             .file_path
             .clone()
             .unwrap_or_else(|| Arc::from("")); // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
-        let line = m.location.line.unwrap_or(0); // LAW10: line not located => placeholder line for REPORTING only; finding still emitted, recall-safe
-        groups.entry((file, line)).or_default().push(m);
+        if let Some(line) = m.location.line {
+            groups
+                .entry((file, GroupLocation::Line(line)))
+                .or_default()
+                .push(m);
+        } else {
+            line_free.entry(file).or_default().push(m);
+        }
     }
-    // Iterate groups in a deterministic key order. `HashMap::into_values` yields
-    // groups in RandomState order, so `resolved` came out shuffled run-to-run;
-    // the downstream total sort in `dedup_matches` washes that out for the final
-    // report, but emitting a stable order here keeps every intermediate consumer
-    // (and the resolution unit tests) reproducible. The `(file, line)` key is
-    // unique per group, so this is a total order.
-    let mut grouped: Vec<((Arc<str>, usize), Vec<RawMatch>)> = groups.into_iter().collect();
-    grouped.sort_by(|a, b| a.0.cmp(&b.0));
+
+    for (file, mut file_matches) in line_free {
+        file_matches.sort_by_key(|matched| {
+            (
+                matched.location.offset,
+                matched
+                    .location
+                    .offset
+                    .saturating_add(matched.credential.as_ref().len()),
+            )
+        });
+
+        let mut component = Vec::new();
+        let mut component_end = 0usize;
+        for matched in file_matches {
+            let start = matched.location.offset;
+            let end = start.saturating_add(matched.credential.as_ref().len());
+            let overlaps = component.first().is_some_and(|first: &RawMatch| {
+                start < component_end || start == first.location.offset
+            });
+            if !overlaps && !component.is_empty() {
+                let component_start = component[0].location.offset;
+                groups.insert(
+                    (file.clone(), GroupLocation::Offset(component_start)),
+                    std::mem::take(&mut component),
+                );
+                component_end = 0;
+            }
+            component_end = component_end.max(end);
+            component.push(matched);
+        }
+        if !component.is_empty() {
+            let component_start = component[0].location.offset;
+            groups.insert((file, GroupLocation::Offset(component_start)), component);
+        }
+    }
+
     let mut resolved = Vec::new();
-    for (_key, group) in grouped {
+    for (_key, group) in groups {
         if group.len() == SINGLE_MATCH_COUNT {
             resolved.extend(group);
             continue;

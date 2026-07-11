@@ -771,20 +771,34 @@ fn generic_assignment_bare_pass_respects_word_boundary() {
 // entropy-floor decision from the MoE scoring stage.
 #[test]
 fn generic_keyword_low_entropy_knob_gates_low_entropy_values() {
-    // `q7q4m7k4p2`: 6 distinct symbols (q,7,4 twice; m,k,p once) => ~2.4 bits/byte,
+    // `q7q4q7k4p2`: 6 distinct symbols with counts 3,2,2,1,1,1 =>
+    // ~2.45 bits/byte,
     // inside the (1.5, 2.8) window that distinguishes the relaxed keyword floor
     // from the high generic-secret floor. 10 chars (length gate), 6 distinct
     // (clears the low-diversity placeholder filter that an `aabbccdd`-style value
     // trips), no other shape-filter triggers, longest run 1. Verified to toggle
     // end-to-end via `--no-keyword-low-entropy` on the real binary.
-    let value = "q7q4m7k4p2";
+    let value = "q7q4q7k4p2";
     let line = format!("PASSWORD = \"{value}\"");
 
-    let relaxed = CompiledScanner::compile(vec![demo_detector()])
+    let active_detectors = || {
+        vec![
+            demo_detector(),
+            keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_SECRET)
+                .expect("generic-secret policy exists")
+                .clone(),
+            keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_KEYWORD_SECRET)
+                .expect("generic-keyword-secret policy exists")
+                .clone(),
+        ]
+    };
+
+    let relaxed = CompiledScanner::compile(active_detectors())
         .unwrap()
         .with_config(keyhog_scanner::ScannerConfig {
             scan: keyhog_core::ScanConfig {
                 generic_keyword_low_entropy: true,
+                entropy_enabled: false,
                 ml_enabled: false,
                 min_confidence: 0.0,
                 ..Default::default()
@@ -800,11 +814,12 @@ fn generic_keyword_low_entropy_knob_gates_low_entropy_values() {
          value must surface"
     );
 
-    let strict = CompiledScanner::compile(vec![demo_detector()])
+    let strict = CompiledScanner::compile(active_detectors())
         .unwrap()
         .with_config(keyhog_scanner::ScannerConfig {
             scan: keyhog_core::ScanConfig {
                 generic_keyword_low_entropy: false,
+                entropy_enabled: false,
                 ml_enabled: false,
                 min_confidence: 0.0,
                 ..Default::default()

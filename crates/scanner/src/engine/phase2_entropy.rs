@@ -71,10 +71,13 @@ impl CompiledScanner {
             );
         #[cfg(feature = "simd")]
         let lower_dash_app_password_candidate = path_entropy_appropriate
-            && crate::entropy::scanner::has_lower_dash_app_password_candidate_with_precomputed_keywords(
-                &entropy_lines,
+            && crate::entropy::scanner::has_lower_dash_app_password_candidate_with_precomputed_keywords_and_policy(
                 &keyword_assignment_lines,
                 &self.config,
+                Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
+                    &self.detectors,
+                    &self.generic_owning_detector,
+                )),
             );
         if !path_entropy_appropriate && !isolated_bare_candidate {
             return;
@@ -133,7 +136,7 @@ impl CompiledScanner {
         #[cfg(not(feature = "ml"))]
         let allow_canonical_lift = false;
         let entropy_matches =
-            crate::entropy::scanner::find_entropy_secrets_with_precomputed_keywords(
+            crate::entropy::scanner::find_entropy_secrets_with_precomputed_keywords_and_policy(
                 &entropy_lines,
                 line_offsets,
                 &keyword_assignment_lines,
@@ -146,6 +149,10 @@ impl CompiledScanner {
                 &self.config.placeholder_keywords,
                 Some(&skip_lines),
                 allow_canonical_lift,
+                Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
+                    &self.detectors,
+                    &self.generic_owning_detector,
+                )),
             );
         for mut entropy_match in entropy_matches {
             // Resolve metadata once; emit clones the pre-interned triple.

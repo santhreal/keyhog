@@ -4,9 +4,9 @@
 /// on the same line, line adjacency window boundary, empty input, single match
 /// passthrough, and priority score ordering.
 use keyhog_core::{MatchLocation, RawMatch, Severity};
-use keyhog_scanner::resolution::resolve_matches;
+use keyhog_scanner::resolution::{resolve_matches, try_resolve_matches_with_private_key_blocks};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 fn credential_hash(credential: &str) -> [u8; 32] {
@@ -65,6 +65,62 @@ fn single_match_is_returned_unchanged() {
     let resolved = resolve_matches(vec![m.clone()]);
     assert_eq!(resolved.len(), 1);
     assert_eq!(resolved[0].detector_id.as_ref(), "github-pat");
+}
+
+#[test]
+fn line_free_matches_at_distinct_offsets_do_not_compete() {
+    let mut first = make_match_at_offset(
+        "service-a-token",
+        "first-secret-value",
+        Some(0.95),
+        "firmware.bin",
+        1,
+        128,
+    );
+    let mut second = make_match_at_offset(
+        "service-b-token",
+        "second-secret-value",
+        Some(0.40),
+        "firmware.bin",
+        1,
+        4096,
+    );
+    first.location.line = None;
+    second.location.line = None;
+
+    let resolved = resolve_matches(vec![first, second]);
+    assert_eq!(resolved.len(), 2);
+    assert!(
+        resolved.iter().any(|m| m.location.offset == 128)
+            && resolved.iter().any(|m| m.location.offset == 4096),
+        "line-free findings at different binary offsets are distinct secrets"
+    );
+}
+
+#[test]
+fn overlapping_line_free_matches_still_compete() {
+    let mut broad = make_match_at_offset(
+        "generic-secret",
+        "prefix-overlapping-secret",
+        Some(0.40),
+        "firmware.bin",
+        1,
+        100,
+    );
+    let mut specific = make_match_at_offset(
+        "service-token",
+        "overlapping-secret",
+        Some(0.95),
+        "firmware.bin",
+        1,
+        107,
+    );
+    broad.location.line = None;
+    specific.location.line = None;
+
+    let resolved = resolve_matches(vec![broad, specific]);
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(resolved[0].detector_id.as_ref(), "service-token");
 }
 
 #[test]
@@ -247,6 +303,37 @@ fn private_key_block_does_not_suppress_same_file_match_outside_block() {
             .any(|m| m.detector_id.as_ref() == "google-api-key"),
         "outside same-file child must survive"
     );
+}
+
+#[test]
+fn active_custom_private_key_block_policy_controls_resolution() {
+    let private_key =
+        "-----BEGIN CUSTOM PRIVATE KEY-----\nopaque-child-value\n-----END CUSTOM PRIVATE KEY-----";
+    let block_offset = 100;
+    let child_credential = "opaque-child-value";
+    let child_offset = block_offset + private_key.find(child_credential).unwrap();
+    let parent = make_match_at_offset(
+        "custom-private-key",
+        private_key,
+        Some(0.8),
+        "secret.pem",
+        1,
+        block_offset,
+    );
+    let child = make_match_at_offset(
+        "custom-child",
+        child_credential,
+        Some(0.95),
+        "secret.pem",
+        2,
+        child_offset,
+    );
+    let active = HashSet::from(["custom-private-key".to_string()]);
+
+    let resolved = try_resolve_matches_with_private_key_blocks(vec![child, parent], &active)
+        .expect("active resolution policy is valid");
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(resolved[0].detector_id.as_ref(), "custom-private-key");
 }
 
 #[test]

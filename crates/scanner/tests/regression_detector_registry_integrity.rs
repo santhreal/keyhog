@@ -2,17 +2,17 @@
 //!
 //! These tests pin the compiled-in detector corpus to CONCRETE expected values
 //! through the public `keyhog_core` loaders (`load_embedded_detectors_or_fail`,
-//! `embedded_detector_count`, `detector_digest`). They also prove that the two
-//! detector-id constants an over-eager dead-code lint flags — `GENERIC_PASSWORD`
-//! and `GENERIC_DATABASE_URL` in `crates/scanner/src/detector_ids.rs` — are NOT
-//! phantom: `generic-password` backs a real embedded detector AND a real
-//! entropy-floor family, and `generic-database-url` backs a real entropy-floor
-//! family (and is reserved as the canonical literal owner). Removing either
-//! const would orphan `rules/entropy-floors.toml` families and break the
-//! `detector_id_owner` gate, so the consts are deliberately retained.
+//! `embedded_detector_count`, `detector_digest`). They also prove that the
+//! `GENERIC_PASSWORD` detector-id constant an over-eager dead-code lint flags —
+//! in `crates/scanner/src/detector_ids.rs` — is NOT phantom: `generic-password`
+//! backs a real embedded detector AND a real entropy-floor family, so removing
+//! the const would orphan a detector TOML's floor family and break the
+//! `detector_id_owner` gate. (`generic-database-url` was removed 2026-07-02: its
+//! scheme://user:pass@host coverage is redundant with `url-credentials` + the
+//! per-engine connection-string detectors, and nothing emitted or floor-keyed
+//! it — a config-present-but-no-emitter half-detector.)
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use keyhog_core::{
     detector_digest, embedded_detector_count, load_embedded_detectors_or_fail, DetectorSpec,
@@ -23,7 +23,7 @@ use keyhog_core::{
 /// of `detectors/*.toml` files (build.rs embeds every `.toml`, one detector per
 /// file). Assert the concrete value — a silent drift means the shipped binary
 /// scans with a different rule set than the tree claims.
-const EXPECTED_EMBEDDED_DETECTOR_COUNT: usize = 916;
+const EXPECTED_EMBEDDED_DETECTOR_COUNT: usize = 923;
 
 fn load_specs() -> Vec<DetectorSpec> {
     load_embedded_detectors_or_fail().expect("embedded detector corpus must load fail-closed")
@@ -36,18 +36,8 @@ fn spec_by_id<'a>(specs: &'a [DetectorSpec], id: &str) -> &'a DetectorSpec {
         .unwrap_or_else(|| panic!("embedded corpus must contain detector id `{id}`"))
 }
 
-/// Repo-root path for `rules/entropy-floors.toml` (CARGO_MANIFEST_DIR is
-/// `crates/scanner`, so go up two levels).
-fn entropy_floors_toml_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("rules")
-        .join("entropy-floors.toml")
-}
-
 #[test]
-fn embedded_detector_count_is_exactly_916() {
+fn embedded_detector_count_is_exactly_923() {
     assert_eq!(
         embedded_detector_count(),
         EXPECTED_EMBEDDED_DETECTOR_COUNT,
@@ -201,31 +191,30 @@ fn generic_password_is_a_real_embedded_detector_not_phantom() {
 }
 
 #[test]
-fn generic_database_url_has_no_embedded_detector_but_owns_an_entropy_family() {
-    // GENERIC_DATABASE_URL ("generic-database-url") has no detector TOML, yet it
-    // owns a real entropy-floor family and is the canonical literal owner — so
-    // the const is NOT dead. Pin both facts.
+fn generic_detectors_own_their_entropy_floor_in_their_own_toml() {
+    // Every generic detector's entropy floor lives in its OWN detectors/*.toml
+    // `entropy_floor` field — there is no separate rules/entropy-floors.toml.
+    // The four shapeless generic detectors are first-class `phase2-generic`
+    // specs (no regex; they fire on keywords + entropy_floor); generic-password
+    // is a regex detector that also carries a floor. Exactly these five declare
+    // an entropy_floor, and only they.
     let specs = load_specs();
-    assert!(
-        !specs.iter().any(|d| d.id == "generic-database-url"),
-        "generic-database-url is a data/entropy-floor id, not an embedded detector"
-    );
-
-    let floors = std::fs::read_to_string(entropy_floors_toml_path())
-        .expect("rules/entropy-floors.toml must be readable");
-    assert!(
-        floors.contains("detector = \"generic-database-url\""),
-        "entropy-floors.toml must own a generic-database-url family (const is live data)"
-    );
-    assert!(
-        floors.contains("detector = \"generic-password\""),
-        "entropy-floors.toml must own a generic-password family"
-    );
-    // Exactly five per-family entropy floors ship today.
-    let family_rows = floors.matches("detector = ").count();
+    let mut floor_owners: Vec<&str> = specs
+        .iter()
+        .filter(|d| !d.entropy_floor.is_empty())
+        .map(|d| d.id.as_str())
+        .collect();
+    floor_owners.sort_unstable();
+    let mut expected = vec![
+        "generic-api-key",
+        "generic-keyword-secret",
+        "generic-password",
+        "generic-secret",
+    ];
+    expected.sort_unstable();
     assert_eq!(
-        family_rows, 5,
-        "entropy-floors.toml declares exactly five per-family floors"
+        floor_owners, expected,
+        "exactly the four generic detectors declare an entropy_floor in their TOML"
     );
 }
 

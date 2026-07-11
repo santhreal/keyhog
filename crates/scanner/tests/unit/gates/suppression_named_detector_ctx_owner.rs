@@ -1,41 +1,7 @@
 //! Gate: production named-detector suppression uses one typed context entry point.
 
-use std::path::{Path, PathBuf};
-
-fn scanner_src() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
-}
-
-fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{} not readable: {e}", path.display()))
-}
-
-fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in
-        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{} not readable: {e}", dir.display()))
-    {
-        let path = entry.expect("dir entry").path();
-        if path.is_dir() {
-            collect_rs_files(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-            out.push(path);
-        }
-    }
-}
-
-fn uncommented_code(src: &str) -> String {
-    src.lines()
-        .filter_map(|line| {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with("//") {
-                None
-            } else {
-                Some(line)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
+use super::support::*;
+use std::path::Path;
 
 fn adjudicate_code(src: &Path) -> String {
     [
@@ -233,18 +199,24 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
     let credential_shapes = uncommented_code(&read(&src.join("credential_shapes.rs")));
     let detector_catalog = uncommented_code(&read(&src.join("detector_catalog.rs")));
     assert!(
-        credential_shapes
-            .contains("include_str!(\"../../../rules/detector-credential-shapes.toml\")")
+        // DET-0: credential shape is a PER-DETECTOR `DetectorSpec::credential_shape`
+        // read from the detector's own spec, compiled per detector — NOT a Tier-B
+        // rules-file list with id validation. The compiled rule + its fields stay
+        // here; the rules-file load / OnceLock cache / id validation are gone.
+        credential_shapes.contains("CredentialShapeRule")
             && credential_shapes.contains("exact_length")
             && credential_shapes.contains("body_min_length")
             && credential_shapes.contains("body_max_length")
-            && credential_shapes.contains("static SHAPE_RULES: OnceLock")
+            && credential_shapes.contains("detector.credential_shape")
             && credential_shapes.contains("build_detector_shape_rules")
-            && credential_shapes.contains("crate::detector_catalog::validate_rule_detector_ids")
-            && credential_shapes.contains("crate::detector_catalog::bundled_detector_ids()")
+            && credential_shapes.contains("CredentialShapeRule::from_spec")
+            && credential_shapes.contains("shape.validate(")
+            && !credential_shapes.contains("detector-credential-shapes.toml")
+            && !credential_shapes.contains("static SHAPE_RULES")
+            && !credential_shapes.contains("validate_rule_detector_ids")
             && detector_catalog.contains("static DETECTOR_IDS: OnceLock")
             && detector_catalog.contains("keyhog_core::load_embedded_detectors_or_fail()"),
-        "detector credential shape policy must be loaded from the Tier-B rules file and cached at compile construction"
+        "detector credential shape must be a per-detector DetectorSpec::credential_shape (DET-0), compiled per detector from the detector's own spec, not a Tier-B rules-file list"
     );
     assert!(
         process.contains("credential_shape_by_detector_index")
@@ -267,27 +239,18 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
 }
 
 #[test]
-fn generic_entropy_floors_load_from_tier_b_data() {
+fn generic_entropy_floors_read_the_active_detector_spec_directly() {
     let src = scanner_src();
     let adjudicate = adjudicate_code(&src);
-    let entropy_floors = uncommented_code(&read(&src.join("entropy_floors.rs")));
-    // The per-family floor TABLE is Tier-B calibration data, not a hardcoded match:
-    // adjudicate keeps `generic_entropy_floor` (and its Tier-A override) but reads
-    // the base floors from the loader, so re-calibrating a family is a data edit.
     assert!(
         adjudicate.contains("fn generic_entropy_floor(")
-            && adjudicate.contains("crate::entropy_floors::family_floor(")
+            && adjudicate.contains("detector: Option<&keyhog_core::DetectorSpec>")
+            && adjudicate.contains("spec.entropy_floor")
             && !adjudicate.contains("credential_len <= 24")
-            && !adjudicate.contains("credential_len <= 40"),
-        "generic_entropy_floor must read per-family floors from crate::entropy_floors, \
-         not a hardcoded length match"
-    );
-    assert!(
-        entropy_floors.contains("include_str!(\"../../../rules/entropy-floors.toml\")")
-            && entropy_floors.contains("fn family_floor(")
-            && entropy_floors.contains("default_floor")
-            && entropy_floors.contains("static ENTROPY_FLOORS: LazyLock"),
-        "entropy_floors must load the per-family floor table from the Tier-B rules file and cache it"
+            && !adjudicate.contains("credential_len <= 40")
+            && !src.join("entropy_floors.rs").exists(),
+        "generic entropy floors must come directly from the active DetectorSpec; no embedded \
+         registry read, hardcoded length table, or parallel entropy_floors module may remain"
     );
 }
 

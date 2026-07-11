@@ -1,94 +1,102 @@
-//! Regression: the shipped Tier-B entropy-floor calibration
-//! (`rules/entropy-floors.toml`) and the drop/keep semantics the scanner layers
+//! Regression: the generic-detector entropy-floor calibration — now owned in each
+//! generic detector's OWN `detectors/*.toml` `entropy_floor` field (there is no
+//! `rules/entropy-floors.toml`) — and the drop/keep semantics the scanner layers
 //! on top of it.
 //!
-//! The floor table itself is scanner-internal (`crate::entropy_floors`,
-//! `pub(crate)`), so this integration crate cannot call `family_floor`. Instead
-//! it parses the SAME embedded data file the scanner compiles in
-//! (`include_str!` of `../../../rules/entropy-floors.toml`) and re-derives, byte
-//! for byte, the two behaviors that file drives:
+//! The test loads the same detector specs the scanner compiles and drives the
+//! real active-spec floor resolver through the public testing seam. It therefore
+//! catches both data drift and runtime wiring drift; it does not reimplement the
+//! production floor algorithm.
 //!
-//!   1. `EntropyFloorTable::family_floor` — first-matching-bucket lookup keyed by
-//!      detector family and credential length.
+//!   1. first-matching-bucket lookup from the supplied active DetectorSpec.
 //!   2. `adjudicate::generic_entropy_below_floor` / the `generic_keyword_low_entropy`
 //!      toggle in `generic_bridge_entropy_below_floor` — the kept-vs-dropped
 //!      decision (`entropy < floor`) and the Tier-A `entropy_threshold` override
 //!      that can only RAISE a floor.
 //!
 //! Every assertion pins a CONCRETE f64 floor or a CONCRETE kept/dropped bool
-//! against the shipped data, so a stray edit to a floor, a bucket boundary, or
-//! the toggle wiring fails here loudly. The detector-id keys are the literal
-//! Tier-B strings the TOML uses (`generic-api-key`, ...) — the scanner's
-//! `detector_ids` constants are `pub(crate)` and deliberately equal these.
+//! against the shipped detector TOMLs, so a stray edit to a floor, a bucket
+//! boundary, or the toggle wiring fails here loudly.
 
-use serde::Deserialize;
-
-/// The exact bytes the scanner compiles in via `entropy_floors::ENTROPY_FLOORS_TOML`.
-const SHIPPED_TOML: &str = include_str!("../../../rules/entropy-floors.toml");
+/// The generic default floor for a detector that declares no `entropy_floor`.
+/// Mirrors the active resolver's compatibility default and pins its public
+/// behavior below.
+const DEFAULT_FLOOR: f64 = 3.5;
 
 /// Compiled default for the Tier-A `entropy_threshold` knob
 /// (`keyhog_core::ScanConfig::default().entropy_threshold`). The override only
 /// bites STRICTLY above this value; at/below it, the calibrated family floor stands.
 const DEFAULT_GENERIC_ENTROPY_THRESHOLD: f64 = 4.5;
 
-// Tier-B detector-family ids exactly as they appear in the shipped TOML.
+// Generic detector ids exactly as they appear in their detector TOMLs.
 const GENERIC_API_KEY: &str = "generic-api-key";
 const GENERIC_SECRET: &str = "generic-secret";
 const GENERIC_PASSWORD: &str = "generic-password";
-const GENERIC_DATABASE_URL: &str = "generic-database-url";
 const GENERIC_KEYWORD_SECRET: &str = "generic-keyword-secret";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 struct FloorFile {
     default_floor: f64,
-    #[serde(default)]
     family: Vec<Family>,
+    specs: Vec<keyhog_core::DetectorSpec>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 struct Family {
     detector: String,
     bucket: Vec<Bucket>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy)]
 struct Bucket {
-    #[serde(default)]
     max_len: Option<usize>,
     floor: f64,
 }
 
+/// Build the floor view from the embedded detector corpus: every detector that
+/// declares an `entropy_floor` contributes one family. This is the same source
+/// the scanner's runtime table derives from — the detector TOMLs.
 fn load() -> FloorFile {
-    toml::from_str(SHIPPED_TOML).expect("shipped rules/entropy-floors.toml parses")
+    let specs =
+        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus loads");
+    let family = specs
+        .iter()
+        .filter(|d| !d.entropy_floor.is_empty())
+        .map(|d| Family {
+            detector: d.id.clone(),
+            bucket: d
+                .entropy_floor
+                .iter()
+                .map(|b| Bucket {
+                    max_len: b.max_len,
+                    floor: b.floor,
+                })
+                .collect(),
+        })
+        .collect();
+    FloorFile {
+        default_floor: DEFAULT_FLOOR,
+        family,
+        specs,
+    }
 }
 
 fn family<'a>(file: &'a FloorFile, detector: &str) -> Option<&'a Family> {
     file.family.iter().find(|f| f.detector == detector)
 }
 
-/// Faithful re-implementation of `EntropyFloorTable::family_floor`: the FIRST
-/// bucket (file order) whose `max_len >= len` (or the catch-all with no
-/// `max_len`) sets the floor; an unknown detector uses `default_floor`.
 fn family_floor(file: &FloorFile, detector: &str, len: usize) -> f64 {
-    let Some(fam) = family(file, detector) else {
-        return file.default_floor;
-    };
-    fam.bucket
-        .iter()
-        .find(|b| b.max_len.is_none_or(|max| len <= max))
-        .map_or(file.default_floor, |b| b.floor)
+    let spec = file.specs.iter().find(|spec| spec.id == detector);
+    keyhog_scanner::testing::generic_entropy_floor_for_test(
+        spec,
+        DEFAULT_GENERIC_ENTROPY_THRESHOLD,
+        len,
+    )
 }
 
-/// Faithful re-implementation of `adjudicate::generic_entropy_floor`: the base
-/// family floor, RAISED to `threshold` only when `threshold` is finite and
-/// strictly above the Tier-A default. Never lowers the calibrated floor.
 fn effective_floor(file: &FloorFile, threshold: f64, detector: &str, len: usize) -> f64 {
-    let base = family_floor(file, detector, len);
-    if threshold.is_finite() && threshold > DEFAULT_GENERIC_ENTROPY_THRESHOLD {
-        base.max(threshold)
-    } else {
-        base
-    }
+    let spec = file.specs.iter().find(|spec| spec.id == detector);
+    keyhog_scanner::testing::generic_entropy_floor_for_test(spec, threshold, len)
 }
 
 /// `adjudicate::generic_entropy_below_floor`: true == DROPPED.
@@ -123,6 +131,10 @@ fn default_floor_is_exactly_3_5() {
 }
 
 #[test]
+// Bucket-encoding name: max_len 24 → floor 3.0, 40 → 2.8, catch-all → 3.5. The
+// double underscores separate the (len, floor) rungs; renaming to single-
+// underscore snake_case would erase that grouping, so allow the non-snake name.
+#[allow(non_snake_case)]
 fn api_key_buckets_are_24_3_0__40_2_8__catch_3_5() {
     let file = load();
     let fam = family(&file, GENERIC_API_KEY).expect("generic-api-key family present");
@@ -136,6 +148,9 @@ fn api_key_buckets_are_24_3_0__40_2_8__catch_3_5() {
 }
 
 #[test]
+// Bucket-encoding name: max_len 24 → floor 2.8, 40 → 3.2, catch-all → 3.5 (see
+// the api-key test above for the naming convention).
+#[allow(non_snake_case)]
 fn secret_buckets_are_24_2_8__40_3_2__catch_3_5() {
     let file = load();
     let fam = family(&file, GENERIC_SECRET).expect("generic-secret family present");
@@ -158,15 +173,6 @@ fn password_is_single_flat_bucket_2_5() {
 }
 
 #[test]
-fn database_url_is_single_flat_bucket_2_0() {
-    let file = load();
-    let fam = family(&file, GENERIC_DATABASE_URL).expect("generic-database-url family present");
-    assert_eq!(fam.bucket.len(), 1);
-    assert_eq!(fam.bucket[0].max_len, None);
-    assert_eq!(fam.bucket[0].floor, 2.0);
-}
-
-#[test]
 fn keyword_secret_floor_is_exactly_1_5() {
     // KEYWORD_SECRET_FLOOR: the lowest bar of any family — the keyword anchor is
     // the evidence, not entropy.
@@ -178,7 +184,7 @@ fn keyword_secret_floor_is_exactly_1_5() {
 }
 
 #[test]
-fn exactly_the_five_generic_families_are_present() {
+fn exactly_the_four_generic_families_are_present() {
     let file = load();
     let mut ids: Vec<&str> = file.family.iter().map(|f| f.detector.as_str()).collect();
     ids.sort_unstable();
@@ -186,7 +192,6 @@ fn exactly_the_five_generic_families_are_present() {
         GENERIC_API_KEY,
         GENERIC_SECRET,
         GENERIC_PASSWORD,
-        GENERIC_DATABASE_URL,
         GENERIC_KEYWORD_SECRET,
     ];
     expected.sort_unstable();
@@ -226,7 +231,6 @@ fn flat_families_ignore_length() {
     let file = load();
     for len in [1usize, 16, 24, 25, 40, 41, 500] {
         assert_eq!(family_floor(&file, GENERIC_PASSWORD, len), 2.5);
-        assert_eq!(family_floor(&file, GENERIC_DATABASE_URL, len), 2.0);
         assert_eq!(family_floor(&file, GENERIC_KEYWORD_SECRET, len), 1.5);
     }
 }
