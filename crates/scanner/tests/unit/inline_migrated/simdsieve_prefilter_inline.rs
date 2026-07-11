@@ -1,289 +1,107 @@
-//! Migrated from src/simdsieve_prefilter.rs.
-//!
-//! The three metadata arrays + HOT_PATTERNS are index-parallel and must stay
-//! consistent: hot_patterns.rs indexes all four by the same `pattern_idx`.
-//! As of 2026-05-29 the arrays carry the CANONICAL detector identity (id /
-//! name / service) the fast-path stands in for - not an internal `hot-*` /
-//! `*_key` label - so the same secret surfaces with the same identity on
-//! every platform. This pins that mapping so a table edit that desyncs the
-//! arrays (or regresses an id back to a `hot-*` form) fails CI.
-//!
-//! The arrays are only exported under the `simdsieve` feature, so the
-//! lean ci build (which drops simdsieve to kill its prefilter footprint)
-//! skips this regression too.
 #![cfg(feature = "simdsieve")]
 
 use keyhog_core::{DetectorSpec, PatternSpec, Severity};
-use keyhog_scanner::{
-    testing::{
-        hot_pattern_index_at, validate_hot_pattern_runtime_table_lengths, HOT_PATTERNS,
-        HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_NAMES,
-    },
-    CompiledScanner,
-};
+use keyhog_scanner::{CompiledScanner, ScanBackend};
+
+fn detector(id: &str, regex: &str, prefixes: &[&str]) -> DetectorSpec {
+    DetectorSpec {
+        id: id.into(),
+        name: id.into(),
+        service: "test".into(),
+        severity: Severity::Critical,
+        patterns: vec![PatternSpec {
+            regex: regex.into(),
+            ..Default::default()
+        }],
+        keywords: prefixes.iter().map(|s| (*s).to_string()).collect(),
+        simdsieve_prefixes: prefixes.iter().map(|s| (*s).to_string()).collect(),
+        min_confidence: Some(0.0),
+        ..Default::default()
+    }
+}
 
 #[test]
-fn hot_pattern_arrays_are_index_parallel() {
-    let n = HOT_PATTERNS.len();
-    assert_eq!(HOT_PATTERN_NAMES.len(), n, "service array length");
-    assert_eq!(HOT_PATTERN_DETECTOR_IDS.len(), n, "id array length");
+fn embedded_hot_prefixes_are_detector_owned_and_compile_to_canonical_rows() {
+    let detectors = keyhog_core::load_embedded_detectors_or_fail().expect("embedded corpus");
+    let declared: usize = detectors.iter().map(|d| d.simdsieve_prefixes.len()).sum();
+    assert_eq!(declared, 12);
+    let scanner = CompiledScanner::compile(detectors).expect("embedded scanner");
+    let rows = keyhog_scanner::testing::hot_pattern_rows(&scanner);
+    assert_eq!(rows.len(), declared);
+    for (prefix, id, name, service) in rows {
+        let spec = keyhog_core::detector_spec_by_id(&id).expect("owning detector");
+        assert!(spec
+            .simdsieve_prefixes
+            .iter()
+            .any(|p| p.as_bytes() == prefix));
+        assert_eq!(name, spec.name);
+        assert_eq!(service, spec.service);
+    }
+}
+
+#[test]
+fn custom_detector_prefix_drives_the_real_hot_scan_without_a_rust_table_edit() {
+    let scanner = CompiledScanner::compile(vec![detector(
+        "custom-hot",
+        r"CUSTOM_[A-Z0-9]{16}",
+        &["CUSTOM_"],
+    )])
+    .expect("custom hot detector compiles");
+    let rows = keyhog_scanner::testing::hot_pattern_rows(&scanner);
     assert_eq!(
-        HOT_PATTERN_DISPLAY_NAMES.len(),
-        n,
-        "display-name array length"
+        rows,
+        vec![(
+            b"CUSTOM_".to_vec(),
+            "custom-hot".into(),
+            "custom-hot".into(),
+            "test".into()
+        )]
     );
-}
-
-#[test]
-fn hot_patterns_map_to_canonical_detector_identity() {
-    // (prefix, detector_id, display_name, service). The id/name/service must
-    // match the corresponding detectors/*.toml so scan output is identical
-    // whether the named detector or the fast-path made the find.
-    let expected: &[(&[u8], &str, &str, &str)] = &[
-        (
-            b"ghp_",
-            "github-classic-pat",
-            "GitHub Classic PAT",
-            "github",
-        ),
-        (b"sk-proj-", "openai-api-key", "OpenAI API Key", "openai"),
-        (b"AKIA", "aws-access-key", "AWS Access Key", "aws"),
-        // ASIA is a temporary STS *access key ID* (same `[0-9A-Z]{16}` shape
-        // as AKIA, both owned by the aws-access-key detector + the verifier's
-        // AWS_VALID_ACCESS_KEY_PREFIXES). It is NOT the session token (the
-        // long base64 blob aws-session-token matches), so it maps to
-        // aws-access-key, not aws-session-token.
-        (b"ASIA", "aws-access-key", "AWS Access Key", "aws"),
-        (b"SG.", "sendgrid-api-key", "SendGrid API Key", "sendgrid"),
-        (b"xoxb-", "slack-bot-token", "Slack Bot Token", "slack"),
-        (b"xoxp-", "slack-user-token", "Slack User Token", "slack"),
-        (
-            b"sq0csp-",
-            "square-access-token",
-            "Square Access Token",
-            "square",
-        ),
-        (
-            b"sk_live_",
-            "stripe-secret-key",
-            "Stripe Secret Key",
-            "stripe",
-        ),
-        (
-            b"sk_test_",
-            "stripe-secret-key",
-            "Stripe Secret Key",
-            "stripe",
-        ),
-        (
-            b"rk_live_",
-            "stripe-secret-key",
-            "Stripe Secret Key",
-            "stripe",
-        ),
-        (
-            b"rk_test_",
-            "stripe-secret-key",
-            "Stripe Secret Key",
-            "stripe",
-        ),
-    ];
-    assert_eq!(HOT_PATTERNS.len(), expected.len());
-    for (i, (prefix, id, name, service)) in expected.iter().enumerate() {
-        assert_eq!(HOT_PATTERNS[i], *prefix, "prefix at {i}");
-        assert_eq!(HOT_PATTERN_DETECTOR_IDS[i], *id, "detector_id at {i}");
-        assert_eq!(HOT_PATTERN_DISPLAY_NAMES[i], *name, "display_name at {i}");
-        assert_eq!(HOT_PATTERN_NAMES[i], *service, "service at {i}");
-    }
-
-    // No id may regress to a leaky internal `hot-*` form.
-    for id in HOT_PATTERN_DETECTOR_IDS {
-        assert!(
-            !id.starts_with("hot-"),
-            "{id} leaks an internal hot-* id into scan output"
-        );
-    }
-}
-
-#[test]
-fn hot_pattern_index_resolves_every_prefix_from_the_shared_table() {
-    for (idx, prefix) in HOT_PATTERNS.iter().enumerate() {
-        assert_eq!(
-            hot_pattern_index_at(prefix, 0),
-            Some(idx),
-            "prefix at slot {idx} resolves to its own slot"
-        );
-
-        let mut haystack = b"xx".to_vec();
-        let offset = haystack.len();
-        haystack.extend_from_slice(prefix);
-        haystack.extend_from_slice(b"TAIL");
-        assert_eq!(
-            hot_pattern_index_at(&haystack, offset),
-            Some(idx),
-            "prefix at slot {idx} resolves at non-zero offset"
-        );
-
-        let mut near_miss = (*prefix).to_vec();
-        let last = near_miss.len() - 1;
-        near_miss[last] = if near_miss[last] == b'Z' { b'Y' } else { b'Z' };
-        assert_eq!(
-            hot_pattern_index_at(&near_miss, 0),
-            None,
-            "near miss for slot {idx} must not resolve"
-        );
-    }
-
-    assert_eq!(hot_pattern_index_at(b"", 0), None, "empty haystack");
-    assert_eq!(
-        hot_pattern_index_at(b"prefix", b"prefix".len()),
-        None,
-        "offset at end of haystack"
+    let matches = scanner.scan_with_backend(
+        &keyhog_core::Chunk::from("token=CUSTOM_1234567890ABCDEF"),
+        ScanBackend::CpuFallback,
     );
+    assert!(matches
+        .iter()
+        .any(|m| m.detector_id.as_ref() == "custom-hot"
+            && m.credential.as_ref() == "CUSTOM_1234567890ABCDEF"));
 }
 
 #[test]
-fn hot_pattern_runtime_tables_fail_loud_on_length_drift() {
-    let expected = HOT_PATTERNS.len();
-    validate_hot_pattern_runtime_table_lengths(expected, expected)
-        .expect("matching runtime hot-pattern table lengths are valid");
-
-    let err = validate_hot_pattern_runtime_table_lengths(expected - 1, expected)
-        .expect_err("validator length drift must fail scanner construction");
-    let msg = err.to_string();
+fn declared_prefix_must_be_backed_by_the_owning_detector_regex() {
+    let error = match CompiledScanner::compile(vec![detector(
+        "bad-hot",
+        r"REAL_[A-Z0-9]{16}",
+        &["WRONG_"],
+    )]) {
+        Ok(_) => panic!("unbacked accelerator declaration must fail closed"),
+        Err(error) => error,
+    };
+    let message = error.to_string();
     assert!(
-        msg.contains("hot_pattern_validators")
-            && msg.contains("HOT_PATTERNS")
-            && msg.contains("fix: rebuild all hot-pattern runtime tables"),
-        "error must name the drifted table and remediation; got {msg}"
+        message.contains("bad-hot") && message.contains("WRONG_"),
+        "{message}"
     );
 }
 
 #[test]
-fn loaded_hot_detector_without_matching_ac_prefix_degrades_slot_gracefully() {
-    // A detector reusing a hot-table id (`github-classic-pat`) but whose regex
-    // exposes a DIFFERENT prefix (`not_ghp_`) no longer fails construction. The
-    // hot table is an internal SIMD optimization keyed to the embedded corpus;
-    // for an arbitrary caller-supplied detector set the `ghp_` slot it cannot
-    // back simply goes inactive — recall-safe, because the hot path is a pure
-    // accelerator over the confirmed AC scan, which still covers `not_ghp_`. The
-    // unified row empties BOTH columns together for that slot (lockstep), so an
-    // inactive slot is never a validator-without-delegate dormant emitter.
-    let detector = DetectorSpec {
-        id: "github-classic-pat".to_string(),
-        name: "GitHub Classic PAT".to_string(),
-        service: "github".to_string(),
-        severity: Severity::Critical,
-        patterns: vec![PatternSpec {
-            regex: r"not_ghp_[A-Za-z0-9_]{36}".to_string(),
-            ..Default::default()
-        }],
-        keywords: vec!["ghp".to_string()],
-        min_confidence: Some(0.1),
-        ..Default::default()
-    };
-
-    let scanner = CompiledScanner::compile(vec![detector])
-        .expect("a detector that cannot back a hot slot must still compile (slot goes inactive)");
-    let presence = keyhog_scanner::testing::hot_pattern_slot_presence(&scanner);
-    let ghp_slot = HOT_PATTERN_DETECTOR_IDS
-        .iter()
-        .position(|id| *id == "github-classic-pat")
-        .expect("ghp_ slot present in table");
+fn hot_prefix_resolver_is_total_and_uses_the_compiled_slot_order() {
+    let scanner = CompiledScanner::compile(vec![detector(
+        "custom-hot",
+        r"CUSTOM_[A-Z0-9]{16}",
+        &["CUSTOM_"],
+    )])
+    .expect("scanner");
     assert_eq!(
-        presence[ghp_slot],
-        (false, false),
-        "the ghp_ slot has no backing ac_map entry (regex exposes not_ghp_), so it must \
-         resolve NEITHER validator nor delegate — inactive, not a dormant emitter"
+        keyhog_scanner::testing::hot_pattern_index_at(&scanner, b"xxCUSTOM_tail", 2),
+        Some(0)
     );
-}
-
-/// Drift gate at the correct scope: the SHIPPED embedded corpus MUST back every
-/// hot-pattern slot. A `HOT_PATTERNS` entry no embedded detector exposes is a
-/// dormant fast-path slot (the class commit 74348481a removed). Catching it here
-/// — against the real corpus the table is authored for — is what replaced the
-/// former per-compile hard error, which over-fired on partial caller detectors
-/// (e.g. a `stripe-secret-key` defining only `sk_live_`) that are legitimately
-/// allowed to leave the other stripe slots inactive.
-#[test]
-fn hot_pattern_table_fully_backed_by_embedded_corpus() {
-    let detectors =
-        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load");
-    let scanner = CompiledScanner::compile(detectors).expect("embedded corpus compiles");
-    let presence = keyhog_scanner::testing::hot_pattern_slot_presence(&scanner);
     assert_eq!(
-        presence.len(),
-        HOT_PATTERNS.len(),
-        "one slot row per hot prefix"
+        keyhog_scanner::testing::hot_pattern_index_at(&scanner, b"CUSTOM_tail", 99),
+        None
     );
-    for (i, (has_validator, has_ac_map)) in presence.iter().enumerate() {
-        assert!(
-            *has_validator && *has_ac_map,
-            "embedded corpus leaves hot slot {i} ({:?}, prefix {:?}) unbacked — a dormant \
-             HOT_PATTERNS entry; fix the detector regex or remove the stale slot",
-            HOT_PATTERN_DETECTOR_IDS[i],
-            std::str::from_utf8(HOT_PATTERNS[i]).unwrap_or("<non-utf8>")
-        );
-    }
-}
-
-#[test]
-fn unified_hot_slot_keeps_validator_and_ac_map_in_lockstep() {
-    // The drift this table's unification eliminates: a slot's precise validator
-    // and its canonical `ac_map` delegate are ONE row, so they are populated or
-    // emptied together. With only the github detector loaded, the `ghp_` slot
-    // must resolve BOTH; every slot for an unloaded detector must resolve
-    // NEITHER. Two parallel `Vec`s could have drifted to one-present-one-absent
-    // (a wrong-detector emission); one row makes that unrepresentable.
-    let detector = DetectorSpec {
-        id: "github-classic-pat".to_string(),
-        name: "GitHub Classic PAT".to_string(),
-        service: "github".to_string(),
-        severity: Severity::Critical,
-        patterns: vec![PatternSpec {
-            regex: r"ghp_[A-Za-z0-9]{36}".to_string(),
-            ..Default::default()
-        }],
-        keywords: vec!["ghp".to_string()],
-        min_confidence: Some(0.1),
-        ..Default::default()
-    };
-
-    let scanner =
-        CompiledScanner::compile(vec![detector]).expect("real github hot detector compiles");
-    let presence = keyhog_scanner::testing::hot_pattern_slot_presence(&scanner);
     assert_eq!(
-        presence.len(),
-        HOT_PATTERNS.len(),
-        "one slot row per hot prefix"
-    );
-
-    for (i, (has_validator, has_ac_map)) in presence.iter().enumerate() {
-        assert_eq!(
-            has_validator, has_ac_map,
-            "slot {i} ({:?}): validator presence must equal ac_map-delegate presence — the \
-             unified row forbids one without the other",
-            HOT_PATTERN_DETECTOR_IDS[i]
-        );
-    }
-
-    let ghp_slot = HOT_PATTERN_DETECTOR_IDS
-        .iter()
-        .position(|id| *id == "github-classic-pat")
-        .expect("ghp_ slot present in table");
-    assert_eq!(
-        presence[ghp_slot],
-        (true, true),
-        "loaded github slot must resolve BOTH its validator and its ac_map delegate"
-    );
-
-    let openai_slot = HOT_PATTERN_DETECTOR_IDS
-        .iter()
-        .position(|id| *id == "openai-api-key")
-        .expect("openai slot present in table");
-    assert_eq!(
-        presence[openai_slot],
-        (false, false),
-        "an unloaded detector's slot must resolve NEITHER validator nor ac_map delegate"
+        keyhog_scanner::testing::hot_pattern_index_at(&scanner, b"CUST0M_tail", 0),
+        None
     );
 }

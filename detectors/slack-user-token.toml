@@ -9,6 +9,7 @@ name = "Slack User Token"
 service = "slack"
 severity = "critical"
 keywords = ["xoxp", "slack", "user"]
+simdsieve_prefixes = ["xoxp-"]
 
 [[detector.patterns]]
 regex = 'xoxp-[0-9]{10,13}-[0-9]{10,13}-[0-9]{10,13}-[a-f0-9]{32}'

@@ -13,15 +13,19 @@ impl CompiledScanner {
         chunk: &Chunk,
         scan_state: &mut ScanState,
     ) {
-        use crate::simdsieve_prefilter::{hot_pattern_index_at, HOT_PATTERNS};
+        use crate::simdsieve_prefilter::hot_pattern_index_at;
         use simdsieve::SimdSieve;
 
         let text_bytes = text.as_bytes();
-        // SimdSieve takes `&[&[u8]]`; HOT_PATTERNS is already exactly
-        // that, so pass it through. The previous flow built a fresh
-        // `Vec<&[u8]>` per chunk via `.to_vec()` - wasted on every
-        // file in a 100k-file scan.
-        let sieve = match SimdSieve::new(text_bytes, HOT_PATTERNS) {
+        if self.hot_pattern_slots.is_empty() {
+            return;
+        }
+        let mut patterns: [&[u8]; 16] = [&[]; 16];
+        for (target, slot) in patterns.iter_mut().zip(&self.hot_pattern_slots) {
+            *target = &slot.prefix;
+        }
+        let patterns = &patterns[..self.hot_pattern_slots.len()];
+        let sieve = match SimdSieve::new(text_bytes, patterns) {
             Ok(sieve) => sieve,
             Err(error) => {
                 tracing::warn!(
@@ -35,11 +39,13 @@ impl CompiledScanner {
 
         for offset in sieve {
             // Resolve the SimdSieve offset to the table-owned hot-pattern slot.
-            let Some(pattern_idx) = hot_pattern_index_at(text_bytes, offset) else {
+            let Some(pattern_idx) =
+                hot_pattern_index_at(&self.hot_pattern_slots, text_bytes, offset)
+            else {
                 continue;
             };
             {
-                let pattern = HOT_PATTERNS[pattern_idx];
+                let pattern = self.hot_pattern_slots[pattern_idx].prefix.as_ref();
                 let end = offset + pattern.len();
                 // Confirm the full literal at this offset. The table-owned
                 // resolver already uses the same literal table, so this is a
@@ -54,9 +60,7 @@ impl CompiledScanner {
                 // `.get()`) keeps the construction-time length invariant loud:
                 // an out-of-range slot is a corrupt build, not a silent skip.
                 let slot = &self.hot_pattern_slots[pattern_idx];
-                let Some(ac_map_index) = slot.ac_map_index else {
-                    continue;
-                };
+                let ac_map_index = slot.ac_map_index;
 
                 // Bound the delimiter search to a fixed lookahead window past the
                 // literal prefix: every hot-pattern credential is well under this
@@ -106,25 +110,13 @@ impl CompiledScanner {
                 // validator owns the emitted token span; process_match owns
                 // every suppression, checksum, confidence, ML, and reporting
                 // policy after that.
-                let credential = match &slot.validator {
-                    Some(validator) => match validator.find(credential) {
-                        // `^`-anchored, so any match starts at 0; trim the
-                        // delimiter-bounded capture down to the real token.
-                        Some(m) => {
-                            if m.end() < credential.len()
-                                && credential.as_bytes()[m.end()].is_ascii_alphanumeric()
-                            {
-                                record_hot_drop(
-                                    credential,
-                                    crate::adjudicate::HotPatternSignal::ShapeGate(
-                                        "hot_regex_validation_rejected",
-                                    ),
-                                );
-                                continue;
-                            }
-                            &credential[..m.end()]
-                        }
-                        None => {
+                let credential = match slot.validator.find(credential) {
+                    // `^`-anchored, so any match starts at 0; trim the
+                    // delimiter-bounded capture down to the real token.
+                    Some(m) => {
+                        if m.end() < credential.len()
+                            && credential.as_bytes()[m.end()].is_ascii_alphanumeric()
+                        {
                             record_hot_drop(
                                 credential,
                                 crate::adjudicate::HotPatternSignal::ShapeGate(
@@ -133,8 +125,17 @@ impl CompiledScanner {
                             );
                             continue;
                         }
-                    },
-                    None => continue,
+                        &credential[..m.end()]
+                    }
+                    None => {
+                        record_hot_drop(
+                            credential,
+                            crate::adjudicate::HotPatternSignal::ShapeGate(
+                                "hot_regex_validation_rejected",
+                            ),
+                        );
+                        continue;
+                    }
                 };
 
                 let entry = &self.ac_map[ac_map_index];

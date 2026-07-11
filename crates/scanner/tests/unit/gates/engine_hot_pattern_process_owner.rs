@@ -36,8 +36,8 @@ fn canonical_hot_patterns_delegate_to_process_match() {
 
     assert!(
         hot_patterns.contains("let slot = &self.hot_pattern_slots[pattern_idx];")
-            && hot_patterns.contains("let Some(ac_map_index) = slot.ac_map_index else")
-            && hot_patterns.contains("match &slot.validator {")
+            && hot_patterns.contains("let ac_map_index = slot.ac_map_index;")
+            && hot_patterns.contains("match slot.validator.find(credential)")
             && hot_patterns.contains("self.process_match(")
             && hot_patterns.contains("super::scan_filters::compute_pattern_signals("),
         "canonical hot-pattern hits must resolve one unified slot (validator + ac_map delegate \
@@ -64,15 +64,16 @@ fn canonical_hot_patterns_delegate_to_process_match() {
     assert!(
         compile.contains("build_hot_pattern_slots(")
             && compile_helpers.contains("fn build_hot_pattern_slots(")
-            && compile_helpers.contains("fn build_hot_ac_map_index_by_index(")
+            && compile_helpers.contains("simdsieve_prefixes")
             && compile_helpers
                 .contains("crate::compiler::compiler_prefix::extract_literal_prefixes("),
-        "compile must build the unified hot-pattern slot table, resolving each slot's canonical ac_map entry from existing compiler prefix extraction"
+        "compile must build hot-pattern slots from detector-owned declarations and resolve each slot through existing compiler prefix extraction"
     );
     assert!(
-        compile_helpers.contains("validate_hot_pattern_runtime_table_lengths(")
-            && compile_helpers.contains(".zip(ac_map_indices)"),
-        "the slot builder must fail loud if the validator/ac_map component tables drift from HOT_PATTERNS BEFORE zipping them into one row per slot"
+        compile_helpers.contains("if total > 16")
+            && compile_helpers.contains("declared by more than one loaded detector")
+            && compile_helpers.contains("none of its compiled patterns exposes"),
+        "the slot builder must fail loud on backend capacity, duplicate ownership, and unbacked detector declarations"
     );
     let simdsieve = uncommented_code(&read(&src.join("simdsieve_prefilter.rs")));
     assert!(

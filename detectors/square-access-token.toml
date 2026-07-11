@@ -15,6 +15,7 @@ name = "Square Access Token"
 service = "square"
 severity = "high"
 keywords = ["sq0atp", "sq0csp", "square", "SQUARE_ACCESS_TOKEN"]
+simdsieve_prefixes = ["sq0csp-"]
 
 [[detector.patterns]]
 regex = 'sq0atp-[0-9A-Za-z_-]{22}'

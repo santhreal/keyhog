@@ -126,6 +126,11 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             for s in sw {
                 entries.push(format!("sw:{}:{}", d.id, s));
             }
+            let mut hot: Vec<&String> = d.simdsieve_prefixes.iter().collect();
+            hot.sort();
+            for prefix in hot {
+                entries.push(format!("simdsieve:{}:{}", d.id, prefix));
+            }
             if d.structural_password_slot {
                 entries.push(format!("sps:{}", d.id));
             }

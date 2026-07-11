@@ -9,6 +9,7 @@ name = "AWS Access Key"
 service = "aws"
 severity = "critical"
 keywords = ["AKIA", "ASIA"]
+simdsieve_prefixes = ["AKIA", "ASIA"]
 
 # AWS access key IDs are exactly 20 bytes: AKIA/ASIA plus 16 characters.
 [detector.credential_shape]

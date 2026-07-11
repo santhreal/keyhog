@@ -254,8 +254,7 @@ pub fn assign_re_captures_for_test(line: &str) -> Option<(String, String)> {
 /// `parse_classification_rules`, never the cached query path. Each facade
 /// forwards verbatim to the live, bundled-TOML-backed query.
 pub fn detector_is_residual_weak_anchor_for_test(detector_id: &str) -> Result<bool, String> {
-    Ok(keyhog_core::detector_spec_by_id(detector_id)
-        .is_some_and(|detector| detector.weak_anchor))
+    Ok(keyhog_core::detector_spec_by_id(detector_id).is_some_and(|detector| detector.weak_anchor))
 }
 
 pub fn detector_is_private_key_block_for_test(detector_id: &str) -> Result<bool, String> {
@@ -1990,7 +1989,6 @@ pub fn scan_state_lazy_identity_tiebreak_probe_for_test() -> (bool, Vec<keyhog_c
     (built, state.into_matches())
 }
 
-
 #[cfg(any(feature = "entropy", feature = "simdsieve"))]
 fn scan_state_probe_match(
     credential: &'static str,
@@ -2615,8 +2613,7 @@ pub(crate) fn ml_unique_bigram_stats(bytes: &[u8]) -> (usize, usize) {
 }
 
 #[cfg(test)]
-pub(crate) const ML_BIGRAM_BITSET_WORDS: usize =
-    crate::ml_scorer::BIGRAM_BITSET_WORDS_FOR_TEST;
+pub(crate) const ML_BIGRAM_BITSET_WORDS: usize = crate::ml_scorer::BIGRAM_BITSET_WORDS_FOR_TEST;
 
 #[cfg(test)]
 pub(crate) fn ml_sigmoid(value: f32) -> f32 {
@@ -2624,12 +2621,10 @@ pub(crate) fn ml_sigmoid(value: f32) -> f32 {
 }
 
 #[cfg(test)]
-pub(crate) const ML_SIGMOID_SATURATION: f32 =
-    crate::ml_scorer::SIGMOID_SATURATION_FOR_TEST;
+pub(crate) const ML_SIGMOID_SATURATION: f32 = crate::ml_scorer::SIGMOID_SATURATION_FOR_TEST;
 
 #[cfg(test)]
-pub(crate) const ML_SCORE_CACHE_CAPACITY: usize =
-    crate::ml_scorer::SCORE_CACHE_CAPACITY_FOR_TEST;
+pub(crate) const ML_SCORE_CACHE_CAPACITY: usize = crate::ml_scorer::SCORE_CACHE_CAPACITY_FOR_TEST;
 
 /// Full feature extractor (with detector-config keyword lists) exposed for
 /// the ML training-pipeline parity harness (`ml/parity_check.py`), which
@@ -3588,42 +3583,30 @@ pub(crate) fn set_hyperscan_cache_dir(path: Option<std::path::PathBuf>) {
 }
 
 #[cfg(all(test, feature = "simdsieve"))]
-pub(crate) const HOT_PATTERNS: &[&[u8]] = crate::simdsieve_prefilter::HOT_PATTERNS;
-#[cfg(all(test, feature = "simdsieve"))]
-pub(crate) const HOT_PATTERN_DETECTOR_IDS: &[&str] =
-    crate::simdsieve_prefilter::HOT_PATTERN_DETECTOR_IDS;
-#[cfg(all(test, feature = "simdsieve"))]
-pub(crate) const HOT_PATTERN_DISPLAY_NAMES: &[&str] =
-    crate::simdsieve_prefilter::HOT_PATTERN_DISPLAY_NAMES;
-#[cfg(all(test, feature = "simdsieve"))]
-pub(crate) const HOT_PATTERN_NAMES: &[&str] = crate::simdsieve_prefilter::HOT_PATTERN_NAMES;
-#[cfg(all(test, feature = "simdsieve"))]
-pub(crate) fn hot_pattern_index_at(text_bytes: &[u8], offset: usize) -> Option<usize> {
-    crate::simdsieve_prefilter::hot_pattern_index_at(text_bytes, offset)
+pub(crate) fn hot_pattern_index_at(
+    scanner: &crate::CompiledScanner,
+    text_bytes: &[u8],
+    offset: usize,
+) -> Option<usize> {
+    crate::simdsieve_prefilter::hot_pattern_index_at(&scanner.hot_pattern_slots, text_bytes, offset)
 }
 #[cfg(all(test, feature = "simdsieve"))]
-pub(crate) fn validate_hot_pattern_runtime_table_lengths(
-    validators_len: usize,
-    ac_map_len: usize,
-) -> crate::error::Result<()> {
-    crate::simdsieve_prefilter::validate_hot_pattern_runtime_table_lengths(
-        validators_len,
-        ac_map_len,
-    )
-}
-
-/// Per-slot `(validator present, ac_map delegate present)` for a compiled
-/// scanner's unified hot-pattern table. Lets a regression test assert the
-/// structural invariant the [`crate::simdsieve_prefilter::HotPatternSlot`]
-/// unification guarantees: a slot's validator and its `ac_map` delegate are one
-/// row, so they are populated or emptied together and can never drift to one
-/// present without the other.
-#[cfg(all(test, feature = "simdsieve"))]
-pub(crate) fn hot_pattern_slot_presence(scanner: &crate::CompiledScanner) -> Vec<(bool, bool)> {
+pub(crate) fn hot_pattern_rows(
+    scanner: &crate::CompiledScanner,
+) -> Vec<(Vec<u8>, String, String, String)> {
     scanner
         .hot_pattern_slots
         .iter()
-        .map(|slot| (slot.validator.is_some(), slot.ac_map_index.is_some()))
+        .map(|slot| {
+            let entry = &scanner.ac_map[slot.ac_map_index];
+            let detector = &scanner.detectors[entry.detector_index];
+            (
+                slot.prefix.to_vec(),
+                detector.id.clone(),
+                detector.name.clone(),
+                detector.service.clone(),
+            )
+        })
         .collect()
 }
 

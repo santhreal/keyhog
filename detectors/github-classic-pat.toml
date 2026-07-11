@@ -18,6 +18,7 @@ name = "GitHub Classic PAT"
 service = "github"
 severity = "critical"
 keywords = ["ghp_"]
+simdsieve_prefixes = ["ghp_"]
 
 [[detector.patterns]]
 regex = 'ghp_[A-Za-z0-9]{36}\b'

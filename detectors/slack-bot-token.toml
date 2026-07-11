@@ -9,6 +9,7 @@ name = "Slack Bot Token"
 service = "slack"
 severity = "critical"
 keywords = ["xoxb", "slack", "bot"]
+simdsieve_prefixes = ["xoxb-"]
 
 [[detector.patterns]]
 regex = 'xoxb-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,32}'

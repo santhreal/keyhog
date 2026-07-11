@@ -20,21 +20,14 @@ pub(crate) const ENTROPY_API_KEY: &str = "entropy-api-key";
 
 pub(crate) const PRIVATE_KEY: &str = "private-key";
 
+#[cfg(test)]
 pub(crate) const AWS_ACCESS_KEY: &str = "aws-access-key";
 pub(crate) const GITHUB_CLASSIC_PAT: &str = "github-classic-pat";
 pub(crate) const GITHUB_PAT_FINE_GRAINED: &str = "github-pat-fine-grained";
 pub(crate) const GITLAB_PERSONAL_ACCESS_TOKEN: &str = "gitlab-personal-access-token";
 pub(crate) const NPM_ACCESS_TOKEN: &str = "npm-access-token";
 pub(crate) const PYPI_API_TOKEN: &str = "pypi-api-token";
-#[cfg(feature = "simdsieve")]
-pub(crate) const OPENAI_API_KEY: &str = "openai-api-key";
-#[cfg(feature = "simdsieve")]
-pub(crate) const SENDGRID_API_KEY: &str = "sendgrid-api-key";
 pub(crate) const SLACK_BOT_TOKEN: &str = "slack-bot-token";
-#[cfg(feature = "simdsieve")]
-pub(crate) const SLACK_USER_TOKEN: &str = "slack-user-token";
-#[cfg(feature = "simdsieve")]
-pub(crate) const SQUARE_ACCESS_TOKEN: &str = "square-access-token";
 pub(crate) const STRIPE_SECRET_KEY: &str = "stripe-secret-key";
 
 #[inline]

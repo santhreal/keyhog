@@ -61,6 +61,7 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_regexes(spec, &mut issues, &mut regex_cache);
     validate_pattern_groups(spec, &mut issues, &mut regex_cache);
     validate_keywords(spec, &mut issues);
+    validate_simdsieve_prefixes(spec, &mut issues);
     validate_pattern_specificity(spec, &mut issues, &mut regex_cache);
     validate_companions(spec, &mut issues, &mut regex_cache);
     validate_verify_spec(spec, &mut issues);
@@ -69,6 +70,26 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_credential_shape(spec, &mut issues);
     validate_detector_allowlists(spec, &mut issues);
     issues
+}
+
+fn validate_simdsieve_prefixes(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    let mut seen = std::collections::HashSet::new();
+    for (index, prefix) in spec.simdsieve_prefixes.iter().enumerate() {
+        if prefix.is_empty() {
+            issues.push(QualityIssue::Error(format!(
+                "simdsieve_prefixes[{index}] must not be empty"
+            )));
+        } else if !prefix.is_ascii() {
+            issues.push(QualityIssue::Error(format!(
+                "simdsieve_prefixes[{index}] must be ASCII because simdsieve performs byte-prefix matching"
+            )));
+        }
+        if !seen.insert(prefix) {
+            issues.push(QualityIssue::Error(format!(
+                "simdsieve_prefixes contains duplicate literal {prefix:?}"
+            )));
+        }
+    }
 }
 
 /// `min_confidence` is a probability in `[0.0, 1.0]`. It is a bare `Option<f64>`

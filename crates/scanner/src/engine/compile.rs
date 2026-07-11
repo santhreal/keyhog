@@ -408,8 +408,8 @@ impl CompiledScanner {
         // Built here (before `detectors` is moved into the struct) so the fast
         // path can reject literal-prefix candidates the detector's own regex
         // would not match - see `build_hot_pattern_slots`. The builder asserts
-        // both component tables equal `HOT_PATTERNS.len()` before zipping, so a
-        // drift fails the scanner build loud rather than silently truncating.
+        // every detector-owned prefix resolves to its owning compiled AC entry;
+        // invalid, duplicate, or over-capacity declarations fail loudly.
         #[cfg(feature = "simdsieve")]
         let hot_pattern_slots = build_hot_pattern_slots(&detectors, &state.ac_map)?;
 
@@ -487,14 +487,10 @@ impl CompiledScanner {
     ) -> std::result::Result<Self, crate::scanner_config::ScannerConfigInstallError> {
         config.validate()?;
         if config.per_chunk_timeout_ms == Some(0) {
-            return Err(
-                crate::scanner_config::ScannerConfigInstallError::ZeroPerChunkTimeout,
-            );
+            return Err(crate::scanner_config::ScannerConfigInstallError::ZeroPerChunkTimeout);
         }
         if config.max_matches_per_chunk == 0 {
-            return Err(
-                crate::scanner_config::ScannerConfigInstallError::ZeroMaxMatchesPerChunk,
-            );
+            return Err(crate::scanner_config::ScannerConfigInstallError::ZeroMaxMatchesPerChunk);
         }
         if config.max_matches_per_chunk > crate::scanner_config::MAX_MATCHES_PER_CHUNK_LIMIT {
             return Err(

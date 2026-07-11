@@ -76,6 +76,14 @@ findings (e.g. "you leaked 3 stripe credentials"); a single service
 can have multiple detectors (`stripe-secret-key`,
 `stripe-restricted-key`, `stripe-publishable-key`).
 
+`detector.simdsieve_prefixes` - optional literal prefixes for the first-pass
+AVX-512/AVX2/NEON accelerator. This is detector-owned Tier-B policy: each value
+must be non-empty ASCII and must be an actual literal prefix of one of the same
+detector's regex patterns. The loaded corpus may declare at most 16 total (the
+backend ABI limit); duplicate ownership, unbacked prefixes, and over-capacity
+corpora fail scanner construction instead of silently disabling acceleration.
+Most detectors leave this empty.
+
 `detector.severity` - one of `critical | high | medium | low | client-safe | info`.
 The CLI exits non-zero when any finding clears the active gate; under
 `--verify`, confirmed live credentials escalate that outcome to exit `10`.

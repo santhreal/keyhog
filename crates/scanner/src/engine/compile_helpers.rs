@@ -42,97 +42,61 @@ fn validate_compiled_pattern_detector_index(
 /// Resolve every hot-pattern slot into a single `Vec<HotPatternSlot>` — the one
 /// runtime table the SIMD fast path indexes by `pattern_idx`.
 ///
-/// Each slot's precise validator and its canonical `ac_map` delegate are built
-/// by two focused helpers (`build_hot_pattern_validators` over the detector
-/// regexes, `build_hot_ac_map_index_by_index` over the compiled AC prefixes),
-/// then zipped into one row per slot. Both helpers project
-/// `HOT_PATTERN_DETECTOR_IDS`, so both must equal `HOT_PATTERNS.len()`; we assert
-/// that BEFORE the zip so a future divergence fails the scanner build loud
-/// instead of `zip()` silently truncating to the shorter table (Law 10). After
-/// the zip the two columns live in one row and can never drift again.
-///
-/// A slot is ACTIVE iff a compiled `ac_map` entry backs its hot literal. The
-/// validator builder keys on detector-id-loaded and shares one combined
-/// validator across every slot of a given detector, so a partial detector set
-/// (e.g. an id reused from the embedded corpus but defining only a subset of its
-/// hot prefixes) would otherwise leave a validator present on an unbacked slot.
-/// We gate the validator on `ac_map_index` so both columns populate and empty
-/// together: an unbacked slot resolves NEITHER and is simply skipped by the hot
-/// path (recall-safe — the confirmed AC scan still covers it). This keeps the
-/// unified-row invariant (`validator.is_some() == ac_map_index.is_some()`) true
-/// for every detector set, not just the full corpus.
+/// Prefix ownership comes directly from each loaded detector's
+/// `simdsieve_prefixes`. Construction fails closed if the backend's 16-prefix
+/// capacity is exceeded, ownership is duplicated, or a declaration is not
+/// backed by one of that detector's compiled literal prefixes. Each surviving
+/// row therefore carries its prefix, exact validator, and canonical `ac_map`
+/// delegate together; no parallel table or missing-slot fallback exists.
 #[cfg(feature = "simdsieve")]
 pub(super) fn build_hot_pattern_slots(
     detectors: &[DetectorSpec],
     ac_map: &[CompiledPattern],
 ) -> Result<Vec<crate::simdsieve_prefilter::HotPatternSlot>> {
-    use crate::simdsieve_prefilter::{
-        build_hot_pattern_validators, validate_hot_pattern_runtime_table_lengths, HotPatternSlot,
-    };
-
-    let validators = build_hot_pattern_validators(detectors)?;
-    let ac_map_indices = build_hot_ac_map_index_by_index(detectors, ac_map);
-    validate_hot_pattern_runtime_table_lengths(validators.len(), ac_map_indices.len())?;
-
-    Ok(validators
-        .into_iter()
-        .zip(ac_map_indices)
-        .map(|(validator, ac_map_index)| HotPatternSlot {
-            // Lockstep: drop the validator on any slot no ac_map entry backs, so
-            // an unbacked slot is (None, None) — never validator-without-delegate.
-            validator: ac_map_index.and(validator),
-            ac_map_index,
-        })
-        .collect())
-}
-
-/// Resolve, for each hot-pattern slot, the `ac_map` entry that backs it — or
-/// `None` when no loaded detector exposes that slot's literal prefix.
-///
-/// A `None` slot is INACTIVE: the SIMD hot fast-path skips it
-/// (`hot_patterns.rs` `continue`s when `ac_map_index` is `None`). That is
-/// recall-safe because the hot path is a pure accelerator over the confirmed AC
-/// scan, which is always active and independently triggers + extracts every
-/// `ac_map` literal (`collect_triggered_patterns_*` -> `extract_confirmed_patterns`);
-/// the stripe direct-prefix dedup only suppresses offsets the hot path ACTUALLY
-/// emitted, so a deactivated slot just routes its credential through the confirmed
-/// path instead. Compiling a custom or partial detector set that reuses a
-/// production detector id but omits one of its hot prefixes therefore degrades
-/// that slot gracefully rather than failing construction (the hot table is an
-/// internal optimization and must not leak into a hard error for caller-supplied
-/// detectors).
-///
-/// A DORMANT slot in the SHIPPED corpus (a `HOT_PATTERNS` entry that no embedded
-/// detector backs) is still a bug — but it is caught loudly at the right scope by
-/// `hot_pattern_table_fully_backed_by_embedded_corpus`, which compiles the real
-/// embedded detector set and asserts every slot is backed. The table is authored
-/// against the embedded corpus, not against arbitrary caller detectors, so that
-/// is where the no-dormant-slot invariant belongs.
-#[cfg(feature = "simdsieve")]
-fn build_hot_ac_map_index_by_index(
-    detectors: &[DetectorSpec],
-    ac_map: &[CompiledPattern],
-) -> Vec<Option<usize>> {
-    use crate::simdsieve_prefilter::{HOT_PATTERNS, HOT_PATTERN_DETECTOR_IDS};
-
-    HOT_PATTERN_DETECTOR_IDS
+    use crate::simdsieve_prefilter::{build_hot_pattern_validator, HotPatternSlot};
+    let total = detectors
         .iter()
-        .enumerate()
-        .map(|(slot, detector_id)| {
-            let hot_literal = std::str::from_utf8(HOT_PATTERNS[slot])
-                .expect("static simdsieve hot-pattern literal must be valid UTF-8");
-            ac_map.iter().position(|entry| {
+        .map(|d| d.simdsieve_prefixes.len())
+        .sum::<usize>();
+    if total > 16 {
+        return Err(crate::error::ScanError::Config(format!(
+            "loaded detector corpus declares {total} simdsieve prefixes, but simdsieve supports at most 16; remove lower-value prefixes or extend the backend"
+        )));
+    }
+    let mut seen = std::collections::HashSet::with_capacity(total);
+    let mut slots = Vec::with_capacity(total);
+    for detector in detectors {
+        if detector.simdsieve_prefixes.is_empty() {
+            continue;
+        }
+        let validator = build_hot_pattern_validator(detector)?;
+        for prefix in &detector.simdsieve_prefixes {
+            if !seen.insert(prefix.as_str()) {
+                return Err(crate::error::ScanError::Config(format!(
+                    "simdsieve prefix {prefix:?} is declared by more than one loaded detector"
+                )));
+            }
+            let ac_map_index = ac_map.iter().position(|entry| {
                 detectors
                     .get(entry.detector_index)
-                    .is_some_and(|detector| detector.id == *detector_id)
+                    .is_some_and(|candidate| candidate.id == detector.id)
                     && crate::compiler::compiler_prefix::extract_literal_prefixes(
                         entry.regex.as_str(),
                     )
                     .iter()
-                    .any(|prefix| prefix.as_str() == hot_literal)
-            })
-        })
-        .collect()
+                    .any(|literal| literal == prefix)
+            }).ok_or_else(|| crate::error::ScanError::Config(format!(
+                "detector {} declares simdsieve prefix {prefix:?}, but none of its compiled patterns exposes that literal prefix",
+                detector.id
+            )))?;
+            slots.push(HotPatternSlot {
+                prefix: prefix.as_bytes().into(),
+                validator: validator.clone(),
+                ac_map_index,
+            });
+        }
+    }
+    Ok(slots)
 }
 
 /// One-shot guard so the CUDA-acquisition-failed warning fires

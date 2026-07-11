@@ -82,6 +82,12 @@ pub struct DetectorSpec {
     /// High-performance pre-filtering keywords.
     #[serde(default)]
     pub keywords: Vec<String>,
+    /// Literal prefixes eligible for the optional `simdsieve` first-pass
+    /// accelerator. Each prefix must be non-empty ASCII, unique in the loaded
+    /// corpus, and an actual literal prefix of one of this detector's patterns.
+    /// Empty means this detector does not participate in that accelerator.
+    #[serde(default)]
+    pub simdsieve_prefixes: Vec<String>,
     /// Self-declared per-detector confidence floor, in `[0.0, 1.0]`.
     ///
     /// When set, findings from THIS detector use this floor instead of the

@@ -9,6 +9,7 @@ name = "SendGrid API Key"
 service = "sendgrid"
 severity = "high"
 keywords = ["SG."]
+simdsieve_prefixes = ["SG."]
 
 [[detector.patterns]]
 regex = 'SG\.[a-zA-Z0-9_-]{22,32}\.[a-zA-Z0-9_-]{43,47}'

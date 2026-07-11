@@ -11,6 +11,7 @@ name = "OpenAI API Key"
 service = "openai"
 severity = "critical"
 keywords = ["sk-proj-", "sk-svcacct-", "sk-admin-", "sk-"]
+simdsieve_prefixes = ["sk-proj-"]
 
 [[detector.patterns]]
 regex = 'sk-proj-[a-zA-Z0-9_-]{40,164}'

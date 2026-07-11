@@ -322,8 +322,7 @@ pub struct CompiledScanner {
     pub(crate) simd_prefilter: Option<crate::simd::backend::HsScanner>,
     #[cfg(feature = "simd")]
     pub(crate) hs_index_map: CsrU32,
-    /// Resolved hot-pattern slots, index-parallel with
-    /// `simdsieve_prefilter::HOT_PATTERNS`. Each row bundles the slot's precise
+    /// Resolved detector-owned hot-pattern slots. Each row bundles the prefix, precise
     /// validator AND its canonical `ac_map` delegate together, so a slot's
     /// validation target and emission target can never be indexed apart and so
     /// can never drift — they were two parallel `Vec`s read by the same
@@ -332,7 +331,6 @@ pub struct CompiledScanner {
     /// can never surface a token the detector's own regex rejects — the length
     /// floor alone let `ghp_…_…`/`xoxp-123-456-789-abc` through) and delegates
     /// the survivor to `ac_map[slot.ac_map_index]` via `process_match`. A slot's
-    /// fields are both `None` together when no canonical detector is loaded.
     /// Built once by `compile_helpers::build_hot_pattern_slots`.
     #[cfg(feature = "simdsieve")]
     pub(crate) hot_pattern_slots: Vec<crate::simdsieve_prefilter::HotPatternSlot>,
