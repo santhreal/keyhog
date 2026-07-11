@@ -2617,6 +2617,19 @@ pub(crate) fn ml_unique_bigram_stats(bytes: &[u8]) -> (usize, usize) {
 pub(crate) const ML_BIGRAM_BITSET_WORDS: usize =
     crate::ml_scorer::BIGRAM_BITSET_WORDS_FOR_TEST;
 
+#[cfg(test)]
+pub(crate) fn ml_sigmoid(value: f32) -> f32 {
+    crate::ml_scorer::sigmoid_for_test(value)
+}
+
+#[cfg(test)]
+pub(crate) const ML_SIGMOID_SATURATION: f32 =
+    crate::ml_scorer::SIGMOID_SATURATION_FOR_TEST;
+
+#[cfg(test)]
+pub(crate) const ML_SCORE_CACHE_CAPACITY: usize =
+    crate::ml_scorer::SCORE_CACHE_CAPACITY_FOR_TEST;
+
 /// Full feature extractor (with detector-config keyword lists) exposed for
 /// the ML training-pipeline parity harness (`ml/parity_check.py`), which
 /// must compute byte-identical features to the serve path.

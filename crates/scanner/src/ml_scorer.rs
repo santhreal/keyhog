@@ -382,25 +382,12 @@ fn softmax(logits: &[f32; EXPERT_COUNT]) -> [f32; EXPERT_COUNT] {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sigmoid_saturates_symmetrically_at_named_bound() {
-        // At/beyond the single-owner saturation bound the output clamps exactly.
-        assert_eq!(sigmoid(SIGMOID_SATURATION), 1.0);
-        assert_eq!(sigmoid(-SIGMOID_SATURATION), 0.0);
-        assert_eq!(sigmoid(SIGMOID_SATURATION + 1.0), 1.0);
-        assert_eq!(sigmoid(-SIGMOID_SATURATION - 1.0), 0.0);
-        // The midpoint uses the rational branch, not the clamp.
-        assert_eq!(sigmoid(0.0), 0.5);
-        // Just inside the bound stays strictly interior (rational branch active).
-        let just_inside = sigmoid(SIGMOID_SATURATION - 0.001);
-        assert!(just_inside > 0.5 && just_inside < 1.0, "{just_inside}");
-    }
-
-    #[test]
-    fn score_cache_capacity_is_the_documented_bound() {
-        assert_eq!(SCORE_CACHE_CAPACITY, 256);
-    }
+pub(crate) fn sigmoid_for_test(value: f32) -> f32 {
+    sigmoid(value)
 }
+
+#[cfg(test)]
+pub(crate) const SIGMOID_SATURATION_FOR_TEST: f32 = SIGMOID_SATURATION;
+
+#[cfg(test)]
+pub(crate) const SCORE_CACHE_CAPACITY_FOR_TEST: usize = SCORE_CACHE_CAPACITY;

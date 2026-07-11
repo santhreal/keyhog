@@ -2,7 +2,8 @@ use keyhog_core::ScanConfig;
 use keyhog_scanner::entropy::{shannon_entropy, VERY_HIGH_ENTROPY_THRESHOLD};
 use keyhog_scanner::ml_scorer::score_with_config;
 use keyhog_scanner::testing::{
-    compute_features_public, ml_unique_bigram_stats, ML_BIGRAM_BITSET_WORDS,
+    compute_features_public, ml_sigmoid, ml_unique_bigram_stats, ML_BIGRAM_BITSET_WORDS,
+    ML_SCORE_CACHE_CAPACITY, ML_SIGMOID_SATURATION,
 };
 
 const FILE_TYPE_OFFSET: usize = 32;
@@ -23,6 +24,22 @@ fn ml_bigram_stats_count_distinct_windows() {
     assert_eq!(ml_unique_bigram_stats(b"aaaa"), (1, 3));
     assert_eq!(ml_unique_bigram_stats(b"a"), (0, 0));
     assert_eq!(ml_unique_bigram_stats(b""), (0, 0));
+}
+
+#[test]
+fn ml_sigmoid_saturates_symmetrically_at_named_bound() {
+    assert_eq!(ml_sigmoid(ML_SIGMOID_SATURATION), 1.0);
+    assert_eq!(ml_sigmoid(-ML_SIGMOID_SATURATION), 0.0);
+    assert_eq!(ml_sigmoid(ML_SIGMOID_SATURATION + 1.0), 1.0);
+    assert_eq!(ml_sigmoid(-ML_SIGMOID_SATURATION - 1.0), 0.0);
+    assert_eq!(ml_sigmoid(0.0), 0.5);
+    let just_inside = ml_sigmoid(ML_SIGMOID_SATURATION - 0.001);
+    assert!(just_inside > 0.5 && just_inside < 1.0, "{just_inside}");
+}
+
+#[test]
+fn ml_score_cache_capacity_is_the_documented_bound() {
+    assert_eq!(ML_SCORE_CACHE_CAPACITY, 256);
 }
 
 fn test_score(text: &str, context: &str) -> f64 {
