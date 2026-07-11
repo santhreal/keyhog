@@ -42,18 +42,6 @@ pub(crate) fn build_gpu_literals(
     )
 }
 
-pub(crate) fn build_gpu_position_literals(
-    confirmed_anchor_literals: &[String],
-    generic_keyword_literals: &[String],
-) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
-    build_gpu_literal_rows(
-        confirmed_anchor_literals
-            .iter()
-            .chain(generic_keyword_literals),
-        "GPU positioned literal set",
-    )
-}
-
 fn build_gpu_literal_rows<'a>(
     literals: impl Iterator<Item = &'a String>,
     label: &'static str,

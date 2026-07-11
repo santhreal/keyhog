@@ -40,7 +40,7 @@ description = "Artifact writer smoke token"
     let manifest: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&manifest_path).expect("manifest should be written"))
             .expect("manifest should be valid json");
-    assert_eq!(manifest["format_version"], 1);
+    assert_eq!(manifest["format_version"], 2);
     assert_eq!(manifest["detector_count"], 1);
     let artifacts = manifest["artifacts"]
         .as_array()
@@ -49,11 +49,10 @@ description = "Artifact writer smoke token"
         artifacts.iter().any(|entry| entry["kind"] == "literal"),
         "manifest must include the main literal artifact: {manifest}"
     );
-    assert!(
-        artifacts
-            .iter()
-            .any(|entry| entry["kind"] == "positioned_literal"),
-        "manifest must include the positioned literal artifact: {manifest}"
+    assert_eq!(
+        artifacts.len(),
+        1,
+        "retired positioned GPU pass must not create a redundant artifact: {manifest}"
     );
 
     for entry in artifacts {

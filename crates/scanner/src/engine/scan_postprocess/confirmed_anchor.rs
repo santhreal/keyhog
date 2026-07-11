@@ -46,7 +46,6 @@ impl CompiledScanner {
 pub(crate) struct ConfirmedAnchorIndex {
     anchor_ac: AhoCorasick,
     anchor_first_bigram: FirstBigramSet,
-    anchor_literals: Vec<String>,
     literal_patterns: Vec<Vec<u32>>,
     eligible: Vec<bool>,
     anchored: Vec<Option<AnchoredRegex>>,
@@ -110,7 +109,6 @@ impl ConfirmedAnchorIndex {
         Some(Self {
             anchor_ac,
             anchor_first_bigram,
-            anchor_literals: literals,
             literal_patterns,
             eligible,
             anchored,
@@ -120,10 +118,6 @@ impl ConfirmedAnchorIndex {
 
     pub(crate) fn eligible_count(&self) -> usize {
         self.eligible_count
-    }
-
-    pub(crate) fn anchor_literals(&self) -> &[String] {
-        &self.anchor_literals
     }
 
     #[cfg(test)]

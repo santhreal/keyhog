@@ -5,9 +5,9 @@
 //! them with Vyre's own wire format, so install/release calibration can persist
 //! matcher artifacts without reimplementing scanner compile semantics.
 
-use super::{gpu_cache, phase2_anchor, phase2_generic, scan_postprocess};
+use super::{gpu_cache, phase2_anchor};
 use crate::compiler::{
-    build_compile_state, build_gpu_literals, build_gpu_position_literals, build_phase2_keyword_ac,
+    build_compile_state, build_gpu_literals, build_phase2_keyword_ac,
 };
 use crate::error::{Result, ScanError};
 use crate::scanner_config::ScannerTuningConfig;
@@ -35,7 +35,11 @@ pub struct GpuLiteralArtifact {
 pub struct GpuLiteralArtifacts {
     /// Main phase-1 region-presence matcher.
     pub literal: Option<GpuLiteralArtifact>,
-    /// Positioned matcher used by localized post-phase-1 accelerators.
+    /// Retired positioned-matcher slot, kept for source compatibility.
+    ///
+    /// Runtime removed the redundant second GPU literal pass in v0.5.40; the
+    /// artifact compiler therefore returns `None` and performs no positioned
+    /// matcher compilation. Consumers should ignore this field.
     pub positioned_literal: Option<GpuLiteralArtifact>,
 }
 
@@ -69,16 +73,6 @@ pub fn compile_gpu_literal_artifacts(
         .as_ref()
         .map_or(&[] as &[String], |index| index.always_anchor_literals());
 
-    let confirmed_anchor_index =
-        scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex::build(&state.ac_map);
-    let confirmed_anchor_literals = confirmed_anchor_index
-        .as_ref()
-        .map_or(&[] as &[String], |index| index.anchor_literals());
-    let generic_keyword_literals = phase2_generic::keywords::generic_keyword_prefilter_stems()
-        .into_iter()
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-
     Ok(GpuLiteralArtifacts {
         literal: serialize_literal_rows(
             "lit",
@@ -88,10 +82,7 @@ pub fn compile_gpu_literal_artifacts(
                 phase2_always_anchor_literals,
             ),
         )?,
-        positioned_literal: serialize_literal_rows(
-            "pos-lit",
-            build_gpu_position_literals(confirmed_anchor_literals, &generic_keyword_literals),
-        )?,
+        positioned_literal: None,
     })
 }
 

@@ -1,6 +1,6 @@
 //! Empty literal in AC set disables GPU literal preparation.
 
-use keyhog_scanner::testing::{build_gpu_literals, build_gpu_position_literals};
+use keyhog_scanner::testing::build_gpu_literals;
 
 #[test]
 fn compiler_gpu_literals_empty_disables_gpu() {
@@ -27,19 +27,5 @@ fn compiler_gpu_literals_append_only_presence_segments_after_detector_literals()
             b"alwaysanchor".to_vec(),
         ],
         "GPU presence rows must keep detector literals first, then phase2 keywords, then always-active anchors"
-    );
-}
-
-#[test]
-fn compiler_gpu_position_literals_append_generic_stems_after_confirmed_anchors() {
-    let confirmed_anchors = vec!["ConfirmedAnchor".into()];
-    let generic_keywords = vec!["GenericStem".into()];
-    let built = build_gpu_position_literals(&confirmed_anchors, &generic_keywords)
-        .expect("gpu positioned literals");
-
-    assert_eq!(
-        built.as_ref(),
-        &vec![b"confirmedanchor".to_vec(), b"genericstem".to_vec()],
-        "GPU positioned rows must keep confirmed-anchor rows before generic stems"
     );
 }

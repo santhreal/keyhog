@@ -8,6 +8,11 @@ use std::path::{Path, PathBuf};
 
 type DynResult<T> = Result<T, Box<dyn std::error::Error>>;
 
+// v2 contains only artifacts consumed by the runtime. v1 also emitted the
+// retired `positioned_literal` matcher, so consumers can distinguish the
+// intentionally smaller manifest from an incomplete v1 package.
+const ARTIFACT_MANIFEST_FORMAT_VERSION: u32 = 2;
+
 #[derive(Debug)]
 struct Args {
     out_dir: PathBuf,
@@ -71,7 +76,7 @@ fn main() -> DynResult<()> {
     }
 
     let manifest = ArtifactManifest {
-        format_version: 1,
+        format_version: ARTIFACT_MANIFEST_FORMAT_VERSION,
         keyhog_version: env!("CARGO_PKG_VERSION"),
         detector_source,
         detector_count: detectors.len(),
