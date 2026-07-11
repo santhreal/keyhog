@@ -408,6 +408,23 @@ impl ScanState {
     ) where
         F: FnOnce(&mut Self) -> keyhog_core::RawMatch,
     {
+        // Reject from borrowed priority fields before constructing the owned
+        // identity. At capacity, a candidate whose priority prefix is already
+        // worse than the heap root cannot beat any retained match, including a
+        // duplicate of its identity. This keeps the overwhelmingly common
+        // rejection path free of Arc/SensitiveString allocation.
+        if limit == 0 {
+            return;
+        }
+        if self.matches.len() >= limit
+            && self
+                .matches
+                .peek()
+                .is_some_and(|worst| priority.cmp_raw_match(worst).is_gt())
+        {
+            return;
+        }
+
         let identity = OwnedMatchIdentity::from_priority(&priority);
         if self.claimed_match_identities.contains(&identity) {
             if !self.claimed_priority_would_replace(&identity, &priority) {
@@ -425,20 +442,16 @@ impl ScanState {
             return;
         }
 
-        let admit = self
-            .matches
-            .peek()
-            .is_some_and(|worst| !priority.cmp_raw_match(worst).is_gt());
-        if admit {
-            let m = build(self);
-            if let Some(mut worst) = self.matches.peek_mut() {
-                if m < *worst {
-                    let displaced = OwnedMatchIdentity::from(&*worst);
-                    *worst = m;
-                    drop(worst);
-                    self.claimed_match_identities.remove(&displaced);
-                    self.claimed_match_identities.insert(identity);
-                }
+        // The borrowed cap check above proved this prefix can still win. Build
+        // once so the full identity tiebreakers can decide the retained match.
+        let m = build(self);
+        if let Some(mut worst) = self.matches.peek_mut() {
+            if m < *worst {
+                let displaced = OwnedMatchIdentity::from(&*worst);
+                *worst = m;
+                drop(worst);
+                self.claimed_match_identities.remove(&displaced);
+                self.claimed_match_identities.insert(identity);
             }
         }
     }

@@ -98,6 +98,31 @@ fn push_match_lazy_builds_only_for_admitted_candidates() {
 }
 
 #[test]
+fn push_match_lazy_zero_limit_never_builds_or_retains() {
+    let mut state = ScanState::default();
+    let mut built = false;
+
+    state.push_match_lazy(
+        RawMatchPriority {
+            confidence: Some(1.0),
+            severity: Severity::Critical,
+            detector_id: "gate",
+            credential: "must-not-build",
+            offset: 0,
+            line: Some(1),
+        },
+        0,
+        |_| {
+            built = true;
+            raw_match(1.0, "must-not-build", 0)
+        },
+    );
+
+    assert!(!built, "a zero-capacity heap must reject before construction");
+    assert_eq!(state.into_matches(), Vec::<RawMatch>::new());
+}
+
+#[test]
 #[cfg(feature = "ml")]
 fn ml_context_for_candidate_has_one_path_prefix_owner() {
     let text = "zero\none\ntwo\nthree\nfour";
