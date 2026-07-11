@@ -48,6 +48,66 @@ ceiling per detector. If “BPD” is being used informally to mean a bits/byte 
 bytes/token density, do not treat it as a third implemented score: Shannon
 entropy and BPE token efficiency are the two separate signals documented here.
 
+### Detector-owned tuning: what each setting changes
+
+Detection policy belongs in the detector TOML whenever the choice is specific
+to a credential type. Scan-wide CLI/TOML values are operational overrides for
+controlled comparisons or a corpus-wide policy; they are not a second hidden
+detector definition. `keyhog explain <detector-id>` shows the resolved policy.
+
+| Detector TOML field | If increased / enabled | If decreased / disabled |
+|---|---|---|
+| `entropy_low` | Requires more Shannon entropy for keyword-anchored generic values; fewer low-randomness passwords/tokens survive | Admits more values when the assignment key supplies evidence; shape, BPE, context, and confidence gates still apply |
+| `entropy_high` | Tightens keyword-independent generic admission | Admits more opaque candidates without strong assignment context |
+| `entropy_very_high` | Tightens isolated, anchor-free token admission | Expands the no-keyword search and therefore its false-positive surface |
+| `entropy_floor` | A higher applicable length-bucket floor suppresses more low-entropy candidates for that detector | A lower floor preserves more human-chosen or structured credentials |
+| `mixed_alnum_floor` | Rejects more identifier-like alphanumeric runs | Preserves more low-randomness mixed-alphanumeric values |
+| `bpe_max_bytes_per_token` | A higher ceiling is looser: fewer compressible/word-like candidates are rejected | A lower ceiling is stricter: more language-like values are rejected, with corresponding recall risk |
+| `bpe_enabled = false` | Not applicable | Skips token-efficiency rejection for detectors such as human-chosen passwords |
+| `min_len` / `keyword_free_min_len` | Longer values are required; short false positives fall, but short real credentials can also fall | Shorter credential shapes become eligible |
+| `min_confidence` | Raises this detector's reporting floor | Lowers this detector's reporting floor; an operator override can still replace it |
+| `weak_anchor`, `structural_password_slot`, `credential_shape` | Enables the named detector-family/shape policy; these are classifications, not numeric quality sliders | Leaves that policy inactive |
+
+Token efficiency can carry more of the precision burden for a detector whose
+assignment key or regex already creates the candidate. That is the practical
+per-detector alternative to making Shannon entropy the decisive signal: use a
+permissive detector-owned entropy floor appropriate to the credential family,
+then let its BPE, shape, context, and confidence policy reject word-like noise.
+It is not equivalent to blindly replacing entropy with one global BPE number,
+and `bpe_enabled` alone never creates a candidate.
+
+Scan-wide settings remain operational controls, but they do not all compose the
+same way. Explicit CLI values take precedence over config-file values. An
+explicit scan-wide BPE ceiling takes precedence over detector-local BPE ceilings
+so a benchmark can compare one bound consistently. `entropy_threshold` can
+tighten a detector's high band but does not silently replace its lower
+detector-owned keyword band. A detector's `min_confidence` replaces the global
+reporting floor for that detector, and `[detector.<id>] min_confidence` is the
+operator override for that one ID. For production detector tuning, put the
+stable value in the owning detector TOML and prove it with that detector's
+positive, negative, evasion, backend-parity, and corpus contracts.
+
+### Settings, hardware, and result parity
+
+Hardware changes execution, not detection policy. CPU, SIMD/Hyperscan, and GPU
+routes consume the same resolved detector/config digest and must return the
+same complete finding set. Autoroute calibrates only fastest **correct**
+candidates and refuses to route when exact persisted evidence is missing or
+stale; it does not relax a detector to make a backend faster.
+
+| Change | Finding-set effect | Routing/calibration effect |
+|---|---|---|
+| Different CPU, GPU, driver, or accelerator availability | None for the same resolved detector/config and input; a parity mismatch rejects that route | Host/device/runtime identity changes, so old autoroute evidence is not reusable |
+| Different detector TOML, thresholds, allowlists, or enabled detectors | May change candidates, suppressions, confidence, and final findings | Detector/config digest changes; recalibration is required |
+| `--fast`, `--deep`, or `--precision` | Changes the resolved feature and confidence policy, so results may differ by design | Each preset has a distinct config identity and calibration coverage |
+| Explicit `--backend cpu|simd|gpu` | Intended to be parity-identical; it is a diagnostic/benchmark override, not proof | Bypasses autoroute and does not create reusable fastest-correct evidence |
+| Input size, chunk count, source family, decode density, or full-source-size availability | The input itself can change findings; backend choice must not | Selects a different exact workload key, including whether each source family's size bucket came from full-source or payload evidence |
+
+When comparing settings, record the effective config, detector digest, input
+identity, backend, host/accelerator identity, and complete findings—not only
+elapsed time or finding count. A faster run with a different result set is a
+detection change or parity failure, not a routing win.
+
 ## Stage 1 - chunker
 
 A file becomes one or more **chunks**. A chunk is `{data: str, metadata:
