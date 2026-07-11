@@ -318,12 +318,17 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         },
     );
 
+    // `None` filter root: scan-system runs paranoid and deliberately ignores the
+    // local `.keyhogignore` allowlist (an attacker would allowlist their leak),
+    // so no post-scan allowlist filter is installed. It STILL benefits from the
+    // resolved `.keyhog.toml` detector/scanner config applied inside setup.
     let scan_runtime = setup_default_scan_runtime(
         &args.detectors,
         args.cache_dir.clone(),
         args.threads,
         "keyhog scan-system",
         true,
+        None,
     )?;
     let palette = style::for_stderr();
     eprintln!(
@@ -729,7 +734,7 @@ fn scan_git_history(
         // final summary's "did NOT cover everything" warning fires.
         let palette = style::for_stderr();
         eprintln!(
-            "{} keyhog scan-system: git history of {} was NOT scanned — this binary \
+            "{} keyhog scan-system: git history of {} was NOT scanned: this binary \
              was built without the `git` feature. Reinstall with `git` (the default \
              build) or pass `--no-git-history` to stop discovering repos you cannot scan.",
             style::warn("WARN", &palette),

@@ -25,10 +25,11 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Instant;
 
-const COALESCED_CHUNK_SCAN_CEILING_BYTES: usize = 512 * 1024 * 1024;
+pub(crate) const COALESCED_CHUNK_SCAN_CEILING_BYTES: usize = 512 * 1024 * 1024;
 /// The scan ceiling in MiB, derived from the byte constant so the operator-facing
 /// skip messages can never name a different size than the limit actually enforced.
-const COALESCED_CHUNK_SCAN_CEILING_MB: usize = COALESCED_CHUNK_SCAN_CEILING_BYTES / (1024 * 1024);
+pub(crate) const COALESCED_CHUNK_SCAN_CEILING_MB: usize =
+    COALESCED_CHUNK_SCAN_CEILING_BYTES / (1024 * 1024);
 
 pub(super) fn record_oversized_coalesced_chunk_skip(chunk: &Chunk) {
     let mb = chunk.data.len() / (1024 * 1024);

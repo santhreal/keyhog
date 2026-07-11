@@ -155,6 +155,11 @@ pub trait CliTestApi {
     fn validate_socket_for_connect(&self, socket_path: &Path) -> Result<()>;
     fn current_uid(&self) -> libc::uid_t;
     fn connected_peer_uid(&self, stream: &tokio::net::UnixStream) -> Result<libc::uid_t>;
+    fn render_credential(
+        &self,
+        credential: &keyhog_core::SensitiveString,
+        show_secrets: bool,
+    ) -> std::borrow::Cow<'static, str>;
     #[cfg(unix)]
     fn is_transient_accept_error(&self, error: &std::io::Error) -> bool;
     fn daemon_client_version<'a>(&self, client: &'a crate::daemon::client::Client) -> &'a str;
@@ -583,6 +588,13 @@ impl CliTestApi for TestApi {
     }
     fn connected_peer_uid(&self, stream: &tokio::net::UnixStream) -> Result<libc::uid_t> {
         crate::daemon::client::testing::connected_peer_uid(stream)
+    }
+    fn render_credential(
+        &self,
+        credential: &keyhog_core::SensitiveString,
+        show_secrets: bool,
+    ) -> std::borrow::Cow<'static, str> {
+        crate::orchestrator::render_credential(credential, show_secrets)
     }
     #[cfg(unix)]
     fn is_transient_accept_error(&self, error: &std::io::Error) -> bool {

@@ -44,8 +44,8 @@ const DEDUP_PRUNE_INTERVAL: usize = 128;
 /// burst's duplicate inotify events. Named here (instead of pasting the two
 /// magic constants into each function) so both provably use one algorithm and
 /// cannot silently drift apart.
-const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
-const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+const FNV_OFFSET_BASIS: u64 = keyhog_scanner::FNV_OFFSET_BASIS;
+const FNV_PRIME: u64 = keyhog_scanner::FNV_PRIME;
 
 #[derive(Default)]
 struct WatchDedupeState {
@@ -74,12 +74,17 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
     // never consults the autoroute cache -- so watch works on an uncalibrated
     // binary (and the autoroute error's `--backend` advice is actionable here).
     let backend_override = crate::orchestrator::explicit_backend_override(args.backend.as_deref())?;
+    // Root config discovery + allowlist loading at the primary watched tree, so
+    // `keyhog watch` resolves the SAME `.keyhog.toml` / `.keyhogignore` policy an
+    // equivalent `keyhog scan <root>` would (folded roots share one policy root,
+    // mirroring scan's single-root allowlist anchor).
     let scan_runtime = setup_default_scan_runtime(
         &args.detectors,
         args.cache_dir.clone(),
         None,
         "keyhog watch",
         false,
+        watch_roots.first().map(PathBuf::as_path),
     )?
     .with_backend_override(backend_override);
     let detector_count = scan_runtime.detector_count();
@@ -139,7 +144,7 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
         watcher.watch(root, RecursiveMode::Recursive).map_err(|e| {
             anyhow::anyhow!(
                 "failed to watch {root}: {e}\n  \
-             On Linux a large tree usually exhausts the inotify watch limit — raise it with:\n    \
+             On Linux a large tree usually exhausts the inotify watch limit; raise it with:\n    \
              sudo sysctl fs.inotify.max_user_watches=524288   (persist in /etc/sysctl.conf)\n  \
              or run a one-shot `keyhog scan {root}` instead of watch.",
                 root = root.display(),
@@ -331,7 +336,7 @@ fn scan_file(
             base_offset: 0,
             base_line: 0,
             source_type: "filesystem".into(),
-            path: Some(path.display().to_string()),
+            path: Some(path.display().to_string().into()),
             commit: None,
             author: None,
             date: None,
@@ -340,7 +345,20 @@ fn scan_file(
             decoded_span: None,
         },
     };
-    let matches = match scan_runtime.scan_chunk(&chunk) {
+    let raw_matches = match scan_runtime.scan_chunk(&chunk) {
+        Ok(matches) => matches,
+        Err(error) => {
+            let palette = style::for_stderr();
+            eprintln!("{} keyhog watch: {error}", style::fail("FAIL", &palette));
+            return Ok(());
+        }
+    };
+    // Route scanner matches through the SAME suppression + resolution pipeline
+    // `keyhog scan` uses (allowlist / `.keyhogignore`, inline `keyhog:ignore`,
+    // disabled detectors, confidence floors, severity, match resolution) before
+    // printing — otherwise watch would surface findings the user explicitly
+    // allowlisted purely because it took a different code path than scan (Law 10).
+    let matches = match scan_runtime.filter_and_resolve(raw_matches) {
         Ok(matches) => matches,
         Err(error) => {
             let palette = style::for_stderr();
@@ -489,6 +507,59 @@ pub(crate) mod testing {
 
     pub(crate) fn findings_fingerprint(matches: &[keyhog_core::RawMatch]) -> u64 {
         super::findings_fingerprint(matches)
+    }
+
+    /// Drive the REAL `keyhog watch` scan + suppression pipeline over `body`
+    /// (written to `file_name` under `root`, which also anchors `.keyhog.toml` /
+    /// `.keyhogignore` discovery) and return the detector ids that SURVIVE the
+    /// shared filter — the exact set `watch` would print. Forces the CPU backend
+    /// so the test needs no autoroute calibration, and writes the body to a real
+    /// on-disk file so inline `keyhog:ignore` suppression (which re-reads the
+    /// file) exercises the same path production does.
+    ///
+    /// Test-only: consumed solely by the `#[cfg(test)] mod tests` below, so it is
+    /// gated to keep it out of release builds (Law-11 / no dead code in shipped
+    /// binaries) — unlike its `testing`-module siblings, which non-test integration
+    /// helpers (`crate::testing`) still call.
+    #[cfg(test)]
+    pub(crate) fn scan_file_surviving_detector_ids(
+        root: &Path,
+        file_name: &str,
+        body: &str,
+    ) -> Result<Vec<String>> {
+        use keyhog_core::{Chunk, ChunkMetadata};
+        let file_path = root.join(file_name);
+        std::fs::write(&file_path, body)?;
+        // Pass the DEFAULT `detectors` sentinel — the ONLY non-existent path the
+        // scan-config validator whitelists (`validate_detector_path_for_scan`) —
+        // so this resolves to the EMBEDDED corpus exactly as `keyhog watch` does
+        // with no `--detectors` and no `detectors/` dir present (the cli crate
+        // has none). A made-up non-existent path is (correctly) rejected as an
+        // operator typo, so it can't be used to force embedded.
+        let embedded_sentinel = std::path::Path::new("detectors");
+        let runtime = super::setup_default_scan_runtime(
+            embedded_sentinel,
+            None,
+            None,
+            "keyhog watch",
+            false,
+            Some(root),
+        )?
+        .with_backend_override(Some(keyhog_scanner::ScanBackend::SimdCpu));
+        let chunk = Chunk {
+            data: body.to_string().into(),
+            metadata: ChunkMetadata {
+                source_type: "filesystem".into(),
+                path: Some(file_path.display().to_string().into()),
+                ..Default::default()
+            },
+        };
+        let matches = runtime.scan_chunk(&chunk)?;
+        let filtered = runtime.filter_and_resolve(matches)?;
+        Ok(filtered
+            .iter()
+            .map(|m| m.detector_id.as_ref().to_string())
+            .collect())
     }
 
     /// Drive two consecutive post-scan finding-set decisions for one path.

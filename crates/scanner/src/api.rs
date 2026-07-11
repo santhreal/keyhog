@@ -11,6 +11,7 @@ pub use crate::engine::{
 };
 pub use crate::error::{Result, ScanError};
 pub use crate::hw_probe::{probe_hardware, select_backend, HardwareCaps, ScanBackend};
+pub use crate::util_hash::{FNV_OFFSET_BASIS, FNV_PRIME};
 pub use crate::types::{
     regex_dfa_limit_default, set_regex_dfa_limit, ScannerConfig, ScannerTuningConfig,
 };

@@ -156,6 +156,21 @@ pub(crate) fn dedup_for_report(
     keyhog_core::dedup_cross_detector(deduped)
 }
 
+/// One owner for the redact-vs-plaintext rendering of a finding's credential, so
+/// a `Skipped` finding renders identically whether it came from the verify path
+/// (`verify_findings`) or the non-verify path (`skipped_findings_from_deduped`).
+/// `--show-secrets` prints plaintext; otherwise the credential is redacted.
+pub(crate) fn render_credential(
+    credential: &keyhog_core::SensitiveString,
+    show_secrets: bool,
+) -> std::borrow::Cow<'static, str> {
+    if show_secrets {
+        credential.to_string().into()
+    } else {
+        keyhog_core::redact(credential)
+    }
+}
+
 pub(crate) fn skipped_findings_from_deduped(
     deduped: Vec<DedupedMatch>,
     show_secrets: bool,
@@ -167,11 +182,7 @@ pub(crate) fn skipped_findings_from_deduped(
             detector_name: m.detector_name,
             service: m.service,
             severity: m.severity,
-            credential_redacted: if show_secrets {
-                m.credential.to_string().into()
-            } else {
-                keyhog_core::redact(&m.credential)
-            },
+            credential_redacted: render_credential(&m.credential, show_secrets),
             credential_hash: m.credential_hash,
             location: m.primary_location,
             verification: VerificationResult::Skipped,
@@ -182,116 +193,143 @@ pub(crate) fn skipped_findings_from_deduped(
         .collect()
 }
 
+/// The scan-time filtering policy shared by EVERY scan-output route, borrowed
+/// from whichever owner holds it (`ScanOrchestrator` for `keyhog scan`, the
+/// `DefaultScanRuntime`'s resolved filter for `keyhog watch`). Extracting it into
+/// one struct + one free function ([`filter_and_resolve_matches`]) is the ONE
+/// PLACE that guarantees `scan` and `watch` apply an IDENTICAL pipeline
+/// (signatures, disabled detectors, test-fixture + self-scan suppression,
+/// allowlist, per-detector / global confidence floors, severity, match
+/// resolution, inline suppression) — they can no longer drift.
+pub(crate) struct MatchFilter<'a> {
+    pub(crate) signatures: &'a std::collections::HashSet<std::sync::Arc<str>>,
+    pub(crate) disabled_detectors: &'a std::collections::HashSet<String>,
+    pub(crate) test_fixture_suppressions:
+        &'a crate::test_fixture_suppressions::TestFixtureSuppressions,
+    pub(crate) no_suppress_test_fixtures: bool,
+    pub(crate) detector_min_confidence: &'a std::collections::HashMap<String, f64>,
+    pub(crate) private_key_block_detectors: &'a std::collections::HashSet<String>,
+    pub(crate) min_confidence: f64,
+    pub(crate) min_severity: Option<keyhog_core::Severity>,
+}
+
+/// Apply the shared scan-time filter + resolution pipeline. Owner-agnostic: both
+/// `keyhog scan` and `keyhog watch` route through this, so a finding suppressed
+/// by one is suppressed by the other.
+pub(crate) fn filter_and_resolve_matches(
+    filter: &MatchFilter<'_>,
+    matches: Vec<RawMatch>,
+    allowlist: &keyhog_core::Allowlist,
+) -> Result<Vec<RawMatch>> {
+    let mut self_scan_path_scope = SelfScanPathScope::new();
+    let mut filtered = matches
+        .into_iter()
+        .filter(|m| {
+            let cred = m.credential.as_ref();
+
+            if filter.signatures.contains(cred) {
+                return false;
+            }
+            // `.keyhog.toml` `[detector.<id>] enabled = false`. TOML
+            // detectors are already dropped at load; this also catches the
+            // hardcoded hot-pattern fast path (ids like `hot-aws_key`),
+            // which is not part of the loaded corpus.
+            if !filter.disabled_detectors.is_empty()
+                && filter.disabled_detectors.contains(m.detector_id.as_ref())
+            {
+                return false;
+            }
+            if suppresses_test_fixture(filter.test_fixture_suppressions, m) {
+                return false;
+            }
+
+            // Self-scan test-data path suppression. Three gates must
+            // be true to suppress:
+            //   1. `--no-suppress-test-fixtures` was NOT passed.
+            //   2. The finding's file path lives inside keyhog's own repo.
+            //   3. The path has a test-data-marker segment.
+            if !filter.no_suppress_test_fixtures {
+                if let Some(file_path) = m.location.file_path.as_deref() {
+                    if self_scan_path_scope.finding_inside_keyhog_repo(file_path) {
+                        let mut segs = file_path.split(['/', '\\']);
+                        let suppressed = segs.any(|seg| {
+                            seg.eq_ignore_ascii_case("detectors")
+                                || seg.eq_ignore_ascii_case("tests")
+                                || seg.eq_ignore_ascii_case("fixtures")
+                                || seg.eq_ignore_ascii_case("benches")
+                        });
+                        if suppressed {
+                            keyhog_scanner::telemetry::record_example_suppression(
+                                m.detector_id.as_ref(),
+                                m.location.file_path.as_deref(),
+                                cred,
+                                "self_scan_test_data_path",
+                            );
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            if suppresses_allowlist_match(allowlist, m) {
+                return false;
+            }
+            if let Some(conf) = m.confidence {
+                // Per-detector floor from `.keyhog.toml`
+                // `[detector.<id>] min_confidence` takes precedence and
+                // applies unconditionally. Falls back to the global floor.
+                if let Some(floor) = filter.detector_min_confidence.get(m.detector_id.as_ref()) {
+                    if conf < *floor {
+                        return false;
+                    }
+                } else if conf < filter.min_confidence {
+                    return false;
+                }
+            }
+            if let Some(min_severity) = filter.min_severity {
+                if m.severity < min_severity {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect::<Vec<_>>();
+
+    filtered = keyhog_scanner::resolution::try_resolve_matches_with_private_key_blocks(
+        filtered,
+        filter.private_key_block_detectors,
+    )
+    .map_err(anyhow::Error::msg)
+    .context("failed to resolve matches; fix rules/detector-classification.toml")?;
+    Ok(crate::inline_suppression::filter_inline_suppressions(
+        filtered,
+    ))
+}
+
 impl ScanOrchestrator {
     pub(crate) fn filter_and_resolve(
         &self,
         matches: Vec<RawMatch>,
         allowlist: &keyhog_core::Allowlist,
     ) -> Result<Vec<RawMatch>> {
-        let mut self_scan_path_scope = SelfScanPathScope::new();
-        let mut filtered = matches
-            .into_iter()
-            .filter(|m| {
-                let cred = m.credential.as_ref();
-
-                if self.signatures.contains(cred) {
-                    return false;
-                }
-                // `.keyhog.toml` `[detector.<id>] enabled = false`. TOML
-                // detectors are already dropped at load; this also catches the
-                // hardcoded hot-pattern fast path (ids like `hot-aws_key`),
-                // which is not part of the loaded corpus.
-                if !self.disabled_detectors.is_empty()
-                    && self.disabled_detectors.contains(m.detector_id.as_ref())
-                {
-                    return false;
-                }
-                if suppresses_test_fixture(&self.test_fixture_suppressions, m) {
-                    return false;
-                }
-
-                // Self-scan test-data path suppression. Three gates must
-                // be true to suppress:
-                //   1. `--no-suppress-test-fixtures` was NOT passed
-                //      (it explicitly opts out of bundled suppression,
-                //      and a user auditing the suppression list wants
-                //      to see segment-filtered findings too).
-                //   2. The finding's file path lives inside keyhog's
-                //      own source repo (root Cargo.toml marker check).
-                //   3. The path has a segment matching a test-data
-                //      marker (detectors/tests/fixtures/benches).
-                //
-                // Without the path-scoping gate, every user with a
-                // `tests/` directory in their tree would have findings
-                // silently dropped, even when scanning a totally
-                // unrelated project. The CWD-only check landed earlier
-                // was the right idea but the wrong dimension: scoping
-                // on FINDING path (not CWD) means a developer who runs
-                // keyhog from inside its own repo against an external
-                // target still gets real findings from that target.
-                //
-                // The previous iteration also matched any segment literally
-                // equal to "keyhog", which dropped findings from any folder
-                // named keyhog/ (forks, docs paths, Reddit demo trees).
-                if !self.effective_config.report.no_suppress_test_fixtures {
-                    if let Some(file_path) = m.location.file_path.as_deref() {
-                        if self_scan_path_scope.finding_inside_keyhog_repo(file_path) {
-                            let mut segs = file_path.split(['/', '\\']);
-                            let suppressed = segs.any(|seg| {
-                                seg.eq_ignore_ascii_case("detectors")
-                                    || seg.eq_ignore_ascii_case("tests")
-                                    || seg.eq_ignore_ascii_case("fixtures")
-                                    || seg.eq_ignore_ascii_case("benches")
-                            });
-                            if suppressed {
-                                keyhog_scanner::telemetry::record_example_suppression(
-                                    m.detector_id.as_ref(),
-                                    m.location.file_path.as_deref(),
-                                    cred,
-                                    "self_scan_test_data_path",
-                                );
-                                return false;
-                            }
-                        }
-                    }
-                }
-
-                if suppresses_allowlist_match(allowlist, m) {
-                    return false;
-                }
-                if let Some(conf) = m.confidence {
-                    // Per-detector floor from `.keyhog.toml`
-                    // `[detector.<id>] min_confidence` takes precedence and
-                    // applies unconditionally (it is an explicit per-detector
-                    // policy, not the ML gate). Falls back to the global
-                    // `--min-confidence` floor, which stays gated on `!no_ml`.
-                    if let Some(floor) = self.detector_min_confidence.get(m.detector_id.as_ref()) {
-                        if conf < *floor {
-                            return false;
-                        }
-                    } else if conf < self.effective_config.min_confidence {
-                        // The post-scan confidence gate reads the same resolved
-                        // value that configured the scanner. Disabling ML changes
-                        // confidence scoring; it must not bypass an explicit
-                        // operator floor.
-                        return false;
-                    }
-                }
-                if let Some(min_severity) = &self.effective_config.report.severity {
-                    if m.severity < min_severity.to_severity() {
-                        return false;
-                    }
-                }
-                true
-            })
-            .collect::<Vec<_>>();
-
-        filtered = keyhog_scanner::resolution::try_resolve_matches(filtered)
-            .map_err(anyhow::Error::msg)
-            .context("failed to resolve matches; fix rules/detector-classification.toml")?;
-        Ok(crate::inline_suppression::filter_inline_suppressions(
-            filtered,
-        ))
+        // Build the shared filter from the orchestrator's resolved config and
+        // delegate to the ONE PLACE `keyhog watch` also uses.
+        let filter = MatchFilter {
+            signatures: &self.signatures,
+            disabled_detectors: &self.disabled_detectors,
+            test_fixture_suppressions: &self.test_fixture_suppressions,
+            no_suppress_test_fixtures: self.effective_config.report.no_suppress_test_fixtures,
+            detector_min_confidence: &self.detector_min_confidence,
+            private_key_block_detectors: &self.private_key_block_detectors,
+            min_confidence: self.effective_config.min_confidence,
+            min_severity: self
+                .effective_config
+                .report
+                .severity
+                .as_ref()
+                .map(|s| s.to_severity()),
+        };
+        filter_and_resolve_matches(&filter, matches, allowlist)
     }
 
     pub(crate) async fn finalize(&self, matches: Vec<RawMatch>) -> Result<Vec<VerifiedFinding>> {
@@ -306,7 +344,9 @@ impl ScanOrchestrator {
                      to outbound HTTPS endpoints). Drop --verify or drop --lockdown."
                 );
             }
-            return self.verify_findings(deduped).await;
+            return self
+                .verify_findings(deduped, self.effective_config.report.show_secrets)
+                .await;
         }
 
         if self.effective_config.report.lockdown && self.effective_config.report.show_secrets {
@@ -323,7 +363,11 @@ impl ScanOrchestrator {
     }
 
     #[cfg(feature = "verify")]
-    async fn verify_findings(&self, groups: Vec<DedupedMatch>) -> Result<Vec<VerifiedFinding>> {
+    async fn verify_findings(
+        &self,
+        groups: Vec<DedupedMatch>,
+        show_secrets: bool,
+    ) -> Result<Vec<VerifiedFinding>> {
         use keyhog_verifier::{VerificationEngine, VerifyConfig};
         use std::io::IsTerminal;
         use std::time::Duration;
@@ -429,7 +473,7 @@ impl ScanOrchestrator {
                 detector_name: m.detector_name,
                 service: m.service,
                 severity: m.severity,
-                credential_redacted: keyhog_core::redact(&m.credential),
+                credential_redacted: render_credential(&m.credential, show_secrets),
                 credential_hash: m.credential_hash,
                 location: m.primary_location,
                 additional_locations: m.additional_locations,

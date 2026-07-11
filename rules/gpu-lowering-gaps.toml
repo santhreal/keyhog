@@ -1,0 +1,24 @@
+# Tier-B: GPU self-test error CLASSIFICATION markers.
+#
+# `keyhog backend --self-test` and `keyhog doctor` both classify a GPU
+# self-test error against these substrings so the two health surfaces never
+# disagree about whether the same GPU error is a KNOWN limitation (scans still
+# run on the AC kernel / deterministic CPU MoE) or a genuinely broken GPU stack.
+# Extend by adding a substring; do not hand-edit the classifier in code.
+
+# Substrings that mark a KNOWN vyre GPU IR-lowering limitation: the literal-set
+# subgroup form the canonical pre-emit lowering rejects. When present, the
+# literal-set path is a known gap (scans route through the AC kernel), not a
+# broken GPU stack, so the surfaces report a limitation rather than a hard FAIL.
+lowering_gap_markers = [
+  "_vyre_match_leader",
+  "canonical pre-emit lowering",
+  "subgroup_ballot",
+]
+
+# Substrings that mark a GPU-MoE-vs-CPU-MoE parity divergence. Detection still
+# fails closed to the deterministic CPU MoE, so this is a KNOWN degrade (GPU ML
+# acceleration disabled) rather than a hard dispatch FAIL.
+moe_parity_degrade_markers = [
+  "diverges from the CPU MoE reference",
+]

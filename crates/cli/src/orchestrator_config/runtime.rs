@@ -103,6 +103,7 @@ pub(crate) struct ScanRuntimeInput {
     pub(crate) autoroute_gpu: bool,
     pub(crate) autoroute_calibration: bool,
     pub(crate) regex_dfa_limit: Option<usize>,
+    pub(crate) megascan_input_len: Option<usize>,
     pub(crate) max_file_size: Option<usize>,
     #[cfg(feature = "git")]
     pub(crate) max_commits: usize,
@@ -129,6 +130,7 @@ impl ScanRuntimeInput {
             autoroute_gpu: args.autoroute_gpu && !args.no_autoroute_gpu,
             autoroute_calibration: args.autoroute_calibrate,
             regex_dfa_limit: args.regex_dfa_limit,
+            megascan_input_len: args.megascan_input_len,
             max_file_size: args.max_file_size,
             #[cfg(feature = "git")]
             max_commits: args.max_commits.unwrap_or(MAX_COMMITS_DEFAULT), // LAW10: absent max-commits => documented compiled git traversal cap; effective config prints the concrete value and source construction consumes this resolved field

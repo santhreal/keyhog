@@ -7,6 +7,27 @@ fn startup_summary_includes_detector_count() {
     assert!(!API.format_gpu_summary().is_empty());
 }
 
+// Both the verify (`verify_findings`) and non-verify (`skipped_findings_from_deduped`)
+// skip paths render a finding's credential through this one owner, so `--show-secrets`
+// can never yield plaintext on one path and redacted on the other.
+#[test]
+fn render_credential_honors_show_secrets_both_directions() {
+    let short = keyhog_core::SensitiveString::from("secret12");
+    assert_eq!(API.render_credential(&short, true), "secret12");
+    assert_eq!(API.render_credential(&short, false), "****");
+
+    let long = keyhog_core::SensitiveString::from(concat!("AK", "IAQYLPMN5HFIQR7XYA"));
+    assert_eq!(
+        API.render_credential(&long, true),
+        concat!("AK", "IAQYLPMN5HFIQR7XYA")
+    );
+    let redacted = API.render_credential(&long, false);
+    assert!(
+        redacted.contains("...") && redacted != "AKIAQYLPMN5HFIQR7XYA",
+        "redacted form must mask the interior: {redacted}"
+    );
+}
+
 fn test_hash() -> [u8; 32] {
     [7u8; 32]
 }

@@ -20,9 +20,9 @@ use std::collections::HashMap;
 
 /// FNV-1a offset basis (seed). The ONE place the seed lives — every cache that
 /// keys on this hash depends on the value being identical.
-const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+pub const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
 /// FNV-1a prime. The ONE place the prime lives.
-const FNV_PRIME: u64 = 0x100000001b3;
+pub const FNV_PRIME: u64 = 0x100000001b3;
 
 /// FNV-1a hash of `data`. Non-cryptographic; used as a content key for dedup
 /// and memoization across the scanner. Keep the seed/prime in sync here only -
