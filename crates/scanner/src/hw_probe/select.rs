@@ -260,7 +260,13 @@ fn select_backend_for_workload(
     )
 }
 
-/// Auto-route a scan to the best backend for this hardware + workload.
+/// Return the legacy hardware-threshold estimate for one workload.
+///
+/// This is a pure diagnostic heuristic, not proof-backed autorouting: it does
+/// not measure backend correctness or speed for the active binary, corpus,
+/// configuration, host, or workload. Production CLI scans consume persisted
+/// fastest-correct calibration and backend-less library scans use the portable
+/// CPU reference. Callers must not present this estimate as an autoroute result.
 ///
 /// Routing rules (highest-priority match wins):
 ///
@@ -276,8 +282,8 @@ fn select_backend_for_workload(
 ///    default high-throughput path for most deployments.
 /// 3. **CpuFallback** - pure scalar AC + regex. Works everywhere.
 ///
-/// The crossover thresholds were tuned against the standard corpus (Django +
-/// kubernetes/kubernetes + linux/linux). See [`super::thresholds`].
+/// The historical crossover thresholds came from a fixed reference corpus and
+/// are not transferable routing evidence. See [`super::thresholds`].
 #[must_use]
 pub fn select_backend(
     caps: &HardwareCaps,
@@ -296,18 +302,15 @@ pub fn select_backend_verdict(
     select_backend_for_workload(caps, BackendWorkload::file(workload_bytes, pattern_count))
 }
 
-/// Batch-aware backend routing — a pure, hardware-only library router.
+/// Batch-aware hardware-threshold estimate for diagnostics and tests.
 ///
 /// NOTE on the live CLI path: the shipped scan dispatcher does NOT call this;
-/// it uses the measured, parity-checked `MeasuredBackendRouter`
+/// it uses the persisted, measured, parity-checked autoroute router
 /// (`crates/cli/src/orchestrator/dispatch/backend.rs`), which benchmarks the
-/// candidate backends on a real sample and gates the GPU behind explicit
-/// `--autoroute-gpu` calibration eligibility (GPU region presence is slower
-/// than SIMD on keyhog's workload through the measured range). This function is the deterministic,
-/// side-effect-free dominance heuristic used by the `keyhog backend` report and
-/// by callers that want a backend decision without running the scanner — it
-/// shares [`cpu_tier_backend`] and [`gpu_could_engage`] with the live router so
-/// the CPU-tier verdict never diverges.
+/// eligible candidates on calibration samples and persists only parity-safe
+/// evidence. This function is a deterministic, side-effect-free estimate for
+/// callers that explicitly want the old threshold model without running the
+/// scanner; it is not a substitute for that evidence.
 ///
 /// Identical to [`select_backend`] for the CPU tiers, but adds a structural
 /// guard before the GPU branch: `large_chunk_bytes`
