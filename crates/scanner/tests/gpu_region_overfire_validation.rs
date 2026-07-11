@@ -55,6 +55,26 @@ fn keys(results: &[Vec<keyhog_core::RawMatch>]) -> std::collections::BTreeSet<Fi
     set
 }
 
+fn canonical(results: &[Vec<keyhog_core::RawMatch>]) -> Vec<keyhog_core::RawMatch> {
+    let mut findings = results.iter().flatten().cloned().collect::<Vec<_>>();
+    findings.sort();
+    findings
+}
+
+fn scan_gpu_without_degrade(
+    scanner: &CompiledScanner,
+    chunks: &[keyhog_core::Chunk],
+) -> Vec<Vec<keyhog_core::RawMatch>> {
+    let before = scanner.runtime_status().gpu_degrade_count;
+    let results = scanner.scan_chunks_with_backend(chunks, ScanBackend::Gpu);
+    let after = scanner.runtime_status().gpu_degrade_count;
+    assert_eq!(
+        after, before,
+        "GPU parity evidence is invalid because the measured scan degraded to another backend"
+    );
+    results
+}
+
 fn scanner() -> CompiledScanner {
     let detectors =
         keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
@@ -96,8 +116,10 @@ fn gpu_equals_simd_on_overfire_bait_corpus() {
         test_chunk("fn main() { println!(\"hello, world\"); }", "src/clean.rs"),
     ];
 
-    let simd = keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu));
-    let gpu = keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu));
+    let simd_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu);
+    let gpu_results = scan_gpu_without_degrade(&scanner, &chunks);
+    let simd = keys(&simd_results);
+    let gpu = keys(&gpu_results);
 
     // The real PAT must be found by SIMD (sanity: the corpus has a finding).
     assert!(
@@ -133,6 +155,11 @@ fn gpu_equals_simd_on_overfire_bait_corpus() {
             only_gpu,
         );
     }
+    assert_eq!(
+        canonical(&gpu_results),
+        canonical(&simd_results),
+        "GPU and SIMD must agree on every RawMatch field and multiplicity"
+    );
 }
 
 /// Boundary-straddled secret parity through the GPU path with the over-fire bait
@@ -165,8 +192,10 @@ fn gpu_equals_simd_with_repeated_real_secrets() {
         ));
     }
 
-    let simd = keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu));
-    let gpu = keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu));
+    let simd_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu);
+    let gpu_results = scan_gpu_without_degrade(&scanner, &chunks);
+    let simd = keys(&simd_results);
+    let gpu = keys(&gpu_results);
 
     let simd_tokens: std::collections::BTreeSet<&str> = simd
         .iter()
@@ -185,6 +214,11 @@ fn gpu_equals_simd_with_repeated_real_secrets() {
         "GPU≢SIMD on the repeated-secret + bait corpus.\n  only SIMD: {:?}\n  only GPU: {:?}",
         simd.difference(&gpu).collect::<Vec<_>>(),
         gpu.difference(&simd).collect::<Vec<_>>(),
+    );
+    assert_eq!(
+        canonical(&gpu_results),
+        canonical(&simd_results),
+        "repeated-secret parity must include every RawMatch field and multiplicity"
     );
 }
 
@@ -217,8 +251,10 @@ fn gpu_equals_simd_on_zero_width_obfuscated_secret() {
         "fixtures/zw_obfuscated.rs",
     )];
 
-    let simd = keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu));
-    let gpu = keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu));
+    let simd_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu);
+    let gpu_results = scan_gpu_without_degrade(&scanner, &chunks);
+    let simd = keys(&simd_results);
+    let gpu = keys(&gpu_results);
 
     // SIMD must de-obfuscate and surface the cleaned token (the engine's unicode
     // hardening contract — see the adversarial unicode_normalization suite).
@@ -235,5 +271,10 @@ fn gpu_equals_simd_on_zero_width_obfuscated_secret() {
          run on preprocessed text, not raw bytes.\n  only SIMD: {:?}\n  only GPU: {:?}",
         simd.difference(&gpu).collect::<Vec<_>>(),
         gpu.difference(&simd).collect::<Vec<_>>(),
+    );
+    assert_eq!(
+        canonical(&gpu_results),
+        canonical(&simd_results),
+        "unicode-normalized parity must include every RawMatch field and multiplicity"
     );
 }
