@@ -349,6 +349,12 @@ impl CompiledScanner {
             crate::generic_keyword_owner::build_generic_named_assignment_keywords(&detectors);
         let generic_owning_detector =
             crate::generic_keyword_owner::GenericOwningDetectorIndex::build(&detectors);
+        let generic_assignment = phase2_generic::GenericAssignmentPolicy::compile(&detectors)
+            .map_err(|error| {
+                crate::error::ScanError::Config(format!(
+                    "cannot compile detector-owned generic assignment policy: {error}"
+                ))
+            })?;
 
         let stripe_hot_confirmed_prefixes =
             crate::detector_classification::stripe_hot_confirmed_prefixes()
@@ -425,6 +431,7 @@ impl CompiledScanner {
             detector_weak_anchor_base_by_index,
             generic_named_assignment_keywords,
             generic_owning_detector,
+            generic_assignment,
             #[cfg(feature = "gpu")]
             ac_match_upper_bounds,
             suffix_gate_ac,

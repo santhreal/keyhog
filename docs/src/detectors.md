@@ -181,6 +181,7 @@ The available per-detector tuning fields are:
 ### Candidate Lengths
 *   **`keyword_free_min_len`** (integer, optional): Per-detector minimum length for an anchor-free (keyword-free or isolated) candidate. Falls back to `KEYWORD_FREE_MIN_LEN` (20) if unset.
 *   **`min_len`** (integer, optional): Per-detector minimum candidate length for any candidate this detector emits. Falls back to no detector-specific floor beyond the path-wide default if unset.
+*   **`max_len`** (integer, optional): Per-detector inclusive maximum for generic-assignment candidates. The bridge rejects the entire overlength token; it never reports a truncated prefix. Generic detectors inherit the compatibility ceiling of 128 when unset. Regex-backed patterns keep their own explicit repetition bounds.
 
 ### Allowlists & Exclusions
 *   **`allowlist_paths`** (array of strings, optional): Per-detector path-exclusion regexes (betterleaks-style allowlist). Any candidate match whose file path matches any of these regexes is suppressed.

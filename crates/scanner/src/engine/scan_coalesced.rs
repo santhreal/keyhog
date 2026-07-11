@@ -235,7 +235,7 @@ impl CompiledScanner {
         let small_chunk = text.len() <= 32 * 1024;
         #[cfg(feature = "multiline")]
         if crate::multiline::has_concatenation_indicators(text) {
-            if has_generic_assignment_keyword(data) || has_secret_keyword_fast(data) {
+            if self.generic_assignment.stems.contains(data) || has_secret_keyword_fast(data) {
                 return true;
             }
             if small_chunk && self.config.entropy_enabled {
@@ -262,7 +262,7 @@ impl CompiledScanner {
                     &self.config.placeholder_keywords,
                 ));
         small_chunk
-            && (has_generic_assignment_keyword(data)
+            && (self.generic_assignment.stems.contains(data)
                 || has_secret_keyword_fast(data)
                 || entropy_admits)
     }

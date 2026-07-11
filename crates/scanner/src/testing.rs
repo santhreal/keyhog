@@ -1650,6 +1650,12 @@ pub fn csr_from_rows_roundtrip_for_test(rows: Vec<Vec<usize>>) -> Vec<Vec<u32>> 
         .collect()
 }
 pub use crate::pipeline::compute_line_offsets;
+
+pub fn generic_assignment_keyword_lines(text: &str) -> Vec<usize> {
+    let mut lines = Vec::new();
+    crate::engine::phase2_generic::keywords::collect_generic_keyword_lines(text, &mut lines);
+    lines
+}
 pub fn normalize_chunk_data(data: &str) -> std::borrow::Cow<'_, str> {
     crate::normalize_chunk_data(data)
 }

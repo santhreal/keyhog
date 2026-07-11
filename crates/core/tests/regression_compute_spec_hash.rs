@@ -420,7 +420,7 @@ fn spec_hash_binds_companion_order_within_a_detector() {
 // ── migration-knob field coverage (2026-07-07 per-detector recall/precision) ──
 // Every per-detector knob added in the 2026-07-07 migration (`kind`,
 // `min_confidence`, `entropy_floor`, the four entropy thresholds,
-// `keyword_free_min_len`, `min_len`, the allowlists/stopwords, the three
+// `keyword_free_min_len`, `min_len`, `max_len`, the allowlists/stopwords, the three
 // classification flags, `credential_shape`) OVERRIDES a scan-match/suppress
 // decision, so changing it changes WHICH findings a scan emits. Each MUST enter
 // the digest (Law 10: else the merkle cache keeps a stale skip). Each test flips
@@ -476,6 +476,7 @@ knob_changes_digest!(spec_hash_binds_keyword_free_min_len, |d| d
     .keyword_free_min_len =
     Some(32));
 knob_changes_digest!(spec_hash_binds_min_len, |d| d.min_len = Some(16));
+knob_changes_digest!(spec_hash_binds_max_len, |d| d.max_len = Some(128));
 knob_changes_digest!(spec_hash_binds_allowlist_paths, |d| d.allowlist_paths =
     vec!["(?i)/test/".to_string()]);
 knob_changes_digest!(spec_hash_binds_allowlist_values, |d| d.allowlist_values =

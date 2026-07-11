@@ -269,6 +269,7 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
     optional_policy!("bpe_enabled", d.bpe_enabled, "");
     optional_policy!("keyword_free_min_len", d.keyword_free_min_len, " bytes");
     optional_policy!("min_len", d.min_len, " bytes");
+    optional_policy!("max_len", d.max_len, " bytes");
 
     for bucket in &d.entropy_floor {
         match bucket.max_len {

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Move generic-assignment candidate length bounds into each owning detector's
+  TOML (`min_len` / `max_len`). The shared extractor derives its capture range
+  from the detector corpus, applies the owning detector's inclusive ceiling,
+  and rejects an overlength token whole instead of emitting a misleading
+  truncated prefix.
 - Skip repeated keyword-free entropy analysis for adjacent byte-identical
   lines after the first eligible copy; candidate-value deduplication already
   makes subsequent copies unable to add a finding, while generated sources and

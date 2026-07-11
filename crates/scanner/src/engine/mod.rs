@@ -250,6 +250,10 @@ pub struct CompiledScanner {
     /// preserves the exact first-match-by-exact-or-normalized semantics. Built
     /// ONCE at construction (see [`crate::generic_keyword_owner::GenericOwningDetectorIndex`]).
     pub(crate) generic_owning_detector: crate::generic_keyword_owner::GenericOwningDetectorIndex,
+    /// One compiled generic-assignment policy containing both extraction and
+    /// line admission, so custom-corpus keywords and bounds cannot drift across
+    /// parallel runtime structures.
+    pub(crate) generic_assignment: phase2_generic::GenericAssignmentPolicy,
     /// Per-`ac_map` regex byte upper bound for GPU hit-local validation. `None`
     /// means the detector regex is unbounded or unparsable by the AST bounder,
     /// so GPU validation must keep the full prepared-chunk oracle.

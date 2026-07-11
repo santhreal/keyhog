@@ -65,6 +65,7 @@ detector definition. `keyhog explain <detector-id>` shows the resolved policy.
 | `bpe_max_bytes_per_token` | A higher ceiling is looser: fewer compressible/word-like candidates are rejected | A lower ceiling is stricter: more language-like values are rejected, with corresponding recall risk |
 | `bpe_enabled = false` | Not applicable | Skips token-efficiency rejection for detectors such as human-chosen passwords |
 | `min_len` / `keyword_free_min_len` | Longer values are required; short false positives fall, but short real credentials can also fall | Shorter credential shapes become eligible |
+| `max_len` (phase-2 generic) | Longer assignment values remain eligible; increase only when the credential contract permits them | Long assignment values are rejected rather than truncated into an apparently valid finding |
 | `min_confidence` | Raises this detector's reporting floor | Lowers this detector's reporting floor; an operator override can still replace it |
 | `weak_anchor`, `structural_password_slot`, `credential_shape` | Enables the named detector-family/shape policy; these are classifications, not numeric quality sliders | Leaves that policy inactive |
 

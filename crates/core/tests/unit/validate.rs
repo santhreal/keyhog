@@ -18,6 +18,7 @@ fn detector_with_pattern(regex: &str) -> DetectorSpec {
         }],
         verify: None,
         companions: Vec::new(),
+        ..Default::default()
     }
 }
 

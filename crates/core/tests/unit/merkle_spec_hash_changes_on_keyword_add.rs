@@ -19,6 +19,7 @@ fn merkle_compute_spec_hash_changes_when_keywords_change() {
         }],
         companions: vec![],
         verify: None,
+        ..Default::default()
     };
     let mut with_extra = base.clone();
     with_extra.keywords.push("api_key".into());

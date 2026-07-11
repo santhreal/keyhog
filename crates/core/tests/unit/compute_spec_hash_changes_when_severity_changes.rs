@@ -18,6 +18,7 @@ fn compute_spec_hash_changes_when_severity_changes() {
         }],
         companions: vec![],
         verify: None,
+        ..Default::default()
     };
     let mut bumped = base.clone();
     bumped.severity = Severity::Critical;

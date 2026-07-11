@@ -81,6 +81,8 @@ pub mod regression_entropy_adjacent_duplicate_lines;
 pub mod regression_entropy_base64_protobuf_decoys;
 #[path = "regression_entropy_unique_char_count.rs"]
 pub mod regression_entropy_unique_char_count;
+#[path = "regression_generic_assignment_length_policy.rs"]
+pub mod regression_generic_assignment_length_policy;
 #[path = "regression_generic_bridge_padded_log_field.rs"]
 pub mod regression_generic_bridge_padded_log_field;
 #[path = "regression_github_app_pem_boundary.rs"]

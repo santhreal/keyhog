@@ -1,24 +1,24 @@
 use super::*;
 use std::cell::RefCell;
-use std::sync::LazyLock;
 
 pub(crate) mod keywords;
 mod line_mapping;
 mod metrics;
 
 use self::keywords::{
-    collect_generic_keyword_lines, collect_generic_keyword_lines_from_positions,
+    collect_generic_keyword_lines_from_positions, collect_generic_keyword_lines_with_stems,
     is_strong_keyword_anchored_encoded_text_secret, is_strong_keyword_anchored_hex_key,
 };
 use self::line_mapping::line_at_index;
 pub(crate) use self::metrics::{generic_profile_dump, generic_profile_reset};
 
-// The value/assignment tail of `GENERIC_RE`: the assignment-syntax grammar,
-// benign secret-suffix hops, and the group-2 value shape. Held as ONE named
-// constant so the alternation builder (below) and any test compile the exact
-// same grammar — there is no second copy of this pattern.
-// PER-DETECTOR-MIGRATION-BLOCKED: The static regex tail bounds (8..128) cannot be made per-detector at compile-time as they are baked into the single global GENERIC_RE.
-const GENERIC_RE_ASSIGNMENT_TAIL: &str = r#"(?:[._-]?(?:key|base|value|val|string|str|enc|raw|b64)){0,2}["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{0,31}\s*[=:]\s*)?|=\s*)["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#;
+// The assignment syntax is stable code; candidate-length policy is not.
+// `compile_generic_re_with_bounds` injects the bounds derived from the owning
+// detector TOMLs, keeping grammar here and secret-type policy with each detector.
+const GENERIC_RE_ASSIGNMENT_PREFIX: &str = r#"(?:[._-]?(?:key|base|value|val|string|str|enc|raw|b64)){0,2}["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{0,31}\s*[=:]\s*)?|=\s*)["'`]?"#;
+const GENERIC_RE_VALUE_CLASS: &str = r"[a-zA-Z0-9/+=_.:!@#$%^&*-]";
+const GENERIC_DEFAULT_MIN_LEN: usize = 8;
+const GENERIC_DEFAULT_MAX_LEN: usize = 128;
 
 // Structural (non-literal) group-1 arm: any bounded `<vendor>_key` / `_secret` /
 // `_token` compound, so a vendor-prefixed credential key bridges even when its
@@ -38,11 +38,8 @@ pub(crate) const GENERIC_RE_VENDOR_SUFFIX_ARM: &str =
 /// generic phase-2 detector specs. Widening a generic detector's `keywords`
 /// widens this alternation automatically, and a second hand-kept list cannot
 /// reappear without the dedup-lock test failing.
-pub(crate) fn generic_keyword_alternation() -> String {
-    let mut literals: Vec<&str> = crate::assignment_keywords::assignment_keywords()
-        .iter()
-        .map(String::as_str)
-        .collect();
+fn generic_keyword_alternation_from(keywords: &[String]) -> String {
+    let mut literals: Vec<&str> = keywords.iter().map(String::as_str).collect();
     // Longest-first (ties broken lexically) keeps a longer keyword alternative
     // preferred and the alternation byte-stable across builds. (The assignment
     // tail already forces the longest full match, so this is determinism, not
@@ -57,45 +54,70 @@ pub(crate) fn generic_keyword_alternation() -> String {
     alternation
 }
 
-/// Compile `GENERIC_RE` from a pre-built group-1 alternation. Kept separate from
-/// the `LazyLock` init so the exact construction is unit-testable AND so the
-/// fail-closed contract can be exercised with a deliberately malformed alternation.
-pub(crate) fn compile_generic_re(
+fn compile_generic_re_with_bounds(
     alternation: &str,
+    min_len: usize,
+    max_len: usize,
 ) -> std::result::Result<regex::Regex, regex::Error> {
     // Group 1 is the keyword, group 2 is the value.
-    regex::Regex::new(&format!("(?i)({alternation}){GENERIC_RE_ASSIGNMENT_TAIL}"))
+    regex::Regex::new(&format!(
+        "(?i)({alternation}){GENERIC_RE_ASSIGNMENT_PREFIX}({GENERIC_RE_VALUE_CLASS}{{{min_len},{max_len}}})[\"'`]?"
+    ))
 }
 
-/// Compile `GENERIC_RE` from the live derived vocabulary.
-pub(crate) fn build_generic_re() -> std::result::Result<regex::Regex, regex::Error> {
-    compile_generic_re(&generic_keyword_alternation())
+pub(crate) struct GenericAssignmentPolicy {
+    extractor: regex::Regex,
+    pub(crate) stems: keywords::GenericKeywordStemSet,
 }
 
-pub(crate) static GENERIC_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    // LAW 10 — FAIL CLOSED. This regex is built from a hardcoded assignment
-    // grammar plus the binary-baked derived keyword vocabulary. A compile failure
-    // is a BUILD/SOURCE defect, never a runtime condition an operator can act on.
-    // The previous code returned `None` on failure, which SILENTLY disabled the
-    // ENTIRE generic value bridge (the dominant CredData `*_PASS=` / `secret:`
-    // recall surface) — an invisible recall hole. There is no recall-preserving
-    // alternative, so panic: the build/CI must catch it, and we refuse to ship a
-    // scanner with its generic bridge gone dark.
-    build_generic_re().unwrap_or_else(|error| {
-        panic!(
-            "GENERIC_RE failed to compile: {error}. It is built from a hardcoded assignment \
-             grammar and the derived generic-keyword vocabulary \
-             (crate::assignment_keywords::assignment_keywords()); a compile failure is a build \
-             defect, not a runtime condition. Refusing to run with the generic-secret value \
-             bridge disabled."
-        )
-    })
-});
+impl GenericAssignmentPolicy {
+    pub(crate) fn compile(detectors: &[DetectorSpec]) -> std::result::Result<Self, String> {
+        let has_generic_phase2 = detectors.iter().any(|detector| {
+            detector.service == "generic"
+                && detector.kind == keyhog_core::DetectorKind::Phase2Generic
+        });
+        if has_generic_phase2 {
+            return Self::compile_authoritative(detectors);
+        }
 
-pub(crate) fn warm_generic_assignment_runtime() {
-    // LAW10: eager init/warm-up. Also validates the fail-closed compile invariant
-    // up front (a broken vocabulary panics here, at warm-up, not mid-scan).
-    LazyLock::force(&GENERIC_RE);
+        // Preserve the longstanding library contract for deliberately reduced
+        // detector vectors: the generic bridge remains available from the
+        // embedded corpus. A vector that supplies generic phase-2 detectors is
+        // always authoritative and never reaches this compatibility path.
+        let embedded = keyhog_core::load_embedded_detectors_or_fail()
+            .map_err(|error| format!("embedded detector corpus is corrupt: {error}"))?;
+        Self::compile_authoritative(&embedded)
+    }
+
+    fn compile_authoritative(detectors: &[DetectorSpec]) -> std::result::Result<Self, String> {
+        let assignment_keywords =
+            crate::assignment_keywords::derive_assignment_keywords(detectors)?;
+        let alternation = generic_keyword_alternation_from(&assignment_keywords);
+        let (min_len, max_len) = generic_assignment_capture_bounds(detectors);
+        let extractor = compile_generic_re_with_bounds(&alternation, min_len, max_len)
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            extractor,
+            stems: keywords::GenericKeywordStemSet::from_keywords(&assignment_keywords),
+        })
+    }
+}
+
+fn generic_assignment_capture_bounds(detectors: &[DetectorSpec]) -> (usize, usize) {
+    detectors
+        .iter()
+        .filter(|detector| {
+            detector.service == "generic"
+                && detector.kind == keyhog_core::DetectorKind::Phase2Generic
+        })
+        .map(|detector| {
+            (
+                detector.min_len.unwrap_or(GENERIC_DEFAULT_MIN_LEN),
+                detector.max_len.unwrap_or(GENERIC_DEFAULT_MAX_LEN),
+            )
+        })
+        .reduce(|(minimum, maximum), detector| (minimum.min(detector.0), maximum.max(detector.1)))
+        .unwrap_or((GENERIC_DEFAULT_MIN_LEN, GENERIC_DEFAULT_MAX_LEN))
 }
 
 thread_local! {
@@ -129,10 +151,9 @@ impl CompiledScanner {
         generic_keyword_positions: Option<&[u32]>,
         deadline: Option<std::time::Instant>,
     ) {
-        // LAW10 fail-closed: `GENERIC_RE` is an infallible `LazyLock<Regex>` — a
-        // compile failure panics at init (build defect), it never silently
-        // disables the bridge here.
-        let generic_re: &regex::Regex = &GENERIC_RE;
+        // The detector-owned extractor compiled fail-closed with this scanner;
+        // there is no optional/disabled state to silently erase generic recall.
+        let generic_re = &self.generic_assignment.extractor;
 
         // Lines already carrying named findings do not need a generic bridge
         // echo. Include ML-pending findings too: they have not been finalized
@@ -175,7 +196,11 @@ impl CompiledScanner {
                 &mut lines_with_keyword,
             );
         } else {
-            collect_generic_keyword_lines(scan_text, &mut lines_with_keyword);
+            collect_generic_keyword_lines_with_stems(
+                scan_text,
+                &self.generic_assignment.stems,
+                &mut lines_with_keyword,
+            );
         }
         metrics::record_prefilter_ns(prefilter_start);
         if profile_enabled {
@@ -341,6 +366,9 @@ impl CompiledScanner {
                     .map(|index| &self.detectors[index]);
 
                 let owning_detector_min_len = owning_detector.and_then(|d| d.min_len).unwrap_or(8);
+                let owning_detector_max_len = owning_detector
+                    .and_then(|d| d.max_len)
+                    .unwrap_or(GENERIC_DEFAULT_MAX_LEN);
                 let owning_detector_entropy_high = owning_detector
                     .and_then(|d| d.entropy_high)
                     .unwrap_or(crate::entropy::HIGH_ENTROPY_THRESHOLD);
@@ -378,6 +406,18 @@ impl CompiledScanner {
                     allow_encoded_text_secret,
                 );
 
+                // The shared regex captures through the largest detector ceiling.
+                // Apply the owning detector's smaller ceiling here, and reject a
+                // capture that stopped only because it reached the shared ceiling:
+                // otherwise a 129-byte token becomes a false 128-byte credential.
+                let capture_continues = line
+                    .as_bytes()
+                    .get(value_match.end())
+                    .is_some_and(|byte| is_generic_assignment_value_byte(*byte));
+                if value.len() > owning_detector_max_len || capture_continues {
+                    shape_rejected = Some(crate::adjudicate::GenericValueShapeStage::ValueTooLong);
+                }
+
                 // The `--keyword-low-entropy` knob relaxes the generic-bridge
                 // entropy floor to the GENERIC_KEYWORD_SECRET floor for EVERY
                 // generic assignment; when off, each candidate is held to the
@@ -404,6 +444,7 @@ impl CompiledScanner {
                                 shape_rejected = None;
                             }
                         }
+                        crate::adjudicate::GenericValueShapeStage::ValueTooLong => {}
                         crate::adjudicate::GenericValueShapeStage::EntropyBelowFloor => {
                             if !crate::adjudicate::generic_entropy_below_floor(
                                 entropy,
@@ -583,4 +624,9 @@ impl CompiledScanner {
         // the next chunk this worker handles.
         KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
     }
+}
+
+#[inline]
+fn is_generic_assignment_value_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || b"/+=_.:!@#$%^&*-".contains(&byte)
 }

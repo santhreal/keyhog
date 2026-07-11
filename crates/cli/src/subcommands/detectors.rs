@@ -174,6 +174,7 @@ fn print_detectors_json(detectors: &[&DetectorSpec]) -> Result<()> {
                     "bpe_max_bytes_per_token": d.bpe_max_bytes_per_token,
                     "keyword_free_min_len": d.keyword_free_min_len,
                     "min_len": d.min_len,
+                    "max_len": d.max_len,
                     "allowlist_paths": d.allowlist_paths,
                     "allowlist_values": d.allowlist_values,
                     "stopwords": d.stopwords,

@@ -23,6 +23,7 @@ fn make(id: &str) -> DetectorSpec {
             required: false,
         }],
         verify: None,
+        ..Default::default()
     }
 }
 

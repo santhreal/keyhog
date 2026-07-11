@@ -695,10 +695,7 @@ fn generic_assignment_prefilter_collects_casefolded_keyword_lines_once() {
         "COMPASS = broad-prefilter-boundary-rejected-later\n",
         "webhook_url = 'two'"
     );
-    let mut lines = Vec::new();
-    keyhog_scanner::engine::phase2_generic::keywords::collect_generic_keyword_lines(
-        text, &mut lines,
-    );
+    let lines = keyhog_scanner::testing::generic_assignment_keyword_lines(text);
     assert_eq!(lines, vec![1, 2, 3, 4]);
 }
 

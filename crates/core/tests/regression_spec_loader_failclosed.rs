@@ -542,6 +542,11 @@ fn dir_with_invalid_detector_local_policy_is_gate_rejected() {
     let cases = [
         ("entropy_high = nan", "entropy_high"),
         ("min_len = 0", "min_len must be greater than 0"),
+        ("max_len = 0", "max_len must be greater than 0"),
+        (
+            "max_len = 128",
+            "max_len currently applies only to kind = \"phase2-generic\"",
+        ),
         (
             "keyword_free_min_len = 0",
             "keyword_free_min_len must be greater than 0",

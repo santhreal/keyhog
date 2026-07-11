@@ -51,6 +51,7 @@ fn clean_detector(id: &str) -> DetectorSpec {
         keywords: vec!["demo_".into()],
         min_confidence: None,
         tests: Vec::new(),
+        ..Default::default()
     }
 }
 
@@ -1575,6 +1576,7 @@ regex = "rt_[A-Z0-9]{8}"
         keywords: vec!["rt_".into()],
         min_confidence: Some(0.5), // not hashed
         tests: Vec::new(),
+        ..Default::default()
     };
     assert_eq!(
         compute_spec_hash(&loaded),
