@@ -12,7 +12,7 @@ TOML file; each file may define one or more `[[detector.patterns]]` rows.
 The startup banner's parenthesized pattern total is the compiled scanner
 count after the engine expands those rows (and related trigger keywords)
 into the literal and regex slots it actually runs, so it is always larger
-than the raw TOML row count. Use `keyhog detectors --json | jq length` for
+than the raw TOML row count. Use `keyhog detectors --format json | jq length` for
 the embedded detector count; the banner line shows the live compiled total
 for your binary.
 
@@ -183,10 +183,18 @@ keyhog detectors --format json \
 keyhog explain stripe-secret-key
 ```
 
-Prints the full TOML contents, the keywords, the patterns with their
-descriptions, the verification endpoint, and any companions. Useful
-when debugging "why didn't this fire?" - usually the answer is in the
-regex or keywords.
+Prints the loaded detector's keywords, patterns, companions, verification
+endpoint, and detector-local admission policy. For generic detectors that
+policy includes Shannon-entropy floors, BPE UTF-8 bytes/token ceilings, length
+floors, stopwords, and allowlists exactly as declared by the detector TOML:
+
+```sh
+keyhog explain generic-secret
+```
+
+This is the first place to look when debugging why a detector did or did not
+fire; it makes detector-owned tuning visible without searching for a Rust-side
+override table.
 
 ## Custom detector corpora
 
