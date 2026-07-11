@@ -6,6 +6,13 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Removed
 
+- **The no-op `kubernetes-secret` detector shim.** Kubernetes `Secret.data`
+  values continue through the structured decoder and are attributed to the
+  detector that recognizes the decoded credential. The retired detector only
+  matched an internal `NEVER__MATCH__K8S_DISABLED__SENTINEL`, so it could never
+  report a real Kubernetes secret; its synthetic contracts and catalog entry
+  are removed with it. This changes the embedded corpus from 923 to 922 real
+  detectors without changing recall on production inputs.
 - **The `keyhog tui` live-scan dashboard.** The interactive TUI subcommand (the
   `tui` module, `Tui`/`TuiArgs`, the `tui` Cargo feature, and the `ratatui` /
   `crossterm` dependencies) is removed in full. It was an interactive frontend

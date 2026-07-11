@@ -874,6 +874,21 @@
     ]
   },
   {
+    "id": "azure-client-secret",
+    "name": "Azure AD / Entra Client Secret",
+    "service": "azure",
+    "severity": "critical",
+    "keywords": [
+      "AZURE_CLIENT_SECRET",
+      "ARM_CLIENT_SECRET",
+      "AAD_CLIENT_SECRET",
+      "AZURE_AD_CLIENT_SECRET",
+      "azure_client_secret",
+      "arm_client_secret",
+      "servicePrincipalKey"
+    ]
+  },
+  {
     "id": "azure-container-registry-token",
     "name": "Azure Container Registry Token",
     "service": "azure-container-registry",
@@ -1097,6 +1112,16 @@
     "keywords": [
       "Basic",
       "basic"
+    ]
+  },
+  {
+    "id": "bearer-authorization",
+    "name": "Bearer Authorization Credentials",
+    "service": "generic",
+    "severity": "high",
+    "keywords": [
+      "Bearer",
+      "bearer"
     ]
   },
   {
@@ -1815,6 +1840,17 @@
       "CLEVER",
       "clever_api",
       "clever.com"
+    ]
+  },
+  {
+    "id": "cli-password-flag",
+    "name": "Command-line Password Flag",
+    "service": "generic",
+    "severity": "high",
+    "keywords": [
+      "password",
+      "Password",
+      "passwd"
     ]
   },
   {
@@ -3518,6 +3554,52 @@
     ]
   },
   {
+    "id": "generic-api-key",
+    "name": "Generic API Key",
+    "service": "generic",
+    "severity": "medium",
+    "keywords": [
+      "api_key",
+      "apikey",
+      "api-key",
+      "access_key",
+      "accesskey",
+      "secret_key",
+      "secretkey",
+      "client_secret",
+      "x-api-key",
+      "apitoken",
+      "api_token",
+      "auth_key",
+      "signing_key",
+      "encryption_key",
+      "master_key",
+      "masterkey",
+      "license_key"
+    ]
+  },
+  {
+    "id": "generic-keyword-secret",
+    "name": "Generic Keyword Secret",
+    "service": "generic",
+    "severity": "medium",
+    "keywords": [
+      "secret",
+      "password",
+      "passwd",
+      "pwd",
+      "pass",
+      "token",
+      "apikey",
+      "api_key",
+      "credential",
+      "auth",
+      "passphrase",
+      "private_key",
+      "authorization"
+    ]
+  },
+  {
     "id": "generic-password",
     "name": "Generic Password",
     "service": "generic",
@@ -3536,6 +3618,25 @@
       "apikey",
       "access_key",
       "client_secret"
+    ]
+  },
+  {
+    "id": "generic-secret",
+    "name": "Generic Secret",
+    "service": "generic",
+    "severity": "medium",
+    "keywords": [
+      "secret",
+      "token",
+      "secret_key",
+      "client_secret",
+      "auth_token",
+      "authtoken",
+      "access_token",
+      "private_key",
+      "signing_secret",
+      "app_secret",
+      "webhook_url"
     ]
   },
   {
@@ -3607,6 +3708,15 @@
       "GHOST",
       "admin_api_key",
       "ghost_admin"
+    ]
+  },
+  {
+    "id": "gitea-access-token",
+    "name": "Gitea Access Token",
+    "service": "gitea",
+    "severity": "high",
+    "keywords": [
+      "gitea"
     ]
   },
   {
@@ -3713,6 +3823,18 @@
     ]
   },
   {
+    "id": "gitlab-agent-token",
+    "name": "GitLab Agent for Kubernetes Token",
+    "service": "gitlab",
+    "severity": "critical",
+    "keywords": [
+      "glagent-",
+      "gitlab",
+      "kas",
+      "agentk"
+    ]
+  },
+  {
     "id": "gitlab-deploy-token",
     "name": "GitLab Deploy Token",
     "service": "gitlab",
@@ -3721,6 +3843,53 @@
       "gldt-",
       "gitlab_deploy",
       "deploy_token"
+    ]
+  },
+  {
+    "id": "gitlab-feature-flags-client-token",
+    "name": "GitLab Feature Flags Client Token",
+    "service": "gitlab",
+    "severity": "low",
+    "keywords": [
+      "glffct-",
+      "gitlab",
+      "feature_flag",
+      "unleash"
+    ]
+  },
+  {
+    "id": "gitlab-feed-token",
+    "name": "GitLab Feed Token",
+    "service": "gitlab",
+    "severity": "medium",
+    "keywords": [
+      "glft-",
+      "gitlab",
+      "feed_token",
+      "rss"
+    ]
+  },
+  {
+    "id": "gitlab-incoming-mail-token",
+    "name": "GitLab Incoming Mail Token",
+    "service": "gitlab",
+    "severity": "medium",
+    "keywords": [
+      "glimt-",
+      "gitlab",
+      "incoming_email"
+    ]
+  },
+  {
+    "id": "gitlab-oauth-application-secret",
+    "name": "GitLab OAuth Application Secret",
+    "service": "gitlab",
+    "severity": "critical",
+    "keywords": [
+      "gloas-",
+      "gitlab",
+      "oauth",
+      "client_secret"
     ]
   },
   {
@@ -3765,6 +3934,26 @@
       "gitlab",
       "CI_SERVER_URL",
       "runner"
+    ]
+  },
+  {
+    "id": "gitlab-runner-registration-token",
+    "name": "GitLab Runner Registration Token",
+    "service": "gitlab",
+    "severity": "high",
+    "keywords": [
+      "GR1348941"
+    ]
+  },
+  {
+    "id": "gitlab-scim-token",
+    "name": "GitLab SCIM OAuth Token",
+    "service": "gitlab",
+    "severity": "high",
+    "keywords": [
+      "glsoat-",
+      "gitlab",
+      "scim"
     ]
   },
   {
@@ -4073,6 +4262,15 @@
       "gravityforms",
       "GRAVITY_FORMS",
       "gravity_forms"
+    ]
+  },
+  {
+    "id": "greptile-api-key",
+    "name": "Greptile API Key",
+    "service": "greptile",
+    "severity": "high",
+    "keywords": [
+      "greptile"
     ]
   },
   {
@@ -4816,10 +5014,7 @@
     "service": "jumio",
     "severity": "high",
     "keywords": [
-      "jumio",
-      "api_token",
-      "client_id",
-      "client_secret"
+      "jumio"
     ]
   },
   {
@@ -4994,15 +5189,6 @@
       "k8s",
       "K8S",
       "KUBERNETES"
-    ]
-  },
-  {
-    "id": "kubernetes-secret",
-    "name": "Kubernetes Secret Value (legacy stub - handled by structured parser)",
-    "service": "kubernetes",
-    "severity": "info",
-    "keywords": [
-      "NEVER__MATCH__K8S_DISABLED"
     ]
   },
   {
@@ -6131,6 +6317,17 @@
     ]
   },
   {
+    "id": "netrc-password",
+    "name": "netrc Stored Password",
+    "service": "netrc",
+    "severity": "high",
+    "keywords": [
+      "machine",
+      "login",
+      "password"
+    ]
+  },
+  {
     "id": "newrelic-license-key",
     "name": "New Relic License Key",
     "service": "newrelic",
@@ -6282,6 +6479,15 @@
     "severity": "critical",
     "keywords": [
       "npm_"
+    ]
+  },
+  {
+    "id": "npmrc-auth-token",
+    "name": "npm Registry Auth Token (.npmrc)",
+    "service": "npm",
+    "severity": "high",
+    "keywords": [
+      "_authToken"
     ]
   },
   {
@@ -7395,6 +7601,15 @@
     ]
   },
   {
+    "id": "putty-private-key",
+    "name": "PuTTY Private Key (.ppk)",
+    "service": "ssh",
+    "severity": "critical",
+    "keywords": [
+      "PuTTY-User-Key-File"
+    ]
+  },
+  {
     "id": "pypi-api-token",
     "name": "PyPI API Token",
     "service": "pypi",
@@ -7578,6 +7793,7 @@
     "keywords": [
       "reddit_ads",
       "REDDIT_ADS",
+      "reddit ads",
       "reddit_advertising",
       "ads-api.reddit.com"
     ]
@@ -7615,7 +7831,9 @@
     "severity": "high",
     "keywords": [
       "redis",
-      "REDIS_URL"
+      "REDIS_URL",
+      "requirepass",
+      "masterauth"
     ]
   },
   {
@@ -8472,7 +8690,7 @@
       "snapchat",
       "SNAPCHAT",
       "snap_chat",
-      " Snapchat"
+      "Snapchat"
     ]
   },
   {
@@ -8729,6 +8947,17 @@
     ]
   },
   {
+    "id": "sql-password",
+    "name": "SQL IDENTIFIED BY Password",
+    "service": "generic",
+    "severity": "high",
+    "keywords": [
+      "IDENTIFIED",
+      "identified",
+      "Identified"
+    ]
+  },
+  {
     "id": "squadcast-api-key",
     "name": "Squadcast API Key",
     "service": "squadcast",
@@ -8774,6 +9003,16 @@
       "RSA",
       "EC PRIVATE",
       "DSA"
+    ]
+  },
+  {
+    "id": "ssh2-private-key",
+    "name": "SSH2/ssh.com Private Key (RFC 4716)",
+    "service": "ssh",
+    "severity": "critical",
+    "keywords": [
+      "BEGIN SSH2",
+      "PRIVATE KEY"
     ]
   },
   {
@@ -9142,6 +9381,7 @@
       "telegram_bot_token",
       "TELEGRAM_TOKEN",
       "telegram_token",
+      "api.telegram.org",
       "bot"
     ]
   },
@@ -9878,6 +10118,15 @@
       "UPTIMEROBOT",
       "api_key",
       "api.uptimerobot.com"
+    ]
+  },
+  {
+    "id": "url-credentials",
+    "name": "URL Userinfo Credentials",
+    "service": "generic",
+    "severity": "high",
+    "keywords": [
+      "://"
     ]
   },
   {
