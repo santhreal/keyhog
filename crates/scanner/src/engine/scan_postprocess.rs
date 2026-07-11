@@ -122,8 +122,12 @@ impl CompiledScanner {
                 // Mark the rescan so the phase-2 profiler can separate sub-chunk
                 // per-pass cost from parent-chunk cost (cheap thread-local swap).
                 let restore_rescan = super::profile::set_in_decode(true);
+                // Decoded rescans stay on the live CPU tier because GPU dispatch
+                // overhead dominates these derived buffers. Preserve that
+                // decision when a large decoded buffer needs scanner windows.
+                let decoded_backend = self.live_cpu_backend();
                 let decoded_matches = if decoded_chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
-                    self.scan_windowed(&decoded_chunk, deadline)
+                    self.scan_windowed(&decoded_chunk, decoded_backend, deadline)
                 } else {
                     // Decoded sub-chunks are post-process recursion;
                     // they're typically tiny (base64/hex/url payloads
@@ -146,7 +150,6 @@ impl CompiledScanner {
                     // collection fails closed through `backend_unavailable`
                     // (process exit), aborting the whole scan on the
                     // decode-through path.
-                    let decoded_backend = self.live_cpu_backend();
                     self.scan_inner(&decoded_chunk, decoded_backend, deadline)
                 };
                 super::profile::set_in_decode(restore_rescan);

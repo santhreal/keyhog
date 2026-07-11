@@ -581,7 +581,7 @@ catches multi-line and decoded secrets the fast path skips.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `error: GPU requested but not available` | `--backend gpu` on a non-GPU host | Drop the flag - `auto` falls back to SIMD |
+| `error: GPU requested but not available` | `--backend gpu` on a non-GPU host | Use a calibrated `--backend auto` route or choose `--backend simd` explicitly; auto fails closed when exact calibration evidence is missing |
 | Findings count drops vs prior run | `.keyhog-baseline.json` is up-to-date or `.keyhog.toml` widened | `git diff .keyhog-baseline.json .keyhog.toml` |
 | Pre-commit hook is slow | Scanning the whole repo on every commit | Use `--git-staged` not `scan .` |
 | SARIF upload rejects file | `min_confidence` too low; thousands of findings | Raise to ≥0.3 for SARIF specifically |

@@ -531,7 +531,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             "scan dispatch"
         );
         let mut matches = if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
-            self.scan_windowed(chunk, deadline)
+            self.scan_windowed(chunk, selected_backend, deadline)
         } else {
             self.scan_inner(chunk, selected_backend, deadline)
         };

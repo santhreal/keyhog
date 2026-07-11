@@ -10,6 +10,7 @@ impl CompiledScanner {
     pub(super) fn scan_windowed(
         &self,
         chunk: &Chunk,
+        backend: crate::hw_probe::ScanBackend,
         deadline: Option<std::time::Instant>,
     ) -> Vec<RawMatch> {
         let chunk_text = &chunk.data;
@@ -37,7 +38,6 @@ impl CompiledScanner {
             }
             let end = window_end_offset(chunk_text, offset, MAX_SCAN_CHUNK_BYTES);
             let window_chunk = window_chunk(chunk, offset, end);
-            let backend = self.select_backend_for_file(window_chunk.data.len() as u64);
             for mut raw_match in self.scan_inner(&window_chunk, backend, deadline) {
                 if record_window_match(
                     &line_offsets,
