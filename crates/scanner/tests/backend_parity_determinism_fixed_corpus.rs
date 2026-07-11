@@ -14,16 +14,15 @@
 //!      detector ids — asserted against a hard-coded expectation, so a recall
 //!      regression that drops one detector flips this red even if every backend
 //!      agrees on the wrong (smaller) set.
-//!   2. SimdCpu and CpuFallback must then produce field-by-field identical
-//!      `RawMatch` records — detector_id, service, severity, credential, and
-//!      byte offset — not just matching `(id, credential)` keys. A backend that
-//!      mis-tiers severity or mis-attributes service on one path is a real
-//!      divergence the looser key-set comparison cannot see.
+//!   2. Every available backend must then produce identical complete `RawMatch`
+//!      records, including multiplicity. A backend that changes attribution,
+//!      confidence, metadata, or duplicate count is a real divergence even when
+//!      its `(id, credential)` key set happens to agree.
 //!   3. Re-running the same backend twice yields byte-identical records
 //!      (determinism): no hash-set iteration order, no fragment-cache bleed.
 //!
-//! Deterministic and host-independent: only the two CPU backends are compared
-//! (both always available); GPU parity lives in the matrix + `gpu_simd_parity`.
+//! The two CPU backends are always compared. GPU builds add the live GPU route
+//! and require it to complete without runtime degradation.
 
 #[path = "support/mod.rs"]
 mod support;
@@ -34,30 +33,10 @@ use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use support::paths::detector_dir;
 
-/// A fully-comparable projection of a `RawMatch`: every field a parity check
-/// cares about, in a deterministically-orderable tuple. Severity is rendered
-/// via its canonical `as_str` (the single source of truth) so a re-tiering is
-/// visible as a string change.
-type MatchRecord = (
-    String, // detector_id
-    String, // service
-    String, // severity (canonical str)
-    String, // credential
-    usize,  // chunk offset
-);
-
-fn project(m: &RawMatch) -> MatchRecord {
-    (
-        m.detector_id.as_ref().to_string(),
-        m.service.as_ref().to_string(),
-        m.severity.to_string(),
-        m.credential.as_ref().to_string(),
-        m.location.offset,
-    )
-}
-
-fn records(results: &[Vec<RawMatch>]) -> BTreeSet<MatchRecord> {
-    results.iter().flatten().map(project).collect()
+fn records(results: &[Vec<RawMatch>]) -> Vec<RawMatch> {
+    let mut records = results.iter().flatten().cloned().collect::<Vec<_>>();
+    records.sort();
+    records
 }
 
 fn detector_ids(results: &[Vec<RawMatch>]) -> BTreeSet<String> {
@@ -174,19 +153,37 @@ fn simd_and_cpu_fallback_produce_identical_match_records() {
         expected_detector_ids().len()
     );
 
-    let only_simd: Vec<&MatchRecord> = simd.difference(&cpu).collect();
-    let only_cpu: Vec<&MatchRecord> = cpu.difference(&simd).collect();
-    assert!(
-        only_simd.is_empty() && only_cpu.is_empty(),
-        "SimdCpu and CpuFallback diverged on the fixed corpus.\n  \
-         only in SimdCpu: {only_simd:?}\n  only in CpuFallback: {only_cpu:?}"
-    );
-
-    // Exact-equality pin: the full record sets are identical, field for field.
     assert_eq!(
         simd, cpu,
-        "the two CPU backends must agree on detector_id, service, severity, \
-         credential, and offset for every finding"
+        "the two CPU backends must agree on every RawMatch field and finding multiplicity"
+    );
+}
+
+#[cfg(feature = "gpu")]
+#[test]
+fn gpu_produces_identical_complete_records_without_degrade() {
+    let scanner = scanner();
+    let corpus = fixed_corpus();
+
+    scanner.clear_fragment_cache();
+    let reference = records(&scanner.scan_chunks_with_backend(&corpus, ScanBackend::SimdCpu));
+    assert!(
+        !reference.is_empty(),
+        "fixed-corpus reference must find secrets"
+    );
+
+    scanner.clear_fragment_cache();
+    let degrade_before = scanner.runtime_status().gpu_degrade_count;
+    let gpu = records(&scanner.scan_chunks_with_backend(&corpus, ScanBackend::Gpu));
+    let degrade_after = scanner.runtime_status().gpu_degrade_count;
+
+    assert_eq!(
+        degrade_after, degrade_before,
+        "forced GPU parity proof must not substitute a CPU backend"
+    );
+    assert_eq!(
+        gpu, reference,
+        "GPU and SimdCpu must agree on every RawMatch field and finding multiplicity"
     );
 }
 
