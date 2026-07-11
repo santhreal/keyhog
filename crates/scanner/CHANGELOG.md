@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Skip repeated keyword-free entropy analysis for adjacent byte-identical
+  lines after the first eligible copy; candidate-value deduplication already
+  makes subsequent copies unable to add a finding, while generated sources and
+  repeated log/config blocks avoid re-running the full entropy/shape pipeline.
 - Reduce the operator backend surface to `auto`, `gpu`, `simd`, and `cpu`.
   Stable profile/evidence labels remain parseable by library and persistence
   paths, while MegaScan and implementation-name aliases no longer silently map

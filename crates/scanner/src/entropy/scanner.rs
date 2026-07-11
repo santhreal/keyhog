@@ -496,11 +496,28 @@ fn scan_keyword_free_candidates(
     // the per-scan capability once so normal scans keep the length prefilter
     // without paying an atomic/thread-local lookup for every line.
     let dogfood_enabled = crate::telemetry::is_dogfood_enabled();
+    let mut previous_scanned_line: Option<&str> = None;
     for (line_idx, line) in lines.iter().enumerate() {
         if let Some(skip) = skip_lines {
             if skip.contains(&line_idx) {
                 continue;
             }
+        }
+        // The output contract already deduplicates entropy candidates by value
+        // through `seen`. An adjacent byte-identical line therefore cannot add
+        // a finding after the first copy, but re-running its innocuous checks,
+        // byte classification, extraction, entropy, and shape gates is costly
+        // in generated source and repeated log/config blocks. Exact `str`
+        // equality keeps this recall-safe without a hash-collision cache or an
+        // unbounded per-chunk memo table. Do this after `skip_lines`: a skipped
+        // first copy must not suppress the next eligible copy. Dogfood mode
+        // deliberately keeps every occurrence so its suppression counts remain
+        // an occurrence-level diagnostic rather than an output-level count.
+        if !dogfood_enabled {
+            if previous_scanned_line == Some(*line) {
+                continue;
+            }
+            previous_scanned_line = Some(line);
         }
         // Single innocuous check for both paths (was called twice, once per
         // collect function). This is the single biggest per-line CPU saving
