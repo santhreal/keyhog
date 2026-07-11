@@ -42,7 +42,7 @@ impl CompiledScanner {
                     continue;
                 }
 
-                let fragment_line = line_idx + 1;
+                let fragment_line = chunk.metadata.base_line.saturating_add(line_idx + 1);
                 // Compute the trigger value's byte offset within chunk.data.
                 // `line` borrows from chunk.data so pointer arithmetic gives
                 // the line's offset; value_match.start() is offset within
@@ -144,11 +144,13 @@ impl CompiledScanner {
                         // chunk-boundary recall invariant since the
                         // same credential got different synthetic
                         // offsets depending on chunk topology.
-                        // fragment_line is window-local to `chunk`; add the
-                        // chunk's base line so the reassembled finding reports
-                        // the absolute file line, matching the `+ base_offset`
-                        // on `m.location.offset` below. 0 on non-windowed.
-                        m.location.line = Some(fragment_line + chunk.metadata.base_line);
+                        // The cache key and its 100-line proximity gate must use
+                        // file-absolute lines. Using each chunk's local line made
+                        // distant fragments in separate 1 MiB chunks appear
+                        // adjacent, and repeated local line numbers could be
+                        // mistaken for duplicate fragments. `fragment_line` was
+                        // normalized before insertion, so stamp it directly.
+                        m.location.line = Some(fragment_line);
                         // kimi-engine audit: chunk metadata can carry
                         // `base_offset` near usize::MAX (custom sources
                         // synthesizing chunks). Unchecked addition would

@@ -17,7 +17,7 @@
 //! coalesced path so the contract is backend-independent.
 
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
-use keyhog_scanner::CompiledScanner;
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 
 fn chunk(text: &str, path: &str) -> Chunk {
     Chunk {
@@ -30,17 +30,14 @@ fn chunk(text: &str, path: &str) -> Chunk {
     }
 }
 
-/// Two assignment fragments of the same secret in separate chunks of one batch
-/// must reassemble into a `:reassembled` finding on the coalesced path, the same
-/// join `post_process_matches` produces on the per-chunk path. Mirrors the GPU
-/// integration test `gpu_batch_preserves_cross_chunk_reassembly` on the CPU
-/// coalesced path so the contract is backend-independent.
-#[test]
-fn coalesced_reassembles_cross_chunk_fragments() {
-    // Custom detector whose pattern matches ONLY the reassembled value
-    // (`abcde` + 15 chars of [0-9A-Z]) — neither fragment matches alone, so a
-    // `:reassembled` finding can only come from the cross-chunk fragment join.
-    let scanner = CompiledScanner::compile(vec![DetectorSpec {
+fn chunk_at(text: &str, path: &str, base_line: usize) -> Chunk {
+    let mut chunk = chunk(text, path);
+    chunk.metadata.base_line = base_line;
+    chunk
+}
+
+fn reassembly_scanner() -> CompiledScanner {
+    CompiledScanner::compile(vec![DetectorSpec {
         id: "demo-reassembled-token".into(),
         name: "Demo Reassembled Token".into(),
         service: "demo".into(),
@@ -54,7 +51,20 @@ fn coalesced_reassembles_cross_chunk_fragments() {
         keywords: vec!["api_key".into()],
         ..Default::default()
     }])
-    .expect("compile demo scanner");
+    .expect("compile demo scanner")
+}
+
+/// Two assignment fragments of the same secret in separate chunks of one batch
+/// must reassemble into a `:reassembled` finding on the coalesced path, the same
+/// join `post_process_matches` produces on the per-chunk path. Mirrors the GPU
+/// integration test `gpu_batch_preserves_cross_chunk_reassembly` on the CPU
+/// coalesced path so the contract is backend-independent.
+#[test]
+fn coalesced_reassembles_cross_chunk_fragments() {
+    // Custom detector whose pattern matches ONLY the reassembled value
+    // (`abcde` + 15 chars of [0-9A-Z]) — neither fragment matches alone, so a
+    // `:reassembled` finding can only come from the cross-chunk fragment join.
+    let scanner = reassembly_scanner();
 
     let chunks = vec![
         chunk("api_key_part1 = \"abcde12345\"", "frag.env"),
@@ -75,4 +85,30 @@ fn coalesced_reassembles_cross_chunk_fragments() {
          — the line-based fragment join was dropped on the coalesced tail",
         coalesced_reassembled
     );
+}
+
+/// Chunk-local line numbers must be composed with `base_line` before the
+/// fragment cache applies its 100-line same-file proximity gate. Otherwise two
+/// distant 1 MiB windows whose assignments both happen to be on local line 1
+/// are falsely glued into a credential, and parallel arrival order changes
+/// which output chunk owns the fabricated finding.
+#[test]
+fn distant_chunks_do_not_reassemble_from_equal_local_lines() {
+    let scanner = reassembly_scanner();
+    let chunks = vec![
+        chunk_at("api_key_part1 = \"abcde12345\"", "large.env", 0),
+        chunk_at("api_key_part2 = \"FGHIJ67890\"", "large.env", 1_000),
+    ];
+
+    for _ in 0..16 {
+        scanner.clear_fragment_cache();
+        let findings = scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback);
+        assert!(
+            findings
+                .iter()
+                .flatten()
+                .all(|finding| !finding.detector_id.as_ref().ends_with(":reassembled")),
+            "distant absolute lines were falsely treated as adjacent chunk-local lines"
+        );
+    }
 }
