@@ -23,6 +23,6 @@ inside the file itself.
 
 ## Detector data lives elsewhere
 
-The 902 secret-type detectors are **not** here — they live in `detectors/` as
+The secret-type detectors are **not** here — they live in `detectors/` as
 one TOML file per detector. This directory is for cross-cutting rules that do
 not fit the per-detector schema.
