@@ -308,6 +308,6 @@ fn non_slack_prefix_not_applicable() {
 }
 
 #[test]
-fn validator_id_is_slack_token() {
-    assert_eq!(SlackTokenValidator.validator_id(), "slack-token");
+fn validator_id_is_slack_bot_token() {
+    assert_eq!(SlackTokenValidator.validator_id(), "slack-bot-token");
 }

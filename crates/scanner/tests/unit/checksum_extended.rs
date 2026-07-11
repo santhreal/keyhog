@@ -323,11 +323,31 @@ fn validator_ids_match_expected() {
     );
     assert_eq!(
         GithubFineGrainedPatValidator.validator_id(),
-        "github-fine-grained-pat"
+        "github-pat-fine-grained"
     );
     assert_eq!(NpmTokenValidator.validator_id(), "npm-access-token");
-    assert_eq!(SlackTokenValidator.validator_id(), "slack-token");
-    assert_eq!(StripeTokenValidator.validator_id(), "stripe-api-key");
+    assert_eq!(SlackTokenValidator.validator_id(), "slack-bot-token");
+    assert_eq!(StripeTokenValidator.validator_id(), "stripe-secret-key");
     assert_eq!(PypiTokenValidator.validator_id(), "pypi-api-token");
-    assert_eq!(GitlabTokenValidator.validator_id(), "gitlab-token");
+    assert_eq!(
+        GitlabTokenValidator.validator_id(),
+        "gitlab-personal-access-token"
+    );
+}
+
+#[test]
+fn validator_ids_resolve_to_embedded_detectors() {
+    for id in [
+        GithubClassicPatValidator.validator_id(),
+        GithubFineGrainedPatValidator.validator_id(),
+        GitlabTokenValidator.validator_id(),
+        NpmTokenValidator.validator_id(),
+        PypiTokenValidator.validator_id(),
+        SlackTokenValidator.validator_id(),
+        StripeTokenValidator.validator_id(),
+    ] {
+        let detector = keyhog_core::detector_spec_by_id(id)
+            .unwrap_or_else(|| panic!("checksum validator id {id:?} has no embedded detector"));
+        assert_eq!(detector.id, id);
+    }
 }

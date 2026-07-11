@@ -82,7 +82,7 @@ fn github_classic_non_alnum_payload_invalid() {
 fn github_fine_grained_valid_crc_is_valid() {
     let v = GithubFineGrainedPatValidator;
     assert_eq!(v.validate(GH_PAT_VALID), ChecksumResult::Valid);
-    assert_eq!(v.validator_id(), "github-fine-grained-pat");
+    assert_eq!(v.validator_id(), "github-pat-fine-grained");
 }
 
 #[test]
@@ -184,7 +184,7 @@ fn stripe_well_formed_live_key_structurally_valid() {
     let token = "sk_live_4eC39HqLyjWDarjtT1zdp7dcABCD";
     assert!(token.len() > 8 + 24);
     assert_eq!(v.validate(token), ChecksumResult::StructurallyValid);
-    assert_eq!(v.validator_id(), "stripe-api-key");
+    assert_eq!(v.validator_id(), "stripe-secret-key");
 }
 
 #[test]
@@ -221,7 +221,7 @@ fn gitlab_classic_20_char_body_structurally_valid() {
     assert_eq!(&token[6..], "abcdefghij0123456789");
     assert_eq!(token[6..].len(), 20);
     assert_eq!(v.validate(token), ChecksumResult::StructurallyValid);
-    assert_eq!(v.validator_id(), "gitlab-token");
+    assert_eq!(v.validator_id(), "gitlab-personal-access-token");
 }
 
 #[test]
@@ -267,7 +267,7 @@ fn slack_bot_three_segment_valid() {
     // xoxb-{digits}-{digits}-{alnum 24..}
     let token = "xoxb-1234567890-0987654321-abcdefghijABCDEFGHIJ1234";
     assert_eq!(v.validate(token), ChecksumResult::Valid);
-    assert_eq!(v.validator_id(), "slack-token");
+    assert_eq!(v.validator_id(), "slack-bot-token");
 }
 
 #[test]

@@ -263,8 +263,8 @@ fn gitlab_bare_glpat_without_dash_not_applicable() {
 }
 
 #[test]
-fn gitlab_validator_id_is_gitlab_token() {
-    assert_eq!(GitlabTokenValidator.validator_id(), "gitlab-token");
+fn gitlab_validator_id_is_gitlab_personal_access_token() {
+    assert_eq!(GitlabTokenValidator.validator_id(), "gitlab-personal-access-token");
 }
 
 // ══════════════════════════════ npm ══════════════════════════════════════
@@ -732,8 +732,8 @@ fn slack_xoxp_prefix_only_is_invalid() {
 }
 
 #[test]
-fn slack_validator_id_is_slack_token() {
-    assert_eq!(SlackTokenValidator.validator_id(), "slack-token");
+fn slack_validator_id_is_slack_bot_token() {
+    assert_eq!(SlackTokenValidator.validator_id(), "slack-bot-token");
 }
 
 // ══════════════════════════════ Stripe ═══════════════════════════════════
@@ -856,8 +856,8 @@ fn stripe_prefix_only_empty_body_invalid() {
 }
 
 #[test]
-fn stripe_validator_id_is_stripe_api_key() {
-    assert_eq!(StripeTokenValidator.validator_id(), "stripe-api-key");
+fn stripe_validator_id_is_stripe_secret_key() {
+    assert_eq!(StripeTokenValidator.validator_id(), "stripe-secret-key");
 }
 
 // ═══════════════════ cross-validator routing via aggregator ═══════════════

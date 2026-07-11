@@ -8,7 +8,7 @@
 //! cannot be imported here); this file pins the EXACT boolean the scanner
 //! suppression cascade returns for each allowlisted vs non-listed shape.
 //!
-//! Every case uses a service-anchored detector (`stripe-api-key`) so the
+//! Every case uses a service-anchored detector (`stripe-secret-key`) so the
 //! Tier-B *shape* gates are bypassed (`bypass_shape_gates = true`): the ONLY
 //! remaining suppression reason for the clean high-entropy `CLEAN` value is the
 //! path / source / universal gate under test, which makes each positive precise
@@ -32,7 +32,7 @@ const CLEAN: &str = "xR7pQ2mfKz9wTnB4vL6h";
 /// Service-anchored detector id (not `generic-*` / `entropy-*` / `private-key`),
 /// so `bypass_shape_gates` is set and only the universal / path / source gates
 /// can fire on `CLEAN`.
-const STRIPE: &str = "stripe-api-key";
+const STRIPE: &str = "stripe-secret-key";
 
 /// The canonical filesystem source type used by the on-disk walker.
 const FS: Option<&str> = Some("filesystem");

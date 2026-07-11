@@ -2543,12 +2543,12 @@ pub mod checksum {
     checksum_validator_wrapper!(
         GithubFineGrainedPatValidator,
         crate::checksum::github::GithubFineGrainedPatValidator,
-        crate::detector_ids::GITHUB_FINE_GRAINED_PAT
+        crate::detector_ids::GITHUB_PAT_FINE_GRAINED
     );
     checksum_validator_wrapper!(
         GitlabTokenValidator,
         crate::checksum::gitlab::GitlabTokenValidator,
-        crate::detector_ids::GITLAB_TOKEN
+        crate::detector_ids::GITLAB_PERSONAL_ACCESS_TOKEN
     );
     checksum_validator_wrapper!(
         NpmTokenValidator,
@@ -2563,12 +2563,12 @@ pub mod checksum {
     checksum_validator_wrapper!(
         SlackTokenValidator,
         crate::checksum::slack::SlackTokenValidator,
-        crate::detector_ids::SLACK_TOKEN
+        crate::detector_ids::SLACK_BOT_TOKEN
     );
     checksum_validator_wrapper!(
         StripeTokenValidator,
         crate::checksum::stripe::StripeTokenValidator,
-        crate::detector_ids::STRIPE_API_KEY
+        crate::detector_ids::STRIPE_SECRET_KEY
     );
 }
 

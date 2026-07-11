@@ -368,7 +368,7 @@ fn owner_span_bounds_guard_and_expansion() {
 #[test]
 fn service_anchored_predicate_matches_expected_ids_and_equals_specific() {
     // Service-anchored (named) detectors.
-    for id in ["github-classic-pat", "aws-access-key", "stripe-api-key"] {
+    for id in ["github-classic-pat", "aws-access-key", "stripe-secret-key"] {
         assert!(
             is_service_anchored_detector_for_test(id),
             "{id} must be service-anchored"
