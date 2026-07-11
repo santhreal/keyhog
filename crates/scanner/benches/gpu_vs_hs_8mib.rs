@@ -247,11 +247,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     println!("=== keyhog 8 MiB matching baseline (GPU region presence vs Hyperscan/SimdCpu) ===");
+    let status = scanner.runtime_status();
     println!(
-        "input={} MiB  chunks={}  detectors={}  iters={}  (median of {} steady-state calls, 1 warm-up excluded)",
+        "input={} MiB  chunks={}  detectors={}  gpu_backend={}  host_threads={}  iters={}  (median of {} steady-state calls, 1 warm-up excluded)",
         size / MIB,
         chunks.len(),
         n_det,
+        status.gpu_backend.unwrap_or("none"),
+        std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get),
         iters,
         iters
     );
@@ -307,6 +310,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         assert!(
             gpu_results == hs_results,
             "exact parity broken: GPU and Hyperscan returned different full RawMatch results on the same 8 MiB input (GPU hits={gpu_hits}, Hyperscan hits={hs_hits})"
+        );
+        assert!(
+            gpu < hs,
+            "8 MiB crossover missed: GPU median {gpu:?} did not beat the fastest Hyperscan median {hs:?}"
         );
     }
     #[cfg(not(feature = "gpu"))]
