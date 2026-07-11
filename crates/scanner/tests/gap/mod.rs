@@ -24,6 +24,7 @@ pub mod compiler_prefix_tuning_thresholds_exact;
 pub mod confidence_calibration_uncalibrated_passthrough;
 pub mod confidence_floor_policy;
 pub mod contains_evasion_single_owner_classification;
+pub mod context_cfg_test_attribute_marks_test_code;
 pub mod context_example_suffix_ascii_ci;
 pub mod context_false_positive_inline_tests_in_src;
 pub mod context_inference_cfg_test_string_breaks_gate;

@@ -445,22 +445,3 @@ pub(crate) fn surrounding_line_window(text: &str, offset: usize, radius: usize) 
     }
     &text[start..end]
 }
-
-#[cfg(test)]
-mod cfg_test_attr_tests {
-    use super::{is_rust_test_attribute, CFG_TEST_ATTR};
-
-    #[test]
-    fn cfg_test_attr_equals_expected_token() {
-        // The single owner must assemble to exactly the Rust test-config gate.
-        assert_eq!(CFG_TEST_ATTR, "#[cfg(test)]");
-    }
-
-    #[test]
-    fn cfg_test_attr_is_recognised_as_test_attribute() {
-        // Both match sites route through this constant, so it must classify as
-        // a Rust test attribute.
-        assert!(is_rust_test_attribute(CFG_TEST_ATTR));
-        assert!(is_rust_test_attribute("#[cfg(test)]"));
-    }
-}

@@ -52,6 +52,8 @@ mod confidence_calibration_uncalibrated_passthrough;
 mod confidence_floor_policy;
 #[path = "gap/contains_evasion_single_owner_classification.rs"]
 mod contains_evasion_single_owner_classification;
+#[path = "gap/context_cfg_test_attribute_marks_test_code.rs"]
+mod context_cfg_test_attribute_marks_test_code;
 #[path = "gap/context_example_suffix_ascii_ci.rs"]
 mod context_example_suffix_ascii_ci;
 #[path = "gap/context_false_positive_inline_tests_in_src.rs"]
