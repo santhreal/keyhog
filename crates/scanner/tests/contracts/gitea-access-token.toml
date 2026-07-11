@@ -1,0 +1,38 @@
+schema_version = 1
+detector_id = "gitea-access-token"
+service = "gitea"
+severity = "high"
+
+[[positive]]
+text = 'GITEA_TOKEN=5aab40e433037523cc70af7d3894a0fa'
+credential = "5aab40e433037523cc70af7d3894a0fa"
+reason = "GITEA_TOKEN assignment with a 32-hex value (betterleaks homefield ground-truth shape)."
+
+[[positive]]
+text = 'git remote add origin https://gitea@f3a9c2e18b7d4056af21e9c8b3d70a1e5f6c2b48/repo.git'
+credential = "f3a9c2e18b7d4056af21e9c8b3d70a1e5f6c2b48"
+reason = "gitea@<40-hex> git-remote URL form."
+
+[[negative]]
+text = 'token = "5aab40e433037523cc70af7d3894a0fa"'
+reason = "No gitea keyword anchor — a bare hex value must not fire this detector."
+
+[[negative]]
+text = 'gitea_token = deadbeef'
+reason = "Value below the 32-char minimum; not a gitea access token."
+
+[[evasion]]
+text = 'config: {"gitea_token":"5aab40e433037523cc70af7d3894a0fa"}'
+credential = "5aab40e433037523cc70af7d3894a0fa"
+reason = "JSON object form with no spaces around the colon."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted gitea token."

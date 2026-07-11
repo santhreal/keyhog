@@ -1,0 +1,21 @@
+# Docs: https://docs.greptile.com/ (API key)
+# Format: 48-char base64 alphabet ([A-Za-z0-9+/]), emitted as a
+#   `greptile_api_key = "<key>"` assignment (betterleaks ground-truth shape).
+# Verify: none (no public safe validation endpoint; never send to a fake verifier).
+# Prefix: none — keyword-anchored on `greptile`.
+
+[detector]
+id = "greptile-api-key"
+name = "Greptile API Key"
+service = "greptile"
+severity = "high"
+keywords = ["greptile"]
+
+[[detector.patterns]]
+regex = '''greptile[_-]?api[_-]?key['"\s]*[:=]['"\s]*([A-Za-z0-9+/]{48})'''
+description = "Greptile API key in a greptile_api_key assignment"
+group = 1
+
+[[detector.tests]]
+test_positive = "greptile_api_key=Bc4UcqgG6mG5ARxNAOH7TV2C/tDWaB7Kpne/pockv3iQcbSN"
+test_negative = "greptile_api_key=tooShortNotFortyEightChars"

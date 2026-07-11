@@ -29,6 +29,8 @@ pub mod regression_cloud_infra_db_token_recall;
 pub mod regression_coalesced_reassembly_parity;
 #[path = "regression_context_syntax_recall.rs"]
 pub mod regression_context_syntax_recall;
+#[path = "regression_creddata_bearer_authorization_recall.rs"]
+pub mod regression_creddata_bearer_authorization_recall;
 #[path = "regression_creddata_hex_key_recall.rs"]
 pub mod regression_creddata_hex_key_recall;
 #[path = "regression_creddata_key_anchor_precision_contract.rs"]

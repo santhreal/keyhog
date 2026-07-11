@@ -1,0 +1,38 @@
+schema_version = 1
+detector_id = "greptile-api-key"
+service = "greptile"
+severity = "high"
+
+[[positive]]
+text = 'greptile_api_key = "Bc4UcqgG6mG5ARxNAOH7TV2C/tDWaB7Kpne/pockv3iQcbSN"'
+credential = "Bc4UcqgG6mG5ARxNAOH7TV2C/tDWaB7Kpne/pockv3iQcbSN"
+reason = "greptile_api_key assignment with a 48-char base64 value (betterleaks ground-truth shape)."
+
+[[positive]]
+text = 'GREPTILE_API_KEY=54tKjWAmKVvnREzrpe4d8/hfgBYf3mpcm/AeKsEHvUnWGx4g'
+credential = "54tKjWAmKVvnREzrpe4d8/hfgBYf3mpcm/AeKsEHvUnWGx4g"
+reason = "Upper-case env-var form; keyword-anchored 48-char value."
+
+[[negative]]
+text = 'greptile_api_key = "tooShortNotFortyEightChars"'
+reason = "Value below the fixed 48-char length; not a greptile key."
+
+[[negative]]
+text = 'api_key = "Bc4UcqgG6mG5ARxNAOH7TV2C/tDWaB7Kpne/pockv3iQcbSN"'
+reason = "No greptile keyword anchor — a bare 48-char base64 must not fire this detector."
+
+[[evasion]]
+text = 'x = {"greptile_api_key":"Bc4UcqgG6mG5ARxNAOH7TV2C/tDWaB7Kpne/pockv3iQcbSN"}'
+credential = "Bc4UcqgG6mG5ARxNAOH7TV2C/tDWaB7Kpne/pockv3iQcbSN"
+reason = "JSON object form with no spaces around the colon."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted greptile credential."

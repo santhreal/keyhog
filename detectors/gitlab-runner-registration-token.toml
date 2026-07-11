@@ -1,0 +1,22 @@
+# Docs: https://docs.gitlab.com/runner/register/ (runner registration token)
+# Format: fixed `GR1348941` prefix (GitLab runner-registration-token, "RRT")
+#   followed by a base58-ish body. The prefix is unique and self-anchoring, so
+#   no keyword context is needed (like `gho_`/`glpat-`).
+# Verify: none (self-hosted/gitlab.com instance varies — never send to a fake verifier).
+# Prefix: GR1348941
+
+[detector]
+id = "gitlab-runner-registration-token"
+name = "GitLab Runner Registration Token"
+service = "gitlab"
+severity = "high"
+keywords = ["GR1348941"]
+
+[[detector.patterns]]
+regex = '''GR1348941[0-9A-Za-z_-]{20,}'''
+description = "GitLab runner registration token (GR1348941 prefix)"
+group = 0
+
+[[detector.tests]]
+test_positive = "RUNNER_REGISTRATION_TOKEN=GR1348941aB3xY7kL9mN2pQ5rS8tU1vW"
+test_negative = "RUNNER_REGISTRATION_TOKEN=GR1348941short"

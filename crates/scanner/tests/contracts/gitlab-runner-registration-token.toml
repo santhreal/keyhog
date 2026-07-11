@@ -1,0 +1,38 @@
+schema_version = 1
+detector_id = "gitlab-runner-registration-token"
+service = "gitlab"
+severity = "high"
+
+[[positive]]
+text = 'RUNNER_REGISTRATION_TOKEN=GR1348941aB3xY7kL9mN2pQ5rS8tU1vW'
+credential = "GR1348941aB3xY7kL9mN2pQ5rS8tU1vW"
+reason = "GR1348941-prefixed runner registration token (betterleaks homefield ground-truth shape)."
+
+[[positive]]
+text = 'gitlab-runner register --registration-token GR1348941dK4mP8qR2sT6uV0wX3yZ7aB'
+credential = "GR1348941dK4mP8qR2sT6uV0wX3yZ7aB"
+reason = "CLI registration flag with the GR1348941 prefix."
+
+[[negative]]
+text = 'token = GR1348941short'
+reason = "Body below the 20-char minimum after the prefix; not a runner token."
+
+[[negative]]
+text = 'ref = GR9999999aB3xY7kL9mN2pQ5rS8tU1vW'
+reason = "Wrong prefix number — only the fixed GR1348941 prefix is a runner registration token."
+
+[[evasion]]
+text = 'export CI_TOKEN="GR1348941aB3xY7kL9mN2pQ5rS8tU1vW"'
+credential = "GR1348941aB3xY7kL9mN2pQ5rS8tU1vW"
+reason = "Quoted env-export form."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted GR1348941 token."
