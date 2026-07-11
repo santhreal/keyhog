@@ -181,7 +181,8 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
     }
     // The post-scan floor is the SAME value the engine resolved - read it back
     // off the built config rather than re-deriving from `args`, so the two can
-    // never drift. `ScannerConfig::from`/`sanitise` already clamped NaN/range.
+    // never drift. CLI/TOML parsers reject invalid ranges, and scanner
+    // installation validates again without clamping operator policy.
     let min_confidence = scanner.min_confidence;
     let ml_enabled = scanner.ml_enabled;
     Ok(ResolvedScanConfig {

@@ -372,14 +372,11 @@ impl ScannerConfig {
             .map(|ms| Instant::now() + Duration::from_millis(ms))
     }
 
-    /// Clamp every float field into its valid range and replace any
-    /// NaN with a safe default. A user-supplied
-    /// `--min-confidence=-5.0` or a corrupt config TOML feeding
-    /// `min_confidence = nan` would otherwise NaN-infect the
-    /// confidence-comparison path and silently drop every finding
-    /// (NaN comparisons are always false, so `conf < min_confidence`
-    /// is `false`, but `conf >= min_confidence` is also `false`,
-    /// behaviour-dependent on the call site).
+    /// Explicitly normalize a programmatically assembled configuration by
+    /// replacing non-finite values with compiled defaults and bounding numeric
+    /// fields. CLI and TOML operator input does not call this method: those
+    /// boundaries reject invalid policy, and [`crate::CompiledScanner::try_with_config`]
+    /// validates again without rewriting it.
     ///
     /// Idempotent - sanitising an already-sane config is a no-op.
     /// This is explicit normalization, not part of `From<ScanConfig>`: implicit

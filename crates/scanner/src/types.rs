@@ -126,7 +126,7 @@ pub(crate) const ML_CONTEXT_RADIUS_LINES: usize = 5;
 // The ML/heuristic blend weight is NOT a compile-time constant: it is the
 // runtime-configurable `ScannerConfig::ml_weight` knob (default seeded from
 // `keyhog_core::ScanConfig`, overridable via `.keyhog.toml` and the
-// `--ml-weight` CLI flag, clamped to [0,1] in `ScannerConfig::sanitise`).
+// `--ml-weight` CLI flag, validated in [0,1] at input and scanner installation).
 // The blend at `apply_ml_batch_scores` reads `self.config.ml_weight` and
 // `(1.0 - self.config.ml_weight)`. The former `ML_WEIGHT`/`HEURISTIC_WEIGHT`
 // consts were a dead parallel source of truth (tuned!=shipped) and have been
