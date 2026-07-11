@@ -411,9 +411,13 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         ready
     }
 
-    /// Scan a chunk of text and return all raw credential matches.
+    /// Scan through the deterministic portable CPU reference backend.
+    ///
+    /// This compatibility entrypoint never guesses an accelerated route.
+    /// Call [`Self::scan_with_backend`] after explicit measurement, or use the
+    /// CLI's persisted fastest-correct autorouter, for accelerated execution.
     pub fn scan(&self, chunk: &Chunk) -> Vec<RawMatch> {
-        self.scan_with_deadline(chunk, self.config.per_chunk_deadline())
+        self.scan_with_backend(chunk, crate::hw_probe::ScanBackend::CpuFallback)
     }
 
     /// Scan a chunk using a caller-selected backend.
@@ -443,12 +447,17 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     }
 
     /// Scan a chunk of text against all compiled detectors.
+    #[cfg(test)]
     pub(crate) fn scan_with_deadline(
         &self,
         chunk: &Chunk,
         deadline: Option<std::time::Instant>,
     ) -> Vec<RawMatch> {
-        self.scan_with_deadline_and_backend(chunk, deadline, None)
+        self.scan_with_deadline_and_backend(
+            chunk,
+            deadline,
+            Some(crate::hw_probe::ScanBackend::CpuFallback),
+        )
     }
 
     pub(crate) fn scan_with_deadline_and_backend(

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Make `CompiledScanner::scan` the deterministic portable CPU reference path
+  instead of an uncalibrated hardware heuristic. Accelerated library callers
+  select a measured backend through `scan_with_backend`; the CLI continues to
+  use persisted fastest-correct autoroute decisions.
 - Add `CompiledScanner::try_with_config`, a fail-closed installation boundary
   for programmatic scanner configuration. It validates the complete shared
   `ScanConfig` before changing scanner state; both production CLI construction

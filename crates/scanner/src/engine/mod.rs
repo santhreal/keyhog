@@ -23,8 +23,10 @@
 //!
 //! There is exactly ONE production on-GPU trigger producer: the region-presence
 //! dispatch in [`gpu_region_dispatch`]. Selecting a GPU backend (`--backend gpu`)
-//! routes the batch path through it;
-//! the default backend is the CPU Hyperscan path. The GPU path degrades LOUDLY
+//! routes the batch path through it. The compatibility library `scan()` method
+//! is the deterministic portable CPU reference; accelerated library calls name
+//! a backend explicitly, while the CLI consumes persisted fastest-correct
+//! calibration. The GPU path degrades LOUDLY
 //! to CPU on any failure (never a silent empty result — Law 10).
 //!
 //! # Where each method lives (the `CompiledScanner` god-object is split by job)

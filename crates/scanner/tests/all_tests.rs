@@ -53,6 +53,8 @@ pub mod regression_crlf_entropy_line_offsets;
 pub mod regression_db_connection_string_recall;
 #[path = "regression_decode_through_strict.rs"]
 pub mod regression_decode_through_strict;
+#[path = "regression_default_scan_reference_backend.rs"]
+pub mod regression_default_scan_reference_backend;
 #[path = "regression_deepl_bare_key_recall.rs"]
 pub mod regression_deepl_bare_key_recall;
 #[path = "regression_devplatform_monitoring_token_recall.rs"]
