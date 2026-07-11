@@ -183,6 +183,42 @@ fn forced_daemon_rejects_per_detector_confidence_policy() {
 }
 
 #[test]
+fn forced_daemon_rejects_custom_detector_corpus() {
+    let work = TempDir::new().expect("work dir");
+    let path = work.path().join("leak.env");
+    std::fs::write(&path, aws_key_line()).expect("write fixture");
+    let detectors = work.path().join("custom-detectors");
+    std::fs::create_dir(&detectors).expect("create detector directory");
+    let runtime = TempDir::new().expect("isolated runtime");
+
+    let out = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", runtime.path())
+        .args(["scan", "--daemon=on", "--detectors"])
+        .arg(&detectors)
+        .args(["--format", "json"])
+        .arg(&path)
+        .output()
+        .expect("spawn keyhog scan");
+
+    let combined = combined_output(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "forced daemon must not discard the selected detector corpus; output={combined}"
+    );
+    assert!(
+        combined.contains("--daemon=on cannot be honored")
+            && combined.contains("detector corpus")
+            && combined.contains("precompiled daemon scanner"),
+        "forced-daemon rejection must identify the unhonored detector corpus; output={combined}"
+    );
+    assert!(
+        !combined.contains("aws-access-key"),
+        "forced daemon rejection must not scan with its embedded corpus; output={combined}"
+    );
+}
+
+#[test]
 fn forced_daemon_rejects_multiple_primary_sources() {
     let work = TempDir::new().expect("work dir");
     let path = work.path().join("leak.env");

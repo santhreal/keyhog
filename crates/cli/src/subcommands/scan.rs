@@ -463,6 +463,11 @@ fn has_daemon_incompatible_extra_sources(args: &ScanArgs) -> bool {
 
 #[cfg(unix)]
 fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
+    if args.detectors_cli_explicit || args.detectors != PathBuf::from("detectors") {
+        return Some(
+            "this scan selects a detector corpus that the precompiled daemon scanner cannot honor",
+        );
+    }
     if args.fast
         || args.deep
         || args.precision

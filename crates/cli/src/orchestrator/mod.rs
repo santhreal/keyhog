@@ -305,10 +305,18 @@ pub(crate) fn setup_default_scan_runtime(
     // `watch` and `scan-system` use this runtime; compiling first would let the
     // engine irreversibly drop a finding under the old floor before the shared
     // post-scan filter could apply a lower operator override.
-    let detector_min_confidence = compose_detector_min_confidence(
+    let mut detector_min_confidence = compose_detector_min_confidence(
         &mut detectors,
         effective_config.detector_min_confidence.clone(),
     );
+    if synthetic.precision {
+        let floor = effective_config.scanner.min_confidence;
+        for detector_floor in detector_min_confidence.values_mut() {
+            *detector_floor = detector_floor.max(floor);
+        }
+        detector_min_confidence =
+            compose_detector_min_confidence(&mut detectors, detector_min_confidence);
+    }
 
     // Compile WITH the resolved engine config + tuning so thresholds (decode
     // window, entropy, min-confidence, ml gate) take effect — not the bare
@@ -603,6 +611,13 @@ impl ScanOrchestrator {
         }
         effective_config.min_confidence = effective_config.scanner.min_confidence;
         effective_config.ml_enabled = effective_config.scanner.ml_enabled;
+
+        // Compose detector TOML defaults before precision clamping so low
+        // self-declared floors participate in the same high-precision bar as
+        // operator entries. Composing only after the clamp lets a detector's
+        // recall-tuned 0.25 floor bypass --precision.
+        detector_min_confidence =
+            compose_detector_min_confidence(&mut detectors, detector_min_confidence);
 
         // High-precision mode: no detector's self-declared (or operator) floor may
         // sit below the precision bar. 47 detectors ship a low recall-tuned floor
