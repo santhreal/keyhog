@@ -22,6 +22,7 @@ fn known_prefix_credential_always_detected_despite_low_confidence_context() {
         verify: None,
         keywords: vec!["sk_live_".into()],
         min_confidence: None,
+        ..Default::default()
     };
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
 
@@ -124,6 +125,7 @@ fn known_prefix_survives_ml_and_context_penalties() {
         verify: None,
         keywords: vec!["ghp_".into()],
         min_confidence: None,
+        ..Default::default()
     };
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     let chunk = make_chunk(&format!("GITHUB_TOKEN={}\n", credential));

@@ -33,6 +33,7 @@ fn straddle_detector() -> DetectorSpec {
         verify: None,
         keywords: vec!["STRADDLE".into()],
         min_confidence: None,
+        ..Default::default()
     }
 }
 

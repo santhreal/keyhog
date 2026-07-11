@@ -51,6 +51,7 @@ pub fn token_detector() -> DetectorSpec {
         verify: None,
         keywords: vec!["TESTKEY_".into()],
         min_confidence: None,
+        ..Default::default()
     }
 }
 

@@ -19,6 +19,7 @@ fn aws_shaped_detector() -> DetectorSpec {
         keywords: vec!["AKIA".into()],
         min_confidence: None,
         tests: Vec::new(),
+        ..Default::default()
     }
 }
 

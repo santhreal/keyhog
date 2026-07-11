@@ -123,8 +123,7 @@ fn appended_gpu_presence_anchor_bits_are_absence_proofs_only() {
 
 #[test]
 fn positioned_confirmed_anchor_bits_are_not_presence_bits() {
-    let mut scanner = scanner_with_detector_and_phase2_keyword_and_anchor();
-    scanner.confirmed_anchor_literal_count = 1;
+    let scanner = scanner_with_detector_and_phase2_keyword_and_anchor();
     assert_eq!(
         scanner.gpu_presence_literal_count(),
         scanner.ac_map.len()
@@ -151,9 +150,7 @@ fn positioned_confirmed_anchor_bits_are_not_presence_bits() {
 
 #[test]
 fn positioned_generic_keyword_bits_are_not_presence_bits() {
-    let mut scanner = scanner_with_detector_and_phase2_keyword_and_anchor();
-    scanner.confirmed_anchor_literal_count = 1;
-    scanner.generic_keyword_literal_count = 1;
+    let scanner = scanner_with_detector_and_phase2_keyword_and_anchor();
     assert_eq!(
         scanner.gpu_presence_literal_count(),
         scanner.ac_map.len()

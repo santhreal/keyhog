@@ -21,6 +21,7 @@ fn test_scan_timeout_respects_deadline() {
         verify: None,
         keywords: vec!["a".into()],
         min_confidence: None,
+        ..Default::default()
     };
 
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
@@ -82,6 +83,7 @@ fn test_inner_loop_deadline_aborts_many_match_pattern() {
         verify: None,
         keywords: vec![],
         min_confidence: None,
+        ..Default::default()
     };
 
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
@@ -133,6 +135,7 @@ fn test_inner_loop_deadline_aborts_many_match_grouped_pattern() {
         verify: None,
         keywords: vec![],
         min_confidence: None,
+        ..Default::default()
     };
 
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
@@ -171,6 +174,7 @@ fn test_inner_loop_deadline_aborts_many_match_anchored_pattern() {
         verify: None,
         keywords: vec!["sk_live_".into()],
         min_confidence: None,
+        ..Default::default()
     };
 
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
@@ -215,6 +219,7 @@ fn test_generic_assignment_deadline_aborts_inside_bridge() {
         verify: None,
         keywords: vec!["abc".into()],
         min_confidence: None,
+        ..Default::default()
     };
 
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();

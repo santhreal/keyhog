@@ -48,6 +48,7 @@ fn fuzz_detectors() -> Vec<DetectorSpec> {
             verify: None,
             keywords: vec!["key".into()],
             min_confidence: None,
+            ..Default::default()
         },
         DetectorSpec {
             tests: Vec::new(),
@@ -65,6 +66,7 @@ fn fuzz_detectors() -> Vec<DetectorSpec> {
             verify: None,
             keywords: vec!["AKIA".into()],
             min_confidence: None,
+            ..Default::default()
         },
     ]
 }

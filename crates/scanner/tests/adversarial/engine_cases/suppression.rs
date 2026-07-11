@@ -20,6 +20,7 @@ fn pure_placeholder_not_flagged() {
         verify: None,
         keywords: vec!["AKIA".into()],
         min_confidence: None,
+        ..Default::default()
     };
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     let chunk = make_chunk("aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n");
@@ -56,6 +57,7 @@ fn example_suppression_is_recorded_in_telemetry() {
         verify: None,
         keywords: vec!["AKIA".into()],
         min_confidence: None,
+        ..Default::default()
     };
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     let chunk = make_chunk("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
@@ -88,6 +90,7 @@ fn dogfood_captures_redacted_event() {
         verify: None,
         keywords: vec!["AKIA".into()],
         min_confidence: None,
+        ..Default::default()
     };
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     let chunk = make_chunk("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
@@ -156,6 +159,7 @@ fn github_pat_example_suppressed() {
         verify: None,
         keywords: vec!["ghp_".into()],
         min_confidence: None,
+        ..Default::default()
     };
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     let chunk = make_chunk("token = ghp_example_0001_xxxxxxxxxxxxxxxxxxxx\n");
@@ -335,6 +339,7 @@ fn dogfood_records_engine_probabilistic_gate_drop() {
         verify: None,
         keywords: vec!["secret".into()],
         min_confidence: None,
+        ..Default::default()
     };
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     // 16 identical chars: matches the regex, has a "secret" keyword anchor, but
