@@ -30,3 +30,7 @@ group = 1
 regex = "docker login [a-z0-9]+\\.azurecr\\.io.*?(?:password|token)[=:\\s\"'']+([A-Za-z0-9+/=]{50,})"
 description = "Azure Container Registry docker login pattern with token"
 group = 1
+
+[[detector.tests]]
+test_positive = "ACR_TOKEN=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrcDRxeDcifQ"
+test_negative = "ACR_TOKEN=plain-string-not-jwt"

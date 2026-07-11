@@ -36,3 +36,7 @@ type = "none"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "BLOCKCYPHER_TOKEN=7b3e5d8c1a9f4e2b6c8d3a5e9f1b"
+test_negative = "BLOCKCYPHER_TOKEN=short"

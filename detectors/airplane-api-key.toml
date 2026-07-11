@@ -22,3 +22,7 @@ group = 1
 [[detector.patterns]]
 regex = "Authorization[=:\\s\"'']+Bearer aptk_[a-zA-Z0-9_\\-]{30,}"
 description = "Airplane API key in Authorization header"
+
+[[detector.tests]]
+test_positive = "aptk_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2SnTb"
+test_negative = "aptk_short"

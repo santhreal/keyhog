@@ -47,3 +47,7 @@ group = 1
 # algorithm isn't an `AuthSpec::Bearer|Basic|Query|AwsV4|Header|Script`
 # variant; until a dedicated `AuthSpec::AzureSharedKey` lands, this
 # detector reports unverified. The key is still flagged.
+
+[[detector.tests]]
+test_positive = "AZURE_STORAGE_KEY=to8PuP8XWbrLmr4e+y/DLH/Hhsl6ArMtSIkCSqL7lSJOrb59CUVd0Hqb0tV/RxYsX8L5UrwFv1eFWPQ9pE++O/=="
+test_negative = "AZURE_STORAGE_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

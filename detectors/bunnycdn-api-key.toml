@@ -31,3 +31,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "bunnycdn-key=abcdef12-3456-7890-abcd-ef1234567890"
+test_negative = "bunnycdn-key=short"

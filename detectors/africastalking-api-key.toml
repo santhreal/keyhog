@@ -29,3 +29,7 @@ status = 200
 [[detector.verify.headers]]
 name = "apiKey"
 value = "{{match}}"
+
+[[detector.tests]]
+test_positive = "africastalking_api_key=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+test_negative = "africastalking_api_key=short"

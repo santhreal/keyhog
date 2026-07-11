@@ -31,3 +31,7 @@ password = "x"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "BUGHERD_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+test_negative = "BUGHERD_API_KEY=Kp4Qx7Rm"

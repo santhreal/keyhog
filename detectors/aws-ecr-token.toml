@@ -36,3 +36,7 @@ group = 1
 # audit.
 regex = "aws ecr get-login-password[^\\n]{0,128}\\|\\s*docker login[^\\n]{0,128}--password-stdin"
 description = "AWS ECR login command pattern indicating token usage"
+
+[[detector.tests]]
+test_positive = "AWS_ECR_PASSWORD=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+test_negative = "ECR_PASSWORD=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"

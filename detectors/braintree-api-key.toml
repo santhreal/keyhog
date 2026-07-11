@@ -37,3 +37,7 @@ status = 200
 [[detector.verify.headers]]
 name = "Authorization"
 value = "{{match}}"
+
+[[detector.tests]]
+test_positive = "braintree_public_key=kp4qx7rm_sn5tb8vw_3yzkp4qx"
+test_negative = "braintree_public_key=kp4qx7rm_sn5tb8vw"

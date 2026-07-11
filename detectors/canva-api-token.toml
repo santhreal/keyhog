@@ -19,3 +19,7 @@ group = 1
 regex = '''(?:CANVA|canva)[._-]?(?:CLIENT|client)[._-]?(?:SECRET|secret)[=:\s"']+(cnvca[a-zA-Z0-9]{20,})'''
 description = "Canva client secret (cnvca prefix)"
 group = 1
+
+[[detector.tests]]
+test_positive = "CANVA_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S"
+test_negative = "CANVA_TOKEN=short"

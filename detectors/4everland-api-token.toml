@@ -19,3 +19,7 @@ group = 1
 name = "secret_key"
 regex = "(?:4EVER|4ever|EVERLAND|everland|SECRET|secret)[._-]?(?:SECRET|secret)?[._-]?(?:KEY|key)[=:\\s\"'']+([A-Za-z0-9/+=]{40})"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "4EVER_ACCESS_KEY=KP4QX7RM2SN5TB8VW3YZ\n4EVER_SECRET_KEY=KP4QX7RM2SN5TB8VW3YZKP4QX7RM2SN5TB8VW3YZK"
+test_negative = "4EVER_KEY=KP4QX7RM2SN5TB8VW3Y"

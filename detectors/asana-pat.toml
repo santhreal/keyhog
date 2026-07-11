@@ -53,3 +53,7 @@ json_path = "data.name"
 [[detector.verify.metadata]]
 name = "email"
 json_path = "data.email"
+
+[[detector.tests]]
+test_positive = "ASANA_ACCESS_TOKEN=1/4827193056718294/Kp7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU"
+test_negative = "1/short/short"

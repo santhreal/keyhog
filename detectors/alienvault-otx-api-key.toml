@@ -26,3 +26,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "OTX_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f0c3d7e1a5f8c2b9d6a3c4e1f"
+test_negative = "OTX_API_KEY=short"

@@ -44,3 +44,7 @@ service = "sts"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "AWS_GOVCLOUD_ACCESS_KEY=AKIAKPQXRMSNTBVWYZBN"
+test_negative = "AWS_GOVCLOUD_ACCESS_KEY=NOTAKIA1234567890XYZA"

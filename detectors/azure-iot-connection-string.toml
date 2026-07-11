@@ -22,3 +22,7 @@ description = "Azure IoT Hub device connection string"
 regex = "(?:IOTHUB|iothub)[._-]?CONNECTION[_-]?STRING[=:\\s\"'']+(HostName=[^\"'']+azure-devices\\.net[^\"'']+)"
 description = "Azure IoT Hub connection string with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "HostName=prod-hub.azure-devices.net;SharedAccessKeyName=iothubowner;SharedAccessKey=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKpZQ"
+test_negative = "HostName=example.com;Other=value"

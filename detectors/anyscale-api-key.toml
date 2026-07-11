@@ -23,3 +23,7 @@ status = 200
 [[detector.verify.headers]]
 name = "Authorization"
 value = "Bearer {{match}}"
+
+[[detector.tests]]
+test_positive = "anyscale_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7RmKp"
+test_negative = "anyscale_short"

@@ -19,3 +19,7 @@ group = 1
 regex = """(?i)campaign[_-]?monitor[_-]?(?:client[_-]?)?id[=:\\s\"']+([a-f0-9]{32})"""
 description = "Campaign Monitor Client ID"
 group = 1
+
+[[detector.tests]]
+test_positive = "campaignmonitor_api_key=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f"
+test_negative = "campaignmonitor_api_key=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9"

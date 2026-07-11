@@ -43,3 +43,7 @@ json_path = "$.user"
 [[detector.verify.metadata]]
 name = "permissions"
 json_path = "$.permissions"
+
+[[detector.tests]]
+test_positive = "APPLITOOLS_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+test_negative = "APPLITOOLS_API_KEY=short"

@@ -24,3 +24,7 @@ group = 1
 regex = "(?:x-functions-key|X-Functions-Key)[\\s]*[=:\\s\"'\\']+([a-zA-Z0-9_-]{40,})"
 description = "Azure Functions key in header format"
 group = 1
+
+[[detector.tests]]
+test_positive = "https://myapp.azurewebsites.net/api/HttpTrigger?code=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+test_negative = "x-functions-key: short"

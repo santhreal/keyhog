@@ -28,3 +28,7 @@ group = 1
 regex = "\\bX-Amz-Security-Token[=:\\s\"']+([A-Za-z0-9%/+_=-]{64,})[\"']?"
 description = "AWS session token with SigV4 header anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "AWS_SESSION_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw"
+test_negative = "AWS_SESSION_TOKEN=short"

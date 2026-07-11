@@ -14,3 +14,7 @@ keywords = ["blur", "BLUR", "BLUR_API_KEY", "blur.io"]
 regex = "(?i)blur[_\\s]*(?:api[_\\s]*)?key[_\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{20,})[\"'']+"
 description = "Blur API key in assignment context (case-insensitive)"
 group = 1
+
+[[detector.tests]]
+test_positive = "blur_api_key=\"Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Q\""
+test_negative = "blur_api_key=\"short\""

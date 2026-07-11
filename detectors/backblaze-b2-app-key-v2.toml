@@ -19,3 +19,7 @@ description = "Backblaze B2 v2 application key (K00M/K00N prefix)"
 name = "application_key_id"
 regex = '[0-9a-f]{20,24}'
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "K00MKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx"
+test_negative = "K00Mshort"

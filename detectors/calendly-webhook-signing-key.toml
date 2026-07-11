@@ -14,3 +14,7 @@ keywords = ["signing_key", "signingKey", "CALENDLY_SIGNING_KEY"]
 regex = "(?:calendly|CALENDLY)[_.\\s]*(?:signing[_\\s]*key|SIGNING[_\\s]*KEY)[\\s\"''']+([a-zA-Z0-9!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?]{10,})"
 description = "Calendly webhook signing key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "calendly signing_key \"Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S\""
+test_negative = "calendly signing_key short"

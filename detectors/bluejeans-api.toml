@@ -31,3 +31,7 @@ template = "Bearer {{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "bluejeans_api_key=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+test_negative = "bluejeans_api_key=short"

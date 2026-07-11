@@ -31,3 +31,7 @@ password = ""
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "AZURE_DEVOPS=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Z"
+test_negative = "AZURE_DEVOPS=short"

@@ -14,3 +14,7 @@ keywords = ["ANYDO_API_KEY", "ANYDO_KEY", "ANYDO_TOKEN"]
 regex = "(?:ANYDO_API_KEY|ANYDO_KEY|ANYDO_TOKEN)[=:\\s\"'']+([A-Za-z0-9_-]{30,60})"
 description = "Any.do API key with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "ANYDO_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn"
+test_negative = "ANYDO_API_KEY=short"

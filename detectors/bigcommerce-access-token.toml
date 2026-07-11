@@ -33,3 +33,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "store_name"
 json_path = "$.name"
+
+[[detector.tests]]
+test_positive = "bbc_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz"
+test_negative = "bbc_short"

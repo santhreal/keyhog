@@ -19,3 +19,7 @@ group = 1
 regex = "(?:bitbucket[_-]?pipeline|BITBUCKET[_-]?PIPELINE)[_\\s]?(?:var|VAR)?[=:\\s\"'']+([A-Za-z0-9_!@#$%^&*+=/-]{16,})"
 description = "Bitbucket pipeline variable with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "BITBUCKET_DEPLOY_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+test_negative = "BITBUCKET_KEY=short"

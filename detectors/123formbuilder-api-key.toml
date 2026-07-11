@@ -39,3 +39,7 @@ json_path = "data.name"
 [[detector.verify.metadata]]
 name = "email"
 json_path = "data.email"
+
+[[detector.tests]]
+test_positive = "123formbuilder api_key Kp4Qx7-Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn"
+test_negative = "123formbuilder api_key short"

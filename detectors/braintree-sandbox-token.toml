@@ -29,3 +29,7 @@ name = "braintree_private_key"
 # random hex hash in the file (validator previously flagged this).
 regex = "(?:braintree[._-]?private[._-]?key|BRAINTREE_PRIVATE_KEY|private_key)[=:\\s\"']+[a-f0-9]{32,40}"
 within_lines = 10
+
+[[detector.tests]]
+test_positive = "sandbox_kp4qx7rm_sn5tb8vw_3yzkp4qx"
+test_negative = "sandbox_kp4qx7rm_sn5tb8vw_3yzkp4"

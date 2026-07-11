@@ -18,3 +18,7 @@ group = 1
 [[detector.patterns]]
 regex = 'AuthKey_[A-Z0-9]{10}\.p8'
 description = "Apple Auth Key file reference"
+
+[[detector.tests]]
+test_positive = "APNS=Kp4Qx7Rm2Sn5Tb8Vw3Yz.Vk9Bn3Lp7Qm2Rs5Tw8Yz.Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+test_negative = "APNS=Kp4Qx7Rm2Sn5Tb8Vw3Yz.Vk9Bn3Lp7Qm2Rs5Tw8Yz"
