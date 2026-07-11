@@ -16,8 +16,9 @@
 //! What each test pins, and what goes red on regression:
 //!   * `detector_ids_are_globally_unique` — two TOMLs claiming the same `id`
 //!     (a copy-paste that silently shadows one detector in the compiled map).
-//!   * `every_detector_has_at_least_one_pattern` — a detector with zero
-//!     `[[detector.patterns]]` can never fire; it is dead weight in the corpus.
+//!   * `every_regex_detector_has_at_least_one_pattern` — a regex detector with
+//!     zero `[[detector.patterns]]` can never fire. Explicit phase-2 generic
+//!     detectors instead execute from their keyword/entropy policy.
 //!   * `every_pattern_regex_is_nonempty` / `every_shipped_detector_passes_the_`
 //!     `production_quality_gate` / `the_whole_on_disk_corpus_compiles_into_one_`
 //!     `scanner` — an empty / invalid / ReDoS-prone regex (a typo in a
@@ -39,13 +40,13 @@ use super::support;
 use std::collections::BTreeMap;
 use support::paths::detector_dir;
 
-use keyhog_core::{validate_detector, DetectorSpec, QualityIssue, Severity};
+use keyhog_core::{validate_detector, DetectorKind, DetectorSpec, QualityIssue, Severity};
 use keyhog_scanner::CompiledScanner;
 
 /// The FULL shipped detector population: the compiled-in embedded corpus the
 /// binary actually carries (every `detectors/*.toml`, UNGATED — `build.rs`
 /// embeds them verbatim, without the runtime quality gate). Structural
-/// invariants (unique id, non-blank fields, has-pattern, valid severity) are
+/// invariants (unique id, non-blank fields, executable kind, valid severity) are
 /// pinned over THIS set so a gate-rejected detector — which `load_detectors`
 /// would silently drop — is still caught. Fails LOUDLY on a parse error
 /// (Law 10): `load_embedded_detectors_or_fail` is itself fail-closed.
@@ -140,16 +141,16 @@ fn detector_ids_and_names_and_service_are_nonblank() {
 }
 
 #[test]
-fn every_detector_has_at_least_one_pattern() {
+fn every_regex_detector_has_at_least_one_pattern() {
     let detectors = load_shipped();
     let zero_pattern: Vec<&str> = detectors
         .iter()
-        .filter(|d| d.patterns.is_empty())
+        .filter(|d| d.kind == DetectorKind::Regex && d.patterns.is_empty())
         .map(|d| d.id.as_str())
         .collect();
     assert!(
         zero_pattern.is_empty(),
-        "a detector with zero patterns can never fire — it is dead corpus \
+        "a regex detector with zero patterns can never fire — it is dead corpus \
          weight:\n  - {}",
         zero_pattern.join("\n  - ")
     );
@@ -160,6 +161,10 @@ fn every_pattern_regex_is_nonempty() {
     let detectors = load_shipped();
     let mut offenders = Vec::new();
     let mut total_patterns = 0usize;
+    let regex_detectors = detectors
+        .iter()
+        .filter(|detector| detector.kind == DetectorKind::Regex)
+        .count();
     for d in &detectors {
         for (i, p) in d.patterns.iter().enumerate() {
             total_patterns += 1;
@@ -169,11 +174,11 @@ fn every_pattern_regex_is_nonempty() {
         }
     }
     assert!(
-        total_patterns >= detectors.len(),
-        "expected at least one pattern per detector ({} patterns over {} \
-         detectors)",
+        total_patterns >= regex_detectors,
+        "expected at least one pattern per regex detector ({} patterns over {} \
+         regex detectors)",
         total_patterns,
-        detectors.len()
+        regex_detectors
     );
     assert!(
         offenders.is_empty(),
