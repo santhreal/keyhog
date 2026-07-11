@@ -1,9 +1,10 @@
 //! Apples-to-apples 8 MiB baseline: Hyperscan/SimdCpu vs GPU region presence.
 //!
-//! Same `CompiledScanner` (real detector catalog), same 8 × 1 MiB batch,
-//! same `scan_chunks_with_backend` entry. The chunk layout matches the scanner's
-//! production maximum and lets the Hyperscan path use its real Rayon parallelism
-//! instead of handicapping it behind one oversized sequential chunk. `SimdCpu`
+//! Same `CompiledScanner` (real detector catalog), same production-style 1 MiB
+//! windows with 128 KiB overlap over an 8 MiB file, same
+//! `scan_chunks_with_backend` entry. The layout lets the Hyperscan path use its
+//! real Rayon parallelism instead of handicapping it behind one oversized
+//! sequential chunk. `SimdCpu`
 //! runs the Hyperscan literal prefilter; `Gpu` routes the batch through Vyre
 //! `GpuLiteralSet::scan_presence_by_region_with_scratch`. Timing includes each
 //! backend's production batching, scheduling, phase 2, and post-processing.
@@ -25,6 +26,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 const MIB: usize = 1024 * 1024;
+const WINDOW_OVERLAP: usize = 128 * 1024;
 
 fn detectors_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors")
@@ -48,25 +50,28 @@ fn make_chunk(data: String, path: &str, base_offset: usize, base_line: usize) ->
     }
 }
 
-fn make_chunks(data: String, chunk_bytes: usize) -> Vec<Chunk> {
-    let mut chunks = Vec::with_capacity(data.len().div_ceil(chunk_bytes));
+fn make_chunks(data: String, chunk_bytes: usize, overlap: usize) -> Vec<Chunk> {
+    assert!(chunk_bytes > overlap, "window must exceed overlap");
+    let stride = chunk_bytes - overlap;
+    let mut chunks = Vec::with_capacity(data.len().div_ceil(stride));
     let mut offset = 0usize;
-    let mut base_line = 0usize;
     while offset < data.len() {
         let end = (offset + chunk_bytes).min(data.len());
         let chunk = &data[offset..end];
+        let base_line = data.as_bytes()[..offset]
+            .iter()
+            .filter(|&&byte| byte == b'\n')
+            .count();
         chunks.push(make_chunk(
             chunk.to_owned(),
             "src/bench_8mib.rs",
             offset,
             base_line,
         ));
-        base_line += chunk
-            .as_bytes()
-            .iter()
-            .filter(|&&byte| byte == b'\n')
-            .count();
-        offset = end;
+        if end == data.len() {
+            break;
+        }
+        offset += stride;
     }
     chunks
 }
@@ -229,7 +234,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scanner = CompiledScanner::compile(detectors)?.with_tuning_config(tuning);
 
     let payload = gen_payload(size);
-    let chunks = make_chunks(payload, MIB);
+    let chunks = make_chunks(payload, MIB, WINDOW_OVERLAP);
 
     assert!(
         scanner.warm_backend(ScanBackend::SimdCpu),
