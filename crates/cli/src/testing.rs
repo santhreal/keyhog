@@ -154,6 +154,7 @@ pub trait CliTestApi {
     fn validate_socket_for_connect(&self, socket_path: &Path) -> Result<()>;
     fn current_uid(&self) -> libc::uid_t;
     fn connected_peer_uid(&self, stream: &tokio::net::UnixStream) -> Result<libc::uid_t>;
+    fn verify_accepted_peer(&self, stream: &tokio::net::UnixStream) -> Result<()>;
     fn render_credential(
         &self,
         credential: &keyhog_core::SensitiveString,
@@ -584,6 +585,9 @@ impl CliTestApi for TestApi {
     }
     fn connected_peer_uid(&self, stream: &tokio::net::UnixStream) -> Result<libc::uid_t> {
         crate::daemon::client::testing::connected_peer_uid(stream)
+    }
+    fn verify_accepted_peer(&self, stream: &tokio::net::UnixStream) -> Result<()> {
+        crate::daemon::server::testing::verify_accepted_peer(stream)
     }
     fn render_credential(
         &self,
@@ -1041,7 +1045,7 @@ impl CliTestApi for TestApi {
             data: body.to_string().into(),
             metadata: keyhog_core::ChunkMetadata {
                 source_type: "filesystem".into(),
-                path: Some("watched.env".to_string()),
+                path: Some("watched.env".into()),
                 ..Default::default()
             },
         };
@@ -1307,5 +1311,85 @@ impl Baseline {
             })
             .collect();
         baseline
+    }
+}
+
+/// Test-only fluent probe over the crate-private [`crate::stable_hash::StableHasher`],
+/// the blake3 length-prefixed stable hasher behind orchestrator config-identity
+/// (cache-key) computation. The real `StableHasher` exposes `&mut self` builder
+/// methods that are `pub(crate)`; this owns one and offers a `mut self -> Self`
+/// chaining surface so integration tests can assert the hasher's identity
+/// contract (determinism, domain separation, type-tag and field-name/value
+/// distinctness, length-prefix anti-collision) without leaking the private type.
+pub struct StableHashProbe {
+    inner: crate::stable_hash::StableHasher,
+}
+
+impl StableHashProbe {
+    /// Start a probe in the given domain (mirrors `StableHasher::new`).
+    pub fn new(domain: &str) -> Self {
+        Self {
+            inner: crate::stable_hash::StableHasher::new(domain),
+        }
+    }
+
+    pub fn bool(mut self, name: &str, value: bool) -> Self {
+        self.inner.field_bool(name, value);
+        self
+    }
+
+    pub fn bytes(mut self, name: &str, value: &[u8]) -> Self {
+        self.inner.field_bytes(name, value);
+        self
+    }
+
+    pub fn f64_bits(mut self, name: &str, value: f64) -> Self {
+        self.inner.field_f64_bits(name, value);
+        self
+    }
+
+    pub fn opt_path(mut self, name: &str, value: Option<&std::path::Path>) -> Self {
+        self.inner.field_option_path(name, value);
+        self
+    }
+
+    pub fn opt_str(mut self, name: &str, value: Option<&str>) -> Self {
+        self.inner.field_option_str(name, value);
+        self
+    }
+
+    pub fn opt_u64(mut self, name: &str, value: Option<u64>) -> Self {
+        self.inner.field_option_u64(name, value);
+        self
+    }
+
+    pub fn opt_usize(mut self, name: &str, value: Option<usize>) -> Self {
+        self.inner.field_option_usize(name, value);
+        self
+    }
+
+    pub fn path(mut self, name: &str, value: &std::path::Path) -> Self {
+        self.inner.field_path(name, value);
+        self
+    }
+
+    pub fn str(mut self, name: &str, value: &str) -> Self {
+        self.inner.field_str(name, value);
+        self
+    }
+
+    pub fn u64(mut self, name: &str, value: u64) -> Self {
+        self.inner.field_u64(name, value);
+        self
+    }
+
+    pub fn usize(mut self, name: &str, value: usize) -> Self {
+        self.inner.field_usize(name, value);
+        self
+    }
+
+    /// Finalize to the 64-bit stable digest (mirrors `StableHasher::finish_u64`).
+    pub fn finish(&self) -> u64 {
+        self.inner.finish_u64()
     }
 }
