@@ -18,3 +18,7 @@ description = "Netlify build hook URL with UUID"
 regex = "(?:NETLIFY|netlify)[_\\-\\s]*(?:BUILD|build)[_\\-\\s]*(?:HOOK|hook)[_\\-\\s]*(?:URL|url)?[=:\\s\"'\\']+https://api\\.netlify\\.com/build_hooks/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
 description = "Netlify build hook URL with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "https://api.netlify.com/build_hooks/f6b93ba3-06a8-5cd8-44c8-76c1a0a29b9d"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

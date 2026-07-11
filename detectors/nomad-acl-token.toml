@@ -24,3 +24,7 @@ group = 1
 regex = "\"SecretID\":\\s*\"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\""
 description = "Nomad Secret ID in JSON response"
 group = 1
+
+[[detector.tests]]
+test_positive = "NOMAD_TOKEN=5a625743-ca5c-c65a-3857-c02b98f8b8b5"
+test_negative = "NOMAD_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -19,3 +19,7 @@ min_confidence = 0.2
 # the existing contract harness.
 regex = '''mysql://[^:]*:[^@\s"'']+@[a-zA-Z0-9._-]+'''
 description = "MySQL connection string with credentials (host-bounded capture)"
+
+[[detector.tests]]
+test_positive = "mysql://dbuser:Np3DnCDi231ZUBYp@prod-db.example.com"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

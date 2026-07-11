@@ -19,3 +19,7 @@ group = 1
 regex = "ncbi\\.nlm\\.nih\\.gov.*[?&]api_key=([a-zA-Z0-9]{36})"
 description = "NCBI API key in URL query parameter"
 group = 1
+
+[[detector.tests]]
+test_positive = "NIH_PUBMED_API_KEY=9Uz0vRSvRD4VZ7SSmyPz32hJL459hzkhCEwA"
+test_negative = "NIH_PUBMED_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

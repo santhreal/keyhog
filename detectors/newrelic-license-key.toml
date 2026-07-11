@@ -36,3 +36,7 @@ value = "application/json"
 
 [detector.verify.success]
 status = 202
+
+[[detector.tests]]
+test_positive = "NEW_RELIC_LICENSE_KEY=5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3ea9e2f5b8"
+test_negative = "NEW_RELIC_LICENSE_KEY=short"

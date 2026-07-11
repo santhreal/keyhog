@@ -34,3 +34,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "MORALIS_API_KEY=RDcaN0CTOK20ayMWP8e33V2zt9U44WSIdDo1pT8f2R68ugXVO0Lu9kX854Uj"
+test_negative = "MORALIS_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

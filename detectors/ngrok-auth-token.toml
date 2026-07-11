@@ -19,3 +19,7 @@ group = 1
 regex = "authtoken:\\s*([a-zA-Z0-9_=+/]{40,})"
 description = "Ngrok auth token in YAML config file"
 group = 1
+
+[[detector.tests]]
+test_positive = "NGROK_AUTHTOKEN=6vFSd5rDCFSM5K5OrRo4JGIdLLsIfXAuWO+bvvn/"
+test_negative = "NGROK_AUTHTOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

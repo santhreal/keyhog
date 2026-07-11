@@ -17,3 +17,7 @@ description = "Neon database connection string with embedded credentials"
 [[detector.patterns]]
 regex = 'neon_conn_[a-z0-9]{20,}'
 description = "Neon connection string identifier"
+
+[[detector.tests]]
+test_positive = "postgres://\"']oT &k$0_PJ9@[3(o#<a5\"H^ubLhQ72qh:vp|PdAvLM,z\">N:&%!@j01tpmv2ygaalu4lbioiis43-hx3wr-ackyl5w38je-9empd71ch4cl.neon.tech/eFffOlBTrz16jBlSz6dLnrfMn05NZRI4PbHnC0L8Al-Az8ol"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

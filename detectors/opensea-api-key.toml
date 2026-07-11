@@ -19,3 +19,7 @@ group = 1
 regex = "X-API-Key[\\s]*:[\\s]*([a-zA-Z0-9_-]{32,})"
 description = "OpenSea API key in HTTP header"
 group = 1
+
+[[detector.tests]]
+test_positive = "opensea=\"2sIuLPADN-nQyiY2sVUsxowxpKZUoKKW\""
+test_negative = "opensea=\"YOUR_API_KEY_HERE_PLACEHOLDER_VALUE\""

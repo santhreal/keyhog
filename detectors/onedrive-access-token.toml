@@ -29,3 +29,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "userPrincipalName"
 json_path = "$.userPrincipalName"
+
+[[detector.tests]]
+test_positive = "ONEDRIVE_TOKEN=eyJ0eXFHAOW1dcFx6CSwxQjhHI2t-8Yz9L0gGN39H67mlO6DjJsMq8.eyJtMwzbKxqpVlfyPWYAk43XzRf2DLgpt3nsGWdU.v_Dd9gVB5bLy1nXh91hk3v0sk2ZZaFjFbUgA7D7EL"
+test_negative = "ONEDRIVE_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

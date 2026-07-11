@@ -28,3 +28,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "username"
 json_path = "username"
+
+[[detector.tests]]
+test_positive = "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"
+test_negative = "npm_short"

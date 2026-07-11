@@ -17,3 +17,7 @@ description = "Okta support token with context anchor"
 [[detector.patterns]]
 regex = "(?i)OKTA_(?:TOKEN|API_KEY|SESSION|SECRET)[=:\\s\"']+00[a-zA-Z0-9]{38,50}"
 description = "Okta environment variable with token"
+
+[[detector.tests]]
+test_positive = "OKTA=00abcdefghijklmnopqrstuvwxyz1234567890abcd"
+test_negative = "OKTA=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

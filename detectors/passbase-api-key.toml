@@ -19,3 +19,7 @@ group = 2
 regex = "X-API-KEY[=:;\\s\"'']+([a-zA-Z0-9_-]{20,})"
 description = "X-API-KEY header value (Passbase)"
 group = 1
+
+[[detector.tests]]
+test_positive = "X-API-KEY=7VVpvY_rJEc_G33gXrRw"
+test_negative = "X-API-KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

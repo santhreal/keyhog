@@ -19,3 +19,7 @@ group = 1
 regex = "(?:User-Agent|user_agent)[=:\\s\"'\\']+([^\\s\"'\\']*(?:NOAA|noaa|weather\\.gov)[^\\s\"'\\']*)"
 description = "NOAA API User-Agent header configuration"
 group = 1
+
+[[detector.tests]]
+test_positive = "User-Agent=mDnz,U!<T$2Zy#c?d:8E)H37Auqweather.govz)Y"
+test_negative = "User-Agent=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

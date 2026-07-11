@@ -24,3 +24,7 @@ group = 1
 regex = "(?:modal-secret|modal_secret)[=:\\s\"\\']+([a-zA-Z0-9_-]{20,})"
 description = "Modal secret paired with modal key"
 group = 1
+
+[[detector.tests]]
+test_positive = "MODAL_API_KEY=nO4A28jeJAIt9uH2hn1l"
+test_negative = "MODAL_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

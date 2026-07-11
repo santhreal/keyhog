@@ -19,3 +19,7 @@ group = 1
 name = "secret_key"
 regex = "(?:MINIO|minio)[._-]?(?:ROOT[._-]?PASSWORD|SECRET[._-]?KEY|secret)[=:\\s\"']+([a-zA-Z0-9+/=]{8,100})"
 within_lines = 5
+
+[[detector.tests]]
+test_positive = "MINIO_ACCESS_KEY=0vp69pixmZ8oC"
+test_negative = "MINIO_ACCESS_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

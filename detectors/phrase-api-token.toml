@@ -36,3 +36,7 @@ template = "token {{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "PHRASE=d33dcb033f52664212c34c0219033d3846ba3ce5c38efd17"
+test_negative = "PHRASE=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

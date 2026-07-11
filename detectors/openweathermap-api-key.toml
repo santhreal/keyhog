@@ -29,3 +29,7 @@ type = "none"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "OPENWEATHERMAP_API_KEY=c0ab6abfd5091fb4abc882544f009965"
+test_negative = "OPENWEATHERMAP_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

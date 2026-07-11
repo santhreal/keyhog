@@ -19,3 +19,7 @@ group = 1
 regex = "client_id[=:\\s\"']+([a-f0-9]{32})[^\\n]{0,100}(?:onelogin|ONELOGIN|onelogin.com)"
 description = "OneLogin Client ID in OAuth config with context"
 group = 1
+
+[[detector.tests]]
+test_positive = "ONELOGIN=2be574f46dae2eb5b37086c51cb2e224"
+test_negative = "ONELOGIN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

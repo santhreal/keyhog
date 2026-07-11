@@ -19,3 +19,7 @@ group = 1
 regex = "(?i)nexus[_.\\s-]*username[=:\\s\"']+\\S+\\s*nexus[_.\\s-]*(?:password|api[_.-]?key)[=:\\s\"']+([a-fA-F0-9]{32,64})"
 description = "Nexus credentials with API key/password"
 group = 1
+
+[[detector.tests]]
+test_positive = "NEXUS_API_KEY=926820561f663070c952112c7f4f5fa46b37c427601aa7dc9e98614469cca8c1"
+test_negative = "NEXUS_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

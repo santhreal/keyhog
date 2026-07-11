@@ -30,3 +30,7 @@ group = 1
 regex = "X-Octopus-ApiKey[=:\\s\"'']+(API-[A-Z0-9]{16,})"
 description = "Octopus Deploy X-Octopus-ApiKey header"
 group = 1
+
+[[detector.tests]]
+test_positive = "API-7X68S9206QLQW4S2FVP"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

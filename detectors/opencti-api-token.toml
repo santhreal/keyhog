@@ -14,3 +14,7 @@ keywords = ["opencti", "OPENCTI_TOKEN", "opencti_api_key"]
 regex = "(?:opencti|OPENCTI)[\\s_-]*(?:token|api[_-]?key)[=:\\s\"'']+([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})"
 description = "OpenCTI API token (UUID v4) with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "opencti_api_key=6bbfb352-50ee-4684-85c6-f4fdd7cd01ab"
+test_negative = "opencti_api_key=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -19,3 +19,7 @@ group = 1
 regex = "(?:NEON[_-](?:DATABASE[_-]?URL|POSTGRES[_-]?URL|URL))[=:\\s\"'']+(postgres(?:ql)?://[^\\s\"'']+)"
 description = "Neon connection string with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "NEON_DATABASE_URL=postgresql://neondb:SecretPass123456@ep-demo.us-east-2.aws.neon.tech/neondb"
+test_negative = "NEON_DATABASE_URL=postgresql://neondb:YOUR_API_KEY_HERE_PLACEHOLDER_VALUE@ep-demo.us-east-2.aws.neon.tech/neondb"

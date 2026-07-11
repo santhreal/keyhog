@@ -19,3 +19,7 @@ group = 1
 regex = "wstoken[=:]([a-f0-9]{32})"
 description = "Moodle wstoken parameter"
 group = 1
+
+[[detector.tests]]
+test_positive = "webservicewstoken=523c55846f4a794128a9d99731891b9c"
+test_negative = "webservicewstoken=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

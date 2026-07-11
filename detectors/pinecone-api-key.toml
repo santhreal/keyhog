@@ -13,3 +13,7 @@ keywords = ["pcsk_", "PINECONE_API_KEY", "pinecone_api_key"]
 [[detector.patterns]]
 regex = 'pcsk_[a-zA-Z0-9_-]{100,}'
 description = "Pinecone API key with pcsk- prefix"
+
+[[detector.tests]]
+test_positive = "pcsk_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+test_negative = "pcsk_short"

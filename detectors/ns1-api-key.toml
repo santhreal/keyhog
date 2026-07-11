@@ -39,3 +39,7 @@ json_path = "name"
 [[detector.verify.metadata]]
 name = "email"
 json_path = "email"
+
+[[detector.tests]]
+test_positive = "NS1_API_KEY=LMg_4h12QvVuiYMIkeb9azkXGNDu3GdphrBLzm4h"
+test_negative = "NS1_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

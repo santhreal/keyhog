@@ -19,3 +19,7 @@ group = 1
 regex = 'Authorization:\s*([a-zA-Z0-9]{56})'
 description = "Pexels Authorization header (API key)"
 group = 1
+
+[[detector.tests]]
+test_positive = "PEXELS_API_KEY=YpnKhuwG7qqvltzETAtrtrXlv9srwh4TUnFDoNwKfurzDV3emeNiRpx8"
+test_negative = "PEXELS_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

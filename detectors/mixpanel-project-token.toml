@@ -19,3 +19,7 @@ group = 1
 # tracking. Server-side API access uses the Service Account (not this
 # token). `--hide-client-safe` drops these.
 client_safe = true
+
+[[detector.tests]]
+test_positive = "mixpaneltoken=c3204d9a091c90da70b2eb73d026b376"
+test_negative = "mixpaneltoken=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

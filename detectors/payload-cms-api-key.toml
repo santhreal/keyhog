@@ -19,3 +19,7 @@ group = 1
 regex = "API-Key\\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
 description = "Payload CMS API key in Authorization header"
 group = 1
+
+[[detector.tests]]
+test_positive = "PAYLOAD_API_KEY=c191374f-c337-41b5-4a8b-64b48783d13f"
+test_negative = "PAYLOAD_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

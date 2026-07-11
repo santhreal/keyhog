@@ -32,3 +32,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "results"
 json_path = "results"
+
+[[detector.tests]]
+test_positive = "ntn_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKpRm"
+test_negative = "ntn_short"

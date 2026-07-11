@@ -30,3 +30,7 @@ template = "Token {{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "percy_h3KLZpjNQVXQtYzZ36cCBZ9ab39wZdGc"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

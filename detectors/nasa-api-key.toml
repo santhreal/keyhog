@@ -19,3 +19,7 @@ group = 1
 regex = "api[_-]?key[=:\\s\"'\\']+([a-zA-Z0-9]{40}).*api\\.nasa\\.gov"
 description = "NASA API key in URL with api.nasa.gov domain"
 group = 1
+
+[[detector.tests]]
+test_positive = "NASA_API_KEY=Yx482xEg9Fb5nAWX0m3IsojQXbBJgYW38rW9Pz9D"
+test_negative = "NASA_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

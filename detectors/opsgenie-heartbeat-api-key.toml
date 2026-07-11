@@ -26,3 +26,7 @@ template = "GenieKey {{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "OPSGENIE_HEARTBEAT=740abf96-f0bb-5397-0c19-8650db0db039"
+test_negative = "OPSGENIE_HEARTBEAT=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

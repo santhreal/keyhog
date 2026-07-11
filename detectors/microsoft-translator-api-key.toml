@@ -36,3 +36,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 400
+
+[[detector.tests]]
+test_positive = "MS_TRANSLATOR_KEY=1dcd0b60e5b037569d8c72e160975b2c"
+test_negative = "MS_TRANSLATOR_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

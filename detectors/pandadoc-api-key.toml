@@ -30,3 +30,7 @@ template = "API-Key {{match}}"
 
 [detector.verify.success]
 status = 200
+
+[[detector.tests]]
+test_positive = "PANDADOC_API_KEY=9a6d3f4b584413eda52b0e42239102d605f5c8d843fdcbe6891a202d4a1432e9"
+test_negative = "PANDADOC_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

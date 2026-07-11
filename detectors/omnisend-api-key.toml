@@ -35,3 +35,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "accountID"
 json_path = "$.accountID"
+
+[[detector.tests]]
+test_positive = "OMNISEND_API_KEY=614030930ca9626eedd2b6b73c763ac9"
+test_negative = "OMNISEND_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

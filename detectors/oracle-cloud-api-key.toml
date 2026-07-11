@@ -34,3 +34,7 @@ group = 1
 regex = "(?:OCI|oracle)[._-]?(?:passphrase|key_passphrase)[=:\\s\"'']+([a-zA-Z0-9!@#$%^&*._-]{8,})"
 description = "Oracle Cloud key passphrase"
 group = 1
+
+[[detector.tests]]
+test_positive = "ocid1.user.oc1.mzks6yx4t4ccgj0myg6d0lm4ox2uush50dkkrmkkyrjn960x7560kzvq1m63t4yk7u2w13lo6hsegd223arj54.gcsxajsz0f04t9fbn8vhlnikxk7fpnge3blz5a53p5z3rp30p4xj851oqsbgruhnhv3ojp2icsyog"
+test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

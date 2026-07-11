@@ -14,3 +14,7 @@ keywords = ["misp", "MISP_API_KEY", "Authkey", "automation"]
 regex = "(?:misp|MISP)[\\s_-]*(?:api[_-]?key|authkey|key)[=:\\s\"'']+([a-f0-9]{40})"
 description = "MISP API key (40 hex chars) with context anchor"
 group = 1
+
+[[detector.tests]]
+test_positive = "mispauthkey=5a2c812ddcec9d17cceae0f42eec7ed26cee806c"
+test_negative = "mispauthkey=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

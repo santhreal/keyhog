@@ -22,3 +22,7 @@ group = 1
 
 # NOTE: live verification disabled. Single-brace `{hostname}` was invalid.
 # kimi-wave3 §1.
+
+[[detector.tests]]
+test_positive = "PALOALTO_API_KEY=/7j3M6glXEI5gvG5RRuIQjBARCDxbz8wJWl3EiPP"
+test_negative = "PALOALTO_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

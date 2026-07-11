@@ -19,3 +19,7 @@ group = 1
 regex = "(?:OPTIMIZELY_SDK_KEY|optimizely_sdk_key)[=:][\\s\"'']*([a-zA-Z0-9_-]{16,})"
 description = "Optimizely SDK key environment variable"
 group = 1
+
+[[detector.tests]]
+test_positive = "OPTIMIZELY_SDK_KEY=EDOQtgXpGDWj1Dll"
+test_negative = "OPTIMIZELY_SDK_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

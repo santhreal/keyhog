@@ -19,3 +19,7 @@ group = 1
 regex = "access_token[=:\\s\"'']+([a-f0-9]{40})[\\s\\S]{0,100}api\\.particle\\.io"
 description = "Particle API token near api.particle.io endpoint"
 group = 1
+
+[[detector.tests]]
+test_positive = "PARTICLE_ACCESS_TOKEN=148ddd535501d0d2be7e63b142409d7f6a0e6c7f"
+test_negative = "PARTICLE_ACCESS_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

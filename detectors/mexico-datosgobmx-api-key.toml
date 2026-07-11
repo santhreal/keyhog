@@ -24,3 +24,7 @@ group = 1
 regex = '''(?:api|admin)[_.-]?key[\s"'=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}).{0,30}(?:datos\.gob\.mx|mexico)'''
 description = "Mexico CKAN API key with trailing context"
 group = 1
+
+[[detector.tests]]
+test_positive = "DATOS_GOB_API_KEY=f81a1948-ed21-1d74-ea77-cfb73d772899"
+test_negative = "DATOS_GOB_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
