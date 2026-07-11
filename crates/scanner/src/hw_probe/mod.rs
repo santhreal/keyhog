@@ -9,11 +9,11 @@
 //!
 //!   * `thresholds` - GPU routing crossover constants consumed through
 //!     the public tier lookup functions.
-//!   * [`tier`] - GPU adapter classification + tier threshold profiles.
-//!   * [`select`] - [`select_backend`] routing logic + env-override
+//!   * `tier` - GPU adapter classification + tier threshold profiles.
+//!   * `select` - [`select_backend`] routing logic + env-override
 //!     parsing.
-//!   * [`banner`] - `startup_banner` formatter for the CLI header.
-//!   * [`platform`] - per-OS detection of physical cores, memory,
+//!   * `banner` - `startup_banner` formatter for the CLI header.
+//!   * `platform` - per-OS detection of physical cores, memory,
 //!     and io_uring availability.
 
 use std::sync::OnceLock;
