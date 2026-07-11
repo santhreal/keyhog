@@ -146,7 +146,7 @@ pub(crate) use phase2::{phase2_gate_stats_dump, phase2_mark_stats, phase2_mark_s
 pub use profile::{
     dump as profile_dump, reset as profile_reset, set_perf_trace_enabled, set_profile_enabled,
 };
-pub use rule_pipeline::megascan_input_len;
+pub use rule_pipeline::{megascan_input_len, megascan_input_len_bounds, set_megascan_input_len};
 #[cfg(test)]
 pub(crate) use scan_inner_profile::scan_inner_profile_dump;
 #[cfg(test)]
