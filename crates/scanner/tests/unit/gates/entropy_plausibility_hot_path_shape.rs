@@ -21,10 +21,19 @@ fn entropy_placeholder_and_ascii_uniqueness_stay_allocation_light() {
             && placeholder.contains("ends_with_ignore_ascii_case(bytes, b\"EXAMPLE\")"),
         "entropy placeholder marker checks should use shared ASCII byte-search primitives"
     );
+    // The ASCII path delegates to the shared distinct-byte primitive instead
+    // of carrying a fourth copy of its 256-slot table. Pin both the call site
+    // and the allocation-free single owner.
+    let entropy_mod = std::fs::read_to_string(root.join("src/entropy/mod.rs"))
+        .expect("entropy module source readable");
     assert!(
         plausibility.contains("if value.is_ascii()")
-            && plausibility.contains("let mut seen = [false; 256];")
-            && plausibility.contains("return count;"),
-        "ASCII plausibility uniqueness must use the fixed-size stack bitmap before the Unicode fallback"
+            && plausibility.contains("super::unique_byte_count(value.as_bytes())"),
+        "ASCII plausibility uniqueness must delegate to unique_byte_count before the Unicode fallback"
+    );
+    assert!(
+        entropy_mod.contains("fn unique_byte_count(")
+            && entropy_mod.contains("let mut seen = [false; 256];"),
+        "the canonical unique_byte_count primitive must retain its fixed-size stack bitmap"
     );
 }
