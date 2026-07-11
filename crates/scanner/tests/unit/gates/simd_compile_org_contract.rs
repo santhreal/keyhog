@@ -210,18 +210,18 @@ fn hyperscan_call_sites_use_distinct_cache_profiles() {
 
     assert!(
         backend_prepared.contains("HsCompileOpts {")
+            && backend_prepared.contains("singlematch: true")
             && backend_prepared.contains("shard_target: tuning.hs_shard_target")
             && backend_prepared.contains("..Default::default()")
-            && !backend_prepared.contains("singlematch: true")
             && !backend_prepared.contains("caseless: Some(")
             && !backend_prepared.contains("utf8: false"),
-        "phase-1 SIMD scanner must keep the legacy all-caseless sharded cache profile"
+        "phase-1 SIMD scanner must use set-membership SINGLEMATCH with the all-caseless sharded cache profile"
     );
     assert!(
         phase2_hs.contains("singlematch: true")
             && phase2_hs.contains("caseless: Some(&caseless)")
             && phase2_hs.contains("shard_target: Some(usize::MAX)")
             && phase2_hs.contains("utf8: false"),
-        "phase-2 HS prefilter must keep its distinct singlematch/per-pattern/one-shard byte-mode cache profile"
+        "phase-2 HS prefilter must keep its distinct per-pattern/one-shard byte-mode cache profile"
     );
 }
