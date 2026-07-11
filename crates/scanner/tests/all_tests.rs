@@ -117,6 +117,8 @@ pub mod regression_package_registry_token_recall;
 pub mod regression_password_slot_mask_suppression;
 #[path = "regression_payment_vendor_token_recall.rs"]
 pub mod regression_payment_vendor_token_recall;
+#[path = "regression_prefix_storm_backend_parity.rs"]
+pub mod regression_prefix_storm_backend_parity;
 #[path = "regression_private_key_block_resolution.rs"]
 pub mod regression_private_key_block_resolution;
 #[path = "regression_private_key_caesar_decode_suppression.rs"]
@@ -137,6 +139,8 @@ pub mod regression_resolution_algorithmic_dos;
 pub mod regression_reverse_integrity_decoy_suppression;
 #[path = "regression_saas_platform_token_recall.rs"]
 pub mod regression_saas_platform_token_recall;
+#[path = "regression_stackblitz_backend_parity.rs"]
+pub mod regression_stackblitz_backend_parity;
 #[path = "regression_shape_collision_recall_carveout.rs"]
 pub mod regression_shape_collision_recall_carveout;
 #[path = "regression_slack_token_family_recall.rs"]

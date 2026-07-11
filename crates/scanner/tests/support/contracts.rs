@@ -120,7 +120,8 @@ pub fn make_chunk(text: &str, source_type: &str, path: &str) -> Chunk {
 /// Convenience over [`make_chunk`] for the common case: a `source_type = "test"`
 /// chunk where only the text and path vary. Collapses the byte-identical
 /// 2-arg `make_chunk` copies that several runners (`backend_parity_matrix`,
-/// `gpu_parity`, `diagnose_sb_divergence`, `phase2_no_hit_branch_recall`)
+/// `gpu_parity`, `regression_stackblitz_backend_parity`,
+/// `phase2_no_hit_branch_recall`)
 /// previously each defined locally.
 pub fn test_chunk(text: &str, path: &str) -> Chunk {
     make_chunk(text, "test", path)
