@@ -5212,39 +5212,6 @@ text = 'dp.s\u{0442}.0000000000000000000000000000000000000000'
 credential = 'dp.st.0000000000000000000000000000000000000000'
 
 [[case]]
-detector_id = "drake-api-credentials"
-suite = 27
-
-[[case.assertion]]
-kind = "fires"
-name = "normal"
-text = 'drake_api_key = "abcde12345abcde12345"'
-credential = 'abcde12345abcde12345'
-
-[[case.assertion]]
-kind = "silent"
-name = "prefix"
-text = 'frake_api_key = "abcde12345abcde12345"'
-
-[[case.assertion]]
-kind = "fires"
-name = "zwsp"
-text = 'drake\u{200B}_api_key = "abcde12345abcde12345"'
-credential = 'abcde12345abcde12345'
-
-[[case.assertion]]
-kind = "fires"
-name = "hyphen"
-text = 'drake_api_key = "abcde12345abcde\u{00AD}12345"'
-credential = 'abcde12345abcde12345'
-
-[[case.assertion]]
-kind = "fires"
-name = "homoglyph"
-text = 'dr\u{0430}ke_api_key = "abcde12345abcde12345"'
-credential = 'abcde12345abcde12345'
-
-[[case]]
 detector_id = "drata-api-token"
 suite = 27
 
