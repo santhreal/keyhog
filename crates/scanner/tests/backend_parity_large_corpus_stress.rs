@@ -1,24 +1,21 @@
 //! Backend parity under stress: large corpus with many firing detectors.
 //!
-//! The full detector corpus has ~894 detectors. When scanning a chunk that
-//! triggers many of them simultaneously, backend dispatch logic is heavily
+//! When scanning a chunk that triggers many detector families simultaneously,
+//! backend dispatch logic is heavily
 //! exercised. This test creates fixtures that trigger large subsets of the
 //! detector corpus and verifies all backends report identical findings.
 //!
 //! Key assertions:
-//!   1. Finding counts match across backends.
-//!   2. Finding offsets and credentials are byte-identical.
-//!   3. No findings are dropped or duplicated.
+//!   1. Complete RawMatch values match across backends.
+//!   2. Finding multiplicity is preserved.
+//!   3. Forced GPU routes do not degrade to CPU.
 
 #[path = "support/mod.rs"]
 mod support;
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::collections::BTreeSet;
 use support::paths::detector_dir;
-
-type FindingKey = (String, usize);
 
 fn make_chunk(text: &str, path: &str) -> Chunk {
     Chunk {
@@ -32,28 +29,20 @@ fn make_chunk(text: &str, path: &str) -> Chunk {
     }
 }
 
-fn collect_findings(results: &[Vec<keyhog_core::RawMatch>]) -> BTreeSet<FindingKey> {
-    results
-        .iter()
-        .flat_map(|chunk| chunk.iter())
-        .map(|m| (m.credential.as_ref().to_string(), m.location.offset))
-        .collect()
+fn collect_findings(results: &[Vec<keyhog_core::RawMatch>]) -> Vec<keyhog_core::RawMatch> {
+    let mut findings = results.iter().flatten().cloned().collect::<Vec<_>>();
+    findings.sort();
+    findings
 }
 
 #[test]
 fn large_corpus_many_simultaneous_detector_fires() {
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors directory unavailable: {e}");
-            return;
-        }
-    };
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
 
-    assert!(
-        detectors.len() >= 894,
-        "stress test requires full corpus (got {} detectors)",
-        detectors.len()
+    assert_eq!(
+        detectors.len(),
+        keyhog_core::embedded_detector_count(),
+        "stress test must use the same complete corpus embedded by this build"
     );
 
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
@@ -62,8 +51,7 @@ fn large_corpus_many_simultaneous_detector_fires() {
     // Include multiple prefixes (AKIA, ghp_, sk_live_, ASIA) and patterns
     // that would activate entropy fallback and AC pre-filters.
     let fixture = make_chunk(
-        &format!(
-            "# AWS key\n\
+        "# AWS key\n\
              AWS_KEY = \"AKIAQYLPMN5HFIQR7AAA\"\n\
              \n\
              # GitHub PAT\n\
@@ -85,67 +73,47 @@ fn large_corpus_many_simultaneous_detector_fires() {
              \n\
              # Additional AWS key variations\n\
              alt_key1 = \"AKIAXYZ1234567890BCD\"\n\
-             alt_key2 = \"AKIAXYZ1234567890EFG\"\n\
-             "
-        ),
+             alt_key2 = \"AKIAXYZ1234567890EFG\"\n",
         "stress_corpus.py",
     );
 
-    let backends = [
-        ScanBackend::SimdCpu,
-        ScanBackend::CpuFallback,
-        ScanBackend::Gpu,
-        ScanBackend::MegaScan,
-    ];
+    let mut backends = vec![ScanBackend::CpuFallback];
+    #[cfg(feature = "gpu")]
+    backends.extend([ScanBackend::Gpu, ScanBackend::MegaScan]);
 
     scanner.clear_fragment_cache();
     let simd_results = scanner.scan_chunks_with_backend(&[fixture.clone()], ScanBackend::SimdCpu);
     let simd_findings = collect_findings(&simd_results);
-
-    eprintln!(
-        "stress test: SIMD found {} findings on full corpus",
-        simd_findings.len()
+    assert!(
+        simd_findings
+            .iter()
+            .any(|finding| finding.detector_id.as_ref() == "stripe-secret-key"),
+        "stress reference must prove positive detector truth, not vacuous parity"
     );
 
-    let mut failures = Vec::new();
-    for backend in &backends[1..] {
+    for backend in backends {
         scanner.clear_fragment_cache();
-        let results = scanner.scan_chunks_with_backend(&[fixture.clone()], *backend);
+        let degrade_before = scanner.runtime_status().gpu_degrade_count;
+        let results = scanner.scan_chunks_with_backend(&[fixture.clone()], backend);
+        let degrade_after = scanner.runtime_status().gpu_degrade_count;
         let findings = collect_findings(&results);
 
-        if findings != simd_findings {
-            let only_simd: Vec<_> = simd_findings.difference(&findings).take(5).collect();
-            let only_backend: Vec<_> = findings.difference(&simd_findings).take(5).collect();
-            failures.push(format!(
-                "[stress/{backend:?}] parity broken: simd={} got={} \
-                 only-in-simd={only_simd:?} only-in-backend={only_backend:?}",
-                simd_findings.len(),
-                findings.len()
-            ));
+        if matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan) {
+            assert_eq!(
+                degrade_after, degrade_before,
+                "{backend:?} stress proof must not silently substitute CPU"
+            );
         }
+        assert_eq!(
+            findings, simd_findings,
+            "{backend:?} must preserve every RawMatch field and multiplicity"
+        );
     }
-
-    eprintln!(
-        "large_corpus_stress: backends={} failures={}",
-        backends.len(),
-        failures.len()
-    );
-    assert!(
-        failures.is_empty(),
-        "large corpus stress parity failures:\n  - {}",
-        failures.join("\n  - ")
-    );
 }
 
 #[test]
 fn detector_count_preserved_after_compile() {
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors directory unavailable: {e}");
-            return;
-        }
-    };
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
 
     let original_count = detectors.len();
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
@@ -156,9 +124,5 @@ fn detector_count_preserved_after_compile() {
         "detector count mismatch: original={} compiled={}",
         original_count, compiled_count
     );
-    assert!(
-        compiled_count >= 894,
-        "expected at least 894 detectors, got {}",
-        compiled_count
-    );
+    assert_eq!(compiled_count, keyhog_core::embedded_detector_count());
 }
