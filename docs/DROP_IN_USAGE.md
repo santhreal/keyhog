@@ -434,6 +434,21 @@ For directory-tree / git / docker walking, drive `keyhog-sources`
 or shell out to the CLI - `CompiledScanner` is one chunk at a time
 by design.
 
+When configuration can contain user or file input, install it through the
+result-returning validation boundary:
+
+```rust
+use keyhog_scanner::{CompiledScanner, ScannerConfig};
+
+let mut config = ScannerConfig::default();
+config.entropy_bpe_max_bytes_per_token = 2.3;
+let scanner = CompiledScanner::compile(specs)?.try_with_config(config)?;
+```
+
+`try_with_config` rejects invalid probabilities, entropy/BPE bounds, decode
+depth, and resource limits. `with_config` is the compatibility builder for
+configuration that the embedding application has already validated.
+
 For finer-grained control of individual detector features:
 
 ```toml

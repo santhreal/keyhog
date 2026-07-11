@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add `CompiledScanner::try_with_config`, a fail-closed installation boundary
+  for programmatic scanner configuration. It validates the complete shared
+  `ScanConfig` before changing scanner state; both production CLI construction
+  paths now use it. `with_config` remains available for source compatibility
+  when callers already hold trusted, validated configuration.
 - Add detector-owned BPE token-efficiency policy through
   `bpe_max_bytes_per_token` in detector TOML. Generic and entropy fallback
   paths resolve the same owning detector before applying the gate; detector
