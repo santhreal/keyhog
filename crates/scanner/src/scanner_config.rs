@@ -352,9 +352,9 @@ impl ScannerConfig {
     /// behaviour-dependent on the call site).
     ///
     /// Idempotent - sanitising an already-sane config is a no-op.
-    /// Called inside `From<ScanConfig>` so any path that constructs
-    /// a ScannerConfig from a user-influenced source pays this
-    /// once at config-build time.
+    /// This is explicit normalization, not part of `From<ScanConfig>`: implicit
+    /// conversion preserves invalid input so [`crate::CompiledScanner::try_with_config`]
+    /// can reject it rather than silently replacing operator policy.
     pub fn sanitise(&mut self) {
         // Probabilities: clamp to [0.0, 1.0], NaN → canonical default. The
         // NaN fallbacks READ FROM `ScanConfig::default()` rather than repeating
@@ -463,7 +463,7 @@ impl From<ScanConfig> for ScannerConfig {
         let entropy_bpe_max_bytes_per_token_override =
             (scan.entropy_bpe_max_bytes_per_token.to_bits() != canonical_bpe_bound.to_bits())
                 .then_some(scan.entropy_bpe_max_bytes_per_token);
-        let mut out = Self {
+        Self {
             scan,
             entropy_bpe_max_bytes_per_token_override,
             multiline: crate::multiline::MultilineConfig::default(),
@@ -472,12 +472,7 @@ impl From<ScanConfig> for ScannerConfig {
             profile: false,
             perf_trace: false,
             calibration: None,
-        };
-        // Defensive clamp + NaN scrub on every user-influenced numeric field
-        // (applied to the wrapped `ScanConfig` via `DerefMut`). Idempotent.
-        // See `ScannerConfig::sanitise` for rationale.
-        out.sanitise();
-        out
+        }
     }
 }
 

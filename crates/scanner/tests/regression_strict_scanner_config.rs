@@ -21,3 +21,16 @@ fn strict_scanner_config_accepts_canonical_defaults() {
         .try_with_config(ScannerConfig::default())
         .expect("canonical scanner defaults must validate");
 }
+
+#[test]
+fn scan_config_conversion_preserves_invalid_policy_for_rejection() {
+    let mut core = keyhog_core::ScanConfig::default();
+    core.entropy_bpe_max_bytes_per_token = 0.0;
+    let converted = ScannerConfig::from(core);
+    assert_eq!(converted.entropy_bpe_max_bytes_per_token, 0.0);
+
+    let result = CompiledScanner::compile(Vec::new())
+        .expect("empty detector corpus is a valid library scanner")
+        .try_with_config(converted);
+    assert!(result.is_err(), "conversion must not launder invalid policy");
+}
