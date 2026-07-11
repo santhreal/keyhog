@@ -251,12 +251,15 @@ fn k8s_secret_stringdata_plaintext_password_surfaces() {
 
 #[test]
 fn k8s_secret_data_token_base64_surfaces() {
-    let token = "ya29.A0ARrdaM-SERVICE-ACCOUNT-TOKEN-bodybodybody1234567890abcdef";
+    let token = "xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx";
     let text = format!(
         "apiVersion: v1\nkind: Secret\nmetadata:\n  name: sa\ndata:\n  token: {}\n",
         b64(token)
     );
-    assert!(surfaces("sa-secret.yaml", &text, "SERVICE-ACCOUNT-TOKEN"), "a base64 token must decode-through and surface");
+    assert!(
+        surfaces("sa-secret.yaml", &text, token),
+        "a base64 token must decode-through and surface"
+    );
 }
 
 #[test]

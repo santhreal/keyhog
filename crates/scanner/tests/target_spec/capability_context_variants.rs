@@ -315,8 +315,7 @@ fn rotate_body(cred: &str) -> Option<String> {
 }
 
 fn is_non_secret_literal_shape(cred: &str) -> bool {
-    cred.contains("NEVER__MATCH__K8S_DISABLED")
-        || cred.eq_ignore_ascii_case("INTERNETOFTHINGS.ibmcloud.com")
+    cred.eq_ignore_ascii_case("INTERNETOFTHINGS.ibmcloud.com")
 }
 
 fn no_separator_fixed_prefix_len(cred: &str, start: usize, len: usize) -> usize {

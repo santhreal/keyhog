@@ -94,6 +94,9 @@ fn extract_k8s_secret_maps(
                     continue;
                 }
             };
+            if key == ".dockerconfigjson" {
+                push_docker_config_passwords(&decoded, pending, &line_anchor, &fallback_anchor);
+            }
             pending.push(PendingExtractedPair::owned_anchor_with_fallback(
                 key,
                 decoded,
@@ -105,6 +108,49 @@ fn extract_k8s_secret_maps(
 
     if let Some(serde_yaml::Value::Mapping(map)) = value.get("stringData") {
         push_scalar_mapping_pairs(map, pending);
+    }
+}
+
+/// Extract passwords from Kubernetes' standard `.dockerconfigjson` payload.
+/// The outer Secret `data:` value contains JSON, while each registry `auth`
+/// member is another base64 layer containing `username:password`. Emitting a
+/// password-owned synthetic pair lets the normal detector policy score the
+/// actual credential rather than the two encoded wrappers.
+fn push_docker_config_passwords(
+    decoded: &str,
+    pending: &mut Vec<PendingExtractedPair>,
+    line_anchor: &str,
+    fallback_anchor: &str,
+) {
+    let Ok(document) = serde_json::from_str::<serde_json::Value>(decoded) else {
+        return;
+    };
+    let Some(auths) = document.get("auths").and_then(serde_json::Value::as_object) else {
+        return;
+    };
+
+    for (registry, entry) in auths {
+        let Some(encoded_auth) = entry.get("auth").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        let Ok(decoded_auth) = keyhog_core::decode_standard_base64(encoded_auth) else {
+            continue;
+        };
+        let Ok(user_password) = std::str::from_utf8(&decoded_auth) else {
+            continue;
+        };
+        let Some((_, password)) = user_password.split_once(':') else {
+            continue;
+        };
+        if password.is_empty() {
+            continue;
+        }
+        pending.push(PendingExtractedPair::owned_anchor_with_fallback(
+            format!("{registry}.password"),
+            password.to_owned(),
+            line_anchor.to_owned(),
+            fallback_anchor.to_owned(),
+        ));
     }
 }
 

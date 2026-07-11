@@ -99,13 +99,6 @@ fn shipped_heap_analytics_key_severity_is_low() {
     assert_eq!(shipped("heap-analytics-key").severity, Severity::Low);
 }
 
-/// `kubernetes-secret.toml` declares `severity = "info"` — the lowest declared
-/// tier in the shipped corpus.
-#[test]
-fn shipped_kubernetes_secret_severity_is_info() {
-    assert_eq!(shipped("kubernetes-secret").severity, Severity::Info);
-}
-
 // ─── every severity string parses to its exact enum tier ─────────────────────
 
 #[test]
@@ -235,8 +228,7 @@ fn severity_ordering_is_info_to_critical() {
     assert!(Severity::Low < Severity::Medium);
     assert!(Severity::Medium < Severity::High);
     assert!(Severity::High < Severity::Critical);
-    // aws-access-key (critical) outranks kubernetes-secret (info).
-    assert!(shipped("aws-access-key").severity > shipped("kubernetes-secret").severity);
+    assert!(shipped("aws-access-key").severity > Severity::Info);
 }
 
 /// `downgrade_one` steps exactly one tier down, and `Info` is the floor (it

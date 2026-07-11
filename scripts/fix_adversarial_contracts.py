@@ -83,10 +83,6 @@ ADV_HAND: dict[str, list[tuple[str, str]]] = {
             "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn",
         ),
     ],
-    "kubernetes-secret": [
-        ("NEVER__MATCH__K8S_DISABLED__SENTINEL", "NEVER__MATCH__K8S_DISABLED__SENTINEL"),
-        ("NEVER__MATCH__K8S_DISABLED__SENTINEL", "NEVER__MATCH__K8S_DISABLED__SENTINEL"),
-    ],
     "google-classroom-api-credentials": [
         (
             "classroom api key ya29.Habcdefghijklmnopqrstuvwxyz1234567890abcd",
