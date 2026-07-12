@@ -32,6 +32,15 @@ compiled defaults  →  .keyhog.toml  →  CLI flags
 There is no separate system/user config tier today: the walk-up `.keyhog.toml`
 is the only file layer.
 
+Detector policy has a separate, explicit provenance. `keyhog explain
+<detector-id>` prints fields declared by the loaded detector TOML and labels
+unset optional fields as unresolved there: detector-field defaults or scan
+policy apply only at scan time. `keyhog config --effective` is the scan-level
+view and reports whether the BPE ceiling came from an explicit `scan-override`
+or the compiled `scan-fallback`. During scanning, an eligible detector's
+declared BPE ceiling wins over that fallback, while an explicit scan override
+wins over every eligible detector ceiling.
+
 ## Core settings
 
 Each row is the same knob across all three layers. Defaults are

@@ -18,6 +18,9 @@
 - Keep default `--git-diff HEAD` wired to worktree changes, honor CLI excludes for staged-only scans, and refresh git-mode e2e contracts for clean staged inputs and SARIF schema coherence.
 - Move args, hook, and scan-system inline tests into registered aggregate unit modules, including scan-system redaction tests updated for the raw `[u8; 32]` hash contract.
 - Refresh the dogfood detector-count oracle to 894 and keep the structured UUID named-detector default-recall e2e passing.
+- Distinguish detector-TOML declarations from scan-time fallback policy in
+  `keyhog explain`, using the same `scan-fallback` provenance label as effective
+  configuration output.
 
 ## 0.2.1
 

@@ -244,7 +244,7 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
         keyhog_core::DetectorKind::Regex => "regex",
         keyhog_core::DetectorKind::Phase2Generic => "phase2-generic",
     };
-    println!("  {}Detection policy:{}", style.bold, style.reset);
+    println!("  {}Declared detector policy:{}", style.bold, style.reset);
     println!("    kind: {kind}");
 
     let mut declared = 0usize;
@@ -321,15 +321,19 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
 
     if declared == 0 {
         println!(
-            "    {}detector-local overrides: none (scan defaults apply){}",
+            "    {}declared detector fields: none{}",
             style.dim, style.reset
         );
     } else {
         println!(
-            "    {}policy owner: [detector] in the loaded detector TOML{}",
+            "    {}declared policy owner: [detector] in the loaded detector TOML{}",
             style.dim, style.reset
         );
     }
+    println!(
+        "    {}unset optional fields: field defaults or scan policy resolve at scan time; use `config --effective` for scan-fallback/scan-override{}",
+        style.dim, style.reset
+    );
 }
 
 /// Service-keyed rotation guide. The map is curated for the most-leaked
