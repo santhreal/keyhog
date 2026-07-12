@@ -131,6 +131,9 @@
   their credential bodies, so temporary ASIA credentials reach SigV4 with the
   required session token; keep GovCloud access-key IDs uppercase-only and
   reject overlong runs instead of truncating them into findings.
+- Make Spotify's companion secret-specific and capture only its value, so a
+  client ID cannot attach itself as a credential pair; collapse redundant
+  uppercase/lowercase primaries under the shared caseless compiler.
 
 ## 0.2.1
 
