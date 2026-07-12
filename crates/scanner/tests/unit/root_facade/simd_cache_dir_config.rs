@@ -32,8 +32,8 @@ impl Drop for CacheEnvGuard {
 rusty_fork_test! {
     // Full-suite contention can delay the forked child well beyond the focused
     // 10 ms runtime. Keep the watchdog from terminating the entire harness
-    // while retaining a finite two-minute deadlock bound.
-    #![rusty_fork(timeout_ms = 120000)]
+    // while retaining a finite ten-minute deadlock bound for saturated CI.
+    #![rusty_fork(timeout_ms = 600000)]
 
     #[test]
     fn explicit_cache_dir_wins_and_legacy_env_is_ignored() {
