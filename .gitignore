@@ -1,10 +1,12 @@
 # Build artifacts
 target/
+/target-*/
 **/*.rs.bk
 Cargo.lock.bak
 # Transient model rollback copy written by ml/retrain_loop.sh --write. The
 # shipped model is weights.bin; the .bak is local-only and never committed.
 crates/scanner/src/weights.bin.bak
+crates/scanner/src/model_card.json.bak
 
 # IDE / editor noise
 .vscode/
@@ -33,6 +35,7 @@ benchmarks/corpora/
 # `make -C benchmarks bench`; the committed, human-facing rollups live in
 # benchmarks/reports/ and the injected ../README.md tables.
 benchmarks/results/
+/benchmarks/results-*/
 
 # Retired bench trees. The generators moved to benchmarks/generators/, the
 # committed baselines to benchmarks/baselines/, and the scorer/differential
@@ -53,6 +56,24 @@ detectors/.keyhog-cache.json
 
 # Accidental root-level scratch belongs outside this standalone prod repo.
 /coordination/
+/scratchpad/
+
+# Root-level review output, throwaway compiler probes, and process state.
+# Durable plans belong under planning/; source patches belong in Git commits.
+/*.patch
+/diff*.txt
+/full_diff*.txt
+/relevant_diff.txt
+/.git_diff_staged.txt
+/.git_status.txt
+/out_dec.json
+/parse_diff.py
+/test_abort_handle.rs
+/test_as_ref
+/test_memmem
+/test_tokio_id.rs
+/wp.pid
+/-
 
 # Bazel scaffolding — currently a PoC stub (every per-crate BUILD.bazel
 # is comment-only, MODULE.bazel pinned to 0.5.7 while we're shipping
