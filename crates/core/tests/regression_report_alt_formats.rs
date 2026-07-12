@@ -13,8 +13,8 @@
 //! specific string, byte count, integer, or parsed-JSON value.
 
 use keyhog_core::{
-    hex_encode, write_report, CredentialHash, MatchLocation, ReportFormat, Severity,
-    VerificationResult, VerifiedFinding,
+    write_report, CredentialHash, MatchLocation, ReportFormat, Severity, VerificationResult,
+    VerifiedFinding,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;

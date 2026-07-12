@@ -19,7 +19,7 @@
 
 use keyhog_verifier::ssrf::is_private_url;
 use keyhog_verifier::testing::{redact_interactsh_error, TestApi, VerifierTestApi};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
 // ===========================================================================

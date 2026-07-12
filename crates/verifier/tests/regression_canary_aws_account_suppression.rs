@@ -17,8 +17,6 @@
 //!   * `AKIAAYLPMN5HAAAAAAAA` -> account `052310077262` (first-party canary)
 //!   * `ASIAY34FZKBOKMUTVV7A` -> account `609629065308` (real, non-canary)
 
-use std::collections::HashMap;
-
 use keyhog_core::VerificationResult;
 use keyhog_core::{finding_metadata, key_id_canary_status, parse_canary_account_ids};
 use keyhog_verifier::testing::{TestApi as VerifierApi, VerifierTestApi};

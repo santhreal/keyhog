@@ -24,7 +24,6 @@ use keyhog_core::{
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-const SCHEMA_VERSION: &str = "15.2.4";
 const SCAN_START: &str = "2026-07-02T09:00:00";
 const SCAN_END: &str = "2026-07-02T09:00:30";
 
