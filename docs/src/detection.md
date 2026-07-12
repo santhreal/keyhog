@@ -10,8 +10,9 @@ files → [chunker] → [prefilter] → [detector match] → [post-process] → 
 Most chunks that fail the cheap prefilter stop there, which keeps full regex
 evaluation focused on plausible inputs. This is not an unconditional hard drop:
 a rejected chunk that looks encoded can enter a bounded decode-only recovery
-pass, so an encoded secret is not lost merely because its plaintext anchor is
-absent from the original bytes.
+pass (recursively decoding up to a `max_decode_depth`, defaulting to 10), so an
+encoded secret is not lost merely because its plaintext anchor is absent from
+the original bytes.
 
 ## Detection mechanisms
 
@@ -33,22 +34,27 @@ mechanisms, and their roles are deliberately different:
 | Live verification | Optionally asks the owning service whether a surviving credential is active | Adds a verdict after detection |
 
 Regex, generic extraction, entropy, and decode-through therefore find different
-candidate classes. BPE is not a replacement name for entropy: it is an
-independent post-candidate signal. Betterleaks calls the approach
+candidate classes. Named regexes and generic assignment extraction create
+candidates; companions, validators, BPE, shape/context policy, and confidence
+then confirm, reject, or score them. Verification runs only after a candidate
+survives detection and reporting policy.
+
+BPE is not a replacement name for entropy: it is an independent post-candidate
+signal. BetterLeaks calls the approach
 [Token Efficiency](https://github.com/betterleaks/betterleaks#notable-features);
 KeyHog uses the same broad BPE idea while keeping its own detector schema,
 thresholds, pipeline, and behavioral evidence.
 
-Terminology matters here: Betterleaks' current source calls the predicate
+Terminology matters here: BetterLeaks' current source calls the predicate
 [`failsTokenEfficiency`](https://github.com/betterleaks/betterleaks/blob/0b4063d7990e0ab6366a5b4eb58789584af5f945/internal/exprruntime/bindings_filter.go#L111-L139),
 not “BPD.” It uses `cl100k_base`, a byte-length/token ratio, word-list checks,
 and short-value threshold branches. KeyHog names its related mechanism **BPE
-token efficiency**, measures UTF-8 bytes per token, and resolves the
-ceiling per detector. If “BPD” is being used informally to mean a bits/byte or
-bytes/token density, do not treat it as a third implemented score: Shannon
-entropy and BPE token efficiency are the two separate signals documented here.
+token efficiency**, measures UTF-8 bytes per token, and resolves the ceiling per
+detector. If “BPD” is being used informally to mean a bits/byte or bytes/token
+density, do not treat it as a third implemented score: Shannon entropy and BPE
+token efficiency are the two separate signals documented here.
 
-### Detector-owned tuning: what each setting changes
+## Detector-owned tuning: what each setting changes
 
 Detection policy belongs in the detector TOML whenever the choice is specific
 to a credential type. Scan-wide CLI/TOML values are operational overrides for
@@ -69,6 +75,21 @@ detector definition. `keyhog explain <detector-id>` shows the resolved policy.
 | `min_confidence` | Raises this detector's reporting floor | Lowers this detector's reporting floor; an operator override can still replace it |
 | `weak_anchor`, `structural_password_slot`, `credential_shape` | Enables the named detector-family/shape policy; these are classifications, not numeric quality sliders | Leaves that policy inactive |
 
+### Precedence and Resolution Rules
+
+*   **BPE Ceiling Precedence**:
+    1.  Compiled Fallback: `2.2` bytes-per-token (default `keyhog_core::DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN`).
+    2.  Detector TOML Override: `bpe_max_bytes_per_token`.
+    3.  Global Override: `[scan].entropy_bpe_max_bytes_per_token` in `.keyhog.toml` or `--entropy-bpe-max-bytes-per-token` CLI override.
+*   **Confidence Floor Precedence**:
+    1.  Compiled Default: `0.40`.
+    2.  Global Scan Floor: `min_confidence` in `.keyhog.toml` or `--min-confidence` CLI override.
+    3.  Detector TOML Floor: `min_confidence` (self-declared by the detector author).
+    4.  Operator Override: `[detector.<id>].min_confidence` in `.keyhog.toml` (highest authority).
+*   **Entropy Threshold Precedence**:
+    1.  Compiled Defaults: `4.5` (high), `3.0` (low), `5.8` (very high), `4.0` (mixed alnum).
+    2.  Detector TOML Overrides: `entropy_high`, `entropy_low`, `entropy_very_high`, `mixed_alnum_floor`.
+
 Token efficiency can carry more of the precision burden for a detector whose
 assignment key or regex already creates the candidate. That is the practical
 per-detector alternative to making Shannon entropy the decisive signal: use a
@@ -88,7 +109,7 @@ operator override for that one ID. For production detector tuning, put the
 stable value in the owning detector TOML and prove it with that detector's
 positive, negative, evasion, backend-parity, and corpus contracts.
 
-### Settings, hardware, and result parity
+## Settings, hardware, and result parity
 
 Hardware changes execution, not detection policy. CPU, SIMD/Hyperscan, and GPU
 routes consume the same resolved detector/config digest and must return the
@@ -103,6 +124,16 @@ stale; it does not relax a detector to make a backend faster.
 | `--fast`, `--deep`, or `--precision` | Changes the resolved feature and confidence policy, so results may differ by design | Each preset has a distinct config identity and calibration coverage |
 | Explicit `--backend cpu|simd|gpu` | Intended to be parity-identical; it is a diagnostic/benchmark override, not proof | Bypasses autoroute and does not create reusable fastest-correct evidence |
 | Input size, chunk count, source family, decode density, or full-source-size availability | The input itself can change findings; backend choice must not | Selects a different exact workload key, including whether each source family's size bucket came from full-source or payload evidence |
+
+### Configuration Presets
+
+*   `--fast` (or `ScannerConfig::fast()`): Disables high-FP generic entropy checks, ML, and deep decoding (`max_decode_depth = 0`). Maximizes throughput.
+*   `--deep` (or `ScannerConfig::thorough()`): Admits unanchored generic high-entropy strings, enabling deep decoding (`max_decode_depth = 10`), ML scoring, and entropy sweeps. Maximizes recall.
+*   `--precision` (or `ScannerConfig::high_precision()`): Sets `min_confidence` to `0.85` (`HIGH_PRECISION_MIN_CONFIDENCE`), keeps ML enabled, limits decoding depth (`max_decode_depth = 1`), and disables high-FP generic entropy checks. Maximizes precision.
+
+### Strict Backend Parity
+
+KeyHog supports three search backends: pure Rust CPU RegexSet, SIMD/Hyperscan (`simd-regex`), and GPU/Vyre region-presence. The `keyhog calibrate-autoroute` command determines the fastest backend based on hardware, config digest, and workload sizes. **Hardware/backend selection is purely a throughput optimization and must preserve identical findings.** Parity is guaranteed; a missing or invalid calibration table will raise a status error (fail-closed) rather than silently degrading scanning accuracy.
 
 When comparing settings, record the effective config, detector digest, input
 identity, backend, host/accelerator identity, and complete findings—not only

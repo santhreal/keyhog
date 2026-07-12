@@ -78,11 +78,11 @@ can have multiple detectors (`stripe-secret-key`,
 
 `detector.simdsieve_prefixes` - optional literal prefixes for the first-pass
 AVX-512/AVX2/NEON accelerator. This is detector-owned Tier-B policy: each value
-must be non-empty ASCII and must be an actual literal prefix of one of the same
-detector's regex patterns. The loaded corpus may declare at most 16 total (the
-backend ABI limit); duplicate ownership, unbacked prefixes, and over-capacity
-corpora fail scanner construction instead of silently disabling acceleration.
-Most detectors leave this empty.
+must be non-empty ASCII, unique in the loaded corpus, and must be an actual
+literal prefix of one of the same detector's regex patterns. The loaded corpus
+may declare at most 16 total (the backend ABI limit); duplicate ownership,
+unbacked prefixes, and over-capacity corpora fail scanner construction instead
+of silently disabling acceleration. Most detectors leave this empty.
 
 `detector.severity` - one of `critical | high | medium | low | client-safe | info`.
 The CLI exits non-zero when any finding clears the active gate; under
@@ -153,6 +153,8 @@ The available per-detector tuning fields are:
 *   **`entropy_very_high`** (float, optional): Per-detector very-high entropy threshold for keyword-free or isolated tokens. Falls back to `VERY_HIGH_ENTROPY_THRESHOLD` (5.8) if unset.
 *   **`mixed_alnum_floor`** (float, optional): Per-detector mixed alpha-numeric token entropy floor. Falls back to `MIXED_ALNUM_TOKEN_THRESHOLD` (4.0) if unset.
 *   **`entropy_floor`** (array of tables, optional): Length-bucketed low-entropy suppression floor mapping maximum lengths to minimum entropy scores. Falls back to `EntropyFloorTable::DEFAULT_FLOOR` if unset.
+    *   `max_len` (integer, optional): Inclusive maximum length for this bucket.
+    *   `floor` (float): Shannon entropy floor.
 
 ### BPE token efficiency
 *   **`bpe_enabled`** (bool, optional): Detector-local token-efficiency switch.
