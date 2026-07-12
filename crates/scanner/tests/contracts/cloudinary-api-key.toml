@@ -12,6 +12,11 @@ credential = "cloudinary://946054033816433664211118670346455:NvXnEzfHQBPE9sQVcnk
 reason = "Hand-tuned positive matching detector regex (R2-F adversarial batch)."
 
 [[positive]]
+text = "CLOUDINARY_URL=cloudinary://123456:Kp4Qx7Rm2Sn5Tb8Vw3Yz@mycloud"
+credential = "cloudinary://123456:Kp4Qx7Rm2Sn5Tb8Vw3Yz@mycloud"
+reason = "A Cloudinary environment URL is a self-contained credential, not a companion fragment."
+
+[[positive]]
 text = """cloudinary://946054033816433664211118670346455:NvXnEzfHQBPE9sQVcnk@rgV7LEbhI1QMVD7lYiBrqFtq3avz_fSEXZpggxdEGkHDnUT3TMXyqaAAPFYT="cloudinary://946054033816433664211118670346455:NvXnEzfHQBPE9sQVcnk@rgV7LEbhI1QMVD7lYiBrqFtq3avz_fSEXZpggxdEGkHDnUT3TMXyqaAAPFYT""""
 credential = "cloudinary://946054033816433664211118670346455:NvXnEzfHQBPE9sQVcnk@rgV7LEbhI1QMVD7lYiBrqFtq3avz_fSEXZpggxdEGkHDnUT3TMXyqaAAPFYT"
 reason = "Quoted-value variant of the canonical positive."
@@ -19,6 +24,10 @@ reason = "Quoted-value variant of the canonical positive."
 [[negative]]
 text = "cloudinary://123:@cloud"
 reason = "Missing secret after colon; regex requires at least one alnum/underscore/hyphen."
+
+[[negative]]
+text = "cloudinary://123456:Kp4Qx7Rm2Sn5Tb8Vw3Yz@mycloud.invalid"
+reason = "An invalid continuation after the cloud name must not produce a truncated URL finding."
 
 [[evasion]]
 text = "cloudinary://123456:Kp4Qx7Rm2Sn5Tb8Vw3Yz@mycloud"

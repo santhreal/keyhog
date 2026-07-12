@@ -164,6 +164,21 @@
 - Keep Checkmarx client secrets detectable on their own while making them the
   exact companion to UUID client IDs; use role-specific anchors and reject
   overlong UUID/token continuations without losing secret recall.
+- Model Cloudinary URLs as the self-contained credentials they are, remove the
+  fabricated companion contract, capture the exact URL without its delimiter,
+  and reject invalid cloud-name continuations instead of truncating them.
+- Treat M-Pesa consumer keys as companion context for consumer-secret findings,
+  preserve standalone API-key detection, capture the exact paired key, and
+  reject invalid underscore/hyphen continuations instead of truncating them.
+- Make Tumblr's companion consumer-secret-specific while preserving standalone
+  secret findings, and reject alphanumeric, underscore, and hyphen extensions
+  whole instead of reporting a valid-looking 50-character prefix.
+- Make Marvel's primary and companion explicitly private-key/public-key roles,
+  so a private key cannot self-attach and public identifiers do not become
+  standalone secret findings; reject overlong hexadecimal key runs.
+- Replace Amazon Music's broad context companion with the exact 64-hex client
+  secret, preserve standalone secret findings, normalize caseless field anchors,
+  and reject client-ID/secret continuations instead of truncating them.
 
 ## 0.2.1
 

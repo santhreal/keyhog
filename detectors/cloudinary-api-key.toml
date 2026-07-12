@@ -11,13 +11,9 @@ severity = "critical"
 keywords = ["cloudinary://", "cloudinary"]
 
 [[detector.patterns]]
-regex = 'cloudinary://[0-9]+:[A-Za-z0-9_-]+@[A-Za-z0-9_-]+'
+regex = '(cloudinary://[0-9]+:[A-Za-z0-9_-]+@[A-Za-z0-9_-]+)(?:[^A-Za-z0-9_.-]|$)'
 description = "Cloudinary full URL with API key and secret"
-
-[[detector.companions]]
-name = "cloudinary_secret"
-regex = 'CLOUDINARY_URL=cloudinary://[0-9]+:([A-Za-z0-9_-]+)@[A-Za-z0-9_-]+'
-within_lines = 5
+group = 1
 
 [[detector.tests]]
 test_positive = "cloudinary://946054033816433664211118670346455:NvXnEzfHQBPE9sQVcnk@rgV7LEbhI1QMVD7lYiBrqFtq3avz_fSEXZpggxdEGkHDnUT3TMXyqaAAPFYT"
