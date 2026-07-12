@@ -61,6 +61,10 @@ pub mod regression_checksum_registry_crc;
 pub mod regression_cloud_credential_recall;
 #[path = "regression_cloud_infra_db_token_recall.rs"]
 pub mod regression_cloud_infra_db_token_recall;
+#[path = "regression_compile_companion_capture_group.rs"]
+pub mod regression_compile_companion_capture_group;
+#[path = "regression_confidence_nan_sanitize.rs"]
+pub mod regression_confidence_nan_sanitize;
 #[path = "regression_coalesced_large_chunk_entropy_parity.rs"]
 pub mod regression_coalesced_large_chunk_entropy_parity;
 #[path = "regression_coalesced_reassembly_parity.rs"]
@@ -163,6 +167,8 @@ pub mod regression_generic_bridge_padded_log_field;
 pub mod regression_github_app_pem_boundary;
 #[path = "regression_github_pat_boundary.rs"]
 pub mod regression_github_pat_boundary;
+#[path = "regression_gpu_region_presence_batch_parity.rs"]
+pub mod regression_gpu_region_presence_batch_parity;
 #[path = "regression_gitlab_token_completeness_recall.rs"]
 pub mod regression_gitlab_token_completeness_recall;
 #[path = "regression_hex_decoder_through.rs"]
@@ -191,6 +197,8 @@ pub mod regression_jwt_header_field_order_recall;
 pub mod regression_jwt_signing_secret_recall;
 #[path = "regression_keyword_bridge_floor.rs"]
 pub mod regression_keyword_bridge_floor;
+#[path = "regression_keyword_bridge.rs"]
+pub mod regression_keyword_bridge;
 #[path = "regression_keyword_predicate_union.rs"]
 pub mod regression_keyword_predicate_union;
 #[path = "regression_keyword_separator_canonicalization.rs"]
@@ -233,6 +241,8 @@ pub mod regression_nested_base64;
 pub mod regression_observability_ci_token_recall;
 #[path = "regression_observability_token_recall.rs"]
 pub mod regression_observability_token_recall;
+#[path = "regression_octal_decode_gate.rs"]
+pub mod regression_octal_decode_gate;
 #[path = "regression_octal_escape_short_escapes.rs"]
 pub mod regression_octal_escape_short_escapes;
 #[path = "regression_overbroad_detectors_precision.rs"]
@@ -249,6 +259,8 @@ pub mod regression_per_pattern_weak_anchor_recall;
 pub mod regression_prefilter_alphabet_union;
 #[path = "regression_prefilter_cache.rs"]
 pub mod regression_prefilter_cache;
+#[path = "regression_prefilter_trigger_union.rs"]
+pub mod regression_prefilter_trigger_union;
 #[path = "regression_prefix_storm_backend_parity.rs"]
 pub mod regression_prefix_storm_backend_parity;
 #[path = "regression_private_key_block_resolution.rs"]
@@ -331,6 +343,8 @@ pub mod regression_symbolic_password_weak_wrappers;
 pub mod regression_telegram_bot_token_recall;
 #[path = "regression_trigger_bitmap_proptest.rs"]
 pub mod regression_trigger_bitmap_proptest;
+#[path = "regression_tuning_bool_override_resolve.rs"]
+pub mod regression_tuning_bool_override_resolve;
 #[path = "regression_unicode_evasion_norm.rs"]
 pub mod regression_unicode_evasion_norm;
 #[path = "regression_unicode_hardening_strip.rs"]

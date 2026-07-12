@@ -116,7 +116,7 @@ behavior-affecting phase.
 - `keyhog calibrate-autoroute` full re-prime on the bench fleet; regenerate
   `make -C benchmarks report`.
 - MoE consts single-owner: codegen the WGSL MOE_SHADER header from
-  ml_scorer/ml_weights.rs consts (CONSOLIDATION_TODO.md); prerequisite hygiene before
+  the constants in `ml_scorer/ml_weights.rs`; prerequisite hygiene before
   any GPU-MoE tuning.
 
 Exit criteria:

@@ -26,7 +26,7 @@ LOUD, not a silent skip (Law 10): the primary Linux build host was
 Linux hosts are likewise down. A green macOS+Windows matrix here does NOT clear
 Linux-on-fleet; it is "not run on those hosts this round."
 
-## macOS (macos-host, Darwin arm64): REACHED, built, dogfooded
+## macOS (macos-host, Darwin arm64): verified build and dogfood
 
 Build: `cargo build --profile release-fast -p keyhog --no-default-features
 --features portable` → **rc 0** in 1m10s. That historical run reported three
@@ -53,7 +53,7 @@ Installer proof (`tests/install/linux/install_from_local_build.sh` and
 scan exit 1, empty scan exit 0, SARIF well-formed, correct/tampered `.sha256`
 gate, missing-file error path, and the `expect`-driven interactive wizard.
 
-## Windows (windows-host, Windows 10.0.26200): REACHED, built, dogfooded
+## Windows (windows-host, Windows 10.0.26200): verified build and dogfood
 
 The Santh NFS share is **not** mounted on Windows (`Test-Path Z:\... = False`),
 so the only build path is an offline source ship. The previous source package

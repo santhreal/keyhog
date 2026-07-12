@@ -9683,7 +9683,9 @@
       "tumblr",
       "TUMBLR",
       "consumer_key",
-      "oauth_consumer_key"
+      "oauth_consumer_key",
+      "consumer_secret",
+      "oauth_consumer_secret"
     ]
   },
   {
@@ -10592,7 +10594,7 @@
     "id": "worldpay-api-credentials",
     "name": "Worldpay API Credentials",
     "service": "worldpay",
-    "severity": "critical",
+    "severity": "low",
     "keywords": [
       "WORLDPAY",
       "worldpay",

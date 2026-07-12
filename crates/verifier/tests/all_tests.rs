@@ -43,6 +43,8 @@ pub mod new_verifier_interpolate;
 pub mod regression_allowlist_cache_invalidation;
 #[path = "regression_aws_v4_sign.rs"]
 pub mod regression_aws_v4_sign;
+#[path = "regression_aws_field_sanitize.rs"]
+pub mod regression_aws_field_sanitize;
 #[path = "regression_bogon_ipv6_and_tenant_suffix_gaps.rs"]
 pub mod regression_bogon_ipv6_and_tenant_suffix_gaps;
 #[path = "regression_canary_aws_account_suppression.rs"]
@@ -69,6 +71,8 @@ pub mod regression_ssrf_screen_matrix;
 pub mod regression_ssrf_short_form_ip;
 #[path = "regression_status_verdict_map.rs"]
 pub mod regression_status_verdict_map;
+#[path = "regression_success_spec_body_json_matcher.rs"]
+pub mod regression_success_spec_body_json_matcher;
 #[path = "regression_verifier_allowlist_expiry.rs"]
 pub mod regression_verifier_allowlist_expiry;
 #[path = "regression_verifier_fix_wave.rs"]
@@ -77,6 +81,8 @@ pub mod regression_verifier_fix_wave;
 pub mod regression_verifier_interpolate_templates;
 #[path = "regression_verifier_network_safety.rs"]
 pub mod regression_verifier_network_safety;
+#[path = "regression_verify_metadata_extraction.rs"]
+pub mod regression_verify_metadata_extraction;
 #[path = "regression_verify_error_fix_guidance.rs"]
 pub mod regression_verify_error_fix_guidance;
 #[path = "regression_verify_error_taxonomy.rs"]

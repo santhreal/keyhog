@@ -261,7 +261,7 @@ Derive + attribute macros: `define_op`, `vyre_ast_registry`,
 `derive_algebraic_laws`, `vyre_pass`, `skip_builder`. Used internally
 by primitive authors.
 
-## v0.5.40 status - everything wired so far
+## v0.5.40 integration status
 
 | Wire                                 | Status      | Where                                                  |
 | ------------------------------------ | ----------- | ------------------------------------------------------ |
@@ -272,13 +272,13 @@ by primitive authors.
 | `rule` CPU evaluator + `FieldInSet`  | ✅ shipped  | upstream `vyre_libs::rule::cpu_eval` + `ast.rs`        |
 | `.keyhogignore.toml` rule engine     | ✅ shipped  | `crates/core/src/rule_filter.rs` + `orchestrator.rs`   |
 | Standalone Vyre megakernel probe     | measured    | `crates/scanner/tests/vyre_megakernel_primitive_probe.rs` |
-| `cooperative_dfa` alt literal engine | ⏳ pending  | needs keyhog GPU dispatch infrastructure (entry below) |
-| `fuse_programs` decode+scan          | ⏳ pending  | needs source/scanner restructure (entry below)         |
-| `nn::moe` replacing gpu.rs MoE       | ⏳ pending  | parity work against existing weights (entry below)     |
-| `GpuMappedBuffer` zero-copy I/O      | ⏳ pending  | Linux-only + lifetime work (entry below)               |
+| `cooperative_dfa` alt literal engine | not integrated | requires a distinct KeyHog GPU dispatch contract (entry below) |
+| `fuse_programs` decode+scan          | not integrated | requires a unified source/scanner execution contract (entry below) |
+| `nn::moe` replacing gpu.rs MoE       | not integrated | requires parity proof against the shipped weights (entry below) |
+| `GpuMappedBuffer` zero-copy I/O      | not integrated | requires an explicit Linux lifetime/ownership contract (entry below) |
 | Vyre crate upgrade                   | current     | crates.io latest verified as `0.6.4` on 2026-06-17    |
 
-## Innovation lane
+## Performance direction
 
 The performance path that can dominate competitors is not more regexes; it is
 fewer host/device round trips and less CPU post-processing after a GPU prefilter
@@ -298,7 +298,7 @@ This is the categorical advantage over Betterleaks, Titus, Nosey Parker, and
 Kingfisher: one scanner surface with GPU-prefilter, decode-through recall,
 structured-source expansion, verification, and deterministic backend parity.
 
-## Pending-wire entry points (concrete)
+## Available integration entry points
 
 Each remaining wire's API surface in vyre + the keyhog hook where
 the integration lands. The unblocker for each is real engineering,
