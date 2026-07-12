@@ -127,6 +127,10 @@
 - Preserve Twilio API-key pairs for mixed-case secret field names by folding
   only the detector-owned companion anchor, without widening the credential
   body's declared alphabet.
+- Capture mixed-case AWS and GovCloud secret/session fields without widening
+  their credential bodies, so temporary ASIA credentials reach SigV4 with the
+  required session token; keep GovCloud access-key IDs uppercase-only and
+  reject overlong runs instead of truncating them into findings.
 
 ## 0.2.1
 

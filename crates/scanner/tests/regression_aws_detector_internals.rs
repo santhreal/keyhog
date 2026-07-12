@@ -171,6 +171,26 @@ fn asia_with_secret_and_session_token_captures_both_companions_distinctly() {
 }
 
 #[test]
+fn asia_mixed_case_fields_capture_complete_temporary_credentials() {
+    let text = format!(
+        "Aws_Access_Key_Id = {ASIA_ACCT_987654321098}\n\
+         Aws_Secret_Access_Key = {AWS_SECRET}\nAws_Session_Token = {AWS_SESSION_TOKEN}\n"
+    );
+    let m = only(&text, "aws-access-key");
+    assert_eq!(m.credential.as_ref(), ASIA_ACCT_987654321098);
+    assert_eq!(
+        m.companions.get("secret_key").map(String::as_str),
+        Some(AWS_SECRET),
+        "mixed-case secret field preserves the exact secret"
+    );
+    assert_eq!(
+        m.companions.get("session_token").map(String::as_str),
+        Some(AWS_SESSION_TOKEN),
+        "mixed-case session field preserves the token required by ASIA verification"
+    );
+}
+
+#[test]
 fn akia_with_only_session_token_captures_session_token_not_secret() {
     // No `AWS_SECRET…` anchor present: the `secret_key` companion must be
     // ABSENT (not empty-string, not the token) while `session_token` is exact.

@@ -17,6 +17,14 @@ reason = "AWS GovCloud region identifier."
 text = "AWS_GOVCLOUD_ACCESS_KEY=NOTAKIA1234567890XYZA"
 reason = "Body not starting with AKIA/ASIA."
 
+[[negative]]
+text = "AWS_GOVCLOUD_ACCESS_KEY=akiakpqxrmsntbvwyzbn"
+reason = "GovCloud access-key IDs use the documented uppercase AWS alphabet."
+
+[[negative]]
+text = "AWS_GOVCLOUD_ACCESS_KEY=AKIAKPQXRMSNTBVWYZBNX"
+reason = "An overlong contiguous key body must not emit a valid-looking 20-character prefix."
+
 [[evasion]]
 text = "GOVCLOUD_KEY_ID=AKIAKPQXRMSNTBVWYZBN"
 credential = "AKIAKPQXRMSNTBVWYZBN"

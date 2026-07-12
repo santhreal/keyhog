@@ -42,7 +42,9 @@ within_lines = 5
 name = "secret_key"
 
 [[detector.companions]]
-regex = "(?:AWS[_-]?SESSION[_-]?TOKEN|aws[_-]?session[_-]?token|X-Amz-Security-Token)[=:\\s\"'']+([A-Za-z0-9/+=]{80,})"
+# Config/header field casing is not part of the session-token value. Fold only
+# the anchor so the base64 credential body retains its detector-owned alphabet.
+regex = "(?i:AWS[_-]?SESSION[_-]?TOKEN|X-Amz-Security-Token)[=:\\s\"'']+([A-Za-z0-9/+=]{80,})"
 within_lines = 5
 name = "session_token"
 

@@ -10,10 +10,10 @@ severity = "critical"
 # fire would contradict correct behaviour. Use realistic non-placeholder values,
 # mirroring the aws-access-key contract.
 [positive_with_companion]
-text = "AWS_GOVCLOUD_ACCESS_KEY=AKIAVKCT3RW7QZ5XPN2D\nAWS_SECRET_ACCESS_KEY=wQ8r/N3pZ2bK7yXmD0vF5tA6sG9hJ4cLeR2nU1oP\nAWS_SESSION_TOKEN=FwoGZXIvYXdzEMrK2pR5tV9wB3cX6yD0aS4eH1gL7mN2oP5qT8uW0xZ3bC6dF9hJ2kM5nQ8rT1vY4wZ7bD0fH3jL6"
+text = "AWS_GOVCLOUD_ACCESS_KEY=AKIAVKCT3RW7QZ5XPN2D\nAws_Secret_Access_Key=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\nAws_Session_Token=FwoGZXIvYXdzEMrK2pR5tV9wB3cX6yD0aS4eH1gL7mN2oP5qT8uW0xZ3bC6dF9hJ2kM5nQ8rT1vY4wZ7bD0fH3jL6"
 expected_findings = ["aws-govcloud-access-key"]
 expected_companions = { secret_key = "wQ8r/N3pZ2bK7yXmD0vF5tA6sG9hJ4cLeR2nU1oP", session_token = "FwoGZXIvYXdzEMrK2pR5tV9wB3cX6yD0aS4eH1gL7mN2oP5qT8uW0xZ3bC6dF9hJ2kM5nQ8rT1vY4wZ7bD0fH3jL6" }
-reason = "GovCloud access key paired with secret and session token."
+reason = "GovCloud access key paired with mixed-case secret and session-token fields."
 
 [positive_primary_only]
 text = "AWS_GOVCLOUD_ACCESS_KEY=AKIAVKCT3RW7QZ5XPN2D"

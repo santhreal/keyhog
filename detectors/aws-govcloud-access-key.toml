@@ -11,7 +11,7 @@ severity = "critical"
 keywords = ["AKIA", "ASIA", "govcloud", "us-gov-"]
 
 [[detector.patterns]]
-regex = "(?:AWS[_-]?GOVCLOUD|GOVCLOUD)[_\\s]*(?:ACCESS[_-]?KEY|KEY[_-]?ID)[=:\\s\"'']+((?:AKIA|ASIA)[0-9A-Z]{16})"
+regex = "(?:AWS[_-]?GOVCLOUD|GOVCLOUD)[_\\s]*(?:ACCESS[_-]?KEY|KEY[_-]?ID)[=:\\s\"'']+((?-i:(?:AKIA|ASIA)[0-9A-Z]{16}))\\b"
 description = "AWS GovCloud access key with context anchor"
 group = 1
 
@@ -21,12 +21,12 @@ description = "AWS GovCloud region identifier"
 group = 1
 
 [[detector.companions]]
-regex = "(?:AWS[_-]?SECRET[_-]?ACCESS[_-]?KEY|SECRET[_-]?KEY|AWS[_-]?SECRET|aws[_-]?secret)[=:\\s\"'']+([0-9a-zA-Z/+=]{40})"
+regex = "(?i:AWS[_-]?SECRET[_-]?ACCESS[_-]?KEY|SECRET[_-]?KEY|AWS[_-]?SECRET)[=:\\s\"'']+([0-9a-zA-Z/+=]{40})"
 within_lines = 5
 name = "secret_key"
 
 [[detector.companions]]
-regex = "(?:AWS[_-]?SESSION[_-]?TOKEN|aws[_-]?session[_-]?token|X-Amz-Security-Token)[=:\\s\"'']+([A-Za-z0-9/+=\\-]{80,})"
+regex = "(?i:AWS[_-]?SESSION[_-]?TOKEN|X-Amz-Security-Token)[=:\\s\"'']+([A-Za-z0-9/+=\\-]{80,})"
 within_lines = 5
 name = "session_token"
 
@@ -47,4 +47,4 @@ status = 200
 
 [[detector.tests]]
 test_positive = "AWS_GOVCLOUD_ACCESS_KEY=AKIAKPQXRMSNTBVWYZBN"
-test_negative = "AWS_GOVCLOUD_ACCESS_KEY=NOTAKIA1234567890XYZA"
+test_negative = "AWS_GOVCLOUD_ACCESS_KEY=akiakpqxrmsntbvwyzbn"
