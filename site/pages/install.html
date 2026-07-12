@@ -6,8 +6,7 @@ description = "Install keyhog via install.sh, install.ps1, prebuilt release bina
   keyhog is a single Rust binary. Install it with the one-line installer,
   download a prebuilt release, pull the Docker image, or build from source.
   Works on Linux, macOS (Intel + Apple Silicon), and Windows with zero
-  configuration. <strong>Crates.io publishing lands with the next tagged
-  release; <code>cargo install keyhog</code> doesn't work yet.</strong>
+  configuration. The CLI and library crates are published on crates.io.
 </p>
 
 <h2>One-liner (recommended)</h2>
@@ -73,14 +72,14 @@ the fastest correct choice); portable single-backend builds have nothing to
 route and skip it. See
 <a href="architecture.html">Architecture →</a>.</p>
 
-<h3>Minimal source build (no SIMD, no ML)</h3>
+<h3>Portable source build (no system libraries)</h3>
 
 <pre><code><span class="prompt">$</span> git clone https://github.com/santhsecurity/keyhog &amp;&amp; cd keyhog
 <span class="prompt">$</span> cargo build --release -p keyhog --no-default-features --features portable</code></pre>
 
-<p>Drops Hyperscan, ML scoring, and decode-through. ~3&nbsp;MB smaller binary,
-~10× slower per pattern, no entropy/ML gating. Use this only for embedded or
-locked-down build environments where pulling Hyperscan is a non-starter.</p>
+<p>Keeps ML, entropy, decode-through, multiline detection, and every source
+integration while dropping Hyperscan and GPU system-library paths. Use it for
+portable builds where external acceleration libraries are unavailable.</p>
 
 <h2>Prebuilt binaries</h2>
 
@@ -95,16 +94,16 @@ page</a>):</p>
   <li><code>keyhog-windows-x86_64.exe</code></li>
 </ul>
 
-<pre><code><span class="prompt">$</span> curl -L https://github.com/santhsecurity/keyhog/releases/latest/download/keyhog-linux-x86_64 \
-    -o keyhog &amp;&amp; chmod +x keyhog
-<span class="prompt">$</span> sudo install keyhog /usr/local/bin/</code></pre>
+<p>Use the installer above to fetch these assets: it verifies both the detached
+minisign signature and SHA-256 checksum before replacing a binary. Set
+<code>KEYHOG_VERSION=v0.5.41</code> to pin an exact release.</p>
 
 <h2>Docker</h2>
 
-<pre><code><span class="prompt">$</span> docker run --rm -v "$PWD:/src" santhsecurity/keyhog scan /src</code></pre>
+<pre><code><span class="prompt">$</span> docker run --rm -v "$PWD:/src" ghcr.io/santhsecurity/keyhog scan /src</code></pre>
 
 <p>The image is built from the <code>Dockerfile</code> at the repo root. It
-bundles the full SIMD + ML feature set, no GPU. ~110&nbsp;MB compressed.</p>
+bundles the full default feature set and probes available GPU runtimes.</p>
 
 <h2>From source</h2>
 

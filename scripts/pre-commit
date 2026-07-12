@@ -16,4 +16,4 @@ if ! command -v keyhog >/dev/null 2>&1; then
     exit 127
 fi
 
-exec keyhog scan --fast --git-staged --backend simd
+exec keyhog scan --fast --git-staged --backend cpu

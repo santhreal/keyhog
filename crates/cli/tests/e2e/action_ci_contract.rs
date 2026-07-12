@@ -1565,8 +1565,14 @@ fn composite_action_version_output_is_validated_before_github_output() {
         "version resolver must reject chars that can inject GITHUB_OUTPUT or shell syntax"
     );
     assert!(
-        manifest.contains("Invalid version. Use only letters"),
+        manifest.contains("Invalid version. Use only letters")
+            && manifest.contains("Explicit version must be MAJOR.MINOR.PATCH"),
         "version resolver must not reflect rejected input into a workflow command"
+    );
+    assert!(
+        manifest.contains("v=\"${ACTION_VERSION#v}\"")
+            && manifest.contains("releases/download/v${version}/${asset}"),
+        "an explicit version must normalize one optional v prefix before building the release URL"
     );
     assert!(
         !manifest.contains("Invalid version '$v'"),
@@ -1734,6 +1740,66 @@ exit 22
     assert!(
         combined.contains("refusing source-build fallback for a required release"),
         "failure must explain that source-build fallback is forbidden for release refs; output={combined}"
+    );
+}
+
+#[test]
+fn composite_action_wires_resolved_asset_into_download_step() {
+    let manifest = fs::read_to_string(action_manifest()).expect("read action manifest");
+    assert!(
+        manifest.contains("ACTION_ASSET_NAME: ${{ steps.asset.outputs.name }}"),
+        "the download step must receive the platform asset selected by the preceding asset step"
+    );
+}
+
+#[test]
+fn composite_action_calibrates_default_autoroute_without_forcing_a_backend() {
+    let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
+    let step = manifest
+        .split("- name: Calibrate autoroute")
+        .nth(1)
+        .and_then(|tail| tail.split("- name:").next())
+        .expect("Calibrate autoroute step exists");
+    assert!(
+        step.contains("if: inputs.backend == ''")
+            && step.contains("run: keyhog calibrate-autoroute"),
+        "fresh default Action scans must create proof-backed routing evidence"
+    );
+    assert!(
+        !step.contains("--backend") && !step.contains("--no-autoroute-gpu"),
+        "Action calibration must measure eligible peers, not choose a route"
+    );
+}
+
+#[test]
+fn release_floating_tags_advance_only_after_signed_newest_stable_release() {
+    let workflow = fs::read_to_string(release_workflow()).expect("read release.yml");
+    let docker = workflow.split("\n  docker:").nth(1).expect("docker job");
+    let major = workflow
+        .split("\n  major-tag:")
+        .nth(1)
+        .expect("major-tag job");
+    for (name, job) in [("docker", docker), ("major-tag", major)] {
+        assert!(
+            job.contains("needs: sign"),
+            "{name} must wait for signatures"
+        );
+        assert!(
+            job.contains("Decide whether this is the newest stable release")
+                && job.contains("grep -E '^v[0-9]+\\.[0-9]+\\.[0-9]+$'")
+                && job.contains("steps.floating.outputs.advance == 'true'"),
+            "{name} must reject prereleases and older manual reruns before moving a floating tag"
+        );
+    }
+    assert!(
+        docker.contains("ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.version }}")
+            && !docker
+                .split("- name: Build and push")
+                .nth(1)
+                .and_then(|tail| tail.split("- name:").next())
+                .expect("build-and-push step")
+                .contains(":latest"),
+        "the immutable version image must publish before latest is conditionally advanced"
     );
 }
 
@@ -2174,12 +2240,13 @@ fn release_workflow_validates_manual_tag_before_shell_outputs() {
         "manual release tag must enter shell through a named env var"
     );
     assert!(
-        workflow.contains("v[0-9]*)"),
-        "release tag resolver must require a v-prefixed numeric release tag"
+        workflow.contains("^v[0-9]+\\.[0-9]+\\.[0-9]+"),
+        "release tag resolver must require an exact v-prefixed semantic version"
     );
     assert!(
-        workflow.contains("*[!A-Za-z0-9._-]*)"),
-        "release tag resolver must reject shell metacharacters, spaces, and newlines"
+        workflow.contains("[0-9A-Za-z][0-9A-Za-z.-]*")
+            && workflow.contains("Release tag must be exact semver"),
+        "release tag resolver must constrain the entire tag, including its optional prerelease"
     );
     assert!(
         workflow.contains("printf 'tag=%s\\n' \"$tag\" >> \"$GITHUB_OUTPUT\""),

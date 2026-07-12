@@ -1340,7 +1340,13 @@ prime_autoroute_cache() {
     web_calibration=0
     python_bin=""
     if printf '%s' "$scan_help" | grep -q -- '--url'; then
-        python_bin="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+        python_bin="$(command -v python3 2>/dev/null || true)"
+        if [ -z "$python_bin" ]; then
+            candidate_python="$(command -v python 2>/dev/null || true)"
+            if [ -n "$candidate_python" ] && "$candidate_python" -c 'import http.server' >/dev/null 2>&1; then
+                python_bin="$candidate_python"
+            fi
+        fi
         if [ -z "$python_bin" ]; then
             warn "  Web URL calibration unavailable: python3/python was not found on PATH."
             warn "  Filesystem/stdin calibration will continue; install Python and rerun install.sh --calibrate before relying on Web URL autorouting."

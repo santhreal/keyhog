@@ -79,6 +79,10 @@ struct ServerState {
     detector_count: usize,
     request_read_timeout: Duration,
     backend_override: Option<ScanBackend>,
+    // Fragment reassembly is scanner-owned mutable state. Until it becomes an
+    // explicit per-scan context, serialize clear/scan/clear so independent
+    // clients can never combine secret fragments across requests.
+    fragment_scan_lock: Arc<std::sync::Mutex<()>>,
     // Caps concurrent in-flight client connections. Without this,
     // every accepted socket spawns an unbounded tokio task that in
     // turn unboundedly spawn_blocks a scanner thread. A burst of
@@ -113,6 +117,7 @@ impl ServerState {
             detector_count,
             request_read_timeout: options.request_read_timeout,
             backend_override,
+            fragment_scan_lock: Arc::new(std::sync::Mutex::new(())),
             connection_limit: Arc::new(Semaphore::new(max_conns)),
         }
     }
@@ -422,6 +427,7 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
     let scanner = state.scanner.clone();
     let router = state.router.clone();
     let backend_override = state.backend_override;
+    let fragment_scan_lock = state.fragment_scan_lock.clone();
     let chunk_path = path.clone();
     let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
     // Hand the actual scan to a blocking thread - calibrated backend scanning
@@ -432,6 +438,10 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
         let matches = keyhog_scanner::telemetry::with_scan_telemetry(
             &telemetry,
             || -> Result<Vec<RawMatch>> {
+                let _fragment_guard = fragment_scan_lock
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("daemon fragment scan lock is poisoned"))?;
+                scanner.clear_fragment_cache();
                 let chunk = Chunk {
                     data: text.into(),
                     metadata: ChunkMetadata {
@@ -441,7 +451,9 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
                     },
                 };
                 let backend = router.choose(backend_override, std::slice::from_ref(&chunk))?;
-                Ok(scanner.scan_with_backend(&chunk, backend))
+                let matches = scanner.scan_with_backend(&chunk, backend);
+                scanner.clear_fragment_cache();
+                Ok(matches)
             },
         )?;
         let (engine_example_suppressions, dogfood_events) = drain_daemon_scan_telemetry(&telemetry);
@@ -514,6 +526,7 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
     let scanner = state.scanner.clone();
     let router = state.router.clone();
     let backend_override = state.backend_override;
+    let fragment_scan_lock = state.fragment_scan_lock.clone();
     let resolved_owned = resolved.clone();
     let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
     type ScanOutput = (
@@ -537,8 +550,13 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
         let matches = keyhog_scanner::telemetry::with_scan_telemetry(
             &telemetry,
             || -> Result<Vec<RawMatch>> {
+                let _fragment_guard = fragment_scan_lock
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("daemon fragment scan lock is poisoned"))?;
+                scanner.clear_fragment_cache();
                 let backend = router.choose(backend_override, &chunks)?;
                 let mut per_chunk = scanner.scan_chunks_with_backend(&chunks, backend);
+                scanner.clear_fragment_cache();
                 crate::inline_suppression::attach_inline_suppression_context(
                     &chunks,
                     &mut per_chunk,

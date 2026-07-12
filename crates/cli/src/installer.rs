@@ -357,11 +357,17 @@ fn process_is_running(pid: u32) -> bool {
     extern "system" {
         fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> *mut c_void;
         fn CloseHandle(hObject: *mut c_void) -> i32;
+        fn GetLastError() -> u32;
     }
 
     let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
     if handle.is_null() {
-        return false;
+        // ERROR_INVALID_PARAMETER is the normal "PID does not exist" result.
+        // Access denied instead proves that a process occupies the PID but is
+        // owned at a privilege boundary; deleting its rollback artifact would
+        // race a live higher-privilege update.
+        const ERROR_INVALID_PARAMETER: u32 = 87;
+        return unsafe { GetLastError() } != ERROR_INVALID_PARAMETER;
     }
     unsafe {
         CloseHandle(handle);
@@ -401,7 +407,7 @@ pub(crate) fn backup_path(exe: &Path) -> PathBuf {
 /// binary that is signed and a valid executable but won't actually run on THIS
 /// host (wrong glibc, missing shared lib). Inherits stdio so the user sees the
 /// doctor report as the verification.
-fn verify_via_doctor_checked(exe: &Path) -> Result<()> {
+pub(crate) fn verify_via_doctor_checked(exe: &Path) -> Result<()> {
     let status = std::process::Command::new(exe)
         .arg("doctor")
         .status()
@@ -419,11 +425,6 @@ fn verify_via_doctor_checked(exe: &Path) -> Result<()> {
             exe.display()
         ))
     }
-}
-
-/// Boolean compatibility wrapper for tests and older internal call sites.
-pub(crate) fn verify_via_doctor(exe: &Path) -> bool {
-    verify_via_doctor_checked(exe).is_ok()
 }
 
 fn extract_keyhog_version(stdout: &str) -> Option<String> {
@@ -521,7 +522,8 @@ pub(crate) fn verify_candidate_release(
 ///    fails, remove the broken binary rather than leave it in place.
 ///
 /// `verify` is injected so tests can drive the rollback path deterministically
-/// without execing a real binary; production callers pass [`verify_via_doctor`].
+/// without execing a real binary; production callers pass
+/// [`verify_via_doctor_checked`].
 pub(crate) fn install_with_rollback<F>(exe: &Path, bytes: &[u8], verify: F) -> Result<()>
 where
     F: FnOnce(&Path) -> bool,

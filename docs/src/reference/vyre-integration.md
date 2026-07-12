@@ -18,7 +18,7 @@ pipeline.
 | GPU literal-set region presence | `keyhog-scanner::engine::gpu_region_dispatch` | Produces one candidate-detector bitmap per input region. WGPU and optional CUDA implementations share this boundary. |
 | GPU literal artifacts and cache | `keyhog-scanner::engine::{gpu_artifacts,gpu_cache}` | Compiles and caches detector-derived literal programs under detector, binary, backend, and runtime identity. |
 | GPU regex-DFA admission | `keyhog-scanner::engine::phase2_gpu_dfa` | Narrows eligible prefixless phase-two work; host extraction remains authoritative. |
-| Perfect-hash interning | `keyhog-scanner::static_intern` | Freezes detector metadata for allocation-light scan state. |
+| Metadata interning | `keyhog-scanner::static_intern` | Freezes detector metadata for allocation-light scan state. |
 | Declarative rule evaluation | `keyhog-core::allowlist` | Evaluates `.keyhogignore.toml` rules through the shared rule representation. |
 
 The portable build retains the VYRE CPU libraries used by these shared data
@@ -46,7 +46,7 @@ variables:
 ```console
 keyhog backend --json
 keyhog backend --self-test --json
-keyhog calibrate-autoroute --json
+keyhog calibrate-autoroute
 keyhog scan PATH --backend gpu --profile
 ```
 
@@ -60,8 +60,7 @@ KeyHog does not silently substitute a CPU backend.
 | Build feature | VYRE surface |
 |---|---|
 | `portable` | CPU-side VYRE libraries only; no WGPU or CUDA driver |
-| `gpu` | WGPU GPU backend and region-presence execution |
-| `cuda` | CUDA backend in addition to the shared GPU contract |
+| `gpu` | Runtime-probed WGPU and CUDA drivers behind the shared GPU contract |
 
 The retired per-rule megakernel catalog and environment-selected GPU side routes
 are not production KeyHog backends. Backend names and runtime policy are the

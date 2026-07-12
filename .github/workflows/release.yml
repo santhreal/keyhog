@@ -39,9 +39,8 @@ jobs:
             asset: keyhog-linux-x86_64
             # libhyperscan-dev is what the `simd` feature links against
             # on Linux. Ship a default-feature build matching the
-            # crates.io release. This is the fallback when the host
-            # has no NVIDIA GPU / no libcuda.so: WGPU still drives any
-            # compatible adapter, SIMD covers the CPU path.
+            # crates.io release. The one Linux artifact probes CUDA and WGPU at
+            # runtime; SIMD remains the CPU candidate on every host.
             install: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
             features: ''
             artifact_features: 'ml,entropy,decode,multiline,simdsieve,simd'
@@ -91,19 +90,10 @@ jobs:
           else
             tag="${GITHUB_REF##refs/tags/}"
           fi
-          case "$tag" in
-            v[0-9]*) ;;
-            *)
-              echo "::error title=KeyHog::Release tag must start with v followed by a digit."
-              exit 2
-              ;;
-          esac
-          case "$tag" in
-            *[!A-Za-z0-9._-]*)
-              echo "::error title=KeyHog::Release tag contains an invalid character."
-              exit 2
-              ;;
-          esac
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
+            exit 2
+          fi
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
           echo "Building release assets for $tag"
 
@@ -111,7 +101,9 @@ jobs:
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
+        with:
+          toolchain: '1.89'
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Install build deps
@@ -121,7 +113,7 @@ jobs:
 
       - name: Build keyhog
         shell: bash
-        run: cargo build --release -p keyhog ${{ matrix.features }}
+        run: cargo build --locked --release -p keyhog ${{ matrix.features }}
 
       - name: Build GPU literal artifacts
         shell: bash
@@ -129,7 +121,7 @@ jobs:
           set -euo pipefail
           bundle_dir="${{ matrix.asset }}.gpu-literals"
           rm -rf "$bundle_dir" "$bundle_dir.tar.gz"
-          cargo run --release \
+          cargo run --locked --release \
             -p keyhog-scanner \
             --bin keyhog-scanner-artifacts \
             --no-default-features \
@@ -139,6 +131,8 @@ jobs:
           tar -czf "$bundle_dir.tar.gz" "$bundle_dir"
 
       - name: Stage binary
+        env:
+          KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
@@ -149,6 +143,12 @@ jobs:
             cp target/release/keyhog.exe "${{ matrix.asset }}"
           else
             cp target/release/keyhog "${{ matrix.asset }}"
+          fi
+          reported="$("./${{ matrix.asset }}" --version)"
+          expected="KeyHog ${KEYHOG_RELEASE_TAG}"
+          if [[ "$reported" != *"$expected"* ]]; then
+            echo "ERROR: staged binary version does not match release tag: expected '$expected', got '$reported'" >&2
+            exit 1
           fi
           # Per-asset SHA256 checksums. install.sh verifies the binary checksum
           # today; the shipped GPU literal sidecar is checksummed and signed now
@@ -224,22 +224,15 @@ jobs:
           else
             tag="${GITHUB_REF##refs/tags/}"
           fi
-          case "$tag" in
-            v[0-9]*) ;;
-            *)
-              echo "::error title=KeyHog::Release tag must start with v followed by a digit."
-              exit 2
-              ;;
-          esac
-          case "$tag" in
-            *[!A-Za-z0-9._-]*)
-              echo "::error title=KeyHog::Release tag contains an invalid character."
-              exit 2
-              ;;
-          esac
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
+            exit 2
+          fi
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
 
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
+        with:
+          toolchain: '1.89'
       - name: Install rsign2
         shell: bash
         run: cargo install rsign2 --version 0.6.6 --locked
@@ -260,16 +253,47 @@ jobs:
           tag="$KEYHOG_RELEASE_TAG"
           workdir="$(mktemp -d)"
           cd "$workdir"
-          # Pull the just-uploaded binaries (and their .sha256 siblings).
-          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern 'keyhog-*' --dir .
+          bases=(
+            keyhog-linux-x86_64
+            keyhog-macos-aarch64
+            keyhog-macos-x86_64
+            keyhog-windows-x86_64.exe
+          )
+          expected=()
+          payloads=()
+          for base in "${bases[@]}"; do
+            payloads+=("$base" "$base.gpu-literals.tar.gz")
+            expected+=(
+              "$base" "$base.sha256"
+              "$base.gpu-literals.tar.gz" "$base.gpu-literals.tar.gz.sha256"
+            )
+          done
+          # A rerun must not preserve or sign retired filenames. Delete only
+          # KeyHog-owned release assets outside the exact current manifest.
+          mapfile -t published < <(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$tag" \
+            --jq '.assets[].name')
+          for asset in "${published[@]}"; do
+            keep=false
+            for wanted in "${expected[@]}"; do
+              if [[ "$asset" == "$wanted" || "$asset" == "$wanted.minisig" ]]; then
+                keep=true
+                break
+              fi
+            done
+            if [[ "$asset" == keyhog-* && "$keep" == false ]]; then
+              gh release delete-asset "$tag" "$asset" \
+                --repo "$GITHUB_REPOSITORY" --yes
+            fi
+          done
+          for asset in "${expected[@]}"; do
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+              --pattern "$asset" --dir .
+          done
           # The stored secret is base64 of the minisign .key file.
           printf '%s' "$KEYHOG_MINISIGN_SECRET_KEY" | base64 -d > sec.key
           trap 'shred -u sec.key 2>/dev/null || rm -f sec.key' EXIT
-          shopt -s nullglob
-          for f in keyhog-*; do
-            case "$f" in
-              *.sha256|*.minisig) continue ;;
-            esac
+          for f in "${payloads[@]}"; do
             rsign sign -W -s sec.key -x "$f.minisig" "$f" </dev/null
             gh release upload "$tag" "$f.minisig" --repo "$GITHUB_REPOSITORY" --clobber
             echo "signed + uploaded $f.minisig"
@@ -285,7 +309,7 @@ jobs:
     # Gate on the build: the container bundles the release binaries, so it must
     # not publish before those artifacts exist (a race that could ship an empty
     # or stale image on a parallel-job run).
-    needs: build
+    needs: sign
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -303,24 +327,35 @@ jobs:
           else
             tag="${GITHUB_REF##refs/tags/}"
           fi
-          case "$tag" in
-            v[0-9]*) ;;
-            *)
-              echo "::error title=KeyHog::Release tag must start with v followed by a digit."
-              exit 2
-              ;;
-          esac
-          case "$tag" in
-            *[!A-Za-z0-9._-]*)
-              echo "::error title=KeyHog::Release tag contains an invalid character."
-              exit 2
-              ;;
-          esac
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
+            exit 2
+          fi
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
           printf 'version=%s\n' "${tag#v}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
+      - name: Decide whether this is the newest stable release
+        id: floating
+        shell: bash
+        env:
+          KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="$KEYHOG_RELEASE_TAG"
+          advance=false
+          if [[ "$tag" != *-* ]]; then
+            git fetch --force --tags origin
+            newest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V | tail -n 1)"
+            if [[ "$tag" == "$newest" ]]; then
+              advance=true
+            fi
+          fi
+          echo "advance=$advance" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -334,10 +369,16 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Advance latest image for the newest stable release
+        if: steps.floating.outputs.advance == 'true'
+        shell: bash
+        run: |
+          docker buildx imagetools create \
+            --tag "ghcr.io/${{ github.repository }}:latest" \
+            "ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.version }}"
 
   # Move the floating major tag (e.g. `v0`) to this release so adopters can
   # pin `uses: santhsecurity/keyhog/.github/actions/keyhog@v0` and always get
@@ -349,7 +390,7 @@ jobs:
     # Gate on the build: the floating major tag (e.g. `v1`) must not move to a
     # release ref until that release has actually built, so consumers pinning
     # `@v1` never resolve to a half-published or failed build.
-    needs: build
+    needs: sign
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -366,25 +407,36 @@ jobs:
           else
             tag="${GITHUB_REF##refs/tags/}"
           fi
-          case "$tag" in
-            v[0-9]*) ;;
-            *)
-              echo "::error title=KeyHog::Release tag must start with v followed by a digit."
-              exit 2
-              ;;
-          esac
-          case "$tag" in
-            *[!A-Za-z0-9._-]*)
-              echo "::error title=KeyHog::Release tag contains an invalid character."
-              exit 2
-              ;;
-          esac
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
+            exit 2
+          fi
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ steps.tag.outputs.tag }}
           fetch-depth: 0
+      - name: Decide whether this is the newest stable release
+        id: floating
+        shell: bash
+        env:
+          KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="$KEYHOG_RELEASE_TAG"
+          advance=false
+          if [[ "$tag" != *-* ]]; then
+            git fetch --force --tags origin
+            newest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V | tail -n 1)"
+            if [[ "$tag" == "$newest" ]]; then
+              advance=true
+            fi
+          fi
+          echo "advance=$advance" >> "$GITHUB_OUTPUT"
       - name: Force-move v<major> to this release
+        if: steps.floating.outputs.advance == 'true'
         shell: bash
         env:
           KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}

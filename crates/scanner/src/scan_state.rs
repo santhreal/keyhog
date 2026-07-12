@@ -223,7 +223,7 @@ pub(crate) struct ScanState {
     /// via `Arc<str>: Borrow<str>`, no allocation on hits.
     ///
     /// Hit ONLY by dynamic strings now: the scanner-wide
-    /// `StaticInterner` (vyre CHD perfect hash) handles every
+    /// `StaticInterner` handles every
     /// `(detector_id, detector_name, service, source_type)` lookup
     /// without per-scan allocation.
     pub(crate) metadata_interner: HashSet<Arc<str>>,
@@ -259,7 +259,7 @@ impl ScanState {
     /// Intern a metadata string (detector_id, name, service, source_type, ...).
     ///
     /// Lookup order:
-    ///   1. Scanner-wide `StaticInterner` (vyre CHD perfect hash) for
+    ///   1. Scanner-wide `StaticInterner` for
     ///      detector metadata that's frozen at scanner construction -
     ///      O(1), no allocation, no lock contention.
     ///   2. Per-scan `metadata_interner` `HashSet` for dynamic strings

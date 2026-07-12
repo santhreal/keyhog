@@ -162,10 +162,8 @@ fn current_scanner_dependency_features() -> Vec<String> {
     if keyhog_scanner::hw_probe::simd_backend_compiled() {
         features.push("simd");
     }
-    // The scanner's `cuda` Cargo feature is a no-op alias for `gpu` and has no
-    // `cfg(feature = "cuda")` code. Its behavior identity is therefore already
-    // represented by `gpu`; the CLI's own feature list still records an
-    // explicitly enabled CLI `cuda` alias as part of the binary identity.
+    // CUDA and WGPU are runtime drivers inside the single `gpu` feature, so one
+    // feature identity covers both without artifact- or driver-specific aliases.
     normalize_feature_list(features)
 }
 

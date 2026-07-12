@@ -1717,7 +1717,10 @@ function Finalize-Install {
                 return $false
             }
         } catch {
-            Warn "Could not run 'keyhog doctor' for post-install verification: $_"
+            Err "Could not run 'keyhog doctor' for post-install verification: $_"
+            Err "Rolling back rather than reporting success with unknown scanner health."
+            Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the binary whose health could not be verified; no working keyhog was overwritten."
+            return $false
         }
         if (-not (Invoke-AutorouteCalibration -BinPath $BinPath)) {
             Err "Autoroute calibration failed; refusing to leave an install whose default auto route is not usable."

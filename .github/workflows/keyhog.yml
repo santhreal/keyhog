@@ -40,9 +40,8 @@ jobs:
         id: keyhog
         uses: ./.github/actions/keyhog
         with:
-          # Pinned to the latest release so keyhog's own CI catches leaks
-          # the binary in users' CI would catch today. Bump on every release.
-          version: '0.5.37'
+          # No version override: a branch/SHA action ref builds and exercises
+          # this exact checkout. Release artifacts have separate signed smokes.
           path: .
           severity: high
           format: sarif

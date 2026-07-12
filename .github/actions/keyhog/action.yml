@@ -75,7 +75,11 @@ runs:
         set -euo pipefail
         release_required=false
         if [[ -n "${ACTION_VERSION:-}" ]]; then
-          v="$ACTION_VERSION"
+          v="${ACTION_VERSION#v}"
+          if ! [[ "$v" =~ ^[0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9._-]+)?$ ]]; then
+            echo "::error title=KeyHog::Invalid version. Explicit version must be MAJOR.MINOR.PATCH with an optional prerelease suffix."
+            exit 2
+          fi
           release_required=true
         else
           # GITHUB_ACTION_REF is e.g. "v0.5.12", "main", a SHA, or a branch.
@@ -140,6 +144,7 @@ runs:
       id: download
       shell: bash
       env:
+        ACTION_ASSET_NAME: ${{ steps.asset.outputs.name }}
         ACTION_RESOLVED_VERSION: ${{ steps.version.outputs.version }}
         ACTION_RELEASE_REQUIRED: ${{ steps.version.outputs.release_required }}
       run: |
@@ -231,6 +236,11 @@ runs:
     - name: Add keyhog to PATH
       shell: bash
       run: echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+    - name: Calibrate autoroute
+      if: inputs.backend == ''
+      shell: bash
+      run: keyhog calibrate-autoroute
 
     - name: Compute output filename
       id: outfile

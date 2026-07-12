@@ -307,6 +307,10 @@ impl ProbeSweep<'_> {
         let mut cmd = Command::new(self.exe);
         cmd.arg("scan")
             .arg("--autoroute-calibrate")
+            // Autoroute calibration measures every eligible backend. GPU is a
+            // peer candidate, not an opt-in route that normal scans can never
+            // discover.
+            .arg("--autoroute-gpu")
             .arg("--no-config");
         if let Some(cache) = self.autoroute_cache {
             cmd.arg("--autoroute-cache").arg(cache);

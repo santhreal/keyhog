@@ -284,6 +284,10 @@ impl DefaultScanRuntime {
         Ok(self.scanner.scan_with_backend(chunk, backend))
     }
 
+    pub(crate) fn clear_fragment_cache(&self) {
+        self.scanner.clear_fragment_cache();
+    }
+
     pub(crate) fn into_parts(self) -> (Arc<CompiledScanner>, CachedBackendRouter) {
         (self.scanner, self.router)
     }

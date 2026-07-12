@@ -79,7 +79,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 | Wall-clock for a 5k-file repo | typically under 10 s end-to-end |
 | Runtime dependencies | `libhyperscan5` (auto-installed via apt on Ubuntu runners); none on macOS/Windows |
 | Toolchains required | none for release-tag prebuilts; Rust only for branch/SHA source builds |
-| GPU | not required on hosted runners (auto-disabled; SIMD + Hyperscan path is the default everywhere) |
+| GPU | optional; install-time calibration measures every backend available on the runner and persists the fastest correct route |
 
 No Python, no JVM, no Docker daemon. Single static binary plus the
 auto-installed Hyperscan shared library on Linux.
@@ -91,7 +91,7 @@ auto-installed Hyperscan shared library on Linux.
 | Linux | x86_64 | yes (full features) | yes |
 | macOS | aarch64 | yes (no Hyperscan) | yes (`portable` feature) |
 | macOS | x86_64 | yes (no Hyperscan) | yes (`portable` feature) |
-| Windows | * | no | manual, see DROP_IN_USAGE.md |
+| Windows | x86_64 | yes (portable feature set) | yes (`portable` feature) |
 
 Release tags and explicit `version:` inputs require a matching prebuilt binary
 and checksum; missing or unverifiable release assets fail closed instead of

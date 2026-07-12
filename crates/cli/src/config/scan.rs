@@ -510,6 +510,11 @@ pub(super) fn apply_top_level_scan_fields(
     if let Some(ref detectors_str) = config.detectors {
         if !args.detectors_cli_explicit && args.detectors == PathBuf::from("detectors") {
             args.detectors = PathBuf::from(detectors_str);
+            // This bit records an explicitly selected corpus, regardless of
+            // whether its spelling happens to equal the default sentinel.
+            // The daemon owns its startup corpus and cannot honor a per-scan
+            // config corpus without proving that identity in the protocol.
+            args.detectors_cli_explicit = true;
         }
     }
 

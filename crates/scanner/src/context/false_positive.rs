@@ -198,24 +198,11 @@ fn comment_marker_has_boundary(bytes: &[u8], start: usize) -> bool {
 /// Check whether a line-level match sits in known false-positive context.
 ///
 /// The path parameter is consumed case-insensitively via
-/// `ends_with_ignore_ascii_case`, so callers no longer need to pre-lower
-/// it. The `_with_path` form kept as a stable alias for downstream
-/// consumers that already passed a lowered path through.
+/// `ends_with_ignore_ascii_case`, so callers do not need to pre-lower it.
 pub(crate) fn is_false_positive_context(
     lines: &[&str],
     line_idx: usize,
     file_path: Option<&str>,
-) -> bool {
-    is_false_positive_context_with_path(lines, line_idx, file_path)
-}
-
-/// Same as [`is_false_positive_context`]. Retained for source compatibility
-/// with callers that historically pre-lowered the path; the body no longer
-/// requires a lowered string thanks to byte-wise case-insensitive checks.
-fn is_false_positive_context_with_path(
-    lines: &[&str],
-    line_idx: usize,
-    path_lower: Option<&str>,
 ) -> bool {
     if line_idx >= lines.len() {
         return false;
@@ -227,7 +214,7 @@ fn is_false_positive_context_with_path(
     // was ~24k transient `String`s landing in the per-match hot path.
     let line_bytes = lines[line_idx].as_bytes();
 
-    is_go_sum_checksum_bytes(line_bytes, path_lower)
+    is_go_sum_checksum_bytes(line_bytes, file_path)
         || is_integrity_hash_bytes(line_bytes)
         || is_configmap_binary_data_context(lines, line_idx, line_bytes)
         || is_git_lfs_pointer_context_with_lines(lines, line_idx, line_bytes)

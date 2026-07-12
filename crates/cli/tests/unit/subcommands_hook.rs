@@ -17,7 +17,7 @@ fn hook_template_embeds_canonical_scan_args() {
     );
     assert!(API.canonical_scan_args().contains("--git-staged"));
     assert!(API.canonical_scan_args().contains("--fast"));
-    assert!(API.canonical_scan_args().contains("--backend simd"));
+    assert!(API.canonical_scan_args().contains("--backend cpu"));
 }
 
 fn repo_root() -> PathBuf {
@@ -118,7 +118,7 @@ exit 2
     );
     assert_eq!(
         std::fs::read_to_string(&args_file).expect("read args"),
-        "scan\n--fast\n--git-staged\n--backend\nsimd\n"
+        "scan\n--fast\n--git-staged\n--backend\ncpu\n"
     );
 }
 

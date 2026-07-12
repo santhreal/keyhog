@@ -431,7 +431,10 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
         "gpu_runtime_policy",
         &resolved.gpu_runtime_policy.to_string(),
     );
-    h.field_bool("autoroute_gpu", resolved.autoroute_gpu);
+    // Candidate admission changes calibration work, not scan semantics. A
+    // normal auto scan must consume the fastest-correct decision produced by
+    // calibration, including a GPU winner, without requiring the calibration
+    // control flag again.
     h.field_option_usize("regex_dfa_limit", resolved.regex_dfa_limit);
     h.field_option_usize("gpu_batch_input_limit", resolved.gpu_batch_input_limit);
     h.field_option_usize("source_policy.max_file_size", resolved.max_file_size);

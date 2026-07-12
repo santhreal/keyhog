@@ -222,7 +222,8 @@ minisign itself is not installed - in which case it prints the one-line install
 command for your OS (`sudo apt-get install minisign`, `brew install minisign`,
 `winget install -e --id jedisct1.minisign`). It then SHA256-verifies the binary
 against the release-side checksum file. For an offline/air-gapped install
-without signature verification, pass `--insecure` (the SHA256 is still checked).
+without release verification, pass `--insecure`; the installer labels that
+trust downgrade visibly.
 
 Pin a version with `KEYHOG_VERSION=v0.5.41`. Change the install dir with
 `--install-dir=/usr/local/bin`. Runtime backend policy belongs to
@@ -236,7 +237,7 @@ sh install.sh --repair      # re-download the platform asset for this host
 sh install.sh --uninstall   # remove the binary + installer-owned shell wiring
 ```
 
-For an interactive install (variant prompts + post-install wizard for
+For an interactive install (post-install wizard for
 PATH, shell completions, Claude Code / Cursor hook, git pre-commit
 hook), download the script first instead of piping into sh:
 ```bash
@@ -518,7 +519,7 @@ keyhog hook install                    # writes .git/hooks/pre-commit
 keyhog hook uninstall                  # removes the keyhog-generated hook
 ```
 
-The installed hook calls `keyhog scan --fast --git-staged --backend simd`
+The installed hook calls `keyhog scan --fast --git-staged --backend cpu`
 on every commit. If `keyhog` is missing from `PATH`, the hook blocks the
 commit because the security scan did not run; install KeyHog, fix `PATH`,
 or remove `.git/hooks/pre-commit` if the repository should not be protected.

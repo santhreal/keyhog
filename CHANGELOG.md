@@ -6,6 +6,17 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Made GPU an ordinary peer in canonical autoroute calibration and removed the
+  calibration-only GPU switch from persisted scan identity. Fresh GitHub
+  Action scans now calibrate before using `auto`; independent daemon/watch
+  operations clear and isolate fragment-reassembly state.
+- Hardened release publication around exact semantic-version tags, pinned and
+  locked builds, staged-binary version proof, an exact signed asset manifest,
+  and newest-stable-only promotion of container `latest` and floating major
+  tags. Release-tag Action inputs now normalize one optional `v` prefix.
+- Made the portable pre-commit command use the always-available CPU backend,
+  recorded config-selected detector corpus provenance, and corrected portable,
+  Docker, crates.io, VYRE, and Windows Action documentation.
 - Replaced the stale VYRE audit/roadmap with one canonical integration reference
   that documents only the shipped v0.6.4 boundaries, parity contract, build
   features, diagnostics, and autoroute ownership. Cross-platform uninstall

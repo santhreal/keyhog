@@ -42,12 +42,11 @@ fn main() -&gt; anyhow::Result&lt;()&gt; {
     Ok(())
 }</code></pre>
 
-<p>Add to <code>Cargo.toml</code> using a git path until crates.io
-publishing lands:</p>
+<p>Add the published libraries to <code>Cargo.toml</code>:</p>
 
 <pre><code><span class="k">[dependencies]</span>
-keyhog-core    = { <span class="k">git</span> = <span class="s">"https://github.com/santhsecurity/keyhog"</span>, <span class="k">tag</span> = <span class="s">"v0.5.41"</span> }
-keyhog-scanner = { <span class="k">git</span> = <span class="s">"https://github.com/santhsecurity/keyhog"</span>, <span class="k">tag</span> = <span class="s">"v0.5.41"</span> }</code></pre>
+keyhog-core    = <span class="s">"0.5.40"</span>
+keyhog-scanner = <span class="s">"0.5.40"</span></code></pre>
 
 <h2>Embedded detectors (no detectors/ directory)</h2>
 

@@ -3,8 +3,7 @@
 ## Unreleased
 
 - Rename the VRAM-adaptive live buffer budget to `gpu_batch_input_limit` and
-  move its owner to `engine/gpu_input_budget.rs`; deprecated public wrappers
-  preserve source migration from the retired MegaScan terminology.
+  move its owner to `engine/gpu_input_budget.rs`.
 - Remove detector-ID constants used only by their own tests; runtime-specific
   identifiers remain centralized only where production scanner behavior
   consumes them, while detector membership stays in detector TOML.
@@ -30,11 +29,9 @@
   `HOT_PATTERN_DETECTOR_IDS` computed from embedded detector specs via
   `LazyLock` with leaked `'static` slices. Add standalone
   `hot_pattern_index_at` test helper that doesn't require a compiled scanner.
-- Reduce the operator backend surface to `auto`, `gpu`, `simd`, and `cpu`.
-  Stable profile/evidence labels remain parseable by library and persistence
-  paths, while MegaScan and implementation-name aliases no longer silently map
-  to a live route. `ScanBackend::MegaScan` remains available to source-compatible
-  library callers but is no longer produced by the parser.
+- Reduce the backend surface to `gpu`, `simd`, and `cpu`; the CLI owns `auto`
+  through persisted fastest-correct routing evidence. MegaScan and
+  implementation-name aliases no longer map to a live route.
 - Reduce `MAX_SCAN_CHUNK_BYTES` from 1 MiB to 384 KiB, enabling 32-thread
   parallelism on large inputs without OOM. Window size stays at 1 MiB to
   preserve adversarial parity.

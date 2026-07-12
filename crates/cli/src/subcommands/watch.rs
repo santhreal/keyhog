@@ -345,7 +345,10 @@ fn scan_file(
             decoded_span: None,
         },
     };
-    let raw_matches = match scan_runtime.scan_chunk(&chunk) {
+    scan_runtime.clear_fragment_cache();
+    let scan_result = scan_runtime.scan_chunk(&chunk);
+    scan_runtime.clear_fragment_cache();
+    let raw_matches = match scan_result {
         Ok(matches) => matches,
         Err(error) => {
             let palette = style::for_stderr();

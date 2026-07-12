@@ -703,7 +703,7 @@ impl CliTestApi for TestApi {
         crate::installer::scan_engine_self_test()
     }
     fn verify_via_doctor(&self, exe: &Path) -> bool {
-        crate::installer::verify_via_doctor(exe)
+        crate::installer::verify_via_doctor_checked(exe).is_ok()
     }
     fn http_client(&self) -> Result<reqwest::Client> {
         crate::installer::http_client()

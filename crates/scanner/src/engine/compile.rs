@@ -293,7 +293,7 @@ impl CompiledScanner {
             "bigram bloom built (65536 slots / 8 KB direct table, lower popcount = stronger filter)"
         );
 
-        // Pre-intern detector metadata strings into a CHD perfect
+        // Pre-intern detector metadata strings into the shared
         // hash so per-scan `intern_metadata` calls hand out shared
         // `Arc<str>` without touching the global allocator. Built
         // once per scanner; lock-free on read.
@@ -307,8 +307,8 @@ impl CompiledScanner {
 
         // Resolve each detector's interned (id, name, service) triple ONCE,
         // indexed by detector index, so the per-match emission sites clone by
-        // index instead of re-hashing the same three strings through the CHD
-        // perfect hash on every finding (PERF-locality_intern-1). The strings
+        // index instead of re-hashing the same three strings through the
+        // interner on every finding (PERF-locality_intern-1). The strings
         // are exactly the arena entries the per-match `lookup` would return;
         // every detector field was just fed into `from_detector_strings`
         // above, so each lookup is guaranteed `Some`. The `unwrap_or_else`
