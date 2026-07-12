@@ -371,7 +371,7 @@ pub struct CompiledScannerRuntime {
     pub detector_count: usize,
     pub pattern_count: usize,
     pub detector_digest: u64,
-    /// Backend used by the no-backend library APIs. CLI autorouting is a
+    /// Backend used by the no-backend library APIs. CLI calibrated routing is a
     /// separate persisted per-workload decision and is never inferred here.
     pub preferred_backend: &'static str,
     pub gpu_backend: Option<&'static str>,

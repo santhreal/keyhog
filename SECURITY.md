@@ -38,10 +38,10 @@ GHSA advisories are filed under the appropriate Santh GitHub
 organization. We coordinate CVE assignment via GitHub's CNA when a
 fix ships.
 
-## RustSec Advisory Assessment (v0.5.3)
+## RustSec Advisory Assessment (v0.5.40)
 
-A `cargo audit` of `Cargo.lock` surfaces seven advisories total (3
-vulnerability, 4 informational across the workspace + vendored vyre).
+A `cargo audit` of `Cargo.lock` surfaces five accepted advisories total (one
+vulnerability and four informational warnings across the workspace and Vyre).
 Each was reviewed against keyhog's actual usage of the affected crate
 and given an explicit accept-with-rationale decision or a fix path.
 The accepts are reflected in the `[advisories]` ignore list at the
@@ -52,19 +52,17 @@ in place.
 
 #### RUSTSEC-2023-0071 - `rsa 0.9.7` Marvin attack
 
-**Risk:** PKCS#1 v1.5 RSA decryption is timing-sidechannel-vulnerable
-(Marvin attack); an attacker with a decryption oracle can recover a key.
+**Risk:** the crate's RSA private-key operations are not fully constant-time;
+an attacker who can submit chosen ciphertexts and remotely observe decryption
+timing may recover private-key material.
 
-**Why not applicable:** `crates/verifier/src/oob/client.rs` uses ONLY
-`rsa::Oaep` for decryption (`use rsa::{Oaep, RsaPrivateKey, RsaPublicKey}`).
-PKCS#1 v1.5 decryption code paths are not invoked. Even if the rsa
-crate's PKCS#1 v1.5 implementation has timing leaks, keyhog never
-exercises them.
-
-**Threat-model gate:** the OOB verifier is a client, not a server. We
-generate a keypair, share the public half with the InteractSh server,
-and decrypt server-pushed payloads locally. There is no remote
-decryption oracle exposed by keyhog.
+**Why not applicable:** the OOB verifier is a client, not a decryption service.
+It generates an ephemeral keypair, shares the public half with the configured
+Interactsh server, and decrypts one server-pushed OAEP-wrapped session key
+locally. KeyHog returns neither a validity verdict nor decryption timing to a
+caller, and transport is HTTPS through the verifier's screened/pinned client.
+The Interactsh server already generated and therefore knows the wrapped AES
+session key. There is no remote RSA decryption oracle exposed by KeyHog.
 
 #### RUSTSEC-2026-0002 - `lru 0.12.5` IterMut Stacked Borrows violation
 
@@ -89,14 +87,13 @@ default `OsRng` seed path. Our tracing logger does not call into rand.
 
 **Risk:** crate is unmaintained; future advisories will not get fixes.
 
-**Why not applicable now:** `paste` is a proc-macro used at compile
-time; it produces no runtime code in keyhog binaries. An unmaintained
-proc-macro can't introduce runtime CVEs. We will migrate when a
-suitable replacement appears in our transitive dep tree.
+**Why accepted:** `paste` is a build-time proc-macro pulled through the
+Metal backend. It is absent from the runtime dependency graph as executable
+library code, and the release build pins and audits its exact source version.
 
-#### RUSTSEC-2025-0141 - `bincode 1.x` unmaintained
+#### RUSTSEC-2025-0141 - `bincode 2.0.1` unmaintained
 
-**Risk:** bincode 1.x is unmaintained upstream; future advisories
+**Risk:** bincode is unmaintained upstream; security defects
 against it will not be patched.
 
 **Why not applicable now:** keyhog itself does not depend on bincode
@@ -104,8 +101,8 @@ directly. It is only pulled in transitively through the published Vyre
 GPU stack, which uses bincode for serializing compiled GPU pattern
 databases. The serialization surface is local disk caches keyed under
 `$KEYHOG_CACHE_DIR`; there is no untrusted network input deserialized
-through bincode. This advisory clears when Vyre cuts a release that
-drops bincode 1.x or migrates to bincode 2.x.
+through bincode. KeyHog pins the exact Vyre and bincode versions and treats the
+cache as local state rather than a network interchange format.
 
 ### Resolved in v0.5.3
 

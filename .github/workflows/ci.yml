@@ -678,11 +678,11 @@ jobs:
         uses: taiki-e/install-action@b8cecb83565409bcc297b2df6e77f030b2a468d5 # v2
         with:
           tool: cargo-audit
-      # The four `--ignore` flags below match the four
+      # The five `--ignore` flags below match the five
       # accept-with-rationale advisories in `audit.toml` (the workspace
       # root file that documents the security review). Adding a fifth
       # ignore without a corresponding SECURITY.md rationale block is
-      # a CI failure waiting to happen — please update both files.
+      # an invalid security gate — update both files together.
       - name: Run cargo audit
         run: |
           cargo audit \

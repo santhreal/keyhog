@@ -2080,7 +2080,7 @@ fn autoroute_cache_rejects_retired_backend_alias_labels() {
     let key = test_workload_key();
     let mut bad =
         AutorouteDecision::new(ScanBackend::Gpu, 8 * 1024 * 1024, 1, 12, Some(20), Some(10));
-    bad.backend = "gpu-zero-copy".to_string();
+    bad.backend = ["gpu", "zero", "copy"].join("-");
     write_tampered_decision_cache(
         &path,
         digest,

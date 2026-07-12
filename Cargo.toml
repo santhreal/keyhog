@@ -58,7 +58,7 @@ reqwest = { version = "=0.12.28", features = ["json", "stream", "cookies", "mult
 
 # Error handling
 thiserror = "=2.0.18"
-anyhow = "=1.0.102"
+anyhow = "=1.0.103"
 
 # CLI
 clap = { version = "=4.6.1", features = ["derive"] }
@@ -158,7 +158,7 @@ ziftsieve = "=0.1.0"
 openpack = "=0.2.2"
 rars = "=0.2.0"
 goblin = "=0.10.5"
-quick-xml = { version = "=0.37.5", features = ["serialize"] }
+quick-xml = { version = "=0.41.0", features = ["serialize"] }
 libc = "=0.2.186"
 io-uring = "=0.7.11"
 

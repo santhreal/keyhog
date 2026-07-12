@@ -51,7 +51,7 @@ ahash = { workspace = true }
 blake3 = { version = "=1.8.5", features = ["pure"] }
 dirs = { workspace = true }
 zeroize = { version = "=1.8.2", features = ["derive"] }
-anyhow = "=1.0.102"
+anyhow = "=1.0.103"
 # Used for atomic-rename writes of `merkle.idx` and `calibration.json`
 # via `NamedTempFile::persist()`. The Drop impl deletes the tmp on
 # panic between create and rename, so a partial save doesn't leak a
