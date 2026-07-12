@@ -55,7 +55,7 @@ CATEGORIES: dict[str, re.Pattern[str]] = {
         r"preserves deterministic|preserved|primary path|scan reparses)\b"
     ),
     "fail_closed_or_security_safe": re.compile(
-        r"(?i)\b(?:fail-closed|fail closed|fail-open for suppression|"
+        r"(?i)\b(?:fail-closed|fails? closed|fail-open for suppression|"
         r"fail-open|fail-open to domain|never an allow|never misses|conservative|"
         r"treated as (?:private/blocked|present error)|disallowed host|blocked|"
         r"not a valid value|malformed input|unparseable url|function's honest|"
@@ -255,6 +255,11 @@ def self_test() -> int:
         ),
         (
             "malformed input => None (fail-closed at the boundary; not a valid value)",
+            {"fail_closed_or_security_safe"},
+            False,
+        ),
+        (
+            "shared helper fails closed on a malformed endpoint",
             {"fail_closed_or_security_safe"},
             False,
         ),

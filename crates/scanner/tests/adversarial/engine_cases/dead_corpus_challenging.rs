@@ -41,7 +41,11 @@ fn assert_credential_substr(matches: &[keyhog_core::RawMatch], fixture: &str, su
         "{fixture}: expected credential containing {substr:?}; matches={:?}",
         matches
             .iter()
-            .map(|m| m.credential.as_ref())
+            .map(|m| (
+                m.detector_id.as_ref(),
+                m.credential.as_ref(),
+                m.location.line
+            ))
             .collect::<Vec<_>>()
     );
 }
@@ -134,13 +138,29 @@ fn challenging_ac_prefilter_bypass_finds_something() {
 
 #[test]
 fn challenging_ac_prefilter_bypass_finds_k8s_base64_secret() {
-    let matches = scan_fixture("ac_prefilter_bypass.env");
+    let path = recall_fixture_path("ac_prefilter_bypass.env");
+    let data = std::fs::read_to_string(&path).expect("recall fixture readable");
+    let chunk = Chunk {
+        data: data.into(),
+        metadata: ChunkMetadata {
+            source_type: "test/recall/kh_challenging".into(),
+            // Exercise detector truth, not the independent test-directory
+            // confidence penalty applied to this repository fixture's disk path.
+            path: Some("ac_prefilter_bypass.env".into()),
+            ..Default::default()
+        },
+    };
+    let trace = std::sync::Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+    trace.enable_dogfood();
+    let matches = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || {
+        production_scanner().scan(&chunk)
+    });
+    let events = trace.drain().dogfood_events;
     // K8S_FULL_SECRET is base64("calico-on-kube-auth-key") - planted in the fixture
     // to stress prefixless / decode-through paths after AC routing.
-    assert_credential_substr(
-        &matches,
-        "ac_prefilter_bypass.env",
-        "Y2FsaWNvLW9uLWt1YmUtYXV0aC1rZXk=",
+    assert!(
+        has_credential(&matches, "Y2FsaWNvLW9uLWt1YmUtYXV0aC1rZXk="),
+        "ac_prefilter_bypass.env: expected the strongly anchored base64 secret; matches={matches:?}, suppression trace={events:?}",
     );
 }
 

@@ -73,14 +73,16 @@ impl CompiledScanner {
             .and_then(|index| self.detectors.get(index));
         let crate::adjudicate::GenericSecretShapeFloors { min_len } =
             crate::adjudicate::generic_secret_shape_floors(generic_secret_detector);
-        if crate::adjudicate::generic_bridge_entropy_below_floor(
-            entropy,
-            self.config.entropy_threshold,
-            self.config.generic_keyword_low_entropy,
-            generic_secret_detector,
-            generic_keyword_detector,
-            value.len(),
-        ) {
+        if !allow_encoded_text_secret
+            && crate::adjudicate::generic_bridge_entropy_below_floor(
+                entropy,
+                self.config.entropy_threshold,
+                self.config.generic_keyword_low_entropy,
+                generic_secret_detector,
+                generic_keyword_detector,
+                value.len(),
+            )
+        {
             return Some(GenericValueShapeStage::EntropyBelowFloor);
         }
 
@@ -344,20 +346,16 @@ impl CompiledScanner {
             return Some(GenericValueShapeStage::DecodedPlaceholder);
         }
         if let Some(reason) = crate::suppression::decision::decoded_benign_text_reason(value) {
-            // A decoded canonical hex KEY (32/40/48) assigned to a STRONG
-            // credential keyword is real AES key material, not a benign digest:
-            // the SAME anchor+shape exemption that already spares
-            // `decoded_placeholder` must spare the `decoded_bare_hash_digest`
-            // arm, or a base64-wrapped AES-128/192/256 key under `api-key:` /
-            // `token:` is silently dropped (the
-            // `..._canonical_hex_keys_still_surface` contract). This mirrors the
-            // direct path's `is_strong_keyword_anchored_hex_key` exemption — one
-            // key-vs-hash policy across both paths. A bare md5/sha1 with no strong
-            // anchor keeps `allow_decoded_hex_key_material == false` and stays
-            // suppressed (`decoded_benign_text_reason` is unchanged; the
-            // md5/sha1 decode-suppression contract holds).
-            if allow_decoded_hex_key_material
-                && matches!(reason, "decoded_placeholder" | "decoded_bare_hash_digest")
+            // A printable value encoded beneath a strong credential anchor is
+            // still secret material. Kubernetes Secret data is the canonical
+            // case: base64 is transport encoding, not encryption, and readable
+            // decoded bytes must not erase the explicit `*_SECRET` evidence.
+            // Placeholder-marked decoded values were rejected immediately above,
+            // so this exemption cannot revive examples. It also preserves the
+            // narrower canonical-hex-key exemption for strong key anchors.
+            if allow_encoded_text_secret
+                || (allow_decoded_hex_key_material
+                    && matches!(reason, "decoded_placeholder" | "decoded_bare_hash_digest"))
             {
                 return None;
             }

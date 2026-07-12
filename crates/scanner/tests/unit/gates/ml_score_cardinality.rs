@@ -110,7 +110,6 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
             && scan_state.contains("fn entropy_authoritative(")
             && scan_state.contains("fn push_detector_ml_pending(")
             && scan_state.contains("fn push_entropy_authoritative_ml_pending(")
-            && scan_state.contains("fn extend_lines_with_pending_ml_matches(")
             && scan_state.contains("fn for_each_named_pending_ml_line")
             && process.contains("&& !weak_anchor")
             && process.contains("push_detector_ml_pending(")

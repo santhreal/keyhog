@@ -250,16 +250,20 @@ fn companion_map_cmp(
     let mut a_after: Option<&str> = None;
     let mut b_after: Option<&str> = None;
     for _ in 0..a.len() {
-        let a_entry = a
+        let Some(a_entry) = a
             .iter()
             .filter(|(key, _)| a_after.is_none_or(|after| key.as_str() > after))
             .min_by(|left, right| left.0.cmp(right.0))
-            .expect("non-empty remainder implied by companion count");
-        let b_entry = b
+        else {
+            return std::cmp::Ordering::Equal;
+        };
+        let Some(b_entry) = b
             .iter()
             .filter(|(key, _)| b_after.is_none_or(|after| key.as_str() > after))
             .min_by(|left, right| left.0.cmp(right.0))
-            .expect("non-empty remainder implied by companion count");
+        else {
+            return std::cmp::Ordering::Equal;
+        };
         match a_entry.cmp(&b_entry) {
             std::cmp::Ordering::Equal => {
                 a_after = Some(a_entry.0.as_str());

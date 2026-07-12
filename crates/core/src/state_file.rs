@@ -101,7 +101,7 @@ pub(crate) fn sweep_stale_tmp_siblings(
             // Best-effort maintenance: a failed dir-entry read drops no scan
             // coverage, so skip the entry rather than aborting the sweep.
             Err(error) => {
-                tracing::warn!(dir = %parent.display(), %error, "stale-state sweep skipped an unreadable directory entry");
+                tracing::warn!(dir = %parent.display(), %error, "skip unreadable tmp dir entry during stale-state sweep");
                 continue;
             }
         };

@@ -7,7 +7,7 @@
 use keyhog_scanner::testing::{
     assignment_keywords_for_test as assignment_keywords, build_generic_re_for_test,
     compile_generic_re_for_test, force_generic_re, generic_keyword_alternation_for_test,
-    generic_re_vendor_suffix_arm,
+    generic_re_vendor_suffix_arm, is_strong_keyword_anchored_encoded_text_secret_for_test,
 };
 use std::collections::BTreeSet;
 
@@ -99,6 +99,25 @@ fn vendor_prefixed_key_bridges_via_the_structural_arm() {
         .expect("vendor-prefixed *_key must bridge via the structural arm");
     assert_eq!(caps.get(1).unwrap().as_str(), "stripe_publishable_key");
     assert_eq!(caps.get(2).unwrap().as_str(), "Xh8Kd93mZq0Lp2Rt");
+}
+
+#[test]
+fn multi_segment_vendor_secret_captures_the_complete_key_and_padded_value() {
+    let re = build_generic_re_for_test().expect("GENERIC_RE compiles");
+    let value = "Y2FsaWNvLW9uLWt1YmUtYXV0aC1rZXk=";
+    let line = format!("K8S_FULL_SECRET=\"{value}\"");
+    let caps = re
+        .captures(&line)
+        .expect("vendor-prefixed *_secret must bridge");
+    assert_eq!(
+        caps.get(1).expect("keyword capture").as_str(),
+        "K8S_FULL_SECRET"
+    );
+    assert_eq!(caps.get(2).expect("value capture").as_str(), value);
+    assert!(is_strong_keyword_anchored_encoded_text_secret_for_test(
+        caps.get(1).expect("keyword capture").as_str(),
+        caps.get(2).expect("value capture").as_str(),
+    ));
 }
 
 #[test]

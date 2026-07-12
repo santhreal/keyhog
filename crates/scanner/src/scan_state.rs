@@ -330,15 +330,6 @@ impl ScanState {
     }
 
     #[cfg(feature = "ml")]
-    pub(crate) fn extend_lines_with_pending_ml_matches(&self, lines: &mut HashSet<usize>) {
-        lines.extend(
-            self.ml_pending
-                .iter()
-                .filter_map(|pending| pending.raw_match.location.line),
-        );
-    }
-
-    #[cfg(feature = "ml")]
     pub(crate) fn for_each_named_pending_ml_line<F>(&self, mut visit: F)
     where
         F: FnMut(Option<usize>),

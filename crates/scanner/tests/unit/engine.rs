@@ -546,6 +546,26 @@ fn azure_subscription_key_named_detector_fires_on_normal_and_zero_width_anchor()
 }
 
 #[test]
+fn strong_secret_assignment_surfaces_printable_base64_transport_value() {
+    let value = "Y2FsaWNvLW9uLWt1YmUtYXV0aC1rZXk=";
+    let mut config = ScannerConfig::default();
+    config.ml_enabled = false;
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = CompiledScanner::compile(vec![
+        embedded_detector("generic-secret"),
+        embedded_detector("generic-keyword-secret"),
+    ])
+    .expect("generic detectors compile")
+    .with_config(config);
+    let matches = scanner.scan(&chunk(&format!("K8S_FULL_SECRET=\"{value}\"")));
+    assert!(
+        matches.iter().any(|m| m.credential.as_ref() == value),
+        "strong *_SECRET assignment must retain its printable base64 transport value; matches={matches:?}"
+    );
+}
+
+#[test]
 fn boundary_scan_uses_bounded_detector_match_width_past_1024_bytes() {
     let mut detector = demo_detector();
     detector.patterns[0].regex = r"LONG_[A-Za-z0-9]{1500}_END".into();

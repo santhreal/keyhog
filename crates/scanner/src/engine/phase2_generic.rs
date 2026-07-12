@@ -135,20 +135,16 @@ impl CompiledScanner {
         // disables the bridge here.
         let generic_re: &regex::Regex = &GENERIC_RE;
 
-        // Lines already carrying named findings do not need a generic bridge
-        // echo. Include ML-pending findings too: they have not been finalized
-        // yet, but they already represent named detector matches on the line.
+        // Lines already carrying finalized named findings do not need a generic
+        // bridge echo. ML-pending candidates deliberately do NOT claim the line:
+        // the model may reject them, and suppressing the generic bridge before
+        // that verdict creates a recall hole. If the named candidate survives,
+        // the normal resolution pass removes the generic duplicate.
         let covered_lines: std::collections::HashSet<usize> = scan_state
             .matches
             .iter()
             .filter_map(|m| m.location.line)
             .collect();
-        #[cfg(feature = "ml")]
-        let covered_lines = {
-            let mut lines = covered_lines;
-            scan_state.extend_lines_with_pending_ml_matches(&mut lines);
-            lines
-        };
 
         // ONE chunk-level derived-stem scan instead of N per-line scans.
         // Profile showed scan_generic_assignments at ~500 µs/chunk -
@@ -426,12 +422,14 @@ impl CompiledScanner {
                     if value.len() < owning_detector_min_len {
                         shape_rejected =
                             Some(crate::adjudicate::GenericValueShapeStage::ValueTooShort);
-                    } else if crate::adjudicate::generic_entropy_below_floor(
-                        entropy,
-                        entropy_threshold,
-                        floor_detector,
-                        value.len(),
-                    ) {
+                    } else if !allow_encoded_text_secret
+                        && crate::adjudicate::generic_entropy_below_floor(
+                            entropy,
+                            entropy_threshold,
+                            floor_detector,
+                            value.len(),
+                        )
+                    {
                         shape_rejected =
                             Some(crate::adjudicate::GenericValueShapeStage::EntropyBelowFloor);
                     }
@@ -446,6 +444,7 @@ impl CompiledScanner {
                 // FP simply aren't BPE-filtered.
                 #[cfg(feature = "entropy")]
                 if shape_rejected.is_none()
+                    && !allow_encoded_text_secret
                     && crate::entropy::bpe::enabled_for_detector(owning_detector)
                 {
                     let bpe_bound = crate::entropy::bpe::max_bytes_per_token_for_detector(
