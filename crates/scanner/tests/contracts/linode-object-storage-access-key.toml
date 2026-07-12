@@ -22,6 +22,10 @@ reason = "snake_case env-var + linodeobjects.com keyword — companion optional,
 text = "linode_access_key=keyTooShort"
 reason = "Body fails the [A-Z0-9]{20} constraint (lowercase + short)."
 
+[[negative]]
+text = "linode_access_key=kpqxrmsntbvwyzk4q7m2"
+reason = "A valid-length lowercase body is not a Linode object-storage access key."
+
 [[evasion]]
 text = "LINODE-OBJECT-STORAGE-ACCESS-KEY = \"KPQXRMSNTBVWYZK4Q7M2\""
 credential = "KPQXRMSNTBVWYZK4Q7M2"

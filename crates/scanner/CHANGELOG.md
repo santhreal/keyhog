@@ -111,6 +111,10 @@
 - Detect current variable-length Clerk publishable keys by their documented
   base64-encoded FAPI URL form instead of requiring an obsolete exact 32-byte
   alphanumeric body; findings remain explicitly client-safe.
+- Keep two S3-compatible access-key bodies case-sensitive inside their
+  detector TOMLs while preserving case-insensitive environment-key anchors,
+  preventing lowercase identifiers from satisfying documented uppercase
+  credential alphabets.
 
 ## 0.2.1
 

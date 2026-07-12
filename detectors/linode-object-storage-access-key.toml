@@ -11,7 +11,7 @@ severity = "high"
 keywords = ["LINODE_OBJECT_STORAGE", "linode_object_storage", "LINODE_ACCESS_KEY", "linodeobjects.com"]
 
 [[detector.patterns]]
-regex = "(?:LINODE|linode)[._-]?(?:OBJECT[._-]?STORAGE|object[._-]?storage)?[._-]?(?:ACCESS[._-]?)?(?:KEY|key)[=:\\s\"'']+([A-Z0-9]{20})"
+regex = "(?:LINODE|linode)[._-]?(?:OBJECT[._-]?STORAGE|object[._-]?storage)?[._-]?(?:ACCESS[._-]?)?(?:KEY|key)[=:\\s\"'']+((?-i:[A-Z0-9]{20}))"
 description = "Linode Object Storage access key ID with context anchor"
 group = 1
 
@@ -22,4 +22,4 @@ within_lines = 5
 
 [[detector.tests]]
 test_positive = "LINODE_OBJECT_STORAGE_ACCESS_KEY=KPQXRMSNTBVWYZK4Q7M2\nLINODE_OBJECT_STORAGE_SECRET_KEY=Vk9Bn3Lp7Qm2Rs5Tw8/+Vk9Bn3Lp7Qm2Rs5Tw8=A"
-test_negative = "linode_access_key=keyTooShort"
+test_negative = "linode_access_key=kpqxrmsntbvwyzk4q7m2"
