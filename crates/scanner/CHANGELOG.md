@@ -118,6 +118,15 @@
 - Apply the canonical Octopus Deploy key alphabet to assignment and header
   patterns too, so context cannot admit lowercase keys or pure documentation
   words that the bare-key pattern correctly rejects.
+- Preserve Akoya client-credential findings for mixed-case config keys by
+  declaring the required companion anchor caseless in its detector TOML;
+  simplify the already-caseless primary regex to one canonical spelling.
+- Preserve Twilio IoT credential pairs for lowercase config keys by applying
+  case folding to the required companion anchor, while keeping the credential
+  body alphabet detector-owned and simplifying redundant primary alternations.
+- Preserve Twilio API-key pairs for mixed-case secret field names by folding
+  only the detector-owned companion anchor, without widening the credential
+  body's declared alphabet.
 
 ## 0.2.1
 

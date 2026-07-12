@@ -28,7 +28,9 @@ description = "Twilio API key SID (SK prefix + exactly 32 hex chars)"
 
 [[detector.companions]]
 name = "secret"
-regex = "(?:TWILIO[_-]?API[_-]?SECRET|twilio[_-]?api[_-]?secret|SECRET|secret)[=:\\s\"'']+([a-zA-Z0-9]{32})"
+# Companion matching is case-sensitive unless the detector opts in. Config-key
+# casing is not part of the credential format, so fold the anchor only.
+regex = "(?i:(?:TWILIO[_-]?API[_-]?SECRET|SECRET))[=:\\s\"'']+([a-zA-Z0-9]{32})"
 within_lines = 3
 required = true
 [detector.verify]
@@ -54,3 +56,6 @@ json_path = "status"
 [[detector.tests]]
 test_positive = "TWILIO_API_KEY=SK3d5f7b9c1e2a4d6f8b0c2e4a6d8f1b3c\nTWILIO_API_SECRET=7a2c4e6f8b1d3a5c7e9f2b4d6a8c1e3f"
 test_negative = "TWILIO_API_KEY=SK3d5f7b9c1e2a4d6f8b0c2e4a6d8f1b3c"
+
+[[detector.tests]]
+test_positive = "TWILIO_API_KEY=SK3d5f7b9c1e2a4d6f8b0c2e4a6d8f1b3c\nTwilio_Api_Secret=7a2c4e6f8b1d3a5c7e9f2b4d6a8c1e3f"

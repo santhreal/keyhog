@@ -17,6 +17,12 @@ TWILIO_API_KEY=SKabcdef1234567890abcdef1234567890'''
 credential = "SKabcdef1234567890abcdef1234567890"
 reason = "Quoted-value variant of the canonical positive."
 
+[[positive]]
+text = '''TWILIO_API_KEY=SK3d5f7b9c1e2a4d6f8b0c2e4a6d8f1b3c
+Twilio_Api_Secret=7a2c4e6f8b1d3a5c7e9f2b4d6a8c1e3f'''
+credential = "SK3d5f7b9c1e2a4d6f8b0c2e4a6d8f1b3c"
+reason = "Mixed-case config keys must resolve the required API-secret companion."
+
 [[negative]]
 text = "TWILIO_API_KEY=SK3d5f7b9c1e2a4d6f8b0c2e4a6d8f1b3c"
 reason = "API key alone — required secret companion missing."
