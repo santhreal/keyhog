@@ -134,6 +134,9 @@
 - Make Spotify's companion secret-specific and capture only its value, so a
   client ID cannot attach itself as a credential pair; collapse redundant
   uppercase/lowercase primaries under the shared caseless compiler.
+- Migrate the stale FedEx companion fixture into its normal detector contract
+  and reject companion contracts whose detector declares no companions, so
+  generated test shape cannot masquerade as production verification wiring.
 
 ## 0.2.1
 

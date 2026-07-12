@@ -299,3 +299,36 @@ fn companion_contracts_cover_at_least_one_detector() {
         "companion contracts directory has no TOMLs"
     );
 }
+
+#[test]
+fn every_companion_contract_targets_a_detector_with_companions() {
+    let contracts = load_companion_contracts();
+    let detectors = keyhog_core::load_detectors(&detector_dir())
+        .expect("detectors directory loadable for companion ownership gate");
+    let mut invalid = Vec::new();
+
+    for (path, contract) in contracts {
+        match detectors
+            .iter()
+            .find(|detector| detector.id == contract.detector_id)
+        {
+            None => invalid.push(format!(
+                "{} targets missing detector {}",
+                path.display(),
+                contract.detector_id
+            )),
+            Some(detector) if detector.companions.is_empty() => invalid.push(format!(
+                "{} targets detector {} which declares no [[detector.companions]] entries",
+                path.display(),
+                contract.detector_id
+            )),
+            Some(_) => {}
+        }
+    }
+
+    assert!(
+        invalid.is_empty(),
+        "orphan companion contracts must migrate to the normal detector contract:\n  - {}",
+        invalid.join("\n  - ")
+    );
+}
