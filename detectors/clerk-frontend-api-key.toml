@@ -1,5 +1,6 @@
-# Docs: https://clerk.com/docs/references/nextjs/clerk-middleware
-# Format: pk_ prefix followed by live/test and 32 alphanumeric characters (publishable key)
+# Docs: https://clerk.com/docs/guides/how-clerk-works/overview
+# Format: pk_live_ / pk_test_ followed by the base64-encoded FAPI URL. The
+# decoded payload ends in `$`; encoded length varies with the instance domain.
 # Verify: no verify endpoint (client-side key)
 # Prefix: pk_
 
@@ -11,13 +12,14 @@ severity = "medium"
 keywords = ["pk_live_", "pk_test_"]
 
 [[detector.patterns]]
-regex = 'pk_(?:live|test)_[a-zA-Z0-9]{32}'
-description = "Clerk frontend publishable API key (pk_live_ or pk_test_)"
+regex = '(pk_(?:live|test)_[a-zA-Z0-9+/]{16,340}={0,2})(?:[^a-zA-Z0-9+/=]|$)'
+description = "Clerk frontend publishable key with base64-encoded FAPI URL"
+group = 1
 # Clerk frontend key is designed to ship in Next.js / browser bundles
 # alongside `<ClerkProvider>` - explicitly publishable. Server-side
 # auth uses the Clerk secret key (separate detector).
 client_safe = true
 
 [[detector.tests]]
-test_positive = "pk_live_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
-test_negative = "pk_live_Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+test_positive = "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_bG9uZ2VyLXByb2R1Y3Rpb24uYWNjb3VudHMuYWNtZS5kZXYk"
+test_negative = "CLERK_SECRET_KEY=sk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk"

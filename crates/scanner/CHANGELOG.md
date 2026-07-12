@@ -108,6 +108,9 @@
   separator/cross-region output.
 - Keep high-entropy base64-like secrets with internal `+`/`/` punctuation through generic and entropy fallbacks by bypassing binary-decoy suppression on the punctuation payload class, closing `encoded_binary`-driven false negatives.
 - Add adversarial coverage for the base64 punctuated high-entropy class and a fixed-token regression for `TVo...+...` shape that previously dropped at `is_encoded_binary`.
+- Detect current variable-length Clerk publishable keys by their documented
+  base64-encoded FAPI URL form instead of requiring an obsolete exact 32-byte
+  alphanumeric body; findings remain explicitly client-safe.
 
 ## 0.2.1
 

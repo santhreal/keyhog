@@ -4,23 +4,27 @@ service = "clerk"
 severity = "medium"
 
 [[positive]]
-text = "pk_live_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
-credential = "pk_live_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
-reason = "Clerk pk_live prefix with 32 alnum body."
+text = "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_YWNtZS5hY2NvdW50cy5kZXYk"
+credential = "pk_test_YWNtZS5hY2NvdW50cy5kZXYk"
+reason = "Current Clerk publishable format: a variable-length base64-encoded FAPI URL."
 
 [[positive]]
-text = "pk_test_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5"
-credential = "pk_test_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5"
-reason = "Clerk pk_test prefix with 32 alnum body."
+text = "pk_live_bG9uZ2VyLXByb2R1Y3Rpb24uYWNjb3VudHMuYWNtZS5kZXYk"
+credential = "pk_live_bG9uZ2VyLXByb2R1Y3Rpb24uYWNjb3VudHMuYWNtZS5kZXYk"
+reason = "Production instance domains produce publishable bodies longer than 32 bytes."
 
 [[negative]]
-text = "pk_live_Kp4Qx7Rm2Sn5Tb8Vw3Yz"
-reason = "Body 22 chars, below 32 minimum."
+text = "pk_live_c2hvcnQk"
+reason = "A short base64-like suffix is not a complete Clerk publishable key."
+
+[[negative]]
+text = "CLERK_SECRET_KEY=sk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk"
+reason = "Clerk server secrets are not publishable keys and must never be marked client-safe."
 
 [[evasion]]
-text = "Bearer pk_live_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
-credential = "pk_live_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
-reason = "Bearer prefix before Clerk publishable key — prefix pattern still fires."
+text = "<ClerkProvider publishableKey=\"pk_test_YWNtZS5hY2NvdW50cy5kZXYk\">"
+credential = "pk_test_YWNtZS5hY2NvdW50cy5kZXYk"
+reason = "JSX attribute form used by Clerk frontend SDKs."
 
 [perf]
 fixture_bytes = 4096
@@ -31,4 +35,4 @@ note = "Standard single-file budget."
 fixture_bytes = 1048576
 min_findings = 1
 max_seconds = 2.0
-note = "1 MiB filler + planted clerk credential."
+note = "1 MiB filler + planted current-format Clerk publishable key."
