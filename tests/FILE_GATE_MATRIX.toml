@@ -1623,6 +1623,9 @@ path = "crates/sources/src/git/source.rs"
 path = "crates/sources/src/git/tag_messages.rs"
 
 [[module]]
+path = "crates/sources/src/git_env.rs"
+
+[[module]]
 path = "crates/sources/src/github_org.rs"
 
 [[module]]
