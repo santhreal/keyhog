@@ -261,7 +261,7 @@ Derive + attribute macros: `define_op`, `vyre_ast_registry`,
 `derive_algebraic_laws`, `vyre_pass`, `skip_builder`. Used internally
 by primitive authors.
 
-## v0.5.40 integration status
+## v0.5.41 integration status
 
 | Wire                                 | Status      | Where                                                  |
 | ------------------------------------ | ----------- | ------------------------------------------------------ |

@@ -103,7 +103,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history; drop if you only scan working tree
-      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
+      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
         with:
           path: .
           severity: high
@@ -122,7 +122,7 @@ binary so each run avoids the ~20 MB fetch:
         uses: actions/cache@v4
         with:
           path: ~/.local/bin/keyhog
-          key: keyhog-${{ runner.os }}-v0.5.40
+          key: keyhog-${{ runner.os }}-v0.5.41
 ```
 
 Place this step before the keyhog action; the composite action's

@@ -41,10 +41,10 @@ pub mod new_verifier_bogon_ssrf;
 pub mod new_verifier_interpolate;
 #[path = "regression_allowlist_cache_invalidation.rs"]
 pub mod regression_allowlist_cache_invalidation;
-#[path = "regression_aws_v4_sign.rs"]
-pub mod regression_aws_v4_sign;
 #[path = "regression_aws_field_sanitize.rs"]
 pub mod regression_aws_field_sanitize;
+#[path = "regression_aws_v4_sign.rs"]
+pub mod regression_aws_v4_sign;
 #[path = "regression_bogon_ipv6_and_tenant_suffix_gaps.rs"]
 pub mod regression_bogon_ipv6_and_tenant_suffix_gaps;
 #[path = "regression_canary_aws_account_suppression.rs"]
@@ -81,12 +81,12 @@ pub mod regression_verifier_fix_wave;
 pub mod regression_verifier_interpolate_templates;
 #[path = "regression_verifier_network_safety.rs"]
 pub mod regression_verifier_network_safety;
-#[path = "regression_verify_metadata_extraction.rs"]
-pub mod regression_verify_metadata_extraction;
 #[path = "regression_verify_error_fix_guidance.rs"]
 pub mod regression_verify_error_fix_guidance;
 #[path = "regression_verify_error_taxonomy.rs"]
 pub mod regression_verify_error_taxonomy;
+#[path = "regression_verify_metadata_extraction.rs"]
+pub mod regression_verify_metadata_extraction;
 #[path = "regression_verify_poll_bounds.rs"]
 pub mod regression_verify_poll_bounds;
 #[path = "regression_verify_reason_ux_contract.rs"]

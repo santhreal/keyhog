@@ -4,6 +4,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [Unreleased]
 
+## [0.5.41] - 2026-07-11
+
 ### Added
 
 - **`keyhog scan --quiet` and `--no-color`.** `--quiet` suppresses the banner,

@@ -70,9 +70,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.102"
+version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
+checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
 name = "arbitrary"
@@ -123,6 +123,12 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "base64"
+version = "0.21.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
+
+[[package]]
+name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
@@ -136,6 +142,21 @@ dependencies = [
  "outref",
  "vsimd",
 ]
+
+[[package]]
+name = "bit-set"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0700ddab506f33b20a03b13996eccd309a48e5ff77d0d95926aa0210fb4e95f1"
+dependencies = [
+ "bit-vec 0.6.3",
+]
+
+[[package]]
+name = "bit-vec"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "349f9b6a179ed607305526ca489b34ad0a41aed5f7980fa90eb03160b69598fb"
 
 [[package]]
 name = "bit-vec"
@@ -203,6 +224,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5cee35f73844aa3014bb606320a6c1f010249dbdf43342fe54b5a4f6a8ed4b79"
 dependencies = [
  "memchr",
+ "regex-automata",
  "serde_core",
 ]
 
@@ -644,6 +666,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "fancy-regex"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "531e46835a22af56d1e3b66f04844bed63158bc094a628bec1d321d9b4c44bf2"
+dependencies = [
+ "bit-set",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -871,7 +904,7 @@ version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd3ab71f03a08c565e8411cc2ae6d20606e72136a6d7899c6e4a9d4b33cb642"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "blake3",
  "constant_time_eq 0.3.1",
  "sha2 0.10.9",
@@ -1217,7 +1250,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog-core"
-version = "0.5.40"
+version = "0.5.41"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1258,11 +1291,11 @@ dependencies = [
 
 [[package]]
 name = "keyhog-scanner"
-version = "0.5.40"
+version = "0.5.41"
 dependencies = [
  "ahash",
  "aho-corasick",
- "base64",
+ "base64 0.22.1",
  "base64-simd",
  "blake3",
  "dashmap",
@@ -1288,6 +1321,7 @@ dependencies = [
  "simdsieve",
  "tempfile",
  "thiserror 2.0.18",
+ "tiktoken-rs",
  "tokio",
  "toml 1.1.2+spec-1.1.0",
  "tracing",
@@ -1299,9 +1333,9 @@ dependencies = [
 
 [[package]]
 name = "keyhog-sources"
-version = "0.5.40"
+version = "0.5.41"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "blake3",
  "bzip2",
  "codewalk",
@@ -1827,6 +1861,12 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
 name = "rustc-hash"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
+
+[[package]]
+name = "rustc-hash"
 version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94300abf3f1ae2e2b8ffb7b58043de3d399c73fa6f4b73826402a5c457614dbe"
@@ -1977,7 +2017,7 @@ version = "3.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd5414fad8e6907dbdd5bc441a50ae8d6e26151a03b1de04d89a5576de61d01f"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "chrono",
  "hex",
  "indexmap 1.9.3",
@@ -2242,6 +2282,22 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "tiktoken-rs"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44075987ee2486402f0808505dd65692163d243a337fc54363d49afac41087f6"
+dependencies = [
+ "anyhow",
+ "base64 0.21.7",
+ "bstr",
+ "fancy-regex",
+ "lazy_static",
+ "parking_lot",
+ "regex",
+ "rustc-hash 1.1.0",
 ]
 
 [[package]]
@@ -2533,7 +2589,7 @@ dependencies = [
  "fs2",
  "inventory",
  "lasso",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "serde",
  "serde_json",
  "smallvec",
@@ -2562,7 +2618,7 @@ dependencies = [
  "itoa",
  "lasso",
  "libm",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "ryu",
  "serde",
  "serde_json",
@@ -2598,7 +2654,7 @@ dependencies = [
  "rayon",
  "regex",
  "regex-syntax",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "serde",
  "serde_json",
  "smallvec",
@@ -2620,7 +2676,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9df079c22e8db5385e396e015007d50aff05c7aed5ee74fb326a9a9d749d9d24"
 dependencies = [
  "im",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "serde",
  "smallvec",
  "thiserror 2.0.18",
@@ -2656,7 +2712,7 @@ version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a07640ee3c917e7ce0ee32c0ee74e7052e342ac4bba11a9af9663f4793958027"
 dependencies = [
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "tracing",
  "vyre-foundation",
  "vyre-primitives",
@@ -3141,7 +3197,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4772d5dfbdacca27e6d0fc67f4ebc271e5548dfd459e9274854e7f76a923a38c"
 dependencies = [
- "bit-vec",
+ "bit-vec 0.8.0",
  "crc32fast",
  "flashsieve",
  "flate2",

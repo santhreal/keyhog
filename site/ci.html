@@ -12,7 +12,7 @@
   <a href="index.html" class="brand">
     <span class="mark">k</span>
     keyhog
-    <span class="v">v0.5.40</span>
+    <span class="v">v0.5.41</span>
   </a>
   <nav class="top">
     <a href="detectors.html">Detectors</a>
@@ -82,7 +82,7 @@
       - <span class="k">uses</span>: actions/checkout@v4
         <span class="k">with</span>:
           <span class="k">fetch-depth</span>: 0      <span class="c"># needed for --git-history</span>
-      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
+      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
         <span class="k">with</span>:
           <span class="k">path</span>: .
           <span class="k">severity</span>: high        <span class="c"># info | low | medium | high | critical</span>
@@ -98,7 +98,7 @@ Cargo. SARIF is auto-uploaded to GitHub code scanning when
 
 <h3>Block PRs on new findings only</h3>
 
-<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
+<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
         <span class="k">with</span>:
           <span class="k">path</span>: .
           <span class="k">baseline</span>: .keyhog-baseline.json
@@ -112,7 +112,7 @@ findings (not in the baseline) fire. See <a href="baseline.html">Baselines →</
 
 <pre><code>      - <span class="k">name</span>: build image
         <span class="k">run</span>: docker build -t app:${{ github.sha }} .
-      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
+      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
         <span class="k">with</span>:
           <span class="k">image</span>: app:${{ github.sha }}
           <span class="k">format</span>: sarif</code></pre>
@@ -209,7 +209,7 @@ findings (not in the baseline) fire. See <a href="baseline.html">Baselines →</
 
 <h2>Optional: live verification in CI</h2>
 
-<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
+<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
         <span class="k">with</span>:
           <span class="k">path</span>: .
           <span class="k">verify</span>: <span class="s">'true'</span>
@@ -238,7 +238,7 @@ findings (not in the baseline) fire. See <a href="baseline.html">Baselines →</
   PR base, instead of the whole tree.</li>
 </ul>
 
-<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
+<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
         <span class="k">with</span>:
           <span class="k">git-diff</span>: ${{ github.event.pull_request.base.sha }}
           <span class="k">incremental</span>: <span class="s">'true'</span></code></pre>

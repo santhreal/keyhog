@@ -2838,7 +2838,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog"
-version = "0.5.40"
+version = "0.5.41"
 dependencies = [
  "anyhow",
  "blake3",
@@ -2875,7 +2875,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog-core"
-version = "0.5.40"
+version = "0.5.41"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2910,7 +2910,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog-scanner"
-version = "0.5.40"
+version = "0.5.41"
 dependencies = [
  "ahash",
  "aho-corasick",
@@ -2965,7 +2965,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog-sources"
-version = "0.5.40"
+version = "0.5.41"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -3015,7 +3015,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog-verifier"
-version = "0.5.40"
+version = "0.5.41"
 dependencies = [
  "aes 0.8.4",
  "base64 0.22.1",

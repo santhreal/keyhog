@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
+      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
         with: { path: ., severity: high, format: sarif }
 ```
 
@@ -165,7 +165,7 @@ Backend selection is reported on startup (the host line also names the GPU and
 `io_uring` when present):
 
 ```
-v0.5.40 · secret scanner · 922 detectors
+v0.5.41 · secret scanner · 922 detectors
 ⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 922 detectors (6061 patterns) | backend=simd-regex
 ```
 
@@ -231,7 +231,7 @@ without signature verification, pass `--insecure` (the SHA256 is still checked).
 Override the variant with `--variant=cuda` (force the native CUDA build,
 requires `libcuda.so` at runtime) or `--variant=cpu` (force the default
 non-CUDA release asset and skip CUDA-asset auto-selection). Pin a version with
-`KEYHOG_VERSION=v0.5.40`. Change the install dir with
+`KEYHOG_VERSION=v0.5.41`. Change the install dir with
 `--install-dir=/usr/local/bin`. An explicit CUDA variant request requires the
 `keyhog-linux-x86_64-cuda` release asset and fails closed if that asset is
 missing; only auto-selected CUDA hosts may fall back to the default Linux asset.
@@ -484,7 +484,7 @@ backend/cache/daemon/OS/GPU matrix.
 ### GitHub Actions
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
   with:
     path: .
     severity: high       # info | low | medium | high | critical
@@ -539,7 +539,7 @@ Or via the `pre-commit` framework:
 ```yaml
 repos:
   - repo: https://github.com/santhsecurity/keyhog
-    rev: v0.5.40
+    rev: v0.5.41
     hooks:
       - id: keyhog
 ```

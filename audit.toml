@@ -7,7 +7,7 @@
 # `cargo audit` invocation in `.github/workflows/ci.yml` need to
 # stay in sync.
 #
-# As of v0.5.40, `scripts/audit.sh` exits zero with these five ignores:
+# As of v0.5.41, `scripts/audit.sh` exits zero with these five ignores:
 # the two gix-* CVEs that the v0.5.2 audit flagged were addressed
 # by bumping gix to 0.77 (commit history under "security: bump
 # gix"). The bincode advisory below was added 2026-05-23 after

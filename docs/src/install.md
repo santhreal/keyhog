@@ -92,7 +92,7 @@ The installer auto-detects, but you can override:
 |-----------------------------------------|---------------------------------------------------------------|
 | `--variant=cuda`                        | Force the CUDA-accelerated Linux build (requires libcuda.so). |
 | `--variant=cpu`                         | Force the default non-CUDA release asset for this platform, skipping CUDA-asset auto-selection. |
-| `KEYHOG_VERSION=v0.5.40` (or `--version=v0.5.40`) | Pin a specific release tag (default: GitHub's latest-asset redirect, with API fallback only when that asset is missing). |
+| `KEYHOG_VERSION=v0.5.41` (or `--version=v0.5.41`) | Pin a specific release tag (default: GitHub's latest-asset redirect, with API fallback only when that asset is missing). |
 | `--install-dir=...`                     | Install into a different directory.            |
 | `GITHUB_TOKEN=...`                      | Optional auth for the fallback GitHub releases API lookup. The normal latest-asset path does not need it. |
 | `--yes` / `-y`                          | Non-interactive: accept all defaults, no prompts.             |
