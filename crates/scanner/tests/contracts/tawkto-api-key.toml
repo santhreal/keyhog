@@ -24,3 +24,18 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "TAWK_TOTOKEN=6c452EXAMPLEEXAMPLE4d06d"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[negative]]
+text = "TAWK_TO_SITE_ID=57e268430f27d064a9cf899b"
+reason = "A Tawk.to site ID is public companion context, not a standalone secret."
+
+[[negative]]
+text = "TAWK_TOTOKEN=6c452aaae4137a470868ddf5d894d06d-extra"
+reason = "A hyphen continuation must not produce a truncated API-key finding."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# TAWKTO_API_KEY=6c452aaae4137a470868ddf5d894d06d  # chat"
+credential = "6c452aaae4137a470868ddf5d894d06d"
+reason = "Commented-out config; TAWKTO_API_KEY keyword + 32-hex key intact inside the comment."

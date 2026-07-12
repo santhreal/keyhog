@@ -4,18 +4,18 @@ service = "tawkto"
 severity = "medium"
 
 [positive_with_companion]
-text = "TAWK_TOTOKEN=e3025697de9717a6d9ce9f63435b17dd\nTAWK_TO site_id ':=57e268430f27d064a9cf899b0b8aa05df2066e5b9bf8e00b834ee3d534e8213"
+text = "TAWK_TOTOKEN=e3025697de9717a6d9ce9f63435b17dd\nTawk_To_Site_Id=57e268430f27d064a9cf899b"
 expected_findings = ["tawkto-api-key"]
-expected_companions = { tawkto_credentials_pair = "TAWK_TOTOKEN=e3025697de9717a6d9ce9f63435b17dd" }
-reason = "Primary paired with companion(s) tawkto_credentials_pair."
+expected_companions = { tawkto_credentials_pair = "57e268430f27d064a9cf899b" }
+reason = "Tawk.to API key paired with the exact nearby site-ID value."
 
 [positive_primary_only]
 text = "TAWK_TOTOKEN=e3025697de9717a6d9ce9f63435b17dd"
 expected_findings = ["tawkto-api-key"]
 must_not_verify = true
-reason = "Primary found without companion tawkto_credentials_pair; verification must NOT proceed."
+reason = "An API key alone must not self-populate the site-ID companion."
 
 [negative_companion_lookalike]
-text = "TAWK_TO site_id ':=57e268430f27d064a9cf899b0b8aa05df2066e5b9bf8e00b834ee3d534e8213"
+text = "Tawk_To_Site_Id=57e268430f27d064a9cf899b"
 expected_findings = []
-reason = "Companion lookalike(s) without primary."
+reason = "A public site ID alone is companion context, not a secret finding."

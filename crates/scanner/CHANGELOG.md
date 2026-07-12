@@ -179,6 +179,18 @@
 - Replace Amazon Music's broad context companion with the exact 64-hex client
   secret, preserve standalone secret findings, normalize caseless field anchors,
   and reject client-ID/secret continuations instead of truncating them.
+- Remove Worldpay's service-name pseudo-companion, migrate its useful fixtures
+  into the normal contract, classify service/merchant IDs as low-severity
+  identifiers, and reject overlong or continued ID tokens whole.
+- Remove Nuvei's self-attaching and invented merchant companions while preserving
+  standalone API-key and API-secret recall, and reject invalid continuations
+  instead of emitting hexadecimal prefixes.
+- Treat Mangopay API keys/passphrases as primaries and client IDs as exact
+  companion context, with mixed-case, minimum-length, unbounded valid-length,
+  and invalid-continuation contracts.
+- Treat Tawk.to API keys as primaries and public site/property IDs as exact
+  companion context, so API keys cannot self-attach and continued key prefixes
+  are rejected whole.
 
 ## 0.2.1
 
