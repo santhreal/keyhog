@@ -112,7 +112,7 @@ fn scan_with_watchdog(root: &Path, out: &Path, deadline: Duration) -> i32 {
             "--backend",
             "simd",
             "--no-gpu",
-            "--no-daemon",
+            "--daemon=off",
             "--dedup",
             "none",
             "--format",

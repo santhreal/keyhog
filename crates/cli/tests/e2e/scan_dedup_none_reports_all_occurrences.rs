@@ -14,7 +14,7 @@ fn scan_dedup_none_reports_all_occurrences() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--format",
             "json",
             "--dedup",

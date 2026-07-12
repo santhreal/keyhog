@@ -8,17 +8,19 @@ use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::sync::OnceLock;
 
 mod mark_stats;
+#[cfg(feature = "simd")]
+pub(crate) use mark_stats::record_mark_hs_served;
 pub(crate) use mark_stats::{
     format_mark_decomposition, phase2_mark_stats, phase2_mark_stats_reset, record_mark_call,
-    record_mark_gate_skip, record_mark_hs_served, record_mark_perpattern_work,
-    record_mark_regexset_served, MarkSnapshot,
+    record_mark_gate_skip, record_mark_perpattern_work, record_mark_regexset_served, MarkSnapshot,
 };
 
 mod hs_mark_timing;
 pub(crate) use hs_mark_timing::{
-    format_hs_mark_split, hs_mark_timing_reset, hs_mark_timing_snapshot, record_hs_mark_dropped_ns,
-    record_hs_mark_scan_ns, HsMarkSplit,
+    format_hs_mark_split, hs_mark_timing_reset, hs_mark_timing_snapshot, HsMarkSplit,
 };
+#[cfg(feature = "simd")]
+pub(crate) use hs_mark_timing::{record_hs_mark_dropped_ns, record_hs_mark_scan_ns};
 
 // The per-scanner performance tuning lives at crate root but remains an
 // engine-internal route selector, not scanner public API.

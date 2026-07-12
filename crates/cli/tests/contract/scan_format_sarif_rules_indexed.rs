@@ -11,7 +11,7 @@ fn scan_format_sarif_rules_indexed() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

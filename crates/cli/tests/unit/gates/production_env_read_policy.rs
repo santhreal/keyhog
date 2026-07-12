@@ -44,15 +44,8 @@ fn env_call_name(line: &str) -> Option<Option<String>> {
 
 fn allowed_env_read(rel: &str, name: &str) -> bool {
     match name {
-        // `PATH`: doctor health check (locate the keyhog binary) and the
-        // installer's CUDA-toolkit probe (find `nvcc` to pick the cuda asset).
-        "PATH" => matches!(
-            rel,
-            "crates/cli/src/subcommands/doctor.rs" | "crates/cli/src/installer/variant.rs"
-        ),
-        // `CUDA_HOME`: installer/update CUDA-variant detection (an environment
-        // *discovery* probe, not a keyhog behavior knob).
-        "CUDA_HOME" => rel == "crates/cli/src/installer/variant.rs",
+        // `PATH`: doctor health check locates the keyhog binary.
+        "PATH" => rel == "crates/cli/src/subcommands/doctor.rs",
         "NO_COLOR" => matches!(
             rel,
             "crates/cli/src/lib.rs"

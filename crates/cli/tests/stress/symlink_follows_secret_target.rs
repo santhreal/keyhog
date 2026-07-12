@@ -15,7 +15,7 @@ fn symlink_follows_secret_target_exit_one() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

@@ -52,7 +52,7 @@ jobs:
         run: |
           set -e
           curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh -o /tmp/install.sh
-          sh /tmp/install.sh --version=v${{ inputs.version }} --yes --no-prompt --variant=cpu
+          sh /tmp/install.sh --version=v${{ inputs.version }} --yes --no-prompt
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install (windows)

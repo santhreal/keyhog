@@ -53,7 +53,7 @@ fn scan_git_staged_severity_critical_filter() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-staged",
             "--severity",
             "critical",

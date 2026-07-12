@@ -21,7 +21,7 @@ fn scan_reports_secret_under_user_detectors_directory() {
 
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg("cpu")
         .arg("--format")

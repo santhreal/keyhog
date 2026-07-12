@@ -43,7 +43,7 @@ pub fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Op
 
     let mut cmd_args: Vec<String> = vec![
         "scan".into(),
-        "--no-daemon".into(),
+        "--daemon=off".into(),
         "--format".into(),
         "json".into(),
         "--backend".into(),
@@ -76,7 +76,7 @@ pub fn write_temp_file(name: &str, content: &str) -> (TempDir, PathBuf) {
 pub fn scan_path(path: &Path, extra_args: &[&str]) -> Output {
     let mut args = vec![
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--format",
         "json",
         "--backend",

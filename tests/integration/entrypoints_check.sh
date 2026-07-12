@@ -121,9 +121,9 @@ fi
 
 PRE="$ROOT/scripts/prerelease.sh"
 if [ -f "$PRE" ]; then
-  if grep -qE 'SKIP bench gate|WARN README tables|KEYHOG_BIN:-|target/release/keyhog|scan --no-daemon .*2>/dev/null .*grep|scan --no-daemon .*grep' "$PRE"; then
+  if grep -qE 'SKIP bench gate|WARN README tables|KEYHOG_BIN:-|target/release/keyhog|scan --daemon=off .*2>/dev/null .*grep|scan --daemon=off .*grep' "$PRE"; then
     echo "FAIL scripts/prerelease.sh must not skip/warn release gates open or prove installed detection with grep/suppressed stderr."
-    grep -nE 'SKIP bench gate|WARN README tables|KEYHOG_BIN:-|target/release/keyhog|scan --no-daemon .*2>/dev/null .*grep|scan --no-daemon .*grep' "$PRE" | sed 's/^/    /'
+    grep -nE 'SKIP bench gate|WARN README tables|KEYHOG_BIN:-|target/release/keyhog|scan --daemon=off .*2>/dev/null .*grep|scan --daemon=off .*grep' "$PRE" | sed 's/^/    /'
     fail=1
   elif grep -q 'make -C benchmarks mirror' "$PRE" \
      && grep -q 'python3 -m bench gate' "$PRE" \

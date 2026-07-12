@@ -15,7 +15,7 @@ fn run_lockdown_with_custom_cache(input: &Path, cache_path: &Path) -> (String, O
     let cache = cache_path.to_str().expect("utf-8 cache path");
     let args = [
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--lockdown",
         "--incremental",
         "--incremental-cache",

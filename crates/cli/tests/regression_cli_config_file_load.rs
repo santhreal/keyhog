@@ -55,12 +55,12 @@ fn make_scan_dir(config: Option<&str>) -> TempDir {
     dir
 }
 
-/// Run `keyhog scan --no-daemon --backend cpu <extra...> <dir>` and return
+/// Run `keyhog scan --daemon=off --backend cpu <extra...> <dir>` and return
 /// (exit code, stdout, stderr). `--backend cpu` keeps the run host-independent.
 fn scan(dir: &std::path::Path, extra: &[&str]) -> (Option<i32>, String, String) {
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg("cpu")
         .args(extra)
@@ -287,7 +287,7 @@ fn explicit_config_path_outside_scan_dir_is_loaded() {
 
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg("cpu")
         .arg("--format")
@@ -428,7 +428,7 @@ fn explicit_config_missing_file_fails_closed_with_fix() {
     let scan_dir = make_scan_dir(None);
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg("cpu")
         .arg("--config")

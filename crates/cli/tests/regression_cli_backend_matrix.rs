@@ -12,7 +12,7 @@
 //!
 //! Every assertion pins an EXACT value (detector id, count, exit code, hash
 //! set, line/offset tuple) — never `!is_empty()`. Deterministic: planted
-//! secrets with valid checksums, otherwise-clean fixtures, `--no-daemon` (no
+//! secrets with valid checksums, otherwise-clean fixtures, `--daemon=off` (no
 //! background-process nondeterminism), and a hermetic `HOME`/`XDG_CACHE_HOME`
 //! so the autoroute cache is isolated from the dev host.
 //!
@@ -72,7 +72,7 @@ fn fixture(name: &str, content: &str) -> (TempDir, PathBuf) {
     (dir, path)
 }
 
-/// Run `keyhog scan --no-daemon --format json [--backend B] [extra…] <path>`
+/// Run `keyhog scan --daemon=off --format json [--backend B] [extra…] <path>`
 /// under a hermetic cache home. Returns (exit code, stdout, stderr) as owned
 /// Strings (no borrows of dropped temporaries).
 fn scan(
@@ -85,7 +85,7 @@ fn scan(
     cmd.env("HOME", home)
         .env("XDG_CACHE_HOME", home)
         .env("NO_COLOR", "1");
-    cmd.args(["scan", "--no-daemon", "--format", "json"]);
+    cmd.args(["scan", "--daemon=off", "--format", "json"]);
     if let Some(b) = backend {
         cmd.args(["--backend", b]);
     }

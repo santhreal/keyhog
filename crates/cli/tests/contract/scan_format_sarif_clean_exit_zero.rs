@@ -9,7 +9,7 @@ fn scan_format_sarif_clean_exit_zero() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

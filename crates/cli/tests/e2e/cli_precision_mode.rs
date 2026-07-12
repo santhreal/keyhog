@@ -34,7 +34,7 @@ fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option
         .args(extra_args)
         .arg("--format")
         .arg("json")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg(&path)
         .output()
         .expect("spawn keyhog scan");
@@ -196,7 +196,7 @@ fn precision_mode_clamps_detector_floor_up_to_0_85() {
             "--precision",
             "--format",
             "json",
-            "--no-daemon",
+            "--daemon=off",
         ])
         .arg(dir.path())
         .output()

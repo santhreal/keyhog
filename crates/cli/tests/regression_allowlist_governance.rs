@@ -33,7 +33,7 @@ fn run_scan(dir: &TempDir) -> (String, String, Option<i32>) {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

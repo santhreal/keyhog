@@ -53,15 +53,8 @@ pub(super) fn apply_system_section(
     args: &mut ScanArgs,
     config_errors: &mut Vec<String>,
     trusted_bin_dirs: &mut Vec<PathBuf>,
-    top_level_trusted_bin_dirs: Option<&[PathBuf]>,
     system: Option<&SystemSection>,
 ) {
-    collect_trusted_bin_dirs(
-        config_errors,
-        trusted_bin_dirs,
-        "trusted_bin_dirs",
-        top_level_trusted_bin_dirs,
-    );
     collect_trusted_bin_dirs(
         config_errors,
         trusted_bin_dirs,

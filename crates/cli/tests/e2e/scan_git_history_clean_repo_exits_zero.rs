@@ -43,7 +43,7 @@ fn scan_git_history_clean_repo_exits_zero() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-history",
             ".",
             "--format",

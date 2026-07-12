@@ -7,7 +7,7 @@ fn scan(path: &std::path::Path) -> std::process::Output {
     Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

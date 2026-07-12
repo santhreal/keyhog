@@ -57,7 +57,7 @@ fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option
 
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .args(["--backend", FUNCTIONAL_E2E_BACKEND])
         .args(extra_args)
         .arg("--format")
@@ -85,7 +85,7 @@ fn forced_simd_progress_banner() -> String {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--progress",
             "--format",
             "json",
@@ -541,7 +541,7 @@ fn no_suppress_test_fixtures_surfaces_stripe_demo_key() {
     // ----- default: suppressed -----------------------------------
     let default_out = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--format")
@@ -564,7 +564,7 @@ fn no_suppress_test_fixtures_surfaces_stripe_demo_key() {
     // ----- --no-suppress-test-fixtures: surfaced -----------------
     let optout_out = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--no-suppress-test-fixtures")
@@ -599,7 +599,7 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
 
     let default_out = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--format")
@@ -620,7 +620,7 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
 
     let optout_out = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--no-suppress-test-fixtures")
@@ -682,13 +682,13 @@ fn demo_secret_aws_example_summary_distinguishes_suppression_from_clean() {
     let path = dir.path().join("demo-secret.env");
     std::fs::write(&path, fixture).expect("write fixture");
 
-    // --no-daemon to guarantee the in-process orchestrator path is
+    // --daemon=off to guarantee the in-process orchestrator path is
     // exercised (the daemon path lives in `subcommands/scan.rs` and
     // is locked by `daemon_route_test_fixture_suppression_records_telemetry`
     // below).
     let out = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--format")
@@ -721,7 +721,7 @@ fn explicit_format_text_does_not_emit_json() {
     // contrast case we're asserting.
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--format")
@@ -781,7 +781,7 @@ fn scan_comments_flag_surfaces_credentials_in_comments() {
     // hides findings the default would surface.
     let default_out = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--format")
@@ -796,7 +796,7 @@ fn scan_comments_flag_surfaces_credentials_in_comments() {
 
     let opt_in_out = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg(FUNCTIONAL_E2E_BACKEND)
         .arg("--scan-comments")
@@ -880,7 +880,7 @@ fn git_staged_scan_finds_only_staged_secret() {
         .args([
             "scan",
             "--git-staged",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             FUNCTIONAL_E2E_BACKEND,
             "--format",
@@ -934,7 +934,7 @@ fn baseline_suppresses_acknowledged_findings_on_rescan() {
     let create = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             FUNCTIONAL_E2E_BACKEND,
             "--create-baseline",
@@ -956,7 +956,7 @@ fn baseline_suppresses_acknowledged_findings_on_rescan() {
     let filtered = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             FUNCTIONAL_E2E_BACKEND,
             "--baseline",
@@ -999,7 +999,7 @@ fn lockdown_bails_on_verify_flag() {
         .arg(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             FUNCTIONAL_E2E_BACKEND,
             "--lockdown",
@@ -1013,7 +1013,7 @@ fn lockdown_bails_on_verify_flag() {
         Err(_) => Command::new(binary())
             .args([
                 "scan",
-                "--no-daemon",
+                "--daemon=off",
                 "--backend",
                 FUNCTIONAL_E2E_BACKEND,
                 "--lockdown",
@@ -1407,7 +1407,7 @@ fn update_subcommand_is_wired_with_its_flags() {
         String::from_utf8_lossy(&output.stderr)
     );
     let help = String::from_utf8_lossy(&output.stdout);
-    for flag in ["--check", "--version", "--variant"] {
+    for flag in ["--check", "--version"] {
         assert!(
             help.contains(flag),
             "`keyhog update --help` must document {flag}; got:\n{help}"
@@ -1431,7 +1431,7 @@ fn repair_subcommand_is_wired_with_its_flags() {
         String::from_utf8_lossy(&output.stderr)
     );
     let help = String::from_utf8_lossy(&output.stdout);
-    for flag in ["--force", "--version", "--variant"] {
+    for flag in ["--force", "--version"] {
         assert!(
             help.contains(flag),
             "`keyhog repair --help` must document {flag}; got:\n{help}"
@@ -1481,7 +1481,7 @@ fn scan_dir_with_config(
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             FUNCTIONAL_E2E_BACKEND,
             "--format",
@@ -1554,7 +1554,7 @@ fn config_detector_disable_all_loaded_detectors_fails_closed() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             FUNCTIONAL_E2E_BACKEND,
             "--format",
@@ -1621,7 +1621,7 @@ fn config_detector_min_confidence_floor_drops_findings() {
         let output = Command::new(binary())
             .args([
                 "scan",
-                "--no-daemon",
+                "--daemon=off",
                 "--backend",
                 FUNCTIONAL_E2E_BACKEND,
                 "--format",

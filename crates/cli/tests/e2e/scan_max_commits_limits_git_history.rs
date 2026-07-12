@@ -58,7 +58,7 @@ fn scan_max_commits_limits_git_history() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-history",
             ".",
             "--format",

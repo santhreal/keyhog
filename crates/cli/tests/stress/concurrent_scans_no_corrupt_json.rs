@@ -19,7 +19,7 @@ fn concurrent_scans_no_corrupt_json() {
             let output = Command::new(binary())
                 .args([
                     "scan",
-                    "--no-daemon",
+                    "--daemon=off",
                     "--backend",
                     "simd",
                     "--format",

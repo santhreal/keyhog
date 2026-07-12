@@ -30,7 +30,7 @@ fn scan_max_file_size_skips_oversized_file() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--format",
             "json",
             // 20 bytes: above `small.txt` (12 B, scanned) and below

@@ -47,7 +47,7 @@ fn every_output_format_documented_in_user_docs_is_accepted_by_scan() {
     for format in documented {
         let output = Command::new(binary())
             .arg("scan")
-            .arg("--no-daemon")
+            .arg("--daemon=off")
             .arg("--backend")
             .arg("simd")
             .arg("--format")

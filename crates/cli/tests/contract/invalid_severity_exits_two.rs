@@ -6,7 +6,7 @@ use std::process::Command;
 #[test]
 fn invalid_severity_exits_two() {
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--severity", "bogus", "."])
+        .args(["scan", "--daemon=off", "--severity", "bogus", "."])
         .output()
         .expect("spawn");
     assert_eq!(

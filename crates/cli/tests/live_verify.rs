@@ -3,7 +3,7 @@
 //! This test is **gated on `KEYHOG_LIVE_VERIFY=1`** so it never runs in
 //! normal CI. When enabled, it plants a credential read from one of the
 //! recognized env-var pairs into a temp file, runs `keyhog scan
-//! --verify --no-daemon` against that file, and asserts the binary
+//! --verify --daemon=off` against that file, and asserts the binary
 //! exits with code 10 - the `EXIT_LIVE_CREDENTIALS` contract from
 //! `crates/cli/src/orchestrator.rs:45`.
 //!
@@ -122,7 +122,7 @@ fn live_verify_smoke_real_credentials_yield_exit_10() {
 
         let out = Command::new(binary())
             .arg("scan")
-            .arg("--no-daemon")
+            .arg("--daemon=off")
             .arg("--backend")
             .arg("simd")
             .arg("--verify")

@@ -97,7 +97,6 @@ pub mod scan_help_documents_git_staged_flag;
 pub mod scan_help_documents_gitlab_group_flag;
 pub mod scan_help_documents_lockdown_flag;
 pub mod scan_help_documents_max_commits_flag;
-pub mod scan_help_documents_no_daemon_flag;
 pub mod scan_help_exits_zero;
 pub mod scan_help_lists_verify_flag;
 pub mod scan_lockdown_verify_exits_two;

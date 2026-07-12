@@ -73,7 +73,8 @@ fn most_regex_detectors_fire_on_a_generated_example() {
         }
     }
 
-    // Current: ~923 detectors, ~920 Regex, ~840+ fire with multi-sample. Floors
+    // The live corpus contains a large regex-backed majority and hundreds of
+    // detectors that fire with multiple samples. Floors
     // sit below that with margin so this is a regression ratchet, not brittle.
     assert!(
         total_regex >= 880,

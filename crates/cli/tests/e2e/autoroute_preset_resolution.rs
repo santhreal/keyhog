@@ -20,7 +20,7 @@ fn scan(
     preset: &[&str],
     calibrate: bool,
 ) -> Option<i32> {
-    let mut args: Vec<&str> = vec!["scan", "--no-daemon"];
+    let mut args: Vec<&str> = vec!["scan", "--daemon=off"];
     if calibrate {
         args.push("--autoroute-calibrate");
     }

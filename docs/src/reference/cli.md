@@ -20,7 +20,9 @@ incomplete.
 | `--exclude-paths <GLOB>...`   | Skip files matching glob. Space-separated list, repeatable. |
 | `--git-staged`                | Scan git-staged files only (pre-commit mode).  |
 | `--git-history <PATH>`        | Walk commits added-line patches (default: HEAD only). |
+| `--git-blobs <PATH>`          | Scan reachable repository blobs, deduplicated by blob ID. |
 | `--git-diff <BASE_REF>`       | Scan only added lines since `BASE_REF`.        |
+| `--git-diff-path <PATH>`      | Select the repository used by `--git-diff` instead of the current directory. |
 | `--docker-image <IMAGE>`      | Scan a saved Docker image archive.             |
 | `--github-org <ORG>`          | Clone and scan every repository in a GitHub organization. Requires `--github-token`. |
 | `--gitlab-group <GROUP>`      | Clone and scan every project in a GitLab group, including subgroups. Requires `--gitlab-token`; use `--gitlab-endpoint` for self-managed GitLab. |
@@ -48,6 +50,11 @@ incomplete.
 | `--verify`                    | Call each detector's verify endpoint.          |
 | `--proxy <URL>`               | Route verifier traffic through a proxy (`http://burp:8080`, `socks5://...`). `off` disables all proxying. |
 | `--insecure`                  | Skip TLS cert verification on verifier traffic (don't use outside a lab). |
+| `--verify-rate <RPS>`         | Cap steady-state verification calls per service (default `5`). |
+| `--verify-batch`              | Serialize verification per service; requires `--verify`. |
+| `--verify-oob`                | Enable callback-based verification; requires `--verify`. |
+| `--oob-server <HOST>`         | Select the Interactsh collector for OOB verification. |
+| `--oob-timeout <SECS>`        | Bound the per-finding OOB callback wait. |
 
 ### Performance
 
@@ -55,7 +62,7 @@ incomplete.
 |-------------------------------|------------------------------------------------|
 | `--fast`                      | Skip entropy + ML scorer. ~50% faster, ~20% fewer detectors. |
 | `--daemon`                    | Force daemon route for eligible stdin/single-file scans. Unix only; fails if the request needs the in-process pipeline. |
-| `--no-daemon`                 | Force in-process scan even if daemon is up.    |
+| `--daemon=off`                 | Force in-process scan even if daemon is up.    |
 | `--timeout <SECONDS>`         | Hard per-scan deadline.                        |
 | `--profile`                   | Emit the scanner-owned hierarchical profile report to stderr at scan end. |
 | `--perf-trace`                | Emit low-level scan/GPU phase timing traces to stderr. |
@@ -81,6 +88,8 @@ minus the `limit-` prefix and with dashes changed to underscores.
 | `--detectors <DIR>`           | Use the detector TOMLs in `DIR` instead of the embedded corpus. To run a curated subset, copy the detector TOMLs you want into a directory and point `--detectors` at it (there is no per-ID enable/disable flag). |
 | `--no-suppress-test-fixtures` | Show findings on bundled example credentials.  |
 | `--baseline <FILE>`           | Compare against a prior scan; show only new.   |
+| `--create-baseline <FILE>`    | Write a new baseline from the current findings and exit. |
+| `--update-baseline <FILE>`    | Merge current findings into an existing baseline. |
 | `--hide-client-safe`          | Drop every `CLIENT-SAFE` finding (Sentry DSN, Stripe `pk_*`, Mapbox `pk.`, PostHog `phc_`, etc.) before reporting. Use this for bug-bounty / exfiltration-impact workflows where keys public by design are noise. |
 
 ### Scan controls
@@ -96,6 +105,7 @@ minus the `limit-` prefix and with dashes changed to underscores.
 | `keyhog scan --no-autoroute-gpu`      | Override TOML `autoroute_gpu = true` for a single run. |
 | `keyhog scan --per-chunk-timeout-ms <MS>` | Attach an `Instant` deadline to every chunk scan. Default unset = no operator deadline; `[scan].per_chunk_timeout_ms` provides the persistent default. |
 | `keyhog scan --threads <N>`           | Pin the rayon worker count for this run. `.keyhog.toml` `[scan].threads` provides the persistent default. |
+| `keyhog scan --calibration-cache <PATH>` | Apply one explicit per-detector Bayesian confidence cache. Missing or invalid files fail closed. |
 | `keyhog scan --reader-threads <N>`    | Pin dedicated filesystem reader threads. `.keyhog.toml` `[scan].reader_threads` provides the persistent default. |
 | `keyhog scan --fused-batch <N>`       | Pin fused filesystem pipeline batch size. `.keyhog.toml` `[scan].fused_batch` provides the persistent default. |
 | `keyhog scan --fused-depth <N>`       | Pin fused filesystem pipeline channel depth. `.keyhog.toml` `[scan].fused_depth` provides the persistent default. |
@@ -108,6 +118,11 @@ Autoroute calibration evidence is also explicit scan configuration: use
 GPU MoE readback timeout is explicit scanner tuning:
 `.keyhog.toml` `[tuning].gpu_moe_timeout_ms`. GPU region-presence parity/debug
 recall-floor runs use `.keyhog.toml` `[tuning].gpu_recall_floor = true`.
+
+Custom S3 and GCS endpoints never receive ambient cloud credentials unless the
+operator explicitly passes `--allow-s3-credential-forward` or
+`--allow-gcs-token-forward`. Private cloud endpoints additionally require
+`--allow-private-cloud-endpoint` (or `[http].allow_private_endpoint = true`).
 
 ## `keyhog config --effective [SCAN FLAGS]`
 
@@ -176,7 +191,7 @@ daemon route cannot be honored.
 |--------------------|-----------------------------------------------------|
 | `daemon start`     | Bind the Unix socket, accept connections.           |
 | `daemon stop`      | Tell the running daemon to shut down.               |
-| `daemon status`    | Print uptime, scans served, active scans, and scan scope. |
+| `daemon status`    | Print uptime, scans served, active scans, and detector count. |
 
 `daemon start --request-timeout-secs <N>` sets how long one client connection
 may sit without completing a request frame before the daemon closes it and
@@ -224,6 +239,14 @@ default lives under the platform cache directory, normally
 `$XDG_CACHE_HOME/keyhog/calibration.json`). Existing corrupted or
 schema-incompatible cache files fail closed and are not overwritten.
 
+## `keyhog calibrate-autoroute`
+
+Runs the complete scan-policy and workload-bucket sweep, verifies backend
+parity, and persists fastest-correct routing evidence for normal `auto` scans.
+`--autoroute-cache <PATH>` selects the evidence file; `off` is rejected because
+calibration must persist its result. `--quiet` suppresses per-probe progress but
+still prints the final summary.
+
 ## `keyhog backend`
 
 Prints hardware probe results: which SIMD ISA was detected, whether
@@ -263,6 +286,19 @@ keyhog completion zsh > "${fpath[1]}/_keyhog"
 keyhog completion fish > ~/.config/fish/completions/keyhog.fish
 keyhog completion powershell >> $PROFILE
 ```
+
+## Install maintenance
+
+| Command | Effect |
+|---------|--------|
+| `keyhog doctor` | Report host and PATH state, detector corpus health, and end-to-end scanner/GPU self-tests. |
+| `keyhog update --check` | Check for a newer verified release; exits `10` when one is available. |
+| `keyhog update [--version <TAG>]` | Atomically install the latest or selected release and roll back if verification fails. |
+| `keyhog repair [--force] [--version <TAG>]` | Reinstall a verified binary; without `--force`, a healthy install is left intact. |
+| `keyhog uninstall [--yes]` | Show what would be removed; `--yes` performs the uninstall. |
+
+Linux uses one GPU-capable artifact that probes CUDA and WGPU at runtime. These
+commands therefore have no backend or artifact-variant selector.
 
 ## Global flags
 

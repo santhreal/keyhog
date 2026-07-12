@@ -2,7 +2,7 @@
 //!
 //! Locks the headline GPU invariant: **every backend produces
 //! byte-identical findings on the same input.** A divergence between
-//! GPU/MegaScan/SimdCpu/CpuFallback on a single fixture means a real
+//! GPU/SimdCpu/CpuFallback on a single fixture means a real
 //! bug - either the GPU kernel dropped a match, or the CPU path is
 //! over-firing, or the chunk-boundary path is asymmetric.
 //!
@@ -12,7 +12,7 @@
 //! synthetic so the test runs in milliseconds; real-corpus parity
 //! lives in `gpu_parity.rs` (boundary) and the differential bench.
 //!
-//! GPU/MegaScan are not allowed to return an all-zero finding set on
+//! GPU is not allowed to return an all-zero finding set on
 //! secret-bearing fixtures. If a host cannot run the GPU path, the scanner must
 //! fail loud or take a recall-preserving backend path before this assertion.
 
@@ -161,7 +161,7 @@ fn build_fixtures() -> Vec<Fixture> {
             // companion (`AC` + 32 hex). It is one of the ~49 no-literal / HS-only
             // detectors, the exact class the GPU region-presence trigger producer
             // can under-admit relative to SimdCpu's Hyperscan trigger union
-            // (M-02). Every backend — Gpu and MegaScan included — must surface it
+            // (M-02). Every backend, including GPU, must surface it
             // identically to the SimdCpu reference, or the GPU path is silently
             // dropping an HS-only vendor secret on its normal success path
             // (Law 10). Chosen as the confidence-CLEAR-CUT vendor member of that
@@ -279,7 +279,6 @@ fn backend_parity_matrix_all_fixtures_all_backends() {
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
         ScanBackend::Gpu,
-        ScanBackend::MegaScan,
     ];
 
     let mut total_cells = 0usize;
@@ -354,7 +353,6 @@ fn determinism_each_backend_each_fixture_runs_twice_matches() {
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
         ScanBackend::Gpu,
-        ScanBackend::MegaScan,
     ];
 
     let mut failures = Vec::new();

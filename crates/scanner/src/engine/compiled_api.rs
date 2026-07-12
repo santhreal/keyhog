@@ -459,20 +459,16 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
 
     /// Warm backend resources that are initialized lazily during scanning.
     pub fn warm_backend(&self, backend: crate::hw_probe::ScanBackend) -> bool {
-        // `Gpu` and `MegaScan` are the SAME live on-GPU engine now: the
-        // GpuLiteralSet region-presence route. The separate `RulePipeline`
-        // regex-NFA engine `MegaScan` once warmed was a dead route (its `scan`
-        // was never invoked) and was removed, so warming both arms is exactly
-        // "is the GPU region-presence stack usable".
+        // GPU readiness means the one production on-GPU engine: GpuLiteralSet
+        // region presence. Retired per-rule routes do not keep compatibility
+        // identities here.
         let ready = match backend {
-            crate::hw_probe::ScanBackend::Gpu | crate::hw_probe::ScanBackend::MegaScan => {
-                self.gpu_stack_usable()
-            }
+            crate::hw_probe::ScanBackend::Gpu => self.gpu_stack_usable(),
             crate::hw_probe::ScanBackend::SimdCpu => self.simd_backend_usable(),
             crate::hw_probe::ScanBackend::CpuFallback => true,
         };
         // Warming is a PROBE with an in-band `bool` channel: report readiness
-        // honestly (`false` when a forced GPU/MegaScan stack is unusable) instead
+        // honestly (`false` when a forced GPU stack is unusable) instead
         // of hard-stopping the process. This is NOT a silent fallback (Law 10) —
         // the caller receives the `false` and decides. The no-silent-fallback
         // hard-stop lives where it MUST: `--require-gpu` is caught by the CLI

@@ -1,5 +1,5 @@
 //! Regression e2e — directory-recursion coverage of `keyhog scan`, driven over
-//! the SHIPPED `keyhog` binary with `--no-daemon` and pinned to EXACT values.
+//! the SHIPPED `keyhog` binary with `--daemon=off` and pinned to EXACT values.
 //!
 //! WHAT THIS FILE PINS (and a bug it documents)
 //! ---------------------------------------------
@@ -86,7 +86,7 @@ fn plant_depth_tree() -> TempDir {
     dir
 }
 
-/// Run `keyhog scan --no-daemon [--backend cpu] <extra…> <path>`, hermetic env,
+/// Run `keyhog scan --daemon=off [--backend cpu] <extra…> <path>`, hermetic env,
 /// returning (exit-code, stdout, stderr). `--backend cpu` is injected unless the
 /// caller pins a backend: the scalar CpuFallback path is always available on
 /// every host and build (including the hyperscan-less `ci` feature set), so the
@@ -95,7 +95,7 @@ fn plant_depth_tree() -> TempDir {
 /// is verified separately in `simd_and_cpu_backends_yield_identical_depth_coverage`.
 fn scan(path: &Path, extra: &[&str]) -> (Option<i32>, String, String) {
     let mut cmd = Command::new(binary());
-    cmd.args(["scan", "--no-daemon"]);
+    cmd.args(["scan", "--daemon=off"]);
     if !extra.contains(&"--backend") {
         cmd.args(["--backend", "cpu"]);
     }

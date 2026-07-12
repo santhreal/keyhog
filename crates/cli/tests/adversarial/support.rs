@@ -37,7 +37,7 @@ pub fn oracle_unicode_path_scan() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",
@@ -83,7 +83,7 @@ pub fn oracle_pipe_stdout_json_valid() {
     let child = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",
@@ -122,7 +122,7 @@ pub fn oracle_concurrent_four_scans_json() {
             let output = Command::new(binary())
                 .args([
                     "scan",
-                    "--no-daemon",
+                    "--daemon=off",
                     "--backend",
                     "simd",
                     "--format",
@@ -167,7 +167,7 @@ pub fn oracle_invalid_utf8_filename_rejected() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

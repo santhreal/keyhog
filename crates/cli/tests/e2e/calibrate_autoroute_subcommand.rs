@@ -77,7 +77,7 @@ fn calibrate_autoroute_primes_every_preset_for_a_later_scan() {
     for preset in [&[][..], &["--fast"], &["--deep"], &["--precision"]] {
         for target in [&four_kib, &sixty_four_kib, &tiny] {
             let target_arg = target.to_string_lossy().into_owned();
-            let mut args: Vec<&str> = vec!["scan", "--no-daemon", "--no-config"];
+            let mut args: Vec<&str> = vec!["scan", "--daemon=off", "--no-config"];
             args.extend_from_slice(preset);
             args.extend_from_slice(&["--format", "json", &target_arg]);
             let scan = Command::new(binary())

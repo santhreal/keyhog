@@ -50,7 +50,7 @@ fn scan_git_diff_head_includes_uncommitted_worktree_changes() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-diff",
             "HEAD",
             "--format",

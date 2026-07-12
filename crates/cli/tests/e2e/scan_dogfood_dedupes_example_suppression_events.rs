@@ -12,7 +12,7 @@ fn scan_dogfood_dedupes_example_suppression_events() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--dogfood",
             "--format",
             "text",

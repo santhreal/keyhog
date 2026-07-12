@@ -11,7 +11,7 @@ fn exclude_paths_massive_glob_list() {
     let mut cmd = Command::new(binary());
     cmd.args([
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--backend",
         "simd",
         "--format",

@@ -19,7 +19,7 @@ Adds the [keyhog](https://github.com/santhsecurity/keyhog) secret
 scanner to PR + push CI. Findings upload to GitHub code-scanning as
 SARIF; the job fails the build only on high-severity findings.
 
-**What it catches.** 920 embedded detectors over the full surface area
+**What it catches.** The embedded detector corpus over the full surface area
 of this repo, including:
 - named vendor detectors (AWS, GitHub, Stripe, Slack, OpenAI,
   Anthropic, GCP, Azure, and similar),

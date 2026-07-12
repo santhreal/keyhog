@@ -60,7 +60,7 @@ installed_detection_smoke() {
   local stderr_log="$5"
   local rc
 
-  "$bin" scan --no-daemon --format json --output "$report" "$leak" >"$stdout_log" 2>"$stderr_log"
+  "$bin" scan --daemon=off --format json --output "$report" "$leak" >"$stdout_log" 2>"$stderr_log"
   rc=$?
   case "$rc" in
     1 | 10) ;;

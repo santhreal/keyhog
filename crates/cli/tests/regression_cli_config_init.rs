@@ -61,7 +61,7 @@ const DEFAULT_REGEX_DFA_LIMIT: usize = 1 << 20; // 1_048_576
 
 #[test]
 fn config_effective_exits_zero_and_leads_with_header() {
-    let (code, stdout, stderr) = run(&["config", "--effective", "--no-config", "--no-daemon"]);
+    let (code, stdout, stderr) = run(&["config", "--effective", "--no-config", "--daemon=off"]);
     assert_eq!(
         code,
         Some(0),
@@ -85,7 +85,7 @@ fn config_effective_exits_zero_and_leads_with_header() {
 
 #[test]
 fn config_effective_default_backend_is_auto() {
-    let (code, stdout, _stderr) = run(&["config", "--effective", "--no-config", "--no-daemon"]);
+    let (code, stdout, _stderr) = run(&["config", "--effective", "--no-config", "--daemon=off"]);
     assert_eq!(code, Some(0), "config --effective must exit 0");
     // `backend_override_label(None)` == "auto": no operator override, no probe.
     assert!(
@@ -100,7 +100,7 @@ fn config_effective_default_gpu_policy_is_auto_not_required() {
     // HOST-INDEPENDENCE: with no `--require-gpu`/`--no-gpu`, the resolved GPU
     // runtime policy is `Auto` (Display == "auto"). This line is identical on a
     // GPU host and a GPU-less runner; it must NEVER silently become "required".
-    let (code, stdout, _stderr) = run(&["config", "--effective", "--no-config", "--no-daemon"]);
+    let (code, stdout, _stderr) = run(&["config", "--effective", "--no-config", "--daemon=off"]);
     assert_eq!(code, Some(0), "config --effective must exit 0");
     assert!(
         stdout.contains("\ngpu = auto\n"),
@@ -114,7 +114,7 @@ fn config_effective_default_gpu_policy_is_auto_not_required() {
 
 #[test]
 fn config_effective_default_max_file_size_reports_annotated_compiled_default() {
-    let (code, stdout, _stderr) = run(&["config", "--effective", "--no-config", "--no-daemon"]);
+    let (code, stdout, _stderr) = run(&["config", "--effective", "--no-config", "--daemon=off"]);
     assert_eq!(code, Some(0), "config --effective must exit 0");
     let expected = format!("\nmax_file_size = {DEFAULT_MAX_FILE_SIZE} (default)\n");
     assert!(
@@ -130,7 +130,7 @@ fn config_effective_default_max_file_size_reports_annotated_compiled_default() {
 
 #[test]
 fn config_effective_default_regex_dfa_limit_reports_annotated_compiled_default() {
-    let (code, stdout, _stderr) = run(&["config", "--effective", "--no-config", "--no-daemon"]);
+    let (code, stdout, _stderr) = run(&["config", "--effective", "--no-config", "--daemon=off"]);
     assert_eq!(code, Some(0), "config --effective must exit 0");
     let expected = format!("\nregex_dfa_limit = {DEFAULT_REGEX_DFA_LIMIT} (default)\n");
     assert!(
@@ -143,7 +143,7 @@ fn config_effective_default_regex_dfa_limit_reports_annotated_compiled_default()
 fn config_effective_default_threads_render_auto() {
     // `resolved.threads == None` renders "auto" (map_or_else), NOT "0" / a probed
     // core count — so the dump stays host-independent.
-    let (code, stdout, _stderr) = run(&["config", "--effective", "--no-config", "--no-daemon"]);
+    let (code, stdout, _stderr) = run(&["config", "--effective", "--no-config", "--daemon=off"]);
     assert_eq!(code, Some(0), "config --effective must exit 0");
     assert!(
         stdout.contains("\nthreads = auto\n"),
@@ -157,7 +157,7 @@ fn config_effective_default_threads_render_auto() {
 
 #[test]
 fn config_effective_emits_all_core_default_keys() {
-    let (code, stdout, stderr) = run(&["config", "--effective", "--no-config", "--no-daemon"]);
+    let (code, stdout, stderr) = run(&["config", "--effective", "--no-config", "--daemon=off"]);
     assert_eq!(
         code,
         Some(0),
@@ -212,7 +212,7 @@ fn config_effective_emits_all_core_default_keys() {
 fn config_effective_default_exclude_and_disabled_counts_are_zero() {
     // Hermetic defaults ship with no excludes and no disabled detectors, so the
     // count-valued lines must be exactly 0 (proves the counters, not just keys).
-    let (code, stdout, _stderr) = run(&["config", "--effective", "--no-config", "--no-daemon"]);
+    let (code, stdout, _stderr) = run(&["config", "--effective", "--no-config", "--daemon=off"]);
     assert_eq!(code, Some(0), "config --effective must exit 0");
     assert!(
         stdout.contains("\nexclude_paths = 0\n"),
@@ -236,7 +236,7 @@ fn config_effective_min_confidence_override_reaches_output() {
         "config",
         "--effective",
         "--no-config",
-        "--no-daemon",
+        "--daemon=off",
         "--min-confidence",
         "0.95",
     ]);
@@ -257,7 +257,7 @@ fn config_effective_decode_depth_override_reaches_output() {
         "config",
         "--effective",
         "--no-config",
-        "--no-daemon",
+        "--daemon=off",
         "--decode-depth",
         "7",
     ]);
@@ -279,7 +279,7 @@ fn config_effective_threads_override_reaches_output() {
         "config",
         "--effective",
         "--no-config",
-        "--no-daemon",
+        "--daemon=off",
         "--threads",
         "3",
     ]);
@@ -300,7 +300,7 @@ fn config_effective_min_secret_len_override_reaches_output() {
         "config",
         "--effective",
         "--no-config",
-        "--no-daemon",
+        "--daemon=off",
         "--min-secret-len",
         "24",
     ]);
@@ -321,7 +321,7 @@ fn config_effective_min_secret_len_override_reaches_output() {
 
 #[test]
 fn config_effective_is_deterministic_across_two_runs() {
-    let args = &["config", "--effective", "--no-config", "--no-daemon"];
+    let args = &["config", "--effective", "--no-config", "--daemon=off"];
     let (code_a, stdout_a, _e_a) = run(args);
     let (code_b, stdout_b, _e_b) = run(args);
     assert_eq!(code_a, Some(0), "first config --effective run must exit 0");

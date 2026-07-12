@@ -9,7 +9,7 @@ fn progress_flag_emits_backend_line_without_tty() {
     let mut cmd = Command::new(binary());
     apply_default_scan_backend(
         &mut cmd,
-        &["scan", "--no-daemon", "--progress", "--format", "json"],
+        &["scan", "--daemon=off", "--progress", "--format", "json"],
     );
     let output = cmd
         .arg(&path)

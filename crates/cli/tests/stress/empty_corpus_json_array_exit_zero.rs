@@ -10,7 +10,7 @@ fn empty_corpus_json_array_exit_zero() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

@@ -36,7 +36,6 @@ choose GPU incorrectly.
 | `--daemon=auto` | Default. Use a reachable daemon only when it can honor the request. A connection/runtime failure is reported, then the scan runs in process. |
 | `--daemon=on` or bare `--daemon` | Require the daemon route. Missing daemon, unsupported request, or IPC failure is an error; KeyHog does not silently substitute an in-process scan. |
 | `--daemon=off` | Always use the in-process orchestrator. |
-| `--no-daemon` | Compatibility alias for `--daemon=off`; new integrations should use the canonical spelling. |
 
 ## Requests the daemon can serve
 
@@ -74,5 +73,5 @@ prefer GPU.
 
 `daemon start --request-timeout-secs <N>` bounds the time a client may take to
 finish a request frame (default `300`). `daemon status` reports uptime, scans
-served, active scans, and scope. A stale socket is removed only after ownership
+served, active scans, and detector count. A stale socket is removed only after ownership
 and directory trust checks pass.

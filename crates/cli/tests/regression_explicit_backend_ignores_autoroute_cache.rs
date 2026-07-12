@@ -18,7 +18,7 @@ fn explicit_backend_does_not_load_stale_autoroute_cache() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--no-config",
             "--format",
             "json",

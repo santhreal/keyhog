@@ -86,7 +86,7 @@ fn scan_file(content: &str, extra: &[&str]) -> (Option<i32>, String, String) {
     // This doc-coherence test proves verification flag/output behavior, not
     // autoroute calibration. Use an explicit backend so the test stays
     // independent of the host's persisted fastest-correct routing cache.
-    let mut args: Vec<&str> = vec!["scan", "--no-daemon", "--backend", "simd"];
+    let mut args: Vec<&str> = vec!["scan", "--daemon=off", "--backend", "simd"];
     args.extend_from_slice(extra);
     let p = path.to_string_lossy().into_owned();
     args.push(&p);

@@ -81,12 +81,12 @@ fn host_has_usable_gpu() -> bool {
     !gpu_line.contains("not detected") && !gpu_line.contains("software renderer")
 }
 
-/// Scan a single file in-process (`--no-daemon`) with the given extra args.
-/// Returns (stdout, stderr, exit-code). `--no-daemon` keeps the run on the
+/// Scan a single file in-process (`--daemon=off`) with the given extra args.
+/// Returns (stdout, stderr, exit-code). `--daemon=off` keeps the run on the
 /// orchestrator path regardless of whether a stray daemon socket exists on the
 /// dev box, so exit-code assertions are deterministic.
 fn scan_in_process(path: &std::path::Path, extra: &[&str]) -> (String, String, Option<i32>) {
-    let mut args: Vec<&str> = vec!["scan", "--no-daemon", "--backend", "simd"];
+    let mut args: Vec<&str> = vec!["scan", "--daemon=off", "--backend", "simd"];
     args.extend_from_slice(extra);
     let p = path.to_str().expect("utf-8 path");
     args.push(p);
@@ -230,22 +230,6 @@ fn unknown_flag_exits_two() {
 }
 
 #[test]
-fn daemon_conflicts_with_no_daemon_exits_two() {
-    // args/scan.rs: `--daemon` is `conflicts_with = "no_daemon"`. clap rejects
-    // the pair at parse time with exit 2.
-    let out = Command::new(binary())
-        .args(["scan", "--daemon", "--no-daemon", "."])
-        .output()
-        .expect("spawn");
-    assert_eq!(
-        out.status.code(),
-        Some(2),
-        "--daemon + --no-daemon are mutually exclusive (clap exit 2); stderr={}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
-#[test]
 fn fast_conflicts_with_deep_exits_two() {
     // args/scan.rs: `--fast` is `conflicts_with_all = ["deep", ...]`.
     let out = Command::new(binary())
@@ -279,7 +263,7 @@ fn precision_conflicts_with_no_decode_exits_two() {
 fn input_and_path_conflict_exits_two() {
     // args/scan.rs: positional `input` is `conflicts_with = "path"`.
     let out = Command::new(binary())
-        .args(["scan", "--no-daemon", "--path", ".", "extra_positional"])
+        .args(["scan", "--daemon=off", "--path", ".", "extra_positional"])
         .output()
         .expect("spawn");
     assert_eq!(
@@ -302,7 +286,7 @@ fn lockdown_scan(path: &std::path::Path, extra: &[&str]) -> (String, Option<i32>
     let home = TempDir::new().expect("home tempdir");
     let p = path.to_str().expect("utf-8 path");
 
-    let mut args: Vec<&str> = vec!["scan", "--no-daemon", "--backend", "simd", "--lockdown"];
+    let mut args: Vec<&str> = vec!["scan", "--daemon=off", "--backend", "simd", "--lockdown"];
     args.extend_from_slice(extra);
     args.push(p);
 
@@ -669,7 +653,7 @@ fn require_gpu_and_no_gpu_flags_conflict() {
     let out = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--require-gpu",
             "--no-gpu",
             &line_path(&path),
@@ -705,7 +689,7 @@ fn require_gpu_exit_twelve_diagnostic_names_the_flag() {
     // must name --require-gpu so the operator knows which gate fired.
     let (_g, path) = fixture("leak.env", &aws_key_line());
     let out = Command::new(binary())
-        .args(["scan", "--no-daemon", "--require-gpu", &line_path(&path)])
+        .args(["scan", "--daemon=off", "--require-gpu", &line_path(&path)])
         .output()
         .expect("spawn");
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -734,7 +718,7 @@ fn require_gpu_fires_before_scanning_so_exit_is_twelve_even_on_clean_input() {
     // the gate is a true preflight, not a post-scan adjustment.
     let (_g, path) = fixture("clean.txt", "fn main() {}\n");
     let out = Command::new(binary())
-        .args(["scan", "--no-daemon", "--require-gpu", &line_path(&path)])
+        .args(["scan", "--daemon=off", "--require-gpu", &line_path(&path)])
         .output()
         .expect("spawn");
     assert_eq!(
@@ -759,7 +743,7 @@ fn require_gpu_does_not_print_findings_on_fail_closed() {
     let out = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--require-gpu",
             "--format",
             "json",
@@ -789,7 +773,7 @@ fn no_require_gpu_policy_scans_normally_on_cpu() {
     let out = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--no-gpu",
             "--backend",
             "cpu",
@@ -818,7 +802,7 @@ fn gpu_config_off_scans_normally_on_cpu() {
     let out = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--config",
             &line_path(&cfg),
             "--backend",
@@ -847,7 +831,7 @@ fn gpu_config_required_on_no_gpu_host_exits_twelve() {
     let out = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--config",
             &line_path(&cfg),
             "--format",
@@ -873,7 +857,7 @@ fn require_gpu_clean_input_no_require_exits_zero() {
     let out = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--no-gpu",
             "--backend",
             "cpu",
@@ -973,7 +957,7 @@ fn create_baseline_exits_zero_even_with_findings() {
     let out = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",
@@ -1012,7 +996,7 @@ fn baseline_suppressing_all_findings_exits_zero() {
     let create = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",
@@ -1033,7 +1017,7 @@ fn baseline_suppressing_all_findings_exits_zero() {
     let rescan = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",
@@ -1066,7 +1050,7 @@ fn baseline_forbidden_daemon_route_fails_loud_not_fallback() {
     let _ = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",
@@ -1127,7 +1111,7 @@ fn stdin_clean_exits_zero() {
     let mut child = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--stdin",
@@ -1162,7 +1146,7 @@ fn stdin_leak_exits_one() {
     let mut child = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--stdin",
@@ -1201,7 +1185,7 @@ fn stdin_lockdown_show_secrets_fails_closed_exit_two() {
     let mut child = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--lockdown",
             "--show-secrets",
             "--stdin",

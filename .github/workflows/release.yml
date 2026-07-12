@@ -45,20 +45,6 @@ jobs:
             install: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
             features: ''
             artifact_features: 'ml,entropy,decode,multiline,simdsieve,simd'
-            cuda_toolkit: false
-          # CUDA-enabled Linux build. install.sh prefers this asset
-          # when nvidia-smi + libcuda.so are both present at install
-          # time, since the CUDA backend is meaningfully faster than
-          # the WGPU fallback on large (>=256 MiB) scans. Requires
-          # libcuda.so at RUNTIME (which is what we detect for); the
-          # CUDA toolkit is only needed at LINK time, which we
-          # provision here on the GH runner via the official action.
-          - os: ubuntu-latest
-            asset: keyhog-linux-x86_64-cuda
-            install: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
-            features: '--features cuda'
-            artifact_features: 'ml,entropy,decode,multiline,simdsieve,simd'
-            cuda_toolkit: true
           # macOS: no `libhyperscan-dev` in the homebrew repo, so the
           # default `cargo build` fails on the simd feature. We ship a
           # feature-subset binary (no Hyperscan) for now. The `portable`
@@ -132,18 +118,6 @@ jobs:
         if: matrix.install != ''
         shell: bash
         run: ${{ matrix.install }}
-
-      # CUDA toolkit (link-time only). The runtime libcuda.so requirement
-      # is checked by install.sh on the user's machine, not on the GH
-      # runner. Pinning 12.6 because that's what vyre-driver-cuda's
-      # `cuda` feature is tested against.
-      - name: Install CUDA toolkit
-        if: matrix.cuda_toolkit == true
-        uses: Jimver/cuda-toolkit@4bd727d5619dc6fa323b1e76c3aa5dca94f5ec6d # v0.2.19
-        with:
-          cuda: '12.6.0'
-          method: 'network'
-          sub-packages: '["nvcc", "cudart", "nvrtc", "nvrtc-dev"]'
 
       - name: Build keyhog
         shell: bash

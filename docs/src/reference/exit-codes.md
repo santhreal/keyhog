@@ -53,6 +53,9 @@ vs "some live" is just `1` vs `10`, no JSON parsing required.
 Things that exit `2`:
 
 - Unknown CLI flag.
+- On Windows, direct `keyhog uninstall --yes`: the running `.exe` cannot delete
+  itself, so the command prints the path to remove after it exits. The
+  PowerShell installer handles this outer-process cleanup normally.
 - `.keyhog.toml` parse error.
 - Detector load failure for a specific TOML (with a stderr warning;
   the rest of the scan continues but exits 2 at the end).
@@ -162,5 +165,5 @@ esac
 - No `--exit-zero` flag. KeyHog deliberately does not provide a way
   to lie to CI about findings. If you need to override (e.g. "this
   finding is accepted, ship anyway"), suppress it by hash in
-  `.keyhog.toml` instead. The exit code then reflects truth: there
+  `.keyhogignore` instead. The exit code then reflects truth: there
   are no UN-suppressed findings, so it's `0`.

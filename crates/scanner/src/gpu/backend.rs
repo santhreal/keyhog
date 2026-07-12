@@ -218,7 +218,7 @@ CPU/SIMD scan path. Use --no-gpu to silence this, or --require-gpu to fail inste
 fn init_gpu() -> Result<GpuContext, GpuInitError> {
     // Reuse the vyre WgpuBackend's device instead of creating a second one.
     // This shares the adapter probe, device request, and queue with the
-    // literal-set/MegaScan GPU scanner - halving init time and memory.
+    // literal-set GPU scanner - halving init time and memory.
     let vyre_backend = vyre_driver_wgpu::WgpuBackend::shared()
         .map_err(|e| GpuInitError::no_adapter(format!("vyre WgpuBackend unavailable: {e}")))?;
 
@@ -382,7 +382,7 @@ static MOE_NUMERIC_DIVERGENCE_WARNED: AtomicBool = AtomicBool::new(false);
 
 /// Surface a runtime GPU-MoE dispatch failure that is about to degrade the
 /// affected batch(es) to the CPU MoE. This mirrors `engine::gpu_forced`'s
-/// posture exactly so the MoE path is coherent with the literal-set/MegaScan
+/// posture exactly so the MoE path is coherent with the literal-set GPU
 /// paths under the no-silent-fallback rule:
 ///
 ///   * `--require-gpu` -> hard-fail (`exit 12`). The init-time check in

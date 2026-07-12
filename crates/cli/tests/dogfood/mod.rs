@@ -103,7 +103,7 @@ fn daemon_eligible_single_file_scan(args: &[String]) -> bool {
     }
     if args
         .iter()
-        .any(|arg| arg == "--no-daemon" || arg == "--daemon" || arg.starts_with("--daemon="))
+        .any(|arg| arg == "--daemon=off" || arg == "--daemon" || arg.starts_with("--daemon="))
     {
         return false;
     }

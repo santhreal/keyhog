@@ -75,12 +75,12 @@ fn config_file(body: &str) -> (TempDir, PathBuf) {
     (dir, path)
 }
 
-/// Run `keyhog scan --no-daemon --backend cpu <extra...> <scan_dir>` and return
+/// Run `keyhog scan --daemon=off --backend cpu <extra...> <scan_dir>` and return
 /// (exit code, stdout, stderr). `--backend cpu` keeps every run host-independent.
 fn scan(scan_dir: &std::path::Path, extra: &[&str]) -> (Option<i32>, String, String) {
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg("cpu")
         .args(extra)
@@ -492,7 +492,7 @@ fn config_and_no_config_flags_are_mutually_exclusive() {
     let (_cfg, cfg_path) = config_file("min_confidence = 0.5\n");
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg("cpu")
         .arg("--config")

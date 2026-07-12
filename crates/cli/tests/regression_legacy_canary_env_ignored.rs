@@ -16,7 +16,7 @@ fn unreadable_keyhog_aws_canary_accounts_is_ignored() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--format",
@@ -54,7 +54,7 @@ fn malformed_keyhog_aws_canary_accounts_is_ignored() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--format",
@@ -92,7 +92,7 @@ fn aws_canary_accounts_toml_key_reaches_scan_metadata() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--format",

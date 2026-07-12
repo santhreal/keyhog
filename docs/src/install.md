@@ -9,29 +9,19 @@ The quickest paths first. Pick one - they all give you the same
 curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
 ```
 
-Drops a binary in `~/.local/bin/keyhog`. The installer detects your
-CPU, GPU, and existing install before downloading, and tells you the
-asset it picked and why.
-
-On Linux x86_64, the default asset is the **WGPU + Hyperscan/SIMD**
-build: it can dispatch the same vyre AC / RulePipeline on your GPU via
-the vulkan backend, with a smaller binary and no `libcuda.so` runtime
-dependency. The dedicated `keyhog-linux-x86_64-cuda` build is only
-auto-selected on Linux when the host has the **full CUDA toolkit
-installed** - `nvcc` on PATH, `$CUDA_HOME` set, or `/usr/local/cuda`
-present. A driver-only NVIDIA host (libcuda.so loadable but no
-toolkit) stays on the default Linux asset, since the native-CUDA
-dispatch saves only single-digit percent on typical repo scans and the
-binary footprint + runtime dependency are not worth it for the
-non-CUDA-developer case. Pass `--variant=cuda` to force the CUDA build
-anyway. macOS release assets are portable no-system-library builds:
-they include the scanner data/source surface without Hyperscan, WGPU,
-CUDA, or a native Metal asset in the current release.
+Drops a binary in `~/.local/bin/keyhog`. The installer detects the platform and
+existing install before downloading and tells you the chosen asset. Linux
+x86_64 has one accelerator-capable binary: Hyperscan plus VYRE's CUDA and WGPU
+drivers. CUDA/NVRTC use dynamic loading, so no build-time toolkit is required
+and the same artifact runs on GPU and CPU-only hosts. Backend probing and
+persisted autoroute evidence—not installer variants—decide execution. macOS and
+Windows assets use the portable no-system-library build without Hyperscan or GPU
+drivers.
 
 ## Interactive mode (recommended for first install)
 
 `curl ... | sh` is fast but skips the wizard because stdin is a pipe.
-For variant selection, shell completions, and optional hook setup:
+For shell completions and optional hook setup:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh \
@@ -84,14 +74,10 @@ iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 `
 > subcommand and the `--daemon` flag emit an explicit "unix-only"
 > error so nothing silently regresses.
 
-## Variants and overrides
-
-The installer auto-detects, but you can override:
+## Installer overrides
 
 | Env var / flag                          | Effect                                                        |
 |-----------------------------------------|---------------------------------------------------------------|
-| `--variant=cuda`                        | Force the CUDA-accelerated Linux build (requires libcuda.so). |
-| `--variant=cpu`                         | Force the default non-CUDA release asset for this platform, skipping CUDA-asset auto-selection. |
 | `KEYHOG_VERSION=v0.5.41` (or `--version=v0.5.41`) | Pin a specific release tag (default: GitHub's latest-asset redirect, with API fallback only when that asset is missing). |
 | `--install-dir=...`                     | Install into a different directory.            |
 | `GITHUB_TOKEN=...`                      | Optional auth for the fallback GitHub releases API lookup. The normal latest-asset path does not need it. |
@@ -135,17 +121,11 @@ Hosted CI runners normally have no useful GPU. Use `--no-gpu` or
 `--require-gpu` or `[system] gpu = "required"` so a driver regression fails
 closed instead of running as a CPU-only scan.
 
-An explicit `--variant=cuda` request requires the `keyhog-linux-x86_64-cuda`
-release asset and fails closed if that asset is missing. Falling back to the
-default Linux asset is allowed only when the installer auto-selected CUDA from
-host detection; in that case the installer made the accelerator choice and logs
-the fallback before installing the default asset.
-
 ## Repair, diagnose, uninstall
 
 ```sh
 sh keyhog-install.sh --diagnose    # print host + binary state, change nothing
-sh keyhog-install.sh --repair      # re-download the right variant for this host
+sh keyhog-install.sh --repair      # re-download the right asset for this host
 sh keyhog-install.sh --uninstall   # remove the binary + installer-owned shell wiring
 ```
 
@@ -154,15 +134,20 @@ reports CPU arch, OS, GPU + libcuda state, the currently-installed
 binary (path + version), whether the install dir is on `PATH`, and
 the asset the installer would download for the latest release tag.
 
-`--repair` re-downloads the asset matching your current host even if
-the existing binary still runs. Useful after a host upgrade adds a
-new GPU, or on Linux after CUDA userland gets installed and the
-non-CUDA asset should be swapped for the CUDA build.
+`--repair` re-downloads the asset matching your current platform even if
+the existing binary still runs. The unified Linux binary probes CUDA and WGPU
+at runtime, so installing a GPU or CUDA userland does not require replacing it
+with a different artifact.
 
 `--uninstall` removes the binary, asks an installed `keyhog uninstall --yes`
 to surface/clean persisted state first when that subcommand is available,
 then removes only the shell artifacts the installer owns: its marked `PATH`
 block and the known bash/zsh/fish completion files.
+
+On Unix, the running binary can unlink itself. Windows does not allow a running
+`.exe` to delete itself, so direct `keyhog uninstall --yes` exits `2` and prints
+the exact executable path to remove after the process exits. The PowerShell
+installer performs that outer-process cleanup for the normal uninstall flow.
 
 ## Direct binary download
 
@@ -172,7 +157,6 @@ from the [releases page](https://github.com/santhsecurity/keyhog/releases/latest
 | Platform              | Asset name                       |
 |-----------------------|----------------------------------|
 | Linux x86_64 (default)| `keyhog-linux-x86_64`            |
-| Linux x86_64 + CUDA   | `keyhog-linux-x86_64-cuda`       |
 | macOS x86_64 (Intel)  | `keyhog-macos-x86_64`            |
 | macOS aarch64 (Apple) | `keyhog-macos-aarch64`           |
 | Windows x86_64        | `keyhog-windows-x86_64.exe`      |
@@ -198,19 +182,16 @@ The default feature set requires **Hyperscan / Vectorscan**:
 - macOS: not available via Homebrew. Build with `--no-default-features --features portable` to skip Hyperscan and use the pure-Rust path.
 - Windows: build with `--no-default-features --features portable`.
 
-For the CUDA backend, add the `cuda` feature on Linux:
+The default Linux build includes the dynamically loaded CUDA and WGPU backends:
 
 ```sh
-cargo build --release -p keyhog --features cuda
+cargo build --release -p keyhog
 ```
 
-This requires the CUDA toolkit at link time (NVCC + cudart + nvrtc)
-and `libcuda.so` at runtime. The release workflow provisions CUDA
-12.6 on the GitHub-hosted ubuntu runner for the
-`keyhog-linux-x86_64-cuda` asset; for local source builds, install
-the matching toolkit from
-[developer.nvidia.com/cuda-toolkit](https://developer.nvidia.com/cuda-toolkit)
-or your distro's `nvidia-cuda-toolkit` package.
+CUDA is attempted only when its runtime libraries and a compatible device are
+present. WGPU is an independent candidate. Missing accelerator libraries do not
+prevent the binary from starting; `keyhog backend --self-test --json` reports
+the exact runtime state and autoroute calibration determines eligibility.
 
 The `portable` feature is what the official Windows + macOS release
 binaries are built with: same scanner, no native dependency, ~5%

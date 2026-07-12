@@ -5,8 +5,8 @@
 # Curl-pipe-sh quick install:
 #   curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
 #
-# Interactive install (recommended when you want to pick a variant
-# or wire keyhog into your shell + Claude Code + pre-commit):
+# Interactive install (recommended when you want to wire keyhog into your
+# shell + Claude Code + pre-commit):
 #   curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh -o keyhog-install.sh
 #   sh keyhog-install.sh
 #
@@ -19,8 +19,6 @@
 #
 # Common flags:
 #   --version=v0.5.37   pin a release tag (default: latest release with assets)
-#   --variant=cuda      force CUDA variant (Linux only)
-#   --variant=cpu       force the default non-CUDA variant
 #   --install-dir=PATH  override the default install directory
 #   --from-file=PATH    install a pre-built/pre-downloaded keyhog binary instead
 #                       of downloading a release (offline / air-gapped installs,
@@ -66,7 +64,6 @@ REPO="santhsecurity/keyhog"
 RELEASE_PUBLIC_KEY="RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go"
 INSTALL_DIR="$HOME/.local/bin"
 VERSION="${KEYHOG_VERSION:-}"
-VARIANT="auto"
 FROM_FILE=""
 INSECURE_INSTALL=0
 MODE="install"
@@ -229,7 +226,7 @@ usage() {
 "  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | sh" \
 "" \
 "Modes:  (default) install/upgrade   --repair   --diagnose   --calibrate   --uninstall" \
-"Flags:  --version=vX.Y.Z  --variant=cpu|cuda  --install-dir=PATH" \
+"Flags:  --version=vX.Y.Z  --install-dir=PATH" \
 "        --from-file=PATH  --yes/-y  --no-prompt  --insecure  --no-color  --help/-h" \
 "Env:    KEYHOG_VERSION  GITHUB_TOKEN  NO_COLOR"
     fi
@@ -243,7 +240,6 @@ while [ $# -gt 0 ]; do
         --calibrate)       MODE="calibrate" ;;
         --uninstall)       MODE="uninstall" ;;
         --version=*)       VERSION="${1#--version=}" ;;
-        --variant=*)       VARIANT="${1#--variant=}" ;;
         --install-dir=*)   INSTALL_DIR="${1#--install-dir=}" ;;
         --from-file=*)     FROM_FILE="${1#--from-file=}" ;;
         --yes|-y)          ASSUME_YES=1 ;;
@@ -272,136 +268,16 @@ setup_colors
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 
-# detect_linux_cuda: yes / driver-only / no-gpu
-#
-# "yes" requires THREE signals, in order of strictness:
-#   1. nvidia-smi reports at least one GPU,
-#   2. libcuda.so is loadable (in ldconfig or a well-known path),
-#   3. the host has a CUDA TOOLKIT installed (nvcc OR /usr/local/cuda
-#      OR $CUDA_HOME) - this is the new gate.
-#
-# Why the third gate: the WGPU build already runs the same vyre AC /
-# RulePipeline dispatch on the same NVIDIA card via the wgpu vulkan
-# backend. The CUDA variant only wins on truly large scans (>1 GiB)
-# and ONLY when the user actively maintains a CUDA install. A driver-
-# only host (libcuda.so present but no toolkit) is signalling "I run
-# CUDA apps as a consumer, not a developer with the toolkit on PATH" -
-# WGPU is the better default there because the binary is smaller, has
-# no runtime libcuda lookup, and the dispatch latency penalty against
-# native CUDA is in the single-digit-percent range for typical repo
-# scans. See task #57.
-#
-# Earlier versions of this script auto-picked CUDA whenever libcuda
-# was loadable, which gave a strictly heavier install for the median
-# user with no offsetting throughput win on typical workloads.
-detect_linux_cuda() {
-    if ! command -v nvidia-smi >/dev/null 2>&1; then
-        if [ -d /proc/driver/nvidia ]; then
-            printf 'driver-only\n'
-            return
-        fi
-        printf 'no-gpu\n'
-        return
-    fi
-    if ! nvidia-smi -L 2>/dev/null | grep -q "GPU "; then
-        printf 'no-gpu\n'
-        return
-    fi
-
-    # Gate 2: libcuda.so loadable?
-    libcuda_present=0
-    if ldconfig -p 2>/dev/null | grep -q "libcuda\.so"; then
-        libcuda_present=1
-    else
-        for p in /usr/lib/x86_64-linux-gnu/libcuda.so /usr/lib64/libcuda.so \
-                 /usr/local/cuda/lib64/libcuda.so /opt/cuda/lib64/libcuda.so; do
-            if [ -e "$p" ]; then
-                libcuda_present=1
-                break
-            fi
-        done
-    fi
-    if [ "$libcuda_present" -eq 0 ]; then
-        printf 'driver-only\n'
-        return
-    fi
-
-    # Gate 3: CUDA toolkit installed? nvcc on PATH OR CUDA_HOME set
-    # OR /usr/local/cuda exists OR /opt/cuda exists. Any one suffices.
-    if command -v nvcc >/dev/null 2>&1; then
-        printf 'yes\n'
-        return
-    fi
-    if [ -n "${CUDA_HOME:-}" ] && [ -d "$CUDA_HOME" ]; then
-        printf 'yes\n'
-        return
-    fi
-    if [ -d /usr/local/cuda ] || [ -d /opt/cuda ]; then
-        printf 'yes\n'
-        return
-    fi
-
-    # Driver + libcuda but no toolkit: signal driver-only so the auto
-    # path stays on WGPU. User can still --variant=cuda if they want.
-    printf 'driver-only\n'
-}
-
-gpu_name() {
-    nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -n 1
-}
-
-# resolve_asset: sets ASSET, ASSET_FALLBACK, GPU_NOTE
+# resolve_asset: sets ASSET and GPU_NOTE. The Linux binary probes CUDA and WGPU
+# dynamically, so host accelerator state does not change the release artifact.
 resolve_asset() {
     ASSET=""
-    ASSET_FALLBACK=""
     GPU_NOTE=""
 
     case "$OS-$ARCH" in
       linux-x86_64|linux-amd64)
-        case "$VARIANT" in
-          cpu)
-            ASSET="keyhog-linux-x86_64"
-            GPU_NOTE="Variant=cpu, installing the Linux default accelerator build and skipping CUDA-asset auto-selection."
-            ;;
-          cuda)
-            ASSET="keyhog-linux-x86_64-cuda"
-            ASSET_FALLBACK=""
-            GPU_NOTE="Variant=cuda, installing CUDA-accelerated build."
-            ;;
-          auto|*)
-            case "$(detect_linux_cuda)" in
-              yes)
-                ASSET="keyhog-linux-x86_64-cuda"
-                ASSET_FALLBACK="keyhog-linux-x86_64"
-                gpu=$(gpu_name)
-                # nvidia-smi --query-gpu=name already prefixes "NVIDIA"
-                # ("NVIDIA GeForce RTX 5090"). Skip our own prefix when
-                # the reported name already starts with NVIDIA so we
-                # don't print "NVIDIA NVIDIA GeForce RTX 5090".
-                label="${gpu:-NVIDIA GPU}"
-                case "$label" in
-                    NVIDIA*) ;;
-                    *) label="NVIDIA $label" ;;
-                esac
-                GPU_NOTE="${label} with CUDA toolkit detected (nvcc / CUDA_HOME / /usr/local/cuda). Picking the CUDA build for the small native-dispatch perf win on large scans. Pass --variant=cpu to keep the default WGPU build instead."
-                ;;
-              driver-only)
-                ASSET="keyhog-linux-x86_64"
-                gpu=$(gpu_name)
-                label="${gpu:-NVIDIA GPU}"
-                case "$label" in
-                    NVIDIA*) ;;
-                    *) label="NVIDIA $label" ;;
-                esac
-                GPU_NOTE="${label} detected. Picking the default WGPU build - it already runs the same vyre AC/RulePipeline on your GPU via vulkan, with a smaller binary and no libcuda dependency. If you have the full CUDA toolkit installed and want the native-dispatch variant, rerun with --variant=cuda."
-                ;;
-              *)
-                ASSET="keyhog-linux-x86_64"
-                GPU_NOTE="No NVIDIA GPU detected. Picking default build: WGPU GPU dispatch on any compatible adapter + SIMD on the CPU path."
-                ;;
-            esac
-            ;;
-        esac
+        ASSET="keyhog-linux-x86_64"
+        GPU_NOTE="One Linux build probes CUDA and WGPU at runtime, then autoroute selects only from persisted fastest-correct evidence."
         ;;
       darwin-arm64|darwin-aarch64)
         ASSET="keyhog-macos-aarch64"
@@ -527,10 +403,6 @@ resolve_operator_release_tag() {
     LATEST_RELEASE_ALIAS=0
     if [ -z "$VERSION" ] && [ "$TAG" = "latest" ]; then
         if resolve_tag_from_latest_redirect "$ASSET"; then
-            LATEST_RELEASE_ALIAS=1
-            return
-        fi
-        if [ -n "$ASSET_FALLBACK" ] && resolve_tag_from_latest_redirect "$ASSET_FALLBACK"; then
             LATEST_RELEASE_ALIAS=1
             return
         fi
@@ -1043,19 +915,6 @@ download_selected_release_asset() {
     quiet="${2:-0}"
     if download_asset "$ASSET" "$out" 2>/dev/null; then
         return 0
-    fi
-    if [ -n "$ASSET_FALLBACK" ] && [ "$ASSET_FALLBACK" != "$ASSET" ]; then
-        warn "$ASSET is not published for $TAG yet. Falling back to $ASSET_FALLBACK."
-        if download_asset "$ASSET_FALLBACK" "$out"; then
-            ASSET="$ASSET_FALLBACK"
-            ASSET_FALLBACK=""
-            return 0
-        fi
-        if [ "$quiet" != "1" ]; then
-            err "Neither $ASSET nor $ASSET_FALLBACK could be downloaded for $TAG."
-            err "Browse https://github.com/$REPO/releases to confirm."
-        fi
-        return 1
     fi
     if [ "$quiet" != "1" ]; then
         err "Download failed. Is the release published yet?"
@@ -2520,7 +2379,6 @@ do_install() {
         # Local-binary install: no GitHub release lookup, no network. ASSET/TAG
         # are populated for show_summary and the verify messages only.
         ASSET=$(basename "$FROM_FILE")
-        ASSET_FALLBACK=""
         TAG="(local file)"
         GPU_NOTE="installing local binary: $FROM_FILE"
     else
@@ -2646,10 +2504,7 @@ do_diagnose() {
     say "  OS:    $OS"
     say "  Arch:  $ARCH"
     if [ "$OS" = "linux" ]; then
-        cuda_state=$(detect_linux_cuda)
-        say "  CUDA detection: $cuda_state"
-        gn=$(gpu_name)
-        [ -n "$gn" ] && say "  GPU name:       $gn"
+        say "  Accelerator selection: runtime CUDA/WGPU probe + persisted autoroute evidence"
     fi
     printf '\n%sExisting install%s\n' "$C_BOLD" "$C_RESET"
     bin=$(current_binary)
@@ -2717,7 +2572,7 @@ do_uninstall() {
 banner
 
 if [ "$INTERACTIVE" = "0" ] && [ "$MODE" = "install" ] && [ ! -t 0 ]; then
-    dim "Tip: re-run interactively for variant + post-install wizard:"
+    dim "Tip: re-run interactively for the post-install wizard:"
     dim "  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh -o keyhog-install.sh && sh keyhog-install.sh"
 fi
 

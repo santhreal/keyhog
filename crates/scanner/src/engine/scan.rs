@@ -29,9 +29,7 @@ impl CompiledScanner {
         }
         // KH-116: Record scan metrics atomically
         crate::telemetry::record_file_scanned(chunk.data.len());
-        if backend == crate::hw_probe::ScanBackend::Gpu
-            || backend == crate::hw_probe::ScanBackend::MegaScan
-        {
+        if backend == crate::hw_probe::ScanBackend::Gpu {
             crate::telemetry::record_gpu_dispatch();
         }
         let prof = scan_inner_prof_enabled();

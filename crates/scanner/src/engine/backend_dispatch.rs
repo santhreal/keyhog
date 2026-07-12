@@ -15,7 +15,7 @@ impl CompiledScanner {
         // `scan_chunk_boundaries` pass reassembles secrets straddling the seam
         // between adjacent gapless chunks of the same file (a per-chunk scan sees
         // each half too short to match) — load-bearing recall, not optional.
-        let gpu_path = matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan);
+        let gpu_path = matches!(backend, ScanBackend::Gpu);
         if !gpu_path || chunks.is_empty() {
             return self.scan_chunks_cpu_parallel(chunks, backend);
         }
@@ -29,7 +29,7 @@ impl CompiledScanner {
         {
             self.scan_coalesced_gpu_region_presence(chunks)
         }
-        // GPU compiled out: a Gpu/MegaScan request degrades to the per-chunk SIMD
+        // GPU compiled out: a GPU request degrades to the per-chunk SIMD
         // path, preserving cross-chunk boundary recall.
         #[cfg(not(feature = "gpu"))]
         {

@@ -1,21 +1,8 @@
 //! close-coherence — VERIFY-BLOCK COUNT doc↔corpus coherence.
 //!
-//! README.md and docs/src/verification.md make a NUMERIC claim about how many
-//! shipped detectors carry a live `[detector.verify]` endpoint:
-//!   * README:        "344 detectors carry an active `[detector.verify]` endpoint"
-//!   * verification.md "344 of the 919 detectors do (about 38%)"
-//!
-//! A prior README said 341 and verification.md said "About 60%"; both had drifted
-//! from the corpus (the real count is 344 of 919 = 37%). A doc number nobody pins
-//! to the artifact rots silently — the operator reading "60%" mis-plans which
-//! findings `--verify` can confirm.
-//!
-//! This test is the SOURCE OF TRUTH guard: it counts the real `[detector.verify]`
-//! headers in the shipped `detectors/*.toml` corpus and asserts BOTH docs quote
-//! that exact count. It also asserts every verify block has a `url` line (so the
-//! count is honest: a verify block without a URL is `unverifiable`, not a live
-//! endpoint). If a detector with/without a verify endpoint is added or removed,
-//! this goes red until the docs are updated to the new count.
+//! Docs intentionally avoid copied detector counts. This gate proves every
+//! shipped `[detector.verify]` block has a URL and rejects stale numeric claims
+//! on the user-facing surfaces.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -38,7 +25,7 @@ fn scan_clean(extra: &[&str]) -> Option<i32> {
     // --verify-batch flags parse and exit 0 on a clean file; it must not depend on
     // an ambient ~/.cache/keyhog/autoroute.json that exists on a dev box but never
     // on a fresh CI runner. `--backend cpu` bypasses autoroute deterministically.
-    let mut args: Vec<&str> = vec!["scan", "--no-daemon", "--backend", "cpu"];
+    let mut args: Vec<&str> = vec!["scan", "--daemon=off", "--backend", "cpu"];
     args.extend_from_slice(extra);
     let p = path.to_string_lossy().into_owned();
     args.push(&p);
@@ -115,25 +102,12 @@ fn count_verify_corpus(detectors: &Path) -> (usize, usize, usize) {
 
 /// The corpus is the source of truth: every detector advertising a verify block
 /// must carry a URL (otherwise the count is dishonest — a block with no URL is
-/// `unverifiable`, not a live endpoint). Pins the exact shipped counts so a
-/// detector add/remove that changes them forces a doc update.
+/// `unverifiable`, not a live endpoint).
 #[test]
-fn verify_block_count_is_pinned_and_every_block_has_a_url() {
+fn every_verify_block_has_a_url() {
     let root = repo_root();
-    let (total, with_verify, with_verify_url) = count_verify_corpus(&root.join("detectors"));
+    let (_total, with_verify, with_verify_url) = count_verify_corpus(&root.join("detectors"));
 
-    assert_eq!(
-        total, 920,
-        "shipped detector corpus is 920 TOMLs (the README/docs cited total); got {total}. \
-         If a detector was added/removed, update the README banner, verification.md, and \
-         this assertion together."
-    );
-    assert_eq!(
-        with_verify, 344,
-        "exactly 344 detectors must carry a `[detector.verify]` header (the count README + \
-         verification.md quote); got {with_verify}. Update both docs and this assertion in \
-         lockstep when the count changes."
-    );
     assert_eq!(
         with_verify_url, with_verify,
         "every `[detector.verify]` block must carry a `url` line — a verify block without a \
@@ -143,43 +117,17 @@ fn verify_block_count_is_pinned_and_every_block_has_a_url() {
     );
 }
 
-/// README's verifier-crate line must quote the corpus's real verify-block count.
-/// Reads the committed README and the live corpus; if either drifts, red.
+/// User docs must derive corpus counts from the installed binary, not copy them.
 #[test]
-fn readme_verifier_line_quotes_real_verify_count() {
+fn user_docs_do_not_pin_detector_counts() {
     let root = repo_root();
-    let (_total, with_verify, _url) = count_verify_corpus(&root.join("detectors"));
     let readme = std::fs::read_to_string(root.join("README.md")).expect("README.md");
-
-    let needle = format!("{with_verify} detectors carry an active `[detector.verify]` endpoint");
-    assert!(
-        readme.contains(&needle),
-        "README's verifier-crate line must quote the real verify-block count ({with_verify}); \
-         expected substring {needle:?}. The corpus changed but the README number did not."
-    );
-}
-
-/// verification.md's "Detectors without verification" section must quote the real
-/// verify-block count AND the real total (`344 of the 919`), and must NOT keep the
-/// stale "About 60%" claim (the true fraction is ~38%). Pins doc↔corpus agreement.
-#[test]
-fn verification_doc_quotes_real_verify_fraction() {
-    let root = repo_root();
-    let (total, with_verify, _url) = count_verify_corpus(&root.join("detectors"));
     let doc =
         std::fs::read_to_string(root.join("docs/src/verification.md")).expect("verification.md");
-
-    let needle = format!("{with_verify} of the {total} detectors do");
     assert!(
-        doc.contains(&needle),
-        "verification.md must state the real verify count and total; expected substring \
-         {needle:?}. Corpus is {with_verify}/{total}."
-    );
-    assert!(
-        !doc.contains("About 60%"),
-        "verification.md still carries the stale \"About 60%\" claim; the real fraction is \
-         {with_verify}/{total} (~{:.0}%).",
-        (with_verify as f64 / total as f64) * 100.0
+        !readme.contains("detectors carry an active `[detector.verify]` endpoint")
+            && doc.contains("keyhog detectors --format json"),
+        "docs must query the installed corpus instead of copying a detector count"
     );
 }
 

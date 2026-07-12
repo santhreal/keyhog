@@ -5,6 +5,7 @@ use std::sync::LazyLock;
 pub(crate) mod keywords;
 mod line_mapping;
 mod metrics;
+mod pattern;
 
 use self::keywords::{
     collect_generic_keyword_lines, collect_generic_keyword_lines_from_positions,
@@ -12,65 +13,9 @@ use self::keywords::{
 };
 use self::line_mapping::line_at_index;
 pub(crate) use self::metrics::{generic_profile_dump, generic_profile_reset};
-
-// The value/assignment tail of `GENERIC_RE`: the assignment-syntax grammar,
-// benign secret-suffix hops, and the group-2 value shape. Held as ONE named
-// constant so the alternation builder (below) and any test compile the exact
-// same grammar — there is no second copy of this pattern.
-// PER-DETECTOR-MIGRATION-BLOCKED: The static regex tail bounds (8..128) cannot be made per-detector at compile-time as they are baked into the single global GENERIC_RE.
-const GENERIC_RE_ASSIGNMENT_TAIL: &str = r#"(?:[._-]?(?:key|base|value|val|string|str|enc|raw|b64)){0,2}["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{0,31}\s*[=:]\s*)?|=\s*)["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#;
-
-// Structural (non-literal) group-1 arm: any bounded `<vendor>_key` / `_secret` /
-// `_token` compound, so a vendor-prefixed credential key bridges even when its
-// exact spelling is not one of the derived keyword literals. This is a SHAPE, not
-// a keyword, so it is NOT part of the vocabulary — it is appended after the
-// derived literals. (The `regression_creddata_vendor_prefixed_key_recall` test
-// locks its behavior.)
-pub(crate) const GENERIC_RE_VENDOR_SUFFIX_ARM: &str =
-    r"[a-z][a-z0-9]*(?:[._-][a-z0-9]+){0,2}[._-](?:key|secret|token)";
-
-/// Build the group-1 keyword alternation from the SINGLE derived vocabulary
-/// (`crate::assignment_keywords::assignment_keywords()`): regex-escaped literals,
-/// longest-first, with the vendor structural arm appended last.
-///
-/// ONE HOME: the keyword vocabulary is NOT hand-maintained here — it is the same
-/// list the phase-2 prefilter (`assignment_keywords`) derives by unioning the
-/// generic phase-2 detector specs. Widening a generic detector's `keywords`
-/// widens this alternation automatically, and a second hand-kept list cannot
-/// reappear without the dedup-lock test failing.
-pub(crate) fn generic_keyword_alternation() -> String {
-    let mut literals: Vec<&str> = crate::assignment_keywords::assignment_keywords()
-        .iter()
-        .map(String::as_str)
-        .collect();
-    // Longest-first (ties broken lexically) keeps a longer keyword alternative
-    // preferred and the alternation byte-stable across builds. (The assignment
-    // tail already forces the longest full match, so this is determinism, not
-    // correctness.)
-    literals.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
-    let mut alternation = String::new();
-    for literal in literals {
-        alternation.push_str(&regex::escape(literal));
-        alternation.push('|');
-    }
-    alternation.push_str(GENERIC_RE_VENDOR_SUFFIX_ARM);
-    alternation
-}
-
-/// Compile `GENERIC_RE` from a pre-built group-1 alternation. Kept separate from
-/// the `LazyLock` init so the exact construction is unit-testable AND so the
-/// fail-closed contract can be exercised with a deliberately malformed alternation.
-pub(crate) fn compile_generic_re(
-    alternation: &str,
-) -> std::result::Result<regex::Regex, regex::Error> {
-    // Group 1 is the keyword, group 2 is the value.
-    regex::Regex::new(&format!("(?i)({alternation}){GENERIC_RE_ASSIGNMENT_TAIL}"))
-}
-
-/// Compile `GENERIC_RE` from the live derived vocabulary.
-pub(crate) fn build_generic_re() -> std::result::Result<regex::Regex, regex::Error> {
-    compile_generic_re(&generic_keyword_alternation())
-}
+pub(crate) use self::pattern::{
+    build_generic_re, compile_generic_re, generic_keyword_alternation, GENERIC_RE_VENDOR_SUFFIX_ARM,
+};
 
 pub(crate) static GENERIC_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
     // LAW 10 — FAIL CLOSED. This regex is built from a hardcoded assignment

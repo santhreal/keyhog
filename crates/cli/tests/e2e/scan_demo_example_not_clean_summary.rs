@@ -14,7 +14,7 @@ fn scan_demo_example_not_clean_summary() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--format",
             "text",
         ])

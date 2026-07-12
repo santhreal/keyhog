@@ -1,4 +1,4 @@
-//! KH-GAP-002: forced GPU/MegaScan requests must hit the loud degrade guard
+//! KH-GAP-002: forced GPU requests must hit the loud degrade guard
 //! before public scan entry points or runtime GPU fallbacks route to CPU.
 
 #[test]

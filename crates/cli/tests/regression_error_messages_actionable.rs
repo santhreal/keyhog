@@ -19,7 +19,7 @@ fn combined(output: &std::process::Output) -> String {
 fn dynamic_source_constructor_error_includes_fix() {
     let output = keyhog(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--backend",
         "simd",
         "--source",
@@ -44,7 +44,7 @@ fn dynamic_source_constructor_error_includes_fix() {
 fn unknown_dynamic_source_error_includes_fix() {
     let output = keyhog(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--backend",
         "simd",
         "--source",

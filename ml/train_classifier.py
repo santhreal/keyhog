@@ -213,7 +213,7 @@ def _group_split(files, seed, fracs=(0.70, 0.15, 0.15)):
     uniq = sorted(set(files))
     rng.shuffle(uniq)
     # Contract fixtures (source_file="contract:<det>") are a FIXED known-positive
-    # set the scanner MUST catch — the standalone contract gate tests all 920, so
+    # set the scanner MUST catch — the standalone contract gate tests the full suite, so
     # they are a memorization requirement, NOT a generalization target. They
     # always train and never enter the held-out; only real-distribution
     # (CredData/homefield) files are split, keeping the held-out recall gate an

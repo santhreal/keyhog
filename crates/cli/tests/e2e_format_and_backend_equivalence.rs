@@ -18,7 +18,7 @@
 //!
 //! All assertions pin EXACT values (the planted detector id + credential hash),
 //! never `!is_empty`. Deterministic: a single planted secret, clean otherwise,
-//! `--no-daemon` so there is no background-process nondeterminism.
+//! `--daemon=off` so there is no background-process nondeterminism.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -49,7 +49,7 @@ fn fixture() -> (TempDir, PathBuf) {
 
 fn run(path: &PathBuf, format: &str, backend: Option<&str>) -> (Option<i32>, String) {
     let mut cmd = Command::new(binary());
-    cmd.args(["scan", "--no-daemon", "--format", format]);
+    cmd.args(["scan", "--daemon=off", "--format", format]);
     cmd.args(["--backend", backend.unwrap_or("simd")]);
     cmd.arg(path);
     let output = cmd.output().expect("spawn keyhog scan");

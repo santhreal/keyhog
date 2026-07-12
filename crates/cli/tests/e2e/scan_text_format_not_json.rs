@@ -12,7 +12,7 @@ fn scan_text_format_not_json() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--format",
             "text",
             "--backend",

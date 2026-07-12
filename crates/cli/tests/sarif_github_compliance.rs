@@ -39,7 +39,7 @@ fn sarif_is_github_code_scanning_compliant() {
         .args([
             "scan",
             ".",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

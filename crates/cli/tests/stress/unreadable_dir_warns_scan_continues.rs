@@ -19,7 +19,7 @@ fn unreadable_dir_warns_scan_continues_exit_one() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",
@@ -62,7 +62,7 @@ fn unreadable_dir_without_findings_exits_source_failed() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

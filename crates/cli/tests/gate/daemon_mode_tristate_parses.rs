@@ -1,8 +1,7 @@
 //! CLI-02 gate: `scan --daemon[=auto|on|off]` is the canonical tri-state, with
-//! `--no-daemon` retained as a back-compat alias for `--daemon=off`. Every
-//! daemon-routing decision must read the resolved [`ScanArgs::daemon_mode`], so
-//! this gate pins the parse → resolve mapping (positive, alias, default,
-//! conflict, and the positional-disambiguation that `require_equals` protects).
+//! Every daemon-routing decision reads [`ScanArgs::daemon_mode`], so this gate
+//! pins explicit values, the default, and the positional disambiguation that
+//! `require_equals` protects.
 
 use clap::Parser;
 use keyhog::args::{Cli, Command, DaemonMode};
@@ -22,7 +21,7 @@ fn absent_flag_resolves_to_auto() {
 
 #[test]
 fn bare_daemon_flag_resolves_to_on() {
-    // Back-compat: legacy `--daemon` (no value) still means "force on".
+    // Bare `--daemon` is the concise spelling for "force on".
     assert_eq!(
         daemon_mode_of(&["keyhog", "scan", "--daemon", "."]),
         DaemonMode::On
@@ -43,22 +42,6 @@ fn explicit_values_resolve_one_to_one() {
         daemon_mode_of(&["keyhog", "scan", "--daemon=auto", "."]),
         DaemonMode::Auto
     );
-}
-
-#[test]
-fn no_daemon_alias_resolves_to_off() {
-    // Compatibility alias: `--no-daemon` == `--daemon=off`.
-    assert_eq!(
-        daemon_mode_of(&["keyhog", "scan", "--no-daemon", "."]),
-        DaemonMode::Off
-    );
-}
-
-#[test]
-fn daemon_and_no_daemon_conflict_is_rejected() {
-    // The two spellings are mutually exclusive (clap conflicts_with).
-    let err = Cli::try_parse_from(["keyhog", "scan", "--daemon", "--no-daemon", "."]);
-    assert!(err.is_err(), "--daemon + --no-daemon must be rejected");
 }
 
 #[test]

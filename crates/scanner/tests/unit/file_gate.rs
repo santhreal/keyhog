@@ -846,7 +846,6 @@ fn engine_scan_gpu_happy() {
 fn engine_scan_gpu_error() {
     use keyhog_scanner::hw_probe::testing::ScanBackend;
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    let _ = scanner.warm_backend(ScanBackend::MegaScan);
 }
 
 #[test]

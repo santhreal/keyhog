@@ -23,7 +23,7 @@ fn init_git_repo(dir: &std::path::Path) {
 }
 
 #[test]
-fn scan_no_daemon_flag_git_staged_clean() {
+fn scan_daemon_off_git_staged_clean() {
     let dir = TempDir::new().expect("tempdir");
     let repo = dir.path();
     init_git_repo(repo);
@@ -45,7 +45,7 @@ fn scan_no_daemon_flag_git_staged_clean() {
         .status()
         .expect("git add staged clean");
     let output = Command::new(binary())
-        .args(["scan", "--backend", "simd", "--no-daemon", "--git-staged"])
+        .args(["scan", "--backend", "simd", "--daemon=off", "--git-staged"])
         .current_dir(repo)
         .arg(".")
         .output()

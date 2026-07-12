@@ -74,7 +74,7 @@ fn build_corpus(dir: &Path) {
 fn run_scan(dir: &Path, threads: &str) -> (String, String, Option<i32>) {
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .args(["--backend", CPU_BACKEND])
         .args(["--threads", threads])
         .args(["--format", "json"])
@@ -434,7 +434,7 @@ fn threads_negative_is_user_error_exit_2() {
     // before the value parser runs). usize parse fails -> unparseable.
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .args(["--backend", CPU_BACKEND])
         .arg("--threads=-3")
         .args(["--format", "json"])

@@ -44,7 +44,7 @@ fn git_history_committed_secret_exit_one() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--git-history",
             ".",
             "--format",

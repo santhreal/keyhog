@@ -14,7 +14,7 @@
 #   ml/retrain_loop.sh                      # measure only (writes a scratch model)
 #   ml/retrain_loop.sh --write              # ship weights.bin if train-gates pass (+.bak)
 #   ml/retrain_loop.sh --write --verify     # ship, then REBUILD + per-detector FP gate
-#                                           #   + contract-recall gate (920 fixtures);
+#                                           #   + full contract-recall gate;
 #                                           #   auto-revert weights.bin on any regression
 #   KEYHOG_BIN=/path/to/keyhog ml/retrain_loop.sh   # explicit external harvester
 #   CORPORA="creddata" ml/retrain_loop.sh   # which real corpora to harvest
@@ -32,7 +32,7 @@
 # that this guard has NOT run — it never silently ships an unverified model.
 #
 # Contract-recall gate (--verify, second guard): the bench above is BLIND to the
-# 920 known-positive contract fixtures, so a model that suppresses generic/entropy
+# known-positive contract fixtures, so a model that suppresses generic/entropy
 # contract positives passes the bench yet breaks the contract CI gate (how
 # moe-v1-1cbb8088 shipped with CredData F1 +0.088 but MISSED 13 contract positives
 # on 2026-07-07). --verify now also runs contracts_runner against the candidate and
@@ -126,7 +126,7 @@ _gate_vs() {  # corpus, results_dir, baseline_dir
        --epsilon "${VERIFY_EPSILON}" --no-beat-competitors )
 }
 # Contract-recall gate (--verify): the per-detector FP/F1 bench above is BLIND to
-# the 920 known-positive contract fixtures. A model that suppresses generic/entropy
+# the known-positive contract fixtures. A model that suppresses generic/entropy
 # contract positives (`password=<real>`, `{"secret":"<real>"}`) sails through the
 # bench yet breaks the hard contract CI gate — exactly how moe-v1-1cbb8088 shipped
 # past --verify on 2026-07-07 (CredData F1 +0.088, mirror recall flat) while MISSING
@@ -136,7 +136,7 @@ _gate_vs() {  # corpus, results_dir, baseline_dir
 # are already red from concurrent work, fix the tree before shipping a model. Set
 # VERIFY_CONTRACTS=0 only for throwaway iteration, never for a real ship.
 VERIFY_CONTRACTS="${VERIFY_CONTRACTS:-1}"
-_contracts_gate() {  # run the 920-fixture contract suite against the current (candidate) weights.bin
+_contracts_gate() {  # run the full contract suite against the current candidate weights.bin
   ( cd "${REPO_ROOT}" \
     && CARGO_TARGET_DIR="${TARGET_DIR}" cargo test -p keyhog-scanner --test contracts_runner )
 }
@@ -264,11 +264,11 @@ if [[ "${DO_WRITE}" == "1" && "${DO_VERIFY}" == "1" ]]; then
       VERIFY_FAILED=1
     fi
   done
-  # Contract-recall gate — the bench above cannot see the 920 known-positive
+  # Contract-recall gate — the bench above cannot see the known-positive
   # fixtures; run them against the candidate so a generic/entropy recall
   # regression can't slip through (the moe-v1-1cbb8088 failure mode).
   if [[ "${VERIFY_FAILED}" == "0" && "${VERIFY_CONTRACTS}" == "1" ]]; then
-    echo "→ [verify] contract-recall gate: 920 known-positive fixtures (bench-blind)"
+    echo "→ [verify] contract-recall gate: full known-positive fixture suite (bench-blind)"
     if ! _contracts_gate; then
       echo "✗ [verify] contract-recall gate FAILED — candidate suppresses known-positive contract fixtures" >&2
       VERIFY_FAILED=1

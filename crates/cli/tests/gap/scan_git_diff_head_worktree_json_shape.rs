@@ -39,7 +39,7 @@ fn scan_git_diff_head_worktree_json_shape() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--git-diff",
             "HEAD",
             "--format",

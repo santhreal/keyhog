@@ -14,7 +14,7 @@ fn scan_jsonl_format_valid_objects() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--format",
             "jsonl",
         ])

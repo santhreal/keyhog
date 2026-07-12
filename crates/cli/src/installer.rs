@@ -33,9 +33,7 @@ use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 
 mod release;
-mod variant;
 pub(crate) use release::*;
-pub(crate) use variant::*;
 
 fn remove_installer_artifact_best_effort(path: &Path, context: &str) {
     if let Err(error) = std::fs::remove_file(path) {

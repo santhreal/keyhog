@@ -3,7 +3,7 @@
 //! changing the process exit code, and reports a bad output path as a clean,
 //! actionable error (never a silent no-op, never a stray partial file).
 //!
-//! Contract pinned here, all via the REAL shipped binary (`--no-daemon`,
+//! Contract pinned here, all via the REAL shipped binary (`--daemon=off`,
 //! `--backend cpu`, `KEYHOG_NO_GPU=1` for host-independence — no accelerator is
 //! assumed):
 //!   * `--output f` writes the report to `f`; `f`'s bytes parse to the SAME JSON
@@ -66,14 +66,14 @@ fn clean_fixture() -> (TempDir, PathBuf) {
     (dir, path)
 }
 
-/// Run `keyhog scan --no-daemon --backend cpu --format <format> [--output out]
+/// Run `keyhog scan --daemon=off --backend cpu --format <format> [--output out]
 /// <target>`. When `out` is `Some`, `--output` is passed. Returns (exit code,
 /// stdout, stderr).
 fn run(target: &PathBuf, format: &str, out: Option<&PathBuf>) -> (Option<i32>, String, String) {
     let mut cmd = Command::new(binary());
     cmd.args([
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--backend",
         "cpu",
         "--no-suppress-test-fixtures",
@@ -290,7 +290,7 @@ fn short_o_flag_equivalent_to_long_output() {
     let (code_short, _so, _se) = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--no-suppress-test-fixtures",

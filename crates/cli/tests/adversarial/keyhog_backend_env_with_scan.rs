@@ -10,7 +10,7 @@ fn legacy_keyhog_backend_env_is_ignored_with_explicit_backend_flag() {
         .env("KEYHOG_BACKEND", "not-a-real-backend")
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--format",
             "json",
             "--backend",

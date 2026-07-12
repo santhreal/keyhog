@@ -68,8 +68,6 @@ ci-lean = [
     "docker",
     "verify",
 ]
-# Unused Cargo flag — use `keyhog scan --fast` at runtime for pre-commit speed.
-fast = []
 # macOS release builds: every keyhog-scanner data feature, no system-lib deps
 # (no Hyperscan / Ghidra / CUDA). Workflows pass just `--features portable`
 # instead of having to enumerate `keyhog-scanner/...` per release.
@@ -133,7 +131,6 @@ web = ["keyhog-sources/web"]
 verify = ["keyhog-verifier/live"]
 gpu = ["keyhog-scanner/gpu"]           # wgpu compute shader inference (heavy)
 simd = ["keyhog-scanner/simd"]         # Vectorscan/Hyperscan SIMD regex (system lib required)
-cuda = ["keyhog-scanner/cuda"]         # no-op alias: CUDA is the primary GPU backend on Linux, always compiled + runtime-loaded
 
 [dependencies]
 keyhog-core = { workspace = true }

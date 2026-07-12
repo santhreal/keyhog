@@ -9,7 +9,7 @@ fn scan_baseline_missing_file_rejects_hostile_path() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             // Pin an explicit backend so the scan reaches baseline loading
             // deterministically. Without this, an uncalibrated host (no
             // persisted autoroute decision / unavailable GPU runtime identity)

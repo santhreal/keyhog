@@ -236,9 +236,7 @@ impl CompiledScanner {
     ) -> Vec<u64> {
         let _g = profile::span(profile::P::Phase1Triggers);
         match backend {
-            ScanBackend::Gpu | ScanBackend::MegaScan => {
-                self.collect_triggered_patterns_gpu(text, backend)
-            }
+            ScanBackend::Gpu => self.collect_triggered_patterns_gpu(text, backend),
             ScanBackend::SimdCpu => self.collect_triggered_patterns_simd(text),
             ScanBackend::CpuFallback => self.collect_triggered_patterns_cpu(text),
         }

@@ -1,4 +1,4 @@
-//! Vyre roadmap docs must track the workspace-pinned crate version.
+//! The canonical VYRE integration reference tracks the workspace pin.
 
 use std::path::PathBuf;
 
@@ -35,22 +35,24 @@ fn workspace_vyre_pin(manifest: &str) -> String {
 }
 
 #[test]
-fn vyre_usage_doc_matches_workspace_pin() {
+fn vyre_integration_doc_matches_workspace_pin() {
     let root = repo_root();
     let manifest = std::fs::read_to_string(root.join("Cargo.toml")).expect("root Cargo.toml");
-    let doc = std::fs::read_to_string(root.join("docs/vyre-usage.md")).expect("docs/vyre-usage.md");
+    let path = root.join("docs/src/reference/vyre-integration.md");
+    let doc = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
     let version = workspace_vyre_pin(&manifest);
 
     assert!(
         doc.contains(&format!("vyre v{version}")),
-        "docs/vyre-usage.md must state the workspace vyre pin v{version}"
+        "VYRE integration reference must state the workspace pin v{version}"
     );
     assert!(
         !doc.contains("Vyre is not on crates.io"),
-        "docs/vyre-usage.md must not claim Vyre is unpublished while Cargo.toml uses crates.io pins"
+        "VYRE integration reference must not claim VYRE is unpublished"
     );
     assert!(
         !doc.contains("vendored vyre v0.6.0"),
-        "docs/vyre-usage.md must not describe the active audit as v0.6.0"
+        "VYRE integration reference must not describe the active integration as v0.6.0"
     );
 }

@@ -43,7 +43,7 @@ fn scan_git_history_max_commits_one_clean_top() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-history",
             ".",
             "--max-commits",

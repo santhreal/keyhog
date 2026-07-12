@@ -12,7 +12,7 @@ fn scan_sarif_has_runs() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--format",
             "sarif",
             "--backend",

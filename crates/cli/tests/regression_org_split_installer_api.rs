@@ -47,22 +47,18 @@ fn release_semver_and_version_compare_unchanged_after_split() {
 #[test]
 fn release_asset_naming_unchanged_after_split() {
     assert_eq!(
-        API.asset_name("linux", "x86_64", false).as_deref(),
+        API.asset_name("linux", "x86_64").as_deref(),
         Some("keyhog-linux-x86_64")
     );
     assert_eq!(
-        API.asset_name("linux", "x86_64", true).as_deref(),
-        Some("keyhog-linux-x86_64-cuda")
-    );
-    assert_eq!(
-        API.asset_name("macos", "aarch64", false).as_deref(),
+        API.asset_name("macos", "aarch64").as_deref(),
         Some("keyhog-macos-aarch64")
     );
     assert_eq!(
-        API.asset_name("windows", "x86_64", false).as_deref(),
+        API.asset_name("windows", "x86_64").as_deref(),
         Some("keyhog-windows-x86_64.exe")
     );
-    assert_eq!(API.asset_name("plan9", "riscv", false), None);
+    assert_eq!(API.asset_name("plan9", "riscv"), None);
 }
 
 #[test]
@@ -200,9 +196,9 @@ fn full_installer_call_surface_reachable_after_split() {
     let _http_client = || API.http_client();
     let _parse_semver = |tag: &str| API.parse_semver(tag);
     let _is_newer = |current: &str, latest: &str| API.is_newer(current, latest);
-    let _asset_name = |os: &str, arch: &str, cuda: bool| API.asset_name(os, arch, cuda);
+    let _asset_name = |os: &str, arch: &str| API.asset_name(os, arch);
     let _select_release_asset_name =
-        |tag: &str, names: &[&str], cuda: bool| API.select_release_asset_name(tag, names, cuda);
+        |tag: &str, names: &[&str]| API.select_release_asset_name(tag, names);
     let _release_api_base_with_override = |base: &str| API.release_api_base_with_override(base);
     let _looks_like_native_executable = |bytes: &[u8]| API.looks_like_native_executable(bytes);
     let _verify_release_signature =

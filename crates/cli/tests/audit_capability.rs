@@ -79,15 +79,15 @@ AAAAAAAAtzc2gtZWQyNTUxOQAAACBabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQR
 -----END OPENSSH PRIVATE KEY-----
 ";
 
-/// Run `keyhog scan --path <path> --no-daemon --format json` and parse the
-/// findings array. `--no-daemon` forces the full in-process pipeline so the
+/// Run `keyhog scan --path <path> --daemon=off --format json` and parse the
+/// findings array. `--daemon=off` forces the full in-process pipeline so the
 /// result does not depend on whether a daemon happens to be running on the
 /// host. Returns the parsed JSON array of findings.
 fn scan_json(path: &std::path::Path) -> Vec<serde_json::Value> {
     let out = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

@@ -1,9 +1,7 @@
 //! VRAM-adaptive GPU batch-input sizing.
 //!
-//! No scan path builds or dispatches vyre's old `RulePipeline` regex-NFA engine:
-//! The retained `ScanBackend::MegaScan` compatibility variant collapses onto
-//! the GPU region-presence route. This module owns only the live byte-budget
-//! selector used for routing and cache-key stability.
+//! This module owns the live GPU region-presence byte-budget selector used for
+//! routing and cache-key stability.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -118,27 +116,6 @@ pub fn gpu_batch_input_limit() -> usize {
         );
         len
     })
-}
-
-/// Compatibility name for callers compiled against the retired MegaScan
-/// sizing terminology. New code uses [`gpu_batch_input_limit`].
-#[deprecated(since = "0.5.40", note = "renamed to gpu_batch_input_limit")]
-#[must_use]
-pub fn megascan_input_len() -> usize {
-    gpu_batch_input_limit()
-}
-
-/// Compatibility name for [`gpu_batch_input_limit_bounds`].
-#[deprecated(since = "0.5.40", note = "renamed to gpu_batch_input_limit_bounds")]
-#[must_use]
-pub fn megascan_input_len_bounds() -> (usize, usize) {
-    gpu_batch_input_limit_bounds()
-}
-
-/// Compatibility name for [`set_gpu_batch_input_limit`].
-#[deprecated(since = "0.5.40", note = "renamed to set_gpu_batch_input_limit")]
-pub fn set_megascan_input_len(bytes: usize) {
-    set_gpu_batch_input_limit(bytes);
 }
 
 pub(crate) fn gpu_batch_input_limit_for_vram_mb(gpu_vram_mb: Option<u64>) -> usize {

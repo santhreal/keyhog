@@ -8,7 +8,7 @@ fn adversarial_missing_path_no_stdout_json() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--format",
             "json",
             "/nonexistent/keyhog-adversarial-missing",

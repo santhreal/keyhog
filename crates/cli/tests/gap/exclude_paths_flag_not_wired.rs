@@ -22,7 +22,7 @@ fn exclude_paths_flag_suppresses_matching_files() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

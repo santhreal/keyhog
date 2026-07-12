@@ -27,7 +27,7 @@
 //!
 //! Every assert pins an EXACT exit code, an EXACT detector id / credential
 //! hash, an EXACT count, or EXACT bytes — never `!is_empty` (Law 6). All scans
-//! pass `--no-daemon` (no background-process nondeterminism), pin `--backend simd`
+//! pass `--daemon=off` (no background-process nondeterminism), pin `--backend simd`
 //! for non-routing assertions, and clear the legacy `KEYHOG_BACKEND` env so the
 //! CLI flag is the only routing input.
 
@@ -78,11 +78,11 @@ fn clean_fixture() -> (TempDir, PathBuf) {
     (dir, path)
 }
 
-/// Run `keyhog scan --no-daemon <extra…> <path>` with a hermetic env and return
+/// Run `keyhog scan --daemon=off <extra…> <path>` with a hermetic env and return
 /// (exit-code, stdout, stderr).
 fn scan(path: &Path, extra: &[&str]) -> (Option<i32>, String, String) {
     let mut cmd = Command::new(binary());
-    cmd.args(["scan", "--no-daemon"]);
+    cmd.args(["scan", "--daemon=off"]);
     if !extra.contains(&"--backend") {
         cmd.args(["--backend", "simd"]);
     }
@@ -493,7 +493,7 @@ fn stdin_scan_finds_the_planted_secret() {
     let mut cmd = Command::new(binary());
     cmd.args([
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--backend",
         "simd",
         "--stdin",

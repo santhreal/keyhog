@@ -7,66 +7,42 @@ fn normalize_ws(text: &str) -> String {
 #[test]
 fn asset_name_matches_release_convention() {
     assert_eq!(
-        API.asset_name("linux", "x86_64", false).as_deref(),
+        API.asset_name("linux", "x86_64").as_deref(),
         Some("keyhog-linux-x86_64")
     );
     assert_eq!(
-        API.asset_name("linux", "x86_64", true).as_deref(),
-        Some("keyhog-linux-x86_64-cuda")
-    );
-    assert_eq!(
-        API.asset_name("macos", "aarch64", false).as_deref(),
+        API.asset_name("macos", "aarch64").as_deref(),
         Some("keyhog-macos-aarch64")
     );
     assert_eq!(
-        API.asset_name("macos", "x86_64", false).as_deref(),
+        API.asset_name("macos", "x86_64").as_deref(),
         Some("keyhog-macos-x86_64")
-    );
-    // macOS has no CUDA build - cuda flag is ignored, no `-cuda` suffix.
-    assert_eq!(
-        API.asset_name("macos", "aarch64", true).as_deref(),
-        Some("keyhog-macos-aarch64")
     );
     // Windows x86_64: release.yml uploads keyhog-windows-x86_64.exe, so
     // `update`/`repair` must resolve it (previously returned None, which
-    // left both commands dead on Windows). CUDA has no Windows asset, so
-    // the flag is ignored - no `-cuda` suffix.
+    // left both commands dead on Windows).
     assert_eq!(
-        API.asset_name("windows", "x86_64", false).as_deref(),
-        Some("keyhog-windows-x86_64.exe")
-    );
-    assert_eq!(
-        API.asset_name("windows", "x86_64", true).as_deref(),
+        API.asset_name("windows", "x86_64").as_deref(),
         Some("keyhog-windows-x86_64.exe")
     );
     // Unsupported (os, arch) pairs still yield None.
-    assert_eq!(API.asset_name("windows", "aarch64", false), None);
-    assert_eq!(API.asset_name("linux", "riscv64", false), None);
+    assert_eq!(API.asset_name("windows", "aarch64"), None);
+    assert_eq!(API.asset_name("linux", "riscv64"), None);
 }
 
 #[cfg(target_os = "linux")]
 #[test]
-fn explicit_cuda_asset_selection_requires_cuda_asset() {
-    let portable_only = ["keyhog-linux-x86_64"];
-    let err = API
-        .select_release_asset_name("v9.9.9", &portable_only, true)
-        .expect_err("explicit CUDA update/repair must not install the portable asset");
-    let msg = format!("{err:#}");
-    assert!(
-        msg.contains("keyhog-linux-x86_64-cuda") && msg.contains("fail closed"),
-        "error must name the missing exact CUDA asset and fail-closed semantics: {msg}"
-    );
-
-    let with_cuda = ["keyhog-linux-x86_64", "keyhog-linux-x86_64-cuda"];
+fn release_selection_uses_the_single_linux_asset() {
+    let assets = ["keyhog-linux-x86_64"];
     assert_eq!(
-        API.select_release_asset_name("v9.9.9", &with_cuda, true)
-            .expect("CUDA asset present"),
-        "keyhog-linux-x86_64-cuda"
+        API.select_release_asset_name("v9.9.9", &assets)
+            .expect("Linux platform asset present"),
+        "keyhog-linux-x86_64"
     );
 }
 
 #[test]
-fn release_selector_has_no_portable_fallback_for_explicit_cuda() {
+fn release_selector_has_no_alternate_asset_fallback() {
     let src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/installer/release.rs"
@@ -78,83 +54,13 @@ fn release_selector_has_no_portable_fallback_for_explicit_cuda() {
         .and_then(|tail| tail.split("/// Download an asset").next())
         .expect("select_asset body is present");
     assert!(
-        selector.contains("explicit release variants fail closed")
-            && !selector.contains(".or_else(")
-            && !selector.contains("portable fallback"),
-        "select_asset must not silently downgrade explicit --variant cuda to the portable asset"
+        selector.contains("has no platform asset named") && !selector.contains(".or_else("),
+        "select_asset must request exactly one platform artifact"
     );
 }
 
 #[test]
-fn omitted_variant_uses_install_script_cuda_default_contract() {
-    assert!(
-        API.default_wants_cuda_variant_for_host("linux", "x86_64", true, true, true),
-        "Linux x86_64 with NVIDIA GPU, libcuda, and CUDA toolkit must default to the CUDA asset"
-    );
-    for (os, arch, nvidia_gpu, libcuda, cuda_toolkit) in [
-        ("macos", "aarch64", true, true, true),
-        ("windows", "x86_64", true, true, true),
-        ("linux", "aarch64", true, true, true),
-        ("linux", "x86_64", false, true, true),
-        ("linux", "x86_64", true, false, true),
-        ("linux", "x86_64", true, true, false),
-    ] {
-        assert!(
-            !API.default_wants_cuda_variant_for_host(os, arch, nvidia_gpu, libcuda, cuda_toolkit),
-            "host tuple {os}-{arch} nvidia={nvidia_gpu} libcuda={libcuda} toolkit={cuda_toolkit} must default to the non-CUDA asset"
-        );
-    }
-}
-
-#[test]
-fn omitted_variant_rejects_unsupported_host_before_cuda_probes() {
-    let variant_rs = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/installer/variant.rs"
-    ))
-    .expect("variant.rs readable");
-    let body = variant_rs
-        .split("pub(crate) fn default_wants_cuda_variant() -> bool")
-        .nth(1)
-        .and_then(|tail| {
-            tail.split("pub(crate) fn default_wants_cuda_variant_for_host")
-                .next()
-        })
-        .expect("default_wants_cuda_variant body extractable");
-    let unsupported_host_gate = body
-        .find("if !cuda_variant_supported_host(os, arch)")
-        .expect("default variant selection must gate unsupported OS/arch before CUDA probes");
-    for probe in [
-        "nvidia_gpu_present()",
-        "libcuda_present()",
-        "cuda_toolkit_present()",
-    ] {
-        let probe_pos = body
-            .find(probe)
-            .unwrap_or_else(|| panic!("default variant selection must call {probe}"));
-        assert!(
-            unsupported_host_gate < probe_pos,
-            "unsupported OS/arch must return the non-CUDA asset before running {probe}"
-        );
-    }
-}
-
-#[test]
-fn explicit_variant_resolution_is_strict() {
-    assert!(API.wants_cuda_variant(Some("cuda")).unwrap());
-    assert!(!API.wants_cuda_variant(Some("cpu")).unwrap());
-    let err = API
-        .wants_cuda_variant(Some("portable"))
-        .expect_err("unknown variants must not silently select portable");
-    let msg = format!("{err:#}");
-    assert!(
-        msg.contains("invalid release variant") && msg.contains("--variant cpu"),
-        "invalid variant error must explain the accepted values: {msg}"
-    );
-}
-
-#[test]
-fn installer_variant_words_match_release_feature_matrix() {
+fn installer_platform_words_match_release_feature_matrix() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let release_yml =
         std::fs::read_to_string(root.join(".github/workflows/release.yml")).expect("release.yml");
@@ -165,8 +71,6 @@ fn installer_variant_words_match_release_feature_matrix() {
     let install_ps1 = std::fs::read_to_string(root.join("install.ps1")).expect("install.ps1");
     let maintenance_rs = std::fs::read_to_string(root.join("crates/cli/src/args/maintenance.rs"))
         .expect("maintenance.rs");
-    let variant_rs = std::fs::read_to_string(root.join("crates/cli/src/installer/variant.rs"))
-        .expect("variant.rs");
     let readme_words = normalize_ws(&readme);
     let install_doc_words = normalize_ws(&install_doc);
 
@@ -184,7 +88,6 @@ fn installer_variant_words_match_release_feature_matrix() {
         ("install.sh", install_sh.as_str()),
         ("install.ps1", install_ps1.as_str()),
         ("maintenance.rs", maintenance_rs.as_str()),
-        ("variant.rs", variant_rs.as_str()),
     ] {
         for stale in [
             "portable WGPU+SIMD",
@@ -205,41 +108,14 @@ fn installer_variant_words_match_release_feature_matrix() {
         readme_words
             .contains("macOS and Windows release assets are portable no-system-library builds")
             && install_doc_words
-                .contains("macOS release assets are portable no-system-library builds")
+                .contains("macOS and Windows assets use the portable no-system-library build")
             && install_doc_words
                 .contains("Windows installer ships the portable no-system-library build")
             && install_sh.contains("portable no-system-library macOS build")
             && install_ps1.contains("portable no-system-library Windows build")
-            && maintenance_rs.contains("default non-CUDA release asset")
-            && variant_rs.contains("default non-CUDA release asset"),
-        "docs, installers, and CLI help must describe portable/non-CUDA variants honestly"
+            && !maintenance_rs.contains("variant"),
+        "docs, installers, and CLI help must describe the platform artifacts honestly"
     );
-}
-
-#[test]
-fn update_and_repair_use_shared_variant_resolver() {
-    for rel in ["src/subcommands/update.rs", "src/subcommands/repair.rs"] {
-        let src = std::fs::read_to_string(format!("{}/{}", env!("CARGO_MANIFEST_DIR"), rel))
-            .expect("subcommand source readable");
-        assert!(
-            src.contains("installer::wants_cuda_variant(args.variant.as_deref())?"),
-            "{rel} must use the shared strict/default variant resolver"
-        );
-        let variant_pos = src
-            .find("installer::wants_cuda_variant(args.variant.as_deref())?")
-            .expect("variant resolver call present");
-        let client_pos = src
-            .find("installer::http_client()?")
-            .expect("HTTP client call present");
-        assert!(
-            variant_pos < client_pos,
-            "{rel} must reject invalid variants before network setup"
-        );
-        assert!(
-            !src.contains("args.variant.as_deref() == Some(\"cuda\")"),
-            "{rel} must not make omitted/invalid variants silently portable"
-        );
-    }
 }
 
 #[test]

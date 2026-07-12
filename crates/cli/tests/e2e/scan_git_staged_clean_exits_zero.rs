@@ -49,7 +49,7 @@ fn scan_git_staged_clean_exits_zero() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-staged",
             "--format",
             "json",

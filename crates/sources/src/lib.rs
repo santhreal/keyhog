@@ -59,9 +59,6 @@ mod cloud;
 #[cfg(feature = "docker")]
 mod docker;
 mod filesystem;
-/// Fuzz-only PDF byte-extractor entry (compiled only under `cargo fuzz`).
-#[cfg(fuzzing)]
-pub use filesystem::fuzz_extract_pdf_text;
 #[cfg(feature = "gcs")]
 mod gcs;
 #[cfg(feature = "git")]
@@ -71,9 +68,6 @@ mod github_org;
 #[cfg(feature = "gitlab")]
 mod gitlab_group;
 mod har;
-/// Fuzz-only HAR byte-expander entry (compiled only under `cargo fuzz`).
-#[cfg(fuzzing)]
-pub use har::fuzz_try_expand_har;
 #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
 mod hosted_git;
 #[cfg(feature = "s3")]
@@ -86,19 +80,9 @@ mod strings;
 mod web;
 
 pub use api::*;
-pub use decode::decode_file_bytes;
-pub use factory::{
-    create_source, create_source_with_http_config, create_source_with_http_config_and_limits,
-    create_source_with_http_config_limits_and_policy,
-};
-pub use limits::{SourceLimits, DEFAULT_SOURCE_LIMITS};
-pub use safe_read::read_file_safe_bytes;
 pub(crate) use skip::{
     acquire_scan_read_lease, attach_scan_lease, enter_exclusive_scan_scope, gate_scan,
     record_skip_event, record_skip_events, reset_skip_counters, SourceSkipEvent,
-};
-pub use skip::{
-    git_object_unreadable, reset_skipped_over_max_size, skip_counts, ScanCounterScope, SkipCounts,
 };
 
 /// Directory path components owned by the source default-exclude policy.

@@ -157,8 +157,6 @@ pub(crate) use gpu_forced_helpers::gpu_forced_unavailable_message;
 pub use gpu_input_budget::{
     gpu_batch_input_limit, gpu_batch_input_limit_bounds, set_gpu_batch_input_limit,
 };
-#[allow(deprecated)]
-pub use gpu_input_budget::{megascan_input_len, megascan_input_len_bounds, set_megascan_input_len};
 #[cfg(test)]
 pub(crate) use phase2::{phase2_gate_stats_dump, phase2_mark_stats, phase2_mark_stats_reset};
 pub use profile::{

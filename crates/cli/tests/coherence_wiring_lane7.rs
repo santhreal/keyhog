@@ -59,7 +59,7 @@ fn scan_file(content: &str, extra: &[&str]) -> (Option<i32>, String, String) {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("planted.txt");
     std::fs::write(&path, content).unwrap();
-    let mut args: Vec<&str> = vec!["scan", "--no-daemon", "--backend", "simd"];
+    let mut args: Vec<&str> = vec!["scan", "--daemon=off", "--backend", "simd"];
     args.extend_from_slice(extra);
     let path_str = path.to_string_lossy().into_owned();
     args.push(&path_str);
@@ -407,7 +407,7 @@ fn exit_code_matrix_holds() {
 
     let (missing, _o, _e) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--format",
         "json",
         "/no/such/keyhog/path/lane7xyz",

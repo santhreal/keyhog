@@ -49,7 +49,7 @@ fn scan_deep_flag_git_staged_clean() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--deep",
             "--git-staged",
             "--format",

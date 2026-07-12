@@ -65,7 +65,7 @@ fn installer_keyhog_env_surface_is_exactly_the_install_pin() {
             actual, allowed,
             "{name} must not grow ambient KEYHOG_* installer configuration. \
              The only surviving installer env is KEYHOG_VERSION as the release pin; \
-             local files, destination, variant, insecure mode, calibration, and behavior use explicit flags."
+             local files, destination, insecure mode, calibration, and behavior use explicit flags."
         );
     }
 }
@@ -97,7 +97,7 @@ fn install_from_file_is_explicit_flag_not_env() {
 }
 
 #[test]
-fn installer_destination_and_variant_are_explicit_flags_not_env() {
+fn installer_destination_is_explicit_flag_not_env() {
     for (name, script, forbidden) in [
         (
             "install.sh",
@@ -113,7 +113,7 @@ fn installer_destination_and_variant_are_explicit_flags_not_env() {
         for token in forbidden {
             assert!(
                 !script.contains(token),
-                "{name} must not accept {token}; installer destination and variant use explicit flags"
+                "{name} must not accept {token}; installer destination is an explicit flag"
             );
         }
     }

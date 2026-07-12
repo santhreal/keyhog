@@ -10,7 +10,7 @@ fn scan_format_csv_finding_row_count() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

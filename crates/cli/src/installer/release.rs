@@ -72,19 +72,14 @@ pub(crate) struct Asset {
 /// GitHub release-asset name for `keyhog` on a given host. Mirrors the asset
 /// naming the release workflow + install.sh use. `None` for platforms without
 /// a prebuilt asset.
-pub(crate) fn asset_name(os: &str, arch: &str, cuda: bool) -> Option<String> {
+pub(crate) fn asset_name(os: &str, arch: &str) -> Option<String> {
     match (os, arch) {
-        ("linux", "x86_64") => Some(if cuda {
-            "keyhog-linux-x86_64-cuda".into()
-        } else {
-            "keyhog-linux-x86_64".into()
-        }),
+        ("linux", "x86_64") => Some("keyhog-linux-x86_64".into()),
         ("macos", "aarch64") => Some("keyhog-macos-aarch64".into()),
         ("macos", "x86_64") => Some("keyhog-macos-x86_64".into()),
         // release.yml uploads keyhog-windows-x86_64.exe; without this arm
         // `select_asset` returned None on Windows and `update`/`repair`
-        // could never resolve an asset there. CUDA has no Windows asset, so
-        // the flag is ignored on this target.
+        // could never resolve an asset there.
         ("windows", "x86_64") => Some("keyhog-windows-x86_64.exe".into()),
         _ => None,
     }
@@ -188,34 +183,23 @@ pub(crate) async fn resolve_release(
         .ok_or_else(|| anyhow!("no recent GitHub release has any assets uploaded; pass --version"))
 }
 
-/// Pick the asset for this host. `want_cuda` is an explicit CUDA request, so it
-/// must resolve to the CUDA Linux asset or fail closed.
-pub(crate) fn select_asset(release: &Release, want_cuda: bool) -> Result<&Asset> {
-    let target = if want_cuda {
-        match (std::env::consts::OS, std::env::consts::ARCH) {
-            ("linux", "x86_64") => "keyhog-linux-x86_64-cuda".to_string(),
-            (os, arch) => {
-                return Err(anyhow!(
-                    "CUDA release variant is only available for linux-x86_64; host is {os}-{arch}"
-                ));
-            }
-        }
-    } else {
-        asset_name(std::env::consts::OS, std::env::consts::ARCH, false).ok_or_else(|| {
-            anyhow!(
-                "no prebuilt asset for {}-{} (supported: linux-x86_64, macos-aarch64, macos-x86_64)",
-                std::env::consts::OS,
-                std::env::consts::ARCH
-            )
-        })?
-    };
+/// Pick the one platform asset for this host. Runtime accelerator selection is
+/// performed by backend probing and autoroute, not by release filenames.
+pub(crate) fn select_asset(release: &Release) -> Result<&Asset> {
+    let target = asset_name(std::env::consts::OS, std::env::consts::ARCH).ok_or_else(|| {
+        anyhow!(
+            "no prebuilt asset for {}-{} (supported: linux-x86_64, macos-aarch64, macos-x86_64, windows-x86_64)",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        )
+    })?;
     release
         .assets
         .iter()
         .find(|a| a.name == target)
         .ok_or_else(|| {
             anyhow!(
-                "release {} has no asset named {target}; explicit release variants fail closed",
+                "release {} has no platform asset named {target}",
                 release.tag_name
             )
         })

@@ -19,7 +19,7 @@ fn malformed_har_parse_fallback_is_visible_to_operator() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--progress",
             "--format",
             "json",
@@ -72,7 +72,7 @@ fn malformed_har_parse_fallback_is_visible_in_sarif_notifications() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--format",
             "sarif",
         ])

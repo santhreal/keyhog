@@ -7,7 +7,7 @@ use std::process::Command;
 fn scan_missing_path_stderr_nonempty() {
     let missing = "/nonexistent/keyhog-contract-stderr-empty";
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", missing])
+        .args(["scan", "--daemon=off", missing])
         .output()
         .expect("spawn");
     let stderr = String::from_utf8_lossy(&output.stderr);

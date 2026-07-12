@@ -11,7 +11,7 @@ fn scan_dogfood_suppressed_example() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--dogfood",
             "--format",
             "text",

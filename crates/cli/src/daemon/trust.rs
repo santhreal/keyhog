@@ -158,7 +158,7 @@ fn validate_socket_parent_for_connect(socket_path: &Path) -> Result<()> {
         bail!(
             "daemon client: socket parent dir {} is mode {mode:#o}; refusing to trust a daemon \
              socket in a group/other-writable directory. Restart the daemon under a private \
-             runtime/cache directory or pass --no-daemon.",
+             runtime/cache directory or pass --daemon=off.",
             parent.display()
         );
     }
@@ -390,7 +390,7 @@ fn platform_connected_peer_uid(stream: &tokio::net::UnixStream) -> Result<libc::
 fn platform_connected_peer_uid(_stream: &tokio::net::UnixStream) -> Result<libc::uid_t> {
     bail!(
         "daemon client: this Unix target has no supported peer-credential API; refusing to \
-         send scan paths or content over the daemon socket. Run `keyhog scan --no-daemon ...` \
+         send scan paths or content over the daemon socket. Run `keyhog scan --daemon=off ...` \
          or use Linux/macOS/BSD for daemon mode."
     )
 }

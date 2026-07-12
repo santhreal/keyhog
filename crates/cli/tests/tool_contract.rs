@@ -54,13 +54,13 @@ fn exit_code_contract_clean_findings_error() {
     let clean = d.join("clean");
     let planted = d.join("planted");
 
-    let (clean_ec, _) = run(&["scan", clean.to_str().unwrap(), "--no-daemon"]);
+    let (clean_ec, _) = run(&["scan", clean.to_str().unwrap(), "--daemon=off"]);
     assert_eq!(clean_ec, 0, "clean scan must exit 0 (no findings)");
 
-    let (planted_ec, _) = run(&["scan", planted.to_str().unwrap(), "--no-daemon"]);
+    let (planted_ec, _) = run(&["scan", planted.to_str().unwrap(), "--daemon=off"]);
     assert_eq!(planted_ec, 1, "scan with findings must exit 1");
 
-    let (missing_ec, _) = run(&["scan", "/no/such/path/kh-contract", "--no-daemon"]);
+    let (missing_ec, _) = run(&["scan", "/no/such/path/kh-contract", "--daemon=off"]);
     assert!(
         missing_ec >= 2,
         "scan of a nonexistent path must exit >=2 (user/source/system error), got {missing_ec}"
@@ -111,7 +111,7 @@ fn output_formats_are_well_formed() {
     let p = planted.to_str().unwrap();
 
     for fmt in ["text", "json", "jsonl", "sarif", "csv", "junit", "html"] {
-        let (ec, out) = run(&["scan", p, "--no-daemon", "--format", fmt]);
+        let (ec, out) = run(&["scan", p, "--daemon=off", "--format", fmt]);
         assert!(
             ec == 0 || ec == 1,
             "--format {fmt} must exit 0/1 (not an operator/configuration error), got {ec}"

@@ -38,12 +38,12 @@ fn binary() -> PathBuf {
 /// and yield ZERO findings, defeating the findings→exit-1 assertion.
 const PLANTED: &str = concat!("ghp_", "1234567890123456789012345678902PDSiF");
 
-/// Run `keyhog scan --no-daemon --backend cpu <extra…> <path>` hermetically,
+/// Run `keyhog scan --daemon=off --backend cpu <extra…> <path>` hermetically,
 /// returning `(exit code, stdout, stderr)`. `KEYHOG_BACKEND` is stripped so an
 /// ambient env override cannot swing the backend out from under the test.
 fn scan(path: &Path, extra: &[&str]) -> (Option<i32>, String, String) {
     let mut cmd = Command::new(binary());
-    cmd.args(["scan", "--no-daemon", "--backend", "cpu"]);
+    cmd.args(["scan", "--daemon=off", "--backend", "cpu"]);
     cmd.args(extra);
     cmd.arg(path);
     cmd.env_remove("KEYHOG_BACKEND");
@@ -188,7 +188,7 @@ fn unknown_backend_value_exits_user_error_two() {
     let (_d, path) = fixture("clean.txt", "hello world\n");
     // Bypass the helper's fixed `--backend cpu` so the bad value is the ONLY one.
     let out = Command::new(binary())
-        .args(["scan", "--no-daemon", "--backend", "quantum"])
+        .args(["scan", "--daemon=off", "--backend", "quantum"])
         .arg(&path)
         .env_remove("KEYHOG_BACKEND")
         .output()

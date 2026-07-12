@@ -13,7 +13,7 @@ fn scan_binary_ghidra_failure_includes_stderr_excerpt() {
     let output = std::process::Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",
@@ -59,7 +59,7 @@ fn scan_binary_ghidra_degradation_is_visible_in_sarif_notifications() {
     let output = std::process::Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

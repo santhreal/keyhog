@@ -121,9 +121,9 @@ simdsieve = "=0.1.1"
 # `vyre_libs::scan::build_regex_dfa_unanchored`, etc.). Keyhog consumes the five
 # runtime vyre crates through exact registry pins only: no path overrides, no
 # Santh NFS dependency, and no repository `vendor/` tree.
-# CUDA backend is wired in keyhog-scanner behind the `cuda` feature
-# (default on). On hosts without libcuda.so the backend's `acquire()`
-# call fails cleanly and the scanner falls back to wgpu.
+# CUDA and WGPU are peers inside keyhog-scanner's default `gpu` feature. CUDA
+# uses dynamic loading, so one Linux binary probes both at runtime without a
+# build-time toolkit or a separate CUDA artifact.
 vyre = "=0.6.4"
 vyre_libs = { package = "vyre-libs", version = "=0.6.4" }
 vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.4" }

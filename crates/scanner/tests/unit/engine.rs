@@ -650,10 +650,10 @@ fn scan_gpu_warm_backend_cpu_paths_always_succeed() {
 }
 
 #[test]
-fn scan_gpu_megascan_warm_degrades_gracefully_without_gpu() {
+fn scan_gpu_warm_reports_stable_backend_readiness() {
     let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
-    // Returns false when no GPU adapter, but must not panic.
-    let _ = scanner.warm_backend(ScanBackend::MegaScan);
+    let gpu_ready = scanner.warm_backend(ScanBackend::Gpu);
+    assert_eq!(gpu_ready, scanner.warm_backend(ScanBackend::Gpu));
 }
 
 // ── engine/scan_filters.rs (keyword gating via generic assignment) ──

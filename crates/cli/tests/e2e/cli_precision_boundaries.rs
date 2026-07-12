@@ -34,7 +34,7 @@ fn scan_with_args(fixture: &str, args: &[&str]) -> (String, String, Option<i32>)
         .args(args)
         .arg("--format")
         .arg("json")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg(&path)
         .output()
         .expect("spawn keyhog scan");

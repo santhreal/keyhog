@@ -94,7 +94,7 @@ fn stream_preview_must_not_show_findings_dropped_by_min_confidence() {
         Command::new(binary())
             .args([
                 "scan",
-                "--no-daemon",
+                "--daemon=off",
                 "--backend",
                 "simd",
                 "--stream",
@@ -177,7 +177,7 @@ fn stream_preview_must_not_show_test_fixture_suppressed_credential() {
     let out = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--stream",
@@ -230,7 +230,7 @@ fn empty_detector_scan_fails_closed_without_phantom_list_guidance() {
     .unwrap();
 
     let scan = Command::new(binary())
-        .args(["scan", "--no-daemon", "--backend", "simd", "-d"])
+        .args(["scan", "--daemon=off", "--backend", "simd", "-d"])
         .arg(&empty_detectors)
         .arg(&target)
         .output()

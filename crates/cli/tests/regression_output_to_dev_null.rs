@@ -36,7 +36,7 @@ fn scan_output_to_dev_null_succeeds_and_reports_findings_exit_code() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--format",

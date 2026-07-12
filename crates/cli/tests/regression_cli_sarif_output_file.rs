@@ -86,13 +86,13 @@ fn clean_fixture() -> (TempDir, PathBuf) {
     (dir, path)
 }
 
-/// Run `keyhog scan --no-daemon --backend cpu --format sarif [--output out]
+/// Run `keyhog scan --daemon=off --backend cpu --format sarif [--output out]
 /// <target>` with the accelerator disabled. Returns (exit code, stdout, stderr).
 fn run_sarif(target: &PathBuf, out: Option<&PathBuf>) -> (Option<i32>, String, String) {
     let mut cmd = Command::new(binary());
     cmd.args([
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--backend",
         "cpu",
         "--no-suppress-test-fixtures",
@@ -509,7 +509,7 @@ fn sarif_short_o_flag_equivalent_to_long_output() {
     let (code_short, _so, _se) = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--no-suppress-test-fixtures",

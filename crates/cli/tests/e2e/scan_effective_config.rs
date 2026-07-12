@@ -476,7 +476,7 @@ fn config_effective_prints_backend_override() {
 fn scan_ignores_legacy_effective_config_env() {
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg("cpu")
         .env("KEYHOG_PRINT_EFFECTIVE_CONFIG", "1")
@@ -590,14 +590,14 @@ fn config_effective_prints_gpu_batch_input_limit_cli_and_toml() {
 }
 
 #[test]
-fn retired_megascan_input_names_migrate_to_gpu_batch_limit() {
+fn retired_megascan_input_names_are_rejected() {
     let (stdout, stderr, code) = effective_config(&["--megascan-input-len", "256MB"]);
-    assert_eq!(code, Some(0), "stderr={stderr}");
-    assert!(stdout.contains("gpu_batch_input_limit = 268435456"));
+    assert_eq!(code, Some(2), "stdout={stdout}; stderr={stderr}");
+    assert!(stderr.contains("unexpected argument '--megascan-input-len'"));
 
     let (stdout, stderr, code) = effective_config_with_toml("megascan_input_len = \"512MB\"\n");
-    assert_eq!(code, Some(0), "stderr={stderr}");
-    assert!(stdout.contains("gpu_batch_input_limit = 536870912"));
+    assert_eq!(code, Some(2), "stdout={stdout}; stderr={stderr}");
+    assert!(stderr.contains("unknown field `megascan_input_len`"));
 }
 
 #[test]

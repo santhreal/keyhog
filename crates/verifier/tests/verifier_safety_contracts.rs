@@ -1422,8 +1422,11 @@ fn enable_oob_uses_engine_network_policy_for_collector_client() {
 fn oob_session_docs_match_fail_closed_runtime_contract() {
     let lib = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))
         .expect("verifier lib.rs must be readable");
-    let docs = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/OOB.md"))
-        .expect("docs/OOB.md must be readable");
+    let docs = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/src/reference/oob-verification.md"
+    ))
+    .expect("OOB verification reference must be readable");
     let session =
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/oob/session.rs"))
             .expect("oob/session.rs must be readable");

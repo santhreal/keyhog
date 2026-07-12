@@ -20,7 +20,7 @@ fn scan_exclude_paths_suppresses_file() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

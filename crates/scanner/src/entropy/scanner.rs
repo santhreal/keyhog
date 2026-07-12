@@ -608,35 +608,8 @@ fn scan_keyword_free_candidates(
     }
 }
 
-#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
-#[allow(dead_code)] // Retained as convenience wrapper; production uses _with_precomputed_keywords
-pub(crate) fn has_lower_dash_app_password_candidate_with_lines(
-    lines: &[&str],
-    config: &crate::ScannerConfig,
-) -> bool {
-    let keyword_lines = find_keyword_assignment_lines(lines, &config.secret_keywords);
-    has_lower_dash_app_password_candidate_with_precomputed_keywords(lines, &keyword_lines, config)
-}
-
-/// Same as [`has_lower_dash_app_password_candidate_with_lines`] but accepts
-/// pre-computed keyword assignment lines, avoiding the redundant
-/// `find_keyword_assignment_lines` scan when the caller already has the result.
-#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
-pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords(
-    _lines: &[&str],
-    keyword_lines: &[(usize, &str)],
-    config: &crate::ScannerConfig,
-) -> bool {
-    has_lower_dash_app_password_candidate_with_precomputed_keywords_and_policy(
-        keyword_lines,
-        config,
-        None,
-    )
-}
-
-/// Production sibling of
-/// [`has_lower_dash_app_password_candidate_with_precomputed_keywords`] that
-/// resolves the prefilter's detector thresholds from the active corpus. The
+/// Resolves the prefilter's detector thresholds from the active corpus using
+/// precomputed keyword assignment lines. The
 /// prefilter can decide whether phase 2 runs at all, so consulting embedded
 /// defaults here would be a silent policy override rather than an optimization.
 #[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]

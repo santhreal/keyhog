@@ -94,7 +94,6 @@ fn boundary_straddle_parity_aws_key_split_across_chunks() {
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
         ScanBackend::Gpu,
-        ScanBackend::MegaScan,
     ];
 
     scanner.clear_fragment_cache();

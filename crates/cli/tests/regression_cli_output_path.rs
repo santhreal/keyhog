@@ -1,7 +1,7 @@
 //! Regression: `keyhog scan --output <path>` — path-handling and per-format
 //! contract that the sibling `regression_cli_output_file.rs` does NOT cover.
 //!
-//! Everything here drives the REAL shipped binary (`--no-daemon`, `--backend
+//! Everything here drives the REAL shipped binary (`--daemon=off`, `--backend
 //! cpu`, `KEYHOG_NO_GPU=1` so NO accelerator is assumed — host-independent) and
 //! every assertion pins a CONCRETE value (exact bytes / JSON value / line count
 //! / substring / bool / exit code). No bare `!is_empty` / `is_ok`.
@@ -92,7 +92,7 @@ fn base_cmd(target: &Path, format: &str, out: Option<&Path>) -> Command {
     let mut cmd = Command::new(binary());
     cmd.args([
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--backend",
         "cpu",
         "--no-suppress-test-fixtures",

@@ -129,11 +129,7 @@ const MEASURE_REPS: usize = 1;
 /// matrix asserts each must reach 10x once batched phase-2 exists; the
 /// CPU-only backends are included deliberately so the matrix records that they
 /// STILL won't be 10x (no batched verify) — making GPU-vs-CPU progress legible.
-const ROUTABLE_BACKENDS: &[ScanBackend] = &[
-    ScanBackend::Gpu,
-    ScanBackend::MegaScan,
-    ScanBackend::CpuFallback,
-];
+const ROUTABLE_BACKENDS: &[ScanBackend] = &[ScanBackend::Gpu, ScanBackend::CpuFallback];
 
 /// One (backend, size) cell of the 10x cross-matrix.
 fn assert_backend_10x_cell(backend: ScanBackend, mib: usize) {
@@ -187,20 +183,20 @@ fn matrix_gpu_64mib() {
     assert_backend_10x_cell(ScanBackend::Gpu, 64);
 }
 #[test]
-fn matrix_megascan_8mib() {
-    assert_backend_10x_cell(ScanBackend::MegaScan, 8);
+fn matrix_simdcpu_8mib() {
+    assert_backend_10x_cell(ScanBackend::SimdCpu, 8);
 }
 #[test]
-fn matrix_megascan_16mib() {
-    assert_backend_10x_cell(ScanBackend::MegaScan, 16);
+fn matrix_simdcpu_16mib() {
+    assert_backend_10x_cell(ScanBackend::SimdCpu, 16);
 }
 #[test]
-fn matrix_megascan_32mib() {
-    assert_backend_10x_cell(ScanBackend::MegaScan, 32);
+fn matrix_simdcpu_32mib() {
+    assert_backend_10x_cell(ScanBackend::SimdCpu, 32);
 }
 #[test]
-fn matrix_megascan_64mib() {
-    assert_backend_10x_cell(ScanBackend::MegaScan, 64);
+fn matrix_simdcpu_64mib() {
+    assert_backend_10x_cell(ScanBackend::SimdCpu, 64);
 }
 #[test]
 fn matrix_cpufallback_8mib() {

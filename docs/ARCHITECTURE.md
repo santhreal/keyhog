@@ -22,15 +22,15 @@ everything else is data, tooling, docs, or eval harness.
 | Dir | Role |
 |-----|------|
 | `crates/` | Rust workspace: runtime code only (five crates; see [below](#the-crates-and-their-layering)). |
-| `detectors/` | **920 detector TOMLs (data, not code).** One file = one secret type; drop a file to add a detector without recompiling detection logic. See [detectors](#detectors--data-not-code). |
+| `detectors/` | Embedded detector TOMLs (data, not code). One file = one secret type; drop a file to add a detector without rewriting detection logic. The generated catalog owns the current count. See [detectors](#detectors--data-not-code). |
 | `rules/` | Tier-B data (e.g. `aws-canary-accounts.toml`); same drop-in model as `detectors/`. |
 | `ml/` | Python pipeline for embedded `weights.bin`: harvest → blend → train → gate (`retrain_loop.sh`). Trains; `crates/scanner` serves. |
 | `benchmarks/` | Eval harness (`bench/`): corpora, scanner adapters, scorer, regression/differential `gate`, README leaderboard. |
 | `tests/` | Repo-level integration tests (Docker, install, cross-OS). Per-crate tests live under each crate's `tests/`. |
 | `fuzz/` | `cargo-fuzz` targets (structure-aware, one sink per target). |
 | `tools/` | Build-time generators (`gen_contracts.py`, `gen_companion_contracts.py`). Large *gitignored* SecretBench corpus. |
-| `scripts/` | Dev/ops: dogfood-all-os, prerelease, audit, triage. |
-| `docs/` | Markdown, mdBook source, execution plan, deep references. |
+| `scripts/` | Maintained dev/release entrypoints and organization/product-truth gates. One-off corpus rewrite scripts do not ship. |
+| `docs/` | Contributor references plus canonical mdBook source under `docs/src/`. |
 | `site/` | Published docs site (HTML); `architecture.html` is the long-form version of this page. |
 | `demo/` | Self-contained demo deployment (app + infra + scripts). |
 | `metrics/` | Star and project-health metrics. |
@@ -107,7 +107,7 @@ method-level version of steps 2-4.
    per-match policy here (suppression gates · example/placeholder · checksum ·
    confidence penalties) is governed by one invariant; see **Match adjudication:
    one policy, one chokepoint** below.
-5. **Verify (optional):** for the 345 detectors with a `[detector.verify]`
+5. **Verify (optional):** for detectors with a `[detector.verify]`
    endpoint, turn a candidate into verified-live, behind SSRF/bogon/rate guards.
    `verifier/`.
 6. **Report:** dedup, allowlist, emit text/JSON/SARIF; diff against a baseline

@@ -83,7 +83,7 @@ options:
 2. Replace it with a placeholder and load the real value from the environment
    at runtime.
 3. If it is a false positive, add its hash to `.keyhogignore` (see below) or a
-   `.keyhog.toml` suppression, or re-run with `--no-suppress-test-fixtures` to
+   predicate rule in `.keyhogignore.toml`, or re-run with `--no-suppress-test-fixtures` to
    confirm it is a documented example.
 
 ## When you really need to commit anyway

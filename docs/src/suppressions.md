@@ -99,7 +99,7 @@ is active; missing required metadata or an overlong expiry stops the scan.
 When a single glob/hash/detector line is too blunt, a `.keyhogignore.toml`
 alongside it gives composable `[[suppress]]` rules. Fields within one table AND
 together; separate tables OR together. Full schema and field list:
-[.keyhogignore.toml reference](https://github.com/santhsecurity/keyhog/blob/main/docs/keyhogignore-toml.md).
+[`.keyhogignore.toml` reference](./reference/keyhogignore-toml.md).
 
 ```toml
 # Drop aws-access-key findings under any tests directory.

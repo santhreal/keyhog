@@ -13,7 +13,7 @@ fn keyhog_detectors_missing_path_ignored() {
         )
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--format",

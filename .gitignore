@@ -57,9 +57,13 @@ detectors/.keyhog-cache.json
 # Accidental root-level scratch belongs outside this standalone prod repo.
 /coordination/
 /scratchpad/
+/planning/
+/BACKLOG.md
 
 # Root-level review output, throwaway compiler probes, and process state.
-# Durable plans belong under planning/; source patches belong in Git commits.
+# Operator working notes stay outside the public release tree. Durable product
+# behavior belongs in code, tests, or canonical docs; source patches belong in
+# Git commits.
 /*.patch
 /diff*.txt
 /full_diff*.txt

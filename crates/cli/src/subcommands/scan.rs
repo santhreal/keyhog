@@ -47,6 +47,9 @@ use std::process::ExitCode;
 pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
     crate::runtime_preflight::validate_scan_runtime_config()?;
     guard_multi_root_combinations(&args)?;
+    if args.daemon_mode() == DaemonMode::Off && args.daemon_socket.is_some() {
+        bail!("`--daemon-socket` cannot be combined with `--daemon=off`; remove the socket or choose `--daemon=auto|on`");
+    }
 
     // On Windows, the daemon route is never available (the `crate::daemon`
     // module is cfg(unix)). If the user explicitly passed `--daemon`,
@@ -405,7 +408,7 @@ fn reject_forced_daemon(forced_on: bool, reason: &str) -> Option<DaemonRoute> {
     forced_on.then(|| {
         DaemonRoute::Rejected(format!(
             "--daemon=on cannot be honored: {reason}. Drop `--daemon=on`, or pass \
-             `--daemon=off` / `--no-daemon` to run the in-process scanner explicitly."
+             `--daemon=off` to run the in-process scanner explicitly."
         ))
     })
 }
@@ -558,7 +561,7 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
     let socket = effective_daemon_socket(args);
     let mut conn = client::connect(&socket).await.with_context(|| {
         format!(
-            "daemon route: connect to {} (start one with `keyhog daemon start{}` or pass --no-daemon)",
+            "daemon route: connect to {} (start one with `keyhog daemon start{}` or pass --daemon=off)",
             socket.display(),
             match &args.daemon_socket {
                 Some(path) => format!(" --socket {}", path.display()),
@@ -587,7 +590,7 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
     } else {
         bail!(
             "daemon route requires either --stdin or a single file path. \
-             For directory scans, pass `--no-daemon` to use the in-process scanner."
+             For directory scans, pass `--daemon=off` to use the in-process scanner."
         );
     };
 
@@ -829,7 +832,7 @@ fn load_daemon_rule_suppressor(args: &ScanArgs) -> Result<RuleSuppressor> {
         Ok(s) => Ok(s),
         Err(e) => anyhow::bail!(
             "daemon route: failed to load {}: {e}. Fix the TOML schema \
-             (see docs/keyhogignore-toml.md) or remove the file; refusing to scan \
+             (see docs/src/reference/keyhogignore-toml.md) or remove the file; refusing to scan \
              with silently ignored suppression rules.",
             toml_path.display()
         ),

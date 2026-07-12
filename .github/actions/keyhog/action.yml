@@ -45,7 +45,7 @@ inputs:
     default: ''
   backend:
     description: |
-      Optional explicit scan backend for diagnostics: auto | simd | cpu | gpu | megascan.
+      Optional explicit scan backend for diagnostics: auto | simd | cpu | gpu.
       Leave unset to use the installed binary's persisted autoroute calibration.
     default: ''
 
@@ -103,38 +103,8 @@ runs:
         set -euo pipefail
         os="$(uname -s)"
         arch="$(uname -m)"
-        linux_cuda_ready=false
-        if [[ "$os/$arch" == "Linux/x86_64" ]]; then
-          if command -v nvidia-smi >/dev/null 2>&1 &&
-             nvidia-smi -L 2>/dev/null | grep -q "GPU "; then
-            libcuda_present=false
-            if ldconfig -p 2>/dev/null | grep -q "libcuda\\.so"; then
-              libcuda_present=true
-            else
-              for p in /usr/lib/x86_64-linux-gnu/libcuda.so /usr/lib64/libcuda.so \
-                       /usr/local/cuda/lib64/libcuda.so /opt/cuda/lib64/libcuda.so; do
-                if [[ -e "$p" ]]; then
-                  libcuda_present=true
-                  break
-                fi
-              done
-            fi
-            if [[ "$libcuda_present" == "true" ]] &&
-               { command -v nvcc >/dev/null 2>&1 ||
-                 [[ -n "${CUDA_HOME:-}" && -d "$CUDA_HOME" ]] ||
-                 [[ -d /usr/local/cuda || -d /opt/cuda ]]; }; then
-              linux_cuda_ready=true
-            fi
-          fi
-        fi
         case "$os/$arch" in
-          Linux/x86_64)
-            if [[ "$linux_cuda_ready" == "true" ]]; then
-              name="keyhog-linux-x86_64-cuda"
-            else
-              name="keyhog-linux-x86_64"
-            fi
-            ;;
+          Linux/x86_64)    name="keyhog-linux-x86_64" ;;
           Darwin/x86_64)  name="keyhog-macos-x86_64" ;;
           Darwin/arm64)   name="keyhog-macos-aarch64" ;;
           MINGW*/x86_64 | MSYS*/x86_64 | CYGWIN*/x86_64)
@@ -170,7 +140,6 @@ runs:
       id: download
       shell: bash
       env:
-        ACTION_ASSET_NAME: ${{ steps.asset.outputs.name }}
         ACTION_RESOLVED_VERSION: ${{ steps.version.outputs.version }}
         ACTION_RELEASE_REQUIRED: ${{ steps.version.outputs.release_required }}
       run: |
@@ -250,13 +219,7 @@ runs:
         # the Hyperscan link. Before this guard the Windows + macOS
         # source-build path crashed at link time on a missing `-lhs`.
         case "$(uname -s)" in
-          Linux*)
-            if [[ "${ACTION_ASSET_NAME:-}" == "keyhog-linux-x86_64-cuda" ]]; then
-              cargo build --locked --release -p keyhog --features cuda
-            else
-              cargo build --locked --release -p keyhog
-            fi
-            ;;
+          Linux*) cargo build --locked --release -p keyhog ;;
           *)
             cargo build --locked --release -p keyhog --no-default-features --features portable
             ;;

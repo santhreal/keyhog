@@ -25,3 +25,23 @@ pub use crate::slack::SlackSource;
 pub use crate::stdin::{ConfiguredStdinSource, StdinSource};
 #[cfg(feature = "web")]
 pub use crate::web::WebSource;
+pub use crate::{
+    decode::decode_file_bytes,
+    factory::{
+        create_source, create_source_with_http_config, create_source_with_http_config_and_limits,
+        create_source_with_http_config_limits_and_policy,
+    },
+    limits::{SourceLimits, DEFAULT_SOURCE_LIMITS},
+    safe_read::read_file_safe_bytes,
+    skip::{
+        git_object_unreadable, reset_skipped_over_max_size, skip_counts, ScanCounterScope,
+        SkipCounts,
+    },
+};
+
+/// Fuzz-only PDF byte extractor.
+#[cfg(fuzzing)]
+pub use crate::filesystem::fuzz_extract_pdf_text;
+/// Fuzz-only HAR byte expander.
+#[cfg(fuzzing)]
+pub use crate::har::fuzz_try_expand_har;

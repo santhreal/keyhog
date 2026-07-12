@@ -161,9 +161,9 @@ case "$verify" in
 esac
 
 case "$backend" in
-  "" | auto | simd | cpu | gpu | megascan) ;;
+  "" | auto | simd | cpu | gpu) ;;
   *)
-    gha_error "Invalid backend '$backend'. Use one of: auto, simd, cpu, gpu, megascan."
+    gha_error "Invalid backend '$backend'. Use one of: auto, simd, cpu, gpu."
     exit 2
     ;;
 esac

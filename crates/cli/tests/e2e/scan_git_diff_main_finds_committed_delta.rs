@@ -58,7 +58,7 @@ fn scan_git_diff_main_finds_committed_delta() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-diff",
             "HEAD~1",
             "--format",

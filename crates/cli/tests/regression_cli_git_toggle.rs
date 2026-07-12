@@ -81,7 +81,7 @@ fn write(path: PathBuf, body: &str) {
 fn scan(root: &Path, extra: &[&str]) -> (Vec<serde_json::Value>, Option<i32>) {
     let mut cmd = Command::new(binary());
     cmd.arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .args(["--backend", "cpu"])
         .arg("--no-suppress-test-fixtures")
         .args(extra)

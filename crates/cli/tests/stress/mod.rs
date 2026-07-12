@@ -6,7 +6,6 @@ pub mod empty_corpus_json_array_exit_zero;
 pub mod git_diff_head_worktree_stress;
 pub mod git_history_committed_secret;
 pub mod git_staged_secret_in_index;
-pub mod hook_install_no_daemon_readme_lie;
 pub mod lockdown_verify_refused_before_preflight;
 pub mod piped_stderr_scan_json_stdout_valid;
 pub mod remote_source_failure_nonzero_exit;

@@ -1,5 +1,5 @@
 //! Regression: the `keyhog scan` credential-redaction contract, driven end to
-//! end over the SHIPPED binary (`--no-daemon`, `--backend cpu` so the assertions
+//! end over the SHIPPED binary (`--daemon=off`, `--backend cpu` so the assertions
 //! are host-independent — no accelerator is ever assumed).
 //!
 //! A single checksum-valid GitHub classic PAT is planted in a temp file. It
@@ -56,11 +56,11 @@ fn planted_fixture() -> (TempDir, PathBuf) {
     (dir, path)
 }
 
-/// Run `keyhog scan --no-daemon --backend cpu <extra…> <path>` hermetically and
+/// Run `keyhog scan --daemon=off --backend cpu <extra…> <path>` hermetically and
 /// return (exit-code, stdout, stderr). CPU backend keeps the run host-independent.
 fn scan(path: &Path, extra: &[&str]) -> (Option<i32>, String, String) {
     let mut cmd = Command::new(binary());
-    cmd.args(["scan", "--no-daemon", "--backend", "cpu"]);
+    cmd.args(["scan", "--daemon=off", "--backend", "cpu"]);
     cmd.args(extra);
     cmd.arg(path);
     cmd.env_remove("KEYHOG_BACKEND");

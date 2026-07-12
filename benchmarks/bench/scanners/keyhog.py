@@ -9,7 +9,7 @@ Maps a :class:`ScannerConfig` to keyhog CLI flags:
 * **cache** -> ``--incremental`` (merkle skip-cache). ``on`` measures the
   *warm* re-run: the adapter populates the index once, then times the second
   pass — that's the 10-100x monorepo-re-run speedup, measured honestly.
-* **daemon** -> ``--daemon`` / ``--no-daemon``.
+* **daemon** -> ``--daemon`` / ``--daemon=off``.
 * **mode** -> ``--fast`` for ``fast``, full pipeline otherwise.
 
 Scoring parity flags are always present:
@@ -236,7 +236,7 @@ class KeyhogScanner(Scanner):
             # CLI's numeric flag parser rejects — and the harvest path sets this
             # floor deliberately low.
             cmd += ["--min-confidence", str(float(cfg.min_confidence))]
-        cmd += ["--daemon"] if cfg.daemon == "on" else ["--no-daemon"]
+        cmd += ["--daemon"] if cfg.daemon == "on" else ["--daemon=off"]
         if cfg.mode == "fast":
             cmd.append("--fast")
         if cfg.backend in _DETERMINISTIC_BACKENDS:

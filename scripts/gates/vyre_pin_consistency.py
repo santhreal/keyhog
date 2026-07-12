@@ -223,19 +223,14 @@ def check() -> list[str]:
             "PUBLISHING.md still describes Vyre path overrides as active.",
         ),
         (
-            "docs/vyre-usage.md",
+            "docs/src/reference/vyre-integration.md",
             "third_party/vyre",
-            "docs/vyre-usage.md still describes the retired third_party/vyre mirror.",
+            "VYRE integration reference still describes the retired third_party/vyre mirror.",
         ),
         (
-            "docs/vyre-usage.md",
+            "docs/src/reference/vyre-integration.md",
             "not in any published",
-            "docs/vyre-usage.md still claims the required Vyre API is unpublished.",
-        ),
-        (
-            "docs/CROSS_OS_STATUS.md",
-            "third_party/vyre",
-            "docs/CROSS_OS_STATUS.md still describes the retired third_party/vyre mirror.",
+            "VYRE integration reference still claims the required VYRE API is unpublished.",
         ),
     ]
     for relpath, needle, msg in stale_doc_claims:

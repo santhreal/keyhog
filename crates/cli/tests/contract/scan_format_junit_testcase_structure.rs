@@ -9,7 +9,7 @@ fn scan_format_junit_testcase_structure() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

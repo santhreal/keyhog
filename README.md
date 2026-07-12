@@ -197,7 +197,7 @@ cargo install keyhog --no-default-features --features portable
 ```
 
 > `install.sh` / `install.ps1` (signed prebuilt) is the recommended path: it
-> auto-selects the right per-host variant and is a ~20 MB download in ~1 s,
+> selects the right platform asset and is a ~20 MB download in ~1 s,
 > versus a ~3-minute source build. For a source build, note that the **default**
 > features link Hyperscan (a system lib available on Linux x86_64); on **macOS**
 > (incl. Apple Silicon) and any host without the Hyperscan dev libraries, build
@@ -207,18 +207,14 @@ cargo install keyhog --no-default-features --features portable
 Works on **Linux**, **macOS** (Intel + Apple Silicon), **Windows**. Zero
 configuration. `keyhog scan .` works out of the box.
 
-The installer auto-detects host state and picks a sensible default.
-On Linux x86_64, the default asset is the **WGPU + Hyperscan/SIMD**
-build: WGPU runs the same vyre AC / RulePipeline dispatch on the GPU
-via the vulkan backend, with a smaller binary and no `libcuda.so`
-runtime dependency.
-The dedicated `keyhog-linux-x86_64-cuda` variant is only auto-picked
-when the full CUDA toolkit is present (nvcc on PATH, `$CUDA_HOME` set,
-or `/usr/local/cuda` exists) - the signal that you actively run a CUDA
-development setup, not just an NVIDIA driver. macOS and Windows release
-assets are portable no-system-library builds: they include the scanner
-data/source surface without Hyperscan, WGPU, CUDA, or a native Metal asset in
-the current release. Each download is verified before it can replace your binary:
+The installer selects one asset per OS/architecture. The Linux x86_64 binary
+contains Hyperscan plus both VYRE CUDA and WGPU drivers; CUDA/NVRTC are loaded
+dynamically, so the same binary works on NVIDIA, other compatible GPUs, and
+CPU-only hosts without a build-time CUDA toolkit. Runtime probing reports which
+engines are usable, while persisted autoroute evidence selects the
+fastest measured-correct engine for each workload. macOS and Windows release
+assets are portable no-system-library builds without Hyperscan or GPU drivers.
+Each download is verified before it can replace your binary:
 the installer checks the release's
 **minisign signature** against keyhog's pinned public key and **fails closed**
 (refuses to install, touching nothing) if the signature is missing, wrong, or
@@ -228,18 +224,15 @@ command for your OS (`sudo apt-get install minisign`, `brew install minisign`,
 against the release-side checksum file. For an offline/air-gapped install
 without signature verification, pass `--insecure` (the SHA256 is still checked).
 
-Override the variant with `--variant=cuda` (force the native CUDA build,
-requires `libcuda.so` at runtime) or `--variant=cpu` (force the default
-non-CUDA release asset and skip CUDA-asset auto-selection). Pin a version with
-`KEYHOG_VERSION=v0.5.41`. Change the install dir with
-`--install-dir=/usr/local/bin`. An explicit CUDA variant request requires the
-`keyhog-linux-x86_64-cuda` release asset and fails closed if that asset is
-missing; only auto-selected CUDA hosts may fall back to the default Linux asset.
+Pin a version with `KEYHOG_VERSION=v0.5.41`. Change the install dir with
+`--install-dir=/usr/local/bin`. Runtime backend policy belongs to
+`keyhog scan --backend ...`, `[system].gpu`, and autoroute calibration—not the
+installer asset name.
 
 Three diagnostic modes ship with the same script:
 ```bash
 sh install.sh --diagnose    # print host + binary state, change nothing
-sh install.sh --repair      # re-download the right variant for this host
+sh install.sh --repair      # re-download the platform asset for this host
 sh install.sh --uninstall   # remove the binary + installer-owned shell wiring
 ```
 
@@ -264,7 +257,6 @@ keyhog doctor                # health check: host probe + end-to-end scan self-t
 keyhog backend --self-test --json # CI-readable GPU path health proof
 keyhog update                # self-update to the latest release (verified download + atomic swap)
 keyhog update --check        # is a newer release available? (exits 10 if yes, 0 if current)
-keyhog update --variant cuda # update to the CUDA build instead of the portable one
 keyhog repair                # reinstall a known-good binary if the self-test fails (--force to force)
 keyhog uninstall             # remove the binary (dry run; pass --yes to actually delete)
 ```
@@ -750,7 +742,7 @@ crates/
   core/       Detector loading, finding types, reporting (text/JSON/SARIF), allowlists
   scanner/    Hardware routing, Hyperscan, GPU, decode-through, entropy, ML, multiline
   sources/    File system, git (staged/diff/history), stdin, Docker, S3, GCS, Azure Blob, GitHub/GitLab/Bitbucket, web
-  verifier/   Live credential verification (344 detectors carry an active `[detector.verify]` endpoint)
+  verifier/   Live credential verification for detectors with an active `[detector.verify]` endpoint
   cli/        CLI binary, daemon, watch, baselines, calibrate, hook installer
 detectors/    922 TOML files (data, not code)
 site/         Documentation site (17 pages, GitHub-Pages-ready)

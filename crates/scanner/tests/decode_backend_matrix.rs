@@ -2,7 +2,7 @@
 //!
 //! Asserts every supported decode layer (base64, hex, url, json-string,
 //! unicode-escape) finds a planted secret through every backend
-//! (SimdCpu, CpuFallback, Gpu, MegaScan). N decode-layers × M backends
+//! (SimdCpu, CpuFallback, Gpu). N decode-layers × M backends
 //! is the surface area where prior incidents have lived:
 //!
 //!   * decode/pipeline.rs `base_offset:0` regression that reported
@@ -14,7 +14,7 @@
 //!
 //! Each (decoder, backend) cell scans a small chunk that embeds the encoded
 //! form of a known AKIA secret and asserts the decoded credential surfaces.
-//! GPU/MegaScan cells must fail loudly or take a recall-preserving path before
+//! GPU cells must fail loudly or take a recall-preserving path before
 //! this assertion; an empty secret-bearing result is a failure.
 
 mod support;
@@ -49,7 +49,6 @@ const ALL_BACKENDS: &[ScanBackend] = &[
     ScanBackend::SimdCpu,
     ScanBackend::CpuFallback,
     ScanBackend::Gpu,
-    ScanBackend::MegaScan,
 ];
 
 // The canonical secret we plant in every encoded fixture. AWS access

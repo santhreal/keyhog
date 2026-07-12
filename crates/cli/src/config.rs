@@ -149,7 +149,6 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         args,
         &mut config_errors,
         &mut trusted_bin_dirs,
-        config.trusted_bin_dirs.as_deref(),
         config.system.as_ref(),
     );
     apply_aws_section(

@@ -49,7 +49,7 @@ fn scan_in(dir: &Path, args: &[&str]) -> (Option<i32>, String, String) {
     // as the GitHub Action invokes it.
     let mut cmd = Command::new(binary());
     cmd.current_dir(dir);
-    cmd.args(["scan", "--no-daemon"]);
+    cmd.args(["scan", "--daemon=off"]);
     // This matrix proves reporter/schema/dedup behavior, not routing. Use an
     // explicit diagnostic backend so the assertions do not depend on the
     // developer machine's persisted autoroute calibration cache.

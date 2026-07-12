@@ -87,7 +87,7 @@ enum Color {
     Removed,
 }
 
-/// Run `keyhog scan --no-daemon --backend cpu [--format F] <path>` under a
+/// Run `keyhog scan --daemon=off --backend cpu [--format F] <path>` under a
 /// hermetic cache home with the requested `NO_COLOR` posture. Returns raw bytes
 /// so byte-level escape / equality checks are exact.
 fn scan(home: &Path, path: &Path, color: Color, format: Option<&str>) -> Out {
@@ -104,7 +104,7 @@ fn scan(home: &Path, path: &Path, color: Color, format: Option<&str>) -> Out {
             cmd.env_remove("NO_COLOR");
         }
     }
-    cmd.args(["scan", "--no-daemon", "--backend", "cpu"]);
+    cmd.args(["scan", "--daemon=off", "--backend", "cpu"]);
     if let Some(f) = format {
         cmd.args(["--format", f]);
     }
@@ -521,7 +521,7 @@ fn bad_backend_value_exits_two_with_plain_stderr_both_modes() {
             }
         }
         let output = cmd
-            .args(["scan", "--no-daemon", "--backend", "turbo"])
+            .args(["scan", "--daemon=off", "--backend", "turbo"])
             .arg(&path)
             .output()
             .expect("spawn keyhog scan");

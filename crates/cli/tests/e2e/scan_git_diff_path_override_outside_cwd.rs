@@ -50,7 +50,7 @@ fn scan_git_diff_path_override_outside_cwd() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-diff",
             "HEAD",
             "--git-diff-path",

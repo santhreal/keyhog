@@ -16,7 +16,7 @@
 //! steps, `hot-*` fast-path label resolution), and the *diff category counts*
 //! in both `--json` and text forms.
 //!
-//! All scans run `--no-daemon --backend cpu` (the always-available,
+//! All scans run `--daemon=off --backend cpu` (the always-available,
 //! feature-independent engine) and clear `KEYHOG_BACKEND` so the CLI flag is
 //! the only routing input.
 
@@ -47,11 +47,11 @@ const GITHUB_ROTATION_URL: &str = "https://docs.github.com/en/authentication/kee
 /// The curated aws rotation-guide URL.
 const AWS_ROTATION_URL: &str = "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_RotateAccessKey";
 
-/// Run `keyhog scan --no-daemon --backend cpu <extra…> <path>` hermetically and
+/// Run `keyhog scan --daemon=off --backend cpu <extra…> <path>` hermetically and
 /// return (exit-code, stdout, stderr).
 fn scan(path: &Path, extra: &[&str]) -> (Option<i32>, String, String) {
     let mut cmd = Command::new(binary());
-    cmd.args(["scan", "--no-daemon", "--backend", "cpu"]);
+    cmd.args(["scan", "--daemon=off", "--backend", "cpu"]);
     cmd.args(extra);
     cmd.arg(path);
     cmd.env_remove("KEYHOG_BACKEND");

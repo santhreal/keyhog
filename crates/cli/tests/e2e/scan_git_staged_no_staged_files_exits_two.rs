@@ -44,7 +44,7 @@ fn scan_git_staged_no_staged_files_exits_two() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-staged",
             "--format",
             "json",

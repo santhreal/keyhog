@@ -17,7 +17,7 @@ fn diff_identical_baselines_exit_zero() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--create-baseline",
         ])
         .arg(baseline.to_str().unwrap())

@@ -58,7 +58,7 @@ fn scan_exclude_paths_with_git_staged() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-staged",
             "--format",
             "json",

@@ -149,7 +149,7 @@ impl CompiledScanner {
                         // regardless of env override: `live_cpu_backend()`
                         // returns SimdCpu ONLY when this scanner actually
                         // built a Hyperscan prefilter, else CpuFallback, and
-                        // never GPU/MegaScan. Hardcoding SimdCpu crashed a
+                        // never GPU. Hardcoding SimdCpu crashed a
                         // scanner whose patterns expose no anchorable literal
                         // (an empty detector set, or `[a-z]{16}`-only) — its
                         // `simd_prefilter` is None, so the SimdCpu trigger

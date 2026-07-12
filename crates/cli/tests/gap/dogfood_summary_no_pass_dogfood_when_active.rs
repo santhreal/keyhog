@@ -18,7 +18,7 @@ fn dogfood_active_summary_does_not_tell_user_to_pass_dogfood_again() {
     let out = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--dogfood",

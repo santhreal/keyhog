@@ -18,7 +18,7 @@ use support::compile_full_detector_scanner;
 fn backends() -> Vec<ScanBackend> {
     let mut backends = vec![ScanBackend::SimdCpu, ScanBackend::CpuFallback];
     #[cfg(feature = "gpu")]
-    backends.extend([ScanBackend::Gpu, ScanBackend::MegaScan]);
+    backends.extend([ScanBackend::Gpu]);
     backends
 }
 

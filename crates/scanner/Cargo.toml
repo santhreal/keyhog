@@ -36,7 +36,6 @@ entropy = ["dep:tiktoken-rs"]
 decode = []
 multiline = []
 simd = ["dep:hyperscan"]  # Vectorscan/Hyperscan SIMD regex compilation (builds HS database)
-simd_scan = ["simd"]      # Enable SIMD scan path (experimental — AC+fallback is faster for <2K patterns)
 simdsieve = ["dep:simdsieve"]  # SIMD-accelerated prefilter for top 8 patterns (50 GB/s)
 # GPU dispatch stack: wgpu cross-platform driver (+ pollster/bytemuck), Vyre's
 # GPU literal-set region-presence runtime, and on Linux the Vyre CUDA driver.
@@ -65,11 +64,6 @@ gpu = [
     # per-rule route (see the internal design notes).
     "vyre-driver-wgpu/megakernel-batch",
 ]
-# CUDA acquisition lives inside the `gpu` feature and is exercised on Linux
-# via cudarc `dynamic-loading` so the same `gpu` build works with or without a
-# CUDA toolkit at install time. This `cuda` alias is retained as a no-op for
-# legacy `--features cuda` invocations.
-cuda = ["gpu"]
 
 [dependencies]
 keyhog-core = { workspace = true }

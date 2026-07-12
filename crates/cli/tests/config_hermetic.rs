@@ -40,7 +40,7 @@ fn scan_dir_with_config(config: &str, extra: &[&str]) -> (Option<i32>, String, S
 
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg("simd")
         .arg("--format")

@@ -254,7 +254,7 @@ impl std::error::Error for AutorouteRoutingError {}
 
 /// The sole scan backend when this build compiled no backend *choice*.
 ///
-/// `SimdCpu` is gated by the `simd` (Hyperscan) feature and `Gpu`/`MegaScan` by
+/// `SimdCpu` is gated by the `simd` (Hyperscan) feature and `Gpu` by
 /// `gpu`; a build with neither (e.g. `--features portable`) can only ever run
 /// `CpuFallback`. There is nothing to route, and autoroute calibration could never
 /// produce a decision such a build would request — so resolving the lone backend
@@ -596,25 +596,14 @@ fn autoroute_cache_state(
 }
 
 pub(super) fn is_gpu_backend(backend: ScanBackend) -> bool {
-    matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan)
-}
-
-/// Collapse compatibility variants onto the live execution engine they use.
-/// Autoroute persistence, comparison, and reporting must never mint a second
-/// label for the same measured route.
-pub(super) fn canonical_execution_backend(backend: ScanBackend) -> ScanBackend {
-    match backend {
-        ScanBackend::MegaScan => ScanBackend::Gpu,
-        other => other,
-    }
+    matches!(backend, ScanBackend::Gpu)
 }
 
 pub(super) fn backend_requires_coalesced_batch_pipeline(
     explicit: Option<keyhog_scanner::hw_probe::ScanBackend>,
 ) -> bool {
     match explicit {
-        Some(keyhog_scanner::hw_probe::ScanBackend::Gpu)
-        | Some(keyhog_scanner::hw_probe::ScanBackend::MegaScan) => true,
+        Some(keyhog_scanner::hw_probe::ScanBackend::Gpu) => true,
         Some(keyhog_scanner::hw_probe::ScanBackend::SimdCpu)
         | Some(keyhog_scanner::hw_probe::ScanBackend::CpuFallback) => false,
         // `ScanBackend` is #[non_exhaustive]: an unknown future backend stays

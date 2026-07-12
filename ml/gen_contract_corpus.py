@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn the 920 detector contract fixtures into ML training records.
+"""Turn the detector contract fixtures into ML training records.
 
 A precision retrain on CredData alone drops the context-anchored medium-entropy
 shapes the contracts exercise (moe-v1-1cbb8088 regressed 13 contract positives).
@@ -10,7 +10,7 @@ Emitted in the real_corpus.jsonl schema (train_classifier.load_real_corpus):
   {text, context, label, kind, class, detector_id, source_file}
 source_file = "contract:<det>" so train_classifier._group_split forces a
 detector's cases into the TRAIN split (contracts are a fixed known-positive set
-to memorize — the contract gate tests all 920 — not a generalization target, so
+to memorize — the contract gate tests the full suite — not a generalization target, so
 they never dilute the honest CredData held-out). class = "Contract:<det>" stays
 tiny -> excluded from the per-class support>=N recall gate, still counted in
 aggregate recall.

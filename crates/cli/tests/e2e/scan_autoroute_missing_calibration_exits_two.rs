@@ -14,7 +14,7 @@ fn scan_autoroute_missing_calibration_exits_two() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--no-config",
             "--format",
             "json",
@@ -52,7 +52,7 @@ fn scan_autoroute_relative_cache_path_exits_two() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--no-config",
             "--format",
             "json",
@@ -89,7 +89,7 @@ fn scan_autoroute_zero_byte_file_does_not_require_cache_bucket() {
         let mut command = Command::new(binary());
         command.args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--no-config",
             "--format",
             "json",

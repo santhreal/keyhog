@@ -59,7 +59,7 @@
 //! so a malformed CSV row or a torn / miscounted JUnit envelope fails even
 //! when its bytes are stable.
 //!
-//! Each case uses `--no-daemon` so the in-process pipeline runs (snapshots
+//! Each case uses `--daemon=off` so the in-process pipeline runs (snapshots
 //! must not depend on whether a `keyhog daemon` happens to be up on the
 //! developer's machine) and `--no-color` semantics are forced by
 //! `NO_COLOR=1` in the spawned env so colour escapes never enter the file.
@@ -669,7 +669,7 @@ fn compare_or_write(case: &str, captured: &Captured) {
 fn case_01_scan_single_file() {
     let (dir, path) = write_single_file();
     let path_s = path.to_string_lossy().into_owned();
-    let captured = run_keyhog(&["scan", "--no-daemon", &path_s], dir.path());
+    let captured = run_keyhog(&["scan", "--daemon=off", &path_s], dir.path());
     snap("case_01_scan_single_file", captured, dir.path());
 }
 
@@ -678,7 +678,7 @@ fn case_02_scan_directory() {
     let dir = write_tree();
     let tree = dir.path().join("tree");
     let tree_s = tree.to_string_lossy().into_owned();
-    let captured = run_keyhog(&["scan", "--no-daemon", &tree_s], dir.path());
+    let captured = run_keyhog(&["scan", "--daemon=off", &tree_s], dir.path());
     snap("case_02_scan_directory", captured, dir.path());
 }
 
@@ -688,7 +688,7 @@ fn case_03_scan_format_json() {
     let tree = dir.path().join("tree");
     let tree_s = tree.to_string_lossy().into_owned();
     let captured = run_keyhog(
-        &["scan", "--no-daemon", "--format", "json", &tree_s],
+        &["scan", "--daemon=off", "--format", "json", &tree_s],
         dir.path(),
     );
     snap("case_03_scan_format_json", captured, dir.path());
@@ -700,7 +700,7 @@ fn case_04_scan_format_sarif() {
     let tree = dir.path().join("tree");
     let tree_s = tree.to_string_lossy().into_owned();
     let captured = run_keyhog(
-        &["scan", "--no-daemon", "--format", "sarif", &tree_s],
+        &["scan", "--daemon=off", "--format", "sarif", &tree_s],
         dir.path(),
     );
     snap("case_04_scan_format_sarif", captured, dir.path());
@@ -712,7 +712,7 @@ fn case_05_scan_format_jsonl() {
     let tree = dir.path().join("tree");
     let tree_s = tree.to_string_lossy().into_owned();
     let captured = run_keyhog(
-        &["scan", "--no-daemon", "--format", "jsonl", &tree_s],
+        &["scan", "--daemon=off", "--format", "jsonl", &tree_s],
         dir.path(),
     );
     snap("case_05_scan_format_jsonl", captured, dir.path());
@@ -724,7 +724,7 @@ fn case_06_scan_severity_high() {
     let tree = dir.path().join("tree");
     let tree_s = tree.to_string_lossy().into_owned();
     let captured = run_keyhog(
-        &["scan", "--no-daemon", "--severity", "high", &tree_s],
+        &["scan", "--daemon=off", "--severity", "high", &tree_s],
         dir.path(),
     );
     snap("case_06_scan_severity_high", captured, dir.path());
@@ -736,7 +736,7 @@ fn case_07_scan_no_default_excludes() {
     let tree = dir.path().join("tree");
     let tree_s = tree.to_string_lossy().into_owned();
     let captured = run_keyhog(
-        &["scan", "--no-daemon", "--no-default-excludes", &tree_s],
+        &["scan", "--daemon=off", "--no-default-excludes", &tree_s],
         dir.path(),
     );
     snap("case_07_scan_no_default_excludes", captured, dir.path());
@@ -748,7 +748,7 @@ fn case_08_scan_format_csv() {
     let tree = dir.path().join("tree");
     let tree_s = tree.to_string_lossy().into_owned();
     let captured = run_keyhog(
-        &["scan", "--no-daemon", "--format", "csv", &tree_s],
+        &["scan", "--daemon=off", "--format", "csv", &tree_s],
         dir.path(),
     );
     snap("case_08_scan_format_csv", captured, dir.path());
@@ -760,7 +760,7 @@ fn case_09_scan_format_junit() {
     let tree = dir.path().join("tree");
     let tree_s = tree.to_string_lossy().into_owned();
     let captured = run_keyhog(
-        &["scan", "--no-daemon", "--format", "junit", &tree_s],
+        &["scan", "--daemon=off", "--format", "junit", &tree_s],
         dir.path(),
     );
     snap("case_09_scan_format_junit", captured, dir.path());
@@ -784,7 +784,7 @@ fn case_10_scan_clean_format_csv() {
     let tree = dir.path().join("tree");
     let tree_s = tree.to_string_lossy().into_owned();
     let captured = run_keyhog(
-        &["scan", "--no-daemon", "--format", "csv", &tree_s],
+        &["scan", "--daemon=off", "--format", "csv", &tree_s],
         dir.path(),
     );
     snap("case_10_scan_clean_format_csv", captured, dir.path());
@@ -796,7 +796,7 @@ fn case_11_scan_clean_format_junit() {
     let tree = dir.path().join("tree");
     let tree_s = tree.to_string_lossy().into_owned();
     let captured = run_keyhog(
-        &["scan", "--no-daemon", "--format", "junit", &tree_s],
+        &["scan", "--daemon=off", "--format", "junit", &tree_s],
         dir.path(),
     );
     snap("case_11_scan_clean_format_junit", captured, dir.path());
@@ -808,7 +808,7 @@ fn case_12_scan_clean_format_html() {
     let tree = dir.path().join("tree");
     let tree_s = tree.to_string_lossy().into_owned();
     let captured = run_keyhog(
-        &["scan", "--no-daemon", "--format", "html", &tree_s],
+        &["scan", "--daemon=off", "--format", "html", &tree_s],
         dir.path(),
     );
     snap("case_12_scan_clean_format_html", captured, dir.path());
@@ -827,7 +827,7 @@ fn html_format_report_contains_finding() {
     let tree = dir.path().join("tree");
     let tree_s = tree.to_string_lossy().into_owned();
     let captured = run_keyhog(
-        &["scan", "--no-daemon", "--format", "html", &tree_s],
+        &["scan", "--daemon=off", "--format", "html", &tree_s],
         dir.path(),
     );
     let out = captured.stdout;
@@ -900,7 +900,7 @@ fn snap(case: &str, captured: Captured, tempdir_root: &Path) {
 /// CSV row count and JUnit `tests`/`failures` must agree with, so no
 /// host-dependent finding count is hardcoded.
 fn json_finding_count(tree_s: &str, root: &Path) -> usize {
-    let captured = run_keyhog(&["scan", "--no-daemon", "--format", "json", tree_s], root);
+    let captured = run_keyhog(&["scan", "--daemon=off", "--format", "json", tree_s], root);
     let v: serde_json::Value =
         serde_json::from_str(&captured.stdout).expect("json output parses as JSON");
     v.as_array()
@@ -987,7 +987,7 @@ fn csv_format_is_valid_and_row_count_matches_findings() {
     let tree = dir.path().join("tree");
     let tree_s = tree.to_string_lossy().into_owned();
     let captured = run_keyhog(
-        &["scan", "--no-daemon", "--format", "csv", &tree_s],
+        &["scan", "--daemon=off", "--format", "csv", &tree_s],
         dir.path(),
     );
 
@@ -1098,7 +1098,7 @@ fn junit_format_is_well_formed_and_counts_match_findings() {
     let tree = dir.path().join("tree");
     let tree_s = tree.to_string_lossy().into_owned();
     let captured = run_keyhog(
-        &["scan", "--no-daemon", "--format", "junit", &tree_s],
+        &["scan", "--daemon=off", "--format", "junit", &tree_s],
         dir.path(),
     );
     let xml = &captured.stdout;

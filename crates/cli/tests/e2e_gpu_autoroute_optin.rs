@@ -60,7 +60,7 @@ fn large_clean_file() -> (TempDir, PathBuf) {
 /// rationale line to be emitted on the completion summary.
 fn scan(path: &PathBuf, extra: &[&str]) -> (Option<i32>, String) {
     let mut cmd = Command::new(binary());
-    cmd.args(["scan", "--no-daemon", "--progress", "--format", "json"]);
+    cmd.args(["scan", "--daemon=off", "--progress", "--format", "json"]);
     cmd.args(extra);
     cmd.arg(path);
     let output = cmd.output().expect("spawn keyhog scan");

@@ -60,15 +60,6 @@ pub mod winpath;
 use std::borrow::Cow;
 
 pub use api::*;
-pub use ascii_ci::{
-    contains_bytes_ignore_ascii_case, contains_ignore_ascii_case, ends_with_ignore_ascii_case,
-    starts_with_ignore_ascii_case,
-};
-pub use hyperscan_cache::{
-    hyperscan_cache_filename, hyperscan_cache_header_is_valid, write_hyperscan_cache_header,
-    HYPERSCAN_CACHE_FILE_BYTES, HYPERSCAN_CACHE_HEADER_LEN, HYPERSCAN_CACHE_MAGIC,
-    HYPERSCAN_CACHE_VERSION,
-};
 /// Auto-fix suggestion logic for SARIF output.
 mod auto_fix;
 /// Bayesian confidence calibration for detectors.

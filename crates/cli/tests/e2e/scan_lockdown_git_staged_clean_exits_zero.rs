@@ -54,7 +54,7 @@ fn scan_lockdown_git_staged_clean_exits_zero() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--lockdown",
             "--git-staged",
             "--format",

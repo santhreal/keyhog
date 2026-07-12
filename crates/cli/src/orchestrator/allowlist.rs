@@ -65,7 +65,7 @@ pub(crate) fn load_rule_suppressor(
             Ok(s)
         }
         Err(e) => anyhow::bail!(
-            "failed to load {}: {e}. Fix the TOML schema (see docs/keyhogignore-toml.md) \
+            "failed to load {}: {e}. Fix the TOML schema (see docs/src/reference/keyhogignore-toml.md) \
              or remove the file; refusing to scan with silently ignored suppression rules.",
             toml_path.display()
         ),

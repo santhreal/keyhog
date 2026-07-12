@@ -83,7 +83,7 @@ fn write_fixture(name: &str, contents: &str) -> PathBuf {
 fn scan_json(path: &PathBuf) -> serde_json::Value {
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg("simd")
         .arg(path)

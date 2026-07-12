@@ -206,7 +206,7 @@ struct ScanRun {
 
 /// Run `keyhog scan --format json <route_flag> <abs_path>` against the
 /// daemon's isolated runtime dir. `route_flag` is `--daemon` or
-/// `--no-daemon`. The path is absolute so config discovery walks up from the
+/// `--daemon=off`. The path is absolute so config discovery walks up from the
 /// fixture's directory regardless of CWD. We pass NO `--min-confidence` /
 /// `--lockdown` CLI flag on purpose: the policy under test lives ONLY in the
 /// fixture's `.keyhog.toml`, which is precisely the surface `daemon_route`
@@ -222,7 +222,7 @@ fn scan(daemon: &Daemon, abs_path: &Path, route_flag: &str) -> ScanRun {
         .arg("simd")
         .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
         .env("XDG_CACHE_HOME", &daemon.xdg_cache_home);
-    if route_flag == "--no-daemon" {
+    if route_flag == "--daemon=off" {
         command.arg("--cache-dir").arg(&daemon.hyperscan_cache_dir);
     }
     let output = command.arg(abs_path).output().expect("spawn keyhog scan");
@@ -270,8 +270,8 @@ fn daemon_route_honors_config_min_confidence_floor() {
     );
 
     // Reference: in-process honors the config floor and suppresses.
-    let in_process = scan(&daemon, &path, "--no-daemon");
-    let in_process_findings = findings(&in_process, "in-process(--no-daemon)");
+    let in_process = scan(&daemon, &path, "--daemon=off");
+    let in_process_findings = findings(&in_process, "in-process(--daemon=off)");
     assert!(
         in_process_findings.is_empty(),
         "control: in-process path must suppress the sub-0.99 generic secret under a \
@@ -314,7 +314,7 @@ fn daemon_route_honors_config_min_confidence_floor() {
 /// `require_lockdown` (which isn't even parsed until after routing). So a
 /// daemon-routed scan silently DEFEATS the lockdown-required guard.
 ///
-/// Reference behavior (`--no-daemon`): exit code 2 with the lockdown error
+/// Reference behavior (`--daemon=off`): exit code 2 with the lockdown error
 /// on stderr; no findings emitted (fail closed).
 /// Buggy behavior (`--daemon`): the scan runs normally — exit 1 with the
 /// finding on stdout. This test asserts the daemon route ALSO fails closed.
@@ -337,7 +337,7 @@ fn daemon_route_enforces_config_lockdown_require() {
     );
 
     // Reference: in-process fails closed (exit 2, lockdown error, no scan).
-    let in_process = scan(&daemon, &path, "--no-daemon");
+    let in_process = scan(&daemon, &path, "--daemon=off");
     assert_eq!(
         in_process.exit_code,
         Some(2),
@@ -407,8 +407,8 @@ fn daemon_route_honors_config_show_secrets() {
     };
 
     // Reference: in-process honors show_secrets and prints the full key.
-    let in_process = scan(&daemon, &path, "--no-daemon");
-    let in_process_cred = rendered(&in_process, "in-process(--no-daemon)");
+    let in_process = scan(&daemon, &path, "--daemon=off");
+    let in_process_cred = rendered(&in_process, "in-process(--daemon=off)");
     assert_eq!(
         in_process_cred, secret,
         "control: in-process must print the full credential under \

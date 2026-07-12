@@ -95,7 +95,7 @@ fn windowed_file_reports_absolute_line_numbers() {
         &mut cmd,
         &[
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--no-suppress-test-fixtures",
             "--detectors",
         ],

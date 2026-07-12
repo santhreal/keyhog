@@ -28,28 +28,27 @@ fn shipped_detector_disable_override_list_does_not_exist() {
     );
 }
 
-/// The entropy-floor table's source of truth. Embedded at compile time so the
-/// check needs no runtime access and no CWD.
-const ENTROPY_FLOORS_SRC: &str = include_str!("../../scanner/src/entropy_floors.rs");
+/// The runtime entropy-floor resolver. Embedded at compile time so the check
+/// needs no runtime access and no CWD.
+const ADJUDICATE_SRC: &str = include_str!("../../scanner/src/adjudicate/mod.rs");
 
 #[test]
-fn entropy_floor_table_is_built_from_specs_not_a_resurrected_floor_file() {
-    // The floors moved into each detector's own TOML (`entropy_floor` buckets);
-    // the runtime table is derived from the embedded corpus specs. Guard against
-    // a second source of truth reappearing: no `include_str!` of an
-    // `entropy-floors` data file, and the spec-derived builder must still be used.
-    let resurrected_file = ENTROPY_FLOORS_SRC
+fn entropy_floor_resolver_reads_detector_specs_not_a_resurrected_floor_file() {
+    // The floors live in each detector's TOML (`entropy_floor` buckets). Guard
+    // against a second data source and against bypassing the active detector
+    // spec in the production resolver.
+    let resurrected_file = ADJUDICATE_SRC
         .lines()
         .any(|l| l.contains("include_str!") && l.contains("entropy-floors"));
     assert!(
         !resurrected_file,
-        "entropy_floors.rs must NOT `include_str!` a separate `entropy-floors` file — the \
+        "adjudicate must NOT `include_str!` a separate `entropy-floors` file — the \
          floors live in each detector's own `detectors/<id>.toml` (`entropy_floor`). A second \
          floor source is exactly the scattered-settings regression this gate prevents."
     );
     assert!(
-        ENTROPY_FLOORS_SRC.contains("from_specs"),
-        "entropy_floors.rs must build the floor table from the embedded detector specs \
-         (`from_specs`); if that builder is gone, the single-source-of-truth is broken."
+        ADJUDICATE_SRC.contains("spec.entropy_floor"),
+        "generic_entropy_floor must resolve buckets from the active detector spec; \
+         if that access is gone, the detector TOML is no longer the source of truth."
     );
 }

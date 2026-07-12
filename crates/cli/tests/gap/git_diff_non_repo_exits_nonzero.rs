@@ -14,7 +14,7 @@ fn git_diff_on_non_repository_exits_nonzero_without_clean_summary() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--git-diff",
             "HEAD",
             "--git-diff-path",

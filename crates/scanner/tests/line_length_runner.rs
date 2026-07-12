@@ -98,11 +98,8 @@ const MULTI_SECRET_LINE_COUNT: usize = 12;
 /// `<…>`, `` `…` ``) are an AMBIGUOUS context: a bare high-entropy base64 blob
 /// inside `foo(…)` or `[…]` may be an argument/array element rather than a
 /// secret, so the generic path treating it as lower-confidence can be intended
-/// precision, not a recall bug. A measured asymmetry there (intercom-access-token
-/// surfaces in quotes but not brackets) is recorded as an OPEN finding in
-/// BACKLOG.md for a precision-vs-recall review of the generic bracket context —
-/// it is NOT gated here as a hard invariant, because we do not assert an
-/// ambiguous expectation.
+/// precision, not a recall bug. It is NOT gated here as a hard invariant,
+/// because this suite asserts only unambiguous credential-value contexts.
 const WRAP_DELIMS: &[(&str, &str)] = &[("\"", "\""), ("'", "'")];
 
 const FILLER: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789..";

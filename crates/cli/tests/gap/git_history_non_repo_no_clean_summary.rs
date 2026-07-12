@@ -11,7 +11,7 @@ fn git_history_on_non_repository_does_not_print_clean_summary() {
     std::fs::write(dir.path().join("plain.txt"), "hello\n").expect("write");
 
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--git-history"])
+        .args(["scan", "--daemon=off", "--git-history"])
         .arg(dir.path())
         .output()
         .expect("spawn");

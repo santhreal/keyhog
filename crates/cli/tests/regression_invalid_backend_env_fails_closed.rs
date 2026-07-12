@@ -15,7 +15,7 @@ fn legacy_keyhog_backend_env_is_ignored_by_explicit_backend_flag() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--format",
             "json",
             "--backend",

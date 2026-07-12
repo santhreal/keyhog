@@ -22,7 +22,7 @@ impl ScanOrchestrator {
     ///
     /// Engaged for filesystem sources unless the operator explicitly forced a
     /// GPU backend:
-    /// * **GPU/MegaScan forced by the user** keeps the coalesced per-batch
+    /// * **GPU forced by the user** keeps the coalesced per-batch
     ///   pipeline so `gpu_parity` and the large-buffer dispatch are untouched.
     ///   Default/auto filesystem scans stay fused. Persisted autoroute
     ///   decisions are consumed per fused batch, where the exact workload key is
@@ -291,15 +291,11 @@ impl ScanOrchestrator {
                 // batch routed to GPU that degrades mid-dispatch (loudly, via
                 // deny_silent_gpu_degrade) must not be counted as GPU-scanned. The
                 // increment moved BELOW the dispatch, gated on this snapshot.
-                let gpu_degrade_before = matches!(
-                    backend,
-                    keyhog_scanner::hw_probe::ScanBackend::Gpu
-                        | keyhog_scanner::hw_probe::ScanBackend::MegaScan
-                )
-                .then(|| scanner_ref.gpu_degrade_count());
+                let gpu_degrade_before =
+                    matches!(backend, keyhog_scanner::hw_probe::ScanBackend::Gpu)
+                        .then(|| scanner_ref.gpu_degrade_count());
                 let per_chunk = match backend {
-                    keyhog_scanner::hw_probe::ScanBackend::Gpu
-                    | keyhog_scanner::hw_probe::ScanBackend::MegaScan => {
+                    keyhog_scanner::hw_probe::ScanBackend::Gpu => {
                         tracing::debug!(
                             target: "keyhog::routing",
                             backend = backend.label(),

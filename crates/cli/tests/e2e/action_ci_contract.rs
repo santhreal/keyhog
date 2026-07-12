@@ -1784,7 +1784,7 @@ exit 22
 }
 
 #[test]
-fn composite_action_detects_cuda_linux_release_asset() {
+fn composite_action_detects_unified_linux_release_asset() {
     let dir = TempDir::new().expect("tempdir");
     let fake_bin = dir.path().join("bin");
     fs::create_dir(&fake_bin).expect("create fake bin");
@@ -1797,30 +1797,6 @@ case "${1:-}" in
   -m) printf 'x86_64\n' ;;
   *) exit 2 ;;
 esac
-"#,
-    );
-    write_executable(
-        &fake_bin.join("nvidia-smi"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-case "${1:-}" in
-  -L) printf 'GPU 0: NVIDIA GeForce RTX 5090 (UUID: GPU-test)\n' ;;
-  *) printf 'NVIDIA GeForce RTX 5090\n' ;;
-esac
-"#,
-    );
-    write_executable(
-        &fake_bin.join("ldconfig"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-printf 'libcuda.so.1 (libc6,x86-64) => /usr/lib/x86_64-linux-gnu/libcuda.so.1\n'
-"#,
-    );
-    write_executable(
-        &fake_bin.join("nvcc"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-exit 0
 "#,
     );
     let output_path = dir.path().join("github-output.txt");
@@ -1841,17 +1817,17 @@ exit 0
     assert_eq!(
         output.status.code(),
         Some(0),
-        "CUDA Linux asset detection must run under bash; output={combined}"
+        "Linux asset detection must run under bash; output={combined}"
     );
     let github_output = fs::read_to_string(&output_path).expect("read GITHUB_OUTPUT");
     assert!(
-        github_output.contains("name=keyhog-linux-x86_64-cuda"),
-        "CUDA-ready Linux runners must use the published CUDA prebuilt asset; output={github_output}"
+        github_output.contains("name=keyhog-linux-x86_64"),
+        "Linux runners must use the unified accelerator-capable asset; output={github_output}"
     );
 }
 
 #[test]
-fn composite_action_source_build_preserves_cuda_feature_request() {
+fn composite_action_source_build_uses_default_linux_features() {
     let dir = TempDir::new().expect("tempdir");
     let fake_bin = dir.path().join("bin");
     let source_root = dir.path().join("source");
@@ -1891,7 +1867,6 @@ chmod +x target/release/keyhog
             ("PATH", path.as_str()),
             ("ACTION_SOURCE_ROOT", source_root_str.as_str()),
             ("RUNNER_TEMP", runner_temp_str.as_str()),
-            ("ACTION_ASSET_NAME", "keyhog-linux-x86_64-cuda"),
             ("CARGO_ARGS_FILE", cargo_args_str.as_str()),
         ],
     );
@@ -1899,7 +1874,7 @@ chmod +x target/release/keyhog
     assert_eq!(
         output.status.code(),
         Some(0),
-        "CUDA source-build fallback must run with fake cargo; output={combined}"
+        "Linux source-build fallback must run with fake cargo; output={combined}"
     );
     let args = fs::read_to_string(&cargo_args).expect("read cargo args");
     assert!(
@@ -1907,8 +1882,8 @@ chmod +x target/release/keyhog
         "source fallback must build against the committed lockfile; args={args}"
     );
     assert!(
-        args.contains("--features\ncuda\n"),
-        "CUDA source fallback must preserve the requested CUDA feature; args={args}"
+        !args.contains("--features\ncuda\n"),
+        "removed CUDA alias must not return; args={args}"
     );
     assert!(
         runner_temp.join("keyhog").is_file(),

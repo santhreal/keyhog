@@ -26,7 +26,7 @@
 //!
 //! Every assertion pins a concrete value (exact bool / int / string / bytes /
 //! exit code). None is a bare `!is_empty` / `is_ok`. Deterministic: one piped
-//! secret, `--no-daemon`, `--backend cpu`.
+//! secret, `--daemon=off`, `--backend cpu`.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -53,14 +53,14 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// Run `keyhog scan --no-daemon --backend cpu --stdin --format <format>` with
+/// Run `keyhog scan --daemon=off --backend cpu --stdin --format <format>` with
 /// `input` piped over stdin. Returns (exit code, stdout, stderr).
 fn run_stdin(input: &[u8], format: &str) -> (Option<i32>, String, String) {
     run_stdin_args(
         input,
         &[
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--stdin",
@@ -435,7 +435,7 @@ fn stdin_bare_dash_positional_aliases_to_stdin() {
         input.as_bytes(),
         &[
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--format",

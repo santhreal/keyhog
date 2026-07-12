@@ -12,7 +12,7 @@ fn keyhog_threads_empty_string_is_ignored() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--format",
             "json",
         ])

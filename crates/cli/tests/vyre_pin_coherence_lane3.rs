@@ -254,9 +254,11 @@ fn vyre_docs_match_registry_pin_contract() {
     let cases: &[(&str, &str)] = &[
         ("PUBLISHING.md", "third_party/vyre"),
         ("PUBLISHING.md", "path override"),
-        ("docs/vyre-usage.md", "third_party/vyre"),
-        ("docs/vyre-usage.md", "not in any published"),
-        ("docs/CROSS_OS_STATUS.md", "third_party/vyre"),
+        ("docs/src/reference/vyre-integration.md", "third_party/vyre"),
+        (
+            "docs/src/reference/vyre-integration.md",
+            "not in any published",
+        ),
     ];
 
     let mut offending: Vec<String> = Vec::new();

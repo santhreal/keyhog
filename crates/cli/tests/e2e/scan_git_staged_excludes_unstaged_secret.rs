@@ -48,7 +48,7 @@ fn scan_git_staged_excludes_unstaged_secret() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-staged",
             "--format",
             "json",

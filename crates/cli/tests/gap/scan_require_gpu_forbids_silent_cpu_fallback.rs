@@ -19,7 +19,7 @@ fn scan_require_gpu_forbids_silent_cpu_fallback_on_gpu_backend() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--require-gpu",
             "--backend",
             "gpu",

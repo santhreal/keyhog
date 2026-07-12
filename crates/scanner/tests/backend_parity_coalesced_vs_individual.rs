@@ -5,7 +5,7 @@
 //!
 //!   - SIMD/CpuFallback: rayon parallel per-chunk, then `scan_chunk_boundaries`.
 //!   - GPU: single coalesced batch dispatch with fusion.
-//!   - MegaScan: coalesced regex-DFA dispatch.
+//!   - GPU: coalesced region-presence dispatch.
 //!
 //! This test **asserts that the sum of per-chunk results equals the
 //! batch-dispatch results**, ensuring chunking and coalescing don't
@@ -63,7 +63,6 @@ fn batch_dispatch_equals_sum_of_per_chunk_results_all_backends() {
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
         ScanBackend::Gpu,
-        ScanBackend::MegaScan,
     ];
 
     for backend in backends {
@@ -137,7 +136,6 @@ fn per_chunk_order_preserved_coalesced_dispatch() {
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
         ScanBackend::Gpu,
-        ScanBackend::MegaScan,
     ];
 
     for backend in backends {

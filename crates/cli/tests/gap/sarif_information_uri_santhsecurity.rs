@@ -17,7 +17,7 @@ fn sarif_information_uri_is_santhsecurity_keyhog() {
     let out = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

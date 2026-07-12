@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Read;
 
-use super::canonical_execution_backend;
 use super::evidence::{gpu_cold_warm_route_evidence, AutorouteDecision};
 use super::host::AutorouteHostProfile;
 use super::workload::WorkloadKey;
@@ -111,9 +110,7 @@ fn current_cli_features() -> Vec<String> {
     push_feature!("binary");
     push_feature!("ci");
     push_feature!("ci-lean");
-    push_feature!("cuda");
     push_feature!("docker");
-    push_feature!("fast");
     push_feature!("full");
     push_feature!("gcs");
     push_feature!("github");
@@ -679,7 +676,7 @@ fn validate_decision_route_evidence(
     // Compare by execution class so a programmatic compatibility variant can
     // never behave like a distinct measured route. Persisted decisions are
     // canonical already; this also keeps in-memory validation coherent.
-    if canonical_execution_backend(selected_backend) != canonical_execution_backend(resolved) {
+    if selected_backend != resolved {
         if decision.has_separated_fastest_route() {
             // One route is provably fastest and it is not the selected one.
             return Err("selected backend is not the fastest persisted timing evidence".into());

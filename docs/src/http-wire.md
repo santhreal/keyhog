@@ -199,7 +199,7 @@ not part of the shipped HTTP-wire contract:
 A modern SPA bundle on a typical SaaS app can ship 200+ npm
 dependencies and a sourcemap that exposes every server-side env
 var the build process touched. Manual code review of one
-`main.js.map` against the 920-detector corpus is hours; running
+`main.js.map` against the full detector corpus is hours; running
 `keyhog scan --url https://app.target.com/static/main.js.map`
 takes seconds.
 

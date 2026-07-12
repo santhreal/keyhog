@@ -36,7 +36,7 @@ fn scan_rejects_partial_detector_corpus() {
     std::fs::write(target.join("input.txt"), "DEMO_ABCDEFGH\n").expect("write scan target");
 
     let output = Command::new(binary())
-        .args(["scan", "--backend", "cpu", "--no-daemon", "--detectors"])
+        .args(["scan", "--backend", "cpu", "--daemon=off", "--detectors"])
         .arg(&detectors)
         .arg(&target)
         .env("NO_COLOR", "1")

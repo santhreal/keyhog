@@ -17,7 +17,7 @@
 //! opportunistic route kicked in - results changing purely on daemon
 //! presence. These tests drive the real `keyhog` binary: they start an
 //! isolated daemon, scan a planted-secret fixture once over the daemon
-//! (`--daemon`) and once in-process (`--no-daemon`), and assert the two
+//! (`--daemon`) and once in-process (`--daemon=off`), and assert the two
 //! produce the SAME findings under each suppression mechanism.
 //!
 //! Each test is unix-only because the daemon (and the `--daemon` flag)
@@ -174,7 +174,7 @@ impl Drop for Daemon {
 }
 
 /// Run `keyhog scan --format json <route_flag> <path>` against the given
-/// daemon's runtime dir. `route_flag` is `--daemon` or `--no-daemon`.
+/// daemon's runtime dir. `route_flag` is `--daemon` or `--daemon=off`.
 /// Returns the parsed JSON findings array.
 fn scan_json(daemon: &Daemon, path: &Path, route_flag: &str) -> Vec<serde_json::Value> {
     let mut cmd = Command::new(binary());
@@ -184,7 +184,7 @@ fn scan_json(daemon: &Daemon, path: &Path, route_flag: &str) -> Vec<serde_json::
         .arg("json")
         .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
         .env("XDG_CACHE_HOME", &daemon.xdg_cache_home);
-    if route_flag == "--no-daemon" {
+    if route_flag == "--daemon=off" {
         // Match the daemon's process-level backend pin without relying on
         // ambient autoroute calibration for the in-process control scan.
         cmd.arg("--backend").arg("cpu");
@@ -304,7 +304,7 @@ fn daemon_and_in_process_both_detect_unsuppressed_secret() {
     );
 
     let daemon_findings = scan_json(&daemon, &path, "--daemon");
-    let in_process_findings = scan_json(&daemon, &path, "--no-daemon");
+    let in_process_findings = scan_json(&daemon, &path, "--daemon=off");
 
     assert!(
         has_aws_finding(&daemon_findings),
@@ -324,7 +324,7 @@ fn daemon_and_in_process_both_detect_unsuppressed_secret() {
 /// Inline `keyhog:ignore` on the secret's own line. The in-process path
 /// drops it (`filter_inline_suppressions`); the daemon path must too.
 /// Before the fix, the daemon route ignored the directive and reported
-/// the key, diverging from `--no-daemon`.
+/// the key, diverging from `--daemon=off`.
 #[test]
 fn daemon_honors_inline_keyhog_ignore() {
     let daemon = Daemon::start();
@@ -339,7 +339,7 @@ fn daemon_honors_inline_keyhog_ignore() {
         &format!("aws_key = \"{secret}\"  # keyhog:ignore\n"),
     );
 
-    let in_process_findings = scan_json(&daemon, &path, "--no-daemon");
+    let in_process_findings = scan_json(&daemon, &path, "--daemon=off");
     assert!(
         !has_aws_finding(&in_process_findings),
         "control: in-process path must suppress the inline-ignored key; got {in_process_findings:?}"
@@ -348,7 +348,7 @@ fn daemon_honors_inline_keyhog_ignore() {
     let daemon_findings = scan_json(&daemon, &path, "--daemon");
     assert!(
         !has_aws_finding(&daemon_findings),
-        "daemon route must honour inline keyhog:ignore (parity with --no-daemon); got {daemon_findings:?}"
+        "daemon route must honour inline keyhog:ignore (parity with --daemon=off); got {daemon_findings:?}"
     );
     // Parity is exact: both routes drop the only secret, leaving an empty
     // findings array.
@@ -376,7 +376,7 @@ fn daemon_honors_keyhogignore_detector_entry() {
     // Discover the exact detector id the running build assigns to this
     // key (named detector vs hot-pattern), then suppress precisely that
     // id - asserting truth, not a guessed constant.
-    let baseline = scan_json(&daemon, &path, "--no-daemon");
+    let baseline = scan_json(&daemon, &path, "--daemon=off");
     assert!(
         has_aws_finding(&baseline),
         "baseline must detect the key before we suppress it; got {baseline:?}"
@@ -392,7 +392,7 @@ fn daemon_honors_keyhogignore_detector_entry() {
         &format!("detector:{aws_id}\n"),
     );
 
-    let in_process_findings = scan_json(&daemon, &path, "--no-daemon");
+    let in_process_findings = scan_json(&daemon, &path, "--daemon=off");
     assert!(
         !has_aws_finding(&in_process_findings),
         "control: in-process path must drop the allowlisted detector; got {in_process_findings:?}"
@@ -401,7 +401,7 @@ fn daemon_honors_keyhogignore_detector_entry() {
     let daemon_findings = scan_json(&daemon, &path, "--daemon");
     assert!(
         !has_aws_finding(&daemon_findings),
-        "daemon route must honour .keyhogignore detector: entry (parity with --no-daemon); got {daemon_findings:?}"
+        "daemon route must honour .keyhogignore detector: entry (parity with --daemon=off); got {daemon_findings:?}"
     );
 }
 
@@ -419,7 +419,7 @@ fn daemon_honors_keyhogignore_toml_rule() {
         &format!("aws_key = \"{secret}\"\n"),
     );
 
-    let baseline = scan_json(&daemon, &path, "--no-daemon");
+    let baseline = scan_json(&daemon, &path, "--daemon=off");
     assert!(
         has_aws_finding(&baseline),
         "baseline must detect the key before we suppress it; got {baseline:?}"
@@ -435,7 +435,7 @@ fn daemon_honors_keyhogignore_toml_rule() {
         &format!("[[suppress]]\ndetector = \"{aws_id}\"\n"),
     );
 
-    let in_process_findings = scan_json(&daemon, &path, "--no-daemon");
+    let in_process_findings = scan_json(&daemon, &path, "--daemon=off");
     assert!(
         !has_aws_finding(&in_process_findings),
         "control: in-process path must drop the rule-suppressed detector; got {in_process_findings:?}"
@@ -444,6 +444,6 @@ fn daemon_honors_keyhogignore_toml_rule() {
     let daemon_findings = scan_json(&daemon, &path, "--daemon");
     assert!(
         !has_aws_finding(&daemon_findings),
-        "daemon route must honour .keyhogignore.toml [[suppress]] (parity with --no-daemon); got {daemon_findings:?}"
+        "daemon route must honour .keyhogignore.toml [[suppress]] (parity with --daemon=off); got {daemon_findings:?}"
     );
 }

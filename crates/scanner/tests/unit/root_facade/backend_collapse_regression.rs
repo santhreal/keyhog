@@ -404,12 +404,11 @@ fn workload_selector_is_the_single_branch_owner() {
 }
 
 // ---------------------------------------------------------------------------
-// 3. The public Rust compatibility variant remains the SAME live engine as
-//    `gpu`; retired operator spellings stay rejected by parse_backend_str.
+// 3. Retired operator spellings stay rejected by parse_backend_str.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn programmatic_megascan_variant_collapses_while_operator_aliases_stay_rejected() {
+fn retired_megascan_aliases_stay_rejected() {
     for alias in [
         "mega-scan",
         "megascan",
@@ -419,22 +418,7 @@ fn programmatic_megascan_variant_collapses_while_operator_aliases_stay_rejected(
     ] {
         assert_eq!(parse_backend_str(alias), None, "retired alias {alias}");
     }
-    // The compatibility variant's diagnostic label remains stable for library
-    // callers and persisted-data migration; it is not a CLI value.
-    assert_eq!(ScanBackend::MegaScan.label(), "gpu-mega-scan");
     assert_eq!(ScanBackend::Gpu.label(), "gpu-region-presence");
-
-    // The collapse contract: a forced MegaScan and a forced Gpu both take the
-    // GPU region-presence route. `backend_dispatch.rs` keys the on-GPU path off
-    // `matches!(backend, Gpu | MegaScan)`; pin that both are GPU-class and the
-    // CPU arms are not, so no caller can treat MegaScan as a third engine.
-    fn is_gpu_class(b: ScanBackend) -> bool {
-        matches!(b, ScanBackend::Gpu | ScanBackend::MegaScan)
-    }
-    assert!(is_gpu_class(ScanBackend::Gpu));
-    assert!(is_gpu_class(ScanBackend::MegaScan));
-    assert!(!is_gpu_class(ScanBackend::SimdCpu));
-    assert!(!is_gpu_class(ScanBackend::CpuFallback));
 }
 
 // ---------------------------------------------------------------------------
@@ -478,8 +462,7 @@ fn removed_dead_gpu_pipelines_stay_removed() {
     // deleted as dead routes, so match the method/field/wrapper forms.
     assert!(
         !code.contains("fn rule_pipeline(&self)"),
-        "the rule_pipeline() lazy method was removed (its scan was never invoked); \
-         MegaScan now collapses onto region-presence"
+        "the rule_pipeline() lazy method was removed because its scan was never invoked"
     );
     assert!(
         !code.contains("rule_pipeline: OnceLock"),
@@ -491,8 +474,7 @@ fn removed_dead_gpu_pipelines_stay_removed() {
     assert!(
         !code.contains("fn rule_pipeline_cached"),
         "rule_pipeline_cached was deleted as dead public surface (zero non-test \
-         callers); the live GpuLiteralSet path caches via gpu_cache, and MegaScan \
-         collapses onto region-presence — do not re-add the dead pipeline cache"
+         callers); the live GpuLiteralSet path caches via gpu_cache"
     );
     assert!(
         !code.contains("fn pipeline_cache_key") && !code.contains("PIPELINE_CACHE_VERSION"),
@@ -523,8 +505,7 @@ fn removed_dead_gpu_pipelines_stay_removed() {
     // longer happen) stays removed.
     assert!(
         !code.contains("fn deny_silent_megascan_degrade"),
-        "deny_silent_megascan_degrade was removed; the MegaScan->literal-set \
-         degrade path no longer exists"
+        "deny_silent_megascan_degrade was removed with the duplicate backend route"
     );
 }
 

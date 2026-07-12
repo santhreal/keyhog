@@ -434,19 +434,13 @@ impl MerkleIndex {
             .map(|e| (e.mtime_ns, e.size, e.hash))
     }
 
-    /// Record a file's content hash. Back-compat shim that drops to a
-    /// zero-metadata entry - calls into [`Self::record_with_metadata`]
-    /// with `mtime_ns = 0` and `size = 0` so existing callers keep
-    /// working but won't benefit from the metadata fast-path.
-    pub(crate) fn record(&self, path: PathBuf, content_hash: [u8; 32]) {
-        self.record_with_metadata(path, 0, 0, content_hash);
-    }
-
-    /// Record a file's metadata + content hash. Overwrites any prior
+    /// Seed a file's metadata + content hash for the public test facade.
+    /// Production ingestion uses the chunk-aware record-and-compare path.
+    /// Overwrites any prior
     /// entry at the same path. The path-shard mutex is held for the
     /// duration of the insert only; concurrent recordings against
     /// different shards never contend.
-    pub(crate) fn record_with_metadata(
+    pub(crate) fn seed_for_testing(
         &self,
         path: PathBuf,
         mtime_ns: u64,

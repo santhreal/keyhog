@@ -49,7 +49,7 @@ fn scan_git_diff_format_jsonl_one_object_per_line() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-diff",
             "HEAD",
             "--format",

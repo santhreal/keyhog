@@ -31,6 +31,9 @@
 - [Autoroute calibration](./reference/autoroute-calibration.md)
 - [Exit codes](./reference/exit-codes.md)
 - [Environment variables](./reference/env.md)
+- [`.keyhogignore.toml`](./reference/keyhogignore-toml.md)
+- [Out-of-band verification](./reference/oob-verification.md)
+- [VYRE integration](./reference/vyre-integration.md)
 
 ---
 

@@ -224,9 +224,9 @@ impl CoalescedScannerWorker {
         let per_chunk = match chosen_backend {
             // The Vyre GpuLiteralSet region-presence route is the single on-GPU
             // trigger path. It owns backend acquisition and degrades LOUDLY to
-            // SIMD/CPU, so both an explicit GPU request and a selected Gpu/MegaScan
+            // SIMD/CPU, so both an explicit GPU request and a selected GPU
             // batch land here.
-            ScanBackend::Gpu | ScanBackend::MegaScan => {
+            ScanBackend::Gpu => {
                 let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
                 tracing::debug!(
                     target: "keyhog::routing",

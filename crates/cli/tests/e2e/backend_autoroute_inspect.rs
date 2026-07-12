@@ -80,7 +80,7 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
     let calibrate = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--autoroute-calibrate",
             "--format",
             "json",

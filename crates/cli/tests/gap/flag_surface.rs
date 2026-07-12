@@ -111,7 +111,7 @@ fn effective_config_with_toml(
 }
 
 /// Write `content` to `name` inside a fresh tempdir and scan it as JSON
-/// in-process (`--no-daemon`). Returns (stdout, stderr, code) plus the dir
+/// in-process (`--daemon=off`). Returns (stdout, stderr, code) plus the dir
 /// guard (kept alive by the caller).
 fn scan_file(name: &str, content: &str, extra: &[&str]) -> (TempDir, String, String, Option<i32>) {
     let dir = TempDir::new().expect("tempdir");
@@ -120,7 +120,7 @@ fn scan_file(name: &str, content: &str, extra: &[&str]) -> (TempDir, String, Str
 
     let mut args: Vec<String> = vec![
         "scan".into(),
-        "--no-daemon".into(),
+        "--daemon=off".into(),
         "--backend".into(),
         "cpu".into(),
         "--format".into(),
@@ -294,7 +294,7 @@ fn severity_accepts_five_levels_and_rejects_client_safe() {
 fn severity_rejects_unknown_value() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--severity",
         "ultra",
         "/nonexistent-path-xyz",
@@ -314,7 +314,7 @@ fn severity_rejects_unknown_value() {
 /// The effective-config oracle prints it verbatim.
 #[test]
 fn min_confidence_default_is_point_four() {
-    let (out, err, code) = effective_config(&["scan", "--no-daemon"]);
+    let (out, err, code) = effective_config(&["scan", "--daemon=off"]);
     assert_eq!(code, Some(0), "oracle must exit 0; stderr={err}");
     assert!(
         out.contains("min_confidence = 0.4"),
@@ -327,7 +327,7 @@ fn min_confidence_default_is_point_four() {
 /// precision mode. The oracle reflects the exact value.
 #[test]
 fn min_confidence_sets_floor_outright_in_default_mode() {
-    let (out, err, code) = effective_config(&["scan", "--no-daemon", "--min-confidence", "0.9"]);
+    let (out, err, code) = effective_config(&["scan", "--daemon=off", "--min-confidence", "0.9"]);
     assert_eq!(code, Some(0), "stderr={err}");
     assert!(
         out.contains("min_confidence = 0.9"),
@@ -340,7 +340,7 @@ fn min_confidence_sets_floor_outright_in_default_mode() {
 /// flag overrides the default rather than `.max()`-ing with it.
 #[test]
 fn min_confidence_can_lower_floor_below_default() {
-    let (out, err, code) = effective_config(&["scan", "--no-daemon", "--min-confidence", "0.3"]);
+    let (out, err, code) = effective_config(&["scan", "--daemon=off", "--min-confidence", "0.3"]);
     assert_eq!(code, Some(0), "stderr={err}");
     assert!(
         out.contains("min_confidence = 0.3"),
@@ -352,14 +352,14 @@ fn min_confidence_can_lower_floor_below_default() {
 /// in `parse_min_confidence`: `(0.0..=1.0).contains`).
 #[test]
 fn min_confidence_accepts_inclusive_bounds() {
-    let (out0, e0, c0) = effective_config(&["scan", "--no-daemon", "--min-confidence", "0.0"]);
+    let (out0, e0, c0) = effective_config(&["scan", "--daemon=off", "--min-confidence", "0.0"]);
     assert_eq!(c0, Some(0), "0.0 is in range; stderr={e0}");
     assert!(
         out0.contains("min_confidence = 0"),
         "0.0 floor must render; got {out0}"
     );
 
-    let (out1, e1, c1) = effective_config(&["scan", "--no-daemon", "--min-confidence", "1.0"]);
+    let (out1, e1, c1) = effective_config(&["scan", "--daemon=off", "--min-confidence", "1.0"]);
     assert_eq!(c1, Some(0), "1.0 is in range; stderr={e1}");
     assert!(
         out1.contains("min_confidence = 1"),
@@ -373,7 +373,7 @@ fn min_confidence_accepts_inclusive_bounds() {
 fn min_confidence_rejects_above_one() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--min-confidence",
         "1.5",
         "/nonexistent-path-xyz",
@@ -402,7 +402,7 @@ fn min_confidence_rejects_above_one() {
 fn min_confidence_rejects_negative() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--min-confidence=-0.5",
         "/nonexistent-path-xyz",
     ]);
@@ -425,7 +425,7 @@ fn min_confidence_rejects_negative() {
 fn min_confidence_rejects_nan() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--min-confidence",
         "nan",
         "/nonexistent-path-xyz",
@@ -447,8 +447,13 @@ fn min_confidence_rejects_nan() {
 /// bug gated it on `!no_ml`). The oracle proves floor and ml are independent.
 #[test]
 fn min_confidence_floor_survives_no_ml() {
-    let (out, err, code) =
-        effective_config(&["scan", "--no-daemon", "--min-confidence", "0.77", "--no-ml"]);
+    let (out, err, code) = effective_config(&[
+        "scan",
+        "--daemon=off",
+        "--min-confidence",
+        "0.77",
+        "--no-ml",
+    ]);
     assert_eq!(code, Some(0), "stderr={err}");
     assert!(
         out.contains("min_confidence = 0.77"),
@@ -468,7 +473,7 @@ fn min_confidence_floor_survives_no_ml() {
 /// floor 0.85, entropy off, decode depth 1. Read straight from the oracle.
 #[test]
 fn precision_preset_floor_entropy_decode() {
-    let (out, err, code) = effective_config(&["scan", "--no-daemon", "--precision"]);
+    let (out, err, code) = effective_config(&["scan", "--daemon=off", "--precision"]);
     assert_eq!(code, Some(0), "stderr={err}");
     assert!(
         out.contains("min_confidence = 0.85"),
@@ -490,7 +495,7 @@ fn precision_preset_floor_entropy_decode() {
 fn precision_min_confidence_above_floor_tightens() {
     let (out, err, code) = effective_config(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--precision",
         "--min-confidence",
         "0.9",
@@ -509,7 +514,7 @@ fn precision_min_confidence_above_floor_tightens() {
 fn precision_min_confidence_below_floor_clamped_to_point_eight_five() {
     let (out, err, code) = effective_config(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--precision",
         "--min-confidence",
         "0.3",
@@ -531,7 +536,7 @@ fn precision_min_confidence_below_floor_clamped_to_point_eight_five() {
 fn precision_min_confidence_equal_to_floor() {
     let (out, err, code) = effective_config(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--precision",
         "--min-confidence",
         "0.85",
@@ -549,7 +554,7 @@ fn precision_min_confidence_equal_to_floor() {
 fn precision_conflicts_with_fast() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--precision",
         "--fast",
         "/nonexistent-path-xyz",
@@ -571,7 +576,7 @@ fn precision_conflicts_with_fast() {
 fn precision_conflicts_with_deep() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--precision",
         "--deep",
         "/nonexistent-path-xyz",
@@ -588,7 +593,7 @@ fn precision_conflicts_with_deep() {
 fn fast_conflicts_with_deep() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--fast",
         "--deep",
         "/nonexistent-path-xyz",
@@ -603,7 +608,7 @@ fn fast_conflicts_with_deep() {
 /// `--no-decode` (no preset) zeroes the decode depth in the resolved config.
 #[test]
 fn no_decode_sets_depth_zero() {
-    let (out, err, code) = effective_config(&["scan", "--no-daemon", "--no-decode"]);
+    let (out, err, code) = effective_config(&["scan", "--daemon=off", "--no-decode"]);
     assert_eq!(code, Some(0), "stderr={err}");
     assert!(
         out.contains("max_decode_depth = 0"),
@@ -616,7 +621,7 @@ fn no_decode_sets_depth_zero() {
 /// flag only off the preset path — here there is no preset, so it applies.
 #[test]
 fn no_entropy_disables_entropy() {
-    let (out, err, code) = effective_config(&["scan", "--no-daemon", "--no-entropy"]);
+    let (out, err, code) = effective_config(&["scan", "--daemon=off", "--no-entropy"]);
     assert_eq!(code, Some(0), "stderr={err}");
     assert!(
         out.contains("entropy_enabled = false"),
@@ -628,7 +633,7 @@ fn no_entropy_disables_entropy() {
 /// the negatives above are real toggles, not the default state.
 #[test]
 fn default_mode_entropy_on_decode_ten() {
-    let (out, err, code) = effective_config(&["scan", "--no-daemon"]);
+    let (out, err, code) = effective_config(&["scan", "--daemon=off"]);
     assert_eq!(code, Some(0), "stderr={err}");
     assert!(
         out.contains("entropy_enabled = true"),
@@ -650,7 +655,7 @@ fn default_mode_entropy_on_decode_ten() {
 fn fast_conflicts_with_no_decode() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--fast",
         "--no-decode",
         "/nonexistent-path-xyz",
@@ -667,7 +672,7 @@ fn fast_conflicts_with_no_decode() {
 fn fast_conflicts_with_no_entropy() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--fast",
         "--no-entropy",
         "/nonexistent-path-xyz",
@@ -684,7 +689,7 @@ fn fast_conflicts_with_no_entropy() {
 fn deep_conflicts_with_no_decode() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--deep",
         "--no-decode",
         "/nonexistent-path-xyz",
@@ -701,7 +706,7 @@ fn deep_conflicts_with_no_decode() {
 fn deep_conflicts_with_no_entropy() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--deep",
         "--no-entropy",
         "/nonexistent-path-xyz",
@@ -718,7 +723,7 @@ fn deep_conflicts_with_no_entropy() {
 fn precision_conflicts_with_no_decode() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--precision",
         "--no-decode",
         "/nonexistent-path-xyz",
@@ -735,7 +740,7 @@ fn precision_conflicts_with_no_decode() {
 fn precision_conflicts_with_no_entropy() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--precision",
         "--no-entropy",
         "/nonexistent-path-xyz",
@@ -753,7 +758,7 @@ fn precision_conflicts_with_no_entropy() {
 #[test]
 fn no_decode_and_no_entropy_compose_without_preset() {
     let (out, err, code) =
-        effective_config(&["scan", "--no-daemon", "--no-decode", "--no-entropy"]);
+        effective_config(&["scan", "--daemon=off", "--no-decode", "--no-entropy"]);
     assert_eq!(
         code,
         Some(0),
@@ -818,7 +823,7 @@ fn cli_precision_preset_wins_over_toml_fast() {
 /// once (`ScannerConfig::fast()` plus `ml_enabled = !fast && !no_ml`).
 #[test]
 fn fast_preset_disables_ml_entropy_decode() {
-    let (out, err, code) = effective_config(&["scan", "--no-daemon", "--fast"]);
+    let (out, err, code) = effective_config(&["scan", "--daemon=off", "--fast"]);
     assert_eq!(code, Some(0), "stderr={err}");
     assert!(
         out.contains("ml_enabled = false"),
@@ -838,7 +843,7 @@ fn fast_preset_disables_ml_entropy_decode() {
 /// canonical 0.40 (thorough() omits min_confidence on purpose).
 #[test]
 fn deep_preset_enables_ml_entropy_keeps_default_floor() {
-    let (out, err, code) = effective_config(&["scan", "--no-daemon", "--deep"]);
+    let (out, err, code) = effective_config(&["scan", "--daemon=off", "--deep"]);
     assert_eq!(code, Some(0), "stderr={err}");
     assert!(
         out.contains("ml_enabled = true"),
@@ -867,14 +872,14 @@ fn deep_preset_enables_ml_entropy_keeps_default_floor() {
 /// operator intent and raises the floor to 0.5.
 #[test]
 fn ml_threshold_unset_is_noop_explicit_default_raises_floor() {
-    let (unset_out, unset_err, unset_code) = effective_config(&["scan", "--no-daemon"]);
+    let (unset_out, unset_err, unset_code) = effective_config(&["scan", "--daemon=off"]);
     assert_eq!(unset_code, Some(0), "stderr={unset_err}");
     assert!(
         unset_out.contains("min_confidence = 0.4"),
         "unset --ml-threshold must not move the 0.40 floor; got {unset_out}"
     );
 
-    let (out, err, code) = effective_config(&["scan", "--no-daemon", "--ml-threshold", "0.5"]);
+    let (out, err, code) = effective_config(&["scan", "--daemon=off", "--ml-threshold", "0.5"]);
     assert_eq!(code, Some(0), "stderr={err}");
     assert!(
         out.contains("min_confidence = 0.5"),
@@ -913,7 +918,7 @@ fn ml_threshold_config_file_raises_floor_and_cli_wins() {
 /// previously-dead lever (M21).
 #[test]
 fn ml_threshold_above_floor_raises_it() {
-    let (out, err, code) = effective_config(&["scan", "--no-daemon", "--ml-threshold", "0.9"]);
+    let (out, err, code) = effective_config(&["scan", "--daemon=off", "--ml-threshold", "0.9"]);
     assert_eq!(code, Some(0), "stderr={err}");
     assert!(
         out.contains("min_confidence = 0.9"),
@@ -925,7 +930,7 @@ fn ml_threshold_above_floor_raises_it() {
 /// `.max()` keeps 0.40 (a lowered threshold can never punch below the floor).
 #[test]
 fn ml_threshold_below_floor_does_not_lower_it() {
-    let (out, err, code) = effective_config(&["scan", "--no-daemon", "--ml-threshold", "0.1"]);
+    let (out, err, code) = effective_config(&["scan", "--daemon=off", "--ml-threshold", "0.1"]);
     assert_eq!(code, Some(0), "stderr={err}");
     assert!(
         out.contains("min_confidence = 0.4"),
@@ -939,7 +944,7 @@ fn ml_threshold_below_floor_does_not_lower_it() {
 fn ml_threshold_composes_with_min_confidence_via_max() {
     let (out, err, code) = effective_config(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--min-confidence",
         "0.6",
         "--ml-threshold",
@@ -958,7 +963,7 @@ fn ml_threshold_composes_with_min_confidence_via_max() {
 fn ml_threshold_rejects_nan() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--ml-threshold",
         "nan",
         "/nonexistent-path-xyz",
@@ -979,7 +984,7 @@ fn ml_threshold_rejects_nan() {
 fn ml_threshold_rejects_above_one() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--ml-threshold",
         "2.0",
         "/nonexistent-path-xyz",
@@ -1010,7 +1015,7 @@ fn dedup_accepts_all_three_scopes() {
 fn dedup_rejects_unknown_scope() {
     let (_o, err, code) = run(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--dedup",
         "everything",
         "/nonexistent-path-xyz",
@@ -1210,25 +1215,35 @@ fn lockdown_forbids_show_secrets() {
 }
 
 // ============================================================================
-// --daemon / --no-daemon routing-policy gate (flag interaction surface)
+// --daemon routing-policy gate (flag interaction surface)
 // ============================================================================
 
-/// `--daemon` and `--no-daemon` are mutually exclusive at the clap layer
-/// (`conflicts_with` on each). Exit 2.
+/// A socket has no meaning when daemon routing is explicitly disabled. The
+/// contradiction must fail instead of silently ignoring operator input.
 #[test]
-fn daemon_conflicts_with_no_daemon() {
-    let (_o, err, code) = run(&["scan", "--daemon", "--no-daemon", "/nonexistent-path-xyz"]);
+fn daemon_off_rejects_daemon_socket() {
+    let (_o, err, code) = run(&[
+        "scan",
+        "--daemon=off",
+        "--daemon-socket",
+        "/tmp/keyhog-unused.sock",
+        "/nonexistent-path-xyz",
+    ]);
     assert_eq!(
         code,
         Some(2),
-        "--daemon + --no-daemon must conflict; stderr={err}"
+        "contradictory daemon controls must fail; stderr={err}"
+    );
+    assert!(
+        err.contains("`--daemon-socket` cannot be combined with `--daemon=off`"),
+        "error must name both controls and the fix; stderr={err}"
     );
 }
 
 /// A scan that requests filtering policy (`--severity`) still runs in-process
-/// correctly without `--no-daemon`: the daemon-route gate forces the
+/// correctly without `--daemon=off`: the daemon-route gate forces the
 /// in-process path whenever `--severity` is set, so the result is identical to
-/// `--no-daemon`. We assert the critical AWS key still surfaces under
+/// `--daemon=off`. We assert the critical AWS key still surfaces under
 /// `--severity critical` with NO explicit daemon flag.
 #[test]
 fn severity_forces_in_process_path_and_still_finds() {
@@ -1276,7 +1291,7 @@ fn severity_forces_in_process_path_and_still_finds() {
 fn property_min_confidence_is_identity_in_plain_mode() {
     for &v in &[0.0_f64, 0.1, 0.25, 0.4, 0.5, 0.75, 0.85, 0.95, 1.0] {
         let s = format!("{v}");
-        let (out, err, code) = effective_config(&["scan", "--no-daemon", "--min-confidence", &s]);
+        let (out, err, code) = effective_config(&["scan", "--daemon=off", "--min-confidence", &s]);
         assert_eq!(code, Some(0), "min-confidence {v} must parse; stderr={err}");
         // The oracle prints the f64 via `{}`; e.g. 0.4 -> "0.4", 1.0 -> "1".
         let expected = format!("min_confidence = {v}");
@@ -1294,8 +1309,13 @@ fn property_min_confidence_is_identity_in_plain_mode() {
 fn property_precision_floor_is_max_with_point_eight_five() {
     for &v in &[0.0_f64, 0.2, 0.5, 0.84, 0.85, 0.86, 0.9, 1.0] {
         let s = format!("{v}");
-        let (out, err, code) =
-            effective_config(&["scan", "--no-daemon", "--precision", "--min-confidence", &s]);
+        let (out, err, code) = effective_config(&[
+            "scan",
+            "--daemon=off",
+            "--precision",
+            "--min-confidence",
+            &s,
+        ]);
         assert_eq!(
             code,
             Some(0),
@@ -1317,7 +1337,7 @@ fn property_precision_floor_is_max_with_point_eight_five() {
 fn composition_min_conf_ml_threshold_no_ml_independent() {
     let (out, err, code) = effective_config(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--min-confidence",
         "0.7",
         "--ml-threshold",

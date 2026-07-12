@@ -19,7 +19,7 @@ use std::sync::atomic::Ordering::Relaxed;
 /// (its prefix-AC gating skips most patterns; the dot-heavy divergent set can't be
 /// gated). So the RegexSet is strictly faster on non-ASCII (Law 7). Kept pure +
 /// separate so the gate is unit-tested without a scanner (`hs_gate_tests`).
-#[cfg_attr(not(feature = "simd"), allow(dead_code))]
+#[cfg(any(test, feature = "simd"))]
 fn hs_prefilter_engages(
     fallback_hs: bool,
     chunk_len: usize,

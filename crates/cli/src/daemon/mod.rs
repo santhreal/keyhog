@@ -18,7 +18,7 @@
 //!   uptime + scans-served + active-scan count.
 //! - `keyhog scan ... --daemon` - force the scan through a running
 //!   daemon; errors if no daemon is up.
-//! - `keyhog scan ... --no-daemon` - force in-process scan even when
+//! - `keyhog scan ... --daemon=off` - force in-process scan even when
 //!   a daemon is up.
 
 pub mod client;

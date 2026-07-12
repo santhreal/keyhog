@@ -14,7 +14,7 @@ fn scan_dogfood_one_event_per_example_suppression() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--dogfood",
             "--format",
             "text",

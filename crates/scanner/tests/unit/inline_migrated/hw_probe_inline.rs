@@ -7,7 +7,7 @@ use keyhog_scanner::hw_probe::testing::{
 use keyhog_scanner::testing::{clear_test_backend_override, set_test_backend_override, thresholds};
 
 // NOTE: these tests deliberately do NOT mutate the process-global
-// `KEYHOG_BACKEND` env var. A global set to a GPU/MegaScan value races with
+// `KEYHOG_BACKEND` env var. A global set to a GPU value races with
 // every concurrent scan in the parallel `all_tests` pool — `gpu_forced` reacts
 // to a forced-but-unavailable GPU by exiting the whole process, which would
 // abort the entire harness. Backend FORCING is exercised via the thread-local

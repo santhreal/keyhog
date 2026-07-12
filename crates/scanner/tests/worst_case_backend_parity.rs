@@ -2,7 +2,7 @@
 //!
 //! Loads the full detector corpus (894 rules) and runs the synthetic
 //! worst-case fixture set from `backend_parity_matrix` plus chunk-boundary
-//! straddle cases on SimdCpu (reference), CpuFallback, GPU, and MegaScan.
+//! straddle cases on SimdCpu (reference), CpuFallback, and GPU.
 //! Contract recall on every positive lives in `contracts_runner.rs`; this
 //! harness gates cross-backend finding-set parity on adversarial shapes.
 
@@ -135,7 +135,7 @@ fn scan_fixture(
     backend: ScanBackend,
 ) -> BTreeSet<FindingKey> {
     scanner.clear_fragment_cache();
-    // Gpu and MegaScan both route to the single on-GPU region-presence producer now.
+    // Gpu routes to the single on-GPU region-presence producer.
     let results = scanner.scan_chunks_with_backend(chunks, backend);
     collect_keys(&results)
 }
@@ -162,7 +162,6 @@ fn full_corpus_multi_backend_worst_case_parity() {
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
         ScanBackend::Gpu,
-        ScanBackend::MegaScan,
     ];
 
     let mut total_cells = 0usize;

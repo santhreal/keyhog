@@ -25,7 +25,7 @@ fn scan_rejects_expired_keyhogignore_policy() {
     .expect("write fixture");
 
     let output = Command::new(binary())
-        .args(["scan", "--backend", "cpu", "--no-daemon"])
+        .args(["scan", "--backend", "cpu", "--daemon=off"])
         .arg(dir.path())
         .env("NO_COLOR", "1")
         .output()

@@ -43,7 +43,7 @@ fn scan_git_diff_clean_range_exits_zero() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-diff",
             "HEAD",
             "--format",

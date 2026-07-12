@@ -31,18 +31,6 @@ fail=0
 skipped=0
 failed_names=""
 
-# detect_linux_cuda probes real host paths (/proc/driver/nvidia,
-# /usr/lib*/libcuda.so, /usr/local/cuda) that a PATH-only sandbox can't
-# intercept. On a host with a real CUDA stack those probes win regardless
-# of the mocked nvidia-smi/ldconfig, so CUDA-absence assertions can't be
-# validated here. They ARE validated in the Docker matrix (clean,
-# CUDA-free containers). Skip them locally when the host has CUDA.
-HOST_HAS_CUDA=no
-if [ -e /proc/driver/nvidia ] || [ -d /usr/local/cuda ] || [ -d /opt/cuda ] \
-   || ls /usr/lib*/libcuda.so* >/dev/null 2>&1 \
-   || ldconfig -p 2>/dev/null | grep -q 'libcuda\.so'; then
-    HOST_HAS_CUDA=yes
-fi
 skip() { printf '  \033[33m-\033[0m %s (skipped: %s)\n' "$1" "$2"; skipped=$((skipped + 1)); }
 
 # ── assertion helpers ─────────────────────────────────────────────────
@@ -63,7 +51,7 @@ _record_fail() {
 
 expect_match() {
     if printf '%s' "$3" | grep -qE -- "$2"; then _record_pass "$1"
-    else _record_fail "$1" "expected /$2/, got (head):" "$(printf '%s' "$3" | head -8)"; fi
+    else _record_fail "$1" "expected /$2/, got (tail):" "$(printf '%s' "$3" | tail -20)"; fi
 }
 expect_nomatch() {
     if printf '%s' "$3" | grep -qE -- "$2"; then
@@ -415,7 +403,6 @@ printf '%s  local_keyhog_no_sidecar\n' "$(sha_of "$FIX_DIR/local_keyhog_no_sidec
 #   MOCK_RELEASES   - path to releases JSON, or "DOWN" to simulate API down
 #   MOCK_ASSET      - path to the binary to serve, or "404"
 #   MOCK_LATEST_ASSET - legacy latest-redirect fixture hook, or "404"
-#   MOCK_FALLBACK   - path to serve for the *fallback* asset, or "404"
 #   MOCK_GPU_LITERAL_SIDECAR - path to serve for <asset>.gpu-literals.tar.gz, or
 #                     "404" (curl exit 22 = HTTP 404 = not published) or
 #                     "neterror" (curl exit 6 = a network/transport failure)
@@ -432,7 +419,7 @@ build_sandbox() {
     for tool in sh dash bash grep sed head tail awk cut tr cat mv cp rm mkdir rmdir \
                 chmod chown ls find dirname basename printf date sleep test true false \
                 command type stat readlink realpath sort uniq wc env tee xargs mktemp \
-                sha256sum shasum touch tar gzip; do
+                sha256sum shasum touch tar gzip git; do
         real=$(command -v "$tool" 2>/dev/null) || continue
         ln -sf "$real" "$sb/bin/$tool" 2>/dev/null || true
     done
@@ -600,16 +587,8 @@ case "$url" in
         emit_redirect_url "$url"
         exit 0 ;;
     esac
-    # First download attempt = primary asset, second = fallback. Tracked
-    # via a marker file so the ordering survives across curl processes.
-    if [ ! -e "$sd/primary_attempted" ]; then
-      : > "$sd/primary_attempted"
-      if [ "${MOCK_ASSET:-404}" = "404" ]; then exit 22; fi
-      served="$MOCK_ASSET"
-    else
-      if [ "${MOCK_FALLBACK:-404}" = "404" ]; then exit 22; fi
-      served="$MOCK_FALLBACK"
-    fi
+    if [ "${MOCK_ASSET:-404}" = "404" ]; then exit 22; fi
+    served="$MOCK_ASSET"
     printf '%s' "$served" > "$sd/served"
     cat "$served" > "$out"
     emit_redirect_url "$url"
@@ -635,7 +614,6 @@ run_install() {
         MOCK_RELEASES="${MOCK_RELEASES:-DOWN}" \
         MOCK_ASSET="${MOCK_ASSET:-404}" \
         MOCK_LATEST_ASSET="${MOCK_LATEST_ASSET:-${MOCK_ASSET:-404}}" \
-        MOCK_FALLBACK="${MOCK_FALLBACK:-404}" \
         MOCK_GPU_LITERAL_SIDECAR="${MOCK_GPU_LITERAL_SIDECAR:-$FIX_DIR/gpu-literals.tar.gz}" \
         MOCK_SIG="${MOCK_SIG:-match}" \
         MOCK_SHA="${MOCK_SHA:-absent}" \
@@ -655,7 +633,7 @@ echo " install.sh edge-case battery"
 echo "=============================================================="
 
 reset_mocks() {
-    unset MOCK_RELEASES MOCK_ASSET MOCK_LATEST_ASSET MOCK_FALLBACK MOCK_GPU_LITERAL_SIDECAR MOCK_SIG MOCK_SHA MOCK_LDD \
+    unset MOCK_RELEASES MOCK_ASSET MOCK_LATEST_ASSET MOCK_GPU_LITERAL_SIDECAR MOCK_SIG MOCK_SHA MOCK_LDD \
           KEYHOG_VERSION INSTALL_DIR_OVERRIDE GITHUB_TOKEN
 }
 
@@ -752,66 +730,6 @@ rm -rf "$sb" "$h"
 sb=$(build_sandbox Linux armv7l no no no); h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --diagnose --no-color); st=$?
 expect_match  "3.unsupported-arch reports it" "Unsupported platform" "$out"
-rm -rf "$sb" "$h"
-
-# ======================================================================
-# 4. CUDA detection gates (detect_linux_cuda via --diagnose)
-# ======================================================================
-printf '\n[4] CUDA detection gates\n'
-reset_mocks
-if [ "$HOST_HAS_CUDA" = "yes" ]; then
-    for t in "4.1 no nvidia -> no-gpu" "4.2 no-gpu -> default asset" \
-             "4.3 nvidia-smi empty -> no-gpu" "4.4 nvidia+libcuda+nvcc -> yes" \
-             "4.5 cuda yes -> cuda asset" "4.6 nvidia+libcuda, no toolkit -> driver-only" \
-             "4.7 driver-only -> default asset" "4.8 nvidia, no libcuda -> driver-only"; do
-        skip "$t" "host has a real CUDA stack; validated in the Docker matrix"
-    done
-else
-    # no nvidia-smi, no driver dir -> no-gpu
-    sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
-    out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --diagnose --no-color)
-    expect_match "4.1 no nvidia -> no-gpu" "CUDA detection: no-gpu" "$out"
-    expect_match "4.2 no-gpu -> default asset" "Would install: keyhog-linux-x86_64$" "$out"
-    rm -rf "$sb" "$h"
-    # nvidia-smi present but lists no GPU -> no-gpu
-    sb=$(build_sandbox Linux x86_64 empty no no); h=$(newhome)
-    out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --diagnose --no-color)
-    expect_match "4.3 nvidia-smi empty -> no-gpu" "CUDA detection: no-gpu" "$out"
-    rm -rf "$sb" "$h"
-    # nvidia + libcuda + toolkit -> yes
-    sb=$(build_sandbox Linux x86_64 yes yes yes); h=$(newhome)
-    out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --diagnose --no-color)
-    expect_match "4.4 nvidia+libcuda+nvcc -> yes" "CUDA detection: yes" "$out"
-    expect_match "4.5 cuda yes -> cuda asset" "Would install: keyhog-linux-x86_64-cuda" "$out"
-    rm -rf "$sb" "$h"
-    # nvidia + libcuda + NO toolkit -> driver-only
-    sb=$(build_sandbox Linux x86_64 yes yes no); h=$(newhome)
-    out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --diagnose --no-color)
-    expect_match "4.6 nvidia+libcuda, no toolkit -> driver-only" "CUDA detection: driver-only" "$out"
-    expect_match "4.7 driver-only -> default asset" "Would install: keyhog-linux-x86_64$" "$out"
-    rm -rf "$sb" "$h"
-    # nvidia + NO libcuda -> driver-only
-    sb=$(build_sandbox Linux x86_64 yes no no); h=$(newhome)
-    out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --diagnose --no-color)
-    expect_match "4.8 nvidia, no libcuda -> driver-only" "CUDA detection: driver-only" "$out"
-    rm -rf "$sb" "$h"
-fi
-
-# ======================================================================
-# 5. Variant overrides
-# ======================================================================
-printf '\n[5] variant overrides\n'
-reset_mocks
-sb=$(build_sandbox Linux x86_64 yes yes yes); h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --variant=cpu --diagnose --no-color)
-expect_match "5.1 variant=cpu beats cuda host" "Would install: keyhog-linux-x86_64$" "$out"
-rm -rf "$h"; h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --variant=cuda --diagnose --no-color)
-expect_match "5.2 variant=cuda forces cuda asset" "Would install: keyhog-linux-x86_64-cuda" "$out"
-rm -rf "$sb" "$h"
-sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --variant=cuda --diagnose --no-color)
-expect_match "5.3 variant=cuda on no-gpu still cuda asset" "Would install: keyhog-linux-x86_64-cuda" "$out"
 rm -rf "$sb" "$h"
 
 # ======================================================================
@@ -1018,27 +936,6 @@ expect_exec   "6.20 binary present when docker daemon is dead" "$h/.local/bin/ke
 expect_nofile "6.21 dead docker daemon is not used for calibration build" "$h/docker-build-called"
 rm -rf "$h" "$sb_dead_docker"
 rm -rf "$sb"
-
-# ======================================================================
-# 7. Explicit CUDA fails closed; auto CUDA may use portable asset
-# ======================================================================
-printf '\n[7] cuda asset fallback policy\n'
-reset_mocks
-sb=$(build_sandbox Linux x86_64 yes yes yes); h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET=404 MOCK_FALLBACK="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --variant=cuda --no-prompt); st=$?
-expect_match  "7.1 explicit cuda missing asset refuses" "Download failed|release published" "$out"
-expect_status "7.2 explicit cuda missing asset exits 1" 1 "$st"
-expect_nofile "7.3 explicit cuda missing asset writes no binary" "$h/.local/bin/keyhog"
-rm -rf "$h"; h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET=404 MOCK_FALLBACK="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "7.4 auto cuda falls back to portable asset" "Falling back to keyhog-linux-x86_64" "$out"
-expect_status "7.5 auto cuda fallback install exits 0" 0 "$st"
-expect_exec   "7.6 binary installed via auto fallback" "$h/.local/bin/keyhog"
-rm -rf "$h"; h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET=404 MOCK_FALLBACK=404 run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "7.7 auto cuda both assets missing errors" "Neither .* could be downloaded|could not be downloaded" "$out"
-expect_status "7.8 auto cuda both assets missing exits 1" 1 "$st"
-rm -rf "$sb" "$h"
 
 # ======================================================================
 # 8. verify_install failure modes
@@ -1442,11 +1339,10 @@ env -i PATH="$sb/bin" HOME="$h" \
     MOCK_STATE_DIR="$signal_state" \
     MOCK_RELEASES="$FIX_DIR/releases_normal.json" \
     MOCK_ASSET="$FIX_DIR/fake_keyhog_slow_scan" \
-    MOCK_FALLBACK=404 \
     MOCK_SHA=match \
     MOCK_LDD=ok \
     KEYHOG_VERSION=v9.9.9 \
-    sh "$INSTALL_SH" --install-dir="$h/.local/bin" --variant=auto --no-prompt --no-color >"$signal_out" 2>&1 &
+    sh "$INSTALL_SH" --install-dir="$h/.local/bin" --no-prompt --no-color >"$signal_out" 2>&1 &
 signal_pid=$!
 i=0
 while [ "$i" -lt 200 ]; do
@@ -1491,9 +1387,10 @@ if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2
     reset_mocks
     sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
     repo="$h/repo"
-    mkdir -p "$repo/.git"
-    wizard_cmd="cd $repo && env -i PATH=$h/.local/bin:$sb/bin HOME=$h SHELL=/bin/bash MOCK_STATE_DIR=$h/state MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_wizard_fail MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9 sh $INSTALL_SH --install-dir=$h/.local/bin --variant=auto --no-color"
-    out=$(printf 'y\ny\ny\n' | script -qefc "$wizard_cmd" /dev/null 2>&1); st=$?
+    mkdir -p "$repo"
+    "$sb/bin/git" -C "$repo" init -q
+    wizard_cmd="cd $repo && env -i PATH=$h/.local/bin:$sb/bin HOME=$h SHELL=/bin/bash MOCK_STATE_DIR=$h/state MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_wizard_fail MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9 sh $INSTALL_SH --install-dir=$h/.local/bin --no-color"
+    out=$(printf 'y\ny\ny\ny\n' | script -qefc "$wizard_cmd" /dev/null 2>&1); st=$?
     expect_status "19.19 interactive wizard failure test exits 0" 0 "$st"
     expect_match  "19.20 completion wizard surfaces real stderr" "completion generation failed: completion disk denied" "$out"
     expect_match  "19.21 hook wizard surfaces real stderr" "pre-commit hook install failed: hook denied by policy" "$out"
@@ -1682,9 +1579,9 @@ printf '\n[21] PATH setup idempotency and macOS bash rc target\n'
 if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2>&1; then
     reset_mocks
     sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
-    path_env="PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9"
-    path_cmd1="env -i $path_env MOCK_STATE_DIR=$h/state-1 sh $INSTALL_SH --install-dir=$h/.local/bin --variant=auto --no-color"
-    path_cmd2="env -i $path_env MOCK_STATE_DIR=$h/state-2 sh $INSTALL_SH --install-dir=$h/.local/bin --variant=auto --no-color"
+    path_env="PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9"
+    path_cmd1="env -i $path_env MOCK_STATE_DIR=$h/state-1 sh $INSTALL_SH --install-dir=$h/.local/bin --no-color"
+    path_cmd2="env -i $path_env MOCK_STATE_DIR=$h/state-2 sh $INSTALL_SH --install-dir=$h/.local/bin --no-color"
     out=$(printf 'y\ny\ny\nn\nn\n' | script -qefc "$path_cmd1" /dev/null 2>&1); st=$?
     expect_status "21.1 first bash PATH setup install exits 0" 0 "$st"
     out=$(printf 'y\ny\nn\nn\n' | script -qefc "$path_cmd2" /dev/null 2>&1); st=$?
@@ -1702,7 +1599,7 @@ if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2
 
     reset_mocks
     sb=$(build_sandbox Darwin x86_64 no no no); h=$(newhome)
-    mac_cmd="env -i PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_STATE_DIR=$h/state MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9 sh $INSTALL_SH --install-dir=$h/.local/bin --variant=auto --no-color"
+    mac_cmd="env -i PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_STATE_DIR=$h/state MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9 sh $INSTALL_SH --install-dir=$h/.local/bin --no-color"
     out=$(printf 'y\ny\ny\nn\nn\n' | script -qefc "$mac_cmd" /dev/null 2>&1); st=$?
     expect_status "21.5 macOS bash PATH setup install exits 0" 0 "$st"
     expect_file   "21.6 macOS bash PATH setup writes login profile" "$h/.bash_profile"
@@ -1711,9 +1608,9 @@ if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2
 
     reset_mocks
     sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
-    zsh_env="PATH=$sb/bin HOME=$h SHELL=/bin/zsh MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9"
-    zsh_cmd1="env -i $zsh_env MOCK_STATE_DIR=$h/zsh-state-1 sh $INSTALL_SH --install-dir=$h/.local/bin --variant=auto --no-color"
-    zsh_cmd2="env -i $zsh_env MOCK_STATE_DIR=$h/zsh-state-2 sh $INSTALL_SH --install-dir=$h/.local/bin --variant=auto --no-color"
+    zsh_env="PATH=$sb/bin HOME=$h SHELL=/bin/zsh MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9"
+    zsh_cmd1="env -i $zsh_env MOCK_STATE_DIR=$h/zsh-state-1 sh $INSTALL_SH --install-dir=$h/.local/bin --no-color"
+    zsh_cmd2="env -i $zsh_env MOCK_STATE_DIR=$h/zsh-state-2 sh $INSTALL_SH --install-dir=$h/.local/bin --no-color"
     out=$(printf 'y\ny\ny\ny\nn\n' | script -qefc "$zsh_cmd1" /dev/null 2>&1); st=$?
     expect_status "21.8 zsh completion setup install exits 0" 0 "$st"
     expect_file   "21.9 zsh completion file is written" "$h/.zfunc/_keyhog"
@@ -1741,8 +1638,8 @@ if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2
     # Pre-seed .bashrc with a $HOME-form keyhog block, literal '$HOME' preserved
     # by the single-quoted printf format string.
     printf '\n# keyhog\nexport PATH="$HOME/.local/bin:$PATH"\n' > "$h/.bashrc"
-    home_env="PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9"
-    home_cmd="env -i $home_env MOCK_STATE_DIR=$h/home-state sh $INSTALL_SH --install-dir=$h/.local/bin --variant=auto --no-color"
+    home_env="PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9"
+    home_cmd="env -i $home_env MOCK_STATE_DIR=$h/home-state sh $INSTALL_SH --install-dir=$h/.local/bin --no-color"
     out=$(printf 'y\ny\ny\nn\nn\n' | script -qefc "$home_cmd" /dev/null 2>&1); st=$?
     expect_status "21.14 install over a \$HOME-form rc exits 0" 0 "$st"
     expect_match  "21.15 \$HOME-form PATH entry recognized as already configured" "PATH already configured" "$out"

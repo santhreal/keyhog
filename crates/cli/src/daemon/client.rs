@@ -98,7 +98,7 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
                     "daemon version mismatch: this keyhog is {CLIENT_KEYHOG_VERSION} but the \
                      daemon at {} is running {keyhog_version}: it holds an OLDER detector \
                      corpus in memory and would return stale scan results. Restart it with \
-                     `keyhog daemon stop && keyhog daemon start`, or pass `--no-daemon` to \
+                     `keyhog daemon stop && keyhog daemon start`, or pass `--daemon=off` to \
                      scan in-process.",
                     socket_path.display(),
                 );
@@ -113,11 +113,11 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
             keyhog_version,
             ..
         } => bail!(
-            "daemon wire version mismatch: client expects {WIRE_VERSION}, daemon at {} reports {wire_version} (keyhog {keyhog_version}). Restart the daemon or pass --no-daemon.",
+            "daemon wire version mismatch: client expects {WIRE_VERSION}, daemon at {} reports {wire_version} (keyhog {keyhog_version}). Restart the daemon or pass --daemon=off.",
             socket_path.display(),
         ),
         other => bail!(
-            "daemon client: expected Hello reply, got {}. Restart the daemon or pass --no-daemon.",
+            "daemon client: expected Hello reply, got {}. Restart the daemon or pass --daemon=off.",
             response_kind(&other)
         ),
     }
@@ -164,7 +164,7 @@ impl Client {
                 "daemon client: connection closed before response. \
                  The daemon may have crashed or been restarted mid-request. \
                  Try `keyhog daemon stop && keyhog daemon start`, or rerun \
-                 the scan with `--no-daemon` to bypass the daemon path."
+                 the scan with `--daemon=off` to bypass the daemon path."
             ),
         }
     }

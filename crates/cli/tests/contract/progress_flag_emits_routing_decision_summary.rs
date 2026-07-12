@@ -16,7 +16,7 @@ fn progress_flag_emits_routing_decision_summary() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--progress",
             "--format",
             "json",

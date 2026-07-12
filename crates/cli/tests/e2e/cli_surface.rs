@@ -108,7 +108,7 @@ fn unknown_global_flag_is_usage_error_exit_2() {
 #[test]
 fn scan_text_secret_exit_1_and_redacts() {
     let (_d, p) = tmp_with("c.env", AWS);
-    let (so, _se, code) = out(&["scan", "--no-daemon", "--format", "text", &p]);
+    let (so, _se, code) = out(&["scan", "--daemon=off", "--format", "text", &p]);
     assert_eq!(code, Some(1), "a file with a live key must exit 1");
     assert!(
         so.contains("AK...YA"),
@@ -119,14 +119,14 @@ fn scan_text_secret_exit_1_and_redacts() {
 #[test]
 fn scan_text_clean_exit_0() {
     let (_d, p) = tmp_with("c.txt", CLEAN);
-    let (_so, _se, code) = out(&["scan", "--no-daemon", "--format", "text", &p]);
+    let (_so, _se, code) = out(&["scan", "--daemon=off", "--format", "text", &p]);
     assert_eq!(code, Some(0));
 }
 
 #[test]
 fn scan_json_is_valid_array_with_detector_id() {
     let (_d, p) = tmp_with("c.env", AWS);
-    let (so, _se, code) = out(&["scan", "--no-daemon", "--format", "json", &p]);
+    let (so, _se, code) = out(&["scan", "--daemon=off", "--format", "json", &p]);
     assert_eq!(code, Some(1));
     let v: serde_json::Value =
         serde_json::from_str(&so).expect("scan --format json must emit valid JSON");
@@ -143,7 +143,7 @@ fn scan_json_is_valid_array_with_detector_id() {
 #[test]
 fn scan_json_clean_is_empty_array_exit_0() {
     let (_d, p) = tmp_with("c.txt", CLEAN);
-    let (so, _se, code) = out(&["scan", "--no-daemon", "--format", "json", &p]);
+    let (so, _se, code) = out(&["scan", "--daemon=off", "--format", "json", &p]);
     assert_eq!(code, Some(0));
     let v: serde_json::Value = serde_json::from_str(&so).expect("valid JSON");
     assert_eq!(
@@ -156,7 +156,7 @@ fn scan_json_clean_is_empty_array_exit_0() {
 #[test]
 fn scan_jsonl_each_line_is_a_json_object() {
     let (_d, p) = tmp_with("c.env", AWS);
-    let (so, _se, code) = out(&["scan", "--no-daemon", "--format", "jsonl", &p]);
+    let (so, _se, code) = out(&["scan", "--daemon=off", "--format", "jsonl", &p]);
     assert_eq!(code, Some(1));
     let mut lines = 0;
     for line in so.lines().filter(|l| !l.trim().is_empty()) {
@@ -170,7 +170,7 @@ fn scan_jsonl_each_line_is_a_json_object() {
 #[test]
 fn scan_sarif_has_runs_and_results() {
     let (_d, p) = tmp_with("c.env", AWS);
-    let (so, _se, code) = out(&["scan", "--no-daemon", "--format", "sarif", &p]);
+    let (so, _se, code) = out(&["scan", "--daemon=off", "--format", "sarif", &p]);
     assert_eq!(code, Some(1));
     let v: serde_json::Value = serde_json::from_str(&so).expect("sarif is JSON");
     assert!(v["runs"].is_array(), "SARIF must have a runs array:\n{so}");
@@ -179,7 +179,7 @@ fn scan_sarif_has_runs_and_results() {
 #[test]
 fn scan_bogus_format_is_usage_error_exit_2() {
     let (_d, p) = tmp_with("c.env", AWS);
-    let (_so, _se, code) = out(&["scan", "--no-daemon", "--format", "yaml-not-real", &p]);
+    let (_so, _se, code) = out(&["scan", "--daemon=off", "--format", "yaml-not-real", &p]);
     assert_eq!(
         code,
         Some(2),
@@ -191,7 +191,7 @@ fn scan_bogus_format_is_usage_error_exit_2() {
 
 #[test]
 fn scan_stdin_finds_secret() {
-    let (so, _se, code) = out_stdin(&["scan", "--no-daemon", "--format", "json", "-"], AWS);
+    let (so, _se, code) = out_stdin(&["scan", "--daemon=off", "--format", "json", "-"], AWS);
     assert_eq!(code, Some(1));
     let v: serde_json::Value = serde_json::from_str(&so).expect("valid JSON from stdin scan");
     assert!(
@@ -203,13 +203,13 @@ fn scan_stdin_finds_secret() {
 #[test]
 fn scan_empty_dir_exit_0() {
     let d = TempDir::new().unwrap();
-    let (_so, _se, code) = out(&["scan", "--no-daemon", d.path().to_str().unwrap()]);
+    let (_so, _se, code) = out(&["scan", "--daemon=off", d.path().to_str().unwrap()]);
     assert_eq!(code, Some(0));
 }
 
 #[test]
 fn scan_nonexistent_path_errors_nonzero() {
-    let (_so, _se, code) = out(&["scan", "--no-daemon", "/no/such/path/keyhog-xyz"]);
+    let (_so, _se, code) = out(&["scan", "--daemon=off", "/no/such/path/keyhog-xyz"]);
     assert_ne!(
         code,
         Some(0),
@@ -220,14 +220,14 @@ fn scan_nonexistent_path_errors_nonzero() {
 #[test]
 fn scan_fast_mode_clean_exit_0() {
     let (_d, p) = tmp_with("c.txt", CLEAN);
-    let (_so, _se, code) = out(&["scan", "--no-daemon", "--fast", "--format", "json", &p]);
+    let (_so, _se, code) = out(&["scan", "--daemon=off", "--fast", "--format", "json", &p]);
     assert_eq!(code, Some(0));
 }
 
 #[test]
 fn scan_fast_mode_still_finds_aws_key() {
     let (_d, p) = tmp_with("c.env", AWS);
-    let (so, _se, code) = out(&["scan", "--no-daemon", "--fast", "--format", "json", &p]);
+    let (so, _se, code) = out(&["scan", "--daemon=off", "--fast", "--format", "json", &p]);
     assert_eq!(code, Some(1));
     assert!(
         so.contains("aws-access-key"),
@@ -238,7 +238,7 @@ fn scan_fast_mode_still_finds_aws_key() {
 #[test]
 fn scan_deep_mode_finds_aws_key() {
     let (_d, p) = tmp_with("c.env", AWS);
-    let (so, _se, code) = out(&["scan", "--no-daemon", "--deep", "--format", "json", &p]);
+    let (so, _se, code) = out(&["scan", "--daemon=off", "--deep", "--format", "json", &p]);
     assert_eq!(code, Some(1));
     assert!(
         so.contains("aws-access-key"),
@@ -253,7 +253,7 @@ fn scan_output_writes_findings_to_file() {
     let outfile = outdir.path().join("report.json");
     let (_so, _se, code) = out(&[
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--format",
         "json",
         "--output",
@@ -272,7 +272,7 @@ fn scan_output_writes_findings_to_file() {
 #[test]
 fn scan_no_color_text_has_no_ansi_escape() {
     let (_d, p) = tmp_with("c.env", AWS);
-    let (so, _se, _code) = out(&["scan", "--no-daemon", "--no-color", "--format", "text", &p]);
+    let (so, _se, _code) = out(&["scan", "--daemon=off", "--no-color", "--format", "text", &p]);
     assert!(
         !so.contains('\u{1b}'),
         "--no-color output must contain no ANSI escapes"

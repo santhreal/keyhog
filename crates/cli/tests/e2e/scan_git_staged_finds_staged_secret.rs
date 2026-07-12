@@ -53,7 +53,7 @@ fn scan_git_staged_finds_staged_secret() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-staged",
             "--format",
             "json",

@@ -23,7 +23,7 @@ fn malformed_config_fails_closed_with_one_operator_error() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

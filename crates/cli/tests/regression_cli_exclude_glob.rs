@@ -1,7 +1,7 @@
 //! Regression: `keyhog scan --exclude-paths <glob>...` prunes the walked
 //! filesystem tree, exercised specifically for the `**/skip/**` /
 //! nested-`skip/`-subtree scenario through the REAL shipped binary
-//! (`--no-daemon`, `--backend cpu`).
+//! (`--daemon=off`, `--backend cpu`).
 //!
 //! This file is DISTINCT from `regression_cli_glob_filters.rs` (which pins the
 //! flat `a.rs`/`b.txt`/`sub` cases): here the fixtures are `.env` files under a
@@ -114,7 +114,7 @@ fn run_json(root: &Path, extra: &[&str]) -> (i32, Vec<Finding>, Vec<u8>, String)
     let root_str = root.to_str().expect("utf8 tempdir path").to_owned();
     let mut args: Vec<String> = vec![
         "scan".into(),
-        "--no-daemon".into(),
+        "--daemon=off".into(),
         "--backend".into(),
         "cpu".into(),
         "--no-suppress-test-fixtures".into(),
@@ -373,7 +373,7 @@ fn bare_exclude_flag_is_usage_error() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--path",
@@ -428,7 +428,7 @@ fn text_summary_reflects_skip_exclude() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--no-suppress-test-fixtures",

@@ -32,7 +32,7 @@ fn assert_empty_keyword_rejected(field: &str, toml_line: &str) {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

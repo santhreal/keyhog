@@ -48,7 +48,7 @@ fn scan_git_diff_modified_tracked_file() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-diff",
             "HEAD",
             "--format",

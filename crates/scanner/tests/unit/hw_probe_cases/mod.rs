@@ -14,7 +14,6 @@ mod gpu_solo_bytes_high_tier_256mb;
 mod gpu_tier_thresholds_are_monotonic;
 mod scan_backend_label_cpu_fallback;
 mod scan_backend_label_gpu;
-mod scan_backend_label_megascan;
 mod scan_backend_label_simd;
 mod select_backend_rejects_software_gpu;
 mod select_backend_test_gpu_override;

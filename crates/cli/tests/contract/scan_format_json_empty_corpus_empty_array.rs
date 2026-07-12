@@ -10,7 +10,7 @@ fn scan_format_json_empty_corpus_empty_array() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

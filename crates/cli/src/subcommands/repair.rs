@@ -56,7 +56,6 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
     }
 
     // 2. Reinstall a known-good release binary (latest, or pinned --version).
-    let want_cuda = installer::wants_cuda_variant(args.variant.as_deref())?;
     let client = installer::http_client()?;
     let release = installer::resolve_release(
         &client,
@@ -64,7 +63,7 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
         args.release_api_base.as_deref(),
     )
     .await?;
-    let asset = installer::select_asset(&release, want_cuda)?;
+    let asset = installer::select_asset(&release)?;
     let expected_tag = release.tag_name.clone();
     let allow_explicit_downgrade = args.version.is_some();
     println!("  downloading    {} ({})", asset.name, release.tag_name);

@@ -10,7 +10,7 @@ fn huge_exclude_paths_glob_completes() {
     std::fs::write(dir.path().join("keep.txt"), "hello\n").unwrap();
     let mut cmd = Command::new(binary());
     cmd.arg("scan")
-        .args(["--no-daemon", "--backend", "simd", "--format", "json"])
+        .args(["--daemon=off", "--backend", "simd", "--format", "json"])
         .arg(dir.path());
     for i in 0..200 {
         cmd.arg("--exclude-paths").arg(format!("**/noise{i}.txt"));

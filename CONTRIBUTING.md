@@ -21,7 +21,7 @@ adversarial test alongside the proving test.
 - `crates/verifier/` - live credential probes (auth/identity
   endpoints) for `--verify`.
 - `crates/cli/` - the `keyhog` binary, subcommands, args, daemon.
-- `detectors/` - 919 TOML detector specs, the project's moat. No
+- `detectors/` - TOML detector specs, the project's moat. No
   Rust code touched when you add one.
 - `fuzz/` - cargo-fuzz harnesses, one target per parser/scanner sink.
 - `ml/` - Python model training and Rust/Python feature-parity checks

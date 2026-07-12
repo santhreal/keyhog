@@ -13,7 +13,7 @@
 //! they fire on the always-available CPU/aho-corasick path and do NOT depend on
 //! Hyperscan/SIMD/GPU. github maps to the SAME id (`github-classic-pat`) on both
 //! the named-detector and simdsieve hot-pattern paths, so no host-dependent
-//! `hot-*` variant appears. All runs force `--backend cpu --no-daemon` with
+//! `hot-*` variant appears. All runs force `--backend cpu --daemon=off` with
 //! `KEYHOG_NO_GPU=1`, so no accelerator is assumed.
 //!
 //! Every assertion pins a concrete value (exact exit code, detector id, service,
@@ -53,13 +53,13 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// Run `keyhog scan --no-daemon --backend cpu --no-suppress-test-fixtures
+/// Run `keyhog scan --daemon=off --backend cpu --no-suppress-test-fixtures
 /// --format <format> <paths…>`. Returns (exit code, stdout, stderr).
 fn scan_paths(paths: &[&Path], format: &str) -> (Option<i32>, String, String) {
     let mut cmd = Command::new(binary());
     cmd.args([
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--backend",
         "cpu",
         "--no-suppress-test-fixtures",

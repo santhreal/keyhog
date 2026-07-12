@@ -16,7 +16,7 @@
 //! The product is the binary (`CARGO_BIN_EXE_keyhog`); these drive it the
 //! way CI gates and SARIF/CSV consumers do.
 //!
-//! `--no-daemon` is passed on every scan so behavior never depends on
+//! `--daemon=off` is passed on every scan so behavior never depends on
 //! whether a `keyhog daemon` socket happens to exist on the test host
 //! (see `scan.rs::daemon_route`): the in-process orchestrator is the
 //! single source of truth for the exit-code ladder we assert.
@@ -40,7 +40,7 @@ const AWS_KEY_FIXTURE: &str = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQ
 /// A file with no credential whatsoever -> the empty-corpus case.
 const CLEAN_FIXTURE: &str = "fn main() { println!(\"hello, world\"); }\n";
 
-/// Run `keyhog scan --no-daemon --format <fmt> <file>` over a temp file
+/// Run `keyhog scan --daemon=off --format <fmt> <file>` over a temp file
 /// containing `content`. Returns (stdout, stderr, exit-code).
 fn scan_with_format(content: &str, fmt: &str) -> (String, String, Option<i32>) {
     let dir = TempDir::new().expect("tempdir");
@@ -52,7 +52,7 @@ fn scan_with_format(content: &str, fmt: &str) -> (String, String, Option<i32>) {
 
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg("simd")
         .arg("--format")
@@ -81,7 +81,7 @@ fn scan_to_output_file(content: &str, fmt: &str) -> (String, Option<i32>) {
 
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg("simd")
         .arg("--format")
@@ -1248,7 +1248,7 @@ fn unknown_format_value_is_clap_usage_error() {
     std::fs::write(&path, CLEAN_FIXTURE).expect("write fixture");
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--format")
         .arg("yaml") // not a valid OutputFormat variant
         .arg(&path)
@@ -1272,7 +1272,7 @@ fn default_format_is_text() {
     std::fs::write(&path, CLEAN_FIXTURE).expect("write fixture");
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--backend")
         .arg("simd")
         .arg(&path)
@@ -1306,7 +1306,7 @@ fn format_value_is_case_sensitive() {
     std::fs::write(&path, CLEAN_FIXTURE).expect("write fixture");
     let output = Command::new(binary())
         .arg("scan")
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg("--format")
         .arg("JSON") // uppercase: not a valid variant when ignore_case=false
         .arg(&path)

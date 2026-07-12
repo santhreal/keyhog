@@ -9,8 +9,6 @@ pub use crate::engine::{
     set_perf_trace_enabled, set_profile_enabled, CompiledScanner, CompiledScannerRuntime,
     GpuInitPolicy, GpuLiteralArtifact, GpuLiteralArtifacts,
 };
-#[allow(deprecated)]
-pub use crate::engine::{megascan_input_len, megascan_input_len_bounds, set_megascan_input_len};
 pub use crate::error::{Result, ScanError};
 pub use crate::hw_probe::{probe_hardware, select_backend, HardwareCaps, ScanBackend};
 pub use crate::types::{

@@ -28,6 +28,8 @@ fn internal_planning_artifacts_stay_out_of_public_repo() {
         "docs/GPU_DETECTION_REWRITE.md",
         "docs/GPU_OOM_INNOVATION_CATALOG.md",
         "benchmarks/docs/RECALL_GAP.md",
+        "BACKLOG.md",
+        "planning/vyre-acceleration",
     ] {
         assert!(
             !repo.join(retired).exists(),

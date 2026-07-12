@@ -19,7 +19,7 @@ fn concurrent_json_output_integrity() {
             let output = Command::new(binary())
                 .args([
                     "scan",
-                    "--no-daemon",
+                    "--daemon=off",
                     "--backend",
                     "simd",
                     "--format",

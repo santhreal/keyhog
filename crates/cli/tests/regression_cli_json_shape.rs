@@ -89,12 +89,12 @@ fn clean_fixture() -> (TempDir, PathBuf) {
     (dir, path)
 }
 
-/// Run `keyhog scan --no-daemon --backend cpu --format json <path>`.
+/// Run `keyhog scan --daemon=off --backend cpu --format json <path>`.
 fn run_json(path: &PathBuf) -> (Option<i32>, String, String) {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--no-suppress-test-fixtures",

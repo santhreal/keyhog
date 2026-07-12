@@ -5,7 +5,7 @@ use keyhog_scanner::hw_probe::ScanBackend;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-use super::{canonical_execution_backend, AUTOROUTE_CALIBRATION_TRIALS, AUTOROUTE_GPU_WARM_TRIALS};
+use super::{AUTOROUTE_CALIBRATION_TRIALS, AUTOROUTE_GPU_WARM_TRIALS};
 
 pub(super) fn selected_backend_margin_ns(
     selected: ScanBackend,
@@ -79,7 +79,7 @@ impl AutorouteDecision {
         let gpu_timing =
             gpu_ms.map(|ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS));
         Self {
-            backend: canonical_execution_backend(backend).label().to_string(),
+            backend: backend.label().to_string(),
             sample_bytes,
             sample_chunks,
             correctness_digest: 0xA11D_0B57_A11D_0B57,
@@ -102,7 +102,7 @@ impl AutorouteDecision {
         gpu_timing: Option<BackendTimingEvidence>,
     ) -> Self {
         Self {
-            backend: canonical_execution_backend(backend).label().to_string(),
+            backend: backend.label().to_string(),
             sample_bytes,
             sample_chunks,
             correctness_digest,
@@ -181,7 +181,7 @@ impl AutorouteDecision {
         match backend {
             ScanBackend::SimdCpu => Some(&self.simd_timing),
             ScanBackend::CpuFallback => self.cpu_timing.as_ref(),
-            ScanBackend::Gpu | ScanBackend::MegaScan => self.gpu_timing.as_ref(),
+            ScanBackend::Gpu => self.gpu_timing.as_ref(),
             _ => None,
         }
     }
@@ -339,7 +339,7 @@ fn backend_overhead_rank(backend: ScanBackend) -> u8 {
     match backend {
         ScanBackend::SimdCpu => 0,
         ScanBackend::CpuFallback => 1,
-        ScanBackend::Gpu | ScanBackend::MegaScan => 2,
+        ScanBackend::Gpu => 2,
         _ => 3,
     }
 }

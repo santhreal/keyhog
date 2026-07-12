@@ -11,7 +11,7 @@ fn git_history_on_non_repository_exits_nonzero() {
     std::fs::write(dir.path().join("plain.txt"), "hello\n").expect("write");
 
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--git-history"])
+        .args(["scan", "--daemon=off", "--git-history"])
         .arg(dir.path())
         .output()
         .expect("spawn");
@@ -30,7 +30,7 @@ fn github_org_with_invalid_token_exits_nonzero() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--fast",
             "--github-org",
             "keyhog-d1-nonexistent-org",

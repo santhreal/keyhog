@@ -201,10 +201,10 @@ fn binary() -> PathBuf {
 /// itself a self-scan tripwire. Fires `github-classic-pat` at confidence 0.9.
 const PLANTED: &str = concat!("ghp_", "1234567890123456789012345678902PDSiF");
 
-/// Run `keyhog scan --no-daemon --backend simd <extra…> <path>` hermetically.
+/// Run `keyhog scan --daemon=off --backend simd <extra…> <path>` hermetically.
 fn scan(path: &Path, extra: &[&str]) -> (Option<i32>, String) {
     let mut cmd = Command::new(binary());
-    cmd.args(["scan", "--no-daemon"]);
+    cmd.args(["scan", "--daemon=off"]);
     if !extra.contains(&"--backend") {
         cmd.args(["--backend", "simd"]);
     }

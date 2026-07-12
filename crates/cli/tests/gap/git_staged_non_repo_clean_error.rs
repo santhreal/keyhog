@@ -19,7 +19,7 @@ fn git_staged_outside_repo_fails_cleanly_with_actionable_message() {
     std::fs::write(dir.path().join("plain.txt"), "hello\n").expect("write");
 
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--git-staged"])
+        .args(["scan", "--daemon=off", "--git-staged"])
         .arg(dir.path())
         .output()
         .expect("spawn");

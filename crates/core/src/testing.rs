@@ -285,7 +285,7 @@ impl CoreTestApi for TestApi {
     }
 
     fn merkle_record(&self, index: &MerkleIndex, path: PathBuf, content_hash: [u8; 32]) {
-        index.record(path, content_hash);
+        index.seed_for_testing(path, 0, 0, content_hash);
     }
 
     fn merkle_is_empty(&self, index: &MerkleIndex) -> bool {
@@ -318,7 +318,7 @@ impl CoreTestApi for TestApi {
         size: u64,
         content_hash: [u8; 32],
     ) {
-        index.record_with_metadata(path, mtime_ns, size, content_hash);
+        index.seed_for_testing(path, mtime_ns, size, content_hash);
     }
 
     fn merkle_record_chunk_at_offset_and_check_unchanged(

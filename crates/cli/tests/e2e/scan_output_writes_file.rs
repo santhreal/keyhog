@@ -17,7 +17,7 @@ fn scan_output_writes_file() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--format",
             "json",
             "--output",

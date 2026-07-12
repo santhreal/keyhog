@@ -63,44 +63,24 @@ fn gpu_batch_input_limit_matches_documented_vram_table() {
     }
 }
 
-#[test]
-#[allow(deprecated)]
-fn retired_megascan_budget_api_forwards_to_gpu_batch_input_limit() {
-    assert_eq!(
-        keyhog_scanner::megascan_input_len_bounds(),
-        keyhog_scanner::gpu_batch_input_limit_bounds()
-    );
-    assert_eq!(
-        keyhog_scanner::megascan_input_len(),
-        keyhog_scanner::gpu_batch_input_limit()
-    );
-}
-
 // ---------------------------------------------------------------------------
-// 2. The collapsed `ScanBackend` model is EXACTLY four variants with stable
-//    labels. No fifth engine snuck back in alongside the dead-route removal.
+// 2. `ScanBackend` names the three real engines exactly once.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn scan_backend_is_exactly_the_four_collapsed_variants() {
+fn scan_backend_is_exactly_the_three_real_engines() {
     // Exhaustive match: adding/removing a variant forces this test to be
     // updated, and the label set below pins coherence with --help / banner.
     let all = [
         ScanBackend::Gpu,
-        ScanBackend::MegaScan,
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
     ];
     let labels: Vec<&'static str> = all.iter().map(|b| b.label()).collect();
     assert_eq!(
         labels,
-        vec![
-            "gpu-region-presence",
-            "gpu-mega-scan",
-            "simd-regex",
-            "cpu-fallback"
-        ],
-        "the four collapsed backend labels must stay stable and in order"
+        vec!["gpu-region-presence", "simd-regex", "cpu-fallback"],
+        "the three backend labels must stay stable and in order"
     );
     // Labels are distinct (no two variants alias to the same operator string).
     let mut sorted = labels.clone();
@@ -108,7 +88,7 @@ fn scan_backend_is_exactly_the_four_collapsed_variants() {
     sorted.dedup();
     assert_eq!(
         sorted.len(),
-        4,
+        3,
         "every backend label must be unique; got duplicates in {labels:?}"
     );
 }

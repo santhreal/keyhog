@@ -46,12 +46,12 @@ const AWS_DETECTOR: &str = "aws-access-key";
 /// The exact SARIF `partialFingerprints` key the reporter emits (versioned).
 const FP_KEY: &str = "keyhog/credentialHash/v1";
 
-/// Run `keyhog scan --no-daemon --backend cpu <extra…> <path>` hermetically and
+/// Run `keyhog scan --daemon=off --backend cpu <extra…> <path>` hermetically and
 /// return (exit-code, stdout, stderr). Clears `KEYHOG_BACKEND` so the flag is
 /// the only routing input; `NO_COLOR` keeps stderr progress plain.
 fn scan(path: &Path, extra: &[&str]) -> (Option<i32>, String, String) {
     let mut cmd = Command::new(binary());
-    cmd.args(["scan", "--no-daemon", "--backend", "cpu"]);
+    cmd.args(["scan", "--daemon=off", "--backend", "cpu"]);
     cmd.args(extra);
     cmd.arg(path);
     cmd.env_remove("KEYHOG_BACKEND");

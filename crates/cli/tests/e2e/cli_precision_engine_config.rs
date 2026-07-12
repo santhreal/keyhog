@@ -27,7 +27,7 @@ fn scan_with_args(fixture: &str, args: &[&str]) -> (String, String, Option<i32>)
         .arg("scan")
         .args(["--backend", "simd"])
         .args(args)
-        .arg("--no-daemon")
+        .arg("--daemon=off")
         .arg(&path)
         .output()
         .expect("spawn keyhog scan");
@@ -117,7 +117,7 @@ fn precision_mode_single_layer_decode_depth_one() {
             "--precision",
             "--format",
             "json",
-            "--no-daemon",
+            "--daemon=off",
         ])
         .arg(&path)
         .output()
@@ -239,7 +239,7 @@ fn precision_mode_uses_highest_floor_global_vs_per_detector() {
             "--precision",
             "--format",
             "json",
-            "--no-daemon",
+            "--daemon=off",
         ])
         .arg(dir.path())
         .output()

@@ -20,7 +20,7 @@
 //!     and MUST collapse identical values to a single finding.
 //!
 //! Every assertion pins a concrete value (exact integer / exact string / exact
-//! exit code). None is a bare `!is_empty` / `is_ok`. `--no-daemon`,
+//! exit code). None is a bare `!is_empty` / `is_ok`. `--daemon=off`,
 //! `--backend cpu`, and `--no-suppress-test-fixtures` keep every run hermetic.
 
 use std::path::{Path, PathBuf};
@@ -64,7 +64,7 @@ fn clean_file() -> (TempDir, PathBuf) {
     (dir, p)
 }
 
-/// Run `keyhog scan --no-daemon --backend cpu --no-suppress-test-fixtures
+/// Run `keyhog scan --daemon=off --backend cpu --no-suppress-test-fixtures
 /// [--dedup <scope>] [extra…] --format <fmt> <paths…>`.
 /// Returns (exit code, stdout, stderr).
 fn run_scan(
@@ -76,7 +76,7 @@ fn run_scan(
     let mut cmd = Command::new(binary());
     cmd.args([
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--backend",
         "cpu",
         "--no-suppress-test-fixtures",

@@ -43,7 +43,7 @@ fn daemon_site_docs_do_not_claim_forced_daemon_fallback() {
             "--daemon=auto",
             "opportunistically use a live daemon",
             "--daemon=off",
-            "--no-daemon",
+            "--daemon=off",
         ] {
             assert!(
                 doc.contains(required),

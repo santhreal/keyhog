@@ -79,7 +79,7 @@ fn combined_fixture() -> (TempDir, PathBuf) {
     (dir, path)
 }
 
-/// Run `keyhog scan --no-daemon --backend cpu --no-suppress-test-fixtures
+/// Run `keyhog scan --daemon=off --backend cpu --no-suppress-test-fixtures
 /// <extra…> <path>` and return (exit-code, stdout, stderr). `--backend cpu` is
 /// always available (unlike `simd`, which fail-closes on the `ci` build), so
 /// this is host-independent.
@@ -87,7 +87,7 @@ fn scan(path: &Path, extra: &[&str]) -> (Option<i32>, String, String) {
     let mut cmd = Command::new(binary());
     cmd.args([
         "scan",
-        "--no-daemon",
+        "--daemon=off",
         "--backend",
         "cpu",
         "--no-suppress-test-fixtures",

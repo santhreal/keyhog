@@ -315,11 +315,6 @@ fn org_backend_arm_gpu_is_live() {
 }
 
 #[test]
-fn org_backend_arm_megascan_is_live() {
-    assert_backend_variant_live("MegaScan");
-}
-
-#[test]
 fn org_backend_arm_simdcpu_is_live() {
     assert_backend_variant_live("SimdCpu");
 }
@@ -351,8 +346,8 @@ fn org_backend_enum_arm_count_matches_label_impl() {
     }
     assert_eq!(
         variants.len(),
-        4,
-        "ORG GAP [backend]: expected exactly 4 ScanBackend variants (Gpu, MegaScan, SimdCpu, \
+        3,
+        "ORG GAP [backend]: expected exactly 3 ScanBackend variants (Gpu, SimdCpu, \
          CpuFallback); found {}: {variants:?}. A new arm must be wired into selection, dispatch, \
          label, and the backend-parity matrix before it counts as live.",
         variants.len(),
@@ -1226,7 +1221,7 @@ fn meta_reexport_parser_counts_curated_aggregation_points() {
         "harness: scanner aggregation count drifted: {counts:?}"
     );
     assert_eq!(
-        counts["sources"], 2,
+        counts["sources"], 1,
         "harness: sources aggregation count drifted: {counts:?}"
     );
     assert_eq!(

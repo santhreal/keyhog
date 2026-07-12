@@ -38,7 +38,7 @@ fn git_staged_secret_in_index_exit_one() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--git-staged",
             "--format",
             "json",

@@ -4,6 +4,50 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [Unreleased]
 
+### Changed
+
+- Replaced the stale VYRE audit/roadmap with one canonical integration reference
+  that documents only the shipped v0.6.4 boundaries, parity contract, build
+  features, diagnostics, and autoroute ownership. Cross-platform uninstall
+  semantics now live with installation and exit-code documentation instead of
+  an expired host-status snapshot.
+- Unified Linux packaging around one `keyhog-linux-x86_64` artifact. The default
+  GPU feature already contains dynamically loaded VYRE CUDA and WGPU drivers,
+  so CUDA/WGPU eligibility now belongs solely to runtime self-test and persisted
+  autoroute evidence rather than a build-time toolkit heuristic.
+- Consolidated `keyhog-core` and `keyhog-sources` root exports behind their
+  curated API modules, separated generic phase-2 regex construction from scan
+  execution, and removed dead convenience wrappers and warning allowances.
+  The organization gate now passes its root-layout, re-export, responsibility,
+  and shipped-code utilization contracts without relaxing their thresholds.
+- Moved OOB verification and `.keyhogignore.toml` into the canonical mdBook,
+  documented the `[http]` policy and missing scan/maintenance flags, corrected
+  suppression and daemon-status semantics, and replaced copied detector counts
+  with commands that query the installed corpus.
+
+### Removed
+
+- Removed the public-tree internal backlog and VYRE execution plan, plus
+  one-off detector/contract mutation scripts that guessed verification
+  endpoints, rewrote fixtures from current output, or depended on developer
+  `/tmp` files. Maintained generation remains under `tools/`; release and
+  organization entrypoints remain under `scripts/`. Absence gates now reject
+  reintroduction of public `BACKLOG.md` or `planning/vyre-acceleration` state.
+- Removed the duplicate `ScanBackend::MegaScan` identity and its deprecated
+  `megascan_input_len*` Rust/CLI/TOML aliases. The three real engines are now
+  represented exactly once: GPU region presence, Hyperscan SIMD, and portable
+  CPU. Persisted autoroute evidence can no longer mint two labels for the same
+  GPU execution path.
+- Removed the `--no-daemon` compatibility flag. `--daemon=auto|on|off` is the
+  single daemon policy across CLI help, release scripts, diagnostics, tests,
+  and documentation. `--daemon=off` combined with `--daemon-socket` now fails
+  visibly instead of ignoring the socket.
+- Removed the duplicate `keyhog-linux-x86_64-cuda` release job, `cuda` Cargo
+  feature alias, installer `--variant=cpu|cuda` surface, update/repair variant
+  resolver, and CUDA-asset fallback ladder. Those paths built the same feature
+  graph under different names and incorrectly required a developer toolkit for
+  a runtime-dynamically-loaded backend.
+
 ## [0.5.41] - 2026-07-11
 
 ### Added
@@ -194,7 +238,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Window the decode-splice context to ±512 B around each decoded blob instead of copying the entire parent chunk per candidate. A candidate-dense source file (every quoted string / `key=value` / hex-or-base64 run is a candidate) previously spawned one parent-sized decoded chunk *per candidate*, each rescanned and recursively re-decoded, an O(candidates × file_size) blowup that pinned a single 156 KB Linux driver at ~15 s. Full Linux-kernel scan (94,825 files) drops from ~85 s to ~7 s; the worst single file from ~15 s to ~0.2 s; decode-through recall unchanged.
 - Bound the GPU AC prefilter's per-shard readback and reroute dense literal-prefix batches through the SIMD coalesced scanner before CPU phase 2 explodes. Forced-GPU CredData now completes in ~5.0 s instead of timing out at 45 s / 5.1 GB RSS, with byte-stable detector/hash/file/offset parity against the current SIMD run.
 - Reuse the batch ML feature vectors for small-batch CPU fallback instead of recomputing text/context features after the GPU crossover gate declines the batch. This removes a redundant feature-extraction pass on scanner chunks that emit fewer than 64 ML candidates while keeping scalar MoE scores byte-identical.
-- Route CPU/SIMD filesystem scans through the fused read+scan pipeline so source walking and coalesced scanning overlap across the Rayon pool. `--batch-pipeline` or `[system].batch_pipeline = true` remains available for A/B verification against the coalesced batch path; CredData SIMD `--no-daemon` keeps byte-identical 2,263-finding JSON output and drops from 5.14 s to 3.57 s on the measured RTX 5090 host.
+- Route CPU/SIMD filesystem scans through the fused read+scan pipeline so source walking and coalesced scanning overlap across the Rayon pool. `--batch-pipeline` or `[system].batch_pipeline = true` remains available for A/B verification against the coalesced batch path; CredData SIMD `--daemon=off` keeps byte-identical 2,263-finding JSON output and drops from 5.14 s to 3.57 s on the measured RTX 5090 host.
 - Keep default/auto filesystem scans eligible for the fused read+scan pipeline on GPU hosts unless `--backend gpu`/`--backend megascan` is explicitly forced. CredData-shaped many-file scans no longer pay the single scanner-thread batch path when auto batch routing would pick SIMD for the 1 MiB filesystem windows anyway.
 - Bound fused filesystem prefetch depth to the Rayon worker count instead of a fixed 256 batches. CredData SIMD direct scans keep the same 5,752 raw findings while dropping from 4.75 s / 2.55 GB RSS to about 4.03 s / 1.84 GB RSS on the measured host; the benchmark adapter row stays detection-identical at 2,577 normalized findings.
 - Make the JSON escape decoder borrow only escaped string spans instead of allocating every plain JSON key/value before discarding it. Escaped JSON recall stays covered by the splice contract, unescaped JSON emits no redundant `/json` layer, and the CredData benchmark row remains detection-identical while trimming allocator work on large JSON/NDJSON fixtures.
@@ -1738,7 +1782,7 @@ dropped primary firing alone - verified before edit.
   of paying the ~3 s `CompiledScanner::compile` cold start.
   Measured **105× speedup** (7 ms via daemon vs 740 ms in-process)
   on a real GitHub PAT, same detector + hash + offset in both
-  paths. `--no-daemon` forces the in-process path. `--verify`,
+  paths. `--daemon=off` forces the in-process path. `--verify`,
   `--baseline`, directory walks, git-staged scans, and archive
   decoding stay in-process by design (the daemon doesn't replicate
   that pipeline).
@@ -1799,7 +1843,7 @@ dropped primary firing alone - verified before edit.
   per-scan telemetry after each `scanner.scan(...)` and resets;
   client merges the values into its own `OnceLock<Telemetry>` via
   two new public helpers (`add_example_suppressions(n)`,
-  `append_events(iter)`). Verified locally: `--no-daemon` AND a
+  `append_events(iter)`). Verified locally: `--daemon=off` AND a
   fresh daemon both emit "No real secrets - but 6 example/test
   keys suppressed. Pass --dogfood to see them."
 - **`demo-secret.env` summary regressed to the clean-repo

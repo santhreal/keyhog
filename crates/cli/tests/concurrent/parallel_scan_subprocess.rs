@@ -24,7 +24,7 @@ fn parallel_scan_subprocesses_emit_valid_json() {
             Command::new(binary())
                 .args([
                     "scan",
-                    "--no-daemon",
+                    "--daemon=off",
                     "--backend",
                     "simd",
                     "--format",

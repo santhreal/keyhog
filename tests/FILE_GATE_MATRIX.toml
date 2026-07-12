@@ -2193,13 +2193,6 @@ adversarial = true
 e2e_linked = true
 
 [[module]]
-path = "crates/cli/src/installer/variant.rs"
-boundary = true
-error = true
-adversarial = true
-e2e_linked = true
-
-[[module]]
 path = "crates/cli/src/orchestrator_config/calibration.rs"
 boundary = true
 error = true

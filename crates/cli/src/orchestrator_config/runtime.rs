@@ -85,12 +85,7 @@ fn explicit_cpu_backend(args: &ScanArgs) -> bool {
     args.backend
         .as_deref()
         .and_then(keyhog_scanner::hw_probe::parse_backend_str)
-        .is_some_and(|backend| {
-            !matches!(
-                backend,
-                keyhog_scanner::ScanBackend::Gpu | keyhog_scanner::ScanBackend::MegaScan
-            )
-        })
+        .is_some_and(|backend| !matches!(backend, keyhog_scanner::ScanBackend::Gpu))
 }
 
 #[derive(Debug, Clone)]

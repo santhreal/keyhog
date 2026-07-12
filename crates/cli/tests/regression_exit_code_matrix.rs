@@ -48,12 +48,12 @@ fn binary() -> PathBuf {
 /// host-independent `cpu` backend.)
 const PLANTED: &str = concat!("ghp_", "1234567890123456789012345678902PDSiF");
 
-/// Run `keyhog scan --no-daemon --backend <backend> <extra…> <path>`
+/// Run `keyhog scan --daemon=off --backend <backend> <extra…> <path>`
 /// hermetically: the daemon route is disabled and every ambient backend/gpu env
 /// override is stripped so the forced backend is the only routing input.
 fn scan_with(backend: &str, path: &Path, extra: &[&str]) -> (Option<i32>, String, String) {
     let mut cmd = Command::new(binary());
-    cmd.args(["scan", "--no-daemon", "--backend", backend]);
+    cmd.args(["scan", "--daemon=off", "--backend", backend]);
     cmd.args(extra);
     cmd.arg(path);
     cmd.env_remove("KEYHOG_BACKEND");
@@ -212,7 +212,7 @@ fn unknown_flag_exits_two() {
     let path = dir.path().join("clean.txt");
     std::fs::write(&path, "nothing sensitive\n").expect("write clean");
     let mut cmd = Command::new(binary());
-    cmd.args(["scan", "--no-daemon", "--this-flag-does-not-exist"]);
+    cmd.args(["scan", "--daemon=off", "--this-flag-does-not-exist"]);
     cmd.arg(&path);
     let out = cmd.output().expect("spawn keyhog scan");
     assert_eq!(

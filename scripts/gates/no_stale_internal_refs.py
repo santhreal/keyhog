@@ -21,6 +21,8 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 
 PATTERNS = [
     "EXECUTION_PLAN",
+    "BACKLOG.md",
+    "planning/vyre-acceleration",
     "docs/legendary",
     "GPU_DETECTION_REWRITE",
     "ALL_VECTORS_GAPS",
@@ -153,6 +155,8 @@ def self_test() -> int:
         "see TESTING_PROGRAM.md section 3": True,
         "old backlog cli-surface-bloat.md": True,
         "see docs/EXECUTION_PLAN.md (now purged)": True,
+        "see BACKLOG.md for the remaining work": True,
+        "open planning/vyre-acceleration/02-keyhog-adoption-plan.md": True,
         "## Phase Design — autoroute": True,
         "Phase tasks (see task list #31-#43)": True,
         "Session findings (2026-06-27)": True,

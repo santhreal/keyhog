@@ -9,17 +9,13 @@
 //! routes (DEDUP / INSUFFICIENCY):
 //!   * `ac_gpu_program` (a `classic_ac_bounded_ranges` `vyre::Program`) — had
 //!     zero callers; `GpuLiteralSet` is the single on-GPU AC trigger engine.
-//!   * `rule_pipeline` (the `RulePipeline` regex-NFA "MegaScan" engine) — its
-//!     `scan` was never invoked; the compatibility MegaScan API variant routes
-//!     to the SAME region-presence backend as `--backend gpu`. The
-//!     cached wrapper, its diagnostic builder, and fixed-size aliases were
-//!     deleted as dead surface; only adaptive byte-budget sizing remains in
-//!     [`super::gpu_input_budget`].
+//!   * `rule_pipeline` (the retired `RulePipeline` regex-NFA engine) — its
+//!     `scan` was never invoked. The cached wrapper, duplicate backend identity,
+//!     diagnostic builder, and fixed-size aliases were deleted as dead surface;
+//!     only adaptive byte-budget sizing remains in [`super::gpu_input_budget`].
 //! [`GpuLiteralSet`]: vyre_libs::scan::GpuLiteralSet
 
-use super::gpu_lazy_helpers::{
-    compile_gpu_literal_set, report_gpu_matcher_unavailable, GpuMatcherKind,
-};
+use super::gpu_lazy_helpers::{compile_gpu_literal_set, report_gpu_literal_matcher_unavailable};
 use super::*;
 
 impl CompiledScanner {
@@ -39,7 +35,7 @@ impl CompiledScanner {
                 match compile_gpu_literal_set(literals, "lit") {
                     Ok(matcher) => Some(matcher),
                     Err(error) => {
-                        report_gpu_matcher_unavailable(&error, GpuMatcherKind::Literal);
+                        report_gpu_literal_matcher_unavailable(&error);
                         None
                     }
                 }

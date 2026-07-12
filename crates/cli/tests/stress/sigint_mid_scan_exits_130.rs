@@ -12,7 +12,7 @@ fn sigint_mid_scan_exits_130() {
         // enough to be interrupted mid-flight: an un-calibrated `auto` scan
         // fails closed (exit 2) before the 800 ms SIGINT, which would race the
         // signal contract this test exists to verify.
-        .args(["scan", "--backend", "simd", "--no-daemon"])
+        .args(["scan", "--backend", "simd", "--daemon=off"])
         .arg(workspace_detectors())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())

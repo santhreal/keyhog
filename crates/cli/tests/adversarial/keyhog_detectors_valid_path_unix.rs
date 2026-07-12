@@ -16,7 +16,7 @@ fn keyhog_detectors_valid_path_unix() {
         .env("KEYHOG_DETECTORS", missing)
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--format",

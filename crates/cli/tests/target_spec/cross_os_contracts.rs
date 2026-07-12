@@ -16,8 +16,8 @@
 //!     an OFFLINE source ship is the only build path — and that ship exposed the
 //!     portability blocker pinned RED below.
 //!   * santhserver, axiomexec — UNREACHABLE (SSH connect hangs to timeout,
-//!     rc 124). thamiya — UNREACHABLE (connect to :22 timed out). Recorded LOUD
-//!     in `docs/CROSS_OS_STATUS.md`; NOT a silent skip (Law 10).
+//!     rc 124). thamiya — UNREACHABLE (connect to :22 timed out). Those
+//!     ephemeral host observations are not shipped as product documentation.
 //!
 //! Two contract classes live here:
 //!   A. GREEN coherence pins (every OS) — lock the DELIBERATE cross-OS
@@ -105,9 +105,8 @@ fn uninstall_remove_binary_is_per_os_and_windows_fails_closed() {
 
 /// `EXIT_USER_ERROR = 2` is the code the Windows `uninstall --yes` error lands
 /// on (the anyhow error is not an `io::Error`, so `main.rs` chooses the user
-/// bucket). Pin the constant so the cross-OS exit table in
-/// `docs/CROSS_OS_STATUS.md` (Unix uninstall => 0, Windows uninstall => 2) stays
-/// coherent with the source.
+/// bucket). Pin the constant so the documented Unix/Windows uninstall contract
+/// stays coherent with the source.
 #[test]
 fn main_defines_exit_user_error_two_for_windows_uninstall_path() {
     assert_eq!(keyhog::exit_codes::EXIT_USER_ERROR, 2);

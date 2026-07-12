@@ -83,7 +83,7 @@ fn scan_help_lists_config_affecting_flags() {
         "--config",
         "--backend",
         "--format",
-        "--no-daemon",
+        "--daemon=off",
         "--dedup",
     ] {
         assert!(
@@ -146,7 +146,7 @@ fn config_effective_min_confidence_override_reaches_output() {
         "config",
         "--effective",
         "--no-config",
-        "--no-daemon",
+        "--daemon=off",
         "--min-confidence",
         "0.85",
     ]);
@@ -171,7 +171,7 @@ fn config_effective_decode_depth_and_threads_reach_output() {
         "config",
         "--effective",
         "--no-config",
-        "--no-daemon",
+        "--daemon=off",
         "--decode-depth",
         "3",
         "--threads",
@@ -200,7 +200,7 @@ fn config_effective_entropy_threshold_override_reaches_output() {
         "config",
         "--effective",
         "--no-config",
-        "--no-daemon",
+        "--daemon=off",
         "--entropy-threshold",
         "6.5",
     ]);
@@ -297,12 +297,6 @@ fn fast_and_deep_are_mutually_exclusive_exit_two() {
 fn no_gpu_and_require_gpu_are_mutually_exclusive_exit_two() {
     // --no-gpu conflicts_with "require_gpu" (and vice versa).
     assert_conflict(&["scan", "--no-gpu", "--require-gpu"]);
-}
-
-#[test]
-fn daemon_and_no_daemon_are_mutually_exclusive_exit_two() {
-    // Bare `--daemon` (=on) conflicts_with "no_daemon".
-    assert_conflict(&["scan", "--daemon", "--no-daemon"]);
 }
 
 #[test]

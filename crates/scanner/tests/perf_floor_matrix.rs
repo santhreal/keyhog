@@ -11,7 +11,6 @@
 //!   * CpuFallback × same - scalar reference floor (always slower
 //!     than SimdCpu by construction).
 //!   * Gpu × same - when adapter present; SKIP otherwise.
-//!   * MegaScan × same - when adapter present; SKIP otherwise.
 //!
 //! The point isn't to bench-mark steady-state throughput (that's
 //! `crates/scanner/benches/`); it's to fail CI when **any** backend
@@ -136,7 +135,6 @@ fn floor_mib_per_s(backend: ScanBackend, size_mib: f64, dense: bool) -> f64 {
         ScanBackend::SimdCpu => 0.6,
         ScanBackend::CpuFallback => 0.5,
         ScanBackend::Gpu => 0.5,
-        ScanBackend::MegaScan => 0.5,
         // ScanBackend is #[non_exhaustive]; future variants inherit the
         // conservative scalar floor until they get their own calibration.
         _ => 0.5,
@@ -145,7 +143,6 @@ fn floor_mib_per_s(backend: ScanBackend, size_mib: f64, dense: bool) -> f64 {
         ScanBackend::SimdCpu => 0.5,
         ScanBackend::CpuFallback => 0.5,
         ScanBackend::Gpu => 0.5,
-        ScanBackend::MegaScan => 0.5,
         _ => 0.5,
     };
     let _ = size_mib;
@@ -176,7 +173,7 @@ fn perf_floor_matrix_all_backends_all_sizes() {
     let scanner = scanner();
     // 16 MiB cell got timeout-killed in the first run; 4 MiB is the
     // largest size that still completes within a single-test budget
-    // when SimdCpu+CpuFallback+Gpu+MegaScan are all exercised twice
+    // when SimdCpu+CpuFallback+Gpu are all exercised twice
     // (warm-up + measured) on every cell.
     let sizes = [Size(64 * KIB), Size(MIB), Size(4 * MIB)];
     let shapes = [
@@ -187,7 +184,6 @@ fn perf_floor_matrix_all_backends_all_sizes() {
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
         ScanBackend::Gpu,
-        ScanBackend::MegaScan,
     ];
 
     let mut cells = 0usize;
@@ -200,7 +196,7 @@ fn perf_floor_matrix_all_backends_all_sizes() {
             let chunk = chunk_for(text, &format!("{}-{}.txt", shape_name, size.label()));
 
             // Reference: how many findings does SimdCpu produce? We use
-            // this to decide if a GPU/MegaScan "0 findings" is a SKIP
+            // this to decide if a GPU "0 findings" is a SKIP
             // (no adapter) vs a real perf-floor failure.
             let (_, simd_matches) = measure(scanner, &chunk, ScanBackend::SimdCpu);
 
@@ -208,15 +204,12 @@ fn perf_floor_matrix_all_backends_all_sizes() {
                 cells += 1;
                 let (mib_per_s, found) = measure(scanner, &chunk, backend);
 
-                // SKIP heuristic: GPU/MegaScan returning empty while
+                // SKIP heuristic: GPU returning empty while
                 // SIMD found matches almost certainly means no real
                 // GPU adapter (helper falls back to SIMD on init
                 // failure; that path produces a quick scan with
                 // zero findings on a "no GPU" host).
-                if matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan)
-                    && found == 0
-                    && simd_matches > 0
-                {
+                if matches!(backend, ScanBackend::Gpu) && found == 0 && simd_matches > 0 {
                     skipped += 1;
                     continue;
                 }

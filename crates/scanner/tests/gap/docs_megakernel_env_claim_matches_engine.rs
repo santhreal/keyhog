@@ -12,11 +12,12 @@ fn repo_root() -> PathBuf {
 }
 
 #[test]
-fn vyre_usage_must_not_claim_retired_keyhog_use_megakernel_routing() {
-    let doc = std::fs::read_to_string(repo_root().join("docs/vyre-usage.md")).expect("doc");
+fn vyre_reference_must_not_claim_retired_keyhog_use_megakernel_routing() {
+    let doc = std::fs::read_to_string(repo_root().join("docs/src/reference/vyre-integration.md"))
+        .expect("VYRE integration reference");
     assert!(
         !doc.contains("KEYHOG_USE_MEGAKERNEL"),
-        "docs/vyre-usage.md must not document retired KEYHOG_USE_MEGAKERNEL routing"
+        "VYRE integration reference must not document retired KEYHOG_USE_MEGAKERNEL routing"
     );
 }
 

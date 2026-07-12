@@ -104,7 +104,6 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "no-config",
     "no-autoroute-gpu",
     "no-batch-pipeline",
-    "no-daemon",
     "no-decode",
     "no-default-excludes",
     "no-entropy",

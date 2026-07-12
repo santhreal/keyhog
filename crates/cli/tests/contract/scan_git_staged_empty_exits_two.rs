@@ -17,7 +17,7 @@ fn scan_git_staged_empty_exits_two() {
     // Index intentionally empty — file exists but is not staged.
 
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--git-staged", "--format", "json"])
+        .args(["scan", "--daemon=off", "--git-staged", "--format", "json"])
         .current_dir(dir.path())
         .output()
         .expect("spawn");

@@ -49,7 +49,6 @@ const ALL_BACKENDS: &[ScanBackend] = &[
     ScanBackend::SimdCpu,
     ScanBackend::CpuFallback,
     ScanBackend::Gpu,
-    ScanBackend::MegaScan,
 ];
 
 #[test]

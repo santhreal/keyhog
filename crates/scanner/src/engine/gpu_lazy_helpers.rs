@@ -18,30 +18,6 @@ Fix the OS user cache directory or set XDG_CACHE_HOME to a writable directory."
     }
 }
 
-/// Which lazily-compiled GPU literal matcher a warning refers to. Colocates the
-/// operator-facing label with its one-shot warned cell so the two cannot drift
-/// and there is no stringly-typed `_ =>` fallback that could silently misroute a
-/// new matcher kind onto the literal cell.
-#[derive(Clone, Copy)]
-#[cfg_attr(not(feature = "gpu"), allow(dead_code))]
-pub(super) enum GpuMatcherKind {
-    Literal,
-}
-
-impl GpuMatcherKind {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Literal => "literal",
-        }
-    }
-
-    fn warned_cell(self) -> &'static std::sync::OnceLock<()> {
-        match self {
-            Self::Literal => &GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED,
-        }
-    }
-}
-
 /// Shared decode of a `catch_unwind` panic payload into an owned detail string.
 /// Single owner for the literal and artifact compile paths.
 pub(super) fn catch_unwind_panic_detail(panic: Box<dyn std::any::Any + Send>) -> String {
@@ -54,20 +30,15 @@ pub(super) fn catch_unwind_panic_detail(panic: Box<dyn std::any::Any + Send>) ->
     }
 }
 
-pub(super) fn report_gpu_matcher_unavailable(
-    error: &crate::error::ScanError,
-    kind: GpuMatcherKind,
-) {
-    let matcher_kind = kind.label();
+pub(super) fn report_gpu_literal_matcher_unavailable(error: &crate::error::ScanError) {
     tracing::warn!(
         target: "keyhog::routing",
         %error,
-        "GPU {matcher_kind} matcher unavailable; CPU/SIMD routes remain authoritative"
+        "GPU literal matcher unavailable; CPU/SIMD routes remain authoritative"
     );
-    let warned = kind.warned_cell();
-    if warned.set(()).is_ok() {
+    if GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED.set(()).is_ok() {
         eprintln!(
-            "keyhog: GPU {matcher_kind} matcher unavailable ({error}); this scanner \
+            "keyhog: GPU literal matcher unavailable ({error}); this scanner \
 cannot use that GPU matcher and will route through CPU/SIMD validation instead. \
 Use --require-gpu when GPU acceleration is mandatory."
         );

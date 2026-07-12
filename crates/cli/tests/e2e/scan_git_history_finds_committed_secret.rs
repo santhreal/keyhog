@@ -58,7 +58,7 @@ fn scan_git_history_finds_committed_secret() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-history",
             ".",
             "--format",

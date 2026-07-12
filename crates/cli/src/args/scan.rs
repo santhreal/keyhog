@@ -76,17 +76,14 @@ impl CliDedupScope {
 
 /// Tri-state daemon routing policy for `scan --daemon[=auto|on|off]` (CLI-02).
 ///
-/// Collapses what used to be a `--daemon` / `--no-daemon` boolean conflict pair
-/// into a single flag with an explicit value, while preserving both legacy
-/// spellings:
-///   * `--daemon` (bare)  → [`Self::On`]   (back-compat: force the daemon route)
+/// One flag owns the complete daemon policy:
+///   * `--daemon` (bare)  → [`Self::On`]   (force the daemon route)
 ///   * `--daemon=auto`    → [`Self::Auto`] (the default when the flag is absent)
-///   * `--daemon=off`     → [`Self::Off`]  (canonical form of `--no-daemon`)
-///   * `--no-daemon`      → [`Self::Off`]  (retained compatibility alias)
+///   * `--daemon=off`     → [`Self::Off`]  (force in-process execution)
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum, Debug)]
 pub enum DaemonMode {
     /// Use the daemon when a live socket is present, else scan in-process. This
-    /// is the behavior when no `--daemon`/`--no-daemon` flag is given.
+    /// is the behavior when no `--daemon` flag is given.
     Auto,
     /// Force the scan through a running `keyhog daemon`; fail if none is up.
     On,
@@ -352,7 +349,8 @@ pub struct ScanArgs {
     /// proves the credential is exfil-capable: we mint a per-finding
     /// subdomain on the configured collector, embed it in the verification
     /// probe, and confirm the service actually called back. Off by default.
-    /// See docs/OOB.md for the threat model and self-hosting guidance.
+    /// See docs/src/reference/oob-verification.md for the threat model and
+    /// self-hosting guidance.
     #[cfg(feature = "verify")]
     #[arg(long, requires = "verify")]
     pub verify_oob: bool,
@@ -530,39 +528,24 @@ pub struct ScanArgs {
     /// ($XDG_RUNTIME_DIR/keyhog.sock) unless `--daemon-socket <path>` points it
     /// at a daemon bound elsewhere (`daemon start --socket <path>`).
     ///
-    /// Read it through [`ScanArgs::daemon_mode`], never directly: that folds in
-    /// the `--no-daemon` compatibility alias.
     #[arg(
         long,
         value_enum,
         num_args = 0..=1,
         require_equals = true,
         default_missing_value = "on",
-        value_name = "auto|on|off",
-        conflicts_with = "no_daemon"
+        value_name = "auto|on|off"
     )]
     pub daemon: Option<DaemonMode>,
-
-    /// Force in-process scanning even when a daemon is running. Useful for
-    /// debugging, hardware probing, contract tests, or any case where you need
-    /// the orchestrator's full pipeline (baseline / merkle skip cache /
-    /// verification) which the daemon's stdin-only fast path does not replicate.
-    ///
-    /// Compatibility alias for `--daemon=off` (CLI-02); the canonical spelling
-    /// is `--daemon=off`. Retained because hook glue and editor integrations
-    /// in the wild pass `--no-daemon`.
-    #[arg(long, conflicts_with = "daemon")]
-    pub no_daemon: bool,
 
     /// Connect the daemon route to a daemon bound on a non-default socket.
     ///
     /// By default `scan --daemon` connects to `$XDG_RUNTIME_DIR/keyhog.sock`.
     /// Pass the same path a daemon was started on
     /// (`keyhog daemon start --socket <path>`) to reach a fixed-location daemon
-    /// (e.g. a shared/system or systemd-managed instance). Only meaningful with
-    /// the daemon route; ignored when `--daemon=off` / `--no-daemon` forces the
-    /// in-process scanner.
-    #[arg(long, value_name = "PATH", conflicts_with = "no_daemon")]
+    /// (e.g. a shared/system or systemd-managed instance). Combining it with
+    /// `--daemon=off` is rejected as contradictory.
+    #[arg(long, value_name = "PATH")]
     pub daemon_socket: Option<PathBuf>,
 
     /// Write findings to file
@@ -639,12 +622,7 @@ pub struct ScanArgs {
     /// clamped into that range. Larger buffers scan more bytes per GPU dispatch
     /// on big inputs at higher VRAM cost. Config: `gpu_batch_input_limit` in
     /// `.keyhog.toml`; this flag overrides it.
-    #[arg(
-        long,
-        alias = "megascan-input-len",
-        value_name = "SIZE",
-        value_parser = crate::value_parsers::parse_byte_size
-    )]
+    #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
     pub gpu_batch_input_limit: Option<usize>,
 
     #[command(flatten)]
@@ -953,18 +931,9 @@ impl ScanArgs {
 }
 
 impl ScanArgs {
-    /// Resolve the effective daemon routing policy (CLI-02), folding the
-    /// `--no-daemon` compatibility alias into the canonical `--daemon=...`
-    /// tri-state. clap's `conflicts_with` guarantees the two are never both
-    /// user-supplied, so the alias check is unambiguous.
-    ///
-    /// All daemon-routing logic must read THIS, never the raw `daemon` /
-    /// `no_daemon` fields, so the alias can never be silently bypassed.
+    /// Resolve the effective daemon routing policy (CLI-02).
     #[must_use]
     pub fn daemon_mode(&self) -> DaemonMode {
-        if self.no_daemon {
-            return DaemonMode::Off;
-        }
         self.daemon.unwrap_or(DaemonMode::Auto) // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
     }
 

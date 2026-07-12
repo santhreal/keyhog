@@ -7,7 +7,7 @@ use std::process::Command;
 #[test]
 fn lockdown_verify_refused_before_preflight() {
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--lockdown", "--verify", "."])
+        .args(["scan", "--daemon=off", "--lockdown", "--verify", "."])
         .output()
         .expect("spawn");
     assert_eq!(

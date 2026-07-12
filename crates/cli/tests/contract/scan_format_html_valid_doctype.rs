@@ -9,7 +9,7 @@ fn scan_format_html_valid_doctype() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

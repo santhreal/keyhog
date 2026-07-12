@@ -49,7 +49,7 @@ fn scan_git_staged_format_sarif_has_schema() {
             "scan",
             "--backend",
             "simd",
-            "--no-daemon",
+            "--daemon=off",
             "--git-staged",
             "--format",
             "sarif",

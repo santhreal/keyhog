@@ -44,14 +44,14 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// Run `keyhog scan --no-daemon --backend <backend> --stdin --format <format>`
+/// Run `keyhog scan --daemon=off --backend <backend> --stdin --format <format>`
 /// with `input` piped over stdin. Returns (exit code, stdout, stderr).
 fn run(input: &[u8], backend: &str, format: &str) -> (Option<i32>, String, String) {
     run_args(
         input,
         &[
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             backend,
             "--stdin",
@@ -335,7 +335,7 @@ fn stdin_oversized_input_fails_closed_exit_13_empty_stdout() {
         &big,
         &[
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--stdin",
@@ -369,7 +369,7 @@ fn stdin_oversized_error_surfaces_inner_reason_and_refusal() {
         &big,
         &[
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--stdin",
@@ -402,7 +402,7 @@ fn stdin_under_byte_limit_scans_clean_exit_0() {
         b"abc\n",
         &[
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--stdin",
@@ -425,7 +425,7 @@ fn stdin_bad_byte_limit_missing_unit_exit_2() {
         b"abc\n",
         &[
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--stdin",

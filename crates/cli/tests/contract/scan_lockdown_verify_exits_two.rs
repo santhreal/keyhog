@@ -6,7 +6,7 @@ use std::process::Command;
 #[test]
 fn scan_lockdown_verify_exits_two() {
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--lockdown", "--verify", "."])
+        .args(["scan", "--daemon=off", "--lockdown", "--verify", "."])
         .output()
         .expect("spawn");
     assert_eq!(

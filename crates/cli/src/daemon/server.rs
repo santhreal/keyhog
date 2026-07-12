@@ -594,7 +594,7 @@ fn daemon_scan_path_chunks(path: &Path) -> Result<(Vec<Chunk>, SourceCoverageGap
                 None => path.display().to_string(),
             };
             anyhow::bail!(
-                "daemon: refusing chunk over {} MiB from {}. Pass --no-daemon to use the full in-process scanner.",
+                "daemon: refusing chunk over {} MiB from {}. Pass --daemon=off to use the full in-process scanner.",
                 crate::orchestrator::COALESCED_CHUNK_SCAN_CEILING_MB,
                 chunk_path
             );

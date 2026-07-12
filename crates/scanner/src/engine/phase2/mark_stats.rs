@@ -220,10 +220,8 @@ pub(crate) fn record_mark_perpattern_work() {
 /// once per such call, after the HS scan succeeds.
 ///
 /// Only ever called from the `#[cfg(feature = "simd")]` HS dispatch, so in a
-/// non-`simd` build it is uncalled (and `hs_served` stays 0, which the profiler
-/// still reports faithfully). Allowed-dead there rather than cfg-gated so the
-/// re-export and snapshot shape stay identical across feature sets.
-#[cfg_attr(not(feature = "simd"), allow(dead_code))]
+/// non-`simd` build it is absent and `hs_served` stays zero.
+#[cfg(feature = "simd")]
 #[inline]
 pub(crate) fn record_mark_hs_served() {
     #[cfg(test)]

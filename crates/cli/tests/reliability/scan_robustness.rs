@@ -18,7 +18,7 @@ fn scan_bounded(path: &Path, extra: &[&str], secs: u64) -> (Option<i32>, bool) {
     let mut args: Vec<String> = vec![
         "scan".into(),
         "--no-config".into(),
-        "--no-daemon".into(),
+        "--daemon=off".into(),
         "--backend".into(),
         "simd".into(),
         "--per-chunk-timeout-ms".into(),
@@ -231,7 +231,7 @@ fn filename_that_looks_like_a_flag_via_separator() {
     let out = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

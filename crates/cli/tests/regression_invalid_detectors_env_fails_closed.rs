@@ -23,7 +23,7 @@ fn legacy_keyhog_detectors_env_is_ignored() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--format",
@@ -60,7 +60,7 @@ fn explicit_detectors_path_works_with_legacy_keyhog_detectors_env_present() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--format",

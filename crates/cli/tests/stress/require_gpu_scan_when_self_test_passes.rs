@@ -35,7 +35,7 @@ fn require_gpu_scan_when_self_test_passes() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--require-gpu",
             "--backend",
             "gpu",

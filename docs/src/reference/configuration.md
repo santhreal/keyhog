@@ -68,7 +68,7 @@ Each row is the same knob across all three layers. Defaults are
 | Per-chunk timeout | off | `per_chunk_timeout_ms` | `--per-chunk-timeout-ms` | Optional hard deadline per chunk scan in milliseconds. |
 | Dedup scope | `credential` | `dedup` | `--dedup` | `credential` / `file` / `none`. |
 | Max file size | 100 MiB | `max_file_size` | `--max-file-size` | Walker skips files larger than this. |
-| GPU batch input limit | VRAM-adaptive (128 MiB–1 GiB) | `[scan] gpu_batch_input_limit` | `--gpu-batch-input-limit` | Caps bytes admitted to one GPU region-presence batch. The retired flat/CLI `megascan_input_len` spelling is accepted only as a migration alias. |
+| GPU batch input limit | VRAM-adaptive (128 MiB–1 GiB) | `[scan] gpu_batch_input_limit` | `--gpu-batch-input-limit` | Caps bytes admitted to one GPU region-presence batch. Retired MegaScan spellings are rejected; this one name owns CLI, config, effective-config output, and the Rust API. |
 | Severity floor | (all) | `severity` | `--severity` | Minimum severity to report: info/low/medium/high/critical. |
 | Output format | `text` | `format` | `--format` | text/json/jsonl/sarif/csv/github-annotations/gitlab-sast/html/junit. |
 | Show secrets | off | `show_secrets` | `--show-secrets` | Print plaintext credentials. **Never enable in CI/logs.** |
@@ -252,6 +252,23 @@ benchmark from this value; they consume persisted fastest-correct decisions.
 default fused filesystem route; set it only for calibration, diagnostics, or
 pipeline parity checks. The resolved value is printed by
 `keyhog config --effective` and is part of the autoroute scan identity.
+
+### `[http]`
+
+```toml
+[http]
+proxy = "off"
+insecure_tls = false
+allow_private_endpoint = false
+```
+
+`proxy` is an explicit outbound proxy URL or `off`; ambient proxy environment
+variables are ignored. `insecure_tls` disables certificate validation for
+outbound HTTP and should be limited to controlled interception environments.
+`allow_private_endpoint` permits cloud source endpoints that resolve to private,
+loopback, link-local, or metadata addresses; it is off by default to preserve
+the SSRF boundary. CLI flags override these values. All three settings are
+operator-visible and never enabled by an ambient environment variable.
 
 ### `[aws]`
 

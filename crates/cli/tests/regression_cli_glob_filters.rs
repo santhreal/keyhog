@@ -1,6 +1,6 @@
 //! Regression: `keyhog scan --exclude-paths <glob>...` filters the walked
 //! filesystem tree by gitignore-style glob patterns, through the REAL shipped
-//! binary (`--no-daemon`, `--backend cpu`).
+//! binary (`--daemon=off`, `--backend cpu`).
 //!
 //! The CLI exposes exactly ONE user-facing scan-glob filter: `--exclude-paths`
 //! (see `crates/cli/src/args/scan.rs` — there is deliberately NO `--include`
@@ -105,7 +105,7 @@ fn run_json(root: &Path, extra: &[&str]) -> (i32, Vec<Finding>, Vec<u8>, String)
     let root_str = root.to_str().expect("utf8 tempdir path").to_owned();
     let mut args: Vec<String> = vec![
         "scan".into(),
-        "--no-daemon".into(),
+        "--daemon=off".into(),
         "--backend".into(),
         "cpu".into(),
         "--no-suppress-test-fixtures".into(),
@@ -365,7 +365,7 @@ fn unknown_include_flag_is_usage_error() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--path",
@@ -436,7 +436,7 @@ fn text_summary_reflects_exclude_filter() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--no-suppress-test-fixtures",

@@ -23,13 +23,13 @@ fn cached_gpu_runtime_policy_flags() -> (bool, bool) {
     })
 }
 
-/// Error message when routing forces GPU/MegaScan but the scanner cannot dispatch.
+/// Error message when routing forces GPU but the scanner cannot dispatch.
 #[must_use]
 pub(crate) fn gpu_forced_unavailable_message(
     scanner: &CompiledScanner,
     backend: ScanBackend,
 ) -> Option<String> {
-    if !matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan) {
+    if !matches!(backend, ScanBackend::Gpu) {
         return None;
     }
     if scanner.gpu_stack_usable() {
@@ -82,7 +82,7 @@ pub(crate) fn deny_silent_gpu_degrade_with_reason(
     if let Some(msg) = gpu_forced_unavailable_message(scanner, backend) {
         crate::process_exit::require_gpu_unmet(msg);
     }
-    if !matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan) {
+    if !matches!(backend, ScanBackend::Gpu) {
         return;
     }
     if reason.is_none() && scanner.gpu_stack_usable() {

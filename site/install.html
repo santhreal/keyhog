@@ -93,13 +93,11 @@ binary installed-but-unrunnable.</p>
 
 <h3>GPU selection</h3>
 
-<p>The default Linux build dispatches via WGPU on any compatible adapter and
-runs SIMD on the CPU path. If you have the full CUDA toolkit installed
-(<code>nvcc</code> on PATH or <code>$CUDA_HOME</code> set), pass
-<code>--variant=cuda</code> to install.sh for the native-CUDA build. See
-<a href="performance.html">Performance →</a>. An explicit CUDA request fails
-closed if the CUDA release asset is missing; only auto-selected CUDA hosts may
-fall back to the WGPU + SIMD asset.</p>
+<p>The Linux binary contains Hyperscan plus VYRE's dynamically loaded CUDA and
+WGPU drivers. It needs no build-time CUDA toolkit: runtime probing reports the
+usable engines, and persisted autoroute evidence chooses the fastest
+measured-correct backend for each workload. See
+<a href="performance.html">Performance →</a>.</p>
 
 <h3>Integrity &amp; verification</h3>
 
@@ -151,8 +149,7 @@ locked-down build environments where pulling Hyperscan is a non-starter.</p>
 page</a>):</p>
 
 <ul>
-  <li><code>keyhog-linux-x86_64</code> (WGPU + SIMD default)</li>
-  <li><code>keyhog-linux-x86_64-cuda</code> (native CUDA dispatch)</li>
+  <li><code>keyhog-linux-x86_64</code> (Hyperscan + runtime CUDA/WGPU)</li>
   <li><code>keyhog-macos-aarch64</code> (Apple Silicon)</li>
   <li><code>keyhog-macos-x86_64</code> (Intel Mac)</li>
   <li><code>keyhog-windows-x86_64.exe</code></li>

@@ -76,7 +76,6 @@ pub(super) struct ConfigFile {
     /// Per-regex lazy-DFA cache ceiling.
     pub regex_dfa_limit: Option<String>,
     /// GPU batch-input buffer byte budget (overrides the VRAM-adaptive default).
-    #[serde(alias = "megascan_input_len")]
     pub gpu_batch_input_limit: Option<String>,
     /// ML weight for confidence scoring, 0.0-1.0.
     pub ml_weight: Option<f64>,
@@ -106,8 +105,6 @@ pub(super) struct ConfigFile {
     pub aws: Option<AwsSection>,
     /// `[tuning]` - recall-equivalent scanner route tuning.
     pub tuning: Option<TuningSection>,
-    /// Top-level compatibility alias for `[system].trusted_bin_dirs`.
-    pub trusted_bin_dirs: Option<Vec<PathBuf>>,
 }
 
 /// `[scan]` nested table. Fields here map 1:1 to the flat top-level scalars.
@@ -133,8 +130,7 @@ pub(super) struct ScanSection {
     pub dedup: Option<String>,
     pub incremental: Option<bool>,
     pub incremental_cache: Option<PathBuf>,
-    /// GPU region-presence batch byte budget. The old name is a migration alias.
-    #[serde(alias = "megascan_input_len")]
+    /// GPU region-presence batch byte budget.
     pub gpu_batch_input_limit: Option<String>,
 }
 

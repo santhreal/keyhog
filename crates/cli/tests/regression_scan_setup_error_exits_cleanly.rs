@@ -31,23 +31,23 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// Run `keyhog scan --backend cpu --no-daemon <path>` and return the raw output.
+/// Run `keyhog scan --backend cpu --daemon=off <path>` and return the raw output.
 fn scan_cpu(path: &std::path::Path) -> Output {
     Command::new(binary())
-        .args(["scan", "--backend", "cpu", "--no-daemon"])
+        .args(["scan", "--backend", "cpu", "--daemon=off"])
         .arg(path)
         .env("NO_COLOR", "1")
         .output()
         .expect("spawn keyhog scan")
 }
 
-/// Run `keyhog scan --no-daemon <path>` with the DEFAULT (autoroute) backend —
+/// Run `keyhog scan --daemon=off <path>` with the DEFAULT (autoroute) backend —
 /// the backend a user gets when they do not pass `--backend`. Autoroute probes
 /// the GPU, so this exercises the path where the probe is NOT disabled: the
 /// early scan-path validation must still make a missing path exit cleanly.
 fn scan_default(path: &std::path::Path) -> Output {
     Command::new(binary())
-        .args(["scan", "--no-daemon"])
+        .args(["scan", "--daemon=off"])
         .arg(path)
         .env("NO_COLOR", "1")
         .output()
@@ -257,7 +257,7 @@ fn nonexistent_extra_path_exits_by_code_not_signal() {
     // still exit cleanly (the early validator checks every requested root).
     let good = dir_with_fixture();
     let output = Command::new(binary())
-        .args(["scan", "--backend", "cpu", "--no-daemon"])
+        .args(["scan", "--backend", "cpu", "--daemon=off"])
         .arg(good.path())
         .arg("/keyhog-nonexistent-extra-root-xyz")
         .env("NO_COLOR", "1")

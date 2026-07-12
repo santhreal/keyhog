@@ -1,7 +1,7 @@
 //! Integrity guard for the embedded detector corpus.
 //!
 //! `assemble_detector_load` collects every parsed spec into a `Vec` and sorts by
-//! id — it never checks that ids are UNIQUE or well-formed. With 919 detectors
+//! id — it never checks that ids are UNIQUE or well-formed. With a large corpus
 //! authored across many sessions, a copy-pasted `id` would silently double-fire
 //! (or shadow the original in any id-keyed downstream map), and a malformed id
 //! breaks doc/registry cross-references — both invisible at scan time. These

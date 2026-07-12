@@ -26,7 +26,7 @@ fn stream_progress_lines_stay_within_file_line_count() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--stream",
             "--fast",
             "--no-suppress-test-fixtures",

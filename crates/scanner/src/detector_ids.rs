@@ -135,8 +135,7 @@ mod detector_id_corpus_guard {
     /// Every const that MUST name a real embedded detector. cfg-gated to mirror
     /// each const's own feature gate so the list compiles under every feature set.
     fn corpus_backed_consts() -> Vec<(&'static str, &'static str)> {
-        #[allow(unused_mut)]
-        let mut v = vec![
+        let v = vec![
             ("GENERIC_SECRET", GENERIC_SECRET),
             ("GENERIC_KEYWORD_SECRET", GENERIC_KEYWORD_SECRET),
             ("GENERIC_API_KEY", GENERIC_API_KEY),
@@ -159,8 +158,10 @@ mod detector_id_corpus_guard {
     /// asserted ABSENT from the TOML corpus (a synthetic id colliding with a real
     /// detector would silently re-route scoring).
     fn synthetic_consts() -> Vec<(&'static str, &'static str)> {
-        #[allow(unused_mut)]
+        #[cfg(feature = "entropy")]
         let mut v = vec![("ENTROPY", ENTROPY)];
+        #[cfg(not(feature = "entropy"))]
+        let v = vec![("ENTROPY", ENTROPY)];
         #[cfg(feature = "entropy")]
         {
             v.push(("ENTROPY_GENERIC", ENTROPY_GENERIC));

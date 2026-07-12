@@ -19,7 +19,7 @@
 //!
 //! Every assertion pins a concrete value (exact bool / int / string / bytes /
 //! exit code). None is a bare `!is_empty` / `is_ok`. Deterministic: one planted
-//! secret, `--no-daemon`, `--backend cpu`.
+//! secret, `--daemon=off`, `--backend cpu`.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -66,13 +66,13 @@ fn clean_fixture() -> (TempDir, PathBuf) {
     (dir, path)
 }
 
-/// Run `keyhog scan --no-daemon --backend cpu --format <format> <path>`.
+/// Run `keyhog scan --daemon=off --backend cpu --format <format> <path>`.
 /// Returns (exit code, stdout, stderr).
 fn run(path: &PathBuf, format: &str) -> (Option<i32>, String, String) {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--no-suppress-test-fixtures",

@@ -8,7 +8,6 @@ pub mod every_detector_has_non_empty_name;
 pub mod every_detector_has_non_empty_service;
 pub mod every_detector_id_is_unique;
 pub mod every_loaded_detector_id_has_contract;
-pub mod generate_contracts_script_claim_matches_loader;
 pub mod github_pat_fine_grained_first_positive_fires;
 pub mod no_contract_readme_claim_stale_889;
 pub mod npm_access_token_contract_file_exists;

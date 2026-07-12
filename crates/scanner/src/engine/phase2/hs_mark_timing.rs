@@ -86,14 +86,14 @@ pub(crate) fn format_hs_mark_split(s: &HsMarkSplit) -> String {
 
 /// Add `ns` to the HS SIMD scan accumulator. Called only when profiling is on
 /// (the caller gates the `Instant`), so the add is never on the unprofiled path.
-#[cfg_attr(not(feature = "simd"), allow(dead_code))]
+#[cfg(feature = "simd")]
 #[inline]
 pub(crate) fn record_hs_mark_scan_ns(ns: u64) {
     HS_MARK_SCAN_NS.fetch_add(ns, Relaxed);
 }
 
 /// Add `ns` to the dropped host-loop accumulator.
-#[cfg_attr(not(feature = "simd"), allow(dead_code))]
+#[cfg(feature = "simd")]
 #[inline]
 pub(crate) fn record_hs_mark_dropped_ns(ns: u64) {
     HS_MARK_DROPPED_NS.fetch_add(ns, Relaxed);

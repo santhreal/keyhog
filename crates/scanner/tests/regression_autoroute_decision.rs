@@ -212,7 +212,6 @@ fn parse_backend_str_trims_lowercases_and_rejects_unknown() {
 #[test]
 fn scan_backend_labels_are_stable() {
     assert_eq!(ScanBackend::Gpu.label(), "gpu-region-presence");
-    assert_eq!(ScanBackend::MegaScan.label(), "gpu-mega-scan");
     assert_eq!(ScanBackend::SimdCpu.label(), "simd-regex");
     assert_eq!(ScanBackend::CpuFallback.label(), "cpu-fallback");
 }

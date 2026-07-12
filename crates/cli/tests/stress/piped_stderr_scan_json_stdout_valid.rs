@@ -9,7 +9,7 @@ fn piped_stderr_scan_json_stdout_valid() {
     let child = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--backend",
             "simd",
             "--format",

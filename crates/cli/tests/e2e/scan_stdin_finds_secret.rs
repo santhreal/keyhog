@@ -10,7 +10,7 @@ fn scan_stdin_finds_secret() {
         .args([
             "scan",
             "--stdin",
-            "--no-daemon",
+            "--daemon=off",
             "--format",
             "json",
             "--backend",

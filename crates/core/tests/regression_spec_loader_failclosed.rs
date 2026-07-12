@@ -657,7 +657,7 @@ patterns = []
 fn embedded_corpus_corrupt_error_renders_full_contract() {
     let err = SpecError::EmbeddedCorpusCorrupt {
         failed_count: 3,
-        total: 919,
+        total: 5,
         detail: "  - discord-bot-token: invalid char class\n  - foo: trailing comma\n  - bar: eof"
             .to_string(),
     };
@@ -667,7 +667,7 @@ fn embedded_corpus_corrupt_error_renders_full_contract() {
         r.contains("discord-bot-token: invalid char class"),
         "must name each offender; got: {r}"
     );
-    assert!(r.contains("3 of 919"), "must report X of Y; got: {r}");
+    assert!(r.contains("3 of 5"), "must report X of Y; got: {r}");
     assert!(
         r.contains("silently degraded"),
         "must call out the silent recall loss (Law 10); got: {r}"

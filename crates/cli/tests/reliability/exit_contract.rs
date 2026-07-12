@@ -24,7 +24,7 @@ fn scan_file(content: &str, extra: &[&str]) -> (Option<i32>, String, String) {
 fn run_scan(path: &Path, extra: &[&str]) -> (Option<i32>, String, String) {
     let mut args: Vec<String> = vec![
         "scan".into(),
-        "--no-daemon".into(),
+        "--daemon=off".into(),
         "--backend".into(),
         "simd".into(),
     ];

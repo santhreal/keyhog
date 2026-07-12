@@ -12,7 +12,7 @@ fn scan_jsonl_one_line_per_finding() {
     let output = Command::new(binary())
         .args([
             "scan",
-            "--no-daemon",
+            "--daemon=off",
             "--format",
             "jsonl",
             "--backend",
