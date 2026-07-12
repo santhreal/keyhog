@@ -260,7 +260,11 @@ fn every_companion_contract_passes() {
             }
         }
         let primary_found = findings_for_detector(&matches, label);
-        if !primary_found.is_empty() {
+        let primary_is_expected = case
+            .expected_findings
+            .iter()
+            .any(|expected| expected == label);
+        if !primary_is_expected && !primary_found.is_empty() {
             parity_issues.push(format!(
                 "{}: negative_companion_lookalike SURPLUS - detector {} fired on companion-only text {:?} ({})",
                 label,

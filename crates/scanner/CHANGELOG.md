@@ -137,6 +137,9 @@
 - Migrate the stale FedEx companion fixture into its normal detector contract
   and reject companion contracts whose detector declares no companions, so
   generated test shape cannot masquerade as production verification wiring.
+- Make LiveKit's companion secret-specific so long API keys cannot self-attach
+  as secrets, deduplicate caseless primary regexes, and let companion contracts
+  explicitly declare when a companion shape is also a valid standalone primary.
 
 ## 0.2.1
 
