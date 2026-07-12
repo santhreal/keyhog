@@ -146,6 +146,9 @@
 - Model Five9 API secrets as intentional standalone primaries in the companion
   corpus, while proving API-key-only findings cannot fabricate the nearby
   secret required for credential-pair verification.
+- Make AWS SES SMTP field anchors consistently caseless while preserving the
+  uppercase access-key alphabet, reject overlong username/password prefixes
+  instead of truncating them, and model password-only findings honestly.
 
 ## 0.2.1
 
