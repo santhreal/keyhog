@@ -31,7 +31,7 @@ fn live_rules_validate_clean() {
 fn weak_anchor_membership_is_exact() {
     // A real weak-anchor entry from the live TOML.
     assert_eq!(is_weak_anchor("flickr-api-key"), Ok(true));
-    assert_eq!(is_weak_anchor("datadog-api-key"), Ok(true));
+    assert_eq!(is_weak_anchor("datadog-api-key"), Ok(false));
     // `ssh-private-key` is a valid detector id but lives in private_key_block,
     // NOT weak_anchor -> the weak-anchor query must report false for it.
     assert_eq!(

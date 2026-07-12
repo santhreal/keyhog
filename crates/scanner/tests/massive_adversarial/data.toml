@@ -2990,6 +2990,7 @@ credential = 'bbc_abcde1234567890abcde1234567890abcde1234567890abcd'
 [[case]]
 detector_id = "bigcommerce-store-api-credentials"
 suite = 14
+expected_finding = false # standalone store hash is a verifier companion, not a credential finding
 
 [[case.assertion]]
 kind = "fires"
@@ -4078,6 +4079,7 @@ credential = 'cnvca00000000000000000000'
 [[case]]
 detector_id = "carbon-black-api-key"
 suite = 17
+expected_finding = false # all-zero placeholder must remain suppressed
 
 [[case.assertion]]
 kind = "fires"
@@ -6460,6 +6462,7 @@ credential = '00000000-0000-0000-0000-000000000000'
 [[case]]
 detector_id = "genesys-cloud-credentials"
 suite = 37
+expected_finding = false # all-zero UUID placeholder must remain suppressed
 
 [[case.assertion]]
 kind = "fires"
@@ -12387,6 +12390,7 @@ credential = 'https://api.avax.network/Kp4Qx7Rm2Sn5Tb8Vw3Yz'
 [[case]]
 detector_id = "avaya-api-credentials"
 suite = 67
+expected_finding = false # standalone client ID is a verifier companion
 
 [[case.assertion]]
 kind = "fires"
@@ -40394,6 +40398,7 @@ credential = 'SzsANQcSgpqa5WgOrklNRy'
 [[case]]
 detector_id = "mangopay-api-credentials"
 suite = 105
+expected_finding = false # standalone client ID is a verifier companion
 
 [[case.assertion]]
 kind = "fires"
@@ -42794,6 +42799,7 @@ credential = '8IhAULcXl1'
 [[case]]
 detector_id = "mpesa-api-credentials"
 suite = 108
+expected_finding = false # standalone consumer key is a verifier companion
 
 [[case.assertion]]
 kind = "fires"
@@ -47969,6 +47975,7 @@ credential = '3e3a5f82f7d330d5fc3da4cefedc7a9c'
 [[case]]
 detector_id = "payoneer-api-credentials"
 suite = 115
+expected_finding = false # standalone client ID is a verifier companion
 
 [[case.assertion]]
 kind = "fires"

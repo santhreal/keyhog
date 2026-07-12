@@ -5,7 +5,7 @@ fn compiled_scanner_detector_digest_uses_stable_length_delimited_blake3() {
         .find("pub(crate) fn detector_digest(&self) -> u64")
         .expect("detector_digest function present");
     let end = source[start..]
-        .find("/// Return the preferred backend for a file of the given size.")
+        .find("/// Identifier of the GPU backend acquired at compile time")
         .map(|offset| start + offset)
         .expect("detector_digest function boundary present");
     let body = &source[start..end];

@@ -22,7 +22,6 @@ fn detector_ids_module_owns_scanner_detector_identity() {
         "GENERIC_SECRET",
         "GENERIC_API_KEY",
         "ENTROPY_API_KEY",
-        "AWS_ACCESS_KEY",
         "GITHUB_CLASSIC_PAT",
         "SLACK_BOT_TOKEN",
         "STRIPE_SECRET_KEY",

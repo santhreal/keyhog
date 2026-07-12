@@ -23,10 +23,10 @@ fn profiles_table_has_one_row_per_tier_in_order() {
 #[test]
 fn per_tier_thresholds_are_exact() {
     let profiles = gpu_routing_profiles();
-    // High tier: lowest byte floors (fastest dispatch), 100-pattern breakeven.
-    // 2026-06-20 RTX 5090 perf trace proves GPU wins at 8 MiB (4.5x).
-    assert_eq!(profiles[0].min_bytes, 8 * MIB);
-    assert_eq!(profiles[0].solo_bytes, 8 * MIB);
+    // High tier: conservative fixed fallback. Smaller exact buckets are owned
+    // by persisted warm/cold calibration evidence.
+    assert_eq!(profiles[0].min_bytes, 128 * MIB);
+    assert_eq!(profiles[0].solo_bytes, 256 * MIB);
     assert_eq!(profiles[0].pattern_breakeven, 100);
     // Mid tier: middle min-bytes floor.
     assert_eq!(profiles[1].min_bytes, 256 * MIB);

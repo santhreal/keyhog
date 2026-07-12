@@ -261,19 +261,16 @@ fn selection_matrix_exact_cells() {
     with_policy(GpuRuntimePolicy::Auto, None, || {
         let gpu = caps_gpu(true, true);
 
-        // Required 8 MiB now engages GPU because the optimized entropy
-        // prefilter + 384 KiB windowing lets the RTX 5090 beat CPU/SIMD at
-        // 8 MiB (the 10x crossover target). GPU_MIN_BYTES_HIGH_TIER was
-        // lowered to 8 MiB to match the measured crossover.
-        assert!(gpu_could_engage(&gpu, REQUIRED_EIGHT_MIB, 5_000));
+        // The fixed heuristic is deliberately conservative: an 8 MiB win is
+        // eligible only through persisted calibration for that exact workload.
+        assert!(!gpu_could_engage(&gpu, REQUIRED_EIGHT_MIB, 5_000));
         assert_eq!(
             select_backend(&gpu, REQUIRED_EIGHT_MIB, 5_000),
-            ScanBackend::Gpu
+            ScanBackend::SimdCpu
         );
-        // 16 MiB is above the solo cap (8 MiB), so GPU engages via the solo
-        // path regardless of pattern count.
-        assert!(gpu_could_engage(&gpu, SIXTEEN_MIB, 1));
-        assert_eq!(select_backend(&gpu, SIXTEEN_MIB, 1), ScanBackend::Gpu);
+        // 16 MiB is also below the 256 MiB high-tier solo cap.
+        assert!(!gpu_could_engage(&gpu, SIXTEEN_MIB, 1));
+        assert_eq!(select_backend(&gpu, SIXTEEN_MIB, 1), ScanBackend::SimdCpu);
 
         // High-tier measured-safe min with enough patterns: GPU engages.
         assert!(gpu_could_engage(

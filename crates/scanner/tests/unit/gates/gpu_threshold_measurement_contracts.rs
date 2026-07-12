@@ -218,7 +218,7 @@ fn fixed_high_tier_threshold_does_not_treat_a_warm_trace_as_cold_autoroute_proof
     assert_eq!(measurement.schema_version, 1);
     assert_eq!(measurement.gpu, "NVIDIA GeForce RTX 5090");
     assert_eq!(measurement.backend, "region-presence");
-    assert_eq!(measurement.payload, "benign-sparse");
+    assert_eq!(measurement.payload, "benign-sparse-single-chunk");
     assert!(measurement.max_measured_mib >= 8);
     // The 2026-06-20 perf trace (post split-positioned-matcher fix) shows GPU
     // winning at 1 MiB. first_gpu_win_mib=1 records this.

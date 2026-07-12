@@ -15,6 +15,18 @@ fn chunk_boundary_datadog_key_split_reassembled() {
     // Context-required detector: the `DD_API_KEY=` anchor and the 32-hex
     // value straddle the seam together (a bare 32-hex is not a Datadog key).
     let secret = "DD_API_KEY=a3f8d2e1b9c7460af1e8d3c5b2a9f04e";
+    let trace = std::sync::Arc::new(crate::telemetry::ScanTelemetry::new());
+    trace.enable_dogfood();
+    let direct_chunk = Chunk {
+        data: secret.into(),
+        metadata: ChunkMetadata {
+            source_type: "adversarial".into(),
+            path: Some("dd.txt".into()),
+            ..Default::default()
+        },
+    };
+    let direct = crate::telemetry::with_scan_telemetry(&trace, || scanner.scan(&direct_chunk));
+    let direct_events = trace.drain().dogfood_events;
     let split = 10;
     let pad = "z\n".repeat(4096);
     let mut data_a = pad.clone();
@@ -47,6 +59,6 @@ fn chunk_boundary_datadog_key_split_reassembled() {
         .any(|m| m.detector_id.as_ref() == "datadog-api-key");
     assert!(
         found,
-        "datadog-api-key split across chunk seam must reassemble"
+        "datadog-api-key split across chunk seam must reassemble; direct={direct:?}; direct_events={direct_events:?}; boundary={results:?}"
     );
 }

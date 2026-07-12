@@ -153,6 +153,13 @@ fn inner_literal_alternation_branches() {
 }
 
 #[test]
+fn inner_literal_refuses_partially_covered_alternation() {
+    assert!(
+        extract_inner_literals(r"(?:DD.API.KEY|DATADOG.API.KEY)[=:\s]+[a-f0-9]{32}").is_empty()
+    );
+}
+
+#[test]
 fn inner_literal_pure_class_yields_empty() {
     assert!(extract_inner_literals(r"[a-f0-9]{32}").is_empty());
 }
@@ -184,6 +191,14 @@ fn literal_prefix_drops_optional_literal_suffix() {
         prefixes,
         vec!["http"],
         "AC prefix must be the guaranteed scheme bytes so http and https both route"
+    );
+}
+
+#[test]
+fn literal_prefix_drops_optional_group_suffix() {
+    assert_eq!(
+        extract_literal_prefixes(r"genesys(?:_cloud)?[_\s]client"),
+        vec!["genesys".to_string()]
     );
 }
 

@@ -10,15 +10,14 @@ service = "datadog"
 severity = "critical"
 min_confidence = 0.2
 keywords = ["DD-API-Key", "DD_API_KEY", "DATADOG_API_KEY", "datadog_api_key"]
-# Weak-anchor: the vendor prefix does not tightly bound the captured value (it
-# collides with a generic hex/base64 run), so scanner suppression keeps the
-# generic shape/entropy gates ENGAGED for it (per-detector, DetectorSpec::weak_anchor;
-# was rules/detector-classification.toml weak_anchor list).
-weak_anchor = true
+# The explicit `DD_API_KEY` / `DATADOG_API_KEY` assignment is a service-owned
+# credential slot. Treat it as a strong named anchor so a legitimate 32-hex key
+# is not demoted to an anonymous entropy finding or lost at a chunk seam.
+weak_anchor = false
 
 [[detector.patterns]]
-regex = "(?:DD.API.KEY|DATADOG.API.KEY|datadog.api.key)[=:\\s\"']+([a-f0-9]{32})"
-description = "Datadog API key with context anchor"
+regex = "(?i)(?:DD_API_KEY|DD-API-KEY|DATADOG_API_KEY)[=:\\s\"']+([a-f0-9]{32})(?:[^a-f0-9]|$)"
+description = "Datadog API key in a documented environment or header slot"
 group = 1
 
 [detector.verify]

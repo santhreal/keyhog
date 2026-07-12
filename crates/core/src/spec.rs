@@ -196,7 +196,7 @@ pub struct DetectorSpec {
     ///
     /// `true` marks a SERVICE-anchored detector whose regex capture nonetheless
     /// structurally collides with a generic value (a bare hex/base64 run the
-    /// vendor prefix does not tightly bound — `alchemy-api-key`, `datadog-api-key`,
+    /// vendor prefix does not tightly bound — `alchemy-api-key`, `carbon-black-api-key`,
     /// `flickr-api-key`, …), so scanner suppression keeps the Tier-B shape gates
     /// ENGAGED for it (`WeakAnchorBase::Always`) instead of trusting the anchor.
     /// Without this the collision-prone captures would bypass the generic

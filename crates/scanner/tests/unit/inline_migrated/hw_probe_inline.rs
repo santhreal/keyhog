@@ -274,10 +274,9 @@ fn high_tier_gpu_activates_at_measured_safe_floor() {
         thresholds::GPU_MIN_BYTES_HIGH_TIER,
         thresholds::GPU_PATTERN_BREAKEVEN
     ));
-    // The required 8 MiB target now clears the fixed heuristic because the
-    // optimized entropy prefilter + 384 KiB windowing lets the RTX 5090 beat
-    // CPU/SIMD at 8 MiB (the 10x crossover target).
-    assert!(gpu_could_engage(&caps, 8 * 1024 * 1024, 5_000));
+    // A warm 8 MiB win does not prove a cold-process win; only persisted exact
+    // calibration may select GPU below the fixed 128 MiB floor.
+    assert!(!gpu_could_engage(&caps, 8 * 1024 * 1024, 5_000));
     // High-tier solo cap opens even with a low pattern count.
     assert!(gpu_could_engage(
         &caps,

@@ -16,7 +16,13 @@ struct Suite {
 struct Case {
     detector_id: String,
     suite: usize,
+    #[serde(default = "default_expected_finding")]
+    expected_finding: bool,
     assertion: Vec<Assertion>,
+}
+
+const fn default_expected_finding() -> bool {
+    true
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -68,13 +74,44 @@ fn massive_adversarial_data_driven() {
 
 fn assertion_failure(case: &Case, assertion: &Assertion) -> Option<String> {
     match assertion.kind.as_str() {
-        "fires" => fires_failure(case, assertion),
+        "fires" if case.expected_finding => fires_failure(case, assertion),
+        "fires" => nonfinding_failure(case, assertion),
         "silent" => silent_failure(case, assertion),
         _ => Some(format!(
             "{} suite {} assertion {} has unknown kind {:?}",
             case.detector_id, case.suite, assertion.name, assertion.kind
         )),
     }
+}
+
+fn nonfinding_failure(case: &Case, assertion: &Assertion) -> Option<String> {
+    let Some(credential) = assertion.credential.as_deref() else {
+        return Some(format!(
+            "{} suite {} assertion {} is missing credential",
+            case.detector_id, case.suite, assertion.name
+        ));
+    };
+    let matches = oracle_support::scan_text(
+        &assertion.text,
+        &format!("{}-nonfinding.txt", case.detector_id),
+    );
+    let leaked = matches.iter().any(|m| {
+        let normalized =
+            keyhog_scanner::testing::unicode_hardening::normalize_homoglyphs(m.credential.as_ref());
+        normalized.contains(credential)
+    });
+    leaked.then(|| {
+        format!(
+            "{} suite {} assertion {} is a declared non-finding but surfaced credential={credential:?} via {:?}",
+            case.detector_id,
+            case.suite,
+            assertion.name,
+            matches
+                .iter()
+                .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+                .collect::<Vec<_>>()
+        )
+    })
 }
 
 fn fires_failure(case: &Case, assertion: &Assertion) -> Option<String> {
@@ -95,8 +132,17 @@ fn fires_failure(case: &Case, assertion: &Assertion) -> Option<String> {
     }) {
         return None;
     }
+    let trace = std::sync::Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+    trace.enable_dogfood();
+    let _ = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || {
+        oracle_support::scan_text(
+            &assertion.text,
+            &format!("{}-positive.txt", case.detector_id),
+        )
+    });
+    let events = trace.drain().dogfood_events;
     Some(format!(
-        "{} suite {} assertion {} must fire; credential={credential:?} all={:?}",
+        "{} suite {} assertion {} must fire; credential={credential:?} all={:?} suppression={events:?}",
         case.detector_id,
         case.suite,
         assertion.name,

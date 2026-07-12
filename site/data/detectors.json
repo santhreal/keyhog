@@ -1564,7 +1564,10 @@
     "keywords": [
       "CARBONBLACK",
       "carbonblack",
-      "CB_API",
+      "CARBON_BLACK_KEY",
+      "CB API KEY",
+      "CB_API_KEY",
+      "CB KEY",
       "VMWARE_CB"
     ]
   },

@@ -53,7 +53,7 @@ fn root_chunk() -> Chunk {
     Chunk {
         data: SensitiveString::from("ordinary text that only the custom decoder can expand"),
         metadata: ChunkMetadata {
-            path: Some("fixtures/reverse-placeholder.txt".into()),
+            path: Some("reverse-placeholder.txt".into()),
             ..Default::default()
         },
     }
@@ -90,7 +90,7 @@ fn decoded_reverse_placeholder_drop_records_adjudicator_example_suppression() {
                 reason,
                 ..
             } if detector == "postprocess-reverse-placeholder"
-                && path == "fixtures/reverse-placeholder.txt"
+                && path == "reverse-placeholder.txt"
                 && reason.as_ref() == "decoded_reverse_placeholder"
         )),
         "decoded reverse placeholder drop must be visible through adjudicator example telemetry, got {events:?}"

@@ -3511,8 +3511,11 @@ pub mod entropy_scanner {
         }
 
         let detectors = vec![
-            detector("generic-secret", 20),
-            detector("generic-keyword-secret", generic_keyword_secret_min_len),
+            detector(crate::detector_ids::GENERIC_SECRET, 20),
+            detector(
+                crate::detector_ids::GENERIC_KEYWORD_SECRET,
+                generic_keyword_secret_min_len,
+            ),
         ];
         let index = GenericOwningDetectorIndex::build(&detectors);
         let policy = ActiveDetectorPolicy::new(&detectors, &index);

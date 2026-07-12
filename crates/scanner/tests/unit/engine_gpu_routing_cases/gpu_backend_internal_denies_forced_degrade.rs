@@ -37,7 +37,7 @@ fn gpu_backend_internal_denies_forced_degrade() {
         .expect("gpu_region_dispatch.rs readable");
     assert!(
         gpu_dispatch.contains("deny_silent_gpu_degrade_with_reason(\n                self,\n                ScanBackend::Gpu,\n                Some(&reason),")
-            && gpu_dispatch.matches("deny_silent_gpu_degrade_with_reason(\n").count() >= 4,
-        "coalesced GPU fallback and GPU auxiliary dispatch losses must pass concrete reasons to the loud degrade guard"
+            && gpu_dispatch.matches("deny_silent_gpu_degrade_with_reason(\n").count() >= 3,
+        "coalesced GPU fallback and phase-2 GPU admission losses must pass concrete reasons to the loud degrade guard"
     );
 }

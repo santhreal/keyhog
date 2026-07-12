@@ -313,14 +313,13 @@ fn assert_high_tier_routing_cells() -> Vec<(u64, usize, ScanBackend, &'static st
             ScanBackend::SimdCpu,
             "high: zero bytes → SimdCpu",
         ),
-        // Above min but below pat_floor: when solo == min (the 8 MiB
-        // crossover target), any bytes >= min also clears the solo cap,
-        // so GPU engages via the solo path regardless of pattern count.
+        // Above min but below pat_floor remains SIMD until the distinct,
+        // higher solo threshold is reached.
         (
             min + 1,
             pat_floor - 1,
-            ScanBackend::Gpu,
-            "high: above min, below pat_floor, at/above solo → Gpu",
+            ScanBackend::SimdCpu,
+            "high: above min, below pat_floor, below solo → SimdCpu",
         ),
     ]
 }

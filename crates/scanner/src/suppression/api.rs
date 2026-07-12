@@ -445,7 +445,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // Generic detectors (generic-secret, generic-api-key, entropy-*)
     // never use this bypass - their anchor is keyword-class, not
     // service-specific, and shape gates are load-bearing for them.
-    // Weakly anchored named detectors (e.g. datadog-api-key) also do not
+    // Weakly anchored named detectors (e.g. carbon-black-api-key) also do not
     // bypass shape gates to prevent false positive traps from triggering.
     let bypass_shape_gates =
         crate::detector_ids::is_service_anchored_detector(detector_id) && !weak_anchor;
@@ -455,7 +455,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // coincidental digest. Exempt it from the bare-hex-digest / algorithmic-
     // placeholder arms only (every decoy gate still runs). Strong-anchor
     // detectors already skip those via `bypass_shape_gates`; this is the
-    // weak_anchor pure-hex case (alchemy / datadog / crowdin / …) whose
+    // weak_anchor pure-hex case (alchemy / carbon-black / crowdin / …) whose
     // `min_confidence = 0.2` already declares the keyword anchor authoritative —
     // the shape gate firing ahead of confidence was defeating that intent.
     let allow_canonical_hex_key = crate::detector_ids::is_service_anchored_detector(detector_id)

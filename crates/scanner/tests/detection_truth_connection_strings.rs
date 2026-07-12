@@ -83,12 +83,8 @@ fn sendgrid_api_key_in_env() {
 
 #[test]
 fn mongodb_uri_password_is_recovered_by_generic_password() {
-    // NOTE: the mongodb-connection-string *specific* detector DOES fire on a
-    // standard mongodb:// URI via the production auto path (SimdCpu/Hyperscan);
-    // it is simply not reached on the AC-only CpuFallback backend used by this
-    // file (an HS-only trigger, by design — see detection_gaps_documented.rs).
-    // Regardless of backend, the embedded password is caught by generic-password,
-    // which this pins.
+    // The specific detector and the generic password recovery are both expected
+    // on every backend; this assertion pins the embedded-password half.
     assert_password_recovered(
         "MONGO_URI=mongodb://admin:Str0ngMongoPwd@cluster0.example.com:27017/db",
         "Str0ngMongoPwd",

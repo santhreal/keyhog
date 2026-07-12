@@ -510,7 +510,13 @@ pub(crate) fn extract_literal_prefix(pattern: &str) -> Option<String> {
                 // patterns like `(https?://...)` route from their earliest
                 // guaranteed bytes instead of a later inner literal.
                 let group_start = chars.clone().collect::<String>();
-                if let Some(alternatives) = extract_group_alternatives(&group_start) {
+                let optional_group = leading_group_parts(&group_start).is_some_and(|(_, tail)| {
+                    tail.starts_with('?') || tail.starts_with('*') || tail.starts_with("{0")
+                });
+                if optional_group {
+                    // Bytes inside an optional group are not a required prefix.
+                    // Keep the literal accumulated before the group and stop.
+                } else if let Some(alternatives) = extract_group_alternatives(&group_start) {
                     // Find the longest common prefix of all alternatives
                     if let Some(first) = alternatives.first() {
                         let common: String = first
@@ -743,7 +749,8 @@ pub(crate) const MIN_INNER_LITERAL_CHARS: usize = 4;
 ///
 /// Walks the parsed regex AST and collects every contiguous run of
 /// `Literal` nodes inside a `Concat`. Alternation branches are walked
-/// recursively (each branch's literals are independent candidates).
+/// recursively only when every branch has at least one eligible trigger;
+/// partial alternation coverage would make the unanchored branch unreachable.
 /// Repetitions and assertions break the run conservatively: even though
 /// `\babc\b` always contains "abc", we also allow that the surrounding
 /// regex might never match, in which case we'd be promoting chunks for
@@ -756,10 +763,45 @@ pub(crate) const MIN_INNER_LITERAL_CHARS: usize = 4;
 ///   `[a-f0-9]{32}` → `[]`
 ///   `wx[a-f0-9]{16}` → `[]` (the `wx` prefix is below the 4-char floor)
 pub(crate) fn extract_inner_literals(pattern: &str) -> Vec<String> {
-    use regex_syntax::ast::parse::Parser;
+    use regex_syntax::ast::{parse::Parser, Ast};
     let Ok(ast) = Parser::new().parse(pattern) else {
         return Vec::new();
     };
+
+    // AC routing is sound only when every possible regex match contains at
+    // least one extracted literal. Collecting a long literal from just one
+    // alternation arm would silently kill a shorter arm with no eligible
+    // literal (for example `DD.API.KEY|DATADOG.API.KEY`).
+    fn has_complete_trigger_coverage(ast: &Ast) -> bool {
+        match ast {
+            Ast::Concat(concat) => {
+                let mut run_bytes = 0usize;
+                for node in &concat.asts {
+                    if let Ast::Literal(literal) = node {
+                        run_bytes += literal.c.len_utf8();
+                        if run_bytes >= MIN_INNER_LITERAL_CHARS {
+                            return true;
+                        }
+                    } else {
+                        run_bytes = 0;
+                        if has_complete_trigger_coverage(node) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            }
+            Ast::Group(group) => has_complete_trigger_coverage(&group.ast),
+            Ast::Alternation(alternation) => {
+                !alternation.asts.is_empty()
+                    && alternation.asts.iter().all(has_complete_trigger_coverage)
+            }
+            _ => false,
+        }
+    }
+    if !has_complete_trigger_coverage(&ast) {
+        return Vec::new();
+    }
     let mut out = Vec::new();
     walk_ast(&ast, &mut out);
     out.retain(|s| s.len() >= MIN_INNER_LITERAL_CHARS);
