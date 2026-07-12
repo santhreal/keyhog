@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Keep fixed high-tier GPU routing conservative at 128 MiB (256 MiB for a
+  single-file override) because the verified 8 MiB RTX 5090 crossover is warm
+  evidence; exact cold-versus-daemon decisions belong to persisted autoroute
+  calibration.
 - Move generic-assignment candidate length bounds into each owning detector's
   TOML (`min_len` / `max_len`). The shared extractor derives its capture range
   from the detector corpus, applies the owning detector's inclusive ceiling,

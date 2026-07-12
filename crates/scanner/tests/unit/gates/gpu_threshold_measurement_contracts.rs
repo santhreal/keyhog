@@ -79,8 +79,12 @@ fn eval_threshold_const(src: &str, name: &str) -> u64 {
             // Match the declaration regardless of `pub(crate)` / `pub` / no
             // visibility prefix; the `: u64 = ` tail keeps it specific.
             line.starts_with(&decl)
-                || line.strip_prefix("pub(crate) ").is_some_and(|l| l.starts_with(&decl))
-                || line.strip_prefix("pub ").is_some_and(|l| l.starts_with(&decl))
+                || line
+                    .strip_prefix("pub(crate) ")
+                    .is_some_and(|l| l.starts_with(&decl))
+                || line
+                    .strip_prefix("pub ")
+                    .is_some_and(|l| l.starts_with(&decl))
         })
         .unwrap_or_else(|| panic!("threshold constant {name} must exist"));
     let rhs = line
@@ -201,7 +205,7 @@ fn rtx5090_region_perf_trace_records_direct_source_and_8mib_not_10x() {
 }
 
 #[test]
-fn high_tier_gpu_threshold_stays_above_measured_no_win_range() {
+fn fixed_high_tier_threshold_does_not_treat_a_warm_trace_as_cold_autoroute_proof() {
     const MIB: u64 = 1024 * 1024;
     let gpu_min_bytes_high_tier = threshold_u64("GPU_MIN_BYTES_HIGH_TIER");
     let gpu_bytes_breakeven_solo_high_tier = threshold_u64("GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER");
@@ -215,9 +219,13 @@ fn high_tier_gpu_threshold_stays_above_measured_no_win_range() {
     assert_eq!(measurement.gpu, "NVIDIA GeForce RTX 5090");
     assert_eq!(measurement.backend, "region-presence");
     assert_eq!(measurement.payload, "benign-sparse");
-    assert_eq!(
-        measurement.first_gpu_win_mib, 0,
-        "0 records that no GPU win was measured in this sweep"
+    assert!(measurement.max_measured_mib >= 8);
+    // The 2026-06-20 perf trace (post split-positioned-matcher fix) shows GPU
+    // winning at 1 MiB. first_gpu_win_mib=1 records this.
+    assert!(
+        measurement.first_gpu_win_mib > 0,
+        "first_gpu_win_mib must be >0 (GPU wins measured): got {}",
+        measurement.first_gpu_win_mib
     );
 
     let eight_mib = measurement
@@ -225,31 +233,36 @@ fn high_tier_gpu_threshold_stays_above_measured_no_win_range() {
         .iter()
         .find(|point| point.mib == 8)
         .expect("8 MiB crossover point");
-    assert_eq!(eight_mib.winner, "cpu");
+    // GPU wins at 8 MiB (4.5x faster than Hyperscan).
+    assert_eq!(eight_mib.winner, "gpu");
     assert!(
-        eight_mib.gpu_mib_s < eight_mib.cpu_mib_s.max(eight_mib.simd_mib_s),
-        "8 MiB GPU route must not be treated as fastest: cpu={} simd={} gpu={}",
+        eight_mib.gpu_mib_s > eight_mib.cpu_mib_s.max(eight_mib.simd_mib_s),
+        "8 MiB GPU route must be fastest: cpu={} simd={} gpu={}",
         eight_mib.cpu_mib_s,
         eight_mib.simd_mib_s,
         eight_mib.gpu_mib_s
     );
     assert!(
-        eight_mib.gpu_best_cpu_ratio < 1.0,
-        "8 MiB GPU ratio must stay below 1.0 until a newer artifact proves a win"
+        eight_mib.gpu_best_cpu_ratio > 1.0,
+        "8 MiB GPU ratio must be above 1.0 (GPU faster): got {}",
+        eight_mib.gpu_best_cpu_ratio
     );
 
-    let measured_ceiling = measurement.max_measured_mib * MIB;
+    // This artifact proves a warm kernel/path win, not cold one-shot process
+    // cost. The fixed heuristic has no runtime-lifetime identity, so it remains
+    // conservative; exact 8 MiB routing belongs to persisted calibration.
+    let eight_mib_bytes = 8 * MIB;
     assert!(
-        gpu_min_bytes_high_tier > measured_ceiling,
-        "high-tier heuristic min must stay above the measured no-win ceiling: threshold={} ceiling={}",
+        gpu_min_bytes_high_tier > eight_mib_bytes,
+        "fixed high-tier minimum must stay above the warm-only 8 MiB trace: threshold={} 8mib={}",
         gpu_min_bytes_high_tier,
-        measured_ceiling
+        eight_mib_bytes
     );
     assert!(
-        gpu_bytes_breakeven_solo_high_tier > measured_ceiling,
-        "high-tier heuristic solo cap must stay above the measured no-win ceiling: threshold={} ceiling={}",
+        gpu_bytes_breakeven_solo_high_tier > eight_mib_bytes,
+        "fixed solo threshold must stay above the warm-only 8 MiB trace: threshold={} 8mib={}",
         gpu_bytes_breakeven_solo_high_tier,
-        measured_ceiling
+        eight_mib_bytes
     );
 }
 
@@ -332,7 +345,8 @@ fn matches_a_bare_const_with_no_visibility_prefix() {
 
 #[test]
 fn resolves_a_nested_named_constant_chain() {
-    let src = "const MIB: u64 = 1024 * 1024;\nconst BLOCK: u64 = 4 * MIB;\nconst A: u64 = 2 * BLOCK;";
+    let src =
+        "const MIB: u64 = 1024 * 1024;\nconst BLOCK: u64 = 4 * MIB;\nconst A: u64 = 2 * BLOCK;";
     assert_eq!(eval_threshold_const(src, "A"), 8 * MIB_LITERAL);
 }
 
@@ -400,7 +414,8 @@ fn real_gpu_breakeven_solo_high_tier_is_256_mib() {
 #[test]
 fn real_breakeven_solo_cap_exceeds_the_min_dispatch_threshold() {
     assert!(
-        threshold_u64("GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER") > threshold_u64("GPU_MIN_BYTES_HIGH_TIER"),
-        "solo breakeven cap must sit above the min dispatch threshold"
+        threshold_u64("GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER")
+            > threshold_u64("GPU_MIN_BYTES_HIGH_TIER"),
+        "solo breakeven cap must exceed the min dispatch threshold"
     );
 }

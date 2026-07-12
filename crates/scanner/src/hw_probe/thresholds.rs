@@ -9,12 +9,11 @@
 //! [`super::gpu_solo_bytes_for_tier`] to pick the right breakeven for
 //! the actual adapter.
 //!
-//! The tier→threshold map is conservative because the live region-presence GPU
-//! route is still full-scan limited by host coalescing/readback and the shared
-//! CPU phase-2 tail. The last high-tier RTX 5090 sweep (2026-06-19) did not
-//! beat best CPU/SIMD through 64 MiB, so heuristic GPU routing starts beyond
-//! that measured no-win range. Install-time autoroute calibration is
-//! authoritative and still measures GPU candidates when explicitly opted in.
+//! The fixed tier map remains conservative because it cannot distinguish a
+//! cold one-shot process from a warm daemon. The production-window RTX 5090
+//! baseline proves a warm 8 MiB GPU win (31.4524 ms vs 35.0860 ms Hyperscan),
+//! but not a cold-process win. Persisted autoroute calibration owns aggressive
+//! workload-specific decisions; this heuristic must not substitute for them.
 //!
 //! | Tier   | Adapter examples                    | Heuristic starts at |
 //! |--------|-------------------------------------|---------------------|
@@ -33,9 +32,8 @@ const MIB: u64 = 1024 * 1024;
 pub(crate) const GPU_MIN_BYTES: u64 = 512 * MIB;
 /// Mid-tier (RTX 20/30, GTX 16, Intel Arc, M-series base): 256 MiB.
 pub(crate) const GPU_MIN_BYTES_MID_TIER: u64 = 256 * MIB;
-/// High-tier (RTX 40/50, A100/H100, M-series Max): 128 MiB. The live
-/// region-presence route did not beat CPU/SIMD through 64 MiB on RTX 5090, so
-/// fixed heuristic routing must not engage at or below that measured range.
+/// High-tier fixed fallback: 128 MiB. Calibrated routing may select GPU at a
+/// smaller exact bucket when cold/warm evidence proves it fastest.
 pub(crate) const GPU_MIN_BYTES_HIGH_TIER: u64 = 128 * MIB;
 /// Pattern count above which GPU literal matching becomes worthwhile
 /// regardless of buffer size - many patterns saturate Hyperscan's
@@ -50,8 +48,8 @@ pub(crate) const GPU_PATTERN_BREAKEVEN_MID_TIER: usize = 500;
 /// Single-file size that justifies GPU even at low pattern counts on low-tier
 /// adapters. Kept no more aggressive than the measured no-win high-tier range.
 pub(crate) const GPU_BYTES_BREAKEVEN_SOLO: u64 = 1024 * MIB;
-/// High-tier solo cap: 256 MiB. Smaller files require install-time calibration
-/// evidence before GPU can be trusted as fastest.
+/// High-tier fixed single-file fallback: 256 MiB. Smaller exact buckets require
+/// persisted cold/warm calibration evidence.
 pub(crate) const GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER: u64 = 256 * MIB;
 /// Mid-tier solo cap: 512 MiB.
 pub(crate) const GPU_BYTES_BREAKEVEN_SOLO_MID_TIER: u64 = 512 * MIB;
