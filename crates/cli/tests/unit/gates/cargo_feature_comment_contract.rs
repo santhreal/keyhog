@@ -59,6 +59,10 @@ fn cli_default_scanner_feature_comment_matches_manifest_contract() {
         "this gate covers the CLI default importing the scanner default feature set"
     );
     assert!(
+        cli_default.contains(&"simd"),
+        "the CLI default must activate its own simd cfg whenever scanner/default enables Hyperscan"
+    );
+    assert!(
         scanner_default.contains(&"gpu") && scanner_default.contains(&"simd"),
         "scanner default currently includes accelerator features; update this gate if that contract changes"
     );

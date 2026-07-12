@@ -3,8 +3,8 @@
 ## `keyhog scan [PATH]...`
 
 The main subcommand. Scans one or more `PATH` roots (default: current
-directory) and emits findings. Pass several roots in a single run —
-`keyhog scan src/ tests/ config/` — and each is walked as its own source;
+directory) and emits findings. Pass several roots in a single run
+(`keyhog scan src/ tests/ config/`) and each is walked as its own source;
 a root nested inside another is folded into its covering parent (announced
 on stderr) so no subtree is scanned twice. Exit code: `0` clean, `1` findings
 present, `2` user error, `3` system error, `10` live credential, `11` scanner
@@ -165,14 +165,10 @@ Manages the git pre-commit hook. See
 
 ## `keyhog daemon <start|stop|status>` (Unix only)
 
-The daemon holds the compiled scanner in memory so IDE-save handlers
-and stdin/single-file hook invocations skip the ~3 s cold start.
-
-The daemon route is scanner-only for eligible stdin or single regular
-file scans. Results are pre-baseline, pre-Merkle-skip-cache, and
-pre-verification. Directory, git, remote, baseline, `--verify`,
-backend/GPU/autoroute, and policy-changing scans run through the
-in-process pipeline; `--daemon=on` exits with an error when that exact
+The daemon holds a compiled scanner and initialized accelerator state for
+eligible stdin and single-file scans. Directory, Git, remote, baseline,
+verification, explicit backend/calibration, and incompatible policy requests
+use the in-process pipeline in `auto` mode; `--daemon=on` fails if the exact
 daemon route cannot be honored.
 
 | Subcommand         | Effect                                              |
@@ -191,6 +187,10 @@ Default socket path: `$XDG_RUNTIME_DIR/keyhog.sock`, or
 On Windows: every `daemon` subcommand prints "daemon mode is
 unix-only" and exits non-zero. No Windows daemon transport ships; use
 `keyhog scan <path>` for in-process scans on Windows.
+
+See [Daemon and warm scans](../workflows/daemon.md) for the complete `auto` /
+`on` / `off` contract, request eligibility, warm autoroute behavior, and socket
+security semantics.
 
 ## `keyhog diff <FILE_A> <FILE_B>`
 

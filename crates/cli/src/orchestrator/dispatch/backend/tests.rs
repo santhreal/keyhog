@@ -440,35 +440,20 @@ fn source_class_hash_uses_stable_top_level_source_family() {
 }
 
 #[test]
-fn workload_key_rejects_missing_source_class_evidence() {
-    let err = workload_key(&[test_chunk_with_source("a".repeat(64), "")], 902)
-        .expect_err("autoroute must not hash missing source class as a reusable bucket");
-    let text = err.to_string();
-    assert!(
-        text.contains("source_type") && text.contains("non-empty source family"),
-        "missing source-class metadata must be an explicit autoroute evidence error, got: {text}"
-    );
-}
+fn workload_key_separates_full_source_size_from_payload_size_fallback() {
+    let full_size = test_chunk_with_source("a".repeat(64), "filesystem");
+    let mut transformed = full_size.clone();
+    transformed.metadata.size_bytes = None;
 
-#[test]
-fn workload_key_separates_payload_derived_size_from_full_source_size() {
-    let mut chunk = test_chunk_with_source("a".repeat(64), "filesystem/windowed");
-    chunk.metadata.path = Some("large.bin".into());
-    chunk.metadata.size_bytes = None;
+    let full_key = workload_key(&[full_size], 902).expect("full-size workload classifies");
+    let transformed_key =
+        workload_key(&[transformed], 902).expect("payload-size workload classifies");
 
-    let payload_key = workload_key(&[chunk.clone()], 902)
-        .expect("a transformed or streamed payload remains autoroutable");
-    chunk.metadata.size_bytes = Some(64);
-    let full_size_key = workload_key(&[chunk], 902).expect("full source size classifies");
-
-    assert_eq!(payload_key.max_file_bucket, full_size_key.max_file_bucket);
+    assert_eq!(full_key.bytes_bucket, transformed_key.bytes_bucket);
+    assert_eq!(full_key.max_file_bucket, transformed_key.max_file_bucket);
     assert_ne!(
-        payload_key.source_class_hash, full_size_key.source_class_hash,
-        "source fingerprint must encode whether max-file size came from payload or full-source evidence"
-    );
-    assert_ne!(
-        payload_key, full_size_key,
-        "numerically equal payload and full-file size buckets must not share calibration evidence"
+        full_key.source_class_hash, transformed_key.source_class_hash,
+        "autoroute must not reuse full-source measurements for stream/transformation payload sizes"
     );
 }
 
@@ -488,6 +473,17 @@ fn source_class_hash_associates_size_provenance_with_each_source_family() {
     assert_ne!(
         filesystem_payload, web_payload,
         "equal source sets with different per-family size provenance need distinct calibration keys"
+    );
+}
+
+#[test]
+fn workload_key_rejects_missing_source_class_evidence() {
+    let err = workload_key(&[test_chunk_with_source("a".repeat(64), "")], 902)
+        .expect_err("autoroute must not hash missing source class as a reusable bucket");
+    let text = err.to_string();
+    assert!(
+        text.contains("source_type") && text.contains("non-empty source family"),
+        "missing source-class metadata must be an explicit autoroute evidence error, got: {text}"
     );
 }
 
@@ -2656,6 +2652,7 @@ fn persisted_router_rejects_agreeing_neighbours_without_exact_evidence() {
     let error = resolve_persisted_backend(
         &decisions,
         requested,
+        AutorouteRuntimeClass::OneShot,
         &Some(std::path::PathBuf::from("autoroute.json")),
         &None,
     )
@@ -2665,6 +2662,38 @@ fn persisted_router_rejects_agreeing_neighbours_without_exact_evidence() {
             .to_string()
             .contains("no persisted fastest-correct backend decision"),
         "missing exact evidence must surface the calibration error: {error}"
+    );
+}
+
+#[test]
+fn persistent_daemon_route_uses_warm_gpu_evidence_but_one_shot_uses_cold_cost() {
+    let simd = BackendTimingEvidence::from_trial_ns(vec![10_000_000; 7])
+        .expect("SIMD timing evidence");
+    let cpu = BackendTimingEvidence::from_trial_ns(vec![20_000_000; 7])
+        .expect("CPU timing evidence");
+    let mut gpu_trials = vec![100_000_000];
+    gpu_trials.extend(std::iter::repeat_n(1_000_000, 6));
+    let gpu = BackendTimingEvidence::from_trial_ns(gpu_trials).expect("GPU timing evidence");
+    let decision = AutorouteDecision::from_timing_evidence(
+        ScanBackend::SimdCpu,
+        8 * 1024 * 1024,
+        9,
+        0xA11D,
+        1,
+        simd,
+        Some(cpu),
+        Some(gpu),
+    );
+
+    assert_eq!(
+        decision.resolved_routing_backend(),
+        Some(ScanBackend::SimdCpu),
+        "one-shot routing must include the real GPU cold dispatch cost"
+    );
+    assert_eq!(
+        decision.resolved_persistent_backend(),
+        Some(ScanBackend::Gpu),
+        "a preinitialized daemon must select from warm GPU evidence"
     );
 }
 

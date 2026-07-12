@@ -179,12 +179,12 @@ fn compile_daemon_scan_runtime(
 )> {
     let scan_runtime = crate::orchestrator::compile_default_scan_runtime(detectors, |error| {
         anyhow::anyhow!("daemon: compiling scanner from detector specs: {error}")
-    })?;
+    })?
+    .prepare_persistent_daemon()?;
     let detector_count = scan_runtime.detector_count();
     // The daemon is long-lived and serves many scan requests; pay the lazy
     // regex compile once, up front and in parallel, so no client request eats a
     // detector's first-use compile latency.
-    scan_runtime.warm();
     let (scanner, router) = scan_runtime.into_parts();
     Ok((scanner, router, detector_count))
 }

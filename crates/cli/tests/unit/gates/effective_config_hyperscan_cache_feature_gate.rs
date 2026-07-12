@@ -13,7 +13,7 @@ fn effective_config_hyperscan_cache_success_test_is_simd_gated() {
     assert!(
         attrs.contains("#[cfg(feature = \"simd\")]"),
         "the effective-config test that expects --cache-dir success must be \
-         gated on feature=simd because default builds fail closed for the \
-         Hyperscan cache-dir surface"
+         gated on feature=simd so portable and accelerator-free builds remain \
+         valid; the default build enables this feature"
     );
 }

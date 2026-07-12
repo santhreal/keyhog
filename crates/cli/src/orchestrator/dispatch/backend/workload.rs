@@ -62,9 +62,9 @@ pub(super) fn workload_key(
     let bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
     let max_file = batch
         .iter()
-        .map(|chunk| chunk.metadata.size_bytes.unwrap_or(chunk.data.len() as u64))
+        .map(|c| c.metadata.size_bytes.unwrap_or(c.data.len() as u64)) // LAW10: empty/absent => documented numeric default, recall-safe
         .max()
-        .unwrap_or(0);
+        .unwrap_or(0); // LAW10: empty/absent => documented numeric default, recall-safe
     Ok(WorkloadKey {
         bytes_bucket: autoroute_stable_bucket(bytes),
         chunks_bucket: autoroute_stable_bucket(batch.len() as u64),
@@ -134,9 +134,9 @@ fn is_decode_trigger_byte(byte: u8) -> bool {
 
 pub(super) fn source_class_hash(batch: &[Chunk]) -> Result<u64, WorkloadClassificationError> {
     // `size_bytes` is the original backing-source size; its absence means the
-    // max-size bucket was derived from a stream/transformation payload. Bind
-    // that provenance to each source family so equal numeric buckets cannot
-    // silently share calibration evidence across different measurement kinds.
+    // max-size bucket was derived from a stream or transformed payload. Bind
+    // that provenance to each source family so numerically equal buckets do
+    // not reuse measurements made for a different kind of workload evidence.
     let mut classes: Vec<(&str, bool)> = Vec::new();
     for chunk in batch {
         classes.push((source_family(chunk)?, chunk.metadata.size_bytes.is_some()));

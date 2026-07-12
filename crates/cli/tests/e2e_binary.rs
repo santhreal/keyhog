@@ -78,6 +78,9 @@ fn forced_simd_progress_banner() -> String {
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join("clean.txt");
     std::fs::write(&path, "hello world\n").expect("write fixture");
+    let home = dirs::home_dir().expect("home directory for validated Hyperscan cache fixture");
+    let cache_root = TempDir::new_in(home).expect("home-scoped Hyperscan cache root");
+    let cache_dir = cache_root.path().join("hyperscan-cache");
 
     let output = Command::new(binary())
         .args([
@@ -89,6 +92,8 @@ fn forced_simd_progress_banner() -> String {
             "--backend",
             "simd",
         ])
+        .arg("--cache-dir")
+        .arg(&cache_dir)
         .arg(&path)
         .output()
         .expect("spawn keyhog scan --progress");

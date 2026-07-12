@@ -234,7 +234,17 @@ impl AutorouteDecision {
         // CpuFallback < Gpu). An empty winner set means no timing evidence, so
         // `min_by_key` yields `None`, propagated to the caller as "no persisted
         // route" — never silently defaulted to a backend.
-        self.fastest_winner_set()
+        self.fastest_winner_set(false)
+            .into_iter()
+            .min_by_key(|backend| backend_overhead_rank(*backend))
+    }
+
+    /// Fastest-correct backend once a long-lived daemon has initialized its
+    /// accelerator state. The persisted trials contain both the real first GPU
+    /// dispatch and the warm trials; daemon routing uses only the warm interval,
+    /// while one-shot routing conservatively includes cold cost.
+    pub(super) fn resolved_persistent_backend(&self) -> Option<ScanBackend> {
+        self.fastest_winner_set(true)
             .into_iter()
             .min_by_key(|backend| backend_overhead_rank(*backend))
     }
@@ -256,8 +266,8 @@ impl AutorouteDecision {
     /// - Exactly one member  → that route is provably fastest.
     /// - Two or more members → they are mutually non-separated (a tie); the
     ///   lowest-overhead member is the sound route.
-    fn fastest_winner_set(&self) -> Vec<ScanBackend> {
-        let intervals = self.route_confidence_intervals();
+    fn fastest_winner_set(&self, persistent_runtime: bool) -> Vec<ScanBackend> {
+        let intervals = self.route_confidence_intervals_for(persistent_runtime);
         intervals
             .iter()
             .filter(|(backend, ci)| {
@@ -270,6 +280,13 @@ impl AutorouteDecision {
     }
 
     fn route_confidence_intervals(&self) -> Vec<(ScanBackend, TimingConfidenceInterval)> {
+        self.route_confidence_intervals_for(false)
+    }
+
+    fn route_confidence_intervals_for(
+        &self,
+        persistent_runtime: bool,
+    ) -> Vec<(ScanBackend, TimingConfidenceInterval)> {
         let mut intervals = vec![(
             ScanBackend::SimdCpu,
             self.simd_timing.confidence_interval_95_ns,
@@ -284,9 +301,13 @@ impl AutorouteDecision {
             let warm_interval = warm_timing.confidence_interval_95_ns;
             intervals.push((
                 ScanBackend::Gpu,
-                TimingConfidenceInterval {
-                    low_ns: cold_ns.max(warm_interval.low_ns),
-                    high_ns: cold_ns.max(warm_interval.high_ns),
+                if persistent_runtime {
+                    warm_interval
+                } else {
+                    TimingConfidenceInterval {
+                        low_ns: cold_ns.max(warm_interval.low_ns),
+                        high_ns: cold_ns.max(warm_interval.high_ns),
+                    }
                 },
             ));
         }

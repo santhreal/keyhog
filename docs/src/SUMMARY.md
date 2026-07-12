@@ -12,12 +12,14 @@
 
 - [How detection works](./detection.md)
 - [Detectors](./detectors.md)
+- [Backends and routing](./backends.md)
 - [HTTP and wire scanning](./http-wire.md)
 - [Suppressions](./suppressions.md)
 - [Verification](./verification.md)
 
 # Workflows
 
+- [Daemon and warm scans](./workflows/daemon.md)
 - [Pre-commit hook](./workflows/precommit.md)
 - [CI integration](./workflows/ci.md)
 

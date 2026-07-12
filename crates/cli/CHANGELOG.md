@@ -3,8 +3,19 @@
 ## Unreleased
 
 - Include full-source-size provenance in autoroute workload keys so streamed or
-  transformed payload sizes cannot silently reuse a calibration measured from
-  an equal numeric full-file-size bucket.
+  transformed payload sizes cannot silently reuse calibration measured from an
+  equal numeric full-file-size bucket.
+- Activate the CLI `simd` feature in default builds so the documented
+  Hyperscan `--cache-dir` surface works whenever the default scanner includes
+  Hyperscan instead of falsely reporting an accelerator-free binary.
+- Stop prewarming an automatic backend from a zero-byte heuristic before the
+  persisted workload-specific autoroute decision is known; explicit diagnostic
+  backend overrides still prewarm directly.
+- Record the actual first GPU dispatch as autoroute cold-start evidence instead
+  of discarding it and mislabelling an already-warm second dispatch as cold.
+- Distinguish one-shot and persistent-daemon autorouting: one-shot scans include
+  GPU cold cost, while the daemon initializes accelerator state before serving
+  requests and selects from calibrated warm timing evidence.
 - Replace autoroute cache writes through a synced same-directory temporary file
   so recalibration atomically replaces an existing cache path across supported
   operating systems.

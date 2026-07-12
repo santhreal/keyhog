@@ -101,6 +101,22 @@ pub(crate) struct CachedBackendRouter {
     decisions: HashMap<WorkloadKey, AutorouteDecision>,
     cache_path: Option<PathBuf>,
     cache_load_error: Option<String>,
+    runtime_class: AutorouteRuntimeClass,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AutorouteRuntimeClass {
+    OneShot,
+    PersistentDaemon,
+}
+
+impl AutorouteRuntimeClass {
+    fn label(self) -> &'static str {
+        match self {
+            Self::OneShot => "one-shot",
+            Self::PersistentDaemon => "persistent-daemon",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +127,7 @@ pub(crate) struct AutorouteRoutingError {
 impl AutorouteRoutingError {
     fn missing_decision(
         key: WorkloadKey,
+        runtime_class: AutorouteRuntimeClass,
         cache_path: &Option<PathBuf>,
         cache_load_error: &Option<String>,
     ) -> Self {
@@ -126,13 +143,14 @@ impl AutorouteRoutingError {
                  fix: run `keyhog calibrate-autoroute` (primes every scan-policy preset and \
                  workload bucket for this binary in place), or rerun `install.sh --calibrate` \
                  on Unix / `install.ps1 -Calibrate` on Windows.\n  \
-                 workload bucket: [{}]\n  \
+                 workload bucket: [{}], runtime={}\n  \
                  cache: {cache_state}.\n  \
                  Decisions are scoped to this exact binary, host, detector corpus, resolved \
                  scan config, and source class. Normal auto scans never benchmark, guess, or \
                  substitute CPU/SIMD/GPU for a missing decision; pass an explicit \
                  `--backend <{}>` for a one-off diagnostic scan.",
                 store::render_workload_key(&key),
+                runtime_class.label(),
                 backend_override_hint(),
             ),
         }
@@ -286,7 +304,13 @@ impl CachedBackendRouter {
             decisions,
             cache_path,
             cache_load_error,
+            runtime_class: AutorouteRuntimeClass::OneShot,
         }
+    }
+
+    pub(crate) fn for_persistent_daemon(mut self) -> Self {
+        self.runtime_class = AutorouteRuntimeClass::PersistentDaemon;
+        self
     }
 
     pub(crate) fn choose(
@@ -305,6 +329,7 @@ impl CachedBackendRouter {
         resolve_persisted_backend(
             &self.decisions,
             key,
+            self.runtime_class,
             &self.cache_path,
             &self.cache_load_error,
         )
@@ -319,13 +344,19 @@ impl CachedBackendRouter {
 fn resolve_persisted_backend(
     decisions: &HashMap<WorkloadKey, AutorouteDecision>,
     key: WorkloadKey,
+    runtime_class: AutorouteRuntimeClass,
     cache_path: &Option<PathBuf>,
     cache_load_error: &Option<String>,
 ) -> Result<ScanBackend, AutorouteRoutingError> {
-    match decisions.get(&key).and_then(AutorouteDecision::backend) {
+    let backend = decisions.get(&key).and_then(|decision| match runtime_class {
+        AutorouteRuntimeClass::OneShot => decision.backend(),
+        AutorouteRuntimeClass::PersistentDaemon => decision.resolved_persistent_backend(),
+    });
+    match backend {
         Some(backend) => Ok(backend),
         None => Err(AutorouteRoutingError::missing_decision(
             key,
+            runtime_class,
             cache_path,
             cache_load_error,
         )),
@@ -400,6 +431,7 @@ impl MeasuredBackendRouter {
             return resolve_persisted_backend(
                 &self.decisions,
                 key,
+                AutorouteRuntimeClass::OneShot,
                 &self.cache_path,
                 &self.cache_load_error,
             );

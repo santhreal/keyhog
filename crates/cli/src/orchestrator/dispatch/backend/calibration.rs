@@ -207,14 +207,14 @@ fn measure_candidate_backend(
 ) -> Result<BackendTimingEvidence, AutorouteRoutingError> {
     let reference_key = canonical_matches(reference_matches);
     let mut durations = Vec::with_capacity(AUTOROUTE_CALIBRATION_TRIALS);
-    // Run one extra UN-recorded warmup pass first (trial_idx 0): it pays the same
-    // per-trial cold-fragment-cache cost a real scan does AND absorbs one-time
-    // startup — Hyperscan scratch first-alloc, cold instruction cache, page-faults
-    // — so the recorded trials measure steady-state throughput, the same warmup
-    // the SIMD reference already gets (Law 7: a biased measurement mis-selects the
-    // backend). The warmup is fully checked (parity + GPU-degrade), so a backend
-    // that diverges or degrades on first contact is still rejected here.
-    for trial_idx in 0..=AUTOROUTE_CALIBRATION_TRIALS {
+    let records_cold_trial = is_gpu_backend(backend);
+    // GPU routing evidence deliberately stores the first real dispatch as its
+    // cold trial followed by warm trials. Discarding that call and labelling the
+    // second one "cold" makes one-shot routing evidence optimistically false.
+    // CPU/Hyperscan candidates still get one checked, unrecorded warmup so their
+    // persisted trials measure steady-state throughput like the SIMD reference.
+    let calls = AUTOROUTE_CALIBRATION_TRIALS + usize::from(!records_cold_trial);
+    for trial_idx in 0..calls {
         scanner.clear_fragment_cache();
         let gpu_degrade_count_before = if is_gpu_backend(backend) {
             Some(scanner.runtime_status().gpu_degrade_count)
@@ -253,7 +253,7 @@ fn measure_candidate_backend(
                 "candidate findings diverged from the SIMD reference",
             ));
         }
-        if trial_idx > 0 {
+        if records_cold_trial || trial_idx > 0 {
             durations.push(dur);
         }
     }

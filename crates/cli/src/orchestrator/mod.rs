@@ -224,6 +224,55 @@ impl DefaultScanRuntime {
         self.scanner.warm();
     }
 
+    /// Prepare the compile-once runtime for daemon semantics. Autoroute may use
+    /// warm GPU timing only after the daemon has initialized the accelerator
+    /// stack before accepting requests.
+    pub(crate) fn prepare_persistent_daemon(mut self) -> Result<Self> {
+        self.scanner.warm();
+        let simd_ready = self
+            .scanner
+            .warm_backend(keyhog_scanner::ScanBackend::SimdCpu);
+        let hw = keyhog_scanner::hw_probe::probe_hardware();
+        let gpu_expected = keyhog_scanner::hw_probe::gpu_backend_compiled()
+            && hw.gpu_available
+            && !hw.gpu_is_software;
+        let gpu_ready = self
+            .scanner
+            .warm_backend(keyhog_scanner::ScanBackend::Gpu);
+        if gpu_expected && !gpu_ready {
+            anyhow::bail!(
+                "daemon GPU initialization failed on a host with an eligible physical GPU; \
+                 refusing to serve warm autoroute decisions. Run `keyhog backend --self-test` \
+                 or start a build/configuration without GPU eligibility"
+            );
+        }
+        if gpu_expected {
+            let warmup = keyhog_core::Chunk {
+                data: "keyhog daemon accelerator warmup\n".into(),
+                metadata: keyhog_core::ChunkMetadata {
+                    source_type: "daemon-warmup".into(),
+                    ..Default::default()
+                },
+            };
+            let degrade_before = self.scanner.gpu_degrade_count();
+            self.scanner.clear_fragment_cache();
+            let _ = self.scanner.scan_chunks_with_backend(
+                std::slice::from_ref(&warmup),
+                keyhog_scanner::ScanBackend::Gpu,
+            );
+            self.scanner.clear_fragment_cache();
+            if self.scanner.gpu_degrade_count() != degrade_before {
+                anyhow::bail!(
+                    "daemon GPU warmup degraded before readiness; refusing to apply persistent \
+                     warm autoroute evidence. Run `keyhog backend --self-test` and fix the GPU path"
+                );
+            }
+        }
+        tracing::info!(simd_ready, gpu_ready, gpu_expected, "persistent daemon backends initialized");
+        self.router = self.router.for_persistent_daemon();
+        Ok(self)
+    }
+
     pub(crate) fn scan_chunk(&self, chunk: &Chunk) -> Result<Vec<RawMatch>> {
         let backend = self
             .router

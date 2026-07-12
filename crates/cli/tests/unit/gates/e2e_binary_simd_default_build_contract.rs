@@ -14,8 +14,8 @@ fn e2e_binary_simd_progress_probe_is_default_build_safe() {
         "e2e_binary progress-banner probe must keep explicit SIMD backend evidence"
     );
     assert!(
-        !helper_body.contains("--cache-dir"),
-        "e2e_binary progress-banner probe must stay default-build safe: --backend simd is valid without Hyperscan, but --cache-dir requires feature=simd"
+        helper_body.contains("--cache-dir"),
+        "the default-build SIMD probe must exercise the Hyperscan cache surface; the CLI default enables its own simd cfg"
     );
 
     let test_body = source

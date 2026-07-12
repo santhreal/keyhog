@@ -95,6 +95,21 @@ bucket—even one with the same CPU winner—is not evidence that the same backe
 is fastest here. Uncalibrated buckets therefore fail closed; KeyHog never
 interpolates or clamps them to a CPU/GPU substitute.
 
+## One-shot scans and the daemon
+
+Runtime lifetime changes GPU cost, so it is part of routing semantics. Each GPU
+measurement contains the real first dispatch plus warm trials:
+
+- An in-process one-shot scan includes cold GPU cost when choosing a backend.
+- A ready daemon initializes accelerator state before accepting requests and
+  chooses from the warm GPU trials.
+
+Both routes consume the same parity-checked primary evidence; they derive the
+appropriate decision for their runtime instead of sharing one misleading
+"GPU time." CPU, Hyperscan/SIMD, and GPU remain peers in both cases. See
+[Daemon and warm scans](../workflows/daemon.md) for request eligibility,
+fallback, policy, socket, and timeout semantics.
+
 ## When an auto scan reports `calibration required`
 
 The error names the missing workload bucket. Resolve it by either:

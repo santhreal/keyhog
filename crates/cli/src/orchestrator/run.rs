@@ -164,13 +164,13 @@ impl ScanOrchestrator {
                 target: "keyhog::routing",
                 "backend prewarm skipped during autoroute calibration"
             );
-        } else {
-            let preferred = match self.effective_config.backend_override {
-                Some(backend) => backend,
-                None => {
-                    keyhog_scanner::hw_probe::select_backend(hw, 0, scanner_status.pattern_count)
-                }
-            };
+        } else if let Some(preferred) = self.effective_config.backend_override {
+            // An automatic route is keyed by the real workload bucket and must
+            // come from persisted fastest-correct evidence. At this point no
+            // chunks have been collected, so a zero-byte heuristic cannot know
+            // which calibrated backend the dispatcher will select. Prewarm only
+            // explicit diagnostic overrides; automatic backends initialize when
+            // the cache-backed router resolves the first real batch.
             let warm_started = Instant::now();
             let warmed = self.scanner.warm_backend(preferred);
             let warm_ms = warm_started.elapsed().as_millis();
@@ -180,6 +180,11 @@ impl ScanOrchestrator {
                 warmed,
                 elapsed_ms = warm_ms as u64,
                 "backend warmed"
+            );
+        } else {
+            tracing::debug!(
+                target: "keyhog::routing",
+                "automatic backend prewarm skipped until persisted workload decision resolves"
             );
         }
 

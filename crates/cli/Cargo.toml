@@ -31,6 +31,7 @@ path = "src/main.rs"
 # dependencies; `binary` (Ghidra) remains opt-in.
 default = [
     "keyhog-scanner/default",  # scanner full desktop stack, including GPU + Hyperscan/SIMD
+    "simd",                    # activate CLI Hyperscan surfaces alongside scanner/default
     "git",                      # Git source backends
     "web",                      # URL scanning (JS/sourcemap/WASM)
     "github",                   # GitHub org scanning
