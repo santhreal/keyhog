@@ -241,11 +241,11 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // `collect_generic_keyword_lines_from_positions`) — crate-internal phase-2
     // reassembly heuristics whose boundary behaviour is recall-load-bearing.
     "engine/phase2_generic/keywords.rs",
-    // `engine/rule_pipeline.rs` pins the private megascan sizing floor/cap consts
-    // (`MEGASCAN_INPUT_LEN_UNKNOWN`/`_HIGH`, 128 MiB / 1 GiB) and the
-    // `clamp_megascan_input_len` override clamp — crate-internal pre-compile
+    // `engine/gpu_input_budget.rs` pins the private GPU sizing floor/cap consts
+    // (`GPU_BATCH_INPUT_LIMIT_UNKNOWN`/`_HIGH`, 128 MiB / 1 GiB) and the
+    // `clamp_gpu_batch_input_limit` override clamp — crate-internal pre-compile
     // budget invariants, not public API.
-    "engine/rule_pipeline.rs",
+    "engine/gpu_input_budget.rs",
     // `engine/scan_postprocess/fragments.rs` pins the private reassembly floors
     // (`REASSEMBLY_MIN_ENTROPY` = 3.0, `REASSEMBLY_MIN_VALUE_LEN` = 16) and proves
     // the no-hit reassembly path reuses the SINGLE `reassembly_probe_data` owner

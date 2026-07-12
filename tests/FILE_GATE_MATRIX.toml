@@ -1081,7 +1081,7 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/rule_pipeline.rs"
+path = "crates/scanner/src/engine/gpu_input_budget.rs"
 error = true
 adversarial = true
 

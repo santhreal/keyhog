@@ -284,6 +284,11 @@ pub(super) fn validate_scan_alias_conflicts(config: &ConfigFile, config_errors: 
         "incremental_cache"
     );
     reject_duplicate!(
+        config.gpu_batch_input_limit.is_some(),
+        scan.gpu_batch_input_limit.is_some(),
+        "gpu_batch_input_limit"
+    );
+    reject_duplicate!(
         config.decode_depth.is_some(),
         scan.decode_depth.is_some(),
         "decode_depth"
@@ -484,6 +489,13 @@ pub(super) fn apply_scan_section(
         }
         if args.incremental_cache.is_none() {
             args.incremental_cache = scan.incremental_cache;
+        }
+        if let Some(ref limit) = scan.gpu_batch_input_limit {
+            let parsed =
+                parse_config_byte_size(config_errors, "[scan].gpu_batch_input_limit", limit);
+            if args.gpu_batch_input_limit.is_none() {
+                args.gpu_batch_input_limit = parsed;
+            }
         }
     }
 }
@@ -781,11 +793,11 @@ pub(super) fn apply_top_level_scan_fields(
         }
     }
 
-    if let Some(ref limit_str) = config.megascan_input_len {
-        let parsed_size = parse_config_byte_size(config_errors, "megascan_input_len", limit_str);
-        if args.megascan_input_len.is_none() {
+    if let Some(ref limit_str) = config.gpu_batch_input_limit {
+        let parsed_size = parse_config_byte_size(config_errors, "gpu_batch_input_limit", limit_str);
+        if args.gpu_batch_input_limit.is_none() {
             if let Some(size) = parsed_size {
-                args.megascan_input_len = Some(size);
+                args.gpu_batch_input_limit = Some(size);
             }
         }
     }

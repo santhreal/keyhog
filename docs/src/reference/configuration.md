@@ -68,6 +68,7 @@ Each row is the same knob across all three layers. Defaults are
 | Per-chunk timeout | off | `per_chunk_timeout_ms` | `--per-chunk-timeout-ms` | Optional hard deadline per chunk scan in milliseconds. |
 | Dedup scope | `credential` | `dedup` | `--dedup` | `credential` / `file` / `none`. |
 | Max file size | 100 MiB | `max_file_size` | `--max-file-size` | Walker skips files larger than this. |
+| GPU batch input limit | VRAM-adaptive (128 MiB–1 GiB) | `[scan] gpu_batch_input_limit` | `--gpu-batch-input-limit` | Caps bytes admitted to one GPU region-presence batch. The retired flat/CLI `megascan_input_len` spelling is accepted only as a migration alias. |
 | Severity floor | (all) | `severity` | `--severity` | Minimum severity to report: info/low/medium/high/critical. |
 | Output format | `text` | `format` | `--format` | text/json/jsonl/sarif/csv/github-annotations/gitlab-sast/html/junit. |
 | Show secrets | off | `show_secrets` | `--show-secrets` | Print plaintext credentials. **Never enable in CI/logs.** |

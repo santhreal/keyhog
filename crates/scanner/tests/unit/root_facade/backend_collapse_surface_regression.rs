@@ -3,43 +3,43 @@
 //! close-org-deadcode).
 //!
 //! `backend_collapse_regression.rs` already source-greps that the dead routes
-//! stay removed. This file pins the positive live side: adaptive MegaScan sizing
-//! and the collapsed backend labels.
+//! stay removed. This file pins the positive live side: adaptive GPU batch
+//! sizing and the collapsed backend labels.
 
-use crate::engine::rule_pipeline::megascan_input_len_for_vram_mb;
-use keyhog_scanner::engine::megascan_input_len;
+use crate::engine::gpu_input_budget::gpu_batch_input_limit_for_vram_mb;
+use keyhog_scanner::engine::gpu_batch_input_limit;
 use keyhog_scanner::hw_probe::testing::ScanBackend;
 
 // ---------------------------------------------------------------------------
-// 1. The VRAM-adaptive `megascan_input_len()` stays bounded and process-stable.
+// 1. The VRAM-adaptive `gpu_batch_input_limit()` stays bounded and process-stable.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn megascan_input_len_is_vram_sized_and_never_below_floor() {
+fn gpu_batch_input_limit_is_vram_sized_and_never_below_floor() {
     // The host-adaptive sizing is cached + stable for the process. On any host
     // it must be a power-of-two byte budget in [128 MiB, 1 GiB], and never below
     // the 128 MiB minimum the sizing table guarantees.
-    let len = megascan_input_len();
+    let len = gpu_batch_input_limit();
     const ONE_TWENTY_EIGHT_MIB: usize = 128 * 1024 * 1024;
     const ONE_GIB: usize = 1024 * 1024 * 1024;
     assert!(
         (ONE_TWENTY_EIGHT_MIB..=ONE_GIB).contains(&len),
-        "megascan_input_len {len} must sit in [128 MiB, 1 GiB]"
+        "gpu_batch_input_limit {len} must sit in [128 MiB, 1 GiB]"
     );
     assert!(
         len.is_power_of_two(),
-        "megascan_input_len {len} must be a power-of-two byte budget"
+        "gpu_batch_input_limit {len} must be a power-of-two byte budget"
     );
     // Cached: a second call returns the identical value.
     assert_eq!(
-        megascan_input_len(),
+        gpu_batch_input_limit(),
         len,
-        "megascan_input_len must be process-stable (cached)"
+        "gpu_batch_input_limit must be process-stable (cached)"
     );
 }
 
 #[test]
-fn megascan_input_len_matches_documented_vram_table() {
+fn gpu_batch_input_limit_matches_documented_vram_table() {
     const MIB_128: usize = 128 * 1024 * 1024;
     const MIB_256: usize = 256 * 1024 * 1024;
     const MIB_512: usize = 512 * 1024 * 1024;
@@ -56,11 +56,24 @@ fn megascan_input_len_matches_documented_vram_table() {
         (Some(24 * 1024), GIB_1),
     ] {
         assert_eq!(
-            megascan_input_len_for_vram_mb(vram_mb),
+            gpu_batch_input_limit_for_vram_mb(vram_mb),
             expected,
-            "VRAM {vram_mb:?} MiB must map to documented MegaScan input length"
+            "VRAM {vram_mb:?} MiB must map to documented GPU batch input limit"
         );
     }
+}
+
+#[test]
+#[allow(deprecated)]
+fn retired_megascan_budget_api_forwards_to_gpu_batch_input_limit() {
+    assert_eq!(
+        keyhog_scanner::megascan_input_len_bounds(),
+        keyhog_scanner::gpu_batch_input_limit_bounds()
+    );
+    assert_eq!(
+        keyhog_scanner::megascan_input_len(),
+        keyhog_scanner::gpu_batch_input_limit()
+    );
 }
 
 // ---------------------------------------------------------------------------

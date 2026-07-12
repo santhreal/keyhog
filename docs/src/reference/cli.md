@@ -88,6 +88,7 @@ minus the `limit-` prefix and with dashes changed to underscores.
 | Control                               | Effect                                                                |
 |---------------------------------------|-----------------------------------------------------------------------|
 | `keyhog scan --backend auto\|gpu\|simd\|cpu` | Force one live scan engine instead of using automatic backend selection. Profiles and routing evidence use the descriptive labels `gpu-region-presence`, `simd-regex`, and `cpu-fallback`; retired MegaScan and implementation-name aliases are rejected. |
+| `keyhog scan --gpu-batch-input-limit 512MB` | Override the VRAM-adaptive byte limit for one GPU region-presence batch (clamped to 128 MiB–1 GiB). |
 | `keyhog scan --no-gpu`                | Short-circuit GPU init at hardware-probe time. The scanner runs as if no GPU adapter existed. |
 | `keyhog scan --require-gpu`           | Fail closed with exit `12` when no usable GPU stack is available. |
 | `keyhog scan --autoroute-calibrate`   | Installer/maintenance mode: benchmark parity-checked autoroute candidates and persist fastest-correct decisions. Normal scans do not use this mode. |

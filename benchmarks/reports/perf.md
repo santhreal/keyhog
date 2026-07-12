@@ -21,7 +21,6 @@
 | KeyHog | `simd-nocache-nodaemon-full` | creddata | 3.31s | 293.8 MB/s | 1887 MB |
 | KeyHog | `cpu-nocache-nodaemon-full` | creddata | 3.45s | 281.7 MB/s | 1821 MB |
 | KeyHog | `auto-nocache-nodaemon-full` | creddata | 3.52s | 275.9 MB/s | 1850 MB |
-| KeyHog | `megascan-nocache-nodaemon-full` | creddata | 3.70s | 262.7 MB/s | 1952 MB |
 | Kingfisher | `default-nocache-nodaemon-low-no-validate` | mirror | 3.81s | 0.6 MB/s | 502 MB |
 | KeyHog | `simd-nocache-nodaemon-full` | creddata | 3.91s | 248.5 MB/s | 1741 MB |
 | KeyHog | `simd-nocache-nodaemon-full` | creddata | 3.99s | 243.7 MB/s | 1720 MB |

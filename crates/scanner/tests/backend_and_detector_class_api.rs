@@ -13,7 +13,7 @@ fn every_advertised_backend_value_parses_except_the_auto_sentinel() {
     // `BACKEND_OVERRIDE_VALUES` is the clap `--backend` possible-value list.
     // Every one must be recognized by the canonical parser; `auto` is the one
     // deliberate `None` (it means "no forced backend, auto-route"). A silent
-    // fall-through here is exactly the `megascan`→None bug the code comments.
+    // fall-through for any advertised forced backend would silently select auto.
     for value in BACKEND_OVERRIDE_VALUES {
         let parsed = parse_backend_str(value);
         if value == "auto" {
@@ -34,9 +34,8 @@ fn backend_strings_map_to_the_expected_backend() {
         parse_backend_str("gpu-region-presence"),
         Some(ScanBackend::Gpu)
     );
-    assert_eq!(parse_backend_str("mega-scan"), Some(ScanBackend::MegaScan));
-    // Regression guard: the no-hyphen spelling previously fell through to None.
-    assert_eq!(parse_backend_str("megascan"), Some(ScanBackend::MegaScan));
+    assert_eq!(parse_backend_str("mega-scan"), None);
+    assert_eq!(parse_backend_str("megascan"), None);
     assert_eq!(parse_backend_str("simd"), Some(ScanBackend::SimdCpu));
     assert_eq!(parse_backend_str("cpu"), Some(ScanBackend::CpuFallback));
     assert_eq!(

@@ -407,13 +407,12 @@ fn workload_selector_is_the_single_branch_owner() {
 }
 
 // ---------------------------------------------------------------------------
-// 3. The MegaScan collapse: `mega-scan` parses to a real arm but is the SAME
-//    live engine as `gpu` (the RulePipeline NFA engine was retired).
+// 3. The public Rust compatibility variant remains the SAME live engine as
+//    `gpu`; retired operator spellings stay rejected by parse_backend_str.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn megascan_aliases_parse_but_collapse_onto_the_gpu_region_presence_route() {
-    // Every advertised mega-scan alias still resolves (public CLI surface).
+fn programmatic_megascan_variant_collapses_while_operator_aliases_stay_rejected() {
     for alias in [
         "mega-scan",
         "megascan",
@@ -421,13 +420,10 @@ fn megascan_aliases_parse_but_collapse_onto_the_gpu_region_presence_route() {
         "regex-nfa",
         "rule-pipeline",
     ] {
-        assert_eq!(
-            parse_backend_str(alias),
-            Some(ScanBackend::MegaScan),
-            "alias {alias} must still parse to MegaScan"
-        );
+        assert_eq!(parse_backend_str(alias), None, "retired alias {alias}");
     }
-    // The label is stable (coherence with --help / banner / JSON).
+    // The compatibility variant's diagnostic label remains stable for library
+    // callers and persisted-data migration; it is not a CLI value.
     assert_eq!(ScanBackend::MegaScan.label(), "gpu-mega-scan");
     assert_eq!(ScanBackend::Gpu.label(), "gpu-region-presence");
 
@@ -464,7 +460,7 @@ fn removed_dead_gpu_pipelines_stay_removed() {
     let code = strip_line_comments(&all);
 
     // The dead `ac_gpu_program` AC `vyre::Program` builder must not return.
-    // (Doc-comment mentions in gpu_lazy.rs/rule_pipeline.rs are prose, not a
+    // (Doc-comment mentions in gpu_lazy.rs/gpu_input_budget.rs are prose, not a
     //  method def or field, so match the *executable* forms.)
     assert!(
         !code.contains("fn ac_gpu_program"),
@@ -509,9 +505,9 @@ fn removed_dead_gpu_pipelines_stay_removed() {
     assert!(
         !code.contains("fn build_rule_pipeline")
             && !code.contains("AC_GPU_MAX_MATCHES_PER_DISPATCH")
-            && !code.contains("MEGASCAN_INPUT_LEN:"),
+            && !code.contains("GPU_BATCH_INPUT_LIMIT:"),
         "the test-only rule-pipeline diagnostic builder and fixed-size aliases \
-         were removed; keep only megascan_input_len() as the live sizing contract"
+         were removed; keep only gpu_batch_input_limit() as the live sizing contract"
     );
     let lib_rs = strip_line_comments(
         &std::fs::read_to_string(
@@ -522,7 +518,7 @@ fn removed_dead_gpu_pipelines_stay_removed() {
     assert!(
         !lib_rs.contains("build_rule_pipeline")
             && !lib_rs.contains("AC_GPU_MAX_MATCHES_PER_DISPATCH")
-            && !lib_rs.contains("MEGASCAN_INPUT_LEN:"),
+            && !lib_rs.contains("GPU_BATCH_INPUT_LIMIT:"),
         "the testing facade must not re-export the dead rule-pipeline builder or aliases"
     );
 
@@ -544,13 +540,14 @@ fn parse_backend_str_is_the_single_string_source() {
     // Case-insensitive + whitespace-trimmed.
     assert_eq!(parse_backend_str("  GPU  "), Some(ScanBackend::Gpu));
     assert_eq!(parse_backend_str("SimD"), Some(ScanBackend::SimdCpu));
-    // gpu aliases.
+    // Stable persisted-evidence label.
     assert_eq!(
         parse_backend_str("gpu-region-presence"),
         Some(ScanBackend::Gpu)
     );
-    assert_eq!(parse_backend_str("gpu-zero-copy"), Some(ScanBackend::Gpu));
-    assert_eq!(parse_backend_str("literal-set"), Some(ScanBackend::Gpu));
+    // Retired implementation labels do not silently remap.
+    assert_eq!(parse_backend_str("gpu-zero-copy"), None);
+    assert_eq!(parse_backend_str("literal-set"), None);
     // Unknown -> None (caller falls through to auto-routing).
     assert_eq!(parse_backend_str("quantum"), None);
     assert_eq!(parse_backend_str(""), None);

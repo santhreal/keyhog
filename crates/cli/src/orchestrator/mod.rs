@@ -582,11 +582,11 @@ impl ScanOrchestrator {
         // compiles, so the cap takes effect on the per-worker DFA caches that
         // dominate scan memory. 0 = use the compiled default.
         keyhog_scanner::set_regex_dfa_limit(args.regex_dfa_limit.unwrap_or(0)); // LAW10: empty/absent => documented numeric default, recall-safe
-                                                                                // Tier-A: MegaScan GPU input-buffer byte budget (VRAM-adaptive default →
-                                                                                // .keyhog.toml → --megascan-input-len). Set the process-global BEFORE the
-                                                                                // first megascan routing/cache-key read caches the value; 0 = keep the
+                                                                                // Tier-A: GPU batch-input buffer byte budget (VRAM-adaptive default →
+                                                                                // .keyhog.toml → --gpu-batch-input-limit). Set the process-global BEFORE the
+                                                                                // first GPU routing/cache-key read caches the value; 0 = keep the
                                                                                 // VRAM-adaptive default. Clamped into the sizing table's [128 MiB, 1 GiB].
-        keyhog_scanner::set_megascan_input_len(args.megascan_input_len.unwrap_or(0)); // LAW10: empty/absent => VRAM-adaptive default, recall-safe
+        keyhog_scanner::set_gpu_batch_input_limit(args.gpu_batch_input_limit.unwrap_or(0)); // LAW10: empty/absent => VRAM-adaptive default, recall-safe
         keyhog_scanner::set_profile_enabled(effective_config.scanner.profile);
         keyhog_scanner::set_perf_trace_enabled(effective_config.scanner.perf_trace);
 
@@ -887,7 +887,7 @@ impl ScanOrchestrator {
                 disabled_detectors: std::collections::HashSet::new(),
                 require_lockdown: false,
                 regex_dfa_limit: None,
-                megascan_input_len: None,
+                gpu_batch_input_limit: None,
                 max_file_size: None,
                 #[cfg(feature = "git")]
                 max_commits: crate::orchestrator_config::MAX_COMMITS_DEFAULT,

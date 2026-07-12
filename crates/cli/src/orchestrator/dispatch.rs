@@ -541,10 +541,9 @@ impl ScanOrchestrator {
         let progress = CoalescedProgressTicker::spawn(show_progress && !self.args.stream);
 
         // Bytes budget per coalesced batch. Sized to match the
-        // engine's `megascan_input_len()` (the pre-compiled
-        // `RulePipeline` input cap) so the GPU dispatch never
-        // auto-degrades to literal-set on oversized batches and we
-        // capture every regex-NFA win. The engine sizes its cap by
+        // engine's `gpu_batch_input_limit()` so one coalesced batch never
+        // exceeds the live GPU region-presence input contract. The engine
+        // sizes its cap by
         // VRAM (1 GiB on RTX 4090/5090, 128 MiB when VRAM is low or
         // unknown), so the orchestrator inherits that scaling automatically.
         //

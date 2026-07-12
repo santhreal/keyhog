@@ -4,11 +4,13 @@
 //! compatibility exports in one place.
 
 pub use crate::engine::{
-    compile_gpu_literal_artifacts, compile_gpu_literal_artifacts_default, megascan_input_len,
-    megascan_input_len_bounds, profile_dump, profile_reset, set_megascan_input_len,
+    compile_gpu_literal_artifacts, compile_gpu_literal_artifacts_default, gpu_batch_input_limit,
+    gpu_batch_input_limit_bounds, profile_dump, profile_reset, set_gpu_batch_input_limit,
     set_perf_trace_enabled, set_profile_enabled, CompiledScanner, CompiledScannerRuntime,
     GpuInitPolicy, GpuLiteralArtifact, GpuLiteralArtifacts,
 };
+#[allow(deprecated)]
+pub use crate::engine::{megascan_input_len, megascan_input_len_bounds, set_megascan_input_len};
 pub use crate::error::{Result, ScanError};
 pub use crate::hw_probe::{probe_hardware, select_backend, HardwareCaps, ScanBackend};
 pub use crate::types::{

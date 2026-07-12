@@ -15,7 +15,7 @@
 //!     to the SAME region-presence backend as `--backend gpu`. The
 //!     cached wrapper, its diagnostic builder, and fixed-size aliases were
 //!     deleted as dead surface; only adaptive byte-budget sizing remains in
-//!     [`super::rule_pipeline`].
+//!     [`super::gpu_input_budget`].
 //! [`GpuLiteralSet`]: vyre_libs::scan::GpuLiteralSet
 
 use super::gpu_lazy_helpers::{

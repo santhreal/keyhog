@@ -108,11 +108,11 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
             |bytes| bytes.to_string()
         )
     ));
-    // MegaScan input length has no single compiled default — it is VRAM-adaptive
+    // GPU batch input limit has no single compiled default — it is VRAM-adaptive
     // until a Tier-A override pins it, so report that rather than a fixed number.
     out.push_str(&format!(
-        "megascan_input_len = {}\n",
-        resolved.megascan_input_len.map_or_else(
+        "gpu_batch_input_limit = {}\n",
+        resolved.gpu_batch_input_limit.map_or_else(
             || "VRAM-adaptive (default)".to_string(),
             |bytes| bytes.to_string()
         )
@@ -433,7 +433,7 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
     );
     h.field_bool("autoroute_gpu", resolved.autoroute_gpu);
     h.field_option_usize("regex_dfa_limit", resolved.regex_dfa_limit);
-    h.field_option_usize("megascan_input_len", resolved.megascan_input_len);
+    h.field_option_usize("gpu_batch_input_limit", resolved.gpu_batch_input_limit);
     h.field_option_usize("source_policy.max_file_size", resolved.max_file_size);
     #[cfg(feature = "git")]
     h.field_usize("source_policy.max_commits", resolved.max_commits);

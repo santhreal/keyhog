@@ -43,9 +43,11 @@ fn canonical(results: &[Vec<keyhog_core::RawMatch>]) -> BTreeSet<Record> {
 }
 
 /// Build a fixed chunk set from the committed `demo/` tree — the exact corpus
-/// whose calibration aborted — padded out with the mirror corpus when present so
-/// there are enough chunks to saturate the rayon pool and surface a concurrency
-/// race. Falls back to demo-only if the mirror tree is absent.
+/// whose calibration aborted — padded out with a bounded mirror-corpus sample
+/// when present so there are enough chunks to saturate the rayon pool and
+/// surface a concurrency race without turning the default suite into an
+/// unbounded corpus benchmark. Falls back to demo-only if the mirror tree is
+/// absent.
 fn fixed_chunks() -> Vec<Chunk> {
     let mut chunks = Vec::new();
     let mut push_file = |path: std::path::PathBuf| {
@@ -98,7 +100,14 @@ fn fixed_chunks() -> Vec<Chunk> {
     }
 
     if let Some(root) = support::paths::corpus_dir() {
-        for (label, bytes) in support::paths::corpus_files_with_paths(&root, 600) {
+        // One non-empty chunk per logical worker exercises concurrent scratch
+        // ownership without multiplying this correctness gate into a corpus
+        // benchmark. Bound extreme CI hosts so the test remains a gate, not a
+        // scale run.
+        let worker_chunks = std::thread::available_parallelism()
+            .map_or(32, std::num::NonZeroUsize::get)
+            .clamp(8, 64);
+        for (label, bytes) in support::paths::corpus_files_with_paths(&root, worker_chunks) {
             if bytes.is_empty() {
                 continue;
             }
@@ -126,10 +135,11 @@ fn scan_coalesced_is_deterministic_across_trials() {
     let scanner = support::compile_full_detector_scanner();
     let chunks = fixed_chunks();
 
-    // Enough trials to make a per-chunk scratch/scheduling race likely to
-    // surface. Clearing the fragment cache isolates each invocation so cache
-    // bleed cannot mask or fake the instability.
-    const TRIALS: usize = 40;
+    // Match the production autoroute evidence count. Each trial saturates the
+    // rayon pool with the bounded corpus above; multiplying that by an arbitrary
+    // 40 made the default integration gate take tens of minutes and serialized
+    // every other Cargo gate behind its target lock.
+    const TRIALS: usize = 7;
 
     scanner.clear_fragment_cache();
     let reference = canonical(

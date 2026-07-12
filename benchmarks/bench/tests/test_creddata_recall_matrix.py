@@ -76,6 +76,14 @@ def scan_result(creddata_simd_findings):
 # 2-positive category recalling 0 is noise, not a blind class).
 
 _CATEGORY_MIN_POSITIVES = 25
+# These CredData labels identify public resources, not credentials. Keyhog may
+# use them as context around a secret, but treating their absence as secret
+# recall blindness would reward noisy detectors that report ordinary domains
+# and bucket names as findings.
+_PUBLIC_IDENTIFIER_CATEGORIES = frozenset({
+    "AWS S3 Bucket",
+    "Firebase Domain",
+})
 
 _POSITIVES_BY_CATEGORY: dict[str, list] = {}
 for _r in _POSITIVES:
@@ -84,6 +92,7 @@ for _r in _POSITIVES:
 _GATED_CATEGORIES = sorted(
     cat for cat, recs in _POSITIVES_BY_CATEGORY.items()
     if len(recs) >= _CATEGORY_MIN_POSITIVES
+    and cat not in _PUBLIC_IDENTIFIER_CATEGORIES
 )
 
 

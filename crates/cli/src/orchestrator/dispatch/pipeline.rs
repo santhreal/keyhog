@@ -9,7 +9,7 @@ pub(super) struct CoalescedPipelinePlan {
 }
 
 pub(super) fn coalesced_pipeline_plan() -> CoalescedPipelinePlan {
-    let engine_cap = keyhog_scanner::megascan_input_len();
+    let engine_cap = keyhog_scanner::gpu_batch_input_limit();
     let caps = keyhog_scanner::hw_probe::probe_hardware();
     let total_ram_bytes = match caps.total_memory_mb {
         Some(mb) => (mb as usize) * 1024 * 1024,

@@ -1,8 +1,10 @@
 from pathlib import Path
 
+_CROSS_DEVICE_DRIVER = Path(__file__).resolve().parents[2] / "cross_device.sh"
+
 
 def _remote_driver_section() -> str:
-    script = Path("benchmarks/cross_device.sh").read_text(encoding="utf-8")
+    script = _CROSS_DEVICE_DRIVER.read_text(encoding="utf-8")
     return script.split("# 1. keyhog:", 1)[1].split("# 2. corpus", 1)[0]
 
 

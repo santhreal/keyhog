@@ -16,7 +16,7 @@ fn coalesced_scan_dispatch_resource_plan_is_split_from_scan_sources() {
         "fn coalesced_pipeline_plan() -> CoalescedPipelinePlan",
         "COALESCED_BATCH_CHUNK_LIMIT",
         "COALESCED_PIPELINE_MAX_DEPTH",
-        "keyhog_scanner::megascan_input_len()",
+        "keyhog_scanner::gpu_batch_input_limit()",
         "keyhog_scanner::hw_probe::probe_hardware()",
     ] {
         assert!(
@@ -46,7 +46,7 @@ fn coalesced_scan_dispatch_resource_plan_is_split_from_scan_sources() {
         })
         .expect("scan_sources planning section extractable");
     for forbidden in [
-        "keyhog_scanner::megascan_input_len()",
+        "keyhog_scanner::gpu_batch_input_limit()",
         "const BATCH_CHUNK_LIMIT",
         "let batch_bytes_budget",
         "let pipeline_depth",

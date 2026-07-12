@@ -174,7 +174,7 @@ POSIX-incompatible with this script; drive the ThinkPad via PowerShell.
 
 Scoring passes `--no-gpu` for the deterministic SIMD path on the default
 `simd-*` configs; the `gpu`/`auto` configs dogfood the GPU path, and explicit
-`gpu`/`megascan` benchmark rows also pass `--require-gpu` so they fail instead
+`gpu` benchmark rows also pass `--require-gpu` so they fail instead
 of timing a CPU fallback. GPU↔SIMD parity is a separate release gate. The
 CredData corpus is
 pinned to an exact commit so a score is reproducible against a fixed dataset

@@ -51,7 +51,7 @@ pub(crate) const REGEX_SIZE_LIMIT_BYTES: usize = 1 << 20; // 1 MiB default
 /// Process-wide effective regex DFA limit, overridable from config/CLI. `0`
 /// means "unset - use [`REGEX_SIZE_LIMIT_BYTES`]". Set ONCE at scan startup
 /// (before any [`LazyRegex`] compiles) via [`set_regex_dfa_limit`]; read by the
-/// regex builders in `compiler_compile`. Mirrors the `megascan_input_len`
+/// regex builders in `compiler_compile`. Mirrors the `gpu_batch_input_limit`
 /// process-global pattern so the per-detector lazy-compile path needs no
 /// per-call plumbing.
 static REGEX_DFA_LIMIT_OVERRIDE: std::sync::atomic::AtomicUsize =

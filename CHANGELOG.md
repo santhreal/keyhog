@@ -25,6 +25,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- **GPU buffer sizing no longer carries retired MegaScan terminology.** The
+  canonical CLI/config/API names are `--gpu-batch-input-limit`,
+  `gpu_batch_input_limit`, and `gpu_batch_input_limit()`. The previous CLI,
+  TOML, and Rust API spellings remain explicit deprecated migration aliases.
 - **Library defaults are deterministic; CLI routing stays measured.** The
   no-backend `CompiledScanner::scan` and `scan_coalesced` APIs now use the
   portable CPU reference instead of a host-size heuristic. Accelerated library
@@ -80,6 +84,16 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   `demo/` tree and `demo.tape` recording now drive `keyhog scan demo`.
 
 ### Fixed
+
+- Release regression gates now distinguish public resource identifiers from
+  credential categories and resolve the cross-device driver independently of
+  the caller's working directory.
+- The coalesced SIMD determinism gate now mirrors autoroute's seven evidence
+  trials over a bounded, concurrency-saturating corpus instead of monopolizing
+  the shared build target with forty full-corpus passes.
+- Benchmark matrices no longer manufacture the retired `megascan` backend as a
+  duplicate GPU lane, and generated performance tables no longer advertise
+  that rejected command spelling.
 
 - **Prerelease benchmarks now prove the candidate artifact.** The gate builds
   and pins the current binary before scanner-backed pytest, and benchmark

@@ -108,11 +108,11 @@ mod phase2_gpu_dfa;
 mod phase2_hs;
 #[cfg(all(test, feature = "simd"))]
 pub(crate) use phase2_hs::hs_prefilter_requires_host_regex as hs_prefilter_requires_host_regex_for_test;
+pub(crate) mod gpu_input_budget;
 mod phase2_prefilter;
 pub(crate) mod phase2_truncate;
 mod process;
 pub(crate) mod profile;
-pub(crate) mod rule_pipeline;
 mod scan;
 mod scan_coalesced;
 pub(crate) mod scan_filters;
@@ -156,12 +156,16 @@ pub use gpu_artifacts::{
 };
 #[cfg(test)]
 pub(crate) use gpu_forced_helpers::gpu_forced_unavailable_message;
+pub use gpu_input_budget::{
+    gpu_batch_input_limit, gpu_batch_input_limit_bounds, set_gpu_batch_input_limit,
+};
+#[allow(deprecated)]
+pub use gpu_input_budget::{megascan_input_len, megascan_input_len_bounds, set_megascan_input_len};
 #[cfg(test)]
 pub(crate) use phase2::{phase2_gate_stats_dump, phase2_mark_stats, phase2_mark_stats_reset};
 pub use profile::{
     dump as profile_dump, reset as profile_reset, set_perf_trace_enabled, set_profile_enabled,
 };
-pub use rule_pipeline::{megascan_input_len, megascan_input_len_bounds, set_megascan_input_len};
 #[cfg(test)]
 pub(crate) use scan_inner_profile::scan_inner_profile_dump;
 #[cfg(test)]

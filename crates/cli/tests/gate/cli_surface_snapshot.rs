@@ -3,7 +3,7 @@
 //! silently churn via rename) without a deliberate edit to this file.
 //!
 //! This snapshot flags the concern directly: "scan carries
-//! 71 flags; the binary exposes 18 subcommands. Surface this large is hard to
+//! 73 unconditional flags; the binary exposes 17 subcommands. Surface this large is hard to
 //! keep coherent, document, and test." This gate makes every addition show up
 //! as a failing test that names exactly what was added/removed, forcing the
 //! author to (a) confirm the new surface is intentional and (b) update the
@@ -54,7 +54,7 @@ fn expected_subcommands() -> BTreeSet<String> {
 }
 
 /// `scan` long-flags that are ALWAYS compiled in (no feature gate). This is the
-/// 71-flag monster this snapshot protects; the feature-gated source/verify/binary
+/// 73-flag base this snapshot protects; the feature-gated source/verify/binary
 /// flags are layered on in [`expected_scan_long_flags`] under the SAME `#[cfg]`
 /// gates the real args carry, so a new flag fails this gate until it is added
 /// here (or in the matching cfg block) on purpose. A rename shows up as one
@@ -93,7 +93,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "limit-stdin-bytes",
     "lockdown",
     "max-file-size",
-    "megascan-input-len",
+    "gpu-batch-input-limit",
     "min-confidence",
     "min-secret-len",
     "ml-threshold",
@@ -207,6 +207,7 @@ fn expected_scan_long_flags() -> BTreeSet<String> {
     // (mirrors the `#[cfg(any(...))]` on the `limit_cloud_max_objects` arg).
     #[cfg(any(feature = "s3", feature = "gcs", feature = "azure"))]
     {
+        add("allow-private-cloud-endpoint");
         add("limit-cloud-max-objects");
     }
     // `--limit-hosted-git-pages` caps API pagination across ALL hosted-git

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Rename the VRAM-adaptive live buffer budget to `gpu_batch_input_limit` and
+  move its owner to `engine/gpu_input_budget.rs`; deprecated public wrappers
+  preserve source migration from the retired MegaScan terminology.
 - Remove detector-ID constants used only by their own tests; runtime-specific
   identifiers remain centralized only where production scanner behavior
   consumes them, while detector membership stays in detector TOML.

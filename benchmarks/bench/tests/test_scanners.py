@@ -232,12 +232,6 @@ def test_keyhog_gpu_benchmark_rows_use_explicit_gpu_policy(tmp_path):
     gpu_cmd = scanner._cmd(
         tmp_path, ScannerConfig(backend="gpu"), tmp_path / "gpu.json", None
     )
-    megascan_cmd = scanner._cmd(
-        tmp_path,
-        ScannerConfig(backend="megascan"),
-        tmp_path / "megascan.json",
-        None,
-    )
     auto_cmd = scanner._cmd(
         tmp_path, ScannerConfig(backend="auto"), tmp_path / "auto.json", None
     )
@@ -246,7 +240,6 @@ def test_keyhog_gpu_benchmark_rows_use_explicit_gpu_policy(tmp_path):
     )
 
     assert "--require-gpu" in gpu_cmd
-    assert "--require-gpu" in megascan_cmd
     assert "--no-gpu" in auto_cmd
     assert "--no-gpu" in simd_cmd
     assert scanner._env(ScannerConfig(backend="gpu")) == {}

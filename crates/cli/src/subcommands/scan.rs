@@ -508,7 +508,7 @@ fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
         || args.ml_weight.is_some()
         || args.max_file_size.is_some()
         || args.regex_dfa_limit.is_some()
-        || args.megascan_input_len.is_some()
+        || args.gpu_batch_input_limit.is_some()
         || args.cache_dir.is_some()
         || args.ml_threshold.is_some()
     {

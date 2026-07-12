@@ -1,7 +1,7 @@
 """Gate #2 — BACKEND DIFFERENTIAL PARITY (the one gate that catches the most).
 
 keyhog runs `walk -> match -> emit` through several divergent backends — SimdCpu,
-the platform CPU fallback, plus Gpu/MegaScan — and a silent fallback in any one of them drops
+the platform CPU fallback, plus GPU region presence — and a silent fallback in any one of them drops
 findings only on THAT path, invisibly. The "validator bypass on the fast path"
 bug class is exactly this: the fast path skips a per-match policy the slow path
 applies, so the two disagree and nobody notices.
@@ -16,7 +16,7 @@ and pretend that proves every future scan bucket.
 `cpu` is a platform fallback for no-SIMD builds and an explicit diagnostic
 override on SIMD builds; it must not be selected by autoroute on a SIMD-capable
 binary until it has its own parity proof.
-GPU/MegaScan are tested as RECALL-PRESERVING (must not drop anything the
+GPU is tested as RECALL-PRESERVING (must not drop anything the
 deterministic reference found) when a GPU-capable binary is present; if it is
 not, that backend is skipped LOUDLY (printed), never silently passed.
 
@@ -46,7 +46,7 @@ _AVAILABLE = _CORPUS.is_downloaded()
 # generator, not a stable parity proof.
 _DETERMINISTIC = ["simd"]
 # Accelerated backends checked as recall-preserving supersets IF available.
-_ACCELERATED = ["gpu", "megascan"]
+_ACCELERATED = ["gpu"]
 _ACCELERATED_TIMEOUT_SECONDS = 120
 
 

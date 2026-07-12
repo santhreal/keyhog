@@ -92,9 +92,9 @@ pub(crate) struct ResolvedScanConfig {
     pub(crate) require_lockdown: bool,
     /// Resolved regex lazy-DFA cache cap applied before scanner compilation.
     pub(crate) regex_dfa_limit: Option<usize>,
-    /// Resolved MegaScan GPU input-buffer byte budget (Tier-A override of the
+    /// Resolved GPU batch-input buffer byte budget (Tier-A override of the
     /// VRAM-adaptive default), applied to the process-global before scanning.
-    pub(crate) megascan_input_len: Option<usize>,
+    pub(crate) gpu_batch_input_limit: Option<usize>,
     /// Resolved filesystem max-file-size cap applied by the source factory.
     pub(crate) max_file_size: Option<usize>,
     /// Resolved git history/blob traversal cap applied by the source factory.
@@ -201,7 +201,7 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         disabled_detectors: outcome.disabled_detectors.into_iter().collect(),
         require_lockdown: outcome.require_lockdown,
         regex_dfa_limit: runtime_input.regex_dfa_limit,
-        megascan_input_len: runtime_input.megascan_input_len,
+        gpu_batch_input_limit: runtime_input.gpu_batch_input_limit,
         max_file_size: runtime_input.max_file_size,
         #[cfg(feature = "git")]
         max_commits: runtime_input.max_commits,
@@ -248,7 +248,7 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
         disabled_detectors: std::collections::HashSet::new(),
         require_lockdown: false,
         regex_dfa_limit: None,
-        megascan_input_len: None,
+        gpu_batch_input_limit: None,
         max_file_size: None,
         #[cfg(feature = "git")]
         max_commits: MAX_COMMITS_DEFAULT,

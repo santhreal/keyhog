@@ -621,8 +621,6 @@ pub struct ScanArgs {
     /// summary. Default is 100 MiB, the `FilesystemSource` ceiling. Files
     /// above the 1 MiB window size are read in overlapping ~1 MiB windows
     /// (so memory stays bounded regardless of file size), up to this cap.
-    /// kimi-dogfood-3 #135: prior help text said "10MB" but no default was
-    /// wired; the 100 MiB FilesystemSource default was the de facto cap.
     #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
     pub max_file_size: Option<usize>,
 
@@ -636,13 +634,18 @@ pub struct ScanArgs {
     #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
     pub regex_dfa_limit: Option<usize>,
 
-    /// MegaScan GPU input-buffer byte budget, e.g. "256MB" or "1GB". Overrides
+    /// GPU batch-input buffer byte budget, e.g. "256MB" or "1GB". Overrides
     /// the VRAM-adaptive default (128 MiB–1 GiB by detected VRAM); the value is
     /// clamped into that range. Larger buffers scan more bytes per GPU dispatch
-    /// on big inputs at higher VRAM cost. Config: `megascan_input_len` in
+    /// on big inputs at higher VRAM cost. Config: `gpu_batch_input_limit` in
     /// `.keyhog.toml`; this flag overrides it.
-    #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
-    pub megascan_input_len: Option<usize>,
+    #[arg(
+        long,
+        alias = "megascan-input-len",
+        value_name = "SIZE",
+        value_parser = crate::value_parsers::parse_byte_size
+    )]
+    pub gpu_batch_input_limit: Option<usize>,
 
     #[command(flatten)]
     pub limits: SourceLimitArgs,

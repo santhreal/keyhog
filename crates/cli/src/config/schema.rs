@@ -75,8 +75,9 @@ pub(super) struct ConfigFile {
     pub max_file_size: Option<String>,
     /// Per-regex lazy-DFA cache ceiling.
     pub regex_dfa_limit: Option<String>,
-    /// MegaScan GPU input-buffer byte budget (overrides the VRAM-adaptive default).
-    pub megascan_input_len: Option<String>,
+    /// GPU batch-input buffer byte budget (overrides the VRAM-adaptive default).
+    #[serde(alias = "megascan_input_len")]
+    pub gpu_batch_input_limit: Option<String>,
     /// ML weight for confidence scoring, 0.0-1.0.
     pub ml_weight: Option<f64>,
     /// Known secret prefixes used to boost confidence.
@@ -132,6 +133,9 @@ pub(super) struct ScanSection {
     pub dedup: Option<String>,
     pub incremental: Option<bool>,
     pub incremental_cache: Option<PathBuf>,
+    /// GPU region-presence batch byte budget. The old name is a migration alias.
+    #[serde(alias = "megascan_input_len")]
+    pub gpu_batch_input_limit: Option<String>,
 }
 
 /// `[allowlist]` nested table.

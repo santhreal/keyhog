@@ -562,29 +562,54 @@ fn config_effective_prints_regex_dfa_limit_cli_and_toml() {
 }
 
 #[test]
-fn config_effective_prints_megascan_input_len_cli_and_toml() {
+fn config_effective_prints_gpu_batch_input_limit_cli_and_toml() {
     // Unset must report VRAM-adaptive, never a fixed byte count.
     let (stdout, stderr, code) = effective_config(&[]);
     assert_eq!(code, Some(0), "stderr={stderr}");
     assert!(
-        stdout.contains("megascan_input_len = VRAM-adaptive"),
-        "unset megascan_input_len must report the VRAM-adaptive default; stdout={stdout}"
+        stdout.contains("gpu_batch_input_limit = VRAM-adaptive"),
+        "unset gpu_batch_input_limit must report the VRAM-adaptive default; stdout={stdout}"
     );
 
-    // `--megascan-input-len 256MB` (= 256 MiB) must reach the resolved config.
+    // `--gpu-batch-input-limit 256MB` (= 256 MiB) reaches resolved config.
+    let (stdout, stderr, code) = effective_config(&["--gpu-batch-input-limit", "256MB"]);
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("gpu_batch_input_limit = 268435456"),
+        "--gpu-batch-input-limit must be visible in resolved config; stdout={stdout}"
+    );
+
+    // The canonical `[scan]` key must resolve identically.
+    let (stdout, stderr, code) =
+        effective_config_with_toml("[scan]\ngpu_batch_input_limit = \"512MB\"\n");
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("gpu_batch_input_limit = 536870912"),
+        "gpu_batch_input_limit TOML key must be visible in resolved config; stdout={stdout}"
+    );
+}
+
+#[test]
+fn retired_megascan_input_names_migrate_to_gpu_batch_limit() {
     let (stdout, stderr, code) = effective_config(&["--megascan-input-len", "256MB"]);
     assert_eq!(code, Some(0), "stderr={stderr}");
-    assert!(
-        stdout.contains("megascan_input_len = 268435456"),
-        "--megascan-input-len must be visible in resolved config; stdout={stdout}"
-    );
+    assert!(stdout.contains("gpu_batch_input_limit = 268435456"));
 
-    // The `.keyhog.toml` `megascan_input_len` key must resolve identically.
     let (stdout, stderr, code) = effective_config_with_toml("megascan_input_len = \"512MB\"\n");
     assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(stdout.contains("gpu_batch_input_limit = 536870912"));
+}
+
+#[test]
+fn gpu_batch_limit_rejects_ambiguous_flat_and_scan_values() {
+    let (stdout, stderr, code) = effective_config_with_toml(
+        "gpu_batch_input_limit = \"256MB\"\n[scan]\ngpu_batch_input_limit = \"512MB\"\n",
+    );
+    assert_eq!(code, Some(2), "stdout={stdout}; stderr={stderr}");
     assert!(
-        stdout.contains("megascan_input_len = 536870912"),
-        "megascan_input_len TOML key must be visible in resolved config; stdout={stdout}"
+        stderr.contains("defined both as top-level `gpu_batch_input_limit`")
+            && stderr.contains("keep only `[scan].gpu_batch_input_limit`"),
+        "ambiguous migration config must name the canonical fix; stderr={stderr}"
     );
 }
 

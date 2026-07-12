@@ -384,6 +384,7 @@ fn config_effective_prints_header_and_expected_keys() {
         "max_decode_depth",
         "max_decode_bytes",
         "regex_dfa_limit",
+        "gpu_batch_input_limit",
         "max_file_size",
         "no_default_excludes",
         "exclude_paths",

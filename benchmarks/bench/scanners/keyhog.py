@@ -2,10 +2,10 @@
 
 Maps a :class:`ScannerConfig` to keyhog CLI flags:
 
-* **backend** -> ``--backend {simd,cpu,gpu,auto,megascan}``. ``simd``/``cpu``/
+* **backend** -> ``--backend {simd,cpu,gpu,auto}``. ``simd``/``cpu``/
   ``auto`` pass ``--no-gpu`` for the bit-deterministic filesystem path the
-  leaderboard is scored on; ``gpu``/``megascan`` pass ``--require-gpu`` so they
-  fail instead of timing a CPU fallback.
+  leaderboard is scored on; ``gpu`` passes ``--require-gpu`` so it fails
+  instead of timing a CPU fallback.
 * **cache** -> ``--incremental`` (merkle skip-cache). ``on`` measures the
   *warm* re-run: the adapter populates the index once, then times the second
   pass — that's the 10-100x monorepo-re-run speedup, measured honestly.
@@ -35,9 +35,9 @@ import tempfile
 from ..schema import ScannerConfig
 from .base import Finding, RunStats, Scanner, _line, run_measured
 
-_BACKENDS = ("simd", "cpu", "gpu", "auto", "megascan")
+_BACKENDS = ("simd", "cpu", "gpu", "auto")
 _DETERMINISTIC_BACKENDS = {"simd", "cpu", "auto"}
-_REQUIRE_GPU_BACKENDS = {"gpu", "megascan"}
+_REQUIRE_GPU_BACKENDS = {"gpu"}
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 

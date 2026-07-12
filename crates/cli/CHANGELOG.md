@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Rename the live GPU region-presence batch byte budget to
+  `--gpu-batch-input-limit` / `gpu_batch_input_limit`; accept the retired
+  MegaScan spelling as a hidden CLI/TOML migration alias.
 - Include full-source-size provenance in autoroute workload keys so streamed or
   transformed payload sizes cannot silently reuse calibration measured from an
   equal numeric full-file-size bucket.

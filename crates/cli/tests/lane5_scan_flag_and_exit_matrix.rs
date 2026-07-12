@@ -9,7 +9,7 @@
 //!     classes (e.g. a parse error that exits 1 instead of 2) is caught.
 //!
 //!   * BACKEND × FORMAT GRID — the SAME planted secret must surface under the
-//!     explicit `--backend {simd,cpu,gpu,mega-scan}` CLI flag AND under every
+//!     explicit `--backend {simd,cpu,gpu}` CLI flag AND under every
 //!     `--format {text,json,jsonl,sarif,csv,html,junit}`, with the JSON/JSONL
 //!     paths carrying the SAME credential hash. This is a Cartesian product
 //!     re-run for structural parse + count,
@@ -57,10 +57,10 @@ const SEVERITY: &str = "critical";
 /// The default-redaction form (`first4…last4`) the masked report must emit.
 const REDACTED: &str = "ghp_...DSiF";
 
-/// Explicit operator-selectable backends. `megascan` is the alias of
-/// `mega-scan`. `auto` is covered by autoroute calibration tests because it
+/// Explicit operator-selectable backends. `auto` is covered by autoroute
+/// calibration tests because it
 /// correctly fails closed on hosts without persisted calibration evidence.
-const BACKENDS: &[&str] = &["simd", "cpu", "gpu", "mega-scan", "megascan"];
+const BACKENDS: &[&str] = &["simd", "cpu", "gpu"];
 /// Every output format the `--format` value-enum accepts.
 const FORMATS: &[&str] = &["text", "json", "jsonl", "sarif", "csv", "html", "junit"];
 

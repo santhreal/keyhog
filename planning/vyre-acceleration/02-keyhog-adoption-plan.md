@@ -37,8 +37,8 @@ behavior-affecting phase.
 - Files: engine/gpu_literal_scratch.rs, engine/gpu_region_dispatch.rs, engine/mod.rs
   (new CompiledScanner field), engine/gpu_lazy*.rs.
 - Hold OnceLock<Option<ResidentPresencePipeline>> per scanner via
-  GpuLiteralSet::prepare_resident_presence with capacity = megascan_input_len()
-  (VRAM-tiered, exists in engine/rule_pipeline.rs).
+  GpuLiteralSet::prepare_resident_presence with capacity = gpu_batch_input_limit()
+  (VRAM-tiered, owned by engine/gpu_input_budget.rs).
 - prepare_resident_presence fails closed on undersized capacity — loud degrade with
   reason (existing record_gpu_degrade path).
 - Batches larger than resident capacity: split at region boundaries (also fixes the
@@ -105,7 +105,7 @@ behavior-affecting phase.
   GPU artifact cache (gpu_cache.rs to_bytes/from_bytes), keyed by detector digest +
   backend id + vyre version.
 - When loaded from cache, lift the shard cap (VRAM-tiered, same table as
-  megascan_input_len_for_vram_mb). Lazy-build path keeps tight caps.
+  gpu_batch_input_limit_for_vram_mb). Lazy-build path keeps tight caps.
 - Acceptance: covered-pattern count (report_phase2_gpu_catalog_loss) rises from ≤64
   toward full coverage on cached hosts; CPU no-hit admission time drops.
 

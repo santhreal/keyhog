@@ -17,7 +17,7 @@ pub mod build_scanner_config_respects_no_entropy;
 pub mod build_scanner_config_respects_no_ml;
 pub mod explicit_backend_cpu_fallback_aliases;
 pub mod explicit_backend_gpu_env_parsed;
-pub mod explicit_backend_megascan_env_parsed;
+pub mod explicit_backend_retired_megascan_rejected;
 pub mod explicit_backend_simd_aliases;
 pub mod explicit_backend_trim_and_lowercase;
 pub mod explicit_backend_unknown_returns_none;
