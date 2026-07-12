@@ -149,6 +149,21 @@
 - Make AWS SES SMTP field anchors consistently caseless while preserving the
   uppercase access-key alphabet, reject overlong username/password prefixes
   instead of truncating them, and model password-only findings honestly.
+- Make Olark's companion token-specific and capture only its value, so an API
+  key cannot self-attach as its own pair; preserve standalone token detection
+  and reject overlong hexadecimal runs instead of truncating them.
+- Make Genesys Cloud's companion client-secret-specific and capture only its
+  value, so a client ID cannot self-attach; preserve standalone secret findings
+  and reject overlong UUID-like client IDs instead of truncating them.
+- Treat Payoneer client IDs as companion context instead of standalone secrets,
+  capture their exact value beside a client-secret primary, and reject invalid
+  token continuations without limiting legitimate variable-length secrets.
+- Preserve standalone Gravity Forms private-key detection while proving public
+  keys cannot self-attach, accepting mixed-case hexadecimal keys, and rejecting
+  overlong hexadecimal runs instead of truncating them.
+- Keep Checkmarx client secrets detectable on their own while making them the
+  exact companion to UUID client IDs; use role-specific anchors and reject
+  overlong UUID/token continuations without losing secret recall.
 
 ## 0.2.1
 

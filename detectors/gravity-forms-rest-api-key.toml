@@ -11,20 +11,20 @@ severity = "high"
 keywords = ["gravityforms", "GRAVITY_FORMS", "gravity_forms"]
 
 [[detector.patterns]]
-regex = "(?:gravity[_\\s]*forms?|GRAVITY[_\\s]*FORMS)[_.\\s]*(?:public[_\\s]*key|api[_\\s]*key)[=:\\s\"'']+([a-f0-9]{32})"
+regex = "(?:gravity[_\\s]*forms?|GRAVITY[_\\s]*FORMS)[_.\\s]*(?:public[_\\s]*key|api[_\\s]*key)[=:\\s\"'']+([a-fA-F0-9]{32})\\b"
 description = "Gravity Forms REST API public key"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:gravity[_\\s]*forms?|GRAVITY[_\\s]*FORMS)[_.\\s]*(?:private[_\\s]*key|secret[_\\s]*key)[=:\\s\"'']+([a-f0-9]{32})"
+regex = "(?:gravity[_\\s]*forms?|GRAVITY[_\\s]*FORMS)[_.\\s]*(?:private[_\\s]*key|secret[_\\s]*key)[=:\\s\"'']+([a-fA-F0-9]{32})\\b"
 description = "Gravity Forms REST API private key"
 group = 1
 
 [[detector.companions]]
 name = "gravity_forms_key_pair"
-regex = "(?:gravity[_\\s]*forms?|GRAVITY[_\\s]*FORMS)[_.\\s]*(?:private[_\\s]*key|secret[_\\s]*key)[=:\\s\"'']+([a-f0-9]{32})"
+regex = "(?:gravity[_\\s]*forms?|GRAVITY[_\\s]*FORMS)[_.\\s]*(?:private[_\\s]*key|secret[_\\s]*key)[=:\\s\"'']+([a-fA-F0-9]{32})\\b"
 within_lines = 5
 
 [[detector.tests]]
-test_positive = "GRAVITY_FORMS private_key=\"fedcba9876543210fedcba9876543210\""
-test_negative = "GRAVITY_FORMS private_key=\"short\""
+test_positive = "GRAVITY_FORMS private_key=\"FeDcBa9876543210FeDcBa9876543210\""
+test_negative = "GRAVITY_FORMS private_key=\"fedcba9876543210fedcba9876543210a\""

@@ -4,18 +4,18 @@ service = "gravityforms"
 severity = "high"
 
 [positive_with_companion]
-text = "gravity forms public key a4f2c891e7b0635d2c8f4e1a9b7d6c3e\ngravity forms private key c8e4f1a92d7b0653e9c4a8f2b1d6e7a0"
+text = "gravity forms public key A4f2c891e7b0635d2c8f4e1a9b7d6c3E\ngravity forms private key C8e4f1a92d7b0653e9c4a8f2b1d6e7a0"
 expected_findings = ["gravity-forms-rest-api-key"]
-expected_companions = { gravity_forms_key_pair = "c8e4f1a92d7b0653e9c4a8f2b1d6e7a0" }
-reason = "Public key paired with private key in Gravity Forms REST API shape."
+expected_companions = { gravity_forms_key_pair = "C8e4f1a92d7b0653e9c4a8f2b1d6e7a0" }
+reason = "Public key paired with private key in Gravity Forms REST API shape (mixed-case hex values)."
 
 [positive_primary_only]
-text = "gravity forms public key a4f2c891e7b0635d2c8f4e1a9b7d6c3e"
+text = "gravity forms public key a4f2c891e7b0635d2c8f4e1a9b7d6c3e\ngravity forms public key c8e4f1a92d7b0653e9c4a8f2b1d6e7a0"
 expected_findings = ["gravity-forms-rest-api-key"]
 must_not_verify = true
-reason = "Primary found without companion gravity_forms_key_pair; verification must NOT proceed."
+reason = "Primary found with another public key; companion must not be fabricated from a public key."
 
 [negative_companion_lookalike]
 text = "gravity forms private key c8e4f1a92d7b0653e9c4a8f2b1d6e7a0"
-expected_findings = []
-reason = "Private key lookalike without public key primary."
+expected_findings = ["gravity-forms-rest-api-key"]
+reason = "Private key alone is a valid standalone secret detection."

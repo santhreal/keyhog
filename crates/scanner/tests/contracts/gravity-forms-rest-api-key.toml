@@ -20,6 +20,11 @@ text = "GRAVITY FORMS public_key f2da167246ebe0e04dc37c9e74a75b5b"
 credential = "f2da167246ebe0e04dc37c9e74a75b5b"
 reason = "Quoted-value variant of the canonical positive."
 
+[[positive]]
+text = "GRAVITY FORMS api_key 963950E3ED2E3DC49D5740982BAC6A94"
+credential = "963950E3ED2E3DC49D5740982BAC6A94"
+reason = "Mixed-case / uppercase hex credential variant."
+
 [[negative]]
 text = "GRAVITY_FORMS=short"
 reason = "Truncated value below detector minimum length."
@@ -27,6 +32,14 @@ reason = "Truncated value below detector minimum length."
 [[negative]]
 text = "GRAVITY_FORMS token abcdef"
 reason = "Keyword context without valid credential body."
+
+[[negative]]
+text = "GRAVITY FORMS api_key 963950e3ed2e3dc49d5740982bac6a94a"
+reason = "Overlong credential value with trailing hex character."
+
+[[negative]]
+text = "GRAVITY FORMS api_key 963950e3ed2e3dc49d5740982bac6a9"
+reason = "Truncated credential value (30 hex characters)."
 
 [[evasion]]
 text = "export GRAVITY_FORMS api_key \"963950e3ed2e3dc49d5740982bac6a94\""
