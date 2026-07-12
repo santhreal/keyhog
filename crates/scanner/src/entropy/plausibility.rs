@@ -353,7 +353,12 @@ fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool
     // reach the entropy floor without being credentials. Keep this
     // gate narrow: real service tokens often contain one or more
     // dashes inside otherwise random alnum bodies.
-    if crate::suppression::shape::is_dash_segmented_alnum_decoy(value) {
+    if crate::suppression::shape::is_dash_segmented_alnum_decoy(value)
+        && !super::isolated::lower_dash_app_password_floor_met(
+            value,
+            shannon_entropy(value.as_bytes()),
+        )
+    {
         return false;
     }
     true

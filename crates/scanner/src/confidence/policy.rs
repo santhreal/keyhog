@@ -253,6 +253,18 @@ pub(crate) struct ReportConfidencePolicy<'a> {
     pub(crate) calibration: Option<&'a keyhog_core::Calibration>,
 }
 
+/// Canonical precision for the public confidence contract. GPU MoE kernels
+/// accumulate `f32` values while the CPU reference promotes the same inputs to
+/// `f64`; their mathematically equivalent scores can differ by a few ULPs.
+/// Three decimal places preserve 1e-3 policy resolution while making serialized
+/// confidence and the final threshold decision backend-invariant.
+const REPORT_CONFIDENCE_SCALE: f64 = 1_000.0;
+
+#[inline]
+fn canonicalize_report_confidence(confidence: f64) -> f64 {
+    (confidence * REPORT_CONFIDENCE_SCALE).round() / REPORT_CONFIDENCE_SCALE
+}
+
 pub(crate) fn finalize_report_confidence(
     confidence: f64,
     policy: ReportConfidencePolicy<'_>,
@@ -274,7 +286,7 @@ pub(crate) fn finalize_report_confidence(
         policy.detector_id,
         policy.calibration,
     );
-    apply_checksum_confidence(confidence, policy.credential)
+    apply_checksum_confidence(confidence, policy.credential).map(canonicalize_report_confidence)
 }
 
 #[cfg(feature = "ml")]

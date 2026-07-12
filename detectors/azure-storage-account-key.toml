@@ -13,6 +13,9 @@ severity = "critical"
 # 0.40 global floor on entropy alone, dropping a real token as a false negative
 # (SecretBench mirror floor-gate analysis). FP risk bounded by the anchor.
 min_confidence = 0.28
+# Public Azurite/devstoreaccount1 emulator key. It is intentionally published
+# in SDK fixtures and must never be reported as a live Azure credential.
+allowlist_values = ["^Vgs4slS82kICttQnzVfKBVypCjxXMNK2BEvHC52zXVZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==$"]
 keywords = [
     "AZURE_STORAGE_KEY",
     "AZURE_STORAGE_ACCOUNT_KEY",

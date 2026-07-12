@@ -561,7 +561,10 @@ fn scan_keyword_free_candidates(
         // even the longest entropy run is too short, since the isolated-bare
         // path's `isolated_bare_candidate` requires alpha+digit or symbolic
         // opacity, which implies entropy bytes.
-        if max_nonws_run >= isolated_min_len {
+        let special_shape_may_cross_minimum = isolated_min_len
+            > super::isolated::ISOLATED_SPECIAL_SHAPE_MIN_LEN
+            && max_nonws_run >= super::isolated::ISOLATED_SPECIAL_SHAPE_MIN_LEN;
+        if max_nonws_run >= isolated_min_len || special_shape_may_cross_minimum {
             collect_isolated_bare_candidates_inner(
                 line,
                 line_idx,

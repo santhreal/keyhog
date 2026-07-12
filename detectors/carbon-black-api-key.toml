@@ -9,10 +9,12 @@ name = "Carbon Black API Key"
 service = "carbon-black"
 severity = "critical"
 keywords = ["CARBONBLACK", "carbonblack", "CARBON_BLACK_KEY", "CB API KEY", "CB_API_KEY", "CB KEY", "VMWARE_CB"]
-# A context anchor identifies the vendor, but the captured body is still an
-# unprefixed hex run. Keep randomness/placeholder gates active so masks such as
-# twenty zeroes do not become critical findings.
-weak_anchor = true
+# `CARBON BLACK`, `CB API KEY`, and `VMWARE_CB KEY` are vendor-specific anchors,
+# so a random 20–32-character hex body is positive evidence, not a generic hash
+# candidate. Keep the detector-local all-zero fixture exclusion below instead
+# of applying generic weak-anchor suppression to every valid Carbon Black key.
+weak_anchor = false
+allowlist_values = ["^0{20,32}$"]
 
 [[detector.patterns]]
 regex = "(?:CARBON[_\\s]*BLACK|carbon[_\\s]*black|CB|vmware_cb)[_\\s]*(?:API[_\\s]*)?KEY[=:\\s\"'']+([A-F0-9]{20,32})"

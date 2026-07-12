@@ -140,6 +140,7 @@ def _normalize_keyhog(data: object) -> list[Finding]:
             normalized = {
                 "file": loc.get("file_path") or loc.get("file") or "",
                 "line": _line(loc.get("line")),
+                "offset": _line(loc.get("offset")),
                 "value": value,
                 "detector": detector,
                 "confidence": confidence,
@@ -147,6 +148,7 @@ def _normalize_keyhog(data: object) -> list[Finding]:
             key = (
                 normalized["file"],
                 normalized["line"],
+                normalized["offset"],
                 normalized["value"],
                 normalized["detector"],
             )
@@ -290,6 +292,12 @@ class KeyhogScanner(Scanner):
             detail = (stderr or stdout or "").strip()
             if len(detail) > 1200:
                 detail = detail[-1200:]
+            if stats.timed_out:
+                raise TimeoutError(
+                    f"keyhog timed out after {timeout}s for {cfg.config_id}; "
+                    "the scan was terminated and produced no parity result"
+                    + (f": {detail}" if detail else "")
+                )
             raise RuntimeError(
                 f"keyhog exited {stats.exit_code} for {cfg.config_id}: {detail}"
             )

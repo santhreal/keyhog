@@ -196,15 +196,18 @@ attributed back to the original source.
 For each pattern-backed detector that the prefilter flagged, the full regex
 evaluates. The regex is `detector.patterns[].regex` in that detector's TOML, and
 its configured capture group becomes the candidate **credential**. Generic
-phase-2 detector TOMLs intentionally carry no regex: their keyword, length,
-entropy, token-efficiency, and shape policy governs candidates extracted from
-assignments or isolated opaque values.
+phase-2 detector TOMLs use keyword, length, entropy, token-efficiency, and shape
+policy for shapeless assignments or isolated opaque values. They may also carry
+explicit patterns for strongly structured envelopes such as JSON `"secret"`,
+`"token"`, or `"apiKey"` fields; both mechanisms remain owned by the same
+detector TOML instead of a central compatibility detector.
 
 A detector's `.toml` carries:
 
 - `id`, `name`, `service`, `severity`, `keywords`
 - zero or more `patterns`, each with `regex` + `group` + optional `description`
-  (required for service-anchored detectors; absent for `phase2-generic`)
+  (required for service-anchored detectors; optional structured-envelope
+  anchors for `phase2-generic`)
 - optional `companions` (e.g. AWS access key needs the secret key nearby)
 - optional `verify` block - HTTP method, URL template, auth scheme,
   success status

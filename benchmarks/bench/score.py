@@ -31,7 +31,8 @@ from collections import defaultdict
 from .corpora.base import LabeledRecord
 from .schema import Detection, DetectorStat, Outcome
 
-# A normalised finding is a plain dict: {file, line, value, detector}.
+# A normalised finding is a plain dict: {file, line, value, detector}, with
+# optional scanner-specific evidence such as offset and confidence.
 Finding = dict
 
 

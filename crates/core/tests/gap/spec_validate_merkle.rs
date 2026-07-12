@@ -226,6 +226,36 @@ keywords = ["demo_"]
     );
 }
 
+#[test]
+fn phase2_generic_may_add_structured_regex_envelopes() {
+    let toml = r#"
+[detector]
+id = "generic-demo"
+name = "Generic Demo"
+service = "generic"
+severity = "medium"
+kind = "phase2-generic"
+keywords = ["secret"]
+entropy_floor = [{ floor = 1.5 }]
+
+[[detector.patterns]]
+regex = '"secret"\s*:\s*"([A-Za-z0-9]{12,80})"'
+group = 1
+"#;
+    let detectors = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml,
+    )
+    .expect("hybrid phase2-generic detector must parse");
+    let issues = keyhog_core::validate_detector(&detectors[0]);
+    assert!(
+        !issues
+            .iter()
+            .any(|issue| matches!(issue, QualityIssue::Error(_))),
+        "structured regex envelopes must coexist with the phase-2 bridge: {issues:?}"
+    );
+}
+
 // ===========================================================================
 // SECTION 2: TOML schema — deny_unknown_fields rejects typos / extras
 // ===========================================================================

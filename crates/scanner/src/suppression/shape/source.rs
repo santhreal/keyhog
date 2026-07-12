@@ -19,6 +19,7 @@ pub(crate) fn looks_like_source_code_expression_with_randomness(
         || looks_like_source_string_terminator_fragment(value, randomness)
         || looks_like_source_escaped_string_fragment(value, randomness)
         || looks_like_source_format_template_fragment(value)
+        || looks_like_template_interpolation_prefix(value)
     {
         return true;
     }
@@ -70,6 +71,18 @@ pub(crate) fn looks_like_source_code_expression_with_randomness(
         || value.contains("->")
         || value.contains("=>")
         || has_call_or_index_syntax(value)
+}
+
+fn looks_like_template_interpolation_prefix(value: &str) -> bool {
+    let Some(identifier) = value.strip_suffix('$') else {
+        return false;
+    };
+    identifier.starts_with("__")
+        && identifier.len() >= 4
+        && identifier.bytes().any(|byte| byte.is_ascii_alphabetic())
+        && identifier
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
 fn looks_like_source_numeric_literal(value: &str) -> bool {
@@ -456,5 +469,15 @@ mod tests {
             "{}.field",
             SOURCE_RECEIVERS[0].as_str()
         )));
+    }
+
+    #[test]
+    fn generated_template_interpolation_prefix_is_source_syntax() {
+        let randomness = TokenRandomness::for_candidate("__vlist$");
+        assert!(looks_like_source_code_expression_with_randomness(
+            "__vlist$",
+            &randomness
+        ));
+        assert!(!looks_like_template_interpolation_prefix("realSecret$"));
     }
 }

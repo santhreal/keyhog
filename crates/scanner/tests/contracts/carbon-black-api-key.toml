@@ -17,6 +17,10 @@ reason = "vmware_cb prefix with space and 24 uppercase hex chars."
 text = "CB API KEY=short"
 reason = "Body below 20 uppercase hex chars."
 
+[[negative]]
+text = "CB API KEY=000000000000000000000000"
+reason = "Detector-local all-zero mask exclusion must suppress placeholders."
+
 [[evasion]]
 text = "Authorization: X-Auth-Token CB API KEY=7B3E5D8C1A9F4E2B6C8D3A5E"
 credential = "7B3E5D8C1A9F4E2B6C8D3A5E"

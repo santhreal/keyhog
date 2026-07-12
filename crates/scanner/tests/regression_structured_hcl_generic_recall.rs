@@ -36,11 +36,11 @@ fn scan(scanner: &CompiledScanner, body: &str, path: &str) -> Vec<RawMatch> {
         .collect()
 }
 
-fn generic_hits<'a>(matches: &'a [RawMatch], credential: &str) -> Vec<&'a RawMatch> {
+fn generic_api_key_hits<'a>(matches: &'a [RawMatch], credential: &str) -> Vec<&'a RawMatch> {
     matches
         .iter()
         .filter(|m| {
-            m.detector_id.as_ref() == "generic-secret" && m.credential.as_ref() == credential
+            m.detector_id.as_ref() == "generic-api-key" && m.credential.as_ref() == credential
         })
         .collect()
 }
@@ -57,17 +57,17 @@ fn detector_hits<'a>(
 }
 
 #[test]
-fn hcl_variable_default_generic_secret_surfaces_with_source_line_and_offset() {
+fn hcl_variable_default_generic_api_key_surfaces_with_source_line_and_offset() {
     let secret = "f1e2d3c4b5a69788776655443322110fedcba9876543210a";
     let body =
         format!("variable \"api_key\" {{\n  type    = string\n  default = \"{secret}\"\n}}\n");
     let scanner = scanner_with_floor(0.40);
     let matches = scan(&scanner, &body, "/repo/infra/variables.tf");
-    let hits = generic_hits(&matches, secret);
+    let hits = generic_api_key_hits(&matches, secret);
     assert_eq!(
         hits.len(),
         1,
-        "HCL synthetic api_key/value line must feed the generic bridge exactly once"
+        "HCL synthetic api_key/value line must feed generic-api-key exactly once; matches={matches:#?}"
     );
     let hit = hits[0];
     assert_eq!(hit.location.line, Some(3));
@@ -82,16 +82,16 @@ fn hcl_variable_default_generic_secret_surfaces_with_source_line_and_offset() {
 }
 
 #[test]
-fn hcl_inline_variable_default_generic_secret_surfaces_with_source_line_and_offset() {
+fn hcl_inline_variable_default_generic_api_key_surfaces_with_source_line_and_offset() {
     let secret = "f1e2d3c4b5a69788776655443322110fedcba9876543210a";
     let body = format!("variable \"api_key\" {{ default = \"{secret}\" }}\n");
     let scanner = scanner_with_floor(0.40);
     let matches = scan(&scanner, &body, "/repo/infra/inline.tf");
-    let hits = generic_hits(&matches, secret);
+    let hits = generic_api_key_hits(&matches, secret);
     assert_eq!(
         hits.len(),
         1,
-        "single-line HCL variable defaults must feed the generic bridge exactly once"
+        "single-line HCL variable defaults must feed generic-api-key exactly once"
     );
     let hit = hits[0];
     assert_eq!(hit.location.line, Some(1));
@@ -113,11 +113,11 @@ fn mirror_shaped_hcl_base64_surfaces_at_default_floor() {
     );
     let scanner = scanner_with_floor(0.40);
     let matches = scan(&scanner, &body, "/repo/pkg/core/consumer.tf");
-    let hits = generic_hits(&matches, secret);
+    let hits = generic_api_key_hits(&matches, secret);
     assert_eq!(
         hits.len(),
         1,
-        "mirror Terraform generic-high-entropy sample must surface through the shipped generic bridge"
+        "mirror Terraform generic-high-entropy sample must surface through generic-api-key"
     );
     let hit = hits[0];
     assert_eq!(hit.location.line, Some(3));
@@ -165,7 +165,7 @@ fn structured_append_does_not_duplicate_raw_env_generic_hit() {
     let body = format!("API_KEY=\"{secret}\"\n");
     let scanner = scanner_with_floor(0.40);
     let matches = scan(&scanner, &body, "/repo/.env");
-    let hits = generic_hits(&matches, secret);
+    let hits = generic_api_key_hits(&matches, secret);
     assert_eq!(
         hits.len(),
         1,
@@ -195,7 +195,7 @@ resource "aws_iam_user" "service_account" {
     assert!(
         matches
             .iter()
-            .all(|m| m.detector_id.as_ref() != "generic-secret"),
+            .all(|m| !matches!(m.detector_id.as_ref(), "generic-secret" | "generic-api-key")),
         "HCL preprocessing must not turn ordinary Terraform defaults into generic secrets: {matches:#?}"
     );
 }

@@ -35,7 +35,9 @@ silently replace a rejected backend.
 This parity contract covers match bytes and offsets before the common
 suppression, confidence, verification, deduplication, and reporter stages. The
 same detector TOML corpus and resolved configuration digest identify every
-route.
+route. Report confidence is canonicalized to three decimal places at the shared
+policy boundary; this removes meaningless CPU-f64/GPU-f32 accumulator ULPs
+before both the reporting-floor decision and serialized output.
 
 ## Why size alone is insufficient
 

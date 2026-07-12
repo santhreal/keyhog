@@ -7,7 +7,8 @@ bug class is exactly this: the fast path skips a per-match policy the slow path
 applies, so the two disagree and nobody notices.
 
 This gate scans the real CredData corpus through the deterministic SIMD
-reference, then checks accelerated backends as recall-preserving supersets.
+reference, then requires accelerated backends to return the exact same finding
+identity set.
 Autoroute is cache-keyed by calibrated workload buckets, so the product-path
 autoroute proof is a separate bounded calibration/replay test in this module;
 the CredData fixture must not live-calibrate an unbounded set of per-batch keys
@@ -16,8 +17,8 @@ and pretend that proves every future scan bucket.
 `cpu` is a platform fallback for no-SIMD builds and an explicit diagnostic
 override on SIMD builds; it must not be selected by autoroute on a SIMD-capable
 binary until it has its own parity proof.
-GPU is tested as RECALL-PRESERVING (must not drop anything the
-deterministic reference found) when a GPU-capable binary is present; if it is
+GPU is tested for exact detector/value/location parity when a GPU-capable
+binary is present; if it is
 not, that backend is skipped LOUDLY (printed), never silently passed.
 
 Speed: one scan per checked backend over CredData. Belongs in the bench/nightly
@@ -29,7 +30,9 @@ build). Both checked; absence skips the module with the reason.
 
 from __future__ import annotations
 
+import json
 import pathlib
+import subprocess
 
 import pytest
 
@@ -45,19 +48,45 @@ _AVAILABLE = _CORPUS.is_downloaded()
 # replay test below because full-corpus live calibration is an unbounded bucket
 # generator, not a stable parity proof.
 _DETERMINISTIC = ["simd"]
-# Accelerated backends checked as recall-preserving supersets IF available.
+# Accelerated backends checked for exact finding parity IF available.
 _ACCELERATED = ["gpu"]
-_ACCELERATED_TIMEOUT_SECONDS = 120
+# CredData is a 1 GiB, 11k-file end-to-end corpus.  This is a recall gate, not
+# a microbenchmark: give slow/cold hosts enough time to produce a real result,
+# while retaining a finite watchdog for hangs.
+_ACCELERATED_TIMEOUT_SECONDS = 600
 
 
 def _finding_keys(findings) -> set[tuple]:
-    """A backend-comparable identity per finding: (file, line, value, detector).
-    Confidence is deliberately excluded — it may legitimately differ by a hair
-    across backends; a DROPPED or ADDED finding is what this gate is about."""
+    """Exact backend-comparable identity, including location and confidence."""
     return {
-        (f.get("file", ""), f.get("line", 0), f.get("value", ""), f.get("detector", ""))
+        (
+            f.get("file", ""),
+            f.get("line", 0),
+            f.get("offset", 0),
+            f.get("value", ""),
+            f.get("detector", ""),
+            f.get("confidence"),
+        )
         for f in findings
     }
+
+
+def test_finding_identity_includes_detector_offset_and_confidence():
+    base = {
+        "file": "fixture.env",
+        "line": 7,
+        "offset": 41,
+        "value": "credential",
+        "detector": "generic-secret",
+        "confidence": 0.73,
+    }
+    variants = [
+        base,
+        {**base, "detector": "generic-password"},
+        {**base, "offset": 42},
+        {**base, "confidence": 0.74},
+    ]
+    assert len(_finding_keys(variants)) == 4
 
 
 def _current_keyhog_binary() -> str:
@@ -70,6 +99,74 @@ def _current_keyhog_binary() -> str:
     except KeyhogVersionError as exc:
         pytest.fail(f"{exc}; refusing to score backend parity with a stale binary")
     return binary
+
+
+def _gpu_preflight(binary: str) -> bool:
+    """Return False only for an honestly absent adapter; fail on broken GPU paths."""
+    try:
+        completed = subprocess.run(
+            [binary, "backend", "--self-test", "--json"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        pytest.fail(f"GPU parity preflight could not run: {exc}")
+    try:
+        report = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        pytest.fail(
+            "GPU parity preflight returned invalid JSON: "
+            f"{exc}; stdout={completed.stdout[-600:]!r}; "
+            f"stderr={completed.stderr[-600:]!r}"
+        )
+    if not isinstance(report, dict):
+        pytest.fail(
+            "GPU parity preflight JSON must be an object; "
+            f"got {type(report).__name__}"
+        )
+    if not report.get("gpu_available", False):
+        if report.get("status") != "skip" or not report.get("ok", False):
+            pytest.fail(
+                f"GPU preflight reported an inconsistent unavailable state: {report}"
+            )
+        return False
+    if (
+        completed.returncode != 0
+        or not report.get("ok", False)
+        or report.get("status") != "pass"
+    ):
+        pytest.fail(
+            "GPU adapter exists but its production self-test failed; refusing to "
+            f"mislabel a broken accelerator as unavailable: {report}"
+        )
+    return True
+
+
+def test_gpu_preflight_skips_only_absent_hardware(monkeypatch):
+    report = {"ok": True, "status": "skip", "gpu_available": False}
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, json.dumps(report), ""
+        ),
+    )
+    assert _gpu_preflight("/unused/keyhog") is False
+
+
+def test_gpu_preflight_rejects_broken_present_adapter(monkeypatch):
+    report = {"ok": False, "status": "fail", "gpu_available": True}
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 4, json.dumps(report), "kernel parity failed"
+        ),
+    )
+    with pytest.raises(pytest.fail.Exception, match="production self-test failed"):
+        _gpu_preflight("/unused/keyhog")
 
 
 def _scan(
@@ -94,8 +191,8 @@ def _scan(
 @pytest.fixture(scope="session")
 def backend_findings(creddata_simd_findings):
     """Scan the corpus once per backend. Deterministic backends are required;
-    accelerated ones are best-effort and recorded as None when unavailable
-    (printed loudly, never silently dropped)."""
+    an accelerated backend is recorded as None only when preflight proves the
+    hardware adapter is absent (printed loudly, never silently dropped)."""
     binary = _current_keyhog_binary()
 
     out: dict[str, set | None] = {
@@ -104,6 +201,10 @@ def backend_findings(creddata_simd_findings):
 
     ref = out[_DETERMINISTIC[0]]
     for b in _ACCELERATED:
+        if b == "gpu" and not _gpu_preflight(binary):
+            print("\n[parity] backend 'gpu' has no hardware adapter; SKIPPED (loud).")
+            out[b] = None
+            continue
         try:
             got = _scan(
                 binary,
@@ -111,18 +212,20 @@ def backend_findings(creddata_simd_findings):
                 _CORPUS.scan_root,
                 timeout=_ACCELERATED_TIMEOUT_SECONDS,
             )
-        except Exception as exc:  # noqa: BLE001 — record + surface, never swallow
-            print(f"\n[parity] backend {b!r} errored ({exc}); SKIPPED (loud).")
-            out[b] = None
-            continue
-        # REQUIRE_GPU makes an unavailable accelerator yield nothing; distinguish
-        # "ran and found the same" from "could not run" by comparing to the ref.
-        if not got and ref:
-            print(f"\n[parity] backend {b!r} produced no findings (GPU/feature "
-                  f"unavailable on this host); SKIPPED (loud, not a pass).")
-            out[b] = None
-        else:
-            out[b] = got
+        except TimeoutError as exc:
+            pytest.fail(
+                f"accelerated backend {b!r} timed out; this is an execution "
+                f"failure, not hardware unavailability: {exc}"
+            )
+        except RuntimeError as exc:
+            pytest.fail(
+                f"accelerated backend {b!r} failed during the parity scan; "
+                f"the preflight passed, so this is an execution defect: {exc}"
+            )
+        # Preflight proved the backend exists and --require-gpu forbids CPU
+        # fallback.  Even an empty successful result is therefore a real parity
+        # result; the differential assertion below must score it, not skip it.
+        out[b] = got
     return out
 
 
@@ -169,9 +272,19 @@ def test_accelerated_backend_drops_nothing(backend, backend_findings):
         pytest.skip(f"{backend} unavailable on this host (reported loudly in fixture)")
     ref = backend_findings[_DETERMINISTIC[0]]
     dropped = ref - got
-    assert not dropped, (
-        f"accelerated backend {backend!r} DROPPED {len(dropped)} finding(s) the "
-        f"deterministic path found — silent recall loss on the fast path:\n"
-        f"  {sorted(dropped)[:12]}\n"
-        f"The GPU/megakernel path may add findings, but it must never lose one "
-        f"the CPU path surfaces.")
+    added = got - ref
+    ref_structural = {finding[:-1] for finding in ref}
+    got_structural = {finding[:-1] for finding in got}
+    structurally_dropped = ref_structural - got_structural
+    structurally_added = got_structural - ref_structural
+    assert not dropped and not added, (
+        f"accelerated backend {backend!r} diverged from the deterministic path: "
+        f"structurally_dropped={len(structurally_dropped)}, "
+        f"structurally_added={len(structurally_added)}, "
+        f"exact_dropped={len(dropped)}, exact_added={len(added)}\n"
+        f"  structurally dropped: {sorted(structurally_dropped, key=repr)[:12]}\n"
+        f"  structurally added:   {sorted(structurally_added, key=repr)[:12]}\n"
+        f"  dropped: {sorted(dropped, key=repr)[:12]}\n"
+        f"  added:   {sorted(added, key=repr)[:12]}\n"
+        "Detector, value, file, line, offset, and confidence must be backend-invariant."
+    )

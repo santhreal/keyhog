@@ -979,13 +979,17 @@ fn isolated_lower_dash_app_password_enters_full_line_recovery() {
     let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
 
     let matches = scanner.scan(&chunk);
-    let entropy_fired = matches.iter().any(|m| {
-        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
-    });
-    assert!(
-        entropy_fired,
+    let entropy_matches = matches
+        .iter()
+        .filter(|m| {
+            m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
+        })
+        .count();
+    assert_eq!(
+        entropy_matches,
+        1,
         "an isolated lowercase 4x4 app-password token with mixed alnum groups \
-         must clear the app-password floor instead of requiring a service \
+         must emit exactly once after clearing the app-password floor instead of requiring a service \
          keyword anchor; matches={:?}",
         matches
             .iter()

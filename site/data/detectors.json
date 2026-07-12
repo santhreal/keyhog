@@ -3575,13 +3575,7 @@
       "PASSWORD",
       "REDIS_PASSWORD",
       "DB_PASSWORD",
-      "MYSQL_PASSWORD",
-      "secret",
-      "token",
-      "api_key",
-      "apikey",
-      "access_key",
-      "client_secret"
+      "MYSQL_PASSWORD"
     ]
   },
   {

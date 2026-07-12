@@ -786,24 +786,6 @@ fn engine_scan_error() {
     assert!(scanner.scan(&demo_chunk("")).is_empty());
 }
 
-#[test]
-fn engine_scan_reassembly_uses_synthetic_naming() {
-    let src = include_str!("../../src/engine/scan_no_hit_reassembly.rs");
-    assert!(
-        src.contains("synthetic_data")
-            && src.contains("synthetic_metadata")
-            && src.contains("synthetic_chunk"),
-        "reassembly scratch chunk names must describe synthetic scan input"
-    );
-    assert!(
-        !src.contains("dummy_data")
-            && !src.contains("dummy_metadata")
-            && !src.contains("dummy_chunk")
-            && !src.contains("dummy chunk"),
-        "engine/scan_no_hit_reassembly.rs must not regress to dummy naming for shipped reassembly internals"
-    );
-}
-
 // ── crates/scanner/src/engine/windowed.rs ─────────────────────────────
 #[test]
 fn engine_windowed_happy() {

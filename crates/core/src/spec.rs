@@ -59,18 +59,18 @@ pub struct DetectorSpec {
     /// What scan phase produces this detector's findings, and thus what the
     /// loader requires of it. Defaults to [`DetectorKind::Regex`]. A `regex`
     /// detector carries >=1 regex pattern and fires in phase 1. A
-    /// `phase2-generic` detector is a shapeless-secret bridge: a shapeless
-    /// secret (bare password, UUID, high-entropy blob) has no anchor to match,
-    /// so it carries NO regex and instead fires in phase 2 driven by its
-    /// `keywords` + `entropy_floor`. Modeled here so those detectors are
-    /// first-class TOML specs — one home for every knob — instead of engine
-    /// constants scattered across `detector_ids.rs` + `entropy-floors.toml`.
+    /// `phase2-generic` detector is a shapeless-secret bridge: bare passwords
+    /// and high-entropy blobs fire in phase 2 from `keywords` plus
+    /// `entropy_floor`. It may also declare structured regex envelopes while
+    /// keeping both paths under one detector owner. Modeled here so those
+    /// detectors are first-class TOML specs — one home for every knob — instead
+    /// of engine constants scattered across `detector_ids.rs` and policy files.
     #[serde(default)]
     pub kind: DetectorKind,
     /// List of regex patterns to match. Defaults to empty so a
-    /// `kind = "phase2-generic"` detector (which has no regex anchor) can omit
-    /// it; a `kind = "regex"` detector with no patterns is rejected by the
-    /// quality gate (`validate_patterns_present`), so this default never
+    /// `kind = "phase2-generic"` detector can omit it when it has no structured
+    /// envelope; a `kind = "regex"` detector with no patterns is rejected by
+    /// the quality gate (`validate_patterns_present`), so this default never
     /// silently ships a dead regex detector.
     #[serde(default)]
     pub patterns: Vec<PatternSpec>,
@@ -241,8 +241,10 @@ pub enum DetectorKind {
     /// anchor. The default and the vast majority of the corpus.
     #[default]
     Regex,
-    /// Phase-2 generic bridge: NO regex (shapeless secret has no anchor); fires
-    /// on `keywords` + `entropy_floor`. The `generic-*` detectors.
+    /// Phase-2 generic bridge: fires on `keywords` + `entropy_floor`. It may
+    /// additionally carry explicit regex patterns for strongly structured
+    /// envelopes (for example a JSON `"secret"` field); those anchors compile
+    /// through the same detector while phase-2 remains the shapeless fallback.
     Phase2Generic,
 }
 

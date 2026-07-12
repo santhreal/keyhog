@@ -441,7 +441,6 @@ impl CompiledScanner {
                     confirmed_anchor_matches,
                     generic_keyword_positions,
                 );
-                self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
                 self.post_process_coalesced_matches(chunk, &mut matches);
                 matches
             })

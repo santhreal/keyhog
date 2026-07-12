@@ -584,10 +584,6 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
                 if crate::deadline::expired(deadline) {
                     return matches;
                 }
-                self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
-                if crate::deadline::expired(deadline) {
-                    return matches;
-                }
                 self.post_process_matches(chunk, &mut matches, deadline);
                 return matches;
             }

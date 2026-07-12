@@ -118,6 +118,29 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Benchmark matrices no longer manufacture the retired `megascan` backend as a
   duplicate GPU lane, and generated performance tables no longer advertise
   that rejected command spelling.
+- Full-corpus GPU parity failures can no longer be mislabeled as hardware
+  skips: the release gate preflights the production GPU kernels, gives the
+  1 GiB corpus a realistic finite watchdog, and treats timeouts, runtime
+  failures, empty results, and any detector/value/location/confidence divergence
+  as failures. The scan engine
+  also removes a duplicate no-hit reassembly side channel that glued unrelated
+  complete findings from nearby lines into fabricated credentials on only some
+  backend paths; fragment reassembly remains owned by the canonical assignment
+  parser. Public confidence is canonicalized at three decimal places so
+  equivalent CPU-f64 and GPU-f32 model accumulation produces identical policy
+  decisions and JSON. Structured decode-through findings now map to the encoded
+  source value column, generated JavaScript interpolation prefixes stay source
+  syntax, and the published Azurite emulator key is excluded in its Azure
+  detector TOML; these close the remaining concrete CredData parity cases.
+- Generic detector ownership is coherent across backends. `generic-password`
+  now owns password/passwd/pwd assignments only; API-key, token, secret,
+  access-key, and client-secret fields stay with their detector-local phase-2
+  TOMLs instead of being relabeled as passwords when the GPU trigger set was a
+  strict superset. The detector-owned 20-byte broad keyword-free minimum also
+  retains narrow 16–19-byte exceptions for shape-proven symbolic credentials
+  and four-group app passwords, with positive and negative no-hit coverage.
+  Carbon Black's vendor-specific anchors now admit its documented 20–32-byte
+  hex key family while the detector TOML explicitly excludes all-zero masks.
 
 - **Prerelease benchmarks now prove the candidate artifact.** The gate builds
   and pins the current binary before scanner-backed pytest, and benchmark

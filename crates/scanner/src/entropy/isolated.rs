@@ -68,6 +68,19 @@ fn line_has_isolated_bare_secret_candidate(
     visit_isolated_bare_candidates(line, min_len.max(1), |candidate, _| {
         found |= isolated_bare_secret_entropy(candidate, threshold, placeholder_keywords).is_some();
     });
+    // Generic detector TOMLs keep their broad keyword-free floor at 20 bytes,
+    // but narrower symbolic/app-password shapes have stronger shape proof down
+    // to 16 bytes. Revisit only that special band; ordinary tokens continue to
+    // obey the detector-owned broad minimum.
+    if !found && min_len > ISOLATED_SPECIAL_SHAPE_MIN_LEN {
+        visit_isolated_bare_candidates(line, ISOLATED_SPECIAL_SHAPE_MIN_LEN, |candidate, _| {
+            let entropy = shannon_entropy(candidate.as_bytes());
+            if isolated_special_shape_floor_met(candidate, entropy) {
+                found |= isolated_bare_secret_entropy(candidate, threshold, placeholder_keywords)
+                    .is_some();
+            }
+        });
+    }
     found
 }
 
@@ -131,10 +144,18 @@ pub(crate) fn mixed_separator_token_floor_met(candidate: &str, entropy: f64) -> 
     has_upper && has_lower && has_digit
 }
 
+const LOWER_DASH_APP_PASSWORD_LEN: usize = 19;
+pub(super) const ISOLATED_SPECIAL_SHAPE_MIN_LEN: usize = 16;
+
+fn isolated_special_shape_floor_met(candidate: &str, entropy: f64) -> bool {
+    lower_dash_app_password_floor_met(candidate, entropy)
+        || (candidate.len() >= ISOLATED_SPECIAL_SHAPE_MIN_LEN
+            && symbolic_isolated_bare_candidate(candidate))
+}
+
 pub(crate) fn lower_dash_app_password_floor_met(candidate: &str, entropy: f64) -> bool {
     const LOWER_DASH_APP_PASSWORD_THRESHOLD: f64 = 3.9;
     // Four `-`-separated groups of 4 chars + 3 dashes = 19 (e.g. `a1b2-c3d4-e5f6-g7h8`).
-    const LOWER_DASH_APP_PASSWORD_LEN: usize = 19;
     if entropy < LOWER_DASH_APP_PASSWORD_THRESHOLD || candidate.len() != LOWER_DASH_APP_PASSWORD_LEN
     {
         return false;
@@ -226,7 +247,7 @@ pub(super) fn collect_isolated_bare_candidates_inner(
     matches: &mut Vec<EntropyMatch>,
     placeholder_keywords: &[String],
 ) {
-    visit_isolated_bare_candidates(line, context.min_len, |candidate, candidate_offset| {
+    let mut emit_candidate = |candidate: &str, candidate_offset: usize| {
         let entropy = match isolated_bare_secret_entropy_decision(
             candidate,
             context.threshold,
@@ -254,7 +275,25 @@ pub(super) fn collect_isolated_bare_candidates_inner(
             line: line_idx + FIRST_SOURCE_LINE_NUMBER,
             offset: line_offset + candidate_offset,
         });
-    });
+    };
+    visit_isolated_bare_candidates(line, context.min_len, &mut emit_candidate);
+    // See the matching admission exception in
+    // `line_has_isolated_bare_secret_candidate`: only shape-proven symbolic or
+    // 4x4 app-password candidates may cross a broader detector TOML floor.
+    if context.min_len > ISOLATED_SPECIAL_SHAPE_MIN_LEN {
+        visit_isolated_bare_candidates(
+            line,
+            ISOLATED_SPECIAL_SHAPE_MIN_LEN,
+            |candidate, candidate_offset| {
+                let entropy = shannon_entropy(candidate.as_bytes());
+                if candidate.len() < context.min_len
+                    && isolated_special_shape_floor_met(candidate, entropy)
+                {
+                    emit_candidate(candidate, candidate_offset);
+                }
+            },
+        );
+    }
 }
 
 fn isolated_bare_secret_entropy(

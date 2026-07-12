@@ -247,13 +247,20 @@ fn kubeconfig_empty_client_key_data_no_panic_no_surface() {
 
 #[test]
 fn k8s_secret_data_tls_key_base64_pem_surfaces() {
+    let encoded = b64(PEM);
     let text = format!(
         "apiVersion: v1\nkind: Secret\nmetadata:\n  name: tls\ntype: kubernetes.io/tls\ndata:\n  tls.key: {}\n",
-        b64(PEM)
+        encoded
     );
-    assert!(
-        surfaces("tls-secret.yaml", &text, PEM_NEEDLE),
-        "a base64 tls.key PEM under a Secret data: block must surface"
+    let matches = scan_file("tls-secret.yaml", &text);
+    let hit = matches
+        .iter()
+        .find(|finding| finding.credential.as_ref().contains(PEM_NEEDLE))
+        .expect("a base64 tls.key PEM under a Secret data: block must surface");
+    assert_eq!(
+        hit.location.offset,
+        text.find(&encoded).expect("encoded tls.key source offset"),
+        "decoded structured findings must point to the encoded value start"
     );
 }
 

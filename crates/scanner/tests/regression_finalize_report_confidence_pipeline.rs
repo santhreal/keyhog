@@ -205,3 +205,31 @@ fn test_path_penalty_does_not_raise_confidence_vs_unpenalized() {
         "the test-path haircut must not INCREASE confidence: penalized {p} > unpenalized {u}"
     );
 }
+
+/// CPU and GPU MoE evaluation use different floating-point widths internally.
+/// Their public report score is a policy input and serialized API field, so a
+/// few accumulator ULPs must not create backend-specific findings or JSON.
+#[test]
+fn report_confidence_canonicalizes_equivalent_cpu_gpu_scores() {
+    let credential = "W/\"e1dc589b7165f7ab3b9a5ec1f1992257";
+    let cpu = finalize_report_confidence(
+        0.831_729_471_683_502_2,
+        credential,
+        "entropy-api-key",
+        None,
+        false,
+        false,
+        false,
+    );
+    let gpu = finalize_report_confidence(
+        0.831_729_531_288_147,
+        credential,
+        "entropy-api-key",
+        None,
+        false,
+        false,
+        false,
+    );
+    assert_eq!(cpu, gpu, "backend-equivalent scores need one public value");
+    assert_eq!(cpu, Some(0.832));
+}

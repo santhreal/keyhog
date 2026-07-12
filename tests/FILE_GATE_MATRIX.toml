@@ -1106,11 +1106,6 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/scan_no_hit_reassembly.rs"
-error = true
-adversarial = true
-
-[[module]]
 path = "crates/scanner/src/engine/scan_postprocess.rs"
 error = true
 adversarial = true

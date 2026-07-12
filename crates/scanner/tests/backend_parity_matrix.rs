@@ -8,7 +8,7 @@
 //!
 //! Each (backend × fixture) pair is its own cell. SimdCpu is the
 //! reference: each non-SIMD backend must produce the same
-//! `(credential, file_path, file_offset)` set. The fixture corpus is
+//! `(detector, credential, file_path, file_offset, confidence-bits)` set. The fixture corpus is
 //! synthetic so the test runs in milliseconds; real-corpus parity
 //! lives in `gpu_parity.rs` (boundary) and the differential bench.
 //!
@@ -21,10 +21,10 @@ use support::contracts::test_chunk as make_chunk;
 use support::paths::detector_dir;
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
-use keyhog_scanner::{CompiledScanner, ScanBackend};
+use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 use std::collections::BTreeSet;
 
-type FindingKey = (String, String, usize);
+type FindingKey = (String, String, String, usize, Option<u64>);
 
 fn collect_keys(results: &[Vec<RawMatch>]) -> BTreeSet<FindingKey> {
     results
@@ -32,6 +32,7 @@ fn collect_keys(results: &[Vec<RawMatch>]) -> BTreeSet<FindingKey> {
         .flat_map(|chunk| chunk.iter())
         .map(|m| {
             (
+                m.detector_id.as_ref().to_string(),
                 m.credential.as_ref().to_string(),
                 m.location
                     .file_path
@@ -39,6 +40,7 @@ fn collect_keys(results: &[Vec<RawMatch>]) -> BTreeSet<FindingKey> {
                     .map(str::to_string)
                     .unwrap_or_default(),
                 m.location.offset,
+                m.confidence.map(f64::to_bits),
             )
         })
         .collect()
@@ -49,7 +51,7 @@ struct Fixture {
     chunks: Vec<Chunk>,
 }
 
-/// Seven synthetic corpora that each exercise a distinct engine path:
+/// Synthetic corpora that each exercise a distinct engine path:
 ///   1. Pure clean text (zero findings - backend must agree on "nothing")
 ///   2. AKIA + ghp_ literal-prefix path (the GPU literal-set hot path)
 ///   3. Stripe sk_live_ + ASIA mixed
@@ -60,6 +62,16 @@ struct Fixture {
 ///   7. HS-only companion detector (`twilio-auth-token`, NO GPU literal prefix -
 ///      the no-literal / regex-only class the GPU region-presence trigger path
 ///      can under-admit vs SimdCpu's Hyperscan union; M-02 test-depth gap)
+///   8. Two complete password assignments within the fragment proximity window;
+///      they must remain independent and backend-identical, never be glued by a
+///      no-hit-only reassembly side channel.
+///   9. A prefixless mixed-alnum API-key assignment at the generic/entropy
+///      boundary, including detector identity and source offset.
+///  10. A generated JavaScript template interpolation prefix that every backend
+///      must classify as source syntax, never a generic secret.
+///  11. The public Azurite connection-string key split across adjacent Python
+///      literals; structured recovery must not turn published fixture data into
+///      a backend-specific finding.
 fn build_fixtures() -> Vec<Fixture> {
     vec![
         Fixture {
@@ -166,6 +178,76 @@ fn build_fixtures() -> Vec<Fixture> {
                 "fixtures/twilio_pair.env",
             )],
         },
+        Fixture {
+            name: "independent_near_passwords",
+            chunks: vec![make_chunk(
+                &{
+                    let mut body = String::from("const string password = \"lapbxbp796\";\n");
+                    for _ in 0..88 {
+                        body.push_str("// unrelated source line\n");
+                    }
+                    body.push_str("const string password = \"ybfyqpb806\";\n");
+                    body
+                },
+                "fixtures/independent-passwords.cs",
+            )],
+        },
+        Fixture {
+            name: "prefixless_api_key_assignment",
+            chunks: vec![make_chunk(
+                r#"from allauth.socialaccount.tests import OAuth2TestsMixin
+from allauth.tests import MockedResponse, TestCase
+
+from .provider import BitlyProvider
+
+class BitlyTests(OAuth2TestsMixin, TestCase):
+    provider_id = BitlyProvider.id
+
+    def get_mocked_response(self):
+        return MockedResponse(
+            200,
+            """{
+            "data": {
+                "apiKey": "T_f8086c90j408603x7d466zys2po85448",
+                "custom_short_domain": null,
+                "display_name": null,
+                "full_name": "Bitly API Oauth Demo Account",
+                "is_enterprise": false,
+                "login": "bitlyapioauthdemo",
+                "member_since": 1331567982,
+                "profile_image": "http://bitly.com/u/bitlyapioauthdemo.png",
+                "profile_url": "http://bitly.com/u/bitlyapioauthdemo",
+                "share_accounts": [],
+                "tracking_domains": []
+            },
+            "status_code": 200,
+            "status_txt": "OK"
+        }""",
+        )
+"#,
+                "fixtures/prefixless-api-key.py",
+            )],
+        },
+        Fixture {
+            name: "generated_js_template_prefix",
+            chunks: vec![make_chunk(
+                "c.key = `__vlist${nestedIndex}_${i}__`\n",
+                "fixtures/generated-template.js",
+            )],
+        },
+        Fixture {
+            name: "public_azurite_key_split_across_python_literals",
+            chunks: vec![make_chunk(
+                r#"TEST_AZURE_CONNECTION_STRING = (
+    "DefaultEndpointsProtocol=http;"
+    "AccountName=devstoreaccount1;"
+    "AccountKey=Vgs4slS82kICttQnzVfKBVypCjxXMNK2BEvHC52zXV"
+    "Z6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+)
+"#,
+                "fixtures/azurite.py",
+            )],
+        },
     ]
 }
 
@@ -176,7 +258,7 @@ fn run_cell(
     fixture: &Fixture,
 ) -> BTreeSet<FindingKey> {
     scanner.clear_fragment_cache();
-    let results = scanner.scan_chunks_with_backend(&fixture.chunks, backend);
+    let results = scanner.scan_coalesced_with_backend(&fixture.chunks, backend);
     collect_keys(&results)
 }
 
@@ -186,7 +268,11 @@ fn backend_parity_matrix_all_fixtures_all_backends() {
     // rather than let this backend-parity gate pass vacuously.
     let detectors = keyhog_core::load_detectors(&detector_dir())
         .expect("load detectors from the required on-disk detector directory");
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let mut config = ScannerConfig::default();
+    config.penalize_test_paths = false;
+    let scanner = CompiledScanner::compile(detectors)
+        .expect("scanner compile")
+        .with_config(config);
     let fixtures = build_fixtures();
 
     let backends = [
@@ -203,8 +289,15 @@ fn backend_parity_matrix_all_fixtures_all_backends() {
         // SimdCpu is the reference for this fixture.
         scanner.clear_fragment_cache();
         let reference_results =
-            scanner.scan_chunks_with_backend(&fixture.chunks, ScanBackend::SimdCpu);
+            scanner.scan_coalesced_with_backend(&fixture.chunks, ScanBackend::SimdCpu);
         let reference_keys = collect_keys(&reference_results);
+        assert!(
+            reference_keys
+                .iter()
+                .all(|(_, credential, _, _, _)| credential != "ybfyqpb806lapbxbp796"
+                    && credential != "lapbxbp796ybfyqpb806"),
+            "independent complete password assignments must never be fabricated into one credential"
+        );
 
         for backend in backends {
             total_cells += 1;
@@ -251,7 +344,11 @@ fn determinism_each_backend_each_fixture_runs_twice_matches() {
     // rather than let this backend-parity gate pass vacuously.
     let detectors = keyhog_core::load_detectors(&detector_dir())
         .expect("load detectors from the required on-disk detector directory");
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let mut config = ScannerConfig::default();
+    config.penalize_test_paths = false;
+    let scanner = CompiledScanner::compile(detectors)
+        .expect("scanner compile")
+        .with_config(config);
     let fixtures = build_fixtures();
     let backends = [
         ScanBackend::SimdCpu,

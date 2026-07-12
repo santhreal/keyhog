@@ -21,6 +21,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 text = "AZURE_STORAGE_KEY=to8PuEXAMPLEEXAMPLE+O/=="
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
 
+[[negative]]
+text = "AccountKey=Vgs4slS82kICttQnzVfKBVypCjxXMNK2BEvHC52zXVZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+reason = "Published Azurite/devstoreaccount1 emulator key is detector-local test data, not a leak."
+
 [[evasion]]
 text = "AZURE_STORAGE_KEY=to8PuP8XWbrLmr4e+y/DLH/Hhsl6ArMtSIkCSqL7lSJOrb59CUVd0Hqb0tV/RxYsX8L5UrwFv1eFWPQ9pE++O/=="
 credential = "to8PuP8XWbrLmr4e+y/DLH/Hhsl6ArMtSIkCSqL7lSJOrb59CUVd0Hqb0tV/RxYsX8L5UrwFv1eFWPQ9pE++O/=="

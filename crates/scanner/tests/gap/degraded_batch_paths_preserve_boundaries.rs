@@ -12,7 +12,6 @@ fn scanner_source(path: &str) -> String {
 fn forced_simd_backend_without_prefilter_is_not_cpu_fallback() {
     let source = scanner_source("engine/compiled_api.rs");
     let triggered = scanner_source("engine/backend_triggered.rs");
-    let no_hit_reassembly = scanner_source("engine/scan_no_hit_reassembly.rs");
     assert!(
         source.contains("selected_backend: crate::hw_probe::ScanBackend")
             && source.contains("crate::process_exit::backend_unavailable"),
@@ -50,11 +49,6 @@ fn forced_simd_backend_without_prefilter_is_not_cpu_fallback() {
             && !missing_prefilter_branch.contains("warn_simd_auto_degrade")
             && !missing_prefilter_branch.contains("collect_triggered_patterns_cpu(text)"),
         "internal SimdCpu trigger collection without a live prefilter must fail closed, not warn and rescan through AC"
-    );
-    assert!(
-        no_hit_reassembly.contains("let backend = self.live_cpu_backend();")
-            && !no_hit_reassembly.contains("let backend = crate::hw_probe::ScanBackend::SimdCpu;"),
-        "no-hit fragment reassembly must request the live CPU-tier backend instead of hardcoding SimdCpu"
     );
 }
 

@@ -1,8 +1,9 @@
 # Generic API-key bridge (phase-2). A shapeless API key — a high-entropy token
 # assigned to an api_key/access_key/secret_key field — has no vendor prefix to
-# anchor a regex on, so this detector carries NO patterns. It fires in phase 2,
-# gated by its keywords + entropy_floor. Every knob lives HERE (Tier-B), not in
-# engine constants: this is the single home for the generic-api-key detector.
+# anchor a regex on, so it fires in phase 2, gated by its keywords and entropy
+# policy. Optional JSON envelopes below preserve structured low-entropy values.
+# Every knob lives HERE (Tier-B), not in engine constants: this is the single
+# home for the generic-api-key detector.
 
 [detector]
 id = "generic-api-key"
@@ -31,6 +32,19 @@ entropy_floor = [
     { max_len = 40, floor = 2.8 },
     { floor = 3.5 },
 ]
+
+# Explicit JSON envelopes belong to the API/access-key owner. Keeping these as
+# separate fixed-anchor patterns makes every backend compile the same trigger
+# roots instead of relying on one multi-family alternation.
+[[detector.patterns]]
+regex = "(?i)\"api[_-]?key\"\\s*:\\s*\"([a-zA-Z0-9/+=_.!@#$%^&*-]{12,80})\""
+description = "API key value in a JSON object field"
+group = 1
+
+[[detector.patterns]]
+regex = "(?i)\"access[_-]?key\"\\s*:\\s*\"([a-zA-Z0-9/+=_.!@#$%^&*-]{12,80})\""
+description = "Access key value in a JSON object field"
+group = 1
 
 [[detector.tests]]
 test_positive = "api_key=ufnlbbavawsdeecn"

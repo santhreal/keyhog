@@ -35,7 +35,6 @@
 //! - `scan` / `scan_with_backend` / `scan_with_deadline*` ............ mod.rs (public entry)
 //! - `scan_inner` ................................................................................ scan.rs
 //! - `scan_coalesced` / `compute_coalesced_triggers` / `scan_coalesced_phase2` .................. scan_coalesced.rs
-//! - no-hit fragment reassembly for the shared tail .............................................. scan_no_hit_reassembly.rs
 //! - `scan_chunks_with_backend_internal` (CPU-vs-GPU batch routing) .. backend_dispatch.rs
 //! - `scan_coalesced_gpu_region_presence` (GPU trigger production) ... gpu_region_dispatch.rs
 //! - GPU region reporting/throughput helpers ................. gpu_region_dispatch_helpers.rs
@@ -117,7 +116,6 @@ mod scan;
 mod scan_coalesced;
 pub(crate) mod scan_filters;
 mod scan_inner_profile;
-mod scan_no_hit_reassembly;
 mod scan_postprocess;
 #[path = "scan_postprocess/confirmed_extract.rs"]
 mod scan_postprocess_confirmed_extract;

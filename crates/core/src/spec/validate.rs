@@ -214,16 +214,11 @@ fn validate_patterns_present(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>
                 issues.push(QualityIssue::Error("no patterns defined".into()));
             }
         }
-        // A phase-2 generic bridge is defined by keywords + entropy_floor and has
-        // NO anchor to match: patterns are forbidden, keywords are required.
+        // A phase-2 generic bridge is defined by keywords + entropy_floor.
+        // Optional patterns add strongly structured envelopes without creating
+        // a duplicate detector owner; keywords remain required for the
+        // shapeless phase-2 path.
         DetectorKind::Phase2Generic => {
-            if !spec.patterns.is_empty() {
-                issues.push(QualityIssue::Error(
-                    "phase2-generic detector must not define regex patterns (it fires on \
-                     keywords + entropy_floor, not an anchor)"
-                        .into(),
-                ));
-            }
             if spec.keywords.is_empty() {
                 issues.push(QualityIssue::Error(
                     "phase2-generic detector must define keywords (its only pre-filter)".into(),

@@ -8,15 +8,12 @@ use super::{absolute_line, CompiledScanner};
 use keyhog_core::{Chunk, RawMatch};
 
 /// Minimum Shannon entropy and byte length a reassembled cross-chunk candidate
-/// must clear before it is worth a synthetic re-scan. ONE owner shared with the
-/// no-phase-1-hit reassembly path (`scan_no_hit_reassembly.rs`) so the two
-/// reassembly admission gates can never drift to different floors.
+/// must clear before it is worth a synthetic re-scan.
 pub(crate) const REASSEMBLY_MIN_ENTROPY: f64 = 3.0;
 pub(crate) const REASSEMBLY_MIN_VALUE_LEN: usize = 16;
 
 /// Wrap a reassembled credential value in the synthetic assignment the scanner
-/// re-scans (`reassembled_key = "<value>"`). ONE owner for the probe shape and
-/// its buffer sizing, shared with `scan_no_hit_reassembly.rs`.
+/// re-scans (`reassembled_key = "<value>"`).
 pub(crate) fn reassembly_probe_data(value: &str) -> String {
     let mut data = String::with_capacity(value.len() + 24);
     data.push_str("reassembled_key = \"");
@@ -211,31 +208,6 @@ mod reassembly_owner_tests {
             reassembly_probe_data("a b\tc"),
             "reassembled_key = \"a b\tc\"",
             "value is embedded verbatim, no escaping/trimming"
-        );
-    }
-
-    #[test]
-    fn no_hit_reassembly_path_reuses_the_single_owner() {
-        // ONE owner lock: the no-phase-1-hit reassembly path MUST import the shared
-        // floors + probe builder, never re-hardcode `3.0` / `< 16` / the probe
-        // string. Re-open-coding any of them here is exactly the drift Law "ONE
-        // PLACE" forbids, so this source-grep fails closed if a copy reappears.
-        let src = crate::testing::read_crate_source("src/engine/scan_no_hit_reassembly.rs");
-        assert!(
-            src.contains("REASSEMBLY_MIN_ENTROPY") && src.contains("REASSEMBLY_MIN_VALUE_LEN"),
-            "no-hit reassembly must gate on the shared floor constants"
-        );
-        assert!(
-            src.contains("reassembly_probe_data"),
-            "no-hit reassembly must build the probe via the shared owner"
-        );
-        assert!(
-            !src.contains("< 3.0") && !src.contains("entropy < 3.0") && !src.contains("len() < 16"),
-            "no-hit reassembly must not re-hardcode the entropy/length floors"
-        );
-        assert!(
-            !src.contains("reassembled_key = \\\""),
-            "no-hit reassembly must not re-open-code the synthetic probe string"
         );
     }
 }

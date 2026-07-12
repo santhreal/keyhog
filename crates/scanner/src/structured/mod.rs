@@ -209,6 +209,48 @@ struct SynthMapping {
     original_start_offset: usize,
 }
 
+/// Align a synthetic `context: decoded-value` line with the original scalar's
+/// value column. Plaintext pairs are normally resolved by searching for the
+/// credential itself; decode-through pairs cannot be, so their mapping origin
+/// must account for source indentation and the original `:`/`=` separator.
+fn synthetic_mapping_origin(
+    text: &str,
+    source_line_offsets: &[usize],
+    pair: &ExtractedPair,
+) -> usize {
+    let line_start = source_line_start(source_line_offsets, pair.line);
+    let line_end = source_line_offsets
+        .get(pair.line)
+        .copied()
+        .unwrap_or(text.len()) // LAW10: missing next-line offset means this reporting-only slice extends to source end; finding bytes still scan
+        .min(text.len());
+    let Some(line) = text.get(line_start..line_end) else {
+        return line_start;
+    };
+    let Some(context_start) = line.find(&pair.context) else {
+        return line_start;
+    };
+    let after_context = context_start + pair.context.len();
+    let Some(delimiter_offset) = line.as_bytes()[after_context..]
+        .iter()
+        .position(|byte| matches!(*byte, b':' | b'='))
+    else {
+        return line_start;
+    };
+    let mut value_column = after_context + delimiter_offset + 1;
+    while line
+        .as_bytes()
+        .get(value_column)
+        .is_some_and(|byte| byte.is_ascii_whitespace() || matches!(*byte, b'\'' | b'"'))
+    {
+        value_column += 1;
+    }
+    let synthetic_value_column = pair.context.len() + SYNTHETIC_PAIR_SEPARATOR.len();
+    line_start
+        .saturating_add(value_column)
+        .saturating_sub(synthetic_value_column)
+}
+
 /// Always-compiled offset synthesis: build `final_text` (original bytes + one
 /// `'\n'` + each synthetic `"{context}: {value}"` line) and its flat mapping
 /// table. Both `build_preprocessed_text` wrappers convert the result into the
@@ -263,7 +305,7 @@ fn synthesize_preprocessed(text: &str, pairs: Vec<ExtractedPair>) -> (String, Ve
             line_number: pair.line,
             start_offset: current_offset,
             end_offset: current_offset + line_len,
-            original_start_offset: source_line_start(&source_line_offsets, pair.line),
+            original_start_offset: synthetic_mapping_origin(text, &source_line_offsets, &pair),
         });
         final_text.push_str(&pair.context);
         final_text.push_str(SYNTHETIC_PAIR_SEPARATOR);

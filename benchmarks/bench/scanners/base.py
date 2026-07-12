@@ -1,6 +1,7 @@
 """Scanner contract + shared subprocess measurement.
 
-Every adapter yields normalised findings (``{file, line, value, detector}``)
+Every adapter yields normalised findings (``{file, line, value, detector}``,
+plus scanner-specific evidence such as ``offset`` and ``confidence``)
 and a :class:`RunStats`. Measurement is uniform across scanners:
 
 * **wall** — a monotonic ``perf_counter`` around the whole invocation.

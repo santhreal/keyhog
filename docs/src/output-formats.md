@@ -39,7 +39,9 @@ runs add the liveness state and commit/author rows when known. The
 
 Stable-schema JSON array. Every finding has every documented field
 present. See [Your first scan](./first-scan.md#json-output) for the
-schema.
+schema. The `confidence` field is canonicalized to three decimal places before
+the reporting-floor decision, so equivalent CPU and GPU scans serialize the
+same value.
 
 ```sh
 keyhog scan . --format json | jq '.[] | .detector_id' | sort | uniq -c

@@ -80,6 +80,7 @@ def test_keyhog_normalizer_reads_json_array_shape():
         {
             "file": "secret.env",
             "line": 4,
+            "offset": 0,
             "value": "ghp_secret",
             "detector": "github-classic-pat",
             "confidence": 0.87,
@@ -104,6 +105,7 @@ def test_keyhog_normalizer_scores_additional_locations_as_findings():
         {
             "file": "primary.pem",
             "line": 1,
+            "offset": 0,
             "value": "-----BEGIN EC PRIVATE KEY-----",
             "detector": "ssh-private-key",
             "confidence": None,
@@ -111,6 +113,7 @@ def test_keyhog_normalizer_scores_additional_locations_as_findings():
         {
             "file": "alias.pem",
             "line": 1,
+            "offset": 0,
             "value": "-----BEGIN EC PRIVATE KEY-----",
             "detector": "ssh-private-key",
             "confidence": None,
@@ -118,6 +121,7 @@ def test_keyhog_normalizer_scores_additional_locations_as_findings():
         {
             "file": "legacy-path.pem",
             "line": 2,
+            "offset": 0,
             "value": "-----BEGIN EC PRIVATE KEY-----",
             "detector": "ssh-private-key",
             "confidence": None,
@@ -243,6 +247,26 @@ def test_keyhog_gpu_benchmark_rows_use_explicit_gpu_policy(tmp_path):
     assert "--no-gpu" in auto_cmd
     assert "--no-gpu" in simd_cmd
     assert scanner._env(ScannerConfig(backend="gpu")) == {}
+
+
+def test_keyhog_scanner_reports_timeout_as_timeout(monkeypatch, tmp_path):
+    scanner = scanners.KeyhogScanner(binary="/unused/keyhog")
+    timed_out = base.RunStats(exit_code=-1, timed_out=True)
+    monkeypatch.setattr(
+        keyhog_adapter,
+        "run_measured",
+        lambda *args, **kwargs: ("", "last scanner diagnostic", timed_out),
+    )
+
+    with pytest.raises(TimeoutError, match=r"timed out after 7s") as exc:
+        scanner.run(
+            tmp_path,
+            ScannerConfig(backend="gpu"),
+            output=tmp_path / "unused.json",
+            timeout=7,
+        )
+
+    assert "last scanner diagnostic" in str(exc.value)
 
 
 def test_keyhog_min_confidence_floor_is_harvest_only(tmp_path):
